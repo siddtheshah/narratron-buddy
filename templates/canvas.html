@@ -3214,7 +3214,7 @@
                 <textarea id="chat-input" rows="2" wrap="soft" aria-label="Chat message" placeholder="Type an idea..."
                     autocomplete="off" required></textarea>
                 <div class="chat-composer-actions">
-                    <button type="button" id="chat-open-stamps-btn" aria-label="Stamps" title="Open Stamp Manager">
+                    <button type="button" id="chat-open-stamps-btn" aria-label="Assets" title="Open Asset Manager">
                         <svg width="22" height="22" viewBox="0 0 28 28" fill="none" aria-hidden="true" focusable="false">
                             <rect x="3" y="7" width="17" height="18" rx="4" fill="#2dd4bf" transform="rotate(-12 3 7)" />
                             <rect x="8" y="4" width="17" height="21" rx="4" fill="#a78bfa" stroke="#ddd6fe" stroke-width="1.2" />
@@ -3251,7 +3251,7 @@
             <div class="stamp-manager-header">
                 <div class="stamp-manager-header-title">
                     <span aria-hidden="true" id="stamp-manager-header-icon">🏷️</span>
-                    <span id="stamp-manager-header-title">Stamp Manager</span>
+                    <span id="stamp-manager-header-title">Asset Manager</span>
                     <span id="stamp-manager-count" class="stamp-manager-count-badge">0/10</span>
                 </div>
                 <button type="button" id="close-stamp-manager-btn" class="panel-btn" title="Back to Chat" style="font-size: 0.78rem; padding: 4px 8px;">
@@ -3259,6 +3259,7 @@
                 </button>
             </div>
             <div id="stamp-manager-tabs" class="stamp-manager-tabs" style="display: none;">
+                <div class="stamp-manager-tab-row">
                 <button type="button" class="stamp-tab-btn active" id="stamp-tab-stamps" data-tab="stamps">
                     🏷️ Stamps
                 </button>
@@ -3268,6 +3269,11 @@
                 <button type="button" class="stamp-tab-btn" id="stamp-tab-characters" data-tab="characters">
                     👤 Characters
                 </button>
+                </div>
+                <div class="stamp-manager-tab-row">
+                <button type="button" class="stamp-tab-btn" id="stamp-tab-playlists" data-tab="playlists">♫ Playlists</button>
+                <button type="button" class="stamp-tab-btn" id="stamp-tab-animations" data-tab="animations">▶ Animations</button>
+                </div>
             </div>
             <div id="stamp-manager-permission-banner" class="stamp-manager-permission-banner non-contributor">
                 <!-- Populated dynamically based on contributor status -->
@@ -3282,6 +3288,10 @@
                         Go to Profile ↗
                     </a>
                 </div>
+                <div id="playlists-manager" hidden>
+                    <div id="playlists-manager-content"></div>
+                </div>
+                <div id="animations-manager" hidden></div>
                 <div id="scenes-manager-grid" class="scenes-grid" style="display: none;"></div>
                 <div id="scenes-manager-empty" class="stamp-manager-empty" style="display: none;">
                     <div class="empty-icon">🎬</div>
@@ -4358,6 +4368,7 @@
 
         function startTrack(src, startTime = 0, fadeDurationMs = 3500) {
             currentTrackSrc = src;
+            if (assetMusicState) updateAssetPlaybackSelection(assetMusicState);
             bgMusic.src = src;
             bgMusic.muted = isMuted;
             if (startTime > 0) {
@@ -4944,6 +4955,8 @@
                         stopPlaylist();
                     }
                 }
+
+                if (data.music) updateAssetPlaybackSelection(data.music);
 
                 if (data.doodles_enabled !== undefined) {
                     setDoodlesDisplay(data.doodles_enabled, data.doodles_persistent);
@@ -5958,7 +5971,7 @@
         resizeDoodleCanvas();
 
         // ========================================
-        // Stamp Manager & Canvas Stamp Dropping
+        // Asset Manager & Canvas Stamp Dropping
         // ========================================
         const chatOpenStampsBtn = document.getElementById('chat-open-stamps-btn');
         const stampManagerPane = document.getElementById('stamp-manager-pane');
@@ -6128,6 +6141,8 @@
                 } else if (activeStampManagerTab === 'characters') {
                     if (cachedTheaterCharacters) renderCharactersManagerGrid(cachedTheaterCharacters);
                     if (typeof loadTheaterCharacters === 'function') loadTheaterCharacters();
+                } else if (activeStampManagerTab === 'playlists' || activeStampManagerTab === 'animations') {
+                    loadExtraAssets(activeStampManagerTab);
                 }
             }
         }
@@ -6604,7 +6619,7 @@
         connectCanvasStateSocket();
 
         // ========================================
-        // Stamp Manager Tab Switching (Scenes & Characters for Orator)
+        // Asset Manager Tab Switching (Scenes & Characters for Orator)
         // ========================================
         function updateStampTabsVisibility() {
             const isOrator = typeof isCurrentOrator === 'function' && isCurrentOrator();
@@ -6629,12 +6644,166 @@
             });
         }
 
+        const extraAssetPanels = {
+            playlists: document.getElementById('playlists-manager'),
+            animations: document.getElementById('animations-manager'),
+        };
+        let assetLoadVersion = 0;
+        let selectedPlaylist = '';
+        let assetMusicState = null;
+        const noMusicButton = createAssetButton({ id: 'no_music', name: 'No Music' }, 'playlists');
+        noMusicButton.id = 'no-music-button';
+        extraAssetPanels.playlists.prepend(noMusicButton);
+        for (const kind of ['playlists', 'animations']) {
+            document.getElementById(`stamp-tab-${kind}`)?.addEventListener('click', () => switchStampManagerTab(kind));
+        }
+
+        function updateAssetPlaybackSelection(music) {
+            assetMusicState = music;
+            extraAssetPanels.playlists.querySelectorAll('.asset-push-button').forEach(updateAssetPlaybackButton);
+        }
+
+        function updateAssetPlaybackButton(button) {
+            if (!assetMusicState || button.dataset.assetKind !== 'playlists') return;
+            const tracks = assetMusicState.tracks || [];
+            const silent = !(assetMusicState.music_id || assetMusicState.playlist) || tracks.length === 0;
+            const playingTrack = typeof currentTrackSrc !== 'undefined' && tracks.includes(currentTrackSrc)
+                ? currentTrackSrc : tracks[0];
+            const selected = button.dataset.assetId === 'no_music' ? silent : !silent && button.dataset.trackUrl === playingTrack;
+            button.classList.toggle('currently-playing', selected);
+            if (selected) button.setAttribute('aria-current', 'true');
+            else button.removeAttribute('aria-current');
+            const indicator = button.querySelector('.asset-playing-indicator');
+            indicator.hidden = !selected;
+            indicator.textContent = silent ? '✓ Selected' : assetMusicState.paused ? 'Ⅱ Paused' : '▶ Playing';
+        }
+
+        async function loadExtraAssets(kind) {
+            const panel = kind === 'playlists' ? document.getElementById('playlists-manager-content') : extraAssetPanels[kind];
+            const version = ++assetLoadVersion;
+            panel.textContent = 'Loading…';
+            stampManagerCount.textContent = '…';
+            try {
+                const res = await fetch(`/api/theaters/${encodeURIComponent(theaterId)}/${kind}`);
+                if (!res.ok) throw new Error('Unable to load assets.');
+                const assets = await res.json();
+                if (version !== assetLoadVersion || activeStampManagerTab !== kind) return;
+                panel.replaceChildren();
+                const count = kind === 'playlists' ? assets.reduce((n, p) => n + p.tracks.length, 0) : assets.length;
+                stampManagerCount.textContent = `${count}`;
+                stampManagerCount.title = `${count} ${kind === 'playlists' ? 'tracks' : 'animations'}`;
+                if (!count) {
+                    panel.textContent = `No ${kind} found for this theater.`;
+                    return;
+                }
+                if (kind === 'playlists') {
+                    const tabs = document.createElement('div');
+                    tabs.className = 'playlist-tabs';
+                    tabs.setAttribute('role', 'tablist');
+                    tabs.setAttribute('aria-label', 'Playlists');
+                    const tracks = document.createElement('div');
+                    tracks.className = 'asset-track-list';
+                    tracks.setAttribute('role', 'tabpanel');
+                    const select = (playlist) => {
+                        selectedPlaylist = playlist.name;
+                        for (const button of tabs.children) {
+                            const active = button.dataset.playlist === playlist.name;
+                            button.classList.toggle('active', active);
+                            button.setAttribute('aria-selected', `${active}`);
+                        }
+                        tracks.replaceChildren();
+                        playlist.tracks.forEach(track => tracks.appendChild(createAssetButton(track, kind)));
+                    };
+                    assets.forEach(playlist => {
+                        const button = document.createElement('button');
+                        button.type = 'button';
+                        button.className = 'stamp-tab-btn';
+                        button.setAttribute('role', 'tab');
+                        button.dataset.playlist = playlist.name;
+                        button.textContent = playlist.name;
+                        button.addEventListener('click', () => select(playlist));
+                        tabs.appendChild(button);
+                    });
+                    panel.append(tabs, tracks);
+                    select(assets.find(p => p.name === selectedPlaylist) || assets[0]);
+                } else {
+                    panel.className = 'asset-track-list';
+                    assets.forEach(asset => panel.appendChild(createAssetButton(asset, kind)));
+                }
+            } catch (err) {
+                if (version === assetLoadVersion && activeStampManagerTab === kind) {
+                    panel.textContent = err.message;
+                    stampManagerCount.textContent = '—';
+                    const retry = document.createElement('button');
+                    retry.type = 'button';
+                    retry.className = 'panel-btn';
+                    retry.textContent = 'Retry';
+                    retry.addEventListener('click', () => loadExtraAssets(kind));
+                    panel.appendChild(retry);
+                }
+            }
+        }
+
+        function createAssetButton(asset, kind) {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'asset-push-button';
+            button.dataset.assetKind = kind;
+            button.dataset.assetId = asset.id;
+            button.dataset.trackUrl = asset.url || asset.id;
+            button.title = asset.description || `Push ${asset.name} to canvas`;
+            if (kind === 'animations' && asset.url) {
+                const img = document.createElement('img');
+                img.src = asset.url;
+                img.alt = '';
+                img.loading = 'lazy';
+                button.appendChild(img);
+            }
+            const label = document.createElement('span');
+            label.textContent = asset.description || asset.name;
+            const action = document.createElement('small');
+            action.textContent = 'Push to Canvas';
+            const indicator = document.createElement('span');
+            indicator.className = 'asset-playing-indicator';
+            indicator.hidden = true;
+            button.append(indicator, label, action);
+            updateAssetPlaybackButton(button);
+            button.addEventListener('click', async () => {
+                if (!isCurrentOrator()) return;
+                button.disabled = true;
+                action.textContent = 'Pushing…';
+                try {
+                    const res = await fetch(`/api/theaters/${encodeURIComponent(theaterId)}/${kind}/push`, {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ id: asset.id }),
+                    });
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data.detail || 'Unable to push asset.');
+                    showShareToast(data.message);
+                    refreshCanvasState(['latest']);
+                    action.textContent = 'Pushed!';
+                } catch (err) {
+                    showShareToast(err.message);
+                    action.textContent = 'Retry';
+                } finally {
+                    button.disabled = false;
+                }
+            });
+            return button;
+        }
+
         function switchStampManagerTab(tab) {
             const isOrator = typeof isCurrentOrator === 'function' && isCurrentOrator();
             if (!isOrator && tab !== 'stamps') {
                 tab = 'stamps';
             }
             activeStampManagerTab = tab;
+            ++assetLoadVersion;
+            for (const kind of ['playlists', 'animations']) {
+                extraAssetPanels[kind].hidden = tab !== kind;
+                document.getElementById(`stamp-tab-${kind}`)?.classList.toggle('active', tab === kind);
+            }
+
 
             stampTabStampsBtn?.classList.toggle('active', tab === 'stamps');
             stampTabScenesBtn?.classList.toggle('active', tab === 'scenes');
@@ -6647,9 +6816,20 @@
             const stampGenSubmit = document.getElementById('stamp-generation-submit');
             const stampProfileLink = document.getElementById('stamp-manager-profile-link');
 
-            if (tab === 'stamps') {
+            if (tab === 'playlists' || tab === 'animations') {
+                if (headerIcon) headerIcon.textContent = tab === 'playlists' ? '♫' : '▶';
+                if (headerTitle) headerTitle.textContent = 'Asset Manager';
+                for (const el of [stampManagerPermissionBanner, stampManagerGrid, stampManagerEmpty,
+                    scenesManagerGrid, scenesManagerEmpty, charactersManagerGrid, charactersManagerEmpty, stampProfileLink]) {
+                    if (el) el.style.display = 'none';
+                }
+                for (const el of [stampGenForm, stampGenStatus, stampGenSubmit]) {
+                    if (el) el.hidden = true;
+                }
+                loadExtraAssets(tab);
+            } else if (tab === 'stamps') {
                 if (headerIcon) headerIcon.textContent = '🏷️';
-                if (headerTitle) headerTitle.textContent = 'Stamp Manager';
+                if (headerTitle) headerTitle.textContent = 'Asset Manager';
                 if (stampManagerPermissionBanner) stampManagerPermissionBanner.style.display = '';
                 if (stampManagerGrid) stampManagerGrid.style.display = '';
                 if (scenesManagerGrid) scenesManagerGrid.style.display = 'none';
@@ -6676,7 +6856,7 @@
                 }
             } else if (tab === 'scenes') {
                 if (headerIcon) headerIcon.textContent = '🎬';
-                if (headerTitle) headerTitle.textContent = 'Scenes';
+                if (headerTitle) headerTitle.textContent = 'Asset Manager';
                 if (stampManagerPermissionBanner) stampManagerPermissionBanner.style.display = 'none';
                 if (stampManagerGrid) stampManagerGrid.style.display = 'none';
                 if (stampManagerEmpty) stampManagerEmpty.style.display = 'none';
@@ -6703,7 +6883,7 @@
                 }
             } else if (tab === 'characters') {
                 if (headerIcon) headerIcon.textContent = '👤';
-                if (headerTitle) headerTitle.textContent = 'Characters';
+                if (headerTitle) headerTitle.textContent = 'Asset Manager';
                 if (stampManagerPermissionBanner) stampManagerPermissionBanner.style.display = 'none';
                 if (stampManagerGrid) stampManagerGrid.style.display = 'none';
                 if (stampManagerEmpty) stampManagerEmpty.style.display = 'none';

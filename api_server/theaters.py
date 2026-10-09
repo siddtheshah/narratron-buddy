@@ -32,6 +32,7 @@ from google.genai import types
 from api_server.dependencies import live_agent_manager, suggestion_service, adventure_service, pricing_controller
 from api_server.canvas import broadcast_baton_update, _broadcast_doodle
 from services.theater_image_generation import generate_theater_image
+from services.theater_assets import Playlist, AnimationAsset, playlists, animations
 from services.generation_billing import (
     billing_locks as _billing_locks,
     MAX_CONCURRENT_GENERATION_JOBS,
@@ -213,6 +214,67 @@ async def list_theater_stamps(
 class PushSceneRequest(BaseModel):
     name: str = ""
     scene_id: Optional[str] = None
+
+
+class PushAssetRequest(BaseModel):
+    id: str = Field(min_length=1, max_length=2000)
+
+
+async def _require_asset_orator(request: Request, theater_id: str, join_key: str | None) -> None:
+    await _require_canvas_access_async(request, theater_id, join_key=join_key)
+    _safe_path_param(theater_id, "theater_id")
+    user = await get_current_user_async(request)
+    if not can_control_agent_websocket(db.get_deployment(theater_id), current_user=user):
+        raise HTTPException(status_code=403, detail="Only the active orator can manage theater assets.")
+
+
+@app.get("/api/theaters/{theater_id}/playlists")
+async def list_theater_playlists(request: Request, theater_id: str, join_key: str | None = None) -> list[Playlist]:
+    await _require_asset_orator(request, theater_id, join_key)
+    return await asyncio.to_thread(playlists, theater_manager.theater(theater_id))
+
+
+@app.get("/api/theaters/{theater_id}/animations")
+async def list_theater_animations(request: Request, theater_id: str, join_key: str | None = None) -> list[AnimationAsset]:
+    await _require_asset_orator(request, theater_id, join_key)
+    assets = await asyncio.to_thread(animations, theater_manager.theater(theater_id))
+    return [asset.model_copy(update={"manifest": {}, "frames": []}) for asset in assets]
+
+
+@app.post("/api/theaters/{theater_id}/playlists/push")
+async def push_theater_track(payload: PushAssetRequest, request: Request, theater_id: str, join_key: str | None = None) -> dict[str, str]:
+    await _require_asset_orator(request, theater_id, join_key)
+    if payload.id == "no_music":
+        state = canvas_states.get(theater_id)
+        state.audio.update_music("", [], allow_pinned=True)
+        state.persist()
+        return {"status": "ok", "message": "Music stopped."}
+    groups = await asyncio.to_thread(playlists, theater_manager.theater(theater_id))
+    for group in groups:
+        for track in group.tracks:
+            if track.id == payload.id:
+                state = canvas_states.get(theater_id)
+                state.audio.update_music(f"{group.name} / {track.name}", [track.url], allow_pinned=True)
+                state.persist()
+                return {"status": "ok", "message": f"Playing {track.name}."}
+    raise HTTPException(status_code=404, detail="Track not found.")
+
+
+@app.post("/api/theaters/{theater_id}/animations/push")
+async def push_theater_animation(payload: PushAssetRequest, request: Request, theater_id: str, join_key: str | None = None) -> dict[str, str]:
+    await _require_asset_orator(request, theater_id, join_key)
+    theater = theater_manager.theater(theater_id)
+    assets = await asyncio.to_thread(animations, theater)
+    for asset in assets:
+        if asset.id == payload.id:
+            state = canvas_states.get(theater_id)
+            result = state.visual.update_animation(asset.type, asset.frames if asset.type == "triframe" else asset.manifest,
+                id=asset.id, prompt=asset.description, force_immediate=True, source="play_animation", url_for_path=theater.get_url_for_path)
+            if result["status"] == "blocked":
+                raise HTTPException(status_code=409, detail=result["message"])
+            state.persist()
+            return {"status": "ok", "message": f"Playing {asset.description or asset.name}."}
+    raise HTTPException(status_code=404, detail="Animation not found.")
 
 
 @app.get("/api/theaters/{theater_id}/scenes")

@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 from playwright.sync_api import Page, Route, sync_playwright
+from playwright.sync_api import expect
 
 
 @pytest.fixture(scope="module")
@@ -154,6 +155,104 @@ def test_canvas_html_and_css_scenes_characters_wiring() -> None:
     assert "pushSceneToCanvas" in canvas_html
     assert "loadTheaterCharacters" in canvas_html
     assert "renderCharactersManagerGrid" in canvas_html
+
+
+def test_playlist_tabs_push_only_selected_track(scenes_chars_page: Page) -> None:
+    page = scenes_chars_page
+    page.evaluate("applyRoleUI(true); setStampManagerOpen(true)")
+
+    def serve_playlists(route: Route) -> None:
+        route.fulfill(json=[
+            {"name": "Calm", "tracks": [{"id": "calm-a", "name": "First track"}, {"id": "calm-b", "name": "Second track"}]},
+            {"name": "Battle", "tracks": [{"id": "battle-a", "name": "Battle track"}]},
+        ])
+
+    def push_track(route: Route) -> None:
+        assert route.request.post_data_json == {"id": "battle-a"}
+        route.fulfill(json={"status": "ok", "message": "Playing Battle track."})
+
+    page.route("**/api/theaters/*/playlists", serve_playlists)
+    page.route("**/api/theaters/*/playlists/push", push_track)
+    page.locator("#stamp-tab-playlists").click()
+    expect(page.locator("#playlists-manager-content .asset-push-button")).to_have_count(2)
+    page.get_by_role("tab", name="Battle", exact=True).click()
+    expect(page.locator("#playlists-manager-content .asset-push-button")).to_have_count(1)
+    page.locator("#playlists-manager-content .asset-push-button").click()
+    expect(page.locator("#playlists-manager-content small")).to_have_text("Pushed!")
+    page.locator("#stamp-tab-scenes").click()
+    expect(page.locator("#playlists-manager")).to_be_hidden()
+
+
+def test_animation_tab_push_and_role_loss(scenes_chars_page: Page) -> None:
+    page = scenes_chars_page
+    page.evaluate("applyRoleUI(true); setStampManagerOpen(true)")
+
+    def serve_animations(route: Route) -> None:
+        route.fulfill(json=[{"id": "storm", "name": "Storm", "description": "A rolling storm", "type": "video", "url": ""}])
+
+    def push_animation(route: Route) -> None:
+        assert route.request.post_data_json == {"id": "storm"}
+        route.fulfill(json={"status": "ok", "message": "Playing Storm."})
+
+    page.route("**/api/theaters/*/animations", serve_animations)
+    page.route("**/api/theaters/*/animations/push", push_animation)
+    page.locator("#stamp-tab-animations").click()
+    expect(page.locator("#animations-manager .asset-push-button")).to_have_count(1)
+    page.locator("#animations-manager .asset-push-button").click()
+    expect(page.locator("#animations-manager small")).to_have_text("Pushed!")
+    page.evaluate("applyRoleUI(false)")
+    expect(page.locator("#animations-manager")).to_be_hidden()
+    assert page.evaluate("activeStampManagerTab") == "stamps"
+
+
+def test_no_music_available_without_playlist_tracks(scenes_chars_page: Page) -> None:
+    page = scenes_chars_page
+    page.evaluate("applyRoleUI(true); setStampManagerOpen(true)")
+
+    def serve_empty_playlists(route: Route) -> None:
+        route.fulfill(json=[])
+
+    def stop_music(route: Route) -> None:
+        assert route.request.post_data_json == {"id": "no_music"}
+        route.fulfill(json={"status": "ok", "message": "Music stopped."})
+
+    page.route("**/api/theaters/*/playlists", serve_empty_playlists)
+    page.route("**/api/theaters/*/playlists/push", stop_music)
+    page.locator("#stamp-tab-playlists").click()
+    expect(page.locator("#playlists-manager-content")).to_have_text("No playlists found for this theater.")
+    page.locator("#no-music-button").click()
+    expect(page.locator("#no-music-button small")).to_have_text("Pushed!")
+    assert page.evaluate("window._lastToast") == "Music stopped."
+
+
+def test_playing_track_highlight_survives_tabs_and_updates_for_silence(scenes_chars_page: Page) -> None:
+    page = scenes_chars_page
+    page.evaluate("applyRoleUI(true); setStampManagerOpen(true)")
+
+    def serve_playlists(route: Route) -> None:
+        route.fulfill(json=[
+            {"name": "Calm", "tracks": [{"id": "/calm.mp3", "url": "/calm.mp3", "name": "Calm track"}]},
+            {"name": "Battle", "tracks": [{"id": "/battle.mp3", "url": "/battle.mp3", "name": "Battle track"}]},
+        ])
+
+    page.route("**/api/theaters/*/playlists", serve_playlists)
+    page.evaluate("updateAssetPlaybackSelection({music_id: 'Battle', tracks: ['/battle.mp3'], paused: false})")
+    page.locator("#stamp-tab-playlists").click()
+    page.get_by_role("tab", name="Battle", exact=True).click()
+    playing = page.locator("#playlists-manager-content .currently-playing")
+    expect(playing).to_have_count(1)
+    expect(playing.locator(".asset-playing-indicator")).to_have_text("▶ Playing")
+    expect(playing).to_have_attribute("aria-current", "true")
+    page.get_by_role("tab", name="Calm", exact=True).click()
+    expect(playing).to_have_count(0)
+    page.get_by_role("tab", name="Battle", exact=True).click()
+    expect(playing).to_have_count(1)
+    page.evaluate("updateAssetPlaybackSelection({music_id: 'Battle', tracks: ['/battle.mp3'], paused: true})")
+    expect(playing.locator(".asset-playing-indicator")).to_have_text("Ⅱ Paused")
+    page.evaluate("updateAssetPlaybackSelection({music_id: '', tracks: [], paused: false})")
+    expect(playing).to_have_count(0)
+    expect(page.locator("#no-music-button")).to_have_class("asset-push-button currently-playing")
+    expect(page.locator("#no-music-button .asset-playing-indicator")).to_have_text("✓ Selected")
 
 
 def test_stamp_manager_tabs_visibility_and_orator_restriction(scenes_chars_page: Page) -> None:
