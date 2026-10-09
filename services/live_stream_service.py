@@ -69,6 +69,14 @@ def format_canvas_state(
             "to attach the latest character portraits automatically."
         )
 
+    scene_images = reference_manager.available_scene_images()
+    if scene_images:
+        scenes = "; ".join(f"{name}: {path}" for name, path in scene_images.items())
+        parts.append(
+            f"[Available Scene Visuals]: {scenes}. Use these paths in reference_images "
+            "to attach scene visuals to image and animation requests."
+        )
+
     return "\n".join(parts)
 
 

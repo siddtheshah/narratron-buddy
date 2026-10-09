@@ -56,6 +56,7 @@ def notepad() -> MagicMock:
 @pytest.fixture
 def reference_manager() -> MagicMock:
     manager = MagicMock(spec=ReferenceManager)
+    manager.available_scene_images.return_value = {}
     manager.get_player_character.return_value = None
     manager.available_character_images.return_value = {}
     return manager
@@ -63,6 +64,7 @@ def reference_manager() -> MagicMock:
 
 def test_format_canvas_state_includes_available_character_visual_tags(notepad: MagicMock) -> None:
     manager = MagicMock(spec=ReferenceManager)
+    manager.available_scene_images.return_value = {}
     manager.get_player_character.return_value = None
     manager.available_character_images.return_value = {"Arthur Modella": "session/1.png", "Grim Vallos": "session/2.png"}
     state = format_canvas_state(CanvasFixture(), notepad, manager)
@@ -76,6 +78,7 @@ def test_format_canvas_state_includes_available_character_visual_tags(notepad: M
 
 def test_format_canvas_state_distinguishes_player_reference_from_npcs(notepad: MagicMock) -> None:
     manager = MagicMock(spec=ReferenceManager)
+    manager.available_scene_images.return_value = {}
     manager.get_player_character.return_value = PlayerCharacter(
         name="Mara", image_description="Private appearance", reference="private_alias",
     )
@@ -91,6 +94,7 @@ def test_format_canvas_state_distinguishes_player_reference_from_npcs(notepad: M
 
 def test_format_canvas_state_omits_player_tag_without_available_portrait(notepad: MagicMock) -> None:
     manager = MagicMock(spec=ReferenceManager)
+    manager.available_scene_images.return_value = {}
     manager.get_player_character.return_value = PlayerCharacter(name="Mara")
     manager.available_character_images.return_value = {"Cedric": "private/cedric.png"}
     state = format_canvas_state(CanvasFixture(), notepad, manager)
@@ -101,6 +105,7 @@ def test_format_canvas_state_omits_player_tag_without_available_portrait(notepad
 
 def test_format_canvas_state_labels_unnamed_player_reference(notepad: MagicMock) -> None:
     manager = MagicMock(spec=ReferenceManager)
+    manager.available_scene_images.return_value = {}
     manager.get_player_character.return_value = PlayerCharacter()
     manager.available_character_images.return_value = {"Player": "private/player.png"}
     state = format_canvas_state(CanvasFixture(), notepad, manager)
@@ -123,6 +128,39 @@ def test_format_canvas_state_reads_current_character_catalog_without_story_sync(
     portrait.unlink()
     assert "[Available Character Visuals]" not in format_canvas_state(canvas, notepad, manager)
     assert "available_character_images" not in story.serialize()
+
+
+def test_format_canvas_state_reads_current_scene_visuals(tmp_path: Path, notepad: MagicMock) -> None:
+    theater = TheaterManager(tmp_path).theater("stage")
+    manager = ReferenceManager(theater, MagicMock(spec=TextResponseProvider))
+    canvas = CanvasFixture()
+    assert "[Available Scene Visuals]" not in format_canvas_state(canvas, notepad, manager)
+
+    authored = theater.scenes_dir() / "Old_Harbor" / "1.png"
+    authored.parent.mkdir(parents=True)
+    Image.new("RGB", (8, 8), "blue").save(authored)
+    forest = theater.scenes_dir() / "Moonlit_Forest" / "1.png"
+    forest.parent.mkdir(parents=True)
+    Image.new("RGB", (8, 8), "green").save(forest)
+    state = format_canvas_state(canvas, notepad, manager)
+    assert "[Available Scene Visuals]:" in state
+    assert f"Old Harbor: {authored}" in state
+    assert f"Moonlit Forest: {forest}" in state
+    assert "Use these paths in reference_images" in state
+    assert "[Available Character Visuals]" not in state
+
+    updated = theater.updated_scenes_dir() / "Old_Harbor" / "2.png"
+    updated.parent.mkdir(parents=True)
+    Image.new("RGB", (8, 8), "red").save(updated)
+    state = format_canvas_state(canvas, notepad, manager)
+    assert f"Old Harbor: {updated}" in state
+    assert str(authored) not in state
+
+    updated.unlink()
+    assert f"Old Harbor: {authored}" in format_canvas_state(canvas, notepad, manager)
+    authored.unlink()
+    forest.unlink()
+    assert "[Available Scene Visuals]" not in format_canvas_state(canvas, notepad, manager)
 
 
 def test_format_canvas_state_includes_sticky_notes(tmp_path: Path, reference_manager: MagicMock) -> None:
@@ -285,6 +323,7 @@ def test_format_canvas_state_shows_reference_tags_without_character_details(note
 
     canvas = CanvasFixture(story=story)
     manager = MagicMock(spec=ReferenceManager)
+    manager.available_scene_images.return_value = {}
     manager.get_player_character.return_value = PlayerCharacter(name="Mara")
     manager.available_character_images.return_value = {"Mara": "private/mara.png", "Cedric": "private/cedric.png"}
     state = format_canvas_state(canvas, notepad, manager)

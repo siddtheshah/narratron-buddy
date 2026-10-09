@@ -47,6 +47,7 @@ def configure_observability_dependencies(session: LiveAgentSession) -> None:
     session.notepad_tools = MagicMock(notepad=pad)
     session.reference_manager = MagicMock(spec=ReferenceManager)
     session.reference_manager.available_character_images.return_value = {}
+    session.reference_manager.available_scene_images.return_value = {}
     session.reference_manager.get_player_character.return_value = None
 
 
