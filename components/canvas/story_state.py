@@ -117,7 +117,10 @@ class StoryState:
         persist: Callable[[], None] | None = None,
         notify_changed: Callable[..., None] | None = None,
         publish_audio_fn: Callable[[dict[str, Any]], None] | None = None,
+        *,
+        adventure_mode: bool = False,
     ) -> None:
+        self.adventure_mode: bool = adventure_mode
         self._persist = persist
         self._notify_changed = notify_changed
         self.publish_audio_fn = publish_audio_fn

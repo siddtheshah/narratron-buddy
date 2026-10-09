@@ -12,6 +12,7 @@ from providers import TextResponseProvider
 
 from services.live_stream_service import format_canvas_state, handle_live_websocket_connection
 from tools.story import StoryTool
+from components.canvas.canvas_state_manager import CanvasStateManager
 from components.notepad import Notepad
 from components.reference_manager import Character, ReferenceManager, PlayerCharacter
 from components.theater_manager import TheaterManager
@@ -43,7 +44,7 @@ class CanvasFixture:
     ui: CanvasUIFixture = field(default_factory=CanvasUIFixture)
     chat: MagicMock = field(default_factory=MagicMock)
     doodles: list[dict] = field(default_factory=list)
-    story: StoryState | None = None
+    story: StoryState = field(default_factory=StoryState)
 
 
 @pytest.fixture
@@ -181,6 +182,35 @@ def test_format_canvas_state_includes_sticky_notes(tmp_path: Path, reference_man
     )
 
     assert "[Sticky Notes]: hero: Mara, a cartographer; tone: Hopeful and tense" in state
+
+
+@pytest.mark.parametrize("adventure_mode", [False, True])
+def test_format_canvas_state_only_includes_raw_notes_outside_adventure_mode(
+    adventure_mode: bool, tmp_path: Path, reference_manager: MagicMock,
+) -> None:
+    theater = MagicMock(wraps=TheaterManager(tmp_path).theater("stage"))
+    theater.config.return_value = {"story_planning": {"adventure_mode": adventure_mode}}
+    theater.theater_id = "stage"
+    canvas = CanvasStateManager(theater)
+    assert canvas.story.adventure_mode is adventure_mode
+    pad = Notepad(theater, canvas_manager=canvas, enforce_structured=False)
+    pad.config["adventure_mode"] = not adventure_mode
+    pad.update_sticky_note("secret", "The guide is the villain")
+    reference_manager.available_character_images.return_value = {"Guide": "guide.png"}
+    reference_manager.available_scene_images.return_value = {"Harbor": "harbor.png"}
+
+    state = format_canvas_state(canvas, pad, reference_manager)
+
+    if adventure_mode:
+        assert "[Sticky Notes]" not in state
+        assert "secret" not in state
+        assert "The guide is the villain" not in state
+    else:
+        assert "[Sticky Notes]: secret: The guide is the villain" in state
+    assert "[Canvas Image]" in state
+    assert "[Canvas music]" in state
+    assert "[Available Character Visuals]: <Guide>" in state
+    assert "[Available Scene Visuals]: Harbor: harbor.png" in state
 
 
 def test_format_canvas_state_uses_notepad_instead_of_story_notes(

@@ -30,6 +30,7 @@ from services.priority_live_request_queue import PriorityLiveRequestQueue
 def canvas_observability_fixture(image_path=None, collaboration_enabled=False, doodles=None):
     canvas = MagicMock()
     canvas.theater = None
+    canvas.story.adventure_mode = False
     canvas.visual.shown_image_path = image_path
     canvas.visual.shown_image_prompt = None
     canvas.audio.current_playlist = None

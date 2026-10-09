@@ -284,6 +284,7 @@ def create_tool_bundle_for_session(
     if canvas_manager.story is not None:
         speech_provider = canvas_manager.story.speech_provider
     story_state = canvas_manager.story if canvas_manager.story is not None else StoryState()
+    story_state.adventure_mode = adventure_mode
     reference_manager = ReferenceManager(
         theater=theater,
         text_response_provider=story_planning_text_provider,

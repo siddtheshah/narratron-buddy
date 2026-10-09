@@ -43,13 +43,13 @@ def format_canvas_state(
             "An explicit Orator Action for a new image grants one create_image call while preserving the pin."
         )
 
-    elements = notepad.get_present_elements()
-
-    if elements:
-        rendered_elements = "; ".join(
-            f"{element['name']}: {element['content']}" for element in elements
-        )
-        parts.append(f"[Sticky Notes]: {rendered_elements}")
+    if not canvas_state_manager.story.adventure_mode:
+        elements = notepad.get_present_elements()
+        if elements:
+            rendered_elements = "; ".join(
+                f"{element['name']}: {element['content']}" for element in elements
+            )
+            parts.append(f"[Sticky Notes]: {rendered_elements}")
 
     available_images = reference_manager.available_character_images()
     player = reference_manager.get_player_character()

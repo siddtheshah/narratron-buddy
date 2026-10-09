@@ -46,7 +46,13 @@ class CanvasStateManager:
         self.doodles = DoodleState(self.persist, theater=self.theater)
         self.ui = UIState(self.persist, self.notify_changed)
         self.tool_response = ToolResponseState(self.notify_changed)
-        self.story = StoryState(self.persist, self.notify_changed, publish_audio_fn=self.connections.broadcast)
+        story_planning_config = theater.config().get("story_planning", {})
+        self.story = StoryState(
+            self.persist,
+            self.notify_changed,
+            publish_audio_fn=self.connections.broadcast,
+            adventure_mode=bool(story_planning_config.get("adventure_mode", False)),
+        )
         self.chat = ChatManager(self.theater)
         self.load_state_from_disk()
         self.visual.initialize_starting_image()
