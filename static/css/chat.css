@@ -333,31 +333,15 @@
     min-height: calc(2lh + 12px + 1px);
 }
 
-#stamp-manager-back-chat-btn {
-    box-sizing: border-box;
-    width: 100%;
-    height: 36px;
-    margin-right: 0;
-    padding: 6px 8px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 6px;
-    font-size: 0.85rem;
-    font-weight: 600;
-}
-
 #chat-form.canvas-chat-composer .chat-composer-actions > button,
-#chat-form.canvas-chat-composer .chat-emotes-control > button,
-.stamp-manager-footer .chat-composer-actions > button {
+#chat-form.canvas-chat-composer .chat-emotes-control > button {
     box-sizing: border-box;
     min-width: 36px;
     min-height: 36px;
     padding: 6px 8px;
 }
 
-#chat-form.canvas-chat-composer .chat-composer-actions,
-.stamp-manager-footer .chat-composer-actions {
+#chat-form.canvas-chat-composer .chat-composer-actions {
     display: grid;
     grid-template-columns: repeat(5, minmax(0, 1fr));
     gap: 4px;
@@ -393,6 +377,19 @@
     flex-shrink: 0;
     color: #94a3b8;
     font-size: 1rem;
+}
+
+.chat-profile-link {
+    flex-shrink: 0;
+    min-width: 28px;
+    min-height: 28px;
+    padding: 4px;
+    justify-content: center;
+    text-decoration: none;
+}
+
+@media (pointer: coarse) {
+    .chat-profile-link { min-width: 44px; min-height: 44px; }
 }
 
 .chat-identity #chat-name-display,
@@ -862,20 +859,6 @@
     background: rgba(0, 0, 0, 0.2);
 }
 
-.stamp-manager-footer-link {
-    font-size: 0.78rem;
-    color: #a5b4fc;
-    text-decoration: none;
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-}
-
-.stamp-manager-footer-link:hover {
-    color: #c7d2fe;
-    text-decoration: underline;
-}
-
 /* Floating drag ghost when dragging stamp to canvas */
 .stamp-drag-ghost {
     position: fixed;
@@ -1047,8 +1030,7 @@
     width: 100%;
     padding: 6px 10px;
     border: 1px solid rgba(255, 255, 255, 0.1);
-    border-bottom: 0;
-    border-radius: 10px 10px 0 0;
+    border-radius: 10px;
     background: rgba(255, 255, 255, 0.1);
     color: #fff;
     font-family: 'Outfit', sans-serif;
@@ -1059,22 +1041,6 @@
 }
 
 #stamp-generation-status { color: #94a3b8; font-size: 0.75rem; padding: 8px 1rem; }
-#stamp-generation-submit {
-    grid-column: 2 / 4;
-    height: 36px;
-    width: 100%;
-    padding: 4px 6px;
-    font-size: 0.78rem;
-    white-space: nowrap;
-}
-#stamp-generation-submit[hidden] { display: none; }
-#stamp-manager-profile-link {
-    grid-column: 4 / -1;
-    justify-self: end;
-    align-self: center;
-    white-space: nowrap;
-}
-#stamp-generation-submit:disabled { opacity: 0.6; cursor: wait; }
 
 /* Scenes Grid and Cards */
 .scenes-grid {

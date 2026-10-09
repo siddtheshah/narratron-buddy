@@ -3154,6 +3154,14 @@
                 <span id="chat-name-display" style="display: none;"></span>
                 <input type="text" id="chat-name-input" aria-label="Your chat name"
                     placeholder="Your Chat Name..." title="Click to change your chat display name">
+                <a href="/profile" id="stamp-manager-profile-link" target="_blank" rel="noopener"
+                    class="panel-btn chat-profile-link" style="display: none;" aria-label="Profile Settings" title="Open your profile">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                        stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <circle cx="12" cy="8" r="4" />
+                        <path d="M5 21v-2a7 7 0 0 1 14 0v2" />
+                    </svg>
+                </a>
                 <button type="button" id="chat-login-chip" class="chat-login-chip"
                     style="display: none;" title="Log in to your account">Log In</button>
             </div>
@@ -3239,9 +3247,6 @@
                     <span id="stamp-manager-header-title">Asset Manager</span>
                     <span id="stamp-manager-count" class="stamp-manager-count-badge">0/10</span>
                 </div>
-                <button type="button" id="close-stamp-manager-btn" class="panel-btn" title="Back to Chat" style="font-size: 0.78rem; padding: 4px 8px;">
-                    ✕ Back to Chat
-                </button>
             </div>
             <div id="stamp-manager-tabs" class="stamp-manager-tabs" style="display: none;">
                 <div class="stamp-manager-tab-row">
@@ -3293,15 +3298,8 @@
             <div id="stamp-generation-status" role="status" aria-live="polite" hidden>Uses image generation credits. Saved to this theater for everyone to use.</div>
             <div class="stamp-manager-footer">
                 <form id="stamp-generation-form" class="stamp-generation-form" hidden>
-                    <textarea id="stamp-generation-prompt" maxlength="4000" rows="2" wrap="soft" aria-label="Stamp image prompt" aria-keyshortcuts="Enter" required placeholder="Describe a stamp…" autocomplete="off"></textarea>
+                    <textarea id="stamp-generation-prompt" maxlength="4000" rows="2" wrap="soft" aria-label="Stamp image prompt" aria-keyshortcuts="Enter" required placeholder="describe a stamp and press (enter)" autocomplete="off"></textarea>
                 </form>
-                <div class="chat-composer-actions">
-                    <button type="button" id="stamp-manager-back-chat-btn" class="panel-btn" aria-label="Chat" title="Back to Chat">Chat</button>
-                    <button id="stamp-generation-submit" class="panel-btn" type="submit" form="stamp-generation-form" title="Generate stamp (Enter)" hidden>Generate stamp</button>
-                    <a href="/profile" id="stamp-manager-profile-link" target="_blank" class="stamp-manager-footer-link" aria-label="Profile Settings" title="Manage stamps in your profile">
-                        ⚙️ Profile ↗
-                    </a>
-                </div>
             </div>
         </div>
     </div>
@@ -3332,7 +3330,10 @@
             const profileLink = document.getElementById('stamp-manager-profile-link');
             const emptyProfileBtn = document.getElementById('stamp-manager-empty-profile-btn');
             const targetUrl = (user && user.username) ? `/users/${encodeURIComponent(user.username)}` : '/profile';
-            if (profileLink) profileLink.href = targetUrl;
+            if (profileLink) {
+                profileLink.href = targetUrl;
+                profileLink.style.display = user && user.username ? 'inline-flex' : 'none';
+            }
             if (emptyProfileBtn) emptyProfileBtn.href = targetUrl;
         }
 
@@ -5961,8 +5962,6 @@
         const chatOpenStampsBtn = document.getElementById('chat-open-stamps-btn');
         const chatPanelTabBtn = document.getElementById('chat-show-chat-btn');
         const stampManagerPane = document.getElementById('stamp-manager-pane');
-        const closeStampManagerBtn = document.getElementById('close-stamp-manager-btn');
-        const stampManagerBackChatBtn = document.getElementById('stamp-manager-back-chat-btn');
         const stampManagerGrid = document.getElementById('stamp-manager-grid');
         const stampManagerEmpty = document.getElementById('stamp-manager-empty');
         const stampEmptyMessage = document.getElementById('stamp-empty-message');
@@ -6005,7 +6004,6 @@
         function updateStampGenerationPermission() {
             const form = document.getElementById('stamp-generation-form');
             if (form) form.hidden = !isTheaterStampOwner;
-            document.getElementById('stamp-generation-submit').hidden = !isTheaterStampOwner;
             document.getElementById('stamp-generation-status').hidden = !isTheaterStampOwner;
         }
 
@@ -6142,6 +6140,8 @@
             if (!stampManagerPermissionBanner) return;
             const canContribute = hasContributorsPermission();
             const isOrator = typeof isCurrentOrator === 'function' && isCurrentOrator();
+            stampManagerPermissionBanner.style.display = isOrator || activeStampManagerTab !== 'stamps' ? 'none' : '';
+            if (isOrator) return;
             const active = canPlaceStamps();
             stampManagerPermissionBanner.className = `stamp-manager-permission-banner ${active ? 'contributor' : 'non-contributor'}`;
             if (!canContribute) {
@@ -6166,12 +6166,6 @@
                 : event.target === chatPanelTabBtn ? chatOpenStampsBtn : chatPanelTabBtn;
             tab.focus();
             tab.click();
-        });
-        closeStampManagerBtn?.addEventListener('click', () => {
-            setStampManagerOpen(false);
-        });
-        stampManagerBackChatBtn?.addEventListener('click', () => {
-            setStampManagerOpen(false);
         });
         stampTabStampsBtn?.addEventListener('click', () => {
             if (typeof switchStampManagerTab === 'function') switchStampManagerTab('stamps');
@@ -6815,17 +6809,15 @@
             const headerTitle = document.getElementById('stamp-manager-header-title');
             const stampGenForm = document.getElementById('stamp-generation-form');
             const stampGenStatus = document.getElementById('stamp-generation-status');
-            const stampGenSubmit = document.getElementById('stamp-generation-submit');
-            const stampProfileLink = document.getElementById('stamp-manager-profile-link');
 
             if (tab === 'playlists' || tab === 'animations') {
                 if (headerIcon) headerIcon.textContent = tab === 'playlists' ? '♫' : '▶';
                 if (headerTitle) headerTitle.textContent = 'Asset Manager';
                 for (const el of [stampManagerPermissionBanner, stampManagerGrid, stampManagerEmpty,
-                    scenesManagerGrid, scenesManagerEmpty, charactersManagerGrid, charactersManagerEmpty, stampProfileLink]) {
+                    scenesManagerGrid, scenesManagerEmpty, charactersManagerGrid, charactersManagerEmpty]) {
                     if (el) el.style.display = 'none';
                 }
-                for (const el of [stampGenForm, stampGenStatus, stampGenSubmit]) {
+                for (const el of [stampGenForm, stampGenStatus]) {
                     if (el) el.hidden = true;
                 }
                 loadExtraAssets(tab);
@@ -6840,7 +6832,6 @@
                 if (charactersManagerEmpty) charactersManagerEmpty.style.display = 'none';
 
                 updateStampGenerationPermission();
-                if (stampProfileLink) stampProfileLink.style.display = '';
                 updateStampManagerPermissionBanner();
 
                 if (stampManagerCount) {
@@ -6868,8 +6859,6 @@
 
                 if (stampGenForm) stampGenForm.hidden = true;
                 if (stampGenStatus) stampGenStatus.hidden = true;
-                if (stampGenSubmit) stampGenSubmit.hidden = true;
-                if (stampProfileLink) stampProfileLink.style.display = 'none';
 
                 if (stampManagerCount) {
                     const count = cachedTheaterScenes ? cachedTheaterScenes.length : 0;
@@ -6895,8 +6884,6 @@
 
                 if (stampGenForm) stampGenForm.hidden = true;
                 if (stampGenStatus) stampGenStatus.hidden = true;
-                if (stampGenSubmit) stampGenSubmit.hidden = true;
-                if (stampProfileLink) stampProfileLink.style.display = 'none';
 
                 if (stampManagerCount) {
                     const count = cachedTheaterCharacters ? cachedTheaterCharacters.length : 0;

@@ -19,7 +19,8 @@ def test_canvas_html_and_chat_css_stamp_wiring() -> None:
 
     # Stamp manager occupying chat pane
     assert 'id="stamp-manager-pane"' in canvas_html
-    assert 'id="close-stamp-manager-btn"' in canvas_html
+    assert 'id="close-stamp-manager-btn"' not in canvas_html
+    assert 'id="stamp-manager-back-chat-btn"' not in canvas_html
     assert 'id="stamp-manager-grid"' in canvas_html
     assert 'id="stamp-manager-profile-link"' in canvas_html
     assert 'id="stamp-manager-empty-profile-btn"' in canvas_html
@@ -158,7 +159,8 @@ def test_production_stamp_generation_permissions_pending_and_result(stamp_page: 
     stamp_page.locator("#stamp-generation-prompt").fill("A green goblin with a spear")
     stamp_page.locator("#stamp-generation-prompt").press("Enter")
     assert stamp_page.locator("#stamp-generation-prompt").input_value() == ""
-    assert stamp_page.locator("#stamp-generation-submit").is_enabled()
+    assert not stamp_page.locator("#stamp-generation-submit").count()
+    expect(stamp_page.locator("#stamp-generation-prompt")).to_have_attribute("placeholder", "describe a stamp and press (enter)")
     assert "1 stamp generating" in stamp_page.locator("#stamp-generation-status").inner_text()
     assert stamp_page.locator(".stamp-card-generating").count() == 1
     assert stamp_page.locator(".stamp-generation-placeholder").evaluate(
@@ -173,11 +175,11 @@ def test_production_stamp_generation_permissions_pending_and_result(stamp_page: 
         "name": "green goblin spear", "prompt": "A green goblin with a spear",
     }
     stamp_page.locator("#stamp-generation-prompt").fill("A silver dragon")
-    stamp_page.locator("#stamp-generation-submit").click()
+    stamp_page.locator("#stamp-generation-prompt").press("Enter")
     assert stamp_page.evaluate("generationRequests.length") == 2
     assert stamp_page.locator(".stamp-card-generating").count() == 2
     assert "2 stamps generating" in stamp_page.locator("#stamp-generation-status").inner_text()
-    stamp_page.locator("#close-stamp-manager-btn").click()
+    stamp_page.locator("#chat-show-chat-btn").click()
     stamp_page.locator("#chat-open-stamps-btn").click()
     stamp_page.evaluate("renderStampManagerGrid(cachedUserStamps || [])")
     assert stamp_page.locator(".stamp-card-generating").count() == 2
@@ -203,7 +205,7 @@ def test_production_stamp_generation_permissions_pending_and_result(stamp_page: 
         assert stamp_page.locator(".stamp-card-name").all_text_contents() == ["Silver dragon"]
     assert stamp_page.locator("#stamp-generation-prompt").input_value() == "Next stamp draft"
     assert stamp_page.locator(".stamp-card-generating").count() == 0
-    assert stamp_page.locator("#stamp-generation-submit").is_enabled()
+    assert stamp_page.locator("#stamp-generation-prompt").is_editable()
     stamp_page.evaluate("isTheaterStampOwner = false; updateStampGenerationPermission()")
     assert not stamp_page.locator("#stamp-generation-form").is_visible()
 
@@ -225,14 +227,19 @@ def test_canvas_panel_tabs_remain_visible_and_preserve_stamp_composer(
         f"<div style='height:600px'>{sidebar}</div>"
     )
     script = html[html.index("        const chatOpenStampsBtn ="):html.index("        function getStampUsageStorageKey()")]
+    profile_script = html[html.index("        function updateStampManagerProfileLinks(user)"):html.index("        function getCanvasAuthState()")]
     stamp_page.add_script_tag(content="""
         let currentUser = {id: 5, username: 'Alice'};
+        let activeOrator = false;
+        function isCurrentOrator() { return activeOrator; }
         function hasContributorsPermission() { return true; }
-        function updateStampManagerProfileLinks() {}
+        function canPlaceStamps() { return true; }
         function loadUserStamps() {
             stampManagerGrid.innerHTML = '<div style="height:1200px">Stamps</div>';
         }
-    """ + script)
+    """ + profile_script + script)
+    stamp_page.evaluate("updateStampManagerProfileLinks(currentUser)")
+    expect(stamp_page.locator("#stamp-manager-profile-link")).to_have_attribute("href", "/users/Alice")
     stamp_page.evaluate(f"isTheaterStampOwner = {'true' if owner else 'false'}; updateStampGenerationPermission()")
     stamp_page.locator("#chat-input").evaluate("element => element.style.height = '110px'")
     chat_box = stamp_page.locator("#chat-input").bounding_box()
@@ -240,23 +247,30 @@ def test_canvas_panel_tabs_remain_visible_and_preserve_stamp_composer(
     assert chat_box is not None
     assert toggle_box is not None
     stamp_page.locator("#chat-open-stamps-btn").click()
-    back_box = stamp_page.locator("#stamp-manager-back-chat-btn").bounding_box()
-    assert back_box is not None
     assert stamp_page.locator("#chat-open-stamps-btn").bounding_box() == toggle_box
     assert stamp_page.locator("#chat-show-chat-btn").is_visible()
     expect(stamp_page.locator("#chat-open-stamps-btn")).to_have_attribute("aria-selected", "true")
+    expect(stamp_page.locator("#stamp-manager-permission-banner")).to_be_visible()
+    stamp_page.evaluate("activeOrator = true; updateStampManagerPermissionBanner()")
+    expect(stamp_page.locator("#stamp-manager-permission-banner")).to_be_hidden()
+    stamp_page.evaluate("activeOrator = false; updateStampManagerPermissionBanner()")
+    expect(stamp_page.locator("#stamp-manager-permission-banner")).to_be_visible()
     assert not stamp_page.locator("#chat-form #chat-open-stamps-btn").count()
     assert not stamp_page.locator("#popout-collapse-btn").count()
     if owner:
         prompt_box = stamp_page.locator("#stamp-generation-prompt").bounding_box()
         assert prompt_box is not None
-        assert prompt_box == pytest.approx(chat_box, abs=1)
+        for dimension in ("x", "width", "height"):
+            assert prompt_box[dimension] == pytest.approx(chat_box[dimension], abs=1)
         stamp_page.locator("#stamp-manager-body").evaluate("element => element.scrollTop = 1200")
         assert stamp_page.locator("#stamp-generation-prompt").bounding_box() == prompt_box
     profile_box = stamp_page.locator("#stamp-manager-profile-link").bounding_box()
     assert profile_box is not None
-    assert profile_box["x"] > back_box["x"] + back_box["width"]
+    assert profile_box["width"] > 0
+    assert stamp_page.locator("#chat-identity #stamp-manager-profile-link").is_visible()
+    assert not stamp_page.locator(".stamp-manager-footer a").count()
     stamp_page.locator("#chat-show-chat-btn").click()
+    assert stamp_page.locator("#stamp-manager-profile-link").is_visible()
     stamp_page.mouse.dblclick(
         toggle_box["x"] + toggle_box["width"] / 2,
         toggle_box["y"] + toggle_box["height"] / 2,
@@ -300,6 +314,7 @@ def stamp_page() -> Iterator[Page]:
                     <div id="canvas-stamp-layer"></div>
                 </div>
                 <div id="chat-sidebar">
+                    <button type="button" id="chat-show-chat-btn">Chat</button>
                     <div id="panel-body" style="display: flex; flex-direction: column; flex: 1;">
                         <div id="chat-messages" style="flex:1;">Chat messages</div>
                         <form id="chat-form">
@@ -312,7 +327,6 @@ def stamp_page() -> Iterator[Page]:
                     <div id="stamp-manager-pane" style="display:none; flex-direction: column; flex: 1;">
                         <div class="stamp-manager-header">
                             <span id="stamp-manager-count">0/10</span>
-                            <button type="button" id="close-stamp-manager-btn">✕ Back</button>
                         </div>
                         <div id="stamp-manager-permission-banner"></div>
                         <div id="stamp-manager-body" class="stamp-manager-body">
@@ -320,7 +334,6 @@ def stamp_page() -> Iterator[Page]:
                             <div id="stamp-manager-empty" style="display:none;">Empty</div>
                         </div>
                         <div class="stamp-manager-footer">
-                            <button type="button" id="stamp-manager-back-chat-btn">Back</button>
                         </div>
                     </div>
                 </div>
@@ -333,8 +346,7 @@ def stamp_page() -> Iterator[Page]:
             const imgContainer = document.getElementById('image-container');
             const chatOpenStampsBtn = document.getElementById('chat-open-stamps-btn');
             const stampManagerPane = document.getElementById('stamp-manager-pane');
-            const closeStampManagerBtn = document.getElementById('close-stamp-manager-btn');
-            const stampManagerBackChatBtn = document.getElementById('stamp-manager-back-chat-btn');
+            const chatPanelTabBtn = document.getElementById('chat-show-chat-btn');
             const panelBody = document.getElementById('panel-body');
             const stampManagerGrid = document.getElementById('stamp-manager-grid');
             const stampManagerCount = document.getElementById('stamp-manager-count');
@@ -558,8 +570,7 @@ def stamp_page() -> Iterator[Page]:
             chatOpenStampsBtn.addEventListener('click', () => {
                 setStampManagerOpen(stampManagerPane.style.display === 'none');
             });
-            closeStampManagerBtn.addEventListener('click', () => setStampManagerOpen(false));
-            stampManagerBackChatBtn.addEventListener('click', () => setStampManagerOpen(false));
+            chatPanelTabBtn.addEventListener('click', () => setStampManagerOpen(false));
 
             renderer.resize(doodleActions);
         """)
@@ -578,8 +589,8 @@ def test_stamp_manager_toggles_and_occupies_chat_pane(stamp_page: Page) -> None:
     assert stamp_page.locator("#stamp-manager-pane").is_visible()
     assert not stamp_page.locator("#panel-body").is_visible()
 
-    # Click back to chat button
-    stamp_page.locator("#close-stamp-manager-btn").click()
+    # Switch back using the persistent Chat tab
+    stamp_page.locator("#chat-show-chat-btn").click()
     assert stamp_page.locator("#panel-body").is_visible()
     assert not stamp_page.locator("#stamp-manager-pane").is_visible()
 
