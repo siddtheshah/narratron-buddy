@@ -13,7 +13,7 @@ from services.theater_builder import (
 )
 
 
-@pytest.mark.parametrize("path", ["../secret.txt", "references/../../secret.png", "/references/a.png", "references/C:/a.png", "references/CON.png", "references/a.png.", "editor.json", "output/file.txt", "lore/script.py", "references/characters/hero.png"])
+@pytest.mark.parametrize("path", ["../secret.txt", "references/../../secret.png", "/references/a.png", "references/C:/a.png", "references/CON.png", "references/a.png.", "editor.json", "output/file.txt", "lore/script.py", "references/characters/hero.png", "references/scenes/harbor.png"])
 def test_paths_cannot_escape_or_edit_internal_files(tmp_path: Path, path: str) -> None:
     with pytest.raises(ValueError):
         safe_asset_path(tmp_path, path)
@@ -31,6 +31,11 @@ def test_paths_cannot_escape_or_edit_internal_files(tmp_path: Path, path: str) -
     ("world/references/characters/Arthur Modella/1.png", True, "references/characters/Arthur Modella/1.png"),
     ("references/characters/Arthur Modella.jpg", False, "references/characters/Arthur Modella/1.jpg"),
     ("references/characters/Arthur Modella/1.png", False, "references/characters/Arthur Modella/1.png"),
+    ("world/scenes/Old Harbor/1.png", True, "references/scenes/Old Harbor/1.png"),
+    ("world/references/scenes/Old Harbor/1.png", True, "references/scenes/Old Harbor/1.png"),
+    ("references/scenes/Old Harbor.jpg", False, "references/scenes/Old Harbor/1.jpg"),
+    ("references/scenes/Old Harbor/1.png", False, "references/scenes/Old Harbor/1.png"),
+    ("scenes/Old Harbor.png", False, "references/scenes/Old Harbor/1.png"),
     ("world/playlists/mystery/rain.mp3", True, "playlists/mystery/rain.mp3"),
     ("world/theater.yaml", True, "theater.yaml"),
 ])
@@ -233,7 +238,9 @@ def test_assistant_proposes_character_portraits_and_system_instruction(tmp_path:
     assert result.generations[0].name == "Arthur Modella"
     system_instruction = client.models.generate_content.call_args.kwargs["config"].system_instruction
     assert "references/characters/<Character Name>" in system_instruction
+    assert "references/scenes/<Scene Name>" in system_instruction
     assert "kind 'character'" in system_instruction
+    assert "kind 'scene'" in system_instruction
 
 
 def test_loading_theater_into_editor_preserves_characters_folder_and_assets(tmp_path: Path) -> None:
@@ -283,6 +290,56 @@ def test_existing_draft_syncs_characters_from_source_on_reopen(tmp_path: Path) -
     draft_dir = store.directory(info.theater_id)
     assert (draft_dir / "references" / "characters").is_dir()
     assert (draft_dir / "references" / "characters" / "Grim Vallos" / "1.png").read_bytes() == b"grim_png"
+
+
+def test_loading_theater_into_editor_preserves_scenes_folder_and_assets(tmp_path: Path) -> None:
+    source = tmp_path / "source_theater"
+    source.mkdir()
+    (source / "theater.yaml").write_text("live_agent: {}\n", encoding="utf-8")
+    (source / "references" / "scenes").mkdir(parents=True)
+    (source / "references" / "scenes" / "Old Harbor").mkdir()
+    (source / "references" / "scenes" / "Old Harbor" / "1.png").write_bytes(b"harbor_png")
+    (source / "references" / "scenes" / "Old Harbor" / "scene.yaml").write_bytes(b"description: Harbor at dawn\n")
+    # Loose scene file in source
+    (source / "references" / "scenes" / "High Peaks.png").write_bytes(b"peaks_png")
+    # Session updated scene
+    (source / "output" / "artifacts" / "updated_references" / "scenes" / "Sunken Crypt").mkdir(parents=True)
+    (source / "output" / "artifacts" / "updated_references" / "scenes" / "Sunken Crypt" / "1.png").write_bytes(b"crypt_png")
+
+    store = TheaterBuilderStore(tmp_path / "storage")
+    info = store.create(7, "Preserved", "live_agent: {}\n", theater_id="theater_scene", source=source)
+    draft_dir = store.directory(info.theater_id)
+
+    assert (draft_dir / "references" / "scenes").is_dir()
+    files = {item.path: item for item in store.files(info.theater_id)}
+    assert "references/scenes/Old Harbor/1.png" in files
+    assert "references/scenes/Old Harbor/scene.yaml" in files
+    assert "references/scenes/High Peaks/1.png" in files
+    assert "references/scenes/Sunken Crypt/1.png" in files
+    assert (draft_dir / "references" / "scenes" / "Old Harbor" / "1.png").read_bytes() == b"harbor_png"
+    assert (draft_dir / "references" / "scenes" / "High Peaks" / "1.png").read_bytes() == b"peaks_png"
+    assert (draft_dir / "references" / "scenes" / "Sunken Crypt" / "1.png").read_bytes() == b"crypt_png"
+
+    # Test copy_to also keeps scenes directory
+    target = tmp_path / "target_theater"
+    target.mkdir()
+    store.copy_to(info, target)
+    assert (target / "references" / "scenes").is_dir()
+    assert (target / "references" / "scenes" / "Old Harbor" / "1.png").read_bytes() == b"harbor_png"
+
+
+def test_existing_draft_syncs_scenes_from_source_on_reopen(tmp_path: Path) -> None:
+    store = TheaterBuilderStore(tmp_path / "storage")
+    info = store.create(7, "Draft", "live_agent: {}\n", theater_id="theater_reopen_scene", source=None, populate_default=False)
+    source = tmp_path / "source_theater"
+    source.mkdir()
+    (source / "references" / "scenes" / "Old Harbor").mkdir(parents=True)
+    (source / "references" / "scenes" / "Old Harbor" / "1.png").write_bytes(b"harbor_png")
+
+    store.sync_source_scenes(info, source)
+    draft_dir = store.directory(info.theater_id)
+    assert (draft_dir / "references" / "scenes").is_dir()
+    assert (draft_dir / "references" / "scenes" / "Old Harbor" / "1.png").read_bytes() == b"harbor_png"
 
 
 

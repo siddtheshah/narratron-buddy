@@ -47,6 +47,7 @@ class TheaterRepositoryTest(unittest.TestCase):
         self.assertTrue(ok)
         self.assertTrue(self.repo.theater_exists(theater_id))
         self.assertTrue((self.repo.theater_path(theater_id) / "references" / "characters").is_dir())
+        self.assertTrue((self.repo.theater_path(theater_id) / "references" / "scenes").is_dir())
 
         # Metadata
         meta = self.repo.get_theater_metadata(theater_id)
@@ -59,6 +60,7 @@ class TheaterRepositoryTest(unittest.TestCase):
         self.assertTrue(recon_ok)
         self.assertTrue((target_dir / "theater.json").exists())
         self.assertTrue((target_dir / "references" / "characters").is_dir())
+        self.assertTrue((target_dir / "references" / "scenes").is_dir())
         self.assertEqual((target_dir / "output" / "img.png").read_bytes(), b"image-bytes-123")
         self.assertEqual((target_dir / "references" / "ref.jpg").read_bytes(), b"ref-bytes-456")
 

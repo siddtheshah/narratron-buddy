@@ -211,6 +211,12 @@ def test_nested_folders_expand_with_mouse_and_keyboard(editor_page: Page, width:
     chars_folder.locator(":scope > summary").click()
     expect(chars_folder.locator(".empty-folder-hint")).to_have_text("No character portraits yet (references/characters/<Name>/1.png)")
 
+    scenes_folder = page.locator('details[data-path="references/scenes"]')
+    expect(scenes_folder).to_be_visible()
+    expect(scenes_folder.locator(":scope > summary .folder-count")).to_have_text("0")
+    scenes_folder.locator(":scope > summary").click()
+    expect(scenes_folder.locator(".empty-folder-hint")).to_have_text("No scene images yet (references/scenes/<Scene>/1.png)")
+
     lore = page.locator('details[data-path="lore"]')
     captain = page.locator('.file-button[title="lore/characters/captain.txt"]')
     expect(captain).not_to_be_visible()

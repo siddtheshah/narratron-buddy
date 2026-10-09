@@ -44,12 +44,12 @@ adventures/<adventure-slug>/
 
 When creating a new adventure, follow this sequence:
 
-1. **Scaffold the Package**: Create `adventures/<adventure-slug>/` with `lore/`, `references/characters/`, `references/`, and `playlists/` folders.
+1. **Scaffold the Package**: Create `adventures/<adventure-slug>/` with `lore/`, `references/characters/`, `references/scenes/`, `references/`, and `playlists/` folders.
 2. **Author `metadata.json`**: Configure the display title, slug ID, genre, difficulty, player count, and cover image.
 3. **Configure `theater.yaml` & `planning.yaml`**: Set `adventure_mode: true` and define agent persona, art, and music direction in `theater.yaml`. Define structured sticky notes, initial values, and required stickies in `planning.yaml`.
 4. **Draft the DM Screen (`lore/readfirst_<name>.txt`)**: Define the high-level premise, timeline/acts, lore directory roadmap, win/loss conditions, and sticky note tracking rules.
 5. **Flesh Out Modular Lore**: Create character dossiers, location profiles, and faction files. Annotate characters with their canonical name (`image_reference: Keeper Orun`); other assets can use `image_reference: references/<filename>`.
-6. **Add Assets**: Place character portraits in `references/characters/<Character Name>/1.png` (each character requires its own folder; loose images directly under `references/characters/` are unsupported), cover/location references in `references/`, and loopable tracks in `playlists/`. During play, character portraits are copied into `output/artifacts/updated_references/characters/` and all appearance updates stay there. The live agent uses `<Character Name>` in visual prompts to attach the latest portrait; authors can manually copy session updates back into `references/characters/`. See `docs/writing_adventures.md` for session reset and reference behavior.
+6. **Add Assets**: Place character portraits in `references/characters/<Character Name>/1.png` (each character requires its own folder; loose images directly under `references/characters/` are unsupported), scene imagery in `references/scenes/<Scene Name>/1.png` (with `scene.yaml`; loose images directly under `references/scenes/` are unsupported), cover/location references in `references/`, and loopable tracks in `playlists/`. During play, character portraits are copied into `output/artifacts/updated_references/characters/`, scene imagery into `output/artifacts/updated_references/scenes/`, and all appearance updates stay there. The live agent uses `<Character Name>` in visual prompts to attach the latest portrait; authors can manually copy session updates back into `references/characters/` and `references/scenes/`. See `docs/writing_adventures.md` for session reset and reference behavior.
 7. **Test Locally**: Run smoke and interactive tests using `testlab/adventure_runner.py`.
 8. **Final Verification**: Upload the folder to [narratron.app/deploy](https://narratron.app/deploy) for live verification.
 

@@ -299,6 +299,60 @@ def test_assistant_proposes_and_generates_characters(builder: BuilderHarness) ->
     assert (builder.repository.theater_path(identifier) / char_path2).read_bytes() == b"arthur-portrait-2"
 
 
+def test_scene_generation_and_evolution_stores_in_scenes_folder_and_increments_iteration(builder: BuilderHarness) -> None:
+    data = builder.create()
+    base = f"/api/theater-editor/{data['draft']['theater_id']}"
+    builder.database.record_user_usage.return_value = {"credits": 29.9}
+
+    proposal = BuilderProposal(
+        message="Created Old Harbor scene",
+        generations=[GenerationRequest(kind="scene", name="Old Harbor", prompt="A misty harbor at dawn")]
+    )
+    with patch.object(TheaterBuilderStore, "propose", return_value=proposal), patch("api_server.theater_editor.auth_session_cache.invalidate_user"):
+        result = builder.client.post(f"{base}/assistant", json={"prompt": "Generate a scene visual"})
+    assert result.status_code == 200
+    gen = result.json()["proposal"]["generations"][0]
+    assert gen["kind"] == "scene"
+    assert gen["name"] == "Old Harbor"
+
+    image = MagicMock()
+    image.generate.return_value = ImageGenerationResult(image_bytes=b"harbor-view-1", mime_type="image/png", provider="mock", model="mock")
+    with patch("services.theater_image_generation.get_image_provider", return_value=image):
+        gen_res = builder.client.post(f"{base}/generate", json={
+            "revision": result.json()["revision"],
+            "kind": gen["kind"],
+            "name": gen["name"],
+            "prompt": gen["prompt"],
+            "references": gen["references"],
+        })
+    assert gen_res.status_code == 200
+    scene_path1 = gen_res.json()["path"]
+    assert scene_path1 == "references/scenes/Old Harbor/1.png"
+    assert builder.client.get(f"{base}/file", params={"path": scene_path1}).content == b"harbor-view-1"
+
+    # Second generation for the same scene increments iteration to 2.png
+    image.generate.return_value = ImageGenerationResult(image_bytes=b"harbor-view-2", mime_type="image/png", provider="mock", model="mock")
+    with patch("services.theater_image_generation.get_image_provider", return_value=image):
+        gen_res2 = builder.client.post(f"{base}/generate", json={
+            "revision": gen_res.json()["state"]["draft"]["revision"],
+            "kind": gen["kind"],
+            "name": gen["name"],
+            "prompt": "Harbor at sunset",
+            "references": [scene_path1],
+        })
+    assert gen_res2.status_code == 200
+    scene_path2 = gen_res2.json()["path"]
+    assert scene_path2 == "references/scenes/Old Harbor/2.png"
+    assert builder.client.get(f"{base}/file", params={"path": scene_path2}).content == b"harbor-view-2"
+
+    # Verify deployment publishes scenes to the live theater
+    published = builder.client.post(f"{base}/deploy", json={"revision": gen_res2.json()["state"]["draft"]["revision"]})
+    assert published.status_code == 200
+    identifier = data["draft"]["theater_id"]
+    assert (builder.repository.theater_path(identifier) / scene_path1).read_bytes() == b"harbor-view-1"
+    assert (builder.repository.theater_path(identifier) / scene_path2).read_bytes() == b"harbor-view-2"
+
+
 def test_failed_or_unaffordable_generation_does_not_charge(builder: BuilderHarness) -> None:
     data = builder.create()
     base = f"/api/theater-editor/{data['draft']['theater_id']}"
