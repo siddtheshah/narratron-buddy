@@ -1,6 +1,7 @@
 /* Chat and Beyond20 Dice Roll Styling for Narratron */
 
 #chat-form {
+    position: relative;
     flex-direction: column;
     align-items: stretch;
 }
@@ -19,7 +20,6 @@
 }
 
 .chat-composer-actions {
-    position: relative;
     display: flex;
     justify-content: flex-end;
     align-items: center;
@@ -53,10 +53,11 @@
 .chat-emotes-palette {
     position: absolute;
     bottom: calc(100% + 0.5rem);
+    left: 0;
     right: 0;
     z-index: 10;
     display: grid;
-    grid-template-columns: repeat(4, 40px);
+    grid-template-columns: repeat(auto-fit, minmax(40px, 1fr));
     gap: 4px;
     padding: 8px;
     border: 1px solid rgba(255, 255, 255, 0.2);
@@ -70,7 +71,7 @@
 }
 
 #chat-form .chat-emotes-palette button {
-    width: 40px;
+    width: 100%;
     height: 40px;
     padding: 0;
     background: transparent;

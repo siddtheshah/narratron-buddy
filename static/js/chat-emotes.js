@@ -11,10 +11,25 @@ export function initializeChatEmotes(chatForm, chatInput) {
         ['🎲', 'Dice'], ['⚔️', 'Swords'], ['🛡️', 'Shield'], ['🐉', 'Dragon'],
     ];
 
+    let closeTimer;
+
+    function resetCloseTimer() {
+        clearTimeout(closeTimer);
+        if (!palette.hidden) {
+            closeTimer = setTimeout(() => {
+                if (palette.contains(document.activeElement)) chatInput.focus();
+                setOpen(false);
+            }, 10000);
+        }
+    }
+
     function setOpen(open) {
         palette.hidden = !open;
         toggle.setAttribute('aria-expanded', String(open));
+        resetCloseTimer();
     }
+
+    chatInput.addEventListener('input', resetCloseTimer);
 
     for (const [emote, label] of emotes) {
         const button = document.createElement('button');
@@ -25,7 +40,6 @@ export function initializeChatEmotes(chatForm, chatInput) {
         button.addEventListener('click', () => {
             chatInput.setRangeText(emote, chatInput.selectionStart, chatInput.selectionEnd, 'end');
             chatInput.dispatchEvent(new Event('input', { bubbles: true }));
-            setOpen(false);
             chatInput.focus();
         });
         palette.appendChild(button);
@@ -47,9 +61,9 @@ export function initializeChatEmotes(chatForm, chatInput) {
     });
 
     document.addEventListener('pointerdown', (event) => {
-        if (!palette.hidden && !palette.contains(event.target) && !toggle.contains(event.target)) {
+        if (!palette.hidden && !chatForm.contains(event.target)) {
             setOpen(false);
         }
     });
-    chatForm.addEventListener('submit', () => setOpen(false));
+    chatForm.addEventListener('submit', resetCloseTimer);
 }

@@ -11,7 +11,7 @@ from playwright.sync_api import Route, expect, sync_playwright
 @pytest.mark.parametrize("view", ["canvas", "popout"])
 def test_chat_composer_sends_suggestions_and_wraps_text(view: str) -> None:
     template = Path(f"templates/{view}.html").read_text(encoding="utf-8")
-    form = re.search(r'<form id="chat-form">.*?</form>', template, re.DOTALL)
+    form = re.search(r'<form id="chat-form"[^>]*>.*?</form>', template, re.DOTALL)
     styles = re.search(r"<style>(.*?)</style>", template, re.DOTALL)
     assert form is not None
     assert styles is not None
@@ -121,6 +121,8 @@ def test_chat_composer_sends_suggestions_and_wraps_text(view: str) -> None:
         chat_input.press("Control+Enter")
         assert page.evaluate("window.sent.length") == 6
 
+        page.clock.install(time=0)
+        page.clock.pause_at(1000)
         emotes = page.get_by_role("button", name="Emotes", exact=True)
         palette = page.get_by_role("group", name="Emotes palette")
         expect(palette).to_be_hidden()
@@ -131,16 +133,34 @@ def test_chat_composer_sends_suggestions_and_wraps_text(view: str) -> None:
         expect(emotes).to_have_attribute("aria-expanded", "true")
         assert palette.evaluate("""el => {
             const bounds = el.getBoundingClientRect();
-            return bounds.left >= 0 && bounds.right <= window.innerWidth;
+            const input = document.querySelector('#chat-input').getBoundingClientRect();
+            const composer = document.querySelector('#chat-form').getBoundingClientRect();
+            return bounds.left >= 0 && bounds.right <= window.innerWidth
+                && Math.abs(bounds.left - composer.left) < 1
+                && Math.abs(bounds.right - composer.right) < 1
+                && bounds.bottom < input.top;
         }""")
         palette.get_by_role("button", name="Dragon", exact=True).click()
         expect(chat_input).to_have_value("Hello 🐉")
         expect(chat_input).to_be_focused()
+        expect(palette).to_be_visible()
+        palette.get_by_role("button", name="Dragon", exact=True).click()
+        expect(chat_input).to_have_value("Hello 🐉🐉")
+        page.clock.fast_forward(9000)
+        chat_input.click()
+        chat_input.press_sequentially("!")
+        page.clock.fast_forward(9000)
+        expect(palette).to_be_visible()
+        palette.get_by_role("button", name="Dragon", exact=True).click()
+        page.clock.fast_forward(9999)
+        expect(palette).to_be_visible()
+        page.clock.fast_forward(1)
         expect(palette).to_be_hidden()
+        expect(emotes).to_have_attribute("aria-expanded", "false")
         assert page.evaluate("window.sent.length") == 6
         chat_input.press("Enter")
         page.wait_for_function("window.sent.length === 7")
-        assert page.evaluate("window.sent[6].text") == "Hello 🐉"
+        assert page.evaluate("window.sent[6].text") == "Hello 🐉🐉!🐉"
 
         emotes.click()
         page.keyboard.press("Escape")
@@ -154,8 +174,25 @@ def test_chat_composer_sends_suggestions_and_wraps_text(view: str) -> None:
         expect(palette.get_by_role("button", name="Smile", exact=True)).to_be_focused()
         page.keyboard.press("Enter")
         expect(chat_input).to_have_value("😀")
+        expect(palette).to_be_visible()
+        chat_input.press("Enter")
+        page.wait_for_function("window.sent.length === 8")
+        assert page.evaluate("window.sent[7].text") == "😀"
+        expect(chat_input).to_have_value("")
+        expect(palette).to_be_visible()
+        palette.get_by_role("button", name="Dragon", exact=True).click()
+        page.clock.fast_forward(9000)
+        send.click()
+        page.wait_for_function("window.sent.length === 9")
+        assert page.evaluate("window.sent[8].text") == "🐉"
+        expect(chat_input).to_have_value("")
+        expect(palette).to_be_visible()
+        page.clock.fast_forward(9999)
+        expect(palette).to_be_visible()
+        expect(emotes).to_have_attribute("aria-expanded", "true")
+        page.clock.fast_forward(1)
         expect(palette).to_be_hidden()
-        assert page.evaluate("window.sent.length") == 7
+        assert page.evaluate("window.sent.length") == 9
 
         chat_input.fill("word " * 100)
         assert chat_input.evaluate("el => el.scrollHeight > el.clientHeight && el.scrollWidth === el.clientWidth")
