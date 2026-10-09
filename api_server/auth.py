@@ -8,7 +8,13 @@ from pydantic import BaseModel, JsonValue, StrictBool
 
 from utils.auth_cache import auth_session_cache
 from api_server.shared import FLAGS, SERVER_RUN_ID, app, db, get_current_user
-from storage.database import DatabaseConnectionTimeout
+from storage.database import (
+    DatabaseConnectionTimeout,
+    MIN_PASSWORD_LENGTH,
+    MIN_USERNAME_LENGTH,
+    MAX_PASSWORD_LENGTH,
+    MAX_USERNAME_LENGTH,
+)
 from utils.config_loader import get_app_config
 from utils.email_service import send_password_reset_email
 
@@ -45,8 +51,19 @@ class MicSensitivityRequest(BaseModel):
 def register_user(req: RegisterRequest, response: Response) -> dict[str, JsonValue]:
     if not req.age_attested:
         raise HTTPException(status_code=400, detail="You must confirm that you are at least 13 years old to create an account.")
+    username_clean = req.username.strip()
+    if len(username_clean) < MIN_USERNAME_LENGTH or len(username_clean) > MAX_USERNAME_LENGTH:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Username must be between {MIN_USERNAME_LENGTH} and {MAX_USERNAME_LENGTH} characters.",
+        )
+    if len(req.password) < MIN_PASSWORD_LENGTH or len(req.password) > MAX_PASSWORD_LENGTH:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Password must be between {MIN_PASSWORD_LENGTH} and {MAX_PASSWORD_LENGTH} characters.",
+        )
     started_at = time.monotonic()
-    logger.info("Registration request started (username_length=%d).", len(req.username.strip()))
+    logger.info("Registration request started (username_length=%d).", len(username_clean))
     try:
         user = db.register_user(req.username, req.email, req.password, age_attested=True)
         token = db.create_auth_session(user["id"])
@@ -146,6 +163,11 @@ def validate_reset_token(token: str):
 def reset_password(req: ResetPasswordRequest):
     if not req.new_password or not req.new_password.strip():
         raise HTTPException(status_code=400, detail="New password cannot be empty.")
+    if len(req.new_password) < MIN_PASSWORD_LENGTH or len(req.new_password) > MAX_PASSWORD_LENGTH:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Password must be between {MIN_PASSWORD_LENGTH} and {MAX_PASSWORD_LENGTH} characters.",
+        )
     reset_user = db.validate_password_reset_token(req.token)
     success = db.reset_password_with_token(req.token, req.new_password)
     if not success:

@@ -21,6 +21,11 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
+MIN_USERNAME_LENGTH: int = 3
+MAX_USERNAME_LENGTH: int = 50
+MIN_PASSWORD_LENGTH: int = 6
+MAX_PASSWORD_LENGTH: int = 128
+
 
 class DatabaseConnectionTimeout(TimeoutError):
     """Raised when a live database connection is not available in time."""
@@ -528,6 +533,14 @@ class _DatabaseManagerBase:
         email_clean = email.strip().lower()
         if not username_clean or not email_clean or not password:
             raise ValueError("Username, email, and password are required.")
+        if len(username_clean) < MIN_USERNAME_LENGTH or len(username_clean) > MAX_USERNAME_LENGTH:
+            raise ValueError(
+                f"Username must be between {MIN_USERNAME_LENGTH} and {MAX_USERNAME_LENGTH} characters."
+            )
+        if len(password) < MIN_PASSWORD_LENGTH or len(password) > MAX_PASSWORD_LENGTH:
+            raise ValueError(
+                f"Password must be between {MIN_PASSWORD_LENGTH} and {MAX_PASSWORD_LENGTH} characters."
+            )
 
         salt = secrets.token_hex(16)
         password_hash = hashlib.sha256((password + salt).encode("utf-8")).hexdigest()

@@ -88,7 +88,7 @@ function ensureAuthModalDOM() {
       <div id="formRegister" style="display: none;">
         <div class="modal-form-group">
           <label for="regUsername">Username</label>
-          <input type="text" id="regUsername" class="modal-input" placeholder="e.g. narrator1">
+          <input type="text" id="regUsername" class="modal-input" placeholder="e.g. narrator1" minlength="3" maxlength="50">
         </div>
         <div class="modal-form-group">
           <label for="regEmail">Email</label>
@@ -96,7 +96,7 @@ function ensureAuthModalDOM() {
         </div>
         <div class="modal-form-group" style="margin-bottom: 1.5rem;">
           <label for="regPassword">Password</label>
-          <input type="password" id="regPassword" class="modal-input" placeholder="••••••••"
+          <input type="password" id="regPassword" class="modal-input" placeholder="••••••••" minlength="6" maxlength="128"
             onkeypress="if(event.key==='Enter') submitRegister()">
         </div>
         <label class="modal-age-attestation" for="regAgeAttested">
@@ -308,6 +308,24 @@ async function submitRegister() {
     return;
   }
 
+  if (username.length < 3 || username.length > 50) {
+    if (err) {
+      err.textContent = 'Username must be between 3 and 50 characters.';
+      err.style.display = 'block';
+    }
+    userEl.focus();
+    return;
+  }
+
+  if (password.length < 6 || password.length > 128) {
+    if (err) {
+      err.textContent = 'Password must be between 6 and 128 characters.';
+      err.style.display = 'block';
+    }
+    passEl.focus();
+    return;
+  }
+
   if (!ageEl.checked) {
     if (err) {
       err.textContent = 'Please confirm that you are at least 13 years old.';
@@ -334,7 +352,13 @@ async function submitRegister() {
       }
     } else {
       if (err) {
-        err.textContent = data.detail || 'Registration failed.';
+        let msg = 'Registration failed.';
+        if (typeof data.detail === 'string') {
+          msg = data.detail;
+        } else if (Array.isArray(data.detail) && data.detail.length > 0) {
+          msg = data.detail[0].msg || msg;
+        }
+        err.textContent = msg;
         err.style.display = 'block';
       }
     }

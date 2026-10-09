@@ -18,10 +18,5 @@
 - [ ] Eliminate traces of 'named element' terminology.
 - [ ] Refactor canvas.html to be more modular.
 
-## Performance
-- [ ] Add database and request observability before and after optimization.
-  - Record per-endpoint request count, latency, DB query count/time, live-pool checkout waits/timeouts, and cache hit rate.
-  - Establish load-test baselines for canvas, OBS, and popout viewers; report DB reads per active viewer and verify the WebSocket migration materially reduces them.
-
 ## Billing
 - [ ] Storage Daemon is not checking file sizes of owned theaters. Need to fix.

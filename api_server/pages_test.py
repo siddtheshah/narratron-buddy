@@ -155,7 +155,7 @@ def test_docs_index_is_not_shadowed_by_the_openapi_docs():
     assert client.get("/fastapi-docs").status_code == 200
 
 
-def test_public_pages_include_canonical_metadata_and_structured_data():
+def test_public_pages_include_canonical_metadata_and_structured_data() -> None:
     response = pages.read_join_splash()
 
     assert "<title>Narratron | Live Interactive Storytelling</title>" in response
@@ -163,6 +163,15 @@ def test_public_pages_include_canonical_metadata_and_structured_data():
     assert '<link rel="canonical" href="https://narratron.app/">' in response
     assert '<meta property="og:url" content="https://narratron.app/">' in response
     assert '<script type="application/ld+json">' in response
+
+
+def test_join_splash_features_include_stamps_and_theater_builder() -> None:
+    response = pages.read_join_splash()
+
+    assert "Stamps" in response
+    assert "Theater Builder" in response
+    assert "Place, resize, and maneuver character miniatures, tokens, and tactical markers" in response
+    assert "Shape custom worlds, organize lore, craft scenes, and collaborate with your" in response
 
 
 def test_private_pages_are_marked_noindex_without_structured_data():
