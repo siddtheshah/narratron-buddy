@@ -2718,6 +2718,7 @@
             background: rgba(255, 255, 255, 0.08);
         }
     </style>
+    <script src="/static/js/canvas-state-polling.js"></script>
 </head>
 
 <body>
@@ -6485,7 +6486,6 @@
         let canvasStateWs = null;
         let canvasStateReconnectDelay = 1000;
         let canvasStateReconnectTimer = null;
-        let canvasStateFallbackTimer = null;
         let canvasStateRefreshTimer = null;
         const pendingCanvasStateDomains = new Set();
 
@@ -6502,22 +6502,6 @@
             }, 50);
         }
 
-        function stopCanvasStateFallbackPolling() {
-            if (canvasStateFallbackTimer) {
-                clearInterval(canvasStateFallbackTimer);
-                canvasStateFallbackTimer = null;
-            }
-        }
-
-        function startCanvasStateFallbackPolling() {
-            if (canvasStateFallbackTimer) return;
-            // A disconnected socket should not leave a viewer stale, but this
-            // is deliberately far less frequent than the former 1–2s polling.
-            canvasStateFallbackTimer = setInterval(() => {
-                if (!document.hidden) refreshCanvasState();
-            }, 30000);
-        }
-
         function connectCanvasStateSocket() {
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
             const socketUrl = `${protocol}//${window.location.host}/ws/canvas-state` +
@@ -6526,7 +6510,6 @@
 
             canvasStateWs.onopen = () => {
                 canvasStateReconnectDelay = 1000;
-                stopCanvasStateFallbackPolling();
             };
             canvasStateWs.onmessage = event => {
                 let message;
@@ -6546,7 +6529,6 @@
             };
             canvasStateWs.onclose = () => {
                 canvasStateWs = null;
-                startCanvasStateFallbackPolling();
                 if (!canvasStateReconnectTimer) {
                     canvasStateReconnectTimer = setTimeout(() => {
                         canvasStateReconnectTimer = null;
@@ -6557,14 +6539,7 @@
             };
         }
 
-        // Catch up on viewer activity even when the state socket is connected.
-        function refreshCanvasStateOnActivity() {
-            if (!document.hidden) refreshCanvasState();
-        }
-
-        document.addEventListener('visibilitychange', refreshCanvasStateOnActivity);
-        window.addEventListener('focus', refreshCanvasStateOnActivity);
-        document.addEventListener('click', refreshCanvasStateOnActivity, true);
+        window.startCanvasStatePolling(refreshCanvasState);
 
         refreshCanvasState();
         connectCanvasStateSocket();

@@ -157,6 +157,7 @@
         .clip-draft-action { display: inline-block; width: 100%; margin-top: 1.2rem; padding: .75rem 1rem; border: 1px solid rgba(244, 114, 182, .7); border-radius: 10px; color: #fff; background: rgba(236, 72, 153, .28); font-weight: 700; text-align: center; text-decoration: none; }
         .clip-draft-action:hover { background: rgba(236, 72, 153, .42); }
     </style>
+    <script src="/static/js/canvas-state-polling.js"></script>
 </head>
 
 <body>
@@ -747,21 +748,6 @@
         let canvasStateWs = null;
         let canvasStateReconnectDelay = 1000;
         let canvasStateReconnectTimer = null;
-        let canvasStateFallbackTimer = null;
-
-        function stopCanvasStateFallbackPolling() {
-            if (canvasStateFallbackTimer) {
-                clearInterval(canvasStateFallbackTimer);
-                canvasStateFallbackTimer = null;
-            }
-        }
-
-        function startCanvasStateFallbackPolling() {
-            if (canvasStateFallbackTimer) return;
-            canvasStateFallbackTimer = setInterval(() => {
-                if (!document.hidden) fetchLatestImage();
-            }, 30000);
-        }
 
         function connectCanvasStateSocket() {
             if (!currenttheaterId) return;
@@ -772,7 +758,6 @@
             canvasStateWs = new WebSocket(stateWsUrl);
             canvasStateWs.onopen = () => {
                 canvasStateReconnectDelay = 1000;
-                stopCanvasStateFallbackPolling();
             };
             canvasStateWs.onmessage = event => {
                 try {
@@ -789,7 +774,6 @@
             };
             canvasStateWs.onclose = () => {
                 canvasStateWs = null;
-                startCanvasStateFallbackPolling();
                 if (!canvasStateReconnectTimer) {
                     canvasStateReconnectTimer = setTimeout(() => {
                         canvasStateReconnectTimer = null;
@@ -800,19 +784,7 @@
             };
         }
 
-        // Coalesce tab selection, focus, and clicks into a single catch-up poll.
-        let canvasStateActivityTimer = null;
-        function refreshCanvasStateOnActivity() {
-            if (document.hidden || canvasStateActivityTimer) return;
-            canvasStateActivityTimer = setTimeout(() => {
-                canvasStateActivityTimer = null;
-                if (!document.hidden) fetchLatestImage();
-            }, 50);
-        }
-
-        document.addEventListener('visibilitychange', refreshCanvasStateOnActivity);
-        window.addEventListener('focus', refreshCanvasStateOnActivity);
-        document.addEventListener('click', refreshCanvasStateOnActivity, true);
+        window.startCanvasStatePolling(fetchLatestImage);
         connectCanvasStateSocket();
 
         // Clip mode is intentionally isolated from the interactive canvas so

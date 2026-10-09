@@ -273,6 +273,7 @@
             border: 1px solid rgba(16, 185, 129, 0.4);
         }
     </style>
+    <script src="/static/js/canvas-state-polling.js"></script>
 </head>
 
 <body>
@@ -643,7 +644,6 @@
         let canvasStateWs = null;
         let canvasStateReconnectDelay = 1000;
         let canvasStateReconnectTimer = null;
-        let canvasStateFallbackTimer = null;
         let canvasStateRefreshTimer = null;
         const pendingCanvasStateDomains = new Set();
 
@@ -659,20 +659,6 @@
             }, 50);
         }
 
-        function stopCanvasStateFallbackPolling() {
-            if (canvasStateFallbackTimer) {
-                clearInterval(canvasStateFallbackTimer);
-                canvasStateFallbackTimer = null;
-            }
-        }
-
-        function startCanvasStateFallbackPolling() {
-            if (canvasStateFallbackTimer) return;
-            canvasStateFallbackTimer = setInterval(() => {
-                if (!document.hidden) refreshCanvasState();
-            }, 30000);
-        }
-
         function connectCanvasStateSocket() {
             if (!theaterId) return;
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -680,7 +666,6 @@
             canvasStateWs = new WebSocket(socketUrl);
             canvasStateWs.onopen = () => {
                 canvasStateReconnectDelay = 1000;
-                stopCanvasStateFallbackPolling();
             };
             canvasStateWs.onmessage = event => {
                 try {
@@ -696,7 +681,6 @@
             };
             canvasStateWs.onclose = () => {
                 canvasStateWs = null;
-                startCanvasStateFallbackPolling();
                 if (!canvasStateReconnectTimer) {
                     canvasStateReconnectTimer = setTimeout(() => {
                         canvasStateReconnectTimer = null;
@@ -707,14 +691,7 @@
             };
         }
 
-        // Catch up on viewer activity even when the state socket is connected.
-        function refreshCanvasStateOnActivity() {
-            if (!document.hidden) refreshCanvasState();
-        }
-
-        document.addEventListener('visibilitychange', refreshCanvasStateOnActivity);
-        window.addEventListener('focus', refreshCanvasStateOnActivity);
-        document.addEventListener('click', refreshCanvasStateOnActivity, true);
+        window.startCanvasStatePolling(refreshCanvasState);
         connectCanvasStateSocket();
 
         // Notify parent window on unload
