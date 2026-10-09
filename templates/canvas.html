@@ -6656,7 +6656,7 @@
 
         function updateAssetPlaybackSelection(music) {
             assetMusicState = music;
-            extraAssetPanels.playlists.querySelectorAll('.asset-push-button').forEach(updateAssetPlaybackButton);
+            extraAssetPanels.playlists.querySelectorAll('.asset-push-button, .playlist-push-button').forEach(updateAssetPlaybackButton);
         }
 
         function updateAssetPlaybackButton(button) {
@@ -6713,16 +6713,13 @@
                             button.setAttribute('aria-selected', `${active}`);
                         }
                         tracks.replaceChildren();
-                        tracks.appendChild(createAssetButton(playlist, kind));
                         playlist.tracks.forEach(track => tracks.appendChild(createAssetButton(track, kind)));
                     };
                     assets.forEach(playlist => {
-                        const button = document.createElement('button');
-                        button.type = 'button';
-                        button.className = 'stamp-tab-btn';
+                        const button = createAssetButton(playlist, kind);
                         button.setAttribute('role', 'tab');
+                        button.setAttribute('aria-label', playlist.name);
                         button.dataset.playlist = playlist.name;
-                        button.textContent = playlist.name;
                         button.addEventListener('click', () => select(playlist));
                         tabs.appendChild(button);
                     });
@@ -6749,7 +6746,7 @@
         function createAssetButton(asset, kind) {
             const button = document.createElement('button');
             button.type = 'button';
-            button.className = 'asset-push-button';
+            button.className = asset.tracks ? 'stamp-tab-btn playlist-push-button' : 'asset-push-button';
             button.dataset.assetKind = kind;
             button.dataset.assetId = asset.id;
             button.dataset.playlistName = asset.tracks ? asset.name : '';
@@ -6763,9 +6760,10 @@
                 button.appendChild(img);
             }
             const label = document.createElement('span');
-            label.textContent = asset.tracks ? `Play entire playlist (${asset.tracks.length} tracks)` : asset.description || asset.name;
+            label.textContent = asset.description || asset.name;
             const action = document.createElement('small');
             action.textContent = 'Push to Canvas';
+            action.hidden = Boolean(asset.tracks);
             const indicator = document.createElement('span');
             indicator.className = 'asset-playing-indicator';
             indicator.hidden = true;

@@ -175,17 +175,19 @@ def test_playlist_tabs_push_entire_playlist_or_selected_track(scenes_chars_page:
     page.route("**/api/theaters/*/playlists", serve_playlists)
     page.route("**/api/theaters/*/playlists/push", push_track)
     page.locator("#stamp-tab-playlists").click()
-    expect(page.locator("#playlists-manager-content .asset-push-button")).to_have_count(3)
-    playlist_button = page.locator('[data-asset-id="playlist:Calm"]')
-    expect(playlist_button).to_contain_text("Play entire playlist (2 tracks)")
+    expect(page.locator("#playlists-manager-content .asset-track-list .asset-push-button")).to_have_count(2)
+    assert pushed_ids == []
+    playlist_button = page.get_by_role("tab", name="Calm", exact=True)
     playlist_button.click()
     expect(playlist_button.locator("small")).to_have_text("Pushed!")
-    page.get_by_role("tab", name="Battle", exact=True).click()
-    expect(page.locator("#playlists-manager-content .asset-push-button")).to_have_count(2)
+    battle_button = page.get_by_role("tab", name="Battle", exact=True)
+    battle_button.click()
+    expect(battle_button.locator("small")).to_have_text("Pushed!")
+    expect(page.locator("#playlists-manager-content .asset-track-list .asset-push-button")).to_have_count(1)
     track_button = page.locator('[data-asset-id="battle-a"]')
     track_button.click()
     expect(track_button.locator("small")).to_have_text("Pushed!")
-    assert pushed_ids == ["playlist:Calm", "battle-a"]
+    assert pushed_ids == ["playlist:Calm", "playlist:Battle", "battle-a"]
     page.locator("#stamp-tab-scenes").click()
     expect(page.locator("#playlists-manager")).to_be_hidden()
 
@@ -242,7 +244,11 @@ def test_playing_track_highlight_survives_tabs_and_updates_for_silence(scenes_ch
             {"id": "playlist:Battle", "name": "Battle", "tracks": [{"id": "/battle.mp3", "url": "/battle.mp3", "name": "Battle track"}]},
         ])
 
+    def push_playlist(route: Route) -> None:
+        route.fulfill(json={"status": "ok", "message": "Playing playlist."})
+
     page.route("**/api/theaters/*/playlists", serve_playlists)
+    page.route("**/api/theaters/*/playlists/push", push_playlist)
     page.evaluate("updateAssetPlaybackSelection({music_id: 'Battle', tracks: ['/battle.mp3'], paused: false})")
     page.locator("#stamp-tab-playlists").click()
     page.get_by_role("tab", name="Battle", exact=True).click()
