@@ -47,6 +47,7 @@ async def test_asset_catalog_and_individual_track_push(tmp_path: Path) -> None:
     generated.write_bytes(b"audio")
     groups = playlists(theater)
     assert [group.name for group in groups] == ["Quiet evening", "Generated music"]
+    assert [group.id for group in groups] == ["playlist:Quiet%20evening", "generated:music"]
     assert groups[0].tracks[0].url == "/theaters/asset-stage/playlists/Quiet%20evening/nested/A%20song.wav"
     assert groups[1].tracks[0].url.endswith("/output/music/generated.mp3")
     request = Request({"type": "http", "headers": []})
@@ -64,6 +65,49 @@ async def test_asset_catalog_and_individual_track_push(tmp_path: Path) -> None:
         with pytest.raises(HTTPException) as missing:
             await theaters.push_theater_track(theaters.PushAssetRequest(id="../../outside.mp3"), request, "asset-stage")
         assert missing.value.status_code == 404
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("generated", [False, True])
+async def test_entire_playlist_push_updates_shared_playback_when_pinned(tmp_path: Path, generated: bool) -> None:
+    manager = TheaterManager(base_theaters_dir=tmp_path)
+    theater = manager.theater("asset-stage")
+    root = theater.music_artifacts_dir() if generated else theater.playlists_dir() / "Quiet evening"
+    root.mkdir(parents=True)
+    (root / "A song.mp3").write_bytes(b"audio")
+    nested = root / "nested"
+    nested.mkdir()
+    (nested / "Second#song.aac").write_bytes(b"audio")
+    (root / "description.txt").write_text("Playlist description")
+    group = playlists(theater)[0]
+    expected_urls = [
+        theater.get_url_for_path(str(root / "A song.mp3")),
+        theater.get_url_for_path(str(nested / "Second#song.aac")),
+    ] if generated else [
+        "/theaters/asset-stage/playlists/Quiet%20evening/A%20song.mp3",
+        "/theaters/asset-stage/playlists/Quiet%20evening/nested/Second%23song.aac",
+    ]
+    state = MagicMock()
+    notify = MagicMock()
+    state.audio = AudioState(notify)
+    state.audio.update_music("Previous", ["/previous.mp3"])
+    state.audio.music_paused = True
+    state.audio.set_pinned(True)
+    request = Request({"type": "http", "headers": []})
+    with patch.object(theaters, "theater_manager", manager), \
+         patch.object(theaters, "_require_asset_orator", AsyncMock()), \
+         patch.object(theaters.canvas_states, "get", return_value=state):
+        response = await theaters.push_theater_track(theaters.PushAssetRequest(id=group.id), request, "asset-stage")
+        with pytest.raises(HTTPException) as missing:
+            await theaters.push_theater_track(theaters.PushAssetRequest(id="playlist:missing"), request, "asset-stage")
+        assert missing.value.status_code == 404
+    assert response["status"] == "ok"
+    assert state.audio.current_music_id == group.name
+    assert state.audio.current_playlist_tracks == expected_urls
+    assert state.audio.music_paused is False
+    assert state.audio.pinned is True
+    notify.assert_called_with("latest")
+    state.persist.assert_called_once()
 
 
 @pytest.mark.asyncio

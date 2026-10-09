@@ -16,6 +16,7 @@ class Track(BaseModel):
 
 
 class Playlist(BaseModel):
+    id: str
     name: str
     tracks: list[Track]
 
@@ -62,7 +63,10 @@ def playlists(theater: Theater) -> list[Playlist]:
             if not generated and "/" not in relative:
                 continue  # The serving route requires a named playlist folder.
             groups.setdefault(name, []).append(Track(id=url, name=path.stem, url=url))
-        result.extend(Playlist(name=name, tracks=tracks) for name, tracks in groups.items())
+        result.extend(
+            Playlist(id="generated:music" if generated else f"playlist:{quote(name, safe='')}", name=name, tracks=tracks)
+            for name, tracks in groups.items()
+        )
     return result
 
 

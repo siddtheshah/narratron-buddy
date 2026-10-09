@@ -41,6 +41,38 @@ def test_register_translates_registry_validation_error() -> None:
     assert error.value.status_code == 400
 
 
+@pytest.mark.parametrize(
+    "invalid_username",
+    ["", "  ", "ab", "  ad  ", "u" * 51],
+)
+def test_register_rejects_invalid_username_length(invalid_username: str) -> None:
+    registry_db = MagicMock()
+    with patch.object(object_registry, "db", registry_db), pytest.raises(HTTPException) as error:
+        auth.register_user(
+            auth.RegisterRequest(username=invalid_username, email="a@b.test", password="secret", age_attested=True),
+            Response(),
+        )
+    assert error.value.status_code == 400
+    assert "between 3 and 50 characters" in str(error.value.detail)
+    registry_db.register_user.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "invalid_password",
+    ["", "12345", "p" * 129],
+)
+def test_register_rejects_invalid_password_length(invalid_password: str) -> None:
+    registry_db = MagicMock()
+    with patch.object(object_registry, "db", registry_db), pytest.raises(HTTPException) as error:
+        auth.register_user(
+            auth.RegisterRequest(username="validuser", email="a@b.test", password=invalid_password, age_attested=True),
+            Response(),
+        )
+    assert error.value.status_code == 400
+    assert "between 6 and 128 characters" in str(error.value.detail)
+    registry_db.register_user.assert_not_called()
+
+
 @pytest.mark.parametrize("attestation", [{}, {"age_attested": False}, {"age_attested": "true"}, {"age_attested": 1}, {"age_attested": None}])
 def test_register_rejects_missing_false_or_non_boolean_attestation(attestation: dict[str, JsonValue]) -> None:
     test_app = FastAPI()

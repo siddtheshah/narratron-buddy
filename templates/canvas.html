@@ -6665,7 +6665,12 @@
             const silent = !(assetMusicState.music_id || assetMusicState.playlist) || tracks.length === 0;
             const playingTrack = typeof currentTrackSrc !== 'undefined' && tracks.includes(currentTrackSrc)
                 ? currentTrackSrc : tracks[0];
-            const selected = button.dataset.assetId === 'no_music' ? silent : !silent && button.dataset.trackUrl === playingTrack;
+            const selected = button.dataset.assetId === 'no_music' ? silent : !silent && (
+                button.dataset.playlistName
+                    ? button.dataset.playlistName === (assetMusicState.music_id || assetMusicState.playlist)
+                        && tracks.includes(button.dataset.trackUrl)
+                    : button.dataset.trackUrl === playingTrack
+            );
             button.classList.toggle('currently-playing', selected);
             if (selected) button.setAttribute('aria-current', 'true');
             else button.removeAttribute('aria-current');
@@ -6708,6 +6713,7 @@
                             button.setAttribute('aria-selected', `${active}`);
                         }
                         tracks.replaceChildren();
+                        tracks.appendChild(createAssetButton(playlist, kind));
                         playlist.tracks.forEach(track => tracks.appendChild(createAssetButton(track, kind)));
                     };
                     assets.forEach(playlist => {
@@ -6746,7 +6752,8 @@
             button.className = 'asset-push-button';
             button.dataset.assetKind = kind;
             button.dataset.assetId = asset.id;
-            button.dataset.trackUrl = asset.url || asset.id;
+            button.dataset.playlistName = asset.tracks ? asset.name : '';
+            button.dataset.trackUrl = asset.tracks ? asset.tracks[0]?.url || '' : asset.url || asset.id;
             button.title = asset.description || `Push ${asset.name} to canvas`;
             if (kind === 'animations' && asset.url) {
                 const img = document.createElement('img');
@@ -6756,7 +6763,7 @@
                 button.appendChild(img);
             }
             const label = document.createElement('span');
-            label.textContent = asset.description || asset.name;
+            label.textContent = asset.tracks ? `Play entire playlist (${asset.tracks.length} tracks)` : asset.description || asset.name;
             const action = document.createElement('small');
             action.textContent = 'Push to Canvas';
             const indicator = document.createElement('span');

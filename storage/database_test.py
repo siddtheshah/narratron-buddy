@@ -329,6 +329,34 @@ class TestUserManagementAndAuth(BaseTestCase):
             self.db.register_user("username", "email@test.com", "")
         self.assertIn("required", str(ctx.exception).lower())
 
+    def test_register_user_size_limits(self) -> None:
+        # Username too short (< 3 chars)
+        with self.assertRaises(ValueError) as ctx:
+            self.db.register_user("ab", "email@test.com", "Password123")
+        self.assertIn("between 3 and 50 characters", str(ctx.exception))
+
+        # Username too long (> 50 chars)
+        with self.assertRaises(ValueError) as ctx:
+            self.db.register_user("u" * 51, "email@test.com", "Password123")
+        self.assertIn("between 3 and 50 characters", str(ctx.exception))
+
+        # Password too short (< 6 chars)
+        with self.assertRaises(ValueError) as ctx:
+            self.db.register_user("validuser", "email@test.com", "12345")
+        self.assertIn("between 6 and 128 characters", str(ctx.exception))
+
+        # Password too long (> 128 chars)
+        with self.assertRaises(ValueError) as ctx:
+            self.db.register_user("validuser", "email@test.com", "p" * 129)
+        self.assertIn("between 6 and 128 characters", str(ctx.exception))
+
+        # Valid boundary lengths (3 chars, 50 chars, 6 chars, 128 chars)
+        user_min = self.db.register_user("abc", "min@test.com", "123456")
+        self.assertEqual(user_min["username"], "abc")
+
+        user_max = self.db.register_user("u" * 50, "max@test.com", "p" * 128)
+        self.assertEqual(user_max["username"], "u" * 50)
+
     def test_register_user_duplicate_username_and_email(self):
         self.db.register_user("user_one", "user1@test.com", "Pass12345")
 

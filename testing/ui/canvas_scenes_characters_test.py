@@ -157,28 +157,35 @@ def test_canvas_html_and_css_scenes_characters_wiring() -> None:
     assert "renderCharactersManagerGrid" in canvas_html
 
 
-def test_playlist_tabs_push_only_selected_track(scenes_chars_page: Page) -> None:
+def test_playlist_tabs_push_entire_playlist_or_selected_track(scenes_chars_page: Page) -> None:
     page = scenes_chars_page
     page.evaluate("applyRoleUI(true); setStampManagerOpen(true)")
+    pushed_ids: list[str] = []
 
     def serve_playlists(route: Route) -> None:
         route.fulfill(json=[
-            {"name": "Calm", "tracks": [{"id": "calm-a", "name": "First track"}, {"id": "calm-b", "name": "Second track"}]},
-            {"name": "Battle", "tracks": [{"id": "battle-a", "name": "Battle track"}]},
+            {"id": "playlist:Calm", "name": "Calm", "tracks": [{"id": "calm-a", "name": "First track"}, {"id": "calm-b", "name": "Second track"}]},
+            {"id": "playlist:Battle", "name": "Battle", "tracks": [{"id": "battle-a", "name": "Battle track"}]},
         ])
 
     def push_track(route: Route) -> None:
-        assert route.request.post_data_json == {"id": "battle-a"}
-        route.fulfill(json={"status": "ok", "message": "Playing Battle track."})
+        pushed_ids.append(route.request.post_data_json["id"])
+        route.fulfill(json={"status": "ok", "message": "Playing music."})
 
     page.route("**/api/theaters/*/playlists", serve_playlists)
     page.route("**/api/theaters/*/playlists/push", push_track)
     page.locator("#stamp-tab-playlists").click()
-    expect(page.locator("#playlists-manager-content .asset-push-button")).to_have_count(2)
+    expect(page.locator("#playlists-manager-content .asset-push-button")).to_have_count(3)
+    playlist_button = page.locator('[data-asset-id="playlist:Calm"]')
+    expect(playlist_button).to_contain_text("Play entire playlist (2 tracks)")
+    playlist_button.click()
+    expect(playlist_button.locator("small")).to_have_text("Pushed!")
     page.get_by_role("tab", name="Battle", exact=True).click()
-    expect(page.locator("#playlists-manager-content .asset-push-button")).to_have_count(1)
-    page.locator("#playlists-manager-content .asset-push-button").click()
-    expect(page.locator("#playlists-manager-content small")).to_have_text("Pushed!")
+    expect(page.locator("#playlists-manager-content .asset-push-button")).to_have_count(2)
+    track_button = page.locator('[data-asset-id="battle-a"]')
+    track_button.click()
+    expect(track_button.locator("small")).to_have_text("Pushed!")
+    assert pushed_ids == ["playlist:Calm", "battle-a"]
     page.locator("#stamp-tab-scenes").click()
     expect(page.locator("#playlists-manager")).to_be_hidden()
 
@@ -231,16 +238,18 @@ def test_playing_track_highlight_survives_tabs_and_updates_for_silence(scenes_ch
 
     def serve_playlists(route: Route) -> None:
         route.fulfill(json=[
-            {"name": "Calm", "tracks": [{"id": "/calm.mp3", "url": "/calm.mp3", "name": "Calm track"}]},
-            {"name": "Battle", "tracks": [{"id": "/battle.mp3", "url": "/battle.mp3", "name": "Battle track"}]},
+            {"id": "playlist:Calm", "name": "Calm", "tracks": [{"id": "/calm.mp3", "url": "/calm.mp3", "name": "Calm track"}]},
+            {"id": "playlist:Battle", "name": "Battle", "tracks": [{"id": "/battle.mp3", "url": "/battle.mp3", "name": "Battle track"}]},
         ])
 
     page.route("**/api/theaters/*/playlists", serve_playlists)
     page.evaluate("updateAssetPlaybackSelection({music_id: 'Battle', tracks: ['/battle.mp3'], paused: false})")
     page.locator("#stamp-tab-playlists").click()
     page.get_by_role("tab", name="Battle", exact=True).click()
-    playing = page.locator("#playlists-manager-content .currently-playing")
+    playing = page.locator('#playlists-manager-content .currently-playing[data-asset-id="/battle.mp3"]')
+    playlist_playing = page.locator('[data-asset-id="playlist:Battle"]')
     expect(playing).to_have_count(1)
+    expect(playlist_playing).to_have_attribute("aria-current", "true")
     expect(playing.locator(".asset-playing-indicator")).to_have_text("▶ Playing")
     expect(playing).to_have_attribute("aria-current", "true")
     page.get_by_role("tab", name="Calm", exact=True).click()
@@ -249,6 +258,10 @@ def test_playing_track_highlight_survives_tabs_and_updates_for_silence(scenes_ch
     expect(playing).to_have_count(1)
     page.evaluate("updateAssetPlaybackSelection({music_id: 'Battle', tracks: ['/battle.mp3'], paused: true})")
     expect(playing.locator(".asset-playing-indicator")).to_have_text("Ⅱ Paused")
+    expect(playlist_playing.locator(".asset-playing-indicator")).to_have_text("Ⅱ Paused")
+    page.evaluate("updateAssetPlaybackSelection({music_id: 'Battle / Battle track', tracks: ['/battle.mp3'], paused: false})")
+    expect(playlist_playing).not_to_have_attribute("aria-current", "true")
+    expect(playing).to_have_count(1)
     page.evaluate("updateAssetPlaybackSelection({music_id: '', tracks: [], paused: false})")
     expect(playing).to_have_count(0)
     expect(page.locator("#no-music-button")).to_have_class("asset-push-button currently-playing")
