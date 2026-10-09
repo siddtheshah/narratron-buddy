@@ -11,7 +11,7 @@ from providers.registry import get_image_provider
 
 
 def generate_theater_image(
-    root: Path, *, kind: Literal["reference", "stamp", "character"], prompt: str,
+    root: Path, *, kind: Literal["reference", "stamp", "character", "scene"], prompt: str,
     references: list[ImageReference],
 ) -> ImageGenerationResult:
     settings = TypeAdapter(dict[str, JsonValue]).validate_python(
@@ -40,6 +40,15 @@ def generate_theater_image(
         )
         request = ImageGenerationRequest(
             prompt=prompt, references=references, aspect_ratio="1:1", background="opaque",
+        )
+    elif kind == "scene":
+        prompt += (
+            "\nScenic environment and location reference image. "
+            "Establishing shot of the setting or architectural space, rich atmosphere and lighting, "
+            "environmental storytelling, no extreme close-up characters, no text, no split-screen."
+        )
+        request = ImageGenerationRequest(
+            prompt=prompt, references=references, aspect_ratio="16:9", background="opaque",
         )
     else:
         request = ImageGenerationRequest(prompt=prompt, references=references, background="opaque")

@@ -84,6 +84,7 @@ class TheaterRepository:
         try:
             target.mkdir(parents=True, exist_ok=True)
             (target / "references" / "characters").mkdir(parents=True, exist_ok=True)
+            (target / "references" / "scenes").mkdir(parents=True, exist_ok=True)
             for item in source_dir.iterdir():
                 dest = target / item.name
                 if item.is_dir():
@@ -108,6 +109,7 @@ class TheaterRepository:
             (target_dir / "playlists").mkdir(parents=True, exist_ok=True)
             (target_dir / "stamps").mkdir(parents=True, exist_ok=True)
             (target_dir / "references" / "characters").mkdir(parents=True, exist_ok=True)
+            (target_dir / "references" / "scenes").mkdir(parents=True, exist_ok=True)
             return (target_dir / "theater.json").exists()
 
         if not source.exists():
@@ -120,6 +122,7 @@ class TheaterRepository:
             (target_dir / "playlists").mkdir(parents=True, exist_ok=True)
             (target_dir / "stamps").mkdir(parents=True, exist_ok=True)
             (target_dir / "references" / "characters").mkdir(parents=True, exist_ok=True)
+            (target_dir / "references" / "scenes").mkdir(parents=True, exist_ok=True)
             return True
         except Exception as e:
             logger.warning("Failed to reconstruct theater %s to %s: %s", theater_id, target_dir, e)

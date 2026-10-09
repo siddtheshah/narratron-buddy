@@ -387,12 +387,12 @@ def generate_asset(info: DraftInfo, body: GenerationRequest) -> tuple[str, bytes
     root = store().directory(info.theater_id)
     name = re.sub(r"[^a-zA-Z0-9_-]", "_", body.name).strip("_") or "asset"
     identifier = uuid.uuid4().hex[:12]
-    if body.kind in ("reference", "stamp", "character"):
+    if body.kind in ("reference", "stamp", "character", "scene"):
         references: list[ImageReference] = []
         for relative in body.references:
             path = safe_asset_path(root, relative)
             if not relative.startswith("references/") or not path.is_file():
-                raise ValueError("Generation references must be existing reference or character images.")
+                raise ValueError("Generation references must be existing reference, scene, or character images.")
             references.append(ImageReference(name=path.name, data=path.read_bytes(), mime_type=asset_mime(path)))
         result = generate_theater_image(root, kind=body.kind, prompt=body.prompt, references=references)
         extension = {"image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp"}.get(result.mime_type)
@@ -410,6 +410,18 @@ def generate_asset(info: DraftInfo, body: GenerationRequest) -> tuple[str, bytes
                 if nums:
                     iteration = max(nums) + 1
             return f"references/characters/{char_folder}/{iteration}{extension}", result.image_bytes
+        if body.kind == "scene":
+            scene_folder = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "", body.name.strip()).strip(". ") or name
+            scene_dir = root / "references" / "scenes" / scene_folder
+            iteration = 1
+            if scene_dir.is_dir():
+                nums = [
+                    int(p.stem) for p in scene_dir.iterdir()
+                    if p.is_file() and p.stem.isdigit()
+                ]
+                if nums:
+                    iteration = max(nums) + 1
+            return f"references/scenes/{scene_folder}/{iteration}{extension}", result.image_bytes
         target_dir = "stamps" if body.kind == "stamp" else "references"
         return f"{target_dir}/{name}_{identifier}{extension}", result.image_bytes
     playlist = re.sub(r"[^a-zA-Z0-9_-]", "_", body.playlist).strip("_") or "ambient"
@@ -447,7 +459,7 @@ async def generate_draft_asset(theater_id: str, body: GenerateDraftRequest, requ
             info = await require_draft(request, theater_id)
             check_revision(info, body.revision)
             rates = pricing_controller.get_rates()
-            cost = rates["image_credit_rate" if body.kind in ("reference", "stamp", "character") else "music_credit_rate"]
+            cost = rates["image_credit_rate" if body.kind in ("reference", "stamp", "character", "scene") else "music_credit_rate"]
             user = await asyncio.to_thread(db.get_user_by_id, owner_id)
             if not user or user["credits"] < cost:
                 raise HTTPException(status_code=402, detail=f"This generation requires {cost:g} credits. Top up on /deploy.")
