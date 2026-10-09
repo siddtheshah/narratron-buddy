@@ -282,7 +282,13 @@ The `references/` folder contains environment images, maps, cover art, and artif
 
 Store each scene's images in its own folder, for example `references/scenes/Old Harbor/1.png`, `2.png`. PNG, JPEG, and WebP are supported; the highest numbered iteration is used. Loose images directly under `references/scenes/` are ignored.
 
-During play, scene images are copied into `output/artifacts/updated_references/scenes/`. Updated imagery is saved there as new numbered iterations, leaving the authored images unchanged. Existing session images are preserved across restarts.
+Add `scene.yaml` beside each scene's portraits:
+
+```yaml
+description: "An old harbor with fishing boats and stone piers at dawn"
+```
+
+At initialization, the manager reads authored scene images and `scene.yaml` directly without copying them into output. Existing session images and descriptions take precedence. Changed descriptions generate new numbered iterations under `output/artifacts/updated_references/scenes/` and save the description to `scene.yaml` there. Authored files remain unchanged, and the initial image is not duplicated in output.
 
 To preserve session updates for future play, copy the desired images back into the authored scene folder. To reset a scene to its authored imagery, remove its folder under `output/artifacts/updated_references/scenes/` before starting a new session.
 
@@ -290,7 +296,7 @@ To preserve session updates for future play, copy the desired images back into t
 
 Each character must have its own folder, with portrait iterations such as `references/characters/Arthur Modella/1.png`, `2.png`. Loose files directly under `references/characters/` are unsupported; the folder also holds `character.yaml` for the character traits. Supported formats are PNG, JPEG, and WebP. The highest numbered iteration is used; a non-numbered portrait can serve as the initial image.
 
-When the reference manager starts, it copies authored images into `output/artifacts/updated_references/characters/`. Existing session folders are preserved when the manager restarts. Character creation, appearance changes, and player-character updates operate on this session library. The authored `references/characters/` folder stays unchanged.
+When the reference manager starts, it reads authored portraits directly without copying them into output. Existing session portraits take precedence. Appearance changes create the next image iteration under `output/artifacts/updated_references/characters/`, using the previous authored or session portrait for continuity. The initial authored image is not duplicated in output, and the authored folder stays unchanged.
 
 Add `character.yaml` alongside the portraits to initialize the character's traits:
 
@@ -303,7 +309,7 @@ gender: male
 voice_tags: [male]
 ```
 
-The folder name supplies the character name. Missing traits use normal character generation. Characters with only `character.yaml` are also registered. The manager copies authored profiles into the session character folder without overwriting an existing session profile, reads them during initialization, and saves updated traits back to the session `character.yaml`. Authored files remain unchanged.
+The folder name supplies the character name. Missing traits use normal character generation. Characters with only `character.yaml` are also registered. The manager reads authored profiles directly during initialization, prefers an existing session profile, and saves later trait changes to the session `character.yaml` without copying the original portrait. Authored files remain unchanged.
 
 The live agent sees all available character visual names in canvas observability, including characters outside the active scene. Character image file paths and aliases stay internal; model-facing character context and tool results use names and traits. Image and animation prompts attach the latest portraits through tags:
 

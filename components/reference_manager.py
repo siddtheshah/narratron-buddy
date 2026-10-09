@@ -102,6 +102,12 @@ def get_next_iteration_number(char_dir: Path) -> int:
     return max_num + 1 if max_num >= 1 else 1
 
 
+class SceneTraits(BaseModel):
+    """Scene description stored beside authored or updated scene imagery."""
+
+    description: str = ""
+
+
 class CharacterTraits(BaseModel):
     """Authored or session-owned traits stored beside a character's portraits."""
 
@@ -514,24 +520,30 @@ class ReferenceManager:
         self._player_character: Optional[PlayerCharacter] = None
         self._player_character_lock = Lock()
         self._initializing_references = True
-        self._seed_character_images()
-        self._seed_reference_images(self.theater.scenes_dir(), self.scenes_dir)
-        initial_images = self.available_character_images()
-        character_root = self.characters_dir
-        if character_root is not None and character_root.is_dir():
-            for profile in sorted(character_root.glob("*/character.yaml")):
-                if profile.is_file() and profile.resolve().is_relative_to(character_root.resolve()):
-                    initial_images.setdefault(profile.parent.name.replace("_", " "), "")
-        for name, path in initial_images.items():
-            directory = Path(path).parent if path else self._character_reference_dir(name)
-            traits = self._read_character_traits(directory) if directory is not None else CharacterTraits()
+        for folders in self._reference_folders(self.theater.characters_dir(), self.characters_dir).values():
+            name = folders[0].name.replace("_", " ")
+            path = self._latest_library_image(folders)
+            profile = self._library_profile(folders, "character.yaml")
+            if path is None and profile is None:
+                continue
+            traits = self._read_character_traits(profile.parent) if profile is not None else CharacterTraits()
             self.create_or_update_character(
-                name=name, image_reference=path, description=traits.description,
-                personality=traits.personality, motivation=traits.motivation,
-                quirk=traits.quirk, gender=traits.gender, voice_tags=traits.voice_tags,
+                name=name, image_reference=str(path) if path is not None else "",
+                description=traits.description, personality=traits.personality,
+                motivation=traits.motivation, quirk=traits.quirk,
+                gender=traits.gender, voice_tags=traits.voice_tags,
             )
-        for name, path in self.available_scene_images().items():
-            self.create_or_update_scene(name=name, image_reference=path)
+        for folders in self._reference_folders(self.theater.scenes_dir(), self.scenes_dir).values():
+            name = folders[0].name.replace("_", " ")
+            path = self._latest_library_image(folders)
+            profile = self._library_profile(folders, "scene.yaml")
+            if path is None and profile is None:
+                continue
+            traits = self._read_scene_traits(profile) if profile is not None else SceneTraits()
+            self.create_or_update_scene(
+                name=name, description=traits.description,
+                image_reference=str(path) if path is not None else None,
+            )
         self._initializing_references = False
         self._sync_story_state()
 
@@ -542,20 +554,71 @@ class ReferenceManager:
             return None
         return Path(val)
 
-    def _seed_character_images(self) -> None:
-        """Copy authored portraits without overwriting existing session iterations."""
-        source = self.theater.characters_dir()
-        destination = self.characters_dir
-        self._seed_reference_images(source, destination)
-        if destination is None or not source.is_dir():
-            return
-        for profile in sorted(source.glob("*/character.yaml")):
-            if not profile.is_file() or not profile.resolve().is_relative_to(source.resolve()):
+    @classmethod
+    def _reference_folders(cls, authored: Path, updated: Path | None) -> dict[str, list[Path]]:
+        """Overlay session folders on authored folders without copying any files."""
+        folders: dict[str, list[Path]] = {}
+        for root in (authored, updated):
+            if root is None or not root.is_dir():
                 continue
-            target = get_character_reference_dir(destination, profile.parent.name) / "character.yaml"
-            if not target.exists():
-                target.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(profile, target)
+            for directory in sorted(root.iterdir()):
+                if directory.is_dir() and directory.resolve().is_relative_to(root.resolve()):
+                    folders.setdefault(cls._slug_key(directory.name), []).insert(0, directory)
+        return folders
+
+    @staticmethod
+    def _latest_library_image(folders: list[Path]) -> Path | None:
+        for directory in folders:
+            image = get_latest_iteration_file(directory)
+            if image is not None and image.resolve().is_relative_to(directory.resolve()):
+                return image
+        return None
+
+    @staticmethod
+    def _library_profile(folders: list[Path], filename: str) -> Path | None:
+        for directory in folders:
+            profile = directory / filename
+            if profile.is_file() and profile.resolve().is_relative_to(directory.resolve()):
+                return profile
+        return None
+
+    @classmethod
+    def _library_images(cls, authored: Path, updated: Path | None) -> dict[str, str]:
+        images: dict[str, str] = {}
+        for folders in cls._reference_folders(authored, updated).values():
+            image = cls._latest_library_image(folders)
+            if image is not None:
+                images[folders[0].name.replace("_", " ")] = str(image)
+        return images
+
+    @staticmethod
+    def _next_library_iteration(directory: Path, previous: Path | None) -> int:
+        previous_number = parse_iteration_number(previous.name) if previous is not None else None
+        return max(get_next_iteration_number(directory), (previous_number or 0) + 1)
+
+    @staticmethod
+    def _read_scene_traits(profile: Path) -> SceneTraits:
+        try:
+            return SceneTraits.model_validate(yaml.safe_load(profile.read_text(encoding="utf-8")))
+        except (OSError, ValueError, yaml.YAMLError) as exc:
+            logger.warning("[ReferenceManager] Could not read scene traits from %s: %s", profile, exc)
+        return SceneTraits()
+
+    def _save_scene_traits(self, name: str) -> None:
+        if self._initializing_references:
+            return
+        key = self._slug_key(name)
+        if key not in self._scene_descriptions:
+            return
+        directory = self._scene_reference_dir(name)
+        try:
+            directory.mkdir(parents=True, exist_ok=True)
+            (directory / "scene.yaml").write_text(
+                yaml.safe_dump({"description": self._scene_descriptions[key]}, sort_keys=False, allow_unicode=True),
+                encoding="utf-8",
+            )
+        except OSError as exc:
+            logger.warning("[ReferenceManager] Could not save scene traits for %s: %s", name, exc)
 
     @staticmethod
     def _read_character_traits(directory: Path) -> CharacterTraits:
@@ -568,8 +631,10 @@ class ReferenceManager:
         return CharacterTraits()
 
     def _save_character_traits(self, character: Character) -> None:
+        if self._initializing_references:
+            return
         directory = self._character_reference_dir(character.name)
-        if directory is None or not directory.is_dir():
+        if directory is None:
             return
         traits = CharacterTraits(
             description=character.description, personality=character.personality,
@@ -577,37 +642,12 @@ class ReferenceManager:
             gender=character.gender, voice_tags=character.voice_tags,
         )
         try:
+            directory.mkdir(parents=True, exist_ok=True)
             (directory / "character.yaml").write_text(
                 yaml.safe_dump(traits.model_dump(), sort_keys=False, allow_unicode=True), encoding="utf-8",
             )
         except OSError as exc:
             logger.warning("[ReferenceManager] Could not save character traits for %s: %s", character.name, exc)
-
-    @staticmethod
-    def _seed_reference_images(source: Path, destination: Path | None) -> None:
-        """Copy named authored images only when a session folder has no images."""
-        if destination is None or not source.is_dir():
-            return
-        existing = {
-            directory.name
-            for directory in destination.iterdir()
-            if directory.is_dir() and get_latest_iteration_file(directory) is not None
-        } if destination.is_dir() else set()
-        for image in sorted(source.rglob("*")):
-            if not image.is_file() or image.suffix.lower() not in IMAGE_EXTENSIONS:
-                continue
-            if not image.resolve().is_relative_to(source.resolve()):
-                continue
-            relative = image.relative_to(source)
-            if len(relative.parts) < 2:
-                continue
-            name = relative.parts[0]
-            target_dir = get_character_reference_dir(destination, name)
-            # Once a named reference has session images, the session owns its identity.
-            if target_dir.name in existing:
-                continue
-            target_dir.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(image, target_dir / image.name)
 
     @property
     def scenes_dir(self) -> Path:
@@ -627,17 +667,8 @@ class ReferenceManager:
         return directory
 
     def available_scene_images(self) -> dict[str, str]:
-        """List each named scene's latest session image."""
-        root = self.scenes_dir
-        if not root.is_dir():
-            return {}
-        images: dict[str, str] = {}
-        for directory in sorted(root.iterdir()):
-            if directory.is_dir():
-                latest = get_latest_iteration_file(directory)
-                if latest is not None:
-                    images[directory.name.replace("_", " ")] = str(latest)
-        return images
+        """List latest session images with authored images as the fallback."""
+        return self._library_images(self.theater.scenes_dir(), self.scenes_dir)
 
     def get_scene_visual_path(self, name: str) -> str | None:
         """Resolve an exact scene name or canonical slug, without partial matching."""
@@ -662,9 +693,12 @@ class ReferenceManager:
         return self.get_scene_visual_path(name)
 
     def _scene_image_entry(self, name: str, image: Path) -> dict[str, str]:
+        alias = f"output/artifacts/updated_references/scenes/{image.parent.name}/{image.name}"
+        if image.resolve().is_relative_to(self.theater.scenes_dir().resolve()):
+            alias = f"references/scenes/{image.relative_to(self.theater.scenes_dir()).as_posix()}"
         return {
             "name": f"{image.parent.name}_{image.stem}",
-            "alias": f"output/artifacts/updated_references/scenes/{image.parent.name}/{image.name}",
+            "alias": alias,
             "path": str(image),
             "title": f"Reference: {name}",
             "description": f"Scene reference for {name}.",
@@ -685,7 +719,8 @@ class ReferenceManager:
             raise ValueError("Scene name cannot be empty.")
         with self._scene_images_lock:
             directory = self._scene_reference_dir(name)
-            previous = get_latest_iteration_file(directory)
+            existing_path = self.get_scene_visual_path(name)
+            previous = Path(existing_path) if existing_path is not None else None
             key = self._slug_key(name)
             clean_description = description.strip()
             if image_reference:
@@ -695,11 +730,15 @@ class ReferenceManager:
                     source = self.theater.directory() / image_reference
                 if not source.is_file() or source.suffix.lower() not in IMAGE_EXTENSIONS:
                     raise ValueError("Scene image reference must identify a supported image file.")
-                if source.parent.resolve() != directory.resolve():
+                authored_root = self.theater.scenes_dir().resolve()
+                if source.resolve().is_relative_to(authored_root):
+                    previous = source
+                elif source.parent.resolve() != directory.resolve():
                     directory.mkdir(parents=True, exist_ok=True)
                     destination = directory / f"{get_next_iteration_number(directory)}{source.suffix.lower()}"
                     shutil.copy2(source, destination)
-                previous = get_latest_iteration_file(directory)
+                if not source.resolve().is_relative_to(authored_root):
+                    previous = get_latest_iteration_file(directory)
             elif previous is None or (
                 clean_description and key in self._scene_descriptions
                 and clean_description != self._scene_descriptions[key]
@@ -707,10 +746,11 @@ class ReferenceManager:
                 generated = self._generate_scene_reference(name, clean_description, directory, previous)
                 if generated is not None:
                     previous = generated
-                else:
+                elif previous is not None or not self._initializing_references:
                     return self._scene_image_entry(name, previous) if previous is not None else None
             if clean_description:
                 self._scene_descriptions[key] = clean_description
+            self._save_scene_traits(name)
             return self._scene_image_entry(name, previous) if previous is not None else None
 
     def _generate_scene_reference(
@@ -736,7 +776,7 @@ class ReferenceManager:
             ))
             image = Image.open(BytesIO(result.image_bytes)).convert("RGB")
             directory.mkdir(parents=True, exist_ok=True)
-            iteration = get_next_iteration_number(directory)
+            iteration = self._next_library_iteration(directory, previous)
             ext = ".webp" if result.mime_type == "image/webp" else ".jpg" if result.mime_type in ("image/jpeg", "image/jpg") else ".png"
             output = directory / f"{iteration}{ext}"
             exif = image.getexif()
@@ -751,18 +791,7 @@ class ReferenceManager:
 
     def available_character_images(self) -> dict[str, str]:
         """List named session portraits, including characters outside the active scene."""
-        root = self.characters_dir
-        if root is None or not root.is_dir():
-            return {}
-        images: dict[str, str] = {}
-        for directory in sorted(root.iterdir()):
-            if not directory.is_dir():
-                continue
-            latest = get_latest_iteration_file(directory)
-            if latest is not None:
-                character = self._existing_character(directory.name)
-                name = character.name if character is not None else directory.name.replace("_", " ")
-                images[name] = str(latest)
+        images = self._library_images(self.theater.characters_dir(), self.characters_dir)
         player = self.get_player_character()
         if player is not None and player.reference_path and Path(player.reference_path).is_file():
             images[player.name or "Player"] = self.get_latest_reference_path_for_character(player.name or "player") or player.reference_path
@@ -1034,6 +1063,10 @@ class ReferenceManager:
                     if latest is not None and latest.is_file():
                         return str(latest)
 
+        for candidate in candidates:
+            for name, path in self._library_images(self.theater.characters_dir(), self.characters_dir).items():
+                if self._slug_key(candidate) == self._slug_key(name):
+                    return path
         return None
 
     def _reference_entry(self, reference: str | None) -> dict[str, str] | None:
@@ -1066,6 +1099,10 @@ class ReferenceManager:
                     "title": f"Reference: {requested}",
                     "description": f"Character reference for {requested}.",
                 }
+
+        for name, path in self._library_images(self.theater.characters_dir(), self.characters_dir).items():
+            if self._slug_key(requested) == self._slug_key(name):
+                return {"name": name, **self._session_reference_entry(name, Path(path))}
 
         # Check if requested is an exact file path that exists
         req_p = Path(requested)
@@ -1215,7 +1252,7 @@ class ReferenceManager:
             )
             image = Image.open(BytesIO(result.image_bytes)).convert("RGB")
             char_dir.mkdir(parents=True, exist_ok=True)
-            next_num = get_next_iteration_number(char_dir)
+            next_num = self._next_library_iteration(char_dir, prev_file)
             ext = ".webp" if result.mime_type == "image/webp" else ".jpg" if result.mime_type in ("image/jpeg", "image/jpg") else ".png"
             output = char_dir / f"{next_num}{ext}"
             exif = image.getexif()
@@ -1256,9 +1293,11 @@ class ReferenceManager:
         character.image_reference_source = source
 
     def _session_reference_entry(self, name: str, image: Path) -> dict[str, str]:
-        """Bind imported references to a writable session copy."""
+        """Read authored references in place; copy external imports into the session."""
         if image.parent.resolve() == self.theater.characters_dir().resolve():
             raise ValueError("Character portraits must be inside references/characters/<Character Name>/.")
+        if image.resolve().is_relative_to(self.theater.characters_dir().resolve()):
+            return {"alias": f"references/characters/{image.relative_to(self.theater.characters_dir()).as_posix()}", "path": str(image)}
         directory = self._character_reference_dir(name)
         if directory is None:
             raise ValueError("Session character directory is required.")
@@ -1332,7 +1371,7 @@ class ReferenceManager:
             )
             image = Image.open(BytesIO(result.image_bytes)).convert("RGB")
             char_dir.mkdir(parents=True, exist_ok=True)
-            next_num = get_next_iteration_number(char_dir)
+            next_num = self._next_library_iteration(char_dir, prev_file)
             ext = ".webp" if result.mime_type == "image/webp" else ".jpg" if result.mime_type in ("image/jpeg", "image/jpg") else ".png"
             output = char_dir / f"{next_num}{ext}"
             exif = image.getexif()

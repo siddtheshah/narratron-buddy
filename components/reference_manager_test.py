@@ -61,12 +61,15 @@ class TestReferenceManager(unittest.TestCase):
         self.assertNotIn("private/", model_context.model_dump_json(exclude_none=True))
 
     def setUp(self) -> None:
+        self.reference_directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.reference_directory.cleanup)
         self.theater = MagicMock(spec=Theater)
-        self.theater.scenes_dir.return_value = Path("/nonexistent/base_scenes")
-        self.theater.updated_scenes_dir.return_value = Path("/nonexistent/scenes")
-        self.theater.characters_dir.return_value = Path("/nonexistent/base_characters")
-        self.theater.updated_characters_dir.return_value = Path("/nonexistent/characters")
-        self.theater.references_dir.return_value = Path("/nonexistent/references")
+        self.theater.scenes_dir.return_value = Path(self.reference_directory.name) / "references/scenes"
+        self.theater.updated_scenes_dir.return_value = Path(self.reference_directory.name) / "output/scenes"
+        self.theater.characters_dir.return_value = Path(self.reference_directory.name) / "references/characters"
+        self.theater.updated_characters_dir.return_value = Path(self.reference_directory.name) / "output/characters"
+        self.theater.directory.return_value = Path(self.reference_directory.name)
+        self.theater.references_dir.return_value = Path(self.reference_directory.name) / "references"
         self.provider = MagicMock(spec=TextResponseProvider)
         self.notepad = MagicMock(spec=Notepad)
         self.notepad.get_present_elements.return_value = [
@@ -202,7 +205,7 @@ class TestReferenceManager(unittest.TestCase):
             self.assertEqual(set(images), {"Ancient Library", "Moonlit Forest"})
             self.assertEqual(register.call_count, 2)
             for name, path in images.items():
-                register.assert_any_call(manager, name=name, image_reference=path)
+                register.assert_any_call(manager, name=name, description="", image_reference=path)
                 self.assertEqual(manager.get_scene_visual_path(name), path)
                 self.assertEqual(manager.create_or_update_scene(name)["path"], path)
             self.image_provider.generate.assert_not_called()
@@ -210,6 +213,52 @@ class TestReferenceManager(unittest.TestCase):
             self.assertEqual(images["Moonlit Forest"], str(session))
             self.assertEqual(len(list(session.parent.iterdir())), 1)
             self.assertEqual(len(list(authored.parent.iterdir())), 1)
+
+    def test_scene_yaml_initializes_without_copying_and_persists_updates(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            theater = Theater(TheaterManager(directory), "stage")
+            authored = theater.scenes_dir() / "Old Harbor"
+            authored.mkdir(parents=True)
+            portrait = authored / "1.png"
+            Image.new("RGB", (8, 8), "blue").save(portrait)
+            original_image = portrait.read_bytes()
+            profile = authored / "scene.yaml"
+            profile.write_text("description: A harbor at dawn\n", encoding="utf-8")
+            original_profile = profile.read_bytes()
+            manager = ReferenceManager(theater, image_provider=self.image_provider)
+            self.assertEqual(manager.get_scene_visual_path("Old Harbor"), str(portrait))
+            self.assertEqual(manager._scene_descriptions["old_harbor"], "A harbor at dawn")
+            self.assertFalse(theater.updated_scenes_dir().exists())
+            self.image_provider.generate.assert_not_called()
+            payload = BytesIO()
+            Image.new("RGB", (8, 8), "red").save(payload, "PNG")
+            self.image_provider.generate.side_effect = None
+            self.image_provider.generate.return_value = ImageGenerationResult(
+                image_bytes=payload.getvalue(), mime_type="image/png", provider="fake", model="scene",
+            )
+            updated = manager.create_or_update_scene("Old Harbor", description="A harbor at sunset")
+            assert updated is not None
+            session = theater.updated_scenes_dir() / "Old_Harbor"
+            self.assertEqual(updated["path"], str(session / "2.png"))
+            self.assertFalse((session / "1.png").exists())
+            self.assertEqual(self.image_provider.generate.call_args.args[0].references[0].data, original_image)
+            self.assertEqual(yaml.safe_load((session / "scene.yaml").read_text(encoding="utf-8")), {"description": "A harbor at sunset"})
+            restored = ReferenceManager(theater, image_provider=self.image_provider)
+            self.assertEqual(restored._scene_descriptions["old_harbor"], "A harbor at sunset")
+            self.assertEqual(restored.get_scene_visual_path("Old Harbor"), updated["path"])
+            self.image_provider.generate.assert_called_once()
+            self.assertEqual(portrait.read_bytes(), original_image)
+            self.assertEqual(profile.read_bytes(), original_profile)
+
+    def test_yaml_only_scene_registers_description_without_creating_session_files(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            theater = Theater(TheaterManager(directory), "stage")
+            profile = theater.scenes_dir() / "Old Harbor" / "scene.yaml"
+            profile.parent.mkdir(parents=True)
+            profile.write_text("description: A harbor at dawn\n", encoding="utf-8")
+            manager = ReferenceManager(theater)
+            self.assertEqual(manager._scene_descriptions["old_harbor"], "A harbor at dawn")
+            self.assertFalse(theater.updated_scenes_dir().exists())
 
     def test_scene_library_ignores_loose_images_and_rejects_invalid_names(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -1147,7 +1196,7 @@ class TestReferenceManager(unittest.TestCase):
             self.assertEqual([ref.label for ref in references], ["Arthur Modella", "Grim Vallos"])
             self.assertEqual(references[0].data, (base / "Arthur Modella" / "1.png").read_bytes())
             self.assertEqual(references[1].data, (base / "Grim Vallos" / "2.png").read_bytes())
-            self.assertTrue((theater.updated_characters_dir() / "Grim_Vallos" / "1.png").is_file())
+            self.assertFalse(theater.updated_characters_dir().exists())
             self.assertEqual(manager.count(), 2)
             self.assertEqual(set(manager.available_character_images()), {"Arthur Modella", "Grim Vallos"})
 
@@ -1172,6 +1221,7 @@ class TestReferenceManager(unittest.TestCase):
             self.assertEqual(character.voice_tags, ["male"])
             self.provider.generate.assert_not_called()
             self.image_provider.generate.assert_not_called()
+            self.assertFalse(theater.updated_characters_dir().exists())
             manager.create_or_update_character("Arthur Modella", personality="Bold")
             saved = theater.updated_characters_dir() / "Arthur_Modella" / "character.yaml"
             self.assertEqual(yaml.safe_load(saved.read_text(encoding="utf-8"))["personality"], "Bold")
@@ -1189,7 +1239,7 @@ class TestReferenceManager(unittest.TestCase):
             manager = ReferenceManager(theater)
             self.assertEqual(manager.count(), 1)
             self.assertEqual(manager.lookup_character().characters[0].personality, "Patient")
-            self.assertTrue((theater.updated_characters_dir() / "Arthur_Modella" / "character.yaml").is_file())
+            self.assertFalse(theater.updated_characters_dir().exists())
 
     def test_invalid_character_yaml_falls_back_to_normal_registration(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -1235,6 +1285,7 @@ class TestReferenceManager(unittest.TestCase):
             manager.create_or_update_character("Arthur Modella", description="A wizard with orange hair")
             updated = theater.updated_characters_dir() / "Arthur_Modella" / "2.png"
             self.assertEqual(manager.get_character_visual_path("Arthur Modella"), str(updated))
+            self.assertFalse((updated.parent / "1.png").exists())
             self.assertEqual(provider.generate.call_args.args[0].references[0].data, original)
             self.assertEqual(authored.read_bytes(), original)
             self.assertEqual(list(authored.parent.iterdir()), [authored])

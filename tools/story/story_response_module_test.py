@@ -1,6 +1,7 @@
 """Dependency-boundary tests for ``StoryResponseModule``."""
 
 import unittest
+import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -11,7 +12,7 @@ from google.adk.sessions import InMemorySessionService
 
 from components.canvas.story_state import StoryState
 from components.canvas_state import CanvasStateManager
-from components.theater_manager import Theater
+from components.theater_manager import Theater, TheaterManager
 from providers import ImageProvider, SpeechProvider, TextResponseProvider
 from components.image_library import ImageLibrary
 from components.reference_manager import Character, ReferenceManager, PlayerCharacter
@@ -30,7 +31,12 @@ from tools.story.story_response_module import (
 
 class TestStoryResponseModuleDependencies(unittest.TestCase):
     def setUp(self) -> None:
-        self.theater = MagicMock(spec=Theater)
+        self.theater_directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.theater_directory.cleanup)
+        self.theater = MagicMock(
+            spec=Theater,
+            wraps=TheaterManager(Path(self.theater_directory.name)).theater("test_theater"),
+        )
         self.theater.theater_id = "response_boundary"
         self.theater.config.return_value = {"story_planning": {"adventure_mode": False}}
         self.canvas = MagicMock(spec=CanvasStateManager)
@@ -248,10 +254,13 @@ class TestStoryResponseModuleDependencies(unittest.TestCase):
 
 class TestStoryResponseModuleBehavior(unittest.TestCase):
     def setUp(self) -> None:
-        self.theater = MagicMock(spec=Theater)
+        self.theater_directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.theater_directory.cleanup)
+        self.theater = MagicMock(
+            spec=Theater,
+            wraps=TheaterManager(Path(self.theater_directory.name)).theater("test_theater"),
+        )
         self.theater.theater_id = "response_theater"
-        self.theater.scenes_dir.return_value = Path("/nonexistent/base_scenes")
-        self.theater.updated_scenes_dir.return_value = Path("/nonexistent/scenes")
         self.theater.lore_documents.return_value = ["lore.txt"]
         self.theater.read_lore_document.return_value = (
             "Lore details about the realm."
@@ -612,7 +621,12 @@ class TestBuildSceneReactionPrompt(unittest.TestCase):
 
 class TestStoryResponseModulePlayerCharacter(unittest.TestCase):
     def setUp(self) -> None:
-        self.theater = MagicMock(spec=Theater)
+        self.theater_directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.theater_directory.cleanup)
+        self.theater = MagicMock(
+            spec=Theater,
+            wraps=TheaterManager(Path(self.theater_directory.name)).theater("test_theater"),
+        )
         self.theater.theater_id = "test_player_theater"
         self.theater.config.return_value = {"story_planning": {"adventure_mode": True}}
         self.canvas = MagicMock(spec=CanvasStateManager)
@@ -700,7 +714,12 @@ class TestStoryResponseModulePlayerCharacter(unittest.TestCase):
 
 class TestResponderInstructionAndTurnPrompt(unittest.TestCase):
     def setUp(self) -> None:
-        self.theater = MagicMock(spec=Theater)
+        self.theater_directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.theater_directory.cleanup)
+        self.theater = MagicMock(
+            spec=Theater,
+            wraps=TheaterManager(Path(self.theater_directory.name)).theater("test_theater"),
+        )
         self.theater.theater_id = "test_prompt_theater"
         self.theater.lore_documents.return_value = ["lore.md"]
         self.theater.config.return_value = {

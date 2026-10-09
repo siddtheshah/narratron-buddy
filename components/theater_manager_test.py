@@ -347,3 +347,12 @@ def test_character_yaml_upload_is_preserved_beside_portraits(tmp_path: Path) -> 
         ("references/characters/Arthur Modella/character.yaml", b"personality: Patient\n"),
     ])
     assert (manager.theater("stage").characters_dir() / "Arthur Modella" / "character.yaml").read_bytes() == b"personality: Patient\n"
+
+
+def test_scene_yaml_upload_is_preserved_beside_scene_images(tmp_path: Path) -> None:
+    manager = TheaterManager(tmp_path)
+    manager.create_theater("Stage", "stage", reference_files=[
+        ("references/scenes/Old Harbor/1.png", png_bytes()),
+        ("references/scenes/Old Harbor/scene.yaml", b"description: A harbor at dawn\n"),
+    ])
+    assert (manager.theater("stage").scenes_dir() / "Old Harbor" / "scene.yaml").read_bytes() == b"description: A harbor at dawn\n"

@@ -302,3 +302,20 @@ def test_character_traits_survive_builder_source_copy_edit_and_publish(tmp_path:
     store.copy_to(info, target)
     assert target.joinpath(relative).read_bytes() == b"personality: Bold\n"
     assert character.read_text(encoding="utf-8") == "personality: Patient\n"
+
+
+def test_scene_yaml_survives_builder_copy_edit_and_publish(tmp_path: Path) -> None:
+    source = tmp_path / "source"
+    relative = "references/scenes/Old Harbor/scene.yaml"
+    profile = source / relative
+    profile.parent.mkdir(parents=True)
+    profile.write_text("description: A harbor at dawn\n", encoding="utf-8")
+    store = TheaterBuilderStore(tmp_path / "repository")
+    info = store.create(7, "World", "live_agent: {}\n", source=source, populate_default=False)
+    assert (store.directory(info.theater_id) / relative).read_bytes() == profile.read_bytes()
+    store.write_files(info, {relative: b"description: A harbor at sunset\n"})
+    target = tmp_path / "runtime"
+    target.mkdir()
+    store.copy_to(info, target)
+    assert (target / relative).read_bytes() == b"description: A harbor at sunset\n"
+    assert profile.read_text(encoding="utf-8") == "description: A harbor at dawn\n"

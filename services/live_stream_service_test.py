@@ -73,8 +73,8 @@ def test_format_canvas_state_reads_current_character_catalog_without_story_sync(
     assert "available_character_images" not in story.serialize()
 
 
-def test_format_canvas_state_includes_present_scene_elements() -> None:
-    theater = MagicMock(theater_id="stage")
+def test_format_canvas_state_includes_present_scene_elements(tmp_path: Path) -> None:
+    theater = MagicMock(wraps=TheaterManager(tmp_path).theater("stage"))
     theater.config = MagicMock(return_value={})
     elements = StoryTool(
         theater,
@@ -116,8 +116,8 @@ def test_format_canvas_state_includes_legacy_elements_from_story_without_tools()
     assert "[Present Scene Elements]: objective: Find the lost compass" in state
 
 
-def test_format_canvas_state_includes_active_characters() -> None:
-    theater = MagicMock(theater_id="stage_chars")
+def test_format_canvas_state_includes_active_characters(tmp_path: Path) -> None:
+    theater = MagicMock(wraps=TheaterManager(tmp_path).theater("stage_chars"))
     theater.config = MagicMock(return_value={"adventure_mode": True})
     elements = StoryTool(
         theater,
@@ -135,8 +135,8 @@ def test_format_canvas_state_includes_active_characters() -> None:
     assert "[Character Image References]:" not in state
 
 
-def test_format_canvas_state_includes_elements_from_notepad_tool() -> None:
-    theater = MagicMock(theater_id="stage_notepad")
+def test_format_canvas_state_includes_elements_from_notepad_tool(tmp_path: Path) -> None:
+    theater = MagicMock(wraps=TheaterManager(tmp_path).theater("stage_notepad"))
     theater.config = MagicMock(return_value={})
     canvas = CanvasFixture(story=StoryState())
     notepad_tool = NotepadTool(
@@ -149,8 +149,8 @@ def test_format_canvas_state_includes_elements_from_notepad_tool() -> None:
     assert "[Present Scene Elements]: objective: Find the lost compass" in state
 
 
-def test_format_canvas_state_includes_characters_from_reference_tool() -> None:
-    theater = MagicMock(theater_id="stage_char_tool")
+def test_format_canvas_state_includes_characters_from_reference_tool(tmp_path: Path) -> None:
+    theater = MagicMock(wraps=TheaterManager(tmp_path).theater("stage_char_tool"))
     theater.config = MagicMock(return_value={})
     canvas = CanvasFixture()
     char_mgr = MagicMock()
@@ -173,9 +173,9 @@ def test_format_canvas_state_includes_characters_from_reference_tool() -> None:
     assert "[Active Characters]: Rowan (Personality: Stealthy, Motivation: Freedom, Quirk: Whistles quietly)" in state
 
 
-def test_format_canvas_state_omits_character_image_handles_for_npcs() -> None:
+def test_format_canvas_state_omits_character_image_handles_for_npcs(tmp_path: Path) -> None:
     canvas = CanvasFixture(story=StoryState())
-    theater = MagicMock(theater_id="stage_char_refs")
+    theater = MagicMock(wraps=TheaterManager(tmp_path).theater("stage_char_refs"))
     theater.config = MagicMock(return_value={"adventure_mode": True})
     elements = StoryTool(
         theater,
@@ -199,9 +199,9 @@ def test_format_canvas_state_omits_character_image_handles_for_npcs() -> None:
     assert "Image Reference" not in state
 
 
-def test_format_canvas_state_omits_character_image_handles_for_player() -> None:
+def test_format_canvas_state_omits_character_image_handles_for_player(tmp_path: Path) -> None:
     canvas = CanvasFixture(story=StoryState())
-    theater = MagicMock(theater_id="stage_player_refs")
+    theater = MagicMock(wraps=TheaterManager(tmp_path).theater("stage_player_refs"))
     theater.config = MagicMock(return_value={"adventure_mode": True})
     elements = StoryTool(
         theater,

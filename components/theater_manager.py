@@ -456,7 +456,9 @@ class TheaterManager:
                     reference_image_type(filename, content)
                 continue
             asset_destination(reference_dir, relative_name)
-            reference_image_type(filename, content)
+            scene_parts = relative_name.split("/")
+            if not (len(scene_parts) == 3 and scene_parts[0] == "scenes" and scene_parts[-1] == "scene.yaml"):
+                reference_image_type(filename, content)
         for playlist_name, files in (playlists_data or {}).items():
             if len(validate_asset_path(playlist_name)) != 1:
                 raise ValueError("Playlist names must be a single path component.")

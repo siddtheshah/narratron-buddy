@@ -1,18 +1,25 @@
 """Boundary tests for the story subsystem composition root."""
 
 import unittest
+import tempfile
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from components.canvas.story_state import StoryState
 from components.canvas_state import CanvasStateManager
-from components.theater_manager import Theater
+from components.theater_manager import Theater, TheaterManager
 from providers import ImageProvider, SpeechProvider, TextResponseProvider
 from tools.story.story_tool import StoryPlanningTools, StoryResponseTool, StoryTool
 
 
 class TestStoryToolComposition(unittest.TestCase):
     def setUp(self) -> None:
-        self.theater = MagicMock(spec=Theater)
+        self.theater_directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.theater_directory.cleanup)
+        self.theater = MagicMock(
+            spec=Theater,
+            wraps=TheaterManager(Path(self.theater_directory.name)).theater("test_theater"),
+        )
         self.theater.theater_id = "boundary_theater"
         self.theater.config.return_value = {"story_planning": {"session_id": "shared-session"}}
         self.canvas = MagicMock(spec=CanvasStateManager)
@@ -207,7 +214,12 @@ class TestStoryToolStateIntegration(unittest.TestCase):
         self.canvas.story = self.story_state
         self.canvas.tool_response = MagicMock()
 
-        self.theater = MagicMock(spec=Theater)
+        self.theater_directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.theater_directory.cleanup)
+        self.theater = MagicMock(
+            spec=Theater,
+            wraps=TheaterManager(Path(self.theater_directory.name)).theater("test_theater"),
+        )
         self.theater.theater_id = "integration_theater"
         self.theater.lore_documents.return_value = []
         self.theater.config.return_value = {

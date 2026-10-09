@@ -108,6 +108,7 @@ def safe_asset_path(root: Path, relative: str) -> Path:
     suffix = PurePosixPath(normalized).suffix.lower()
     allowed = normalized in ROOT_FILES
     allowed |= len(parts) >= 2 and parts[0] == "references" and suffix in IMAGE_EXTENSIONS
+    allowed |= len(parts) == 4 and parts[:2] == ["references", "scenes"] and parts[-1] == "scene.yaml"
     allowed |= len(parts) >= 2 and parts[0] == "stamps" and suffix in IMAGE_EXTENSIONS
     if parts[:2] == ["references", "characters"]:
         allowed = len(parts) >= 4 and (suffix in IMAGE_EXTENSIONS or (len(parts) == 4 and parts[-1] == "character.yaml"))
@@ -427,6 +428,7 @@ class TheaterBuilderStore:
                         "Image previews are supplied for up to twelve reference, stamp, and character assets; identify their content when organizing generic filenames. Do not claim to have inspected audio or unshown images. "
                         "Update lore/config asset paths when moving assets. Generation requests propose one reference image, stamp token, character portrait, or playlist track each (kind: 'reference', 'stamp', 'character', or 'playlist'). "
                         "Generated assets are charged only when the user clicks Generate. Use only existing references or character image paths in generation requests. "
+                        "Scene descriptions belong in references/scenes/<Scene Name>/scene.yaml with a description string alongside their image iterations. "
                         "Character portraits under references/characters/<Character Name>/ establish visual identity for NPCs and heroes. Propose generation requests with kind 'character' (name matching the character's canonical name) to generate portraits. "
                         "Stamps under stamps/ are movable canvas tokens (such as character tokens, minis, monster tokens, items, props, and markers) for 2D battlemaps and virtual tabletop play. Propose generation requests with kind 'stamp' when setting up tokens/stamps for NPCs, heroes, creatures, or props. You may also organize token image uploads into stamps/. Never use stamp files as input references in generation requests, and never move them into references/ or references/characters/. "
                         "You can propose file deletions (deletions: ['path/to/file']) for unneeded, obsolete, duplicate, or user-requested removals. Never propose deleting theater.yaml. "
