@@ -8,6 +8,7 @@ import yaml
 
 from providers.image_provider import ImageGenerationRequest, ImageGenerationResult, ImageReference
 from providers.registry import get_image_provider
+from utils.config_loader import apply_app_config
 
 
 def generate_theater_image(
@@ -15,7 +16,7 @@ def generate_theater_image(
     references: list[ImageReference],
 ) -> ImageGenerationResult:
     settings = TypeAdapter(dict[str, JsonValue]).validate_python(
-        yaml.safe_load((root / "theater.yaml").read_text(encoding="utf-8")) or {}
+        apply_app_config(yaml.safe_load((root / "theater.yaml").read_text(encoding="utf-8")) or {})
     )
     visuals = TypeAdapter(dict[str, JsonValue]).validate_python(settings.get("visuals") or {})
     style = str(visuals.get("style") or "").strip()
@@ -52,4 +53,12 @@ def generate_theater_image(
         )
     else:
         request = ImageGenerationRequest(prompt=prompt, references=references, background="opaque")
-    return get_image_provider("openai-gpt-image-flare").generate(request)
+    reference_model = str(visuals.get("reference_model") or "").strip()
+    if reference_model:
+        provider_id = reference_model
+        options = visuals.get("reference_model_options") or {}
+    else:
+        provider_id = str(visuals.get("model") or "openai-gpt-image-flare").strip()
+        options = visuals.get("model_options") or {}
+    provider_options = TypeAdapter(dict[str, JsonValue]).validate_python(options)
+    return get_image_provider(provider_id, provider_options).generate(request)

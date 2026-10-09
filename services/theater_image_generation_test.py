@@ -1,18 +1,35 @@
 """Package references and stamps receive distinct background and composition settings."""
 
 from pathlib import Path
+from collections.abc import Iterator
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 from providers.image_provider import ImageReference
 from services.theater_image_generation import generate_theater_image
 
 
-def test_stamp_uses_flare_transparency_and_cutout_instructions(tmp_path: Path) -> None:
-    (tmp_path / "theater.yaml").write_text("visuals:\n  model: hybrid-flux-gemini\n  style: Painted fantasy\n", encoding="utf-8")
+@pytest.fixture(autouse=True)
+def reference_config() -> Iterator[MagicMock]:
+    with patch("utils.config_loader.get_app_config", return_value={
+        "visuals": {
+            "reference_model": "openai-gpt-image-flare",
+            "reference_model_options": {"model": "gpt-image-2.5-sunburst", "quality": "medium"},
+        },
+    }) as config:
+        yield config
+
+
+def test_stamp_uses_sunburst_transparency_and_cutout_instructions(tmp_path: Path) -> None:
+    (tmp_path / "theater.yaml").write_text(
+        "visuals:\n  model: hybrid-flux-gemini\n  style: Painted fantasy\n"
+        "  reference_model: gemini\n  reference_model_options:\n    quality: high\n", encoding="utf-8",
+    )
     provider = MagicMock()
     with patch("services.theater_image_generation.get_image_provider", return_value=provider) as resolve:
         generate_theater_image(tmp_path, kind="stamp", prompt="Goblin scout", references=[])
-    resolve.assert_called_once_with("openai-gpt-image-flare")
+    resolve.assert_called_once_with("openai-gpt-image-flare", {"model": "gpt-image-2.5-sunburst", "quality": "medium"})
     request = provider.generate.call_args.args[0]
     assert request.background == "transparent"
     assert request.aspect_ratio == "1:1"
@@ -23,13 +40,13 @@ def test_stamp_uses_flare_transparency_and_cutout_instructions(tmp_path: Path) -
     assert "checkerboard" in request.prompt
 
 
-def test_reference_uses_flare_scene_prompt_and_selected_references(tmp_path: Path) -> None:
+def test_reference_uses_sunburst_scene_prompt_and_selected_references(tmp_path: Path) -> None:
     (tmp_path / "theater.yaml").write_text("visuals:\n  style: Painted fantasy\n", encoding="utf-8")
     references = [ImageReference(name="hero.png", data=b"hero", mime_type="image/png")]
     provider = MagicMock()
     with patch("services.theater_image_generation.get_image_provider", return_value=provider) as resolve:
         generate_theater_image(tmp_path, kind="reference", prompt="A misty harbor", references=references)
-    resolve.assert_called_once_with("openai-gpt-image-flare")
+    resolve.assert_called_once_with("openai-gpt-image-flare", {"model": "gpt-image-2.5-sunburst", "quality": "medium"})
     request = provider.generate.call_args.args[0]
     assert request.background == "opaque"
     assert request.aspect_ratio == "16:9"
@@ -37,13 +54,13 @@ def test_reference_uses_flare_scene_prompt_and_selected_references(tmp_path: Pat
     assert request.prompt == "A misty harbor\nStyle: Painted fantasy"
 
 
-def test_character_uses_flare_square_portrait_instructions(tmp_path: Path) -> None:
+def test_character_uses_sunburst_square_portrait_instructions(tmp_path: Path) -> None:
     (tmp_path / "theater.yaml").write_text("visuals:\n  style: Oil painting\n", encoding="utf-8")
     references = [ImageReference(name="previous_iter.png", data=b"char", mime_type="image/png")]
     provider = MagicMock()
     with patch("services.theater_image_generation.get_image_provider", return_value=provider) as resolve:
         generate_theater_image(tmp_path, kind="character", prompt="Arthur Modella, harbor captain", references=references)
-    resolve.assert_called_once_with("openai-gpt-image-flare")
+    resolve.assert_called_once_with("openai-gpt-image-flare", {"model": "gpt-image-2.5-sunburst", "quality": "medium"})
     request = provider.generate.call_args.args[0]
     assert request.background == "opaque"
     assert request.aspect_ratio == "1:1"
@@ -52,3 +69,14 @@ def test_character_uses_flare_square_portrait_instructions(tmp_path: Path) -> No
     assert "Style: Oil painting" in request.prompt
     assert "Single-character reference portrait" in request.prompt
     assert "Square head-and-shoulders portrait" in request.prompt
+
+
+def test_blank_reference_model_reuses_live_provider_options(tmp_path: Path, reference_config: MagicMock) -> None:
+    reference_config.return_value = {"visuals": {"reference_model": ""}}
+    (tmp_path / "theater.yaml").write_text(
+        "visuals:\n  model: gemini\n  model_options:\n    model: live-image-model\n"
+        "  reference_model_options:\n    model: gpt-image-2.5-sunburst\n", encoding="utf-8",
+    )
+    with patch("services.theater_image_generation.get_image_provider") as resolve:
+        generate_theater_image(tmp_path, kind="scene", prompt="Harbor", references=[])
+    resolve.assert_called_once_with("gemini", {"model": "live-image-model"})

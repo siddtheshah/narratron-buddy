@@ -229,7 +229,7 @@ def test_generated_stamp_preserves_png_alpha_in_draft_and_published_theater(buil
             "revision": draft["draft"]["revision"], "kind": "stamp", "name": "Goblin", "prompt": "Goblin scout",
         })
     assert result.status_code == 200, result.text
-    resolve.assert_called_once_with("openai-gpt-image-flare")
+    resolve.assert_called_once_with("openai-gpt-image-flare", {"model": "gpt-image-2.5-sunburst", "quality": "medium"})
     request = provider.generate.call_args.args[0]
     assert request.background == "transparent"
     assert request.aspect_ratio == "1:1"

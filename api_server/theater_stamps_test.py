@@ -82,7 +82,9 @@ def test_only_owner_can_generate_not_orator_or_contributor(
 
 
 def test_owner_without_baton_generates_persistent_transparent_stamp(stamps: StampHarness) -> None:
-    result = stamps.client.post("/api/theaters/stage/stamps/generate", json={"name": "../Goblin", "prompt": "Goblin scout"})
+    with patch("services.theater_image_generation.get_image_provider", return_value=stamps.provider) as resolve:
+        result = stamps.client.post("/api/theaters/stage/stamps/generate", json={"name": "../Goblin", "prompt": "Goblin scout"})
+    resolve.assert_called_once_with("openai-gpt-image-flare", {"model": "gpt-image-2.5-sunburst", "quality": "medium"})
     assert result.status_code == 200, result.text
     payload = result.json()
     stamp = payload["stamps"][0]
