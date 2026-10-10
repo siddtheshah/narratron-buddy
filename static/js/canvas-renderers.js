@@ -1187,7 +1187,16 @@ export function createDoodleRenderer({ canvas, isVisible = () => true, textLayer
             if (node) selectedStampItems.add(node);
         });
         Array.from(stampLayer.children).forEach(node => {
-            node.classList.toggle("movable", selectedStampItems.has(node));
+            const isMovable = selectedStampItems.has(node);
+            node.classList.toggle("movable", isMovable);
+            if (!isMovable && (document.activeElement === node || node.contains(document.activeElement))) {
+                if (typeof document.activeElement?.blur === "function") {
+                    document.activeElement.blur();
+                }
+                if (typeof node.blur === "function") {
+                    node.blur();
+                }
+            }
         });
         const lastItem = items[items.length - 1] || null;
         selectedStampItem = lastItem;
@@ -1314,10 +1323,25 @@ export function createDoodleRenderer({ canvas, isVisible = () => true, textLayer
         });
     }
 
-    stampLayer?.parentElement.addEventListener("pointerdown", event => {
-        if (event.shiftKey || event.ctrlKey || event.metaKey) return;
-        if (!event.target.closest(".canvas-stamp-annotation")) selectMovableStamp(null);
-    });
+    if (typeof window !== "undefined") {
+        window.addEventListener("pointerdown", event => {
+            if (event.shiftKey || event.ctrlKey || event.metaKey) return;
+            if (event.target && event.target.closest && (
+                event.target.closest(".canvas-stamp-annotation") ||
+                event.target.closest(".stamp-resize-handle") ||
+                event.target.closest(".stamp-rotate-handle") ||
+                event.target.closest(".canvas-selection-box")
+            )) return;
+            if (selectedStampItems.size > 0 || selectedStampItem) {
+                selectMovableStamp(null);
+            }
+        });
+    } else {
+        stampLayer?.parentElement?.addEventListener("pointerdown", event => {
+            if (event.shiftKey || event.ctrlKey || event.metaKey) return;
+            if (!event.target.closest(".canvas-stamp-annotation")) selectMovableStamp(null);
+        });
+    }
 
     function renderSelectableStamp(action) {
         if (!stampLayer || !action.id) return;

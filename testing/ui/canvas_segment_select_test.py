@@ -240,3 +240,40 @@ def test_selection_box_drag_across_center_does_not_highlight_frame(segment_page:
 
     segment_page.mouse.up()
 
+
+def test_clicking_off_stamp_drops_selection(segment_page: Page) -> None:
+    # Select stamp 1 by left-click-drag box
+    segment_page.mouse.move(500, 40)
+    segment_page.mouse.down()
+    segment_page.mouse.move(630, 160)
+    segment_page.mouse.up()
+
+    assert segment_page.evaluate("() => window.renderer.getSelectedStamps().length") == 1
+    assert segment_page.evaluate("""() => {
+        const el = document.querySelector('.canvas-stamp-annotation');
+        return el && el.classList.contains('movable') && document.activeElement === el;
+    }""") is True
+
+    # Click off the stamp onto empty canvas
+    segment_page.mouse.click(200, 200)
+
+    # Stamp selection must be dropped (both movable class, selected state, and focus)
+    selected_count: int = segment_page.evaluate("() => window.renderer.getSelectedStamps().length")
+    is_stamp_movable: bool = segment_page.evaluate("""() => {
+        const el = document.querySelector('.canvas-stamp-annotation');
+        return el && el.classList.contains('movable');
+    }""")
+    has_focus: bool = segment_page.evaluate("""() => {
+        const el = document.querySelector('.canvas-stamp-annotation');
+        return document.activeElement === el;
+    }""")
+
+    assert selected_count == 0
+    assert is_stamp_movable is False
+    assert has_focus is False
+
+    # Pressing Delete after dropping selection must NOT delete the stamp
+    segment_page.keyboard.press("Delete")
+    remaining_stamps: int = segment_page.evaluate("() => window.getDoodleActions().filter(a => a.type === 'stamp').length")
+    assert remaining_stamps == 1
+

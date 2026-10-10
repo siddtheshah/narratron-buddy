@@ -1058,13 +1058,17 @@
     filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.45));
 }
 
-.canvas-stamp-annotation:focus,
 .canvas-stamp-annotation.movable {
     outline: 2px dashed #818cf8;
     border-radius: 8px;
     background: rgba(99, 102, 241, 0.12);
     box-shadow: 0 0 14px rgba(99, 102, 241, 0.4);
     cursor: grab;
+}
+
+.canvas-stamp-annotation:focus-visible:not(.movable) {
+    outline: 2px solid rgba(129, 140, 248, 0.6);
+    border-radius: 8px;
 }
 
 .canvas-stamp-annotation.dragging {
@@ -1089,8 +1093,7 @@
     box-sizing: border-box;
 }
 
-.canvas-stamp-annotation.movable .stamp-resize-handle,
-.canvas-stamp-annotation:focus .stamp-resize-handle {
+.canvas-stamp-annotation.movable .stamp-resize-handle {
     display: block;
 }
 

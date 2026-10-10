@@ -5548,6 +5548,10 @@
                     button.setAttribute('aria-pressed', 'false');
                 });
             }
+            if (textAnnotationMode) {
+                doodleRenderer?.clearSelectedSegments?.();
+                doodleRenderer?.selectStamp?.(null);
+            }
             textAnnotationToggle?.classList.toggle('active', textAnnotationMode);
             textAnnotationToggle?.setAttribute('aria-pressed', String(textAnnotationMode));
             setTextAnnotationMenuOpen(Boolean(openMenu && textAnnotationMode));
@@ -5578,8 +5582,9 @@
                 textAnnotationToggle?.setAttribute('aria-pressed', 'false');
                 setTextAnnotationMenuOpen(false);
             }
-            if (color !== null && typeof doodleRenderer?.clearSelectedSegments === 'function') {
-                doodleRenderer.clearSelectedSegments();
+            if (color !== null) {
+                doodleRenderer?.clearSelectedSegments?.();
+                doodleRenderer?.selectStamp?.(null);
             }
             currentColor = color || null;
             colorBtns.forEach(button => {
