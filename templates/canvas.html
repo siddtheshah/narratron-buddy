@@ -1172,6 +1172,57 @@
             padding: 8px 0;
         }
 
+        .sticky-notes-hidden-section {
+            margin-top: 6px;
+            padding-top: 6px;
+            border-top: 1px dashed rgba(250, 204, 21, 0.25);
+            display: flex;
+            flex-direction: column;
+            width: 100%;
+        }
+
+        .sticky-notes-hidden-toggle-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            background: rgba(234, 179, 8, 0.12);
+            border: 1px solid rgba(234, 179, 8, 0.35);
+            border-radius: 6px;
+            color: #fde047;
+            font-size: 0.75rem;
+            font-weight: 600;
+            padding: 5px 8px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            width: 100%;
+        }
+
+        .sticky-notes-hidden-toggle-btn:hover {
+            background: rgba(234, 179, 8, 0.22);
+            border-color: rgba(234, 179, 8, 0.6);
+            color: #fff;
+        }
+
+        .sticky-notes-hidden-toggle-btn.revealed {
+            background: rgba(239, 68, 68, 0.12);
+            border-color: rgba(239, 68, 68, 0.35);
+            color: #fca5a5;
+        }
+
+        .sticky-notes-hidden-toggle-btn.revealed:hover {
+            background: rgba(239, 68, 68, 0.22);
+            border-color: rgba(239, 68, 68, 0.6);
+            color: #fff;
+        }
+
+        .sticky-notes-hidden-container {
+            margin-top: 8px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
         .sticky-note-card.is-hidden-sticky {
             border: 1px dashed rgba(250, 204, 21, 0.4);
             border-left: 3px solid #eab308;
@@ -3447,6 +3498,8 @@
                 }
             }
 
+            btn.addEventListener('pointerdown', (e) => e.stopPropagation());
+            btn.addEventListener('mousedown', (e) => e.stopPropagation());
             btn.addEventListener('mouseenter', () => {
                 btn.classList.add('expanded');
                 triggerSuggestionsFetch();
@@ -3467,8 +3520,62 @@
 
             let cachedNotes = null;
             let cachedHidden = [];
+            let hiddenRevealed = false;
             let isFetching = false;
             let isPinned = false;
+            const STICKIES_REVEAL_CACHE_TIMEOUT_MS = 60 * 60 * 1000; // 1 hour
+
+            function getStickiesRevealedCacheKey(tid) {
+                return `narratron_stickies_revealed:${tid || 'default'}`;
+            }
+
+            function isStickiesRevealedInCache(tid) {
+                try {
+                    const key = getStickiesRevealedCacheKey(tid);
+                    const raw = localStorage.getItem(key);
+                    if (!raw) return false;
+                    const parsed = JSON.parse(raw);
+                    if (parsed && typeof parsed === 'object') {
+                        if (typeof parsed.expiresAt === 'number' && Date.now() > parsed.expiresAt) {
+                            localStorage.removeItem(key);
+                            return false;
+                        }
+                        return Boolean(parsed.revealed);
+                    }
+                    if (typeof parsed === 'number') {
+                        if (Date.now() > parsed) {
+                            localStorage.removeItem(key);
+                            return false;
+                        }
+                        return true;
+                    }
+                } catch (_) { }
+                return false;
+            }
+
+            function setStickiesRevealedInCache(tid, revealed) {
+                try {
+                    const key = getStickiesRevealedCacheKey(tid);
+                    if (!revealed) {
+                        localStorage.removeItem(key);
+                        return;
+                    }
+                    const payload = {
+                        revealed: true,
+                        revealedAt: Date.now(),
+                        expiresAt: Date.now() + STICKIES_REVEAL_CACHE_TIMEOUT_MS
+                    };
+                    localStorage.setItem(key, JSON.stringify(payload));
+                } catch (_) { }
+            }
+
+            function isHiddenRevealed() {
+                const tid = resolveTheaterId();
+                if (isStickiesRevealedInCache(tid)) {
+                    return true;
+                }
+                return Boolean(hiddenRevealed);
+            }
 
             function escapeHtml(str) {
                 return String(str)
@@ -3534,9 +3641,25 @@
                     }).filter(Boolean)
                 );
 
+                const visibleItems = [];
+                const hiddenItems = [];
+
+                for (const item of notes) {
+                    if (isHiddenItem(item, hiddenSet)) {
+                        hiddenItems.push(item);
+                    } else {
+                        visibleItems.push(item);
+                    }
+                }
+
+                const isRevealed = isHiddenRevealed();
+
                 if (badge) {
                     if (notes.length > 0) {
-                        badge.textContent = String(notes.length);
+                        const countText = isRevealed
+                            ? String(notes.length)
+                            : (visibleItems.length > 0 ? String(visibleItems.length) : (hiddenItems.length > 0 ? `${hiddenItems.length} 🔒` : '0'));
+                        badge.textContent = countText;
                         badge.style.display = 'inline-block';
                     } else {
                         badge.style.display = 'none';
@@ -3548,22 +3671,80 @@
                     return;
                 }
 
-                list.innerHTML = notes.map(item => {
-                    const isHidden = isHiddenItem(item, hiddenSet);
-                    const cardClass = isHidden ? 'sticky-note-card is-hidden-sticky' : 'sticky-note-card';
-                    const hiddenBadgeHtml = isHidden ? '<span class="sticky-note-hidden-badge">Hidden</span>' : '';
-                    return `
-                        <div class="${cardClass}">
+                let html = '';
+
+                if (visibleItems.length === 0 && hiddenItems.length > 0) {
+                    html += '<div style="font-size: 0.78rem; color: #94a3b8; font-style: italic;">No standard sticky notes active.</div>';
+                } else {
+                    html += visibleItems.map(item => `
+                        <div class="sticky-note-card">
                             <div class="sticky-note-card-header">
-                                <span class="sticky-note-card-topic">
-                                    ${escapeHtml(item.topic || item.name || '')}
-                                    ${hiddenBadgeHtml}
-                                </span>
+                                <span class="sticky-note-card-topic">${escapeHtml(item.topic || item.name || '')}</span>
                             </div>
                             <div class="sticky-note-card-info">${escapeHtml(item.info || item.content || '')}</div>
                         </div>
+                    `).join('');
+                }
+
+                if (hiddenItems.length > 0) {
+                    const count = hiddenItems.length;
+                    const label = isRevealed
+                        ? `🙈 Hide ${count} hidden sticky${count > 1 ? ' notes' : ' note'}`
+                        : `👁️ Show ${count} hidden sticky${count > 1 ? ' notes' : ' note'}`;
+                    const btnClass = isRevealed
+                        ? 'sticky-notes-hidden-toggle-btn revealed'
+                        : 'sticky-notes-hidden-toggle-btn';
+                    const containerDisplay = isRevealed ? 'flex' : 'none';
+
+                    html += `
+                        <div class="sticky-notes-hidden-section">
+                            <button type="button" id="sticky-notes-hidden-toggle-btn" class="${btnClass}" title="Toggle reveal of hidden stickies">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    ${isRevealed
+                            ? '<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/>'
+                            : '<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/>'
+                        }
+                                </svg>
+                                <span class="sticky-notes-hidden-toggle-text">${label}</span>
+                            </button>
+                            <div id="sticky-notes-hidden-container" class="sticky-notes-hidden-container" style="display: ${containerDisplay};">
+                                ${hiddenItems.map(item => `
+                                    <div class="sticky-note-card is-hidden-sticky">
+                                        <div class="sticky-note-card-header">
+                                            <span class="sticky-note-card-topic">
+                                                ${escapeHtml(item.topic || item.name || '')}
+                                                <span class="sticky-note-hidden-badge">Hidden</span>
+                                            </span>
+                                        </div>
+                                        <div class="sticky-note-card-info">${escapeHtml(item.info || item.content || '')}</div>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
                     `;
-                }).join('');
+                }
+
+                list.innerHTML = html;
+
+                const toggleBtn = document.getElementById('sticky-notes-hidden-toggle-btn');
+                if (toggleBtn) {
+                    toggleBtn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        isPinned = true;
+                        btn.classList.add('expanded');
+                        const nextRevealed = !isHiddenRevealed();
+                        hiddenRevealed = nextRevealed;
+                        setStickiesRevealedInCache(resolveTheaterId(), nextRevealed);
+                        renderStickyNotes(cachedNotes, cachedHidden);
+                        if (nextRevealed) {
+                            const hiddenContainer = document.getElementById('sticky-notes-hidden-container');
+                            if (hiddenContainer) {
+                                hiddenContainer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                            }
+                        }
+                    });
+                }
             }
 
             function resolveTheaterId() {
@@ -3671,6 +3852,13 @@
                 }
             };
 
+            window.isStickiesRevealedInCache = isStickiesRevealedInCache;
+            window.setStickiesRevealedInCache = setStickiesRevealedInCache;
+            window.STICKIES_REVEAL_CACHE_TIMEOUT_MS = STICKIES_REVEAL_CACHE_TIMEOUT_MS;
+
+            btn.addEventListener('pointerdown', (e) => e.stopPropagation());
+            btn.addEventListener('mousedown', (e) => e.stopPropagation());
+
             let leaveTimeout = null;
             btn.addEventListener('mouseenter', () => {
                 if (leaveTimeout) {
@@ -3694,7 +3882,7 @@
             });
 
             btn.addEventListener('click', (e) => {
-                if (e.target.closest('.sticky-note-card')) {
+                if (e.target.closest('#sticky-notes-hidden-toggle-btn') || e.target.closest('.sticky-note-card')) {
                     return;
                 }
                 isPinned = !isPinned;
@@ -3876,6 +4064,8 @@
             window.history.replaceState({}, '', cleanQuery + window.location.hash);
         }
         const theaterId = urlParams.get('theater_id');
+        window.theaterId = theaterId;
+        window.currenttheaterId = theaterId;
 
         function isCurrentOrator() {
             return Boolean(window._isActiveOratorState);

@@ -1100,7 +1100,14 @@ export function createDoodleRenderer({ canvas, isVisible = () => true, textLayer
             event.target.closest(".stamp-rotate-handle") ||
             event.target.closest("#orator-command-overlay") ||
             event.target.closest("#history-paging-controls") ||
-            event.target.closest(".a2ui-surface")
+            event.target.closest(".a2ui-surface") ||
+            event.target.closest("#sticky-notes-toggle-btn") ||
+            event.target.closest("#suggestions-toggle-btn") ||
+            event.target.closest("#prompt-toggle-btn") ||
+            event.target.closest("#canvas-pin-btn") ||
+            event.target.closest("#agent-activity-tray") ||
+            event.target.closest("#narration-pane-mount") ||
+            event.target.closest("button, a, input, select, textarea, [role='button']")
         )) {
             return;
         }
@@ -1132,6 +1139,20 @@ export function createDoodleRenderer({ canvas, isVisible = () => true, textLayer
     });
 
     interactionTarget?.addEventListener("dragstart", event => {
+        if (event.target && event.target.closest && (
+            event.target.closest("#sticky-notes-toggle-btn") ||
+            event.target.closest("#suggestions-toggle-btn") ||
+            event.target.closest("#prompt-toggle-btn") ||
+            event.target.closest("#canvas-pin-btn") ||
+            event.target.closest(".canvas-stamp-annotation") ||
+            event.target.closest(".canvas-text-annotation") ||
+            event.target.closest("#orator-command-overlay") ||
+            event.target.closest("#history-paging-controls") ||
+            event.target.closest(".a2ui-surface") ||
+            event.target.closest("button, a, input, select, textarea, [role='button']")
+        )) {
+            return;
+        }
         if (boxDrag || (typeof canSelectSegment === "function" && canSelectSegment())) {
             event.preventDefault();
         }
