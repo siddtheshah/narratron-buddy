@@ -337,13 +337,44 @@ class TestImageTools(BaseTestCase):
         visual.stop_cycle()
 
     @patch("tools.image.image_tool.get_image_provider")
-    def test_missing_reference_returns_error_without_calling_provider(self, mock_get_provider):
-        tools = self.make_image_tools(self.config, theater_id="missing_reference", theater_manager=self.manager)
+    def test_missing_reference_in_image_prompt_generates_reference_and_continues(self, mock_get_provider):
+        provider = mock_get_provider.return_value
+        provider.generate.return_value = self._provider_result()
+        tools = self.make_image_tools(self.config, theater_id="missing_ref_gen", theater_manager=self.manager)
 
-        result = tools.create_image("a castle with <not-here>", image_name="castle")
+        result = tools.create_image("a castle with <Sir Galahad>", image_name="castle", display=False)
+        tools.join_generation()
+
+        self.assertIn("Image generation started", result)
+        self.assertEqual(provider.generate.call_count, 2)
+        char_path = tools.reference_manager.get_character_visual_path("Sir Galahad")
+        self.assertIsNotNone(char_path)
+        self.assertTrue(Path(char_path).is_file())
+
+    @patch("tools.image.image_tool.get_image_provider")
+    def test_missing_scene_reference_in_image_prompt_generates_scene_reference(self, mock_get_provider):
+        provider = mock_get_provider.return_value
+        provider.generate.return_value = self._provider_result()
+        tools = self.make_image_tools(self.config, theater_id="missing_scene_gen", theater_manager=self.manager)
+
+        result = tools.create_image("The hero arrives at <Misty Mountains>", image_name="mountain_arrival", display=False)
+        tools.join_generation()
+
+        self.assertIn("Image generation started", result)
+        self.assertEqual(provider.generate.call_count, 2)
+        scene_path = tools.reference_manager.get_scene_visual_path("Misty Mountains")
+        self.assertIsNotNone(scene_path)
+        self.assertTrue(Path(scene_path).is_file())
+
+    @patch("tools.image.image_tool.get_image_provider")
+    def test_missing_reference_returns_error_when_provider_fails(self, mock_get_provider):
+        provider = mock_get_provider.return_value
+        provider.generate.side_effect = ImageProviderError("Provider failure")
+        tools = self.make_image_tools(self.config, theater_id="missing_ref_fail", theater_manager=self.manager)
+
+        result = tools.create_image("a castle with <not-here>", image_name="castle", display=False)
 
         self.assertIn("Error: Character visual '<not-here>' not found", result)
-        mock_get_provider.assert_not_called()
 
     def _make_tools_with_style(self, style: str) -> ImageTools:
         config = {

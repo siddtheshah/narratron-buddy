@@ -1,16 +1,27 @@
 """Unit tests for shared character generation and state management."""
 
 from types import SimpleNamespace
+import json
 from io import BytesIO
 from pathlib import Path
 import tempfile
+import threading
+import time
 import unittest
 from unittest.mock import MagicMock, patch
 
 from PIL import Image
 import yaml
 
-from providers import ImageGenerationResult, ImageProvider, ImageProviderError, SpeechProvider, TextResponseProvider
+from providers import (
+    ImageGenerationRequest,
+    ImageGenerationResult,
+    ImageProvider,
+    ImageProviderError,
+    SpeechProvider,
+    TextResponseProvider,
+    TextResponseResult,
+)
 from components.canvas.story_state import StoryState
 from services.quirk_service import QuirkGeneratorService
 from components.reference_manager import Character, ReferenceManager, PlayerCharacter, normalize_voice_tags
@@ -1340,7 +1351,111 @@ class TestReferenceManager(unittest.TestCase):
             self.assertTrue(manager.is_character_reference("hero_character.png"))
             self.assertTrue(manager.is_character_reference("npc_portrait.jpg"))
 
+    def test_generate_references_from_context_uses_single_text_provider_call(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            theater = Theater(TheaterManager(directory), "stage")
+            payload = BytesIO()
+            Image.new("RGB", (8, 8), "green").save(payload, "PNG")
+            image_provider = MagicMock(spec=ImageProvider)
+            image_provider.generate.return_value = ImageGenerationResult(
+                image_bytes=payload.getvalue(), mime_type="image/png", provider="fake", model="gen",
+            )
+            text_provider = MagicMock(spec=TextResponseProvider)
+            classification_json = json.dumps({
+                "classifications": [
+                    {"name": "Sir Galahad", "type": "character", "description": "A noble knight with silver armor."},
+                    {"name": "Castle Courtyard", "type": "scene", "description": "Cobblestone courtyard with banners."},
+                ]
+            })
+            text_provider.generate.return_value = TextResponseResult(
+                text=classification_json, provider="fake", model="test"
+            )
+
+            manager = ReferenceManager(theater, text_provider, image_provider=image_provider)
+            prompt = "In <Castle Courtyard>, <Sir Galahad> raises his banner."
+            generated = manager.generate_references_from_context(prompt)
+
+            self.assertEqual(text_provider.generate.call_count, 1)
+            self.assertIn("Sir Galahad", generated)
+            self.assertIn("Castle Courtyard", generated)
+            self.assertTrue(Path(generated["Sir Galahad"]).is_file())
+            self.assertTrue(Path(generated["Castle Courtyard"]).is_file())
+            self.assertIsNotNone(manager.get_character_visual_path("Sir Galahad"))
+            self.assertIsNotNone(manager.get_scene_visual_path("Castle Courtyard"))
+
+    def test_generate_references_from_context_heuristic_fallback(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            theater = Theater(TheaterManager(directory), "stage")
+            payload = BytesIO()
+            Image.new("RGB", (8, 8), "blue").save(payload, "PNG")
+            image_provider = MagicMock(spec=ImageProvider)
+            image_provider.generate.return_value = ImageGenerationResult(
+                image_bytes=payload.getvalue(), mime_type="image/png", provider="fake", model="gen",
+            )
+            manager = ReferenceManager(theater, None, image_provider=image_provider)
+            prompt = "<Morgana> looks across <Dark Forest>."
+            generated = manager.generate_references_from_context(prompt)
+
+            self.assertIn("Morgana", generated)
+            self.assertIn("Dark Forest", generated)
+            self.assertIsNotNone(manager.get_character_visual_path("Morgana"))
+            self.assertIsNotNone(manager.get_scene_visual_path("Dark Forest"))
+
+    def test_generate_references_from_context_parallelized(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            theater = Theater(TheaterManager(directory), "stage")
+            payload = BytesIO()
+            Image.new("RGB", (8, 8), "purple").save(payload, "PNG")
+            image_provider = MagicMock(spec=ImageProvider)
+            active_threads: set[int] = set()
+            lock = threading.Lock()
+
+            def fake_generate(req: ImageGenerationRequest) -> ImageGenerationResult:
+                with lock:
+                    active_threads.add(threading.get_ident())
+                time.sleep(0.02)
+                return ImageGenerationResult(
+                    image_bytes=payload.getvalue(), mime_type="image/png", provider="fake", model="gen",
+                )
+
+            image_provider.generate.side_effect = fake_generate
+            manager = ReferenceManager(theater, None, image_provider=image_provider)
+            prompt = "<Galahad> and <Lancelot> travel through <Whispering Woods>."
+            generated = manager.generate_references_from_context(prompt)
+
+            self.assertEqual(len(generated), 3)
+            self.assertGreater(len(active_threads), 1)
+
+    def test_generate_references_from_context_skips_existing_references(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            theater = Theater(TheaterManager(directory), "stage")
+            char_dir = theater.characters_dir() / "Arthur"
+            char_dir.mkdir(parents=True)
+            Image.new("RGB", (8, 8), "red").save(char_dir / "1.png")
+            scene_dir = theater.scenes_dir() / "Camelot"
+            scene_dir.mkdir(parents=True)
+            Image.new("RGB", (8, 8), "gold").save(scene_dir / "1.png")
+
+            image_provider = MagicMock(spec=ImageProvider)
+            text_provider = MagicMock(spec=TextResponseProvider)
+            manager = ReferenceManager(theater, text_provider, image_provider=image_provider)
+            text_provider.generate.reset_mock()
+            image_provider.generate.reset_mock()
+
+            generated = manager.generate_references_from_context("<Arthur> arrives in <Camelot>.")
+            self.assertEqual(generated, {})
+            text_provider.generate.assert_not_called()
+            image_provider.generate.assert_not_called()
+
+    def test_generate_references_from_context_invalid_input_raises_value_error(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            theater = Theater(TheaterManager(directory), "stage")
+            manager = ReferenceManager(theater, None)
+            with self.assertRaises(ValueError):
+                manager.generate_references_from_context(123)  # type: ignore[arg-type]
+
 
 if __name__ == "__main__":
     unittest.main()
+
 

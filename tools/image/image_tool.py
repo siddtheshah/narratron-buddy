@@ -297,6 +297,15 @@ class ImageTools(BaseTools):
                 return res
         
         if self.reference_manager is not None:
+            if self.reference_manager.image_provider is None:
+                self.reference_manager.image_provider = self._get_image_provider()
+            generated_refs = self.reference_manager.generate_references_from_context(
+                context=image_prompt,
+                visual=self.visual,
+            )
+            if self.visual is not None and generated_refs:
+                for ref_name, ref_path in generated_refs.items():
+                    self.visual.register_image(ref_path, ref_name)
             provider_references, ref_error = self.reference_manager.resolve_provider_references(
                 prompt=image_prompt,
                 visual=self.visual,

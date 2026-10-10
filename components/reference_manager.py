@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import re
 import shutil
+from concurrent.futures import ThreadPoolExecutor
 from threading import Lock
 from io import BytesIO
 from pathlib import Path
@@ -430,6 +432,44 @@ Always include `gender=<gender>` in voice_tags. You may include additional appli
 Return ONLY a JSON object with keys 'personality' (string), 'motivation' (string), 'gender' (string: 'male', 'female', or 'nonbinary'), and 'voice_tags' (list of strings)."""
 )
 
+_REF_CLASSIFICATION_PROMPT_TEMPLATE = Template(
+    """Context:
+{{ context }}
+
+New reference tags found in the context:
+{% for tag in tags -%}
+- <{{ tag }}>
+{% endfor %}
+
+For each reference tag, classify whether it refers to:
+- "character": a person, creature, animal, humanoid, entity, or individual
+- "scene": a location, setting, environment, room, landscape, building, or place
+
+Also provide a brief visual description (1-2 sentences) derived from the context for each reference to guide image generation.
+
+Return ONLY a JSON object in this format:
+{
+  "classifications": [
+    {
+      "name": "tag name",
+      "type": "character",
+      "description": "visual description"
+    }
+  ]
+}"""
+)
+
+
+class RefClassificationItem(BaseModel):
+    name: str
+    type: str = "character"
+    description: str = ""
+
+
+class RefClassificationResult(BaseModel):
+    classifications: list[RefClassificationItem] = Field(default_factory=list)
+
+
 
 def normalize_voice_tags(
     tags: Any,
@@ -735,7 +775,9 @@ class ReferenceManager:
                 if directory.is_dir() and self._slug_key(directory.name) == key:
                     return directory
         directory = root / get_character_folder_name(name)
-        if not directory.resolve().is_relative_to(root.resolve()) or directory.resolve() == root.resolve():
+        abs_dir = Path(os.path.abspath(directory))
+        abs_root = Path(os.path.abspath(root))
+        if not abs_dir.is_relative_to(abs_root) or abs_dir == abs_root:
             raise ValueError("Scene name must identify a folder inside the scene library.")
         return directory
 
@@ -2220,6 +2262,156 @@ class ReferenceManager:
             return stem
         return Path(ref_clean).stem or ref_clean
 
+    def _heuristic_classify_reference_tag(
+        self,
+        tag: str,
+        context: str,
+    ) -> tuple[Literal["character", "scene"], str]:
+        """Classify a reference tag as character or scene using naming and context heuristics."""
+        escaped_tag = re.escape(tag)
+        pattern = re.compile(rf"([^.!?\n]*<[\s_]*{escaped_tag}[\s_]*>[^.!?\n]*)", re.IGNORECASE)
+        match = pattern.search(context)
+        if match is not None:
+            raw_desc = match.group(1).strip()
+            clean_desc = re.sub(r"<([^<>]+)>", r"\1", raw_desc).strip()
+        else:
+            clean_desc = tag
+
+        scene_keywords = {
+            "room", "hall", "street", "road", "forest", "mountain", "cave", "cavern",
+            "dungeon", "castle", "city", "tavern", "camp", "office", "corridor", "bridge",
+            "tower", "garden", "landscape", "interior", "exterior", "alley", "chamber",
+            "ruins", "ruin", "shrine", "temple", "beach", "ocean", "sea", "desert",
+            "scene", "palace", "village", "town", "valley", "lake", "river", "shore",
+            "deck", "space", "station", "planet", "plaza", "library", "docks", "swamp",
+            "woods", "sky", "path", "sanctuary", "inn", "courtyard", "gate", "wall",
+            "tunnel", "mine", "field", "meadow", "island", "harbor", "port", "cliff",
+            "wasteland", "fortress", "glade", "sanctum", "citadel", "lair", "vault",
+            "overview", "view", "vista", "clearing", "grove", "realm",
+        }
+        tag_words = {word.lower() for word in re.findall(r"\b\w+\b", tag)}
+        is_scene = bool(tag_words.intersection(scene_keywords))
+
+        if not is_scene:
+            prep_pattern = rf"\b(?:in|at|into|inside|outside|through|around|towards|near|entering|enters|arrived at|stands in|backdrop of|background of|setting of|view of|landscape of)\s+<[\s_]*{escaped_tag}[\s_]*>"
+            if re.search(prep_pattern, context, re.IGNORECASE) is not None:
+                is_scene = True
+
+        tag_type: Literal["character", "scene"] = "scene" if is_scene else "character"
+        return tag_type, clean_desc
+
+    def generate_references_from_context(
+        self,
+        context: str,
+        visual: Optional[ImagePathResolver] = None,
+    ) -> dict[str, str]:
+        """Extract missing reference tags from context, classify as characters or scenes, and generate them immediately."""
+        if type(context) is not str:
+            raise ValueError("context must be a string.")
+        if not context.strip():
+            return {}
+
+        raw_tags = re.findall(r"<([^<>]+)>", context)
+        tags = list(dict.fromkeys(name.strip() for name in raw_tags if name.strip()))
+        if not tags:
+            return {}
+
+        new_tags: list[str] = []
+        for tag in tags:
+            tag_cf = tag.casefold()
+            if tag_cf.startswith("canvas_capture") or tag_cf in ("capture", "canvascapture"):
+                continue
+            if self.get_character_visual_path(tag) is not None:
+                continue
+            if self.get_scene_visual_path(tag) is not None:
+                continue
+            if self.get_canvas_capture_path(tag) is not None:
+                continue
+            if visual is not None and visual.resolve_image_path(tag) is not None:
+                continue
+            new_tags.append(tag)
+
+        if not new_tags:
+            return {}
+
+        llm_classifications: dict[str, tuple[Literal["character", "scene"], str]] = {}
+        if self.text_response_provider is not None:
+            try:
+                request = TextResponseRequest(
+                    prompt=_REF_CLASSIFICATION_PROMPT_TEMPLATE.render(
+                        context=context,
+                        tags=new_tags,
+                    ),
+                    system_instruction=(
+                        "You classify story and scene elements from interactive adventures. "
+                        "Categorize reference tags as either 'character' or 'scene', and provide a brief description."
+                    ),
+                    temperature=0.2,
+                )
+                response = self.text_response_provider.generate(request)
+                raw_text = response.text.strip()
+                if raw_text.startswith("```"):
+                    raw_text = re.sub(r"^```(?:json)?\s*", "", raw_text)
+                    raw_text = re.sub(r"\s*```$", "", raw_text)
+                parsed_items: list[RefClassificationItem] = []
+                if raw_text.startswith("["):
+                    parsed_items = [RefClassificationItem.model_validate(item) for item in json.loads(raw_text)]
+                else:
+                    parsed_res = RefClassificationResult.model_validate_json(raw_text)
+                    parsed_items = parsed_res.classifications
+                for item in parsed_items:
+                    item_type_str = item.type.lower().strip()
+                    item_type: Literal["character", "scene"] = (
+                        "scene"
+                        if any(w in item_type_str for w in ("scene", "location", "place", "setting", "environment"))
+                        else "character"
+                    )
+                    llm_classifications[item.name.strip().casefold()] = (item_type, item.description.strip())
+            except Exception as exc:
+                logger.warning("[ReferenceManager] Reference classification via text provider failed: %s", exc)
+
+        classifications: dict[str, tuple[Literal["character", "scene"], str]] = {}
+        for tag in new_tags:
+            tag_cf = tag.casefold()
+            if tag_cf in llm_classifications:
+                classifications[tag] = llm_classifications[tag_cf]
+            else:
+                classifications[tag] = self._heuristic_classify_reference_tag(tag, context)
+
+        def _generate_single_reference(tag: str) -> tuple[str, Optional[str]]:
+            tag_type, desc = classifications[tag]
+            if tag_type == "character":
+                char = self.create_or_update_character(
+                    name=tag,
+                    description=desc,
+                    personality=desc or f"Adventure character {tag}.",
+                    motivation="Participate in the adventure scene.",
+                    gender="nonbinary",
+                    voice_tags=["nonbinary"],
+                )
+                if char is not None:
+                    return tag, self.get_character_visual_path(char.name)
+                return tag, None
+            else:
+                entry = self.create_or_update_scene(name=tag, description=desc)
+                path: Optional[str] = None
+                if entry is not None:
+                    path = entry.get("path")
+                    if path is None:
+                        path = self.get_scene_visual_path(tag)
+                return tag, path
+
+        generated_references: dict[str, str] = {}
+        max_workers = min(len(new_tags), 8)
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = [executor.submit(_generate_single_reference, tag) for tag in new_tags]
+            for future in futures:
+                tag, path = future.result()
+                if path is not None:
+                    generated_references[tag] = path
+
+        return generated_references
+
     def resolve_provider_references(
         self,
         reference_images: Union[list[str], str, None] = None,
@@ -2237,6 +2429,8 @@ class ReferenceManager:
         if tagged_names:
             for name in tagged_names:
                 path = self.get_character_visual_path(name)
+                if path is None:
+                    path = self.get_scene_visual_path(name)
                 if path is None:
                     path = self.get_canvas_capture_path(name)
                 if path is None and visual is not None:
@@ -2372,4 +2566,6 @@ __all__ = [
     "SUPPORTED_VOICE_TAGS",
     "normalize_voice_tags",
     "ImagePathResolver",
+    "RefClassificationItem",
+    "RefClassificationResult",
 ]
