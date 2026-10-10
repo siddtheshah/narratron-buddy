@@ -6964,6 +6964,26 @@
             document.getElementById(`stamp-tab-${kind}`)?.addEventListener('click', () => switchStampManagerTab(kind));
         }
 
+        function revertAllOtherPushItems(currentElement) {
+            document.querySelectorAll('.asset-push-button, .playlist-push-button').forEach(btn => {
+                if (btn !== currentElement) {
+                    const action = btn.querySelector('small');
+                    if (action && (action.textContent === 'Pushed!' || action.textContent === 'Pushing…')) {
+                        action.textContent = 'Push';
+                    }
+                }
+            });
+            document.querySelectorAll('.scene-card').forEach(card => {
+                if (card !== currentElement) {
+                    card.classList.remove('pushing');
+                    const badge = card.querySelector('.scene-card-push-badge');
+                    if (badge && (badge.textContent === 'Pushed!' || badge.textContent === 'Pushing...')) {
+                        badge.textContent = 'Push';
+                    }
+                }
+            });
+        }
+
         function updateAssetPlaybackSelection(music) {
             assetMusicState = music;
             extraAssetPanels.playlists.querySelectorAll('.asset-push-button, .playlist-push-button').forEach(updateAssetPlaybackButton);
@@ -6987,6 +7007,19 @@
             const indicator = button.querySelector('.asset-playing-indicator');
             indicator.hidden = !selected;
             indicator.textContent = silent ? '✓ Selected' : assetMusicState.paused ? 'Ⅱ Paused' : '▶ Playing';
+            if (button.classList.contains('playlist-push-button')) {
+                const label = button.querySelector('.asset-label') || button.querySelector('span:not(.asset-playing-indicator)');
+                if (label) {
+                    label.hidden = selected;
+                    label.textContent = selected ? '' : 'Push';
+                }
+            }
+            if (!selected) {
+                const action = button.querySelector('small');
+                if (action && (action.textContent === 'Pushed!' || action.textContent === 'Pushing…')) {
+                    action.textContent = 'Push';
+                }
+            }
         }
 
         async function loadExtraAssets(kind) {
@@ -7122,7 +7155,7 @@
             button.dataset.playlistName = asset.tracks ? asset.name : '';
             if (asset.tracks) button.dataset.playlist = asset.name;
             button.dataset.trackUrl = asset.tracks ? asset.tracks[0]?.url || '' : asset.url || asset.id;
-            button.title = asset.description || `Push ${asset.name} to canvas`;
+            button.title = asset.description || `Push ${asset.name}`;
             if (kind === 'animations' && asset.url) {
                 const img = document.createElement('img');
                 img.src = asset.url;
@@ -7131,9 +7164,10 @@
                 button.appendChild(img);
             }
             const label = document.createElement('span');
+            label.className = 'asset-label';
             label.textContent = asset.tracks ? 'Push' : (asset.description || asset.name);
             const action = document.createElement('small');
-            action.textContent = 'Push to Canvas';
+            action.textContent = 'Push';
             action.hidden = Boolean(asset.tracks);
             const indicator = document.createElement('span');
             indicator.className = 'asset-playing-indicator';
@@ -7142,6 +7176,7 @@
             updateAssetPlaybackButton(button);
             button.addEventListener('click', async () => {
                 if (!isCurrentOrator()) return;
+                revertAllOtherPushItems(button);
                 button.disabled = true;
                 action.textContent = 'Pushing…';
                 try {
@@ -7152,8 +7187,40 @@
                     const data = await res.json();
                     if (!res.ok) throw new Error(data.detail || 'Unable to push asset.');
                     showShareToast(data.message);
+                    if (asset.tracks) {
+                        updateAssetPlaybackSelection({
+                            music_id: asset.name,
+                            playlist: asset.name,
+                            tracks: asset.tracks.map(t => t.url || t.id),
+                            paused: false
+                        });
+                    } else if (asset.id === 'no_music') {
+                        updateAssetPlaybackSelection({
+                            music_id: '',
+                            playlist: '',
+                            tracks: [],
+                            paused: false
+                        });
+                    } else if (kind === 'playlists') {
+                        const parentGroup = button.closest('.playlist-group');
+                        const plName = parentGroup ? parentGroup.dataset.playlistName : '';
+                        const trackUrl = button.dataset.trackUrl || asset.url || asset.id;
+                        currentTrackSrc = trackUrl;
+                        updateAssetPlaybackSelection({
+                            music_id: plName ? `${plName} / ${asset.name}` : asset.name,
+                            playlist: plName,
+                            tracks: [trackUrl],
+                            paused: false
+                        });
+                    }
                     refreshCanvasState(['latest']);
+                    revertAllOtherPushItems(button);
                     action.textContent = 'Pushed!';
+                    setTimeout(() => {
+                        if (action.textContent === 'Pushed!') {
+                            action.textContent = 'Push';
+                        }
+                    }, 2000);
                 } catch (err) {
                     showShareToast(err.message);
                     action.textContent = 'Retry';
@@ -7324,7 +7391,7 @@
                 card.className = 'scene-card';
                 card.setAttribute('role', 'button');
                 card.setAttribute('tabindex', '0');
-                card.setAttribute('title', `Click to push "${scene.name}" to canvas`);
+                card.setAttribute('title', `Click to push "${scene.name}"`);
                 card.dataset.sceneName = scene.name;
                 if (scene.id) card.dataset.sceneId = scene.id;
 
@@ -7361,7 +7428,7 @@
                 overlay.className = 'scene-card-overlay';
                 const badge = document.createElement('span');
                 badge.className = 'scene-card-push-badge';
-                badge.textContent = 'Push to Canvas';
+                badge.textContent = 'Push';
                 overlay.appendChild(badge);
                 thumbContainer.appendChild(overlay);
 
@@ -7397,11 +7464,12 @@
             const isOrator = typeof isCurrentOrator === 'function' && isCurrentOrator();
             if (!isOrator) {
                 if (typeof showShareToast === 'function') {
-                    showShareToast('Only the active orator can push scenes to canvas.');
+                    showShareToast('Only the active orator can push scenes.');
                 }
                 return;
             }
 
+            revertAllOtherPushItems(cardEl);
             isPushingScene = true;
             if (cardEl) {
                 cardEl.classList.add('pushing');
@@ -7417,17 +7485,18 @@
                 });
                 const data = await res.json();
                 if (!res.ok) {
-                    throw new Error(typeof data.detail === 'string' ? data.detail : 'Failed to push scene to canvas.');
+                    throw new Error(typeof data.detail === 'string' ? data.detail : 'Failed to push scene.');
                 }
+                revertAllOtherPushItems(cardEl);
                 if (cardEl) {
                     const badge = cardEl.querySelector('.scene-card-push-badge');
                     if (badge) badge.textContent = 'Pushed!';
                     setTimeout(() => {
-                        if (badge) badge.textContent = 'Push to Canvas';
+                        if (badge && badge.textContent === 'Pushed!') badge.textContent = 'Push';
                     }, 2000);
                 }
                 if (typeof showShareToast === 'function') {
-                    showShareToast(`Pushed "${scene.name}" to canvas.`);
+                    showShareToast(`Pushed "${scene.name}".`);
                 }
                 if (typeof fetchLatestImage === 'function') {
                     fetchLatestImage();
@@ -7437,13 +7506,13 @@
             } catch (err) {
                 console.error('Error pushing scene to canvas:', err);
                 if (typeof showShareToast === 'function') {
-                    showShareToast(err.message || 'Error pushing scene to canvas.');
+                    showShareToast(err.message || 'Error pushing scene.');
                 }
                 if (cardEl) {
                     const badge = cardEl.querySelector('.scene-card-push-badge');
                     if (badge) badge.textContent = 'Failed';
                     setTimeout(() => {
-                        if (badge) badge.textContent = 'Push to Canvas';
+                        if (badge) badge.textContent = 'Push';
                     }, 2000);
                 }
             } finally {

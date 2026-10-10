@@ -190,6 +190,7 @@ def test_playlist_headers_push_entire_playlist_or_selected_track(scenes_chars_pa
     expect(calm_group.locator(".playlist-header-toggle")).to_have_attribute("aria-expanded", "true")
     expect(calm_group.locator(".asset-track-list")).to_be_visible()
     expect(calm_group.locator(".asset-track-list .asset-push-button")).to_have_count(2)
+    expect(calm_group.locator(".asset-track-list .asset-push-button small").first).to_have_text("Push")
 
     # Minimize Calm again: its track list becomes hidden
     calm_group.locator(".playlist-header-toggle").click()
@@ -206,6 +207,10 @@ def test_playlist_headers_push_entire_playlist_or_selected_track(scenes_chars_pa
     battle_button = page.locator('[data-asset-id="playlist:Battle"]')
     battle_button.click()
     expect(battle_button.locator("small")).to_have_text("Pushed!")
+    # Calm playlist was pushed previously; since it's no longer the most recent push, it reverts:
+    expect(playlist_button.locator("small")).to_have_text("Push")
+    expect(playlist_button.locator(".asset-label")).to_be_visible()
+    expect(playlist_button.locator(".asset-label")).to_have_text("Push")
     expect(battle_group.locator(".asset-track-list")).to_be_visible()
     expect(battle_group.locator(".asset-track-list .asset-push-button")).to_have_count(1)
 
@@ -213,6 +218,10 @@ def test_playlist_headers_push_entire_playlist_or_selected_track(scenes_chars_pa
     track_button = page.locator('[data-asset-id="battle-a"]')
     track_button.click()
     expect(track_button.locator("small")).to_have_text("Pushed!")
+    # Battle playlist header was pushed previously; since it's no longer the most recent push, it reverts:
+    expect(battle_button.locator("small")).to_have_text("Push")
+    expect(battle_button.locator(".asset-label")).to_be_visible()
+    expect(battle_button.locator(".asset-label")).to_have_text("Push")
 
     assert pushed_ids == ["playlist:Calm", "playlist:Battle", "battle-a"]
     page.locator("#stamp-tab-scenes").click()
@@ -281,8 +290,14 @@ def test_playing_track_highlight_survives_tabs_and_updates_for_silence(scenes_ch
 
     battle_toggle = page.locator('.playlist-header-toggle[data-playlist-name="Battle"]')
     playlist_playing = page.locator('[data-asset-id="playlist:Battle"]')
+    calm_button = page.locator('[data-asset-id="playlist:Calm"]')
     expect(playlist_playing).to_have_attribute("aria-current", "true")
     expect(page.locator('.playlist-group[data-playlist-name="Battle"] .asset-track-list')).to_be_hidden()
+    # Battle is selected/playing: 'Push' is dropped from its chip
+    expect(playlist_playing.locator(".asset-label")).to_be_hidden()
+    # Calm is not selected: its chip displays 'Push'
+    expect(calm_button.locator(".asset-label")).to_be_visible()
+    expect(calm_button.locator(".asset-label")).to_have_text("Push")
 
     # Expand Battle: track list is visible, playing track is shown
     battle_toggle.click()
@@ -305,13 +320,30 @@ def test_playing_track_highlight_survives_tabs_and_updates_for_silence(scenes_ch
     page.evaluate("updateAssetPlaybackSelection({music_id: 'Battle', tracks: ['/battle.mp3'], paused: true})")
     expect(playing.locator(".asset-playing-indicator")).to_have_text("Ⅱ Paused")
     expect(playlist_playing.locator(".asset-playing-indicator")).to_have_text("Ⅱ Paused")
+    expect(playlist_playing.locator(".asset-label")).to_be_hidden()
+
     page.evaluate("updateAssetPlaybackSelection({music_id: 'Battle / Battle track', tracks: ['/battle.mp3'], paused: false})")
     expect(playlist_playing).not_to_have_attribute("aria-current", "true")
+    expect(playlist_playing.locator(".asset-label")).to_be_visible()
+    expect(playlist_playing.locator(".asset-label")).to_have_text("Push")
     expect(playing).to_have_count(1)
+
     page.evaluate("updateAssetPlaybackSelection({music_id: '', tracks: [], paused: false})")
     expect(playing).to_have_count(0)
     expect(page.locator("#no-music-button")).to_have_class("asset-push-button currently-playing")
     expect(page.locator("#no-music-button .asset-playing-indicator")).to_have_text("✓ Selected")
+    # With No Music selected, Battle and Calm chips restore 'Push'
+    expect(playlist_playing.locator(".asset-label")).to_be_visible()
+    expect(playlist_playing.locator(".asset-label")).to_have_text("Push")
+    expect(calm_button.locator(".asset-label")).to_be_visible()
+    expect(calm_button.locator(".asset-label")).to_have_text("Push")
+
+    # Selecting Calm playlist drops 'Push' on Calm chip while Battle chip retains 'Push'
+    page.evaluate("updateAssetPlaybackSelection({music_id: 'Calm', tracks: ['/calm.mp3'], paused: false})")
+    expect(calm_button.locator(".asset-label")).to_be_hidden()
+    expect(calm_button.locator(".asset-playing-indicator")).to_have_text("▶ Playing")
+    expect(playlist_playing.locator(".asset-label")).to_be_visible()
+    expect(playlist_playing.locator(".asset-label")).to_have_text("Push")
 
 
 def test_stamp_manager_tabs_visibility_and_orator_restriction(scenes_chars_page: Page) -> None:
@@ -384,6 +416,7 @@ def test_scenes_tab_push_to_canvas(scenes_chars_page: Page) -> None:
     assert scenes_chars_page.locator(".scene-card").count() == 2
     assert scenes_chars_page.locator(".scene-card-name").all_text_contents() == ["Grand Ballroom", "Dark Dungeon"]
     assert scenes_chars_page.locator("#stamp-manager-count").text_content() == "2"
+    assert scenes_chars_page.locator(".scene-card-push-badge").all_text_contents() == ["Push", "Push"]
 
     # Click first scene card to push to canvas
     with scenes_chars_page.expect_response("**/api/theaters/*/scenes/push"):
@@ -506,3 +539,68 @@ def test_scenes_and_characters_count_not_overwritten_by_late_stamp_render_and_im
     assert "/img/armory.png" in preloaded
     assert "/img/knight.png" in preloaded
     assert "/img/mage.png" in preloaded
+
+
+def test_non_recent_push_items_revert_properly(scenes_chars_page: Page) -> None:
+    page = scenes_chars_page
+    page.evaluate("applyRoleUI(true); setStampManagerOpen(true)")
+
+    def handle_push_scene(route: Route) -> None:
+        route.fulfill(json={"status": "ok", "scene": "Done"})
+
+    def handle_push_animation(route: Route) -> None:
+        route.fulfill(json={"status": "ok", "message": "Animation playing."})
+
+    page.route("**/api/theaters/*/scenes/push", handle_push_scene)
+    page.route("**/api/theaters/*/animations/push", handle_push_animation)
+
+    page.evaluate("""
+        cachedTheaterScenes = [
+            { id: 's1', name: 'Scene One', description: 'First scene', image_url: null },
+            { id: 's2', name: 'Scene Two', description: 'Second scene', image_url: null }
+        ];
+        switchStampManagerTab('scenes');
+    """)
+
+    card1 = page.locator('.scene-card[data-scene-id="s1"]')
+    card2 = page.locator('.scene-card[data-scene-id="s2"]')
+    badge1 = card1.locator(".scene-card-push-badge")
+    badge2 = card2.locator(".scene-card-push-badge")
+
+    expect(badge1).to_have_text("Push")
+    expect(badge2).to_have_text("Push")
+
+    # Push Scene 1: badge becomes 'Pushed!'
+    card1.click()
+    expect(badge1).to_have_text("Pushed!")
+    expect(badge2).to_have_text("Push")
+
+    # Push Scene 2: Scene 1 immediately reverts to 'Push', Scene 2 becomes 'Pushed!'
+    card2.click()
+    expect(badge2).to_have_text("Pushed!")
+    expect(badge1).to_have_text("Push")
+
+    # Switch to Animations tab: push an animation
+    def serve_animations(route: Route) -> None:
+        route.fulfill(json=[
+            {"id": "anim1", "name": "Rain", "description": "Rain anim", "type": "video", "url": ""},
+            {"id": "anim2", "name": "Snow", "description": "Snow anim", "type": "video", "url": ""}
+        ])
+
+    page.route("**/api/theaters/*/animations", serve_animations)
+    page.locator("#stamp-tab-animations").click()
+
+    anim_btn1 = page.locator('#animations-manager [data-asset-id="anim1"]')
+    anim_btn2 = page.locator('#animations-manager [data-asset-id="anim2"]')
+
+    expect(anim_btn1.locator("small")).to_have_text("Push")
+    expect(anim_btn2.locator("small")).to_have_text("Push")
+
+    anim_btn1.click()
+    expect(anim_btn1.locator("small")).to_have_text("Pushed!")
+    expect(anim_btn2.locator("small")).to_have_text("Push")
+
+    # Pushing anim2 causes anim1 to immediately revert to 'Push'
+    anim_btn2.click()
+    expect(anim_btn2.locator("small")).to_have_text("Pushed!")
+    expect(anim_btn1.locator("small")).to_have_text("Push")
