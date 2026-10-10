@@ -155,11 +155,10 @@ class MockToolBundle:
         self,
         image_prompt: str,
         image_name: str,
-        reference_images: List[str] = None,
         display: bool = True,
         effect: str = "gleam3",
     ) -> str:
-        """Creates an image based on a prompt and adapts visual style using reference images."""
+        """Creates an image based on a prompt and attaches referenced visual assets."""
         self._created_images.append(image_name)
         if display:
             self.canvas_state.current_image = image_name
@@ -171,7 +170,6 @@ class MockToolBundle:
             {
                 "image_prompt": image_prompt,
                 "image_name": image_name,
-                "reference_images": reference_images,
                 "display": display,
                 "effect": effect,
             },

@@ -6,6 +6,7 @@ import os
 import shutil
 import tempfile
 import unittest
+from pathlib import Path
 from typing import Optional
 
 from components.reference_manager import (
@@ -468,6 +469,68 @@ class TestReferenceManagerResolution(unittest.TestCase):
         self.assertEqual(refs[0].name, "2.png")
         self.assertEqual(refs[0].data, b"player_iter2_bytes")
         self.assertEqual(refs[0].label, "Valen")
+
+    def test_add_and_get_canvas_capture(self) -> None:
+        captures_dir = os.path.join(self.temp_dir, "canvas_captures")
+        os.makedirs(captures_dir, exist_ok=True)
+        cap1 = os.path.join(captures_dir, "canvas_abc12345.png")
+        Path(cap1).write_bytes(b"capture_data_1")
+
+        cap2 = os.path.join(captures_dir, "canvas_def67890.jpg")
+        Path(cap2).write_bytes(b"capture_data_2")
+
+        handle1 = self.manager.add_canvas_capture(cap1)
+        self.assertEqual(handle1, "canvas_abc12345")
+        self.assertEqual(self.manager.get_canvas_capture_path(handle1), str(Path(cap1).resolve()))
+        self.assertEqual(self.manager.get_canvas_capture_path(f"<{handle1}>"), str(Path(cap1).resolve()))
+
+        handle2 = self.manager.add_canvas_capture(cap2, handle="custom_capture")
+        self.assertEqual(handle2, "custom_capture")
+        self.assertEqual(self.manager.get_canvas_capture_path("custom_capture"), str(Path(cap2).resolve()))
+        self.assertEqual(self.manager.get_canvas_capture_path("canvas_capture"), str(Path(cap2).resolve()))
+
+        available = self.manager.available_canvas_captures()
+        self.assertIn("custom_capture", available)
+        self.assertIn("canvas_abc12345", available)
+
+    def test_resolve_provider_references_with_tagged_canvas_capture(self) -> None:
+        captures_dir = os.path.join(self.temp_dir, "canvas_captures")
+        os.makedirs(captures_dir, exist_ok=True)
+        cap_file = os.path.join(captures_dir, "canvas_testcap.png")
+        Path(cap_file).write_bytes(b"test_capture_bytes")
+
+        handle = self.manager.add_canvas_capture(cap_file)
+        resolver = DummyPathResolver({})
+
+        refs, err = self.manager.resolve_provider_references(
+            prompt=f"A painting based on <{handle}>",
+            visual=resolver,
+        )
+        self.assertIsNone(err)
+        self.assertEqual(len(refs), 1)
+        self.assertEqual(refs[0].name, "canvas_testcap.png")
+        self.assertEqual(refs[0].data, b"test_capture_bytes")
+        self.assertEqual(refs[0].label, handle)
+        self.assertEqual(refs[0].mime_type, "image/png")
+
+    def test_resolve_provider_references_with_prompt_mentioned_canvas_capture(self) -> None:
+        captures_dir = os.path.join(self.temp_dir, "canvas_captures")
+        os.makedirs(captures_dir, exist_ok=True)
+        cap_file = os.path.join(captures_dir, "canvas_untagged.webp")
+        Path(cap_file).write_bytes(b"untagged_bytes")
+
+        handle = self.manager.add_canvas_capture(cap_file)
+        resolver = DummyPathResolver({})
+
+        refs, err = self.manager.resolve_provider_references(
+            prompt=f"Draw something drawing from {handle} right now",
+            visual=resolver,
+        )
+        self.assertIsNone(err)
+        self.assertEqual(len(refs), 1)
+        self.assertEqual(refs[0].name, "canvas_untagged.webp")
+        self.assertEqual(refs[0].data, b"untagged_bytes")
+        self.assertEqual(refs[0].mime_type, "image/webp")
 
 
 if __name__ == "__main__":

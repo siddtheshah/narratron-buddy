@@ -944,14 +944,18 @@ class TestLiveAgentSessionManager(unittest.TestCase):
             self.assertTrue(session.send_agent_requested_observability())
             content = session.live_request_queue.send_content.call_args.args[0]
             self.assertEqual(content.role, "user")
-            capture_path = content.parts[0].text.split("[Canvas Capture]: ", 1)[1].splitlines()[0]
-            self.assertTrue(Path(capture_path).is_absolute())
-            first_capture = Path(capture_path).read_bytes()
+            capture_handle = content.parts[0].text.split("[Canvas Capture]: ", 1)[1].splitlines()[0]
+            self.assertFalse("/" in capture_handle or "\\" in capture_handle)
+            self.assertFalse(capture_handle.endswith(".png"))
+            ref_mgr = ReferenceManager(canvas.theater)
+            resolved_capture_path = ref_mgr.get_canvas_capture_path(capture_handle)
+            self.assertIsNotNone(resolved_capture_path)
+            self.assertTrue(Path(resolved_capture_path).is_absolute())
+            first_capture = Path(resolved_capture_path).read_bytes()
             self.assertEqual(first_capture, content.parts[-1].inline_data.data)
             self.assertNotEqual(first_capture, image_path.read_bytes())
-            ref_mgr = ReferenceManager(canvas.theater)
             references, error = ref_mgr.resolve_provider_references(
-                [capture_path], visual=VisualState(canvas.theater),
+                prompt=f"<{capture_handle}>", visual=VisualState(canvas.theater),
             )
             self.assertIsNone(error)
             self.assertEqual(references[0].data, first_capture)
@@ -962,10 +966,12 @@ class TestLiveAgentSessionManager(unittest.TestCase):
             asyncio.run(session._send_doodle_snapshot())
             content = session.live_request_queue.send_content.call_args.args[0]
             self.assertEqual(content.role, "user")
-            next_path = content.parts[0].text.split("[Canvas Capture]: ", 1)[1].splitlines()[0]
-            self.assertNotEqual(next_path, capture_path)
-            self.assertEqual(Path(next_path).read_bytes(), content.parts[-1].inline_data.data)
-            self.assertEqual(Path(capture_path).read_bytes(), first_capture)
+            next_handle = content.parts[0].text.split("[Canvas Capture]: ", 1)[1].splitlines()[0]
+            self.assertNotEqual(next_handle, capture_handle)
+            next_capture_path = ref_mgr.get_canvas_capture_path(next_handle)
+            self.assertIsNotNone(next_capture_path)
+            self.assertEqual(Path(next_capture_path).read_bytes(), content.parts[-1].inline_data.data)
+            self.assertEqual(Path(resolved_capture_path).read_bytes(), first_capture)
             self.assertFalse(session.send_agent_requested_observability())
             self.assertEqual(session.live_request_queue.send_content.call_count, 2)
 
@@ -1029,7 +1035,10 @@ class TestLiveAgentSessionManager(unittest.TestCase):
             content = session.live_request_queue.send_content.call_args.args[0]
             self.assertEqual(content.role, "user")
             self.assertIn("[Canvas Capture]: ", content.parts[0].text)
-            capture_path = content.parts[0].text.split("[Canvas Capture]: ", 1)[1].splitlines()[0]
+            capture_handle = content.parts[0].text.split("[Canvas Capture]: ", 1)[1].splitlines()[0]
+            ref_mgr = ReferenceManager(canvas.theater)
+            capture_path = ref_mgr.get_canvas_capture_path(capture_handle)
+            self.assertIsNotNone(capture_path)
             self.assertTrue(Path(capture_path).is_file())
 
             capture_bytes = Path(capture_path).read_bytes()
@@ -1051,9 +1060,12 @@ class TestLiveAgentSessionManager(unittest.TestCase):
             session.live_request_queue = MagicMock()
             self.assertTrue(session.send_agent_requested_observability())
             content = session.live_request_queue.send_content.call_args.args[0]
-            capture_path = content.parts[0].text.split("[Canvas Capture]: ", 1)[1].splitlines()[0]
+            capture_handle = content.parts[0].text.split("[Canvas Capture]: ", 1)[1].splitlines()[0]
+            ref_mgr = ReferenceManager(canvas.theater)
+            capture_path = ref_mgr.get_canvas_capture_path(capture_handle)
+            self.assertIsNotNone(capture_path)
             self.assertEqual(Path(capture_path).read_bytes(), b"scene-image")
-            self.assertIn("reference_images", content.parts[0].text)
+            self.assertIn(f"<{capture_handle}> in create_image", content.parts[0].text)
             self.assertEqual(content.parts[-1].inline_data.mime_type, "image/jpeg")
 
             image_path.write_bytes(b"changed-scene")

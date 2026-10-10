@@ -93,7 +93,7 @@ State it as the user describes, but prefix with qualifiers that keep the content
 Use the exact `<Character Name>` tags from [Available Character Visuals] in `create_image` and animation prompts, for example `<Arthur Modella> flashes a wand before stepping back from <Grim Vallos>`. ReferenceManager attaches the latest portraits automatically; character references belong in the prompt. Only use tags for available character visuals. Provide a concise unique image name. Choose visual effects only when they support the scene.
 {% endif %}
 {% if image_generation_enabled %}
-Canvas observability may supply a `[Canvas Capture]` path. Use it in `create_image`'s `reference_images` when drawing from the current canvas or audience annotations; the capture preserves the observed image for visual collaboration.
+Canvas observability may supply a `[Canvas Capture]` handle. Use `<handle>` in `create_image`'s prompt when drawing from the current canvas or audience annotations; the capture preserves the observed image for visual collaboration.
 {% else %}
 Stage suitable mounted assets with `show_image`.
 {% endif %}
@@ -160,12 +160,12 @@ Call `request_canvas_observability` when an audience/viewer suggestion arrives o
 {%- if image_generation_enabled %}
 ### How to use the canvas capture effectively
 You may get a canvas capture from the orator {% if observability_enabled %} or by your observability_tool {% endif %}.
-The resulting `[Canvas Capture]` image path shows the current canvas, including any visible audience annotations.
+The resulting `[Canvas Capture]` handle shows the current canvas, including any visible audience annotations.
 
 Follow these steps for the next image created:
 1. Determine what is amusing or intriguing about the drawing within the capture.
 2. Elaborate on that in your prompt for create_image. Do not focus on the previous prompt, focus on the amusing/funny thing.
-3. Pass that reference image path in `create_image`'s `reference_images` for your next image so it builds on what is on screen.
+3. Include `<handle>` in `create_image`'s prompt for your next image so it builds on what is on screen.
 {%- endif %}
 """
 
@@ -493,14 +493,14 @@ def create_agent(
         animation_enabled=bool(config.get("animation", {}).get("enabled", False)),
         image_generation_enabled=bool(config.get("image_generation", {}).get("enabled", True)),
         use_generated_music=bool(config.get("music", {}).get("use_generated_music", False)),
-        adventure_mode=bool(config.get("story_planning", {}).get("adventure_mode", False)),
+        adventure_mode=adventure_mode,
         interactive_canvas_enabled=bool(config.get("interactive_canvas", {}).get("enabled", False)),
         user_help_enabled=bool(user_help_config.get("enabled", True)),
         observability_enabled=bool((config.get("observability_tool") or {}).get("enabled", False)),
         audience_suggestions=Template(
             AUDIENCE_SUGGESTIONS_TEMPLATE,
         ).render(
-            adventure_mode=bool(config.get("story_planning", {}).get("adventure_mode", False)),
+            adventure_mode=adventure_mode,
             observability_enabled=bool((config.get("observability_tool") or {}).get("enabled", False)),
             image_generation_enabled=bool(config.get("image_generation", {}).get("enabled", True)),
         ).strip()

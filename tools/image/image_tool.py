@@ -6,7 +6,7 @@ import re
 import threading
 import time
 from io import BytesIO
-from typing import Any, Callable, Dict, Optional, Union
+from typing import Any, Callable, Dict, Optional
 
 from PIL import Image
 
@@ -238,7 +238,6 @@ class ImageTools(BaseTools):
         self,
         image_prompt: str,
         image_name: str,
-        reference_images: Union[list[str], str, None] = None,
         display: bool = True,
         effect: str = "gleam3",
     ) -> str:
@@ -246,11 +245,10 @@ class ImageTools(BaseTools):
 
         Args:
             image_prompt: The prompt describing the image to generate. Always use the explicit
-                <Character Name> tags from Available Character Visuals when describing
-                characters or actions so their latest portraits are automatically attached.
+                <Character Name> tags from Available Character Visuals, or canvas capture handles
+                (e.g. <canvas_capture_handle>) when describing characters, actions, or drawing from
+                canvas captures, so references are automatically attached.
             image_name: Required friendly name/alias for the generated image (e.g. 'hero_portrait', 'oasis_v1').
-            reference_images: Optional non-character reference names or paths (e.g. a canvas capture).
-                Character references are specified with <Character Name> tags in the prompt.
             display: Whether to automatically display the image on the canvas upon creation (default True).
             effect: Optional canvas animation effect; defaults to gleam3. Supported values: none,
                 gleam3 - Best all-rounder, especially good for drama. 
@@ -266,7 +264,7 @@ class ImageTools(BaseTools):
         allow_pinned = self.consume_orator_pin_bypass("create_image")
         if self.visual.pinned and not allow_pinned:
             return f"Error: {CANVAS_PINNED_MESSAGE}"
-        if not isinstance(image_name, str) or not image_name.strip():
+        if type(image_name) is not str or not image_name.strip():
             res = "Error: image_name is required when creating an image."
             self._trigger_after_tool_call("create_image")
             return res
@@ -287,7 +285,7 @@ class ImageTools(BaseTools):
         if not effective_prompt:
             self._trigger_after_tool_call("create_image")
             return "Error: image_prompt must describe a scene after prompt cleanup."
-        logger.debug(f"[ImageTools] create_image prompt={effective_prompt}, image_name={image_name}, reference_images={reference_images}, display={display}")
+        logger.debug(f"[ImageTools] create_image prompt={effective_prompt}, image_name={image_name}, display={display}")
 
         with self._story_plan_lock:
             if self.adventure_mode and not self._story_plan_completed:
@@ -300,7 +298,6 @@ class ImageTools(BaseTools):
         
         if self.reference_manager is not None:
             provider_references, ref_error = self.reference_manager.resolve_provider_references(
-                reference_images=reference_images,
                 prompt=image_prompt,
                 visual=self.visual,
                 caller_label="ImageTools",
@@ -535,7 +532,7 @@ class ImageTools(BaseTools):
             self._trigger_after_tool_call("show_image")
             return (
                 f"Error: '{file_path}' is a canvas capture and cannot be displayed with show_image. "
-                "Canvas captures may only be used in create_image(reference_images=[...])."
+                "Canvas captures may only be used as references in create_image prompts (e.g. '<canvas_capture_handle>')."
             )
 
         char_dir = self.theater.characters_dir()

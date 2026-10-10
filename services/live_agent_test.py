@@ -338,7 +338,7 @@ class TestCreateAgent(unittest.TestCase):
         instruction = mock_agent_cls.call_args.kwargs["instruction"]
         self.assertIn("## Canvas Observability", instruction)
         self.assertIn("request_canvas_observability", instruction)
-        self.assertIn("reference_images` for your next image", instruction)
+        self.assertIn("prompt for your next image", instruction)
 
         create_agent(theater=make_test_theater("unobserved", {}), tool_bundle=mock_bundle)
         instruction = mock_agent_cls.call_args.kwargs["instruction"]

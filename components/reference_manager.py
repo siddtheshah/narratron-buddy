@@ -545,6 +545,10 @@ class ReferenceManager:
                 image_reference=str(path) if path is not None else None,
             )
         self._initializing_references = False
+        self._canvas_captures: dict[str, str] = {}
+        self._canvas_captures_lock = Lock()
+        self._latest_canvas_capture: Optional[str] = None
+        self._load_canvas_captures()
         self._sync_story_state()
 
     @property
@@ -553,6 +557,75 @@ class ReferenceManager:
         if val is None or not str(val).strip():
             return None
         return Path(val)
+
+    def _load_canvas_captures(self) -> None:
+        """Index existing canvas captures from theater storage."""
+        captures_dir = self.theater.canvas_captures_dir()
+        if captures_dir.is_dir():
+            for capture_file in sorted(captures_dir.iterdir(), key=lambda f: f.stat().st_mtime if f.is_file() else 0.0):
+                if capture_file.is_file() and capture_file.suffix.lower() in IMAGE_EXTENSIONS:
+                    stem = capture_file.stem
+                    path_str = str(capture_file.resolve())
+                    self._canvas_captures[stem.casefold()] = path_str
+                    self._canvas_captures[self._slug_key(stem)] = path_str
+                    self._canvas_captures["canvas_capture"] = path_str
+                    self._latest_canvas_capture = stem
+
+    def add_canvas_capture(self, path: str | Path, handle: Optional[str] = None) -> str:
+        """Register a canvas capture by path, generating or using the provided handle."""
+        p = Path(path)
+        if not p.is_file():
+            raise ValueError(f"Canvas capture file not found: {path}")
+        resolved = str(p.resolve())
+        assigned_handle = handle.strip() if handle is not None and handle.strip() else p.stem
+        with self._canvas_captures_lock:
+            self._canvas_captures[assigned_handle.casefold()] = resolved
+            self._canvas_captures[self._slug_key(assigned_handle)] = resolved
+            self._canvas_captures["canvas_capture"] = resolved
+            self._latest_canvas_capture = assigned_handle
+        return assigned_handle
+
+    def get_canvas_capture_path(self, handle: str) -> Optional[str]:
+        """Resolve a canvas capture handle to its file path."""
+        if not handle or not str(handle).strip():
+            return None
+        clean = handle.strip().strip("<>").strip()
+        key = self._slug_key(clean)
+        with self._canvas_captures_lock:
+            if clean.casefold() in self._canvas_captures:
+                candidate_path = self._canvas_captures[clean.casefold()]
+                if Path(candidate_path).is_file():
+                    return candidate_path
+            if key in self._canvas_captures:
+                candidate_path = self._canvas_captures[key]
+                if Path(candidate_path).is_file():
+                    return candidate_path
+            if key in ("canvas_capture", "canvascapture", "capture") and self._latest_canvas_capture is not None:
+                candidate_path = self._canvas_captures.get(self._latest_canvas_capture.casefold())
+                if candidate_path is not None and Path(candidate_path).is_file():
+                    return candidate_path
+
+        captures_dir = self.theater.canvas_captures_dir()
+        if captures_dir.is_dir():
+            for ext in IMAGE_EXTENSIONS:
+                candidate = captures_dir / f"{clean}{ext}"
+                if candidate.is_file():
+                    res = str(candidate.resolve())
+                    with self._canvas_captures_lock:
+                        self._canvas_captures[clean.casefold()] = res
+                        self._canvas_captures[key] = res
+                    return res
+            if key in ("canvas_capture", "canvascapture", "capture"):
+                files = [f for f in captures_dir.iterdir() if f.is_file() and f.suffix.lower() in IMAGE_EXTENSIONS]
+                if files:
+                    latest = max(files, key=lambda f: f.stat().st_mtime)
+                    return str(latest.resolve())
+        return None
+
+    def available_canvas_captures(self) -> dict[str, str]:
+        """Return registered canvas capture handles and their resolved file paths."""
+        with self._canvas_captures_lock:
+            return dict(self._canvas_captures)
 
     @classmethod
     def _reference_folders(cls, authored: Path, updated: Path | None) -> dict[str, list[Path]]:
@@ -2165,6 +2238,10 @@ class ReferenceManager:
             for name in tagged_names:
                 path = self.get_character_visual_path(name)
                 if path is None:
+                    path = self.get_canvas_capture_path(name)
+                if path is None and visual is not None:
+                    path = visual.resolve_image_path(name)
+                if path is None:
                     return [], f"Error: Character visual '<{name}>' not found. Use an available character name."
                 normalized = os.path.normcase(os.path.abspath(path))
                 if normalized not in seen_paths:
@@ -2190,6 +2267,19 @@ class ReferenceManager:
                 else:
                     logger.debug(f"[{caller_label}] Character reference '{ref_clean}' could not be resolved; skipping.")
 
+        with self._canvas_captures_lock:
+            known_captures = list(self._canvas_captures.items())
+        for cap_handle, cap_path in known_captures:
+            if cap_handle in seen_keys or cap_handle in ("canvas_capture", "canvascapture", "capture"):
+                continue
+            if re.search(r"\b" + re.escape(cap_handle) + r"\b", prompt, re.IGNORECASE):
+                if Path(cap_path).is_file():
+                    norm_path = os.path.normcase(os.path.abspath(cap_path))
+                    if norm_path not in seen_paths:
+                        seen_paths.add(norm_path)
+                        seen_keys.add(cap_handle.casefold())
+                        resolved_refs.append((cap_handle, cap_path))
+
         has_character_references = bool(resolved_refs)
 
         ref_list = _normalize_reference_image_list(reference_images)
@@ -2199,6 +2289,8 @@ class ReferenceManager:
             ref_path = self.get_latest_reference_path_for_character(ref)
             if not ref_path and visual is not None:
                 ref_path = visual.resolve_image_path(ref)
+            if not ref_path:
+                ref_path = self.get_canvas_capture_path(ref)
 
             if not ref_path:
                 if has_character_references and self.is_character_reference(
@@ -2243,6 +2335,8 @@ class ReferenceManager:
                 lookup_result=lookup_result,
             )
             if tagged_names and ref_name in tagged_names:
+                label = ref_name
+            elif self.get_canvas_capture_path(ref_name) is not None:
                 label = ref_name
             provider_references.append(
                 ImageReference(

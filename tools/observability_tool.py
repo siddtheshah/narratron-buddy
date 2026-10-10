@@ -29,7 +29,7 @@ class ObservabilityTools(BaseTools):
 
         Use sparingly: this interrupts the normal observability cadence and is
         subject to a cooldown. When an image is available, the update includes
-        a canvas capture path to use in create_image's reference_images. With
+        a canvas capture handle to use in create_image's prompt. With
         collaboration enabled, the capture includes visible audience annotations.
         """
         callback = self.on_observability_requested

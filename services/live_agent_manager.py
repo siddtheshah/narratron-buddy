@@ -464,11 +464,11 @@ class LiveAgentSession:
         if image is not None:
             content = content.model_copy(deep=True)
             content.role = "user"
-            capture_path = self._save_canvas_capture(image) if include_capture_reference else None
-            if capture_path is not None:
+            capture_handle = self._save_canvas_capture(image) if include_capture_reference else None
+            if capture_handle is not None:
                 reference_text = (
-                    f"\n[Canvas Capture]: {capture_path}\n"
-                    "Use this path in create_image(reference_images=[...]) to draw from "
+                    f"\n[Canvas Capture]: {capture_handle}\n"
+                    f"Use <{capture_handle}> in create_image prompt to draw from "
                     "the attached canvas capture, including any visible audience annotations."
                 )
                 text_part = next((part for part in content.parts if part.text is not None), None)
@@ -485,7 +485,7 @@ class LiveAgentSession:
         return True
 
     def _save_canvas_capture(self, image: types.Part) -> str | None:
-        """Persist the exact observed bytes as an immutable image-tool reference."""
+        """Persist observed bytes as an immutable capture and register handle with ReferenceManager."""
         canvas = self.canvas_state_manager
         if canvas is None or canvas.theater is None or image.inline_data is None:
             return None
@@ -506,7 +506,13 @@ class LiveAgentSession:
                     temporary.replace(path)
                 finally:
                     temporary.unlink(missing_ok=True)
-            return str(path.resolve())
+            handle = path.stem
+            ref_mgr = self.reference_manager
+            if ref_mgr is None and self.image_tools is not None:
+                ref_mgr = self.image_tools.reference_manager
+            if ref_mgr is not None:
+                ref_mgr.add_canvas_capture(str(path.resolve()), handle=handle)
+            return handle
         except OSError:
             logger.exception("Could not save canvas capture for theater %s", self.theater_id)
             return None
