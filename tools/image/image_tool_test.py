@@ -4,11 +4,13 @@ import shutil
 import tempfile
 import threading
 from pathlib import Path
+from typing import Optional
 from unittest.mock import MagicMock, patch
 
 from PIL import Image, PngImagePlugin
 
 from components.canvas.canvas_state_service import CanvasStateService
+from components.canvas.visual_state import VisualState
 from components.theater_manager import TheaterManager
 from providers import ImageGenerationRequest, ImageGenerationResult, ImageProviderError, TextResponseProvider
 from testing.base import BaseTestCase
@@ -1196,4 +1198,123 @@ class TestImageTools(BaseTestCase):
         self.assertIn("is a canvas capture and cannot be displayed", res)
         self.assertIsNone(tools.currently_displayed_image_path)
         self.assertIsNone(tools.visual.shown_image_path)
+
+    @patch("tools.image.image_tool.get_image_provider")
+    def test_create_image_canvas_visual_indicator_aligned_with_start_and_end(
+        self, mock_get_provider: MagicMock
+    ) -> None:
+        mock_get_provider.return_value.generate.return_value = self._provider_result()
+        tools = self.make_image_tools(
+            self.config,
+            theater_id="indicator_test",
+            theater_manager=self.manager,
+        )
+        spy_set_activity = MagicMock(wraps=tools.canvas_manager.tool_response.set_activity)
+        tools.canvas_manager.tool_response.set_activity = spy_set_activity
+
+        observed_activity: list[tuple[bool, bool]] = []
+        original_set_activity = tools._set_canvas_activity
+
+        def tracking_set_activity(active: bool) -> None:
+            original_set_activity(active)
+            observed_activity.append((active, tools.is_generating))
+
+        tools._set_canvas_activity = tracking_set_activity
+
+        res = tools.create_image("A glowing enchanted forest", image_name="forest")
+        self.assertIn("started in background", res)
+        # Visual indicator must already be active when create_image begins and returns
+        self.assertTrue(tools.is_generating)
+        self.assertTrue(tools.canvas_manager.tool_response.image_generation_active)
+        spy_set_activity.assert_any_call("image", active=True)
+
+        tools.join_generation()
+
+        # Visual indicator must be inactive once create_image ends
+        self.assertFalse(tools.is_generating)
+        self.assertFalse(tools.canvas_manager.tool_response.image_generation_active)
+        self.assertIn((True, True), observed_activity)
+        self.assertIn((False, False), observed_activity)
+        spy_set_activity.assert_any_call("image", active=False)
+
+    @patch("tools.image.image_tool.get_image_provider")
+    def test_create_image_indicator_active_during_reference_generation(
+        self, mock_get_provider: MagicMock
+    ) -> None:
+        mock_get_provider.return_value.generate.return_value = self._provider_result()
+        ref_manager = MagicMock()
+        activity_during_ref_gen: list[bool] = []
+
+        tools = self.make_image_tools(
+            self.config,
+            theater_id="ref_indicator_test",
+            theater_manager=self.manager,
+            reference_manager=ref_manager,
+        )
+        spy_set_activity = MagicMock(wraps=tools.canvas_manager.tool_response.set_activity)
+        tools.canvas_manager.tool_response.set_activity = spy_set_activity
+
+        def mock_generate_refs(context: str, visual: Optional[VisualState] = None) -> dict[str, str]:
+            activity_during_ref_gen.append(tools.is_generating)
+            return {}
+
+        ref_manager.generate_references_from_context = mock_generate_refs
+        ref_manager.resolve_provider_references.return_value = ([], None)
+
+        tools.create_image("A hero in armor", image_name="hero")
+        tools.join_generation()
+
+        self.assertEqual(activity_during_ref_gen, [True])
+        self.assertFalse(tools.is_generating)
+        self.assertFalse(tools.canvas_manager.tool_response.image_generation_active)
+        spy_set_activity.assert_any_call("image", active=True)
+        spy_set_activity.assert_any_call("image", active=False)
+
+    @patch("tools.image.image_tool.get_image_provider")
+    def test_create_image_indicator_cleared_on_reference_resolution_error(
+        self, mock_get_provider: MagicMock
+    ) -> None:
+        ref_manager = MagicMock()
+        ref_manager.generate_references_from_context.return_value = {}
+        ref_manager.resolve_provider_references.return_value = ([], "Error: Invalid character reference")
+
+        tools = self.make_image_tools(
+            self.config,
+            theater_id="ref_err_test",
+            theater_manager=self.manager,
+            reference_manager=ref_manager,
+        )
+        spy_set_activity = MagicMock(wraps=tools.canvas_manager.tool_response.set_activity)
+        tools.canvas_manager.tool_response.set_activity = spy_set_activity
+
+        res = tools.create_image("<InvalidHero> in a cave", image_name="cave")
+        self.assertEqual(res, "Error: Invalid character reference")
+        self.assertFalse(tools.is_generating)
+        self.assertFalse(tools.canvas_manager.tool_response.image_generation_active)
+        spy_set_activity.assert_any_call("image", active=False)
+
+    @patch("tools.image.image_tool.get_image_provider")
+    def test_create_image_validation_rejection_does_not_activate_indicator(
+        self, mock_get_provider: MagicMock
+    ) -> None:
+        tools = self.make_image_tools(
+            self.config,
+            theater_id="validation_test",
+            theater_manager=self.manager,
+        )
+        spy_set_activity = MagicMock(wraps=tools.canvas_manager.tool_response.set_activity)
+        tools.canvas_manager.tool_response.set_activity = spy_set_activity
+
+        res_empty_prompt = tools.create_image("", image_name="empty")
+        self.assertIn("Error", res_empty_prompt)
+        self.assertFalse(tools.is_generating)
+        self.assertFalse(tools.canvas_manager.tool_response.image_generation_active)
+
+        res_empty_name = tools.create_image("A castle", image_name="")
+        self.assertIn("Error", res_empty_name)
+        self.assertFalse(tools.is_generating)
+        self.assertFalse(tools.canvas_manager.tool_response.image_generation_active)
+
+        spy_set_activity.assert_not_called()
+
 

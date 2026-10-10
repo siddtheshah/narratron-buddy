@@ -159,7 +159,8 @@ class ImageTools(BaseTools):
     def _set_canvas_activity(self, active: bool) -> None:
         """Notify connected canvases that image generation has started or finished."""
         self.is_generating = bool(active)
-        self.canvas_manager.tool_response.set_activity("image", active=active)
+        if self.canvas_manager is not None and self.canvas_manager.tool_response is not None:
+            self.canvas_manager.tool_response.set_activity("image", active=active)
 
     def _load_references(self):
         """Scans the references folder once at startup and builds a read-only manifest."""
@@ -262,7 +263,7 @@ class ImageTools(BaseTools):
             A string indicating that background image generation has started, or an error message.
         """
         allow_pinned = self.consume_orator_pin_bypass("create_image")
-        if self.visual.pinned and not allow_pinned:
+        if self.visual is not None and self.visual.pinned and not allow_pinned:
             return f"Error: {CANVAS_PINNED_MESSAGE}"
         if type(image_name) is not str or not image_name.strip():
             res = "Error: image_name is required when creating an image."
@@ -295,159 +296,168 @@ class ImageTools(BaseTools):
                 )
                 self._trigger_after_tool_call("create_image")
                 return res
-        
-        if self.reference_manager is not None:
-            if self.reference_manager.image_provider is None:
-                self.reference_manager.image_provider = self._get_image_provider()
-            generated_refs = self.reference_manager.generate_references_from_context(
-                context=image_prompt,
-                visual=self.visual,
-            )
-            if self.visual is not None and generated_refs:
-                for ref_name, ref_path in generated_refs.items():
-                    self.visual.register_image(ref_path, ref_name)
-            provider_references, ref_error = self.reference_manager.resolve_provider_references(
-                prompt=image_prompt,
-                visual=self.visual,
-                caller_label="ImageTools",
-            )
-        else:
-            provider_references, ref_error = [], None
-        if ref_error is not None:
-            self._trigger_after_tool_call("create_image")
-            return ref_error
 
-        with self._story_plan_lock:
-            if self.adventure_mode:
-                self._story_plan_completed = False
-
-        def _worker() -> None:
-            try:
-                self._set_canvas_activity(True)
-                saved_paths = []
-                provider = self._get_image_provider()
-                logger.debug(
-                    "[ImageTools] Generating image using provider '%s' from prompt: %s...",
-                    self.image_model,
-                    effective_prompt[:100],
+        self._set_canvas_activity(True)
+        try:
+            if self.reference_manager is not None:
+                if self.reference_manager.image_provider is None:
+                    self.reference_manager.image_provider = self._get_image_provider()
+                generated_refs = self.reference_manager.generate_references_from_context(
+                    context=image_prompt,
+                    visual=self.visual,
                 )
-                result = provider.generate(
-                    ImageGenerationRequest(
-                        prompt=effective_prompt,
-                        references=provider_references,
-                        aspect_ratio="16:9",
-                    )
+                if self.visual is not None and generated_refs:
+                    for ref_name, ref_path in generated_refs.items():
+                        self.visual.register_image(ref_path, ref_name)
+                provider_references, ref_error = self.reference_manager.resolve_provider_references(
+                    prompt=image_prompt,
+                    visual=self.visual,
+                    caller_label="ImageTools",
                 )
-                image_bytes = result.image_bytes
-                generation_details = f"provider '{result.provider}' model '{result.model}'"
-
-                if image_bytes:
-                    image = Image.open(BytesIO(image_bytes))
-                    if image.mode != "RGB":
-                        image = image.convert("RGB")
-                    
-                    timestamp = int(time.time())
-                    filename = f"{clean_image_name}_{timestamp}.jpg"
-                    webp_filename = f"{clean_image_name}_{timestamp}.webp"
-                    
-                    out_folder = self.output_dir
-                    filepath = os.path.join(out_folder, filename)
-                    webp_filepath = os.path.join(out_folder, webp_filename)
-                     
-                    ref_names: list[str] = []
-                    character_names = {
-                        re.sub(r"[\W_]+", " ", name).strip().casefold(): name
-                        for name in self.reference_manager.available_character_images()
-                    } if self.reference_manager is not None else {}
-                    for ref in provider_references:
-                        ref_name = ref.name.strip()
-                        character_name = character_names.get(re.sub(r"[\W_]+", " ", ref.label or "").strip().casefold())
-                        if character_name is not None:
-                            ref_name = f"<{character_name}>"
-                        if ref_name and ref_name not in ref_names:
-                            ref_names.append(ref_name)
-
-                    clean_prompt = effective_prompt.strip()
-                    if ref_names:
-                        metadata_prompt = (
-                            f"{clean_prompt}\nReferences: {', '.join(ref_names)}"
-                            if clean_prompt
-                            else f"References: {', '.join(ref_names)}"
-                        )
-                    else:
-                        metadata_prompt = effective_prompt
-
-                    exif = image.getexif()
-                    embed_image_metadata(exif, metadata_prompt)
-                     
-                    # Save full quality image
-                    image.save(filepath, "JPEG", exif=exif, quality=95)
-
-                    # Save compressed webp image for frontend display
-                    try:
-                        image.save(webp_filepath, "WEBP", exif=exif, quality=80)
-                    except Exception as e:
-                        logger.warning(f"[ImageTools] Failed to save webp compressed image: {e}")
-
-                    saved_paths.append(filepath)
-                    
-                    if self.visual:
-                        self.visual.register_image(filepath, image_name, clean_image_name)
-                    
-                    logger.debug(f"[ImageTools] Saved image from {generation_details} to {filepath} and WebP to {webp_filepath} (Name alias: {image_name})")
-                    if self.on_image_created:
-                        try:
-                            self.on_image_created(filepath)
-                        except TypeError:
-                            try:
-                                self.on_image_created()
-                            except Exception as cb_err:
-                                logger.error(f"[ImageTools] Exception in on_image_created callback: {cb_err}")
-                        except Exception as cb_err:
-                            logger.error(f"[ImageTools] Exception in on_image_created callback: {cb_err}")
-
-                if saved_paths:
-                    saved_path = saved_paths[0]
-                    if display:
-                        if self.canvas_manager is not None and self.canvas_manager.visual is not None:
-                            update_res = self.canvas_manager.visual.update_visual(
-                                type="image",
-                                path=saved_path,
-                                display_path=webp_filepath,
-                                transition="crossfade",
-                                effect=effect,
-                                prompt=metadata_prompt,
-                                priority=PRIORITY_CREATE,
-                                source="create_image",
-                                allow_pinned=allow_pinned,
-                                url_for_path=self.theater.get_url_for_path,
-                            )
-                            if update_res.get("status") == "displayed":
-                                self._currently_displayed_image_path = saved_path
-                                self._currently_displayed_image_transition = "crossfade"
-                                self._currently_displayed_image_effect = effect
-                            show_img = getattr(self.canvas_manager.visual, "show_image", None)
-                            if callable(show_img) and type(show_img).__name__ in ("MagicMock", "Mock", "AsyncMock"):
-                                show_img(webp_filepath)
-                else:
-                    self.record_tool_failure("image_cycle")
-                    logger.error("[ImageTools] Failed to generate image: provider returned no binary image data.")
-            except ImageProviderError as e:
-                self.record_tool_failure("image_cycle")
-                logger.error("[ImageTools] Image provider '%s' failed: %s", self.image_model, e)
-            except Exception as e:
-                self.record_tool_failure("image_cycle")
-                logger.error(f"[ImageTools] Error generating image in background: {e}")
-            finally:
+            else:
+                provider_references, ref_error = [], None
+            if ref_error is not None:
                 self._set_canvas_activity(False)
                 self._trigger_after_tool_call("create_image")
-                self._on_cycle_tool_completed("image_cycle")
+                return ref_error
 
-        t = threading.Thread(target=_worker, daemon=True)
-        self._last_generation_thread = t
-        t.start()
+            with self._story_plan_lock:
+                if self.adventure_mode:
+                    self._story_plan_completed = False
 
-        return f"Image generation started in background with alias '{image_name}' for prompt: '{effective_prompt[:80]}'. The image will automatically appear on the canvas when ready."
+            def _worker() -> None:
+                try:
+                    self._set_canvas_activity(True)
+                    saved_paths = []
+                    provider = self._get_image_provider()
+                    logger.debug(
+                        "[ImageTools] Generating image using provider '%s' from prompt: %s...",
+                        self.image_model,
+                        effective_prompt[:100],
+                    )
+                    result = provider.generate(
+                        ImageGenerationRequest(
+                            prompt=effective_prompt,
+                            references=provider_references,
+                            aspect_ratio="16:9",
+                        )
+                    )
+                    image_bytes = result.image_bytes
+                    generation_details = f"provider '{result.provider}' model '{result.model}'"
+
+                    if image_bytes:
+                        image = Image.open(BytesIO(image_bytes))
+                        if image.mode != "RGB":
+                            image = image.convert("RGB")
+                        
+                        timestamp = int(time.time())
+                        filename = f"{clean_image_name}_{timestamp}.jpg"
+                        webp_filename = f"{clean_image_name}_{timestamp}.webp"
+                        
+                        out_folder = self.output_dir
+                        filepath = os.path.join(out_folder, filename)
+                        webp_filepath = os.path.join(out_folder, webp_filename)
+                         
+                        ref_names: list[str] = []
+                        character_names = {
+                            re.sub(r"[\W_]+", " ", name).strip().casefold(): name
+                            for name in self.reference_manager.available_character_images()
+                        } if self.reference_manager is not None else {}
+                        for ref in provider_references:
+                            ref_name = ref.name.strip()
+                            character_name = character_names.get(re.sub(r"[\W_]+", " ", ref.label or "").strip().casefold())
+                            if character_name is not None:
+                                ref_name = f"<{character_name}>"
+                            if ref_name and ref_name not in ref_names:
+                                ref_names.append(ref_name)
+
+                        clean_prompt = effective_prompt.strip()
+                        if ref_names:
+                            metadata_prompt = (
+                                f"{clean_prompt}\nReferences: {', '.join(ref_names)}"
+                                if clean_prompt
+                                else f"References: {', '.join(ref_names)}"
+                            )
+                        else:
+                            metadata_prompt = effective_prompt
+
+                        exif = image.getexif()
+                        embed_image_metadata(exif, metadata_prompt)
+                         
+                        # Save full quality image
+                        image.save(filepath, "JPEG", exif=exif, quality=95)
+
+                        # Save compressed webp image for frontend display
+                        try:
+                            image.save(webp_filepath, "WEBP", exif=exif, quality=80)
+                        except Exception as e:
+                            logger.warning(f"[ImageTools] Failed to save webp compressed image: {e}")
+
+                        saved_paths.append(filepath)
+                        
+                        if self.visual:
+                            self.visual.register_image(filepath, image_name, clean_image_name)
+                        
+                        logger.debug(f"[ImageTools] Saved image from {generation_details} to {filepath} and WebP to {webp_filepath} (Name alias: {image_name})")
+                        if self.on_image_created:
+                            try:
+                                self.on_image_created(filepath)
+                            except TypeError:
+                                try:
+                                    self.on_image_created()
+                                except Exception as cb_err:
+                                    logger.error(f"[ImageTools] Exception in on_image_created callback: {cb_err}")
+                            except Exception as cb_err:
+                                logger.error(f"[ImageTools] Exception in on_image_created callback: {cb_err}")
+
+                    if saved_paths:
+                        saved_path = saved_paths[0]
+                        if display:
+                            if self.canvas_manager is not None and self.canvas_manager.visual is not None:
+                                update_res = self.canvas_manager.visual.update_visual(
+                                    type="image",
+                                    path=saved_path,
+                                    display_path=webp_filepath,
+                                    transition="crossfade",
+                                    effect=effect,
+                                    prompt=metadata_prompt,
+                                    priority=PRIORITY_CREATE,
+                                    source="create_image",
+                                    allow_pinned=allow_pinned,
+                                    url_for_path=self.theater.get_url_for_path,
+                                    )
+                                if update_res.get("status") == "displayed":
+                                    self._currently_displayed_image_path = saved_path
+                                    self._currently_displayed_image_transition = "crossfade"
+                                    self._currently_displayed_image_effect = effect
+                                show_img = getattr(self.canvas_manager.visual, "show_image", None)
+                                if callable(show_img) and type(show_img).__name__ in ("MagicMock", "Mock", "AsyncMock"):
+                                    show_img(webp_filepath)
+                    else:
+                        self.record_tool_failure("image_cycle")
+                        logger.error("[ImageTools] Failed to generate image: provider returned no binary image data.")
+                except ImageProviderError as e:
+                    self.record_tool_failure("image_cycle")
+                    logger.error("[ImageTools] Image provider '%s' failed: %s", self.image_model, e)
+                except Exception as e:
+                    self.record_tool_failure("image_cycle")
+                    logger.error(f"[ImageTools] Error generating image in background: {e}")
+                finally:
+                    self._set_canvas_activity(False)
+                    self._trigger_after_tool_call("create_image")
+                    self._on_cycle_tool_completed("image_cycle")
+
+            t = threading.Thread(target=_worker, daemon=True)
+            self._last_generation_thread = t
+            t.start()
+
+            return f"Image generation started in background with alias '{image_name}' for prompt: '{effective_prompt[:80]}'. The image will automatically appear on the canvas when ready."
+        except Exception:
+            self._set_canvas_activity(False)
+            self.record_tool_failure("image_cycle")
+            self._trigger_after_tool_call("create_image")
+            self._on_cycle_tool_completed("image_cycle")
+            raise
 
     def _get_image_provider(self) -> ImageProvider:
         """Build the configured provider once per session-scoped tool instance."""
