@@ -885,6 +885,9 @@ export function createDoodleRenderer({ canvas, isVisible = () => true, textLayer
                 ? crypto.randomUUID()
                 : ("seg-" + Math.random().toString(36).slice(2, 10));
         }
+        if (!action.stroke_id) {
+            action.stroke_id = action.id;
+        }
         return action.id;
     }
 
@@ -909,12 +912,23 @@ export function createDoodleRenderer({ canvas, isVisible = () => true, textLayer
         const items = Array.isArray(target) ? target : (target ? [target] : []);
         items.forEach(item => {
             const action = (typeof item === "string")
-                ? lastDoodleActions.find(a => a.type === "draw" && a.id === item)
+                ? lastDoodleActions.find(a => a.type === "draw" && (a.id === item || a.stroke_id === item))
                 : item;
             if (action && action.type === "draw") {
                 ensureSegmentId(action);
-                selectedSegmentIds.add(action.id);
-                action.selected = true;
+                const strokeId = action.stroke_id;
+                if (strokeId) {
+                    lastDoodleActions.forEach(a => {
+                        if (a.type === "draw" && (a.stroke_id === strokeId || a.id === strokeId)) {
+                            ensureSegmentId(a);
+                            selectedSegmentIds.add(a.id);
+                            a.selected = true;
+                        }
+                    });
+                } else {
+                    selectedSegmentIds.add(action.id);
+                    action.selected = true;
+                }
             }
         });
         if (typeof onSelectSegment === "function") {
@@ -927,11 +941,21 @@ export function createDoodleRenderer({ canvas, isVisible = () => true, textLayer
         const items = Array.isArray(target) ? target : (target ? [target] : []);
         items.forEach(item => {
             const action = (typeof item === "string")
-                ? lastDoodleActions.find(a => a.type === "draw" && a.id === item)
+                ? lastDoodleActions.find(a => a.type === "draw" && (a.id === item || a.stroke_id === item))
                 : item;
             if (action) {
-                if (action.id) selectedSegmentIds.delete(action.id);
-                action.selected = false;
+                const strokeId = action.stroke_id;
+                if (strokeId) {
+                    lastDoodleActions.forEach(a => {
+                        if (a.type === "draw" && (a.stroke_id === strokeId || a.id === strokeId)) {
+                            if (a.id) selectedSegmentIds.delete(a.id);
+                            a.selected = false;
+                        }
+                    });
+                } else {
+                    if (action.id) selectedSegmentIds.delete(action.id);
+                    action.selected = false;
+                }
             }
         });
         if (typeof onSelectSegment === "function") {
@@ -964,6 +988,21 @@ export function createDoodleRenderer({ canvas, isVisible = () => true, textLayer
         const projX = x0 + t * dx;
         const projY = y0 + t * dy;
         return Math.hypot(px - projX, py - projY);
+    }
+
+    function segmentsIntersect(x1, y1, x2, y2, x3, y3, x4, y4) {
+        function ccw(ax, ay, bx, by, cx, cy) {
+            return (cy - ay) * (bx - ax) > (by - ay) * (cx - ax);
+        }
+        return (ccw(x1, y1, x3, y3, x4, y4) !== ccw(x2, y2, x3, y3, x4, y4)) &&
+               (ccw(x1, y1, x2, y2, x3, y3) !== ccw(x1, y1, x2, y2, x4, y4));
+    }
+
+    function lineIntersectsRect(ax, ay, bx, by, minX, minY, maxX, maxY) {
+        return segmentsIntersect(ax, ay, bx, by, minX, minY, maxX, minY) ||
+               segmentsIntersect(ax, ay, bx, by, minX, maxY, maxX, maxY) ||
+               segmentsIntersect(ax, ay, bx, by, minX, minY, minX, maxY) ||
+               segmentsIntersect(ax, ay, bx, by, maxX, minY, maxX, maxY);
     }
 
     function findSegmentAt(px, py, threshold = null) {
@@ -1004,11 +1043,22 @@ export function createDoodleRenderer({ canvas, isVisible = () => true, textLayer
         return lastDoodleActions.filter(action => {
             if (action.type !== "draw") return false;
             ensureSegmentId(action);
-            const segMinX = Math.min(Number(action.x0), Number(action.x1));
-            const segMaxX = Math.max(Number(action.x0), Number(action.x1));
-            const segMinY = Math.min(Number(action.y0), Number(action.y1));
-            const segMaxY = Math.max(Number(action.y0), Number(action.y1));
-            return segMaxX >= minX && segMinX <= maxX && segMaxY >= minY && segMinY <= maxY;
+            const ax = Number(action.x0);
+            const ay = Number(action.y0);
+            const bx = Number(action.x1);
+            const by = Number(action.y1);
+            const segMinX = Math.min(ax, bx);
+            const segMaxX = Math.max(ax, bx);
+            const segMinY = Math.min(ay, by);
+            const segMaxY = Math.max(ay, by);
+            if (segMaxX < minX || segMinX > maxX || segMaxY < minY || segMinY > maxY) {
+                return false;
+            }
+            if ((ax >= minX && ax <= maxX && ay >= minY && ay <= maxY) ||
+                (bx >= minX && bx <= maxX && by >= minY && by <= maxY)) {
+                return true;
+            }
+            return lineIntersectsRect(ax, ay, bx, by, minX, minY, maxX, maxY);
         });
     }
 
@@ -1019,64 +1069,253 @@ export function createDoodleRenderer({ canvas, isVisible = () => true, textLayer
     }
 
     const interactionTarget = canvas?.parentElement || canvas;
+
+    function getOrCreateSelectionBox() {
+        if (!interactionTarget) return null;
+        let box = interactionTarget.querySelector(".canvas-selection-box");
+        if (!box) {
+            box = document.createElement("div");
+            box.className = "canvas-selection-box";
+            box.style.position = "absolute";
+            box.style.border = "1.5px dashed #818cf8";
+            box.style.background = "rgba(99, 102, 241, 0.16)";
+            box.style.borderRadius = "4px";
+            box.style.pointerEvents = "none";
+            box.style.zIndex = "25";
+            box.style.display = "none";
+            box.style.boxSizing = "border-box";
+            interactionTarget.appendChild(box);
+        }
+        return box;
+    }
+
+    let boxDrag = null;
+
     interactionTarget?.addEventListener("pointerdown", event => {
         if (event.button !== 0) return;
-        if (event.target && event.target.closest && (event.target.closest(".canvas-stamp-annotation") || event.target.closest(".canvas-text-annotation"))) {
+        if (event.target && event.target.closest && (
+            event.target.closest(".canvas-stamp-annotation") ||
+            event.target.closest(".canvas-text-annotation") ||
+            event.target.closest(".stamp-resize-handle") ||
+            event.target.closest(".stamp-rotate-handle") ||
+            event.target.closest("#orator-command-overlay") ||
+            event.target.closest("#history-paging-controls") ||
+            event.target.closest(".a2ui-surface")
+        )) {
             return;
         }
         if (typeof canSelectSegment === "function" && !canSelectSegment()) return;
         if (!canvas) return;
         const rect = canvas.getBoundingClientRect();
         if (!rect.width || !rect.height) return;
-        const px = event.clientX - rect.left;
-        const py = event.clientY - rect.top;
-        const hit = findSegmentAt(px, py);
-        if (hit) {
-            const multi = event.shiftKey || event.ctrlKey || event.metaKey;
-            selectSegment(hit, multi);
-        } else if (!event.shiftKey && !event.ctrlKey && !event.metaKey) {
-            clearSelectedSegments();
+
+        event.preventDefault();
+
+        const startX = event.clientX - rect.left;
+        const startY = event.clientY - rect.top;
+
+        boxDrag = {
+            startClientX: event.clientX,
+            startClientY: event.clientY,
+            startX,
+            startY,
+            isMulti: event.shiftKey || event.ctrlKey || event.metaKey,
+            active: false,
+            pointerId: event.pointerId,
+        };
+
+        if (interactionTarget.setPointerCapture) {
+            try {
+                interactionTarget.setPointerCapture(event.pointerId);
+            } catch (_) {}
         }
     });
+
+    interactionTarget?.addEventListener("dragstart", event => {
+        if (boxDrag || (typeof canSelectSegment === "function" && canSelectSegment())) {
+            event.preventDefault();
+        }
+    });
+
+    interactionTarget?.addEventListener("pointermove", event => {
+        if (!boxDrag) return;
+        const dx = event.clientX - boxDrag.startClientX;
+        const dy = event.clientY - boxDrag.startClientY;
+        if (!boxDrag.active && Math.hypot(dx, dy) >= 4) {
+            boxDrag.active = true;
+            if (typeof window !== "undefined") window.isCanvasSelectionActive = true;
+            if (interactionTarget.classList.contains("stamp-drag-over")) {
+                interactionTarget.classList.remove("stamp-drag-over");
+            }
+            const box = getOrCreateSelectionBox();
+            if (box) box.style.display = "block";
+        }
+        if (boxDrag.active) {
+            event.preventDefault();
+            if (interactionTarget.classList.contains("stamp-drag-over")) {
+                interactionTarget.classList.remove("stamp-drag-over");
+            }
+            const rect = canvas.getBoundingClientRect();
+            const curX = event.clientX - rect.left;
+            const curY = event.clientY - rect.top;
+            const boxLeft = Math.max(0, Math.min(rect.width, Math.min(boxDrag.startX, curX)));
+            const boxTop = Math.max(0, Math.min(rect.height, Math.min(boxDrag.startY, curY)));
+            const boxRight = Math.max(0, Math.min(rect.width, Math.max(boxDrag.startX, curX)));
+            const boxBottom = Math.max(0, Math.min(rect.height, Math.max(boxDrag.startY, curY)));
+
+            const box = getOrCreateSelectionBox();
+            if (box) {
+                box.style.left = `${boxLeft}px`;
+                box.style.top = `${boxTop}px`;
+                box.style.width = `${boxRight - boxLeft}px`;
+                box.style.height = `${boxBottom - boxTop}px`;
+            }
+        }
+    });
+
+    const selectedStampItems = new Set();
+    let selectedStampItem = null;
+
+    function selectMovableStamp(item, multi = false) {
+        if (!stampLayer) return;
+        const previous = selectedStampItem;
+        const items = Array.isArray(item) ? item : (item ? [item] : []);
+        if (!multi) {
+            selectedStampItems.clear();
+        }
+        items.forEach(node => {
+            if (node) selectedStampItems.add(node);
+        });
+        Array.from(stampLayer.children).forEach(node => {
+            node.classList.toggle("movable", selectedStampItems.has(node));
+        });
+        const lastItem = items[items.length - 1] || null;
+        selectedStampItem = lastItem;
+        if (lastItem) {
+            stampLayer.appendChild(lastItem);
+            if (typeof lastItem.focus === "function") {
+                lastItem.focus();
+            }
+            if (previous !== lastItem && typeof onSelectStamp === "function" && lastItem.annotation) {
+                onSelectStamp(lastItem.annotation);
+            }
+        }
+    }
+
+    function getStampsInRect(x0, y0, x1, y1) {
+        if (!stampLayer || !canvas) return [];
+        const canvasRect = canvas.getBoundingClientRect();
+        if (!canvasRect.width || !canvasRect.height) return [];
+        const minX = Math.min(x0, x1);
+        const maxX = Math.max(x0, x1);
+        const minY = Math.min(y0, y1);
+        const maxY = Math.max(y0, y1);
+
+        return Array.from(stampLayer.children).filter(item => {
+            if (!item.classList.contains("canvas-stamp-annotation")) return false;
+            const itemRect = item.getBoundingClientRect();
+            const stampLeft = itemRect.left - canvasRect.left;
+            const stampTop = itemRect.top - canvasRect.top;
+            const stampRight = itemRect.right - canvasRect.left;
+            const stampBottom = itemRect.bottom - canvasRect.top;
+
+            return stampLeft <= maxX && stampRight >= minX && stampTop <= maxY && stampBottom >= minY;
+        });
+    }
+
+    const finishSelectionBox = event => {
+        if (!boxDrag) return;
+        const drag = boxDrag;
+        boxDrag = null;
+        if (typeof window !== "undefined") window.isCanvasSelectionActive = false;
+        if (interactionTarget.classList.contains("stamp-drag-over")) {
+            interactionTarget.classList.remove("stamp-drag-over");
+        }
+
+        if (interactionTarget.hasPointerCapture && interactionTarget.hasPointerCapture(event.pointerId)) {
+            try {
+                interactionTarget.releasePointerCapture(event.pointerId);
+            } catch (_) {}
+        }
+
+        const box = getOrCreateSelectionBox();
+        if (box) box.style.display = "none";
+
+        const rect = canvas.getBoundingClientRect();
+        if (drag.active) {
+            const curX = event.clientX - rect.left;
+            const curY = event.clientY - rect.top;
+            const boxLeft = Math.min(drag.startX, curX);
+            const boxTop = Math.min(drag.startY, curY);
+            const boxRight = Math.max(drag.startX, curX);
+            const boxBottom = Math.max(drag.startY, curY);
+
+            const segmentsInBox = getSegmentsInRect(boxLeft, boxTop, boxRight, boxBottom);
+            selectSegment(segmentsInBox, drag.isMulti);
+
+            const stampsInBox = getStampsInRect(boxLeft, boxTop, boxRight, boxBottom);
+            if (stampsInBox.length > 0) {
+                selectMovableStamp(stampsInBox, drag.isMulti);
+            } else if (!drag.isMulti) {
+                selectMovableStamp(null);
+            }
+        } else {
+            const hit = findSegmentAt(drag.startX, drag.startY);
+            if (hit) {
+                selectSegment(hit, drag.isMulti);
+                if (!drag.isMulti) selectMovableStamp(null);
+            } else if (!drag.isMulti) {
+                clearSelectedSegments();
+                selectMovableStamp(null);
+            }
+        }
+    };
+
+    interactionTarget?.addEventListener("pointerup", finishSelectionBox);
+    interactionTarget?.addEventListener("pointercancel", finishSelectionBox);
+    interactionTarget?.addEventListener("lostpointercapture", finishSelectionBox);
 
     if (typeof window !== "undefined") {
         window.addEventListener("keydown", event => {
             const active = document.activeElement;
             if (active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA" || active.isContentEditable)) return;
-            if (selectedSegmentIds.size === 0) return;
             if (event.key === "Escape") {
-                event.preventDefault();
-                clearSelectedSegments();
-            } else if (event.key === "Delete" || event.key === "Backspace") {
-                if (typeof onRemoveSegment === "function") {
-                    const removed = getSelectedSegments();
+                if (boxDrag) {
+                    boxDrag = null;
+                    const box = getOrCreateSelectionBox();
+                    if (box) box.style.display = "none";
+                }
+                if (selectedSegmentIds.size > 0) {
                     event.preventDefault();
                     clearSelectedSegments();
+                }
+                if (selectedStampItems.size > 0 || selectedStampItem) {
+                    event.preventDefault();
+                    selectMovableStamp(null);
+                }
+            } else if (event.key === "Delete" || event.key === "Backspace") {
+                let handled = false;
+                if (selectedSegmentIds.size > 0 && typeof onRemoveSegment === "function") {
+                    const removed = getSelectedSegments();
+                    clearSelectedSegments();
                     onRemoveSegment(removed);
+                    handled = true;
+                }
+                if (selectedStampItems.size > 0 && typeof onRemoveStamp === "function" && canMoveStamp()) {
+                    const toRemove = Array.from(selectedStampItems).map(node => node.annotation).filter(Boolean);
+                    selectMovableStamp(null);
+                    toRemove.forEach(ann => onRemoveStamp(ann));
+                    handled = true;
+                }
+                if (handled) {
+                    event.preventDefault();
                 }
             }
         });
     }
 
-    let selectedStampItem = null;
-
-    function selectMovableStamp(item) {
-        if (!stampLayer) return;
-        const previous = selectedStampItem;
-        selectedStampItem = item;
-        Array.from(stampLayer.children).forEach(node => node.classList.toggle("movable", node === item));
-        if (item) {
-            stampLayer.appendChild(item);
-            if (typeof item.focus === "function") {
-                item.focus();
-            }
-            if (previous !== item && typeof onSelectStamp === "function" && item.annotation) {
-                onSelectStamp(item.annotation);
-            }
-        }
-    }
-
     stampLayer?.parentElement.addEventListener("pointerdown", event => {
+        if (event.shiftKey || event.ctrlKey || event.metaKey) return;
         if (!event.target.closest(".canvas-stamp-annotation")) selectMovableStamp(null);
     });
 
@@ -1574,5 +1813,8 @@ export function createDoodleRenderer({ canvas, isVisible = () => true, textLayer
         findSegmentAt,
         getSegmentsInRect,
         selectSegmentsInRect,
+        selectStamp: selectMovableStamp,
+        getSelectedStamps: () => Array.from(selectedStampItems).map(node => node.annotation).filter(Boolean),
+        getStampsInRect,
     };
 }

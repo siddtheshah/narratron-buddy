@@ -1388,7 +1388,6 @@ def test_serve_theater_output_passes_join_key_to_require_canvas_access_async(tmp
 async def test_theater_scenes_and_characters_require_active_orator(tmp_path: Path) -> None:
     from starlette.requests import Request
     from components.theater_manager import TheaterManager
-    from api_server.theaters import PushSceneRequest
 
     manager = TheaterManager(base_theaters_dir=tmp_path)
     manager.create_theater("Stage", "scenes-stage", reference_files=[
@@ -1481,6 +1480,59 @@ async def test_theater_push_scene_to_canvas(tmp_path: Path) -> None:
             with pytest.raises(HTTPException) as exc_missing:
                 await theaters.push_theater_scene(PushSceneRequest(name="Nonexistent Realm"), request, "push-stage")
             assert exc_missing.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_theater_push_subsequent_scenes_with_shared_stem_succeeds(tmp_path: Path) -> None:
+    from starlette.requests import Request
+    from components.theater_manager import TheaterManager
+    from api_server.theaters import PushSceneRequest
+
+    manager = TheaterManager(base_theaters_dir=tmp_path)
+    manager.create_theater("Stage", "multi-scene-stage", reference_files=[
+        ("references/scenes/The Desk of Origins/1.png", png_bytes()),
+        ("references/scenes/The Desk of Origins/scene.yaml", b"description: Ancient cedar drafting table.\n"),
+        ("references/scenes/Grand Ballroom/1.png", png_bytes()),
+        ("references/scenes/Grand Ballroom/scene.yaml", b"description: Sparkling crystal chandeliers.\n"),
+    ])
+    request = Request({"type": "http", "headers": []})
+    access = AsyncMock()
+    user_orator = {"id": 10, "username": "orator"}
+    deployment = {"theater_id": "multi-scene-stage", "user_id": 10, "active_orator_id": 10}
+
+    with patch.object(theaters, "_require_canvas_access_async", access), \
+         patch.object(theaters, "theater_manager", manager), \
+         patch.object(theaters.db, "get_deployment", return_value=deployment):
+
+        mock_session = MagicMock()
+        mock_session.is_alive = True
+        with patch.object(theaters, "get_current_user_async", return_value=user_orator), \
+             patch.object(theaters.live_agent_manager, "get_session", return_value=mock_session):
+
+            # Push first scene
+            res1 = await theaters.push_theater_scene(PushSceneRequest(name="The Desk of Origins"), request, "multi-scene-stage")
+            assert res1["status"] == "ok"
+            state = theaters.canvas_states.get("multi-scene-stage")
+            path1 = state.visual.shown_image_path
+            time1 = state.visual.shown_image_time
+            payload1 = state.get_latest_state()
+            assert path1 is not None
+            assert state.visual.shown_image_prompt == "Ancient cedar drafting table."
+
+            # Push second scene (both have image file named '1.png' in their respective scene folders)
+            res2 = await theaters.push_theater_scene(PushSceneRequest(name="Grand Ballroom"), request, "multi-scene-stage")
+            assert res2["status"] == "ok"
+            path2 = state.visual.shown_image_path
+            time2 = state.visual.shown_image_time
+            payload2 = state.get_latest_state()
+
+            # Second push must produce distinct display path, updated time, and changed latest state
+            assert path2 is not None
+            assert path1 != path2
+            assert time2 > time1
+            assert payload1["latest"] != payload2["latest"]
+            assert state.visual.shown_image_prompt == "Sparkling crystal chandeliers."
+
 
 
 

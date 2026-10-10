@@ -157,7 +157,7 @@ def test_canvas_html_and_css_scenes_characters_wiring() -> None:
     assert "renderCharactersManagerGrid" in canvas_html
 
 
-def test_playlist_tabs_push_entire_playlist_or_selected_track(scenes_chars_page: Page) -> None:
+def test_playlist_headers_push_entire_playlist_or_selected_track(scenes_chars_page: Page) -> None:
     page = scenes_chars_page
     page.evaluate("applyRoleUI(true); setStampManagerOpen(true)")
     pushed_ids: list[str] = []
@@ -175,18 +175,45 @@ def test_playlist_tabs_push_entire_playlist_or_selected_track(scenes_chars_page:
     page.route("**/api/theaters/*/playlists", serve_playlists)
     page.route("**/api/theaters/*/playlists/push", push_track)
     page.locator("#stamp-tab-playlists").click()
-    expect(page.locator("#playlists-manager-content .asset-track-list .asset-push-button")).to_have_count(2)
+
+    calm_group = page.locator('.playlist-group[data-playlist-name="Calm"]')
+    battle_group = page.locator('.playlist-group[data-playlist-name="Battle"]')
+    expect(page.locator(".playlist-group")).to_have_count(2)
+    expect(calm_group.locator(".playlist-header-toggle")).to_have_attribute("aria-expanded", "false")
+    expect(battle_group.locator(".playlist-header-toggle")).to_have_attribute("aria-expanded", "false")
+    expect(calm_group.locator(".asset-track-list")).to_be_hidden()
+    expect(battle_group.locator(".asset-track-list")).to_be_hidden()
     assert pushed_ids == []
-    playlist_button = page.get_by_role("tab", name="Calm", exact=True)
+
+    # Expand Calm: its track list becomes visible
+    calm_group.locator(".playlist-header-toggle").click()
+    expect(calm_group.locator(".playlist-header-toggle")).to_have_attribute("aria-expanded", "true")
+    expect(calm_group.locator(".asset-track-list")).to_be_visible()
+    expect(calm_group.locator(".asset-track-list .asset-push-button")).to_have_count(2)
+
+    # Minimize Calm again: its track list becomes hidden
+    calm_group.locator(".playlist-header-toggle").click()
+    expect(calm_group.locator(".playlist-header-toggle")).to_have_attribute("aria-expanded", "false")
+    expect(calm_group.locator(".asset-track-list")).to_be_hidden()
+
+    # Push whole Calm playlist: also auto-expands it
+    playlist_button = page.locator('[data-asset-id="playlist:Calm"]')
     playlist_button.click()
     expect(playlist_button.locator("small")).to_have_text("Pushed!")
-    battle_button = page.get_by_role("tab", name="Battle", exact=True)
+    expect(calm_group.locator(".asset-track-list")).to_be_visible()
+
+    # Push whole Battle playlist: auto-expands Battle
+    battle_button = page.locator('[data-asset-id="playlist:Battle"]')
     battle_button.click()
     expect(battle_button.locator("small")).to_have_text("Pushed!")
-    expect(page.locator("#playlists-manager-content .asset-track-list .asset-push-button")).to_have_count(1)
+    expect(battle_group.locator(".asset-track-list")).to_be_visible()
+    expect(battle_group.locator(".asset-track-list .asset-push-button")).to_have_count(1)
+
+    # Push individual track
     track_button = page.locator('[data-asset-id="battle-a"]')
     track_button.click()
     expect(track_button.locator("small")).to_have_text("Pushed!")
+
     assert pushed_ids == ["playlist:Calm", "playlist:Battle", "battle-a"]
     page.locator("#stamp-tab-scenes").click()
     expect(page.locator("#playlists-manager")).to_be_hidden()
@@ -251,17 +278,30 @@ def test_playing_track_highlight_survives_tabs_and_updates_for_silence(scenes_ch
     page.route("**/api/theaters/*/playlists/push", push_playlist)
     page.evaluate("updateAssetPlaybackSelection({music_id: 'Battle', tracks: ['/battle.mp3'], paused: false})")
     page.locator("#stamp-tab-playlists").click()
-    page.get_by_role("tab", name="Battle", exact=True).click()
-    playing = page.locator('#playlists-manager-content .currently-playing[data-asset-id="/battle.mp3"]')
+
+    battle_toggle = page.locator('.playlist-header-toggle[data-playlist-name="Battle"]')
     playlist_playing = page.locator('[data-asset-id="playlist:Battle"]')
-    expect(playing).to_have_count(1)
     expect(playlist_playing).to_have_attribute("aria-current", "true")
+    expect(page.locator('.playlist-group[data-playlist-name="Battle"] .asset-track-list')).to_be_hidden()
+
+    # Expand Battle: track list is visible, playing track is shown
+    battle_toggle.click()
+    expect(page.locator('.playlist-group[data-playlist-name="Battle"] .asset-track-list')).to_be_visible()
+    playing = page.locator('#playlists-manager-content .currently-playing[data-asset-id="/battle.mp3"]')
+    expect(playing).to_have_count(1)
     expect(playing.locator(".asset-playing-indicator")).to_have_text("▶ Playing")
     expect(playing).to_have_attribute("aria-current", "true")
-    page.get_by_role("tab", name="Calm", exact=True).click()
-    expect(playing).to_have_count(0)
-    page.get_by_role("tab", name="Battle", exact=True).click()
+
+    # Minimize Battle: header still shows active playing indicator, while track list is hidden
+    battle_toggle.click()
+    expect(page.locator('.playlist-group[data-playlist-name="Battle"] .asset-track-list')).to_be_hidden()
+    expect(playlist_playing).to_have_attribute("aria-current", "true")
+
+    # Re-expand Battle: track list is visible again
+    battle_toggle.click()
+    expect(page.locator('.playlist-group[data-playlist-name="Battle"] .asset-track-list')).to_be_visible()
     expect(playing).to_have_count(1)
+
     page.evaluate("updateAssetPlaybackSelection({music_id: 'Battle', tracks: ['/battle.mp3'], paused: true})")
     expect(playing.locator(".asset-playing-indicator")).to_have_text("Ⅱ Paused")
     expect(playlist_playing.locator(".asset-playing-indicator")).to_have_text("Ⅱ Paused")

@@ -143,6 +143,15 @@
             justify-content: center;
             align-items: center;
             min-height: 0;
+            user-select: none;
+            -webkit-user-select: none;
+            outline: none;
+        }
+
+        #image-container img {
+            -webkit-user-drag: none;
+            user-select: none;
+            -webkit-user-select: none;
         }
 
         #image-container.layout-resizing::after {
@@ -2578,6 +2587,17 @@
             cursor: grabbing;
         }
 
+        .canvas-selection-box {
+            position: absolute;
+            border: 1.5px dashed #818cf8;
+            background: rgba(99, 102, 241, 0.16);
+            border-radius: 4px;
+            pointer-events: none;
+            z-index: 25;
+            display: none;
+            box-sizing: border-box;
+        }
+
         .canvas-text-editor {
             position: absolute;
             z-index: 16;
@@ -2809,6 +2829,7 @@
             <div id="canvas-stamp-layer"></div>
             <canvas id="doodle-canvas"></canvas>
             <div id="canvas-text-layer"></div>
+            <div id="canvas-selection-box" class="canvas-selection-box"></div>
             <div id="a2ui-canvas-layer" aria-live="polite"></div>
             <div id="narration-pane-mount"></div>
             <div id="orator-command-overlay" role="dialog" aria-modal="true" aria-labelledby="orator-command-title"
@@ -5099,6 +5120,7 @@
         if (pagingControls && imgContainer) {
             let pagingHoverTimeout = null;
             imgContainer.addEventListener('pointermove', (e) => {
+                if (typeof window !== 'undefined' && window.isCanvasSelectionActive) return;
                 if (pagingControls.classList.contains('inspector-open')) return;
                 const rect = imgContainer.getBoundingClientRect();
                 const relY = e.clientY - rect.top;
@@ -5334,10 +5356,13 @@
         function renderDoodleBatch(data) {
             const points = data.points;
             if (!Array.isArray(points) || points.length < 4) return;
+            const batchStrokeId = data.stroke_id || data.client_message_id || ((typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : ('batch-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7)));
             const rect = canvas.getBoundingClientRect();
             for (let index = 0; index < points.length - 2; index += 2) {
                 const action = {
-                    type: 'draw', x0: points[index], y0: points[index + 1],
+                    type: 'draw',
+                    stroke_id: batchStrokeId,
+                    x0: points[index], y0: points[index + 1],
                     x1: points[index + 2], y1: points[index + 3],
                     color: data.color, size: data.size || 3
                 };
@@ -5693,6 +5718,9 @@
                 } else if (data.type === 'draw_batch') {
                     renderDoodleBatch(data);
                 } else if (data.type === 'draw') {
+                    if (!data.stroke_id) {
+                        data.stroke_id = data.client_message_id || ((typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : ('stroke-' + Date.now()));
+                    }
                     doodleActions.push(data);
                     const rect = canvas.getBoundingClientRect();
                     renderSegment(
@@ -5733,6 +5761,7 @@
         function drawLine(nx0, ny0, nx1, ny1, color, size, emit) {
             const action = {
                 type: 'draw',
+                stroke_id: currentStrokeId || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : ('stroke-' + Date.now())),
                 x0: nx0,
                 y0: ny0,
                 x1: nx1,
@@ -5912,9 +5941,14 @@
 
         canvas.addEventListener('click', beginTextAnnotation);
 
+        let currentStrokeId = null;
+
         canvas.addEventListener('mousedown', (e) => {
             if (!doodlesEnabled || !currentColor) return;
             isDrawing = true;
+            currentStrokeId = (typeof crypto !== 'undefined' && crypto.randomUUID)
+                ? crypto.randomUUID()
+                : ('stroke-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7));
             const coords = getNormalizedCoords(e);
             lastNormX = coords.x;
             lastNormY = coords.y;
@@ -5928,14 +5962,17 @@
             lastNormY = coords.y;
         });
 
-        canvas.addEventListener('mouseup', () => { isDrawing = false; flushDrawBatch(); });
-        canvas.addEventListener('mouseout', () => { isDrawing = false; flushDrawBatch(); });
+        canvas.addEventListener('mouseup', () => { isDrawing = false; currentStrokeId = null; flushDrawBatch(); });
+        canvas.addEventListener('mouseout', () => { isDrawing = false; currentStrokeId = null; flushDrawBatch(); });
 
         // Touch support for tablets/mobile
         canvas.addEventListener('touchstart', (e) => {
             if (!doodlesEnabled || !currentColor) return;
             e.preventDefault();
             isDrawing = true;
+            currentStrokeId = (typeof crypto !== 'undefined' && crypto.randomUUID)
+                ? crypto.randomUUID()
+                : ('stroke-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7));
             const coords = getNormalizedCoords(e);
             lastNormX = coords.x;
             lastNormY = coords.y;
@@ -5950,7 +5987,7 @@
             lastNormY = coords.y;
         }, { passive: false });
 
-        canvas.addEventListener('touchend', () => { isDrawing = false; flushDrawBatch(); });
+        canvas.addEventListener('touchend', () => { isDrawing = false; currentStrokeId = null; flushDrawBatch(); });
 
         clearBtn.addEventListener('click', () => {
             flushDrawBatch();
@@ -6520,7 +6557,10 @@
 
         if (imgContainer) {
             imgContainer.addEventListener('dragover', (e) => {
-                if (canPlaceStamps()) {
+                if (typeof window !== 'undefined' && window.isCanvasSelectionActive) return;
+                const types = e.dataTransfer ? Array.from(e.dataTransfer.types || []) : [];
+                const isStampDrag = types.includes('application/json') || types.includes('text/plain');
+                if (canPlaceStamps() && isStampDrag) {
                     e.preventDefault();
                     e.dataTransfer.dropEffect = 'copy';
                     imgContainer.classList.add('stamp-drag-over');
@@ -6657,6 +6697,7 @@
         let assetLoadVersion = 0;
         let selectedPlaylist = '';
         let assetMusicState = null;
+        const expandedPlaylists = new Set();
         const noMusicButton = createAssetButton({ id: 'no_music', name: 'No Music' }, 'playlists');
         noMusicButton.id = 'no-music-button';
         extraAssetPanels.playlists.prepend(noMusicButton);
@@ -6708,33 +6749,93 @@
                     return;
                 }
                 if (kind === 'playlists') {
-                    const tabs = document.createElement('div');
-                    tabs.className = 'playlist-tabs';
-                    tabs.setAttribute('role', 'tablist');
-                    tabs.setAttribute('aria-label', 'Playlists');
-                    const tracks = document.createElement('div');
-                    tracks.className = 'asset-track-list';
-                    tracks.setAttribute('role', 'tabpanel');
-                    const select = (playlist) => {
-                        selectedPlaylist = playlist.name;
-                        for (const button of tabs.children) {
-                            const active = button.dataset.playlist === playlist.name;
-                            button.classList.toggle('active', active);
-                            button.setAttribute('aria-selected', `${active}`);
+                    const listContainer = document.createElement('div');
+                    listContainer.className = 'playlist-accordion-list';
+                    assets.forEach((playlist, index) => {
+                        const initialExpanded = expandedPlaylists.has(playlist.name);
+                        const group = document.createElement('div');
+                        group.className = 'playlist-group';
+                        group.dataset.playlistName = playlist.name;
+                        if (!initialExpanded) {
+                            group.classList.add('minimized');
                         }
-                        tracks.replaceChildren();
-                        playlist.tracks.forEach(track => tracks.appendChild(createAssetButton(track, kind)));
-                    };
-                    assets.forEach(playlist => {
-                        const button = createAssetButton(playlist, kind);
-                        button.setAttribute('role', 'tab');
-                        button.setAttribute('aria-label', playlist.name);
-                        button.dataset.playlist = playlist.name;
-                        button.addEventListener('click', () => select(playlist));
-                        tabs.appendChild(button);
+
+                        const header = document.createElement('div');
+                        header.className = 'playlist-header';
+
+                        const toggleBtn = document.createElement('button');
+                        toggleBtn.type = 'button';
+                        toggleBtn.className = 'playlist-header-toggle';
+                        toggleBtn.dataset.playlistName = playlist.name;
+                        toggleBtn.setAttribute('aria-expanded', initialExpanded ? 'true' : 'false');
+                        toggleBtn.setAttribute('aria-controls', `playlist-tracks-${index}`);
+                        toggleBtn.setAttribute('aria-label', `Toggle ${playlist.name} playlist`);
+
+                        const chevron = document.createElement('span');
+                        chevron.className = 'playlist-chevron';
+                        chevron.setAttribute('aria-hidden', 'true');
+                        chevron.textContent = initialExpanded ? '▼' : '▶';
+
+                        const title = document.createElement('span');
+                        title.className = 'playlist-title';
+                        title.textContent = playlist.name;
+
+                        const countBadge = document.createElement('span');
+                        countBadge.className = 'playlist-track-count';
+                        const trackCount = playlist.tracks ? playlist.tracks.length : 0;
+                        countBadge.textContent = `${trackCount} ${trackCount === 1 ? 'track' : 'tracks'}`;
+
+                        toggleBtn.append(chevron, title, countBadge);
+
+                        const pushBtn = createAssetButton(playlist, kind);
+                        pushBtn.classList.add('playlist-header-push');
+                        pushBtn.setAttribute('aria-label', `Push ${playlist.name}`);
+
+                        header.append(toggleBtn, pushBtn);
+
+                        const trackList = document.createElement('div');
+                        trackList.className = 'asset-track-list playlist-track-list';
+                        trackList.id = `playlist-tracks-${index}`;
+                        trackList.hidden = !initialExpanded;
+
+                        playlist.tracks.forEach(track => {
+                            trackList.appendChild(createAssetButton(track, kind));
+                        });
+
+                        const setExpanded = (expanded) => {
+                            toggleBtn.setAttribute('aria-expanded', `${expanded}`);
+                            chevron.textContent = expanded ? '▼' : '▶';
+                            trackList.hidden = !expanded;
+                            group.classList.toggle('minimized', !expanded);
+                            if (expanded) {
+                                expandedPlaylists.add(playlist.name);
+                            } else {
+                                expandedPlaylists.delete(playlist.name);
+                            }
+                        };
+
+                        toggleBtn.addEventListener('click', (e) => {
+                            e.stopPropagation();
+                            const isExpanded = toggleBtn.getAttribute('aria-expanded') === 'true';
+                            setExpanded(!isExpanded);
+                        });
+
+                        header.addEventListener('click', (e) => {
+                            if (e.target.closest('.playlist-header-push')) return;
+                            const isExpanded = toggleBtn.getAttribute('aria-expanded') === 'true';
+                            setExpanded(!isExpanded);
+                        });
+
+                        pushBtn.addEventListener('click', () => {
+                            if (toggleBtn.getAttribute('aria-expanded') !== 'true') {
+                                setExpanded(true);
+                            }
+                        });
+
+                        group.append(header, trackList);
+                        listContainer.appendChild(group);
                     });
-                    panel.append(tabs, tracks);
-                    select(assets.find(p => p.name === selectedPlaylist) || assets[0]);
+                    panel.appendChild(listContainer);
                 } else {
                     panel.className = 'asset-track-list';
                     assets.forEach(asset => panel.appendChild(createAssetButton(asset, kind)));
@@ -6760,6 +6861,7 @@
             button.dataset.assetKind = kind;
             button.dataset.assetId = asset.id;
             button.dataset.playlistName = asset.tracks ? asset.name : '';
+            if (asset.tracks) button.dataset.playlist = asset.name;
             button.dataset.trackUrl = asset.tracks ? asset.tracks[0]?.url || '' : asset.url || asset.id;
             button.title = asset.description || `Push ${asset.name} to canvas`;
             if (kind === 'animations' && asset.url) {
@@ -6770,7 +6872,7 @@
                 button.appendChild(img);
             }
             const label = document.createElement('span');
-            label.textContent = asset.description || asset.name;
+            label.textContent = asset.tracks ? 'Push' : (asset.description || asset.name);
             const action = document.createElement('small');
             action.textContent = 'Push to Canvas';
             action.hidden = Boolean(asset.tracks);

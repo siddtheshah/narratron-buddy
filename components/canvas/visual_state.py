@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import glob
+import hashlib
 import logging
 import os
 from pathlib import Path
@@ -256,15 +257,14 @@ class VisualState:
             return file_path
 
         img_dir = self.theater.image_artifacts_dir()
-        if isinstance(img_dir, (str, Path)):
-            out_dir = str(img_dir)
-        else:
-            out_dir = os.path.dirname(file_path) or "."
+        out_dir = str(img_dir) if img_dir is not None else (os.path.dirname(file_path) or ".")
 
         try:
             os.makedirs(out_dir, exist_ok=True)
             stem = Path(file_path).stem
-            webp_filename = f"{stem}.webp"
+            canonical = str(Path(file_path).resolve())
+            path_hash = hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:10]
+            webp_filename = f"{stem}_{path_hash}.webp"
             webp_path = os.path.join(out_dir, webp_filename)
 
             if os.path.exists(webp_path) and os.path.exists(file_path):

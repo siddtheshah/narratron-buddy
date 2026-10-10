@@ -1,3 +1,4 @@
+import hashlib
 import logging
 import os
 from pathlib import Path
@@ -190,7 +191,9 @@ class ImageTools(BaseTools):
             return file_path
 
         stem = Path(file_path).stem
-        webp_filename = f"{stem}.webp"
+        canonical = str(Path(file_path).resolve())
+        path_hash = hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:10]
+        webp_filename = f"{stem}_{path_hash}.webp"
         webp_path = os.path.join(self.output_dir, webp_filename)
 
         try:
