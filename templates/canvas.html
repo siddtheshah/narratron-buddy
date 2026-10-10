@@ -3509,6 +3509,7 @@
             let cachedHidden = [];
             let hiddenRevealed = false;
             let isFetching = false;
+            let isPinned = false;
 
             function escapeHtml(str) {
                 return String(str)
@@ -3516,6 +3517,19 @@
                     .replace(/</g, '&lt;')
                     .replace(/>/g, '&gt;')
                     .replace(/"/g, '&quot;');
+            }
+
+            function isHiddenItem(item, hiddenSet) {
+                if (!item) return false;
+                if (item.hidden === true || item.is_hidden === true) return true;
+                const rawTopic = String(item.topic || item.name || '').trim().toLowerCase();
+                if (!rawTopic) return false;
+                if (hiddenSet.has(rawTopic)) return true;
+                const normalized = rawTopic.replace(/[_\s-]+/g, ' ');
+                for (const h of hiddenSet) {
+                    if (h.replace(/[_\s-]+/g, ' ') === normalized) return true;
+                }
+                return false;
             }
 
             function renderStickyNotes(items, hiddenList) {
@@ -3528,15 +3542,17 @@
 
                 const notes = cachedNotes || [];
                 const hiddenSet = new Set(
-                    (cachedHidden || []).map(h => String(h).trim().toLowerCase()).filter(Boolean)
+                    (cachedHidden || []).map(h => {
+                        const val = typeof h === 'object' && h !== null ? (h.topic || h.name || '') : h;
+                        return String(val).trim().toLowerCase();
+                    }).filter(Boolean)
                 );
 
                 const visibleItems = [];
                 const hiddenItems = [];
 
                 for (const item of notes) {
-                    const topic = String(item.topic || item.name || '').trim().toLowerCase();
-                    if (hiddenSet.has(topic)) {
+                    if (isHiddenItem(item, hiddenSet)) {
                         hiddenItems.push(item);
                     } else {
                         visibleItems.push(item);
@@ -3622,8 +3638,31 @@
                         e.preventDefault();
                         hiddenRevealed = !hiddenRevealed;
                         renderStickyNotes(cachedNotes, cachedHidden);
+                        if (hiddenRevealed) {
+                            const hiddenContainer = document.getElementById('sticky-notes-hidden-container');
+                            if (hiddenContainer) {
+                                hiddenContainer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                            }
+                        }
                     });
                 }
+            }
+
+            function resolveTheaterId() {
+                let tid = new URLSearchParams(window.location.search).get('theater_id');
+                if (!tid && typeof currenttheaterId !== 'undefined' && currenttheaterId) {
+                    tid = currenttheaterId;
+                }
+                if (!tid && typeof theaterId !== 'undefined' && theaterId) {
+                    tid = theaterId;
+                }
+                if (!tid) {
+                    const pathParts = window.location.pathname.split('/').filter(Boolean);
+                    if (pathParts.length >= 2 && pathParts[0] === 'theaters') {
+                        tid = pathParts[1];
+                    }
+                }
+                return tid;
             }
 
             async function triggerStickyNotesFetch() {
@@ -3636,20 +3675,12 @@
                 }
 
                 try {
-                    let currentTheaterId = new URLSearchParams(window.location.search).get('theater_id');
-                    if (!currentTheaterId && typeof theaterId !== 'undefined' && theaterId) {
-                        currentTheaterId = theaterId;
-                    }
+                    const currentTheaterId = resolveTheaterId();
                     if (!currentTheaterId) {
-                        const pathParts = window.location.pathname.split('/').filter(Boolean);
-                        if (pathParts.length >= 2 && pathParts[0] === 'theaters') {
-                            currentTheaterId = pathParts[1];
-                        }
+                        return;
                     }
 
-                    const url = currentTheaterId
-                        ? `/theaters/${encodeURIComponent(currentTheaterId)}/sticky-notes`
-                        : `/api/sticky-notes`;
+                    const url = `/theaters/${encodeURIComponent(currentTheaterId)}/sticky-notes`;
                     const response = await fetch(url);
                     if (!response.ok) throw new Error(`HTTP ${response.status}`);
                     const data = await response.json();
@@ -3686,12 +3717,24 @@
             });
 
             btn.addEventListener('mouseleave', () => {
-                btn.classList.remove('expanded');
-                if (hiddenRevealed) {
-                    hiddenRevealed = false;
-                    renderStickyNotes(cachedNotes, cachedHidden);
+                if (!isPinned) {
+                    btn.classList.remove('expanded');
                 }
             });
+
+            btn.addEventListener('click', (e) => {
+                if (e.target.closest('#sticky-notes-hidden-toggle-btn') || e.target.closest('.sticky-note-card')) {
+                    return;
+                }
+                isPinned = !isPinned;
+                btn.classList.toggle('expanded', isPinned);
+                if (isPinned) {
+                    triggerStickyNotesFetch();
+                }
+            });
+
+            // Initial fetch to load sticky notes and hidden configuration on canvas load
+            triggerStickyNotesFetch();
         })();
 
         let startAudioRecorderWorklet;
