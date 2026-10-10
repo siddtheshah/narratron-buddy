@@ -26,6 +26,28 @@ def create_fake_image_bytes() -> bytes:
 
 
 class TestImageTools(BaseTestCase):
+    def test_show_image_requires_handle_and_resolves_latest_scene(self) -> None:
+        theater = self.manager.theater("scene_handles")
+        scene_dir = theater.scenes_dir() / "Stormy Battlefield"
+        scene_dir.mkdir(parents=True)
+        first = scene_dir / "1.png"
+        latest = scene_dir / "2.png"
+        Image.new("RGB", (10, 10), "blue").save(first)
+        reference_manager = make_reference_manager(theater)
+        reference_manager.available_scene_images = MagicMock(return_value={"Stormy Battlefield": str(first)})
+        tools = self.make_image_tools(
+            self.config, theater_id=theater.theater_id, theater_manager=self.manager,
+            reference_manager=reference_manager,
+        )
+        self.assertIn("requires a reference handle", tools.show_image(str(first)))
+        self.assertIsNone(tools.currently_displayed_image_path)
+        Image.new("RGB", (10, 10), "red").save(latest)
+        reference_manager.available_scene_images.return_value = {"Stormy Battlefield": str(latest)}
+        result = tools.show_image(reference_handle="Stormy Battlefield")
+        self.assertIn("Successfully displayed 'Stormy Battlefield'", result)
+        self.assertNotIn(str(latest), result)
+        self.assertEqual(tools.currently_displayed_image_path, str(latest))
+
     def setUp(self):
         super().setUp()
         self.temp_dir = tempfile.mkdtemp()
@@ -63,6 +85,30 @@ class TestImageTools(BaseTestCase):
             provider="hybrid-flux-gemini",
             model="fal-ai/flux-2/klein/9b",
         )
+
+    @patch("tools.image.image_tool.get_image_provider")
+    def test_create_image_cleans_prompt_before_provider_and_metadata(self, mock_get_provider: MagicMock) -> None:
+        provider = mock_get_provider.return_value
+        provider.generate.return_value = self._provider_result()
+        tools = self.make_image_tools(self.config, theater_id="prompt_cleanup", theater_manager=self.manager)
+        with self.assertLogs("tools.image.image_tool", level="DEBUG") as logs:
+            tools.create_image("A duel, no graphic content, subdued violence, sparks fly. Keep the scene non-graphic, intense, and cinematic.", image_name="duel", display=False)
+            tools.join_generation()
+        request = provider.generate.call_args.args[0]
+        self.assertEqual(request.prompt, "A duel, graphic content, explicit violence, sparks fly. Keep the scene graphic, intense, and cinematic.")
+        self.assertTrue(any("Image prompt cleanup original=" in entry for entry in logs.output))
+        paths = list(tools.theater.image_artifacts_dir().glob("*.jpg"))
+        self.assertEqual(len(paths), 1)
+        with Image.open(paths[0]) as image:
+            self.assertNotIn("no graphic content", str(image.getexif()))
+            self.assertIn("explicit violence", str(image.getexif()))
+
+    @patch("tools.image.image_tool.get_image_provider")
+    def test_create_image_rejects_empty_cleaned_prompt(self, mock_get_provider: MagicMock) -> None:
+        tools = self.make_image_tools(self.config, theater_id="cleanup_empty", theater_manager=self.manager)
+        result = tools.create_image("", image_name="empty", display=False)
+        self.assertIn("Error: image_prompt", result)
+        mock_get_provider.assert_not_called()
 
     @patch("tools.image.image_tool.get_image_provider")
     def test_prompt_tags_attach_session_portraits_without_reference_field(self, mock_get_provider: MagicMock) -> None:
@@ -674,9 +720,9 @@ class TestImageTools(BaseTestCase):
         path = Path(tools.reference_dir) / "forest.jpg"
         Image.new("RGB", (10, 10), "green").save(path)
         with patch.object(ImageTools, "_schedule_cooldown_timer"):
-            tools.show_image(str(path))
+            tools.show_image(path.stem)
             assert "scheduled" in tools.create_image("castle", image_name="castle")
-            assert "parameters updated" in tools.show_image(str(path), effect="dream")
+            assert "parameters updated" in tools.show_image(path.stem, effect="dream")
             pending = tools.get_pending_cycle_call("image_cycle")
             assert pending is not None
             assert pending["func"].__name__ == "show_image"
@@ -736,7 +782,7 @@ class TestImageTools(BaseTestCase):
         mock_get_provider.return_value.generate.side_effect = generate
         tools.cooldown_duration = 9.0
         with patch.object(ImageTools, "_schedule_cooldown_timer"):
-            tools.show_image(str(path))
+            tools.show_image(path.stem)
             tools.create_image("castle", image_name="castle")
             tools._last_call_times.clear()
             tools.acquire_in_flight("image_cycle")
@@ -772,15 +818,15 @@ class TestImageTools(BaseTestCase):
         path = Path(tools.reference_dir) / "forest.jpg"
         Image.new("RGB", (10, 10), "green").save(path)
         with patch.object(ImageTools, "_schedule_cooldown_timer"):
-            tools.show_image(str(path))
-            tools.show_image(str(path), effect="dream")
+            tools.show_image(path.stem)
+            tools.show_image(path.stem, effect="dream")
             tools.request_orator_bypass({"create_image"})
             tools.visual.request_immediate_image()
             assert "started" in tools.create_image("castle", image_name="castle")
             tools.join_generation()
             assert not tools._pending_cycle_calls
             assert tools.visual.current_cycle_visual["source"] == "create_image"
-            assert "scheduled" in tools.show_image(str(path), effect="haze")
+            assert "scheduled" in tools.show_image(path.stem, effect="haze")
             tools.cancel_pending_cycle_call("image_cycle")
 
     @patch("tools.image.image_tool.get_image_provider")
@@ -798,9 +844,9 @@ class TestImageTools(BaseTestCase):
 
         tools.on_after_tool_call = after_call
         try:
-            tools.show_image(str(path))
+            tools.show_image(path.stem)
             assert "scheduled" in tools.create_image("castle", image_name="castle")
-            assert "parameters updated" in tools.show_image(str(path), effect="dream")
+            assert "parameters updated" in tools.show_image(path.stem, effect="dream")
             assert finished.wait(5)
             assert tools.visual.next_cycle_image["effect"] == "dream"
             mock_get_provider.return_value.generate.assert_not_called()
@@ -1117,7 +1163,7 @@ class TestImageTools(BaseTestCase):
         self.assertIn("Error: Image 'Soran' not found.", res_alias)
 
         res_path = tools.show_image(char_img)
-        self.assertIn("not found", res_path)
+        self.assertIn("requires a reference handle", res_path)
 
         # Canvas visual state must not have displayed the character image
         self.assertNotEqual(tools.currently_displayed_image_path, char_img)
@@ -1129,7 +1175,8 @@ class TestImageTools(BaseTestCase):
         capture = captures_dir / "canvas_deadbeef.png"
         Image.new("RGB", (10, 10), color="red").save(capture)
 
-        res = tools.show_image(str(capture))
+        tools.visual.register_image(str(capture), "canvas_capture")
+        res = tools.show_image(reference_handle="canvas_capture")
 
         self.assertIn("is a canvas capture and cannot be displayed", res)
         self.assertIsNone(tools.currently_displayed_image_path)

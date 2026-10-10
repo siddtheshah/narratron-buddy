@@ -18,6 +18,7 @@ from providers import (
 )
 from tools.base_tool import BaseTools, CANVAS_PINNED_MESSAGE, blocked_when_canvas_pinned, logged_tool_call, with_cycle_cooldown
 from tools.tool_metadata import terminal
+from tools.image.prompt_cleanup import clean_image_prompt
 from utils.image_utils import (
     compress_image_to_webp,
     embed_image_metadata,
@@ -276,7 +277,16 @@ class ImageTools(BaseTools):
             self._trigger_after_tool_call("create_image")
             return res
 
-        effective_prompt = self._apply_default_style(image_prompt)
+        styled_prompt = self._apply_default_style(image_prompt)
+        effective_prompt = clean_image_prompt(styled_prompt)
+        if effective_prompt != styled_prompt:
+            logger.debug(
+                "[ImageTools] Image prompt cleanup original=%r cleaned=%r",
+                styled_prompt, effective_prompt,
+            )
+        if not effective_prompt:
+            self._trigger_after_tool_call("create_image")
+            return "Error: image_prompt must describe a scene after prompt cleanup."
         logger.debug(f"[ImageTools] create_image prompt={effective_prompt}, image_name={image_name}, reference_images={reference_images}, display={display}")
 
         with self._story_plan_lock:
@@ -462,14 +472,16 @@ class ImageTools(BaseTools):
     @with_cycle_cooldown(action_desc="showing another image", tool_name="image_cycle")
     def show_image(
         self,
-        file_path: str,
+        reference_handle: str,
         transition: str = "crossfade",
         effect: str = "gleam3",
     ) -> str:
         """Display an image when the current visual has had its minimum screen time, or queue it.
 
         Args:
-            file_path: The file path or friendly name/alias of the image to show.
+            reference_handle: A stable image name/alias from the preloaded reference
+                catalog, a scene name, or the image_name used with create_image.
+                Use a reference handle, never a filesystem path.
             transition: The transition effect to apply when displaying the image on the canvas.
                         Supported values: 'crossfade' (default, old image dissolves into new), 'fade' (fades in from black), 'none' (instant).
             effect: Animation effect to apply after the transition; defaults to 'gleam3'. Supported values:
@@ -478,6 +490,10 @@ class ImageTools(BaseTools):
         Returns:
             A status message indicating success, queued status, or an error message.
         """
+        file_path = reference_handle.strip()
+        if not file_path or any(separator in file_path for separator in ("/", "\\", ":")):
+            self._trigger_after_tool_call("show_image")
+            return "Error: show_image requires a reference handle, not a file path."
         supported_effects = {"none", "creeping", "dream", "sparkle", "gleam3", "haze", "trace"}
         effect = str(effect or "gleam3").lower().strip()
         if effect not in supported_effects:
@@ -492,7 +508,10 @@ class ImageTools(BaseTools):
                 self._trigger_after_tool_call("show_image")
                 return res
 
-        resolved_path = self.visual.resolve_image_path(file_path) if self.visual is not None else None
+        if self.reference_manager is not None and self.visual is not None:
+            for name, path in self.reference_manager.available_scene_images().items():
+                self.visual.register_image(path, name)
+        resolved_path = self.visual.resolve_image_handle(file_path) if self.visual is not None else None
         if self._is_narratron_avatar(file_path) or (
             resolved_path is not None and self._is_narratron_avatar(resolved_path)
         ):
@@ -508,7 +527,7 @@ class ImageTools(BaseTools):
                 if self.adventure_mode:
                     self._story_plan_completed = False
             self._trigger_after_tool_call("show_image")
-            return f"Successfully displayed {target} to the user with transition '{transition}' and effect '{effect}'."
+            return f"Successfully displayed '{reference_handle}' to the user with transition '{transition}' and effect '{effect}'."
 
         captures_dir = self.theater.canvas_captures_dir().resolve()
         if any(p and Path(p).resolve().is_relative_to(captures_dir) for p in (file_path, resolved_path)):
@@ -573,7 +592,7 @@ class ImageTools(BaseTools):
                 self._currently_displayed_image_path = resolved_path
                 self._currently_displayed_image_transition = transition
                 self._currently_displayed_image_effect = effect
-                res = f"Successfully displayed {resolved_path} to the user with transition '{transition}' and effect '{effect}'."
+                res = f"Successfully displayed '{reference_handle}' to the user with transition '{transition}' and effect '{effect}'."
             elif status == "blocked":
                 res = f"Error: {update_res['message']}"
             else:
@@ -582,7 +601,7 @@ class ImageTools(BaseTools):
             self._currently_displayed_image_path = resolved_path
             self._currently_displayed_image_transition = transition
             self._currently_displayed_image_effect = effect
-            res = f"Successfully displayed {resolved_path} to the user with transition '{transition}' and effect '{effect}'."
+            res = f"Successfully displayed '{reference_handle}' to the user with transition '{transition}' and effect '{effect}'."
 
         self._trigger_after_tool_call("show_image")
         return res

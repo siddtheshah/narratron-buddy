@@ -480,6 +480,15 @@ class TestCreateAgent(unittest.TestCase):
                 }
                 theater = make_test_theater("reference_provider", config, Path(temp_dir))
                 bundle = create_tool_bundle_for_session(theater)
+                tool_names = {tool.name for tool in bundle.tools}
+                show_tool = next(tool for tool in bundle.tools if tool.name == "show_image")
+                parameters = show_tool._get_declaration().parameters_json_schema["properties"]
+                self.assertIn("reference_handle", parameters)
+                self.assertNotIn("file_path", parameters)
+                self.assertTrue({"create_image", "show_image"}.issubset(tool_names))
+                self.assertTrue(
+                    {"list_references", "browse_images", "search_image_by_metadata"}.isdisjoint(tool_names)
+                )
                 mock_image_provider.assert_called_once_with(expected_provider, expected_options)
                 image_tools = next(tool.func.__self__ for tool in bundle.tools if tool.name == "create_image")
                 self.assertIs(image_tools.reference_manager.image_provider, provider)

@@ -184,6 +184,18 @@ class VisualState:
                     relative = image_path.relative_to(root).as_posix()
                     self.register_image(str(image_path), image_path.name, relative, f"{root.name}/{relative}")
 
+    def resolve_image_handle(self, handle: str) -> str | None:
+        """Resolve a registered image handle without accepting filesystem paths."""
+        if not handle.strip() or any(separator in handle for separator in ("/", "\\", ":")):
+            return None
+        normalized = self._normalize_image_alias(handle.strip())
+        resolved = self._image_aliases.get(normalized)
+        if resolved and Path(resolved).is_file():
+            return resolved
+        self._index_visual_assets()
+        resolved = self._image_aliases.get(normalized)
+        return resolved if resolved and Path(resolved).is_file() else None
+
     def resolve_image_path(self, value: str) -> str | None:
         """Resolve a visual path or alias owned by this canvas state."""
         if not value or not str(value).strip():

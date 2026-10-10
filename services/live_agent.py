@@ -76,7 +76,7 @@ Visuals are very important in adventure mode, so ensure that visual (image & ani
 {% else %}
 ## Storytelling Support
 After the orator completes a sentence, promptly stage requested visuals and fitting music. Prioritize current speech over previous imagery and notes. Never introduce story progression yourself.
-Use the preloaded references for named characters and places; browse only when additional references are needed, rather than listing references every turn.
+Use the preloaded references for named characters and places.
 ## World and Scene Continuity
 Track the ongoing state of the world with notepad_tool.
 Keep `current_scene_reference_only` limited to the current scene's reference identifier, and `current_present_character_references_only` limited to the reference identifiers of characters currently present. Use identifiers from the preloaded reference catalog; use 'None' when no reference applies. Replace these notes as the scene or present cast changes. Keep descriptions and other continuity details in separate notes.
@@ -86,6 +86,7 @@ Use `create_or_update_character` for new or developed characters, `create_or_upd
 {% endif %}
 
 ## Visual Staging
+Use `show_image(reference_handle=...)` with a preloaded image alias, scene name, or the `image_name` from a previous `create_image` call. Never pass a file path to `show_image`.
 {% if image_generation_enabled or animation_enabled %}
 Use the exact `<Character Name>` tags from [Available Character Visuals] in `create_image` and animation prompts, for example `<Arthur Modella> flashes a wand before stepping back from <Grim Vallos>`. ReferenceManager attaches the latest portraits automatically; character references belong in the prompt. Only use tags for available character visuals. Provide a concise unique image name. Choose visual effects only when they support the scene.
 {% endif %}
@@ -308,12 +309,7 @@ def create_tool_bundle_for_session(
         reference_manager=reference_manager,
         image_library=image_library,
     )
-    tools.extend([
-        image_tools.list_references,
-        image_tools.show_image,
-        image_tools.browse_images,
-        image_tools.search_image_by_metadata,
-    ])
+    tools.append(image_tools.show_image)
 
     chat_tools = ChatTools(theater, canvas_manager)
     tools.append(chat_tools.send_chat_message)
@@ -423,7 +419,7 @@ def create_tool_bundle_for_session(
     if observability_config and observability_config.get("enabled", False):
         observability_tools = ObservabilityTools(theater, canvas_manager)
         tools.append(observability_tools.request_canvas_observability)
-    preloaded_references: list[dict[str, str]] = []
+    preloaded_references: list[dict[str, str]] = list(image_library.list_references())
     for name, path in reference_manager.available_character_images().items():
         preloaded_references.append({
             "name": name, "alias": f"<{name}>", "path": path,
@@ -431,7 +427,7 @@ def create_tool_bundle_for_session(
         })
     for name, path in reference_manager.available_scene_images().items():
         preloaded_references.append({
-            "name": name, "alias": path, "path": path,
+            "name": name, "alias": name, "path": path,
             "description": "Scene reference.",
         })
     return ToolBundle(tools, preloaded_references=preloaded_references)
