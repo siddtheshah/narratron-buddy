@@ -59,7 +59,9 @@ story_planning:
         - current_scene_reference_only
         - current_present_character_references_only
     # Names of sticky notes to hide in the canvas UI view by default until toggled
-    hidden_stickies: []
+    hidden_stickies:
+        - current_scene_reference_only
+        - current_present_character_references_only
 
     adventure_mode: false
     # Immediately generate and publish an opening scene through the story
