@@ -1058,7 +1058,7 @@
             z-index: 30;
             width: 320px;
             height: auto;
-            max-height: 380px;
+            max-height: 440px;
             border-radius: 16px;
             padding: 14px;
             background: rgba(15, 17, 21, 0.95);
@@ -1170,57 +1170,6 @@
             font-size: 0.78rem;
             color: #fde047;
             padding: 8px 0;
-        }
-
-        .sticky-notes-hidden-section {
-            margin-top: 6px;
-            padding-top: 6px;
-            border-top: 1px dashed rgba(250, 204, 21, 0.25);
-            display: flex;
-            flex-direction: column;
-            width: 100%;
-        }
-
-        .sticky-notes-hidden-toggle-btn {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 6px;
-            background: rgba(234, 179, 8, 0.12);
-            border: 1px solid rgba(234, 179, 8, 0.35);
-            border-radius: 6px;
-            color: #fde047;
-            font-size: 0.75rem;
-            font-weight: 600;
-            padding: 5px 8px;
-            cursor: pointer;
-            transition: all 0.2s ease;
-            width: 100%;
-        }
-
-        .sticky-notes-hidden-toggle-btn:hover {
-            background: rgba(234, 179, 8, 0.22);
-            border-color: rgba(234, 179, 8, 0.6);
-            color: #fff;
-        }
-
-        .sticky-notes-hidden-toggle-btn.revealed {
-            background: rgba(239, 68, 68, 0.12);
-            border-color: rgba(239, 68, 68, 0.35);
-            color: #fca5a5;
-        }
-
-        .sticky-notes-hidden-toggle-btn.revealed:hover {
-            background: rgba(239, 68, 68, 0.22);
-            border-color: rgba(239, 68, 68, 0.6);
-            color: #fff;
-        }
-
-        .sticky-notes-hidden-container {
-            margin-top: 8px;
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
         }
 
         .sticky-note-card.is-hidden-sticky {
@@ -3171,20 +3120,22 @@
 
         <div class="panel-header">
             <div id="chat-identity" class="chat-identity">
-                <span id="chat-name-status-icon" class="chat-name-status-icon" role="img" aria-label="Guest" title="Guest">◌</span>
+                <span id="chat-name-status-icon" class="chat-name-status-icon" role="img" aria-label="Guest"
+                    title="Guest">◌</span>
                 <span id="chat-name-display" style="display: none;"></span>
-                <input type="text" id="chat-name-input" aria-label="Your chat name"
-                    placeholder="Your Chat Name..." title="Click to change your chat display name">
+                <input type="text" id="chat-name-input" aria-label="Your chat name" placeholder="Your Chat Name..."
+                    title="Click to change your chat display name">
                 <a href="/profile" id="stamp-manager-profile-link" target="_blank" rel="noopener"
-                    class="panel-btn chat-profile-link" style="display: none;" aria-label="Profile Settings" title="Open your profile">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                        stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    class="panel-btn chat-profile-link" style="display: none;" aria-label="Profile Settings"
+                    title="Open your profile">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                        stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                         <circle cx="12" cy="8" r="4" />
                         <path d="M5 21v-2a7 7 0 0 1 14 0v2" />
                     </svg>
                 </a>
-                <button type="button" id="chat-login-chip" class="chat-login-chip"
-                    style="display: none;" title="Log in to your account">Log In</button>
+                <button type="button" id="chat-login-chip" class="chat-login-chip" style="display: none;"
+                    title="Log in to your account">Log In</button>
             </div>
             <div class="panel-actions">
                 <button class="panel-btn suggestion-visibility-btn" id="hide-suggestions-btn"
@@ -3192,9 +3143,10 @@
                     style="display: none;">
                     🙈
                 </button>
-                <button class="panel-btn" id="popout-window-btn" aria-label="Pop out chat into separate window" title="Pop out into separate window">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"
-                        stroke-linecap="round" stroke-linejoin="round">
+                <button class="panel-btn" id="popout-window-btn" aria-label="Pop out chat into separate window"
+                    title="Pop out into separate window">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                        aria-hidden="true" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
                         <polyline points="15 3 21 3 21 9" />
                         <line x1="10" x2="21" y1="14" y2="3" />
@@ -3220,13 +3172,14 @@
             <button type="button" id="chat-open-stamps-btn" role="tab" aria-selected="false"
                 aria-controls="stamp-manager-pane">Assets</button>
         </div>
-        <div id="panel-body" role="tabpanel" aria-labelledby="chat-show-chat-btn" style="display: flex; flex-direction: column; flex: 1; overflow: hidden; min-height: 0;">
+        <div id="panel-body" role="tabpanel" aria-labelledby="chat-show-chat-btn"
+            style="display: flex; flex-direction: column; flex: 1; overflow: hidden; min-height: 0;">
             <div id="viewer-collab-bar" class="viewer-collab-bar" style="display: none;">
                 <span class="viewer-collab-spark" aria-hidden="true">✦</span>
                 <span id="viewer-collab-bar-status" role="status" aria-live="polite">Collaboration: Off</span>
-                <button type="button" class="panel-btn" id="viewer-collab-guide-btn"
-                    aria-label="What is collaboration?" aria-haspopup="dialog"
-                    aria-controls="viewer-collab-guide-modal" title="What is collaboration?">?</button>
+                <button type="button" class="panel-btn" id="viewer-collab-guide-btn" aria-label="What is collaboration?"
+                    aria-haspopup="dialog" aria-controls="viewer-collab-guide-modal"
+                    title="What is collaboration?">?</button>
             </div>
             <div id="agent-thought-card" class="agent-thought-card" aria-live="polite">
                 <div class="agent-thought-label">📌 Narratron's current thought</div>
@@ -3271,19 +3224,21 @@
             </div>
             <div id="stamp-manager-tabs" class="stamp-manager-tabs" style="display: none;">
                 <div class="stamp-manager-tab-row">
-                <button type="button" class="stamp-tab-btn active" id="stamp-tab-stamps" data-tab="stamps">
-                    🏷️ Stamps
-                </button>
-                <button type="button" class="stamp-tab-btn" id="stamp-tab-scenes" data-tab="scenes">
-                    🎬 Scenes
-                </button>
-                <button type="button" class="stamp-tab-btn" id="stamp-tab-characters" data-tab="characters">
-                    👤 Characters
-                </button>
+                    <button type="button" class="stamp-tab-btn active" id="stamp-tab-stamps" data-tab="stamps">
+                        🏷️ Stamps
+                    </button>
+                    <button type="button" class="stamp-tab-btn" id="stamp-tab-scenes" data-tab="scenes">
+                        🎬 Scenes
+                    </button>
+                    <button type="button" class="stamp-tab-btn" id="stamp-tab-characters" data-tab="characters">
+                        👤 Characters
+                    </button>
                 </div>
                 <div class="stamp-manager-tab-row">
-                <button type="button" class="stamp-tab-btn" id="stamp-tab-playlists" data-tab="playlists">♫ Playlists</button>
-                <button type="button" class="stamp-tab-btn" id="stamp-tab-animations" data-tab="animations">▶ Animations</button>
+                    <button type="button" class="stamp-tab-btn" id="stamp-tab-playlists" data-tab="playlists">♫
+                        Playlists</button>
+                    <button type="button" class="stamp-tab-btn" id="stamp-tab-animations" data-tab="animations">▶
+                        Animations</button>
                 </div>
             </div>
             <div id="stamp-manager-permission-banner" class="stamp-manager-permission-banner non-contributor">
@@ -3294,8 +3249,10 @@
                 <div id="stamp-manager-empty" class="stamp-manager-empty" style="display: none;">
                     <div class="empty-icon">🏷️</div>
                     <div id="stamp-empty-message" style="font-weight: 500;">No stamps found.</div>
-                    <div style="font-size: 0.78rem; color: #64748b;">Upload stamps in your profile to place them on the canvas.</div>
-                    <a href="/profile" id="stamp-manager-empty-profile-btn" target="_blank" class="panel-btn" style="margin-top: 8px; font-size: 0.78rem; text-decoration: none; padding: 5px 12px; color: #a5b4fc;">
+                    <div style="font-size: 0.78rem; color: #64748b;">Upload stamps in your profile to place them on the
+                        canvas.</div>
+                    <a href="/profile" id="stamp-manager-empty-profile-btn" target="_blank" class="panel-btn"
+                        style="margin-top: 8px; font-size: 0.78rem; text-decoration: none; padding: 5px 12px; color: #a5b4fc;">
                         Go to Profile ↗
                     </a>
                 </div>
@@ -3316,10 +3273,13 @@
                     <div style="font-size: 0.78rem; color: #64748b;">This adventure has no predefined characters.</div>
                 </div>
             </div>
-            <div id="stamp-generation-status" role="status" aria-live="polite" hidden>Uses image generation credits. Saved to this theater for everyone to use.</div>
+            <div id="stamp-generation-status" role="status" aria-live="polite" hidden>Uses image generation credits.
+                Saved to this theater for everyone to use.</div>
             <div class="stamp-manager-footer">
                 <form id="stamp-generation-form" class="stamp-generation-form" hidden>
-                    <textarea id="stamp-generation-prompt" maxlength="4000" rows="2" wrap="soft" aria-label="Stamp image prompt" aria-keyshortcuts="Enter" required placeholder="describe a stamp and press (enter)" autocomplete="off"></textarea>
+                    <textarea id="stamp-generation-prompt" maxlength="4000" rows="2" wrap="soft"
+                        aria-label="Stamp image prompt" aria-keyshortcuts="Enter" required
+                        placeholder="describe a stamp and press (enter)" autocomplete="off"></textarea>
                 </form>
             </div>
         </div>
@@ -3395,7 +3355,7 @@
             return canvasAuthStatePromise;
         }
 
-        window.onAuthSuccess = function(action, data) {
+        window.onAuthSuccess = function (action, data) {
             window.location.reload();
         };
 
@@ -3507,7 +3467,6 @@
 
             let cachedNotes = null;
             let cachedHidden = [];
-            let hiddenRevealed = false;
             let isFetching = false;
             let isPinned = false;
 
@@ -3532,11 +3491,38 @@
                 return false;
             }
 
+            function areNotesEqual(a, b) {
+                if (a === b) return true;
+                if (!Array.isArray(a) || !Array.isArray(b)) return false;
+                if (a.length !== b.length) return false;
+                for (let i = 0; i < a.length; i++) {
+                    const x = a[i], y = b[i];
+                    if (!x || !y) return false;
+                    if ((x.topic || x.name) !== (y.topic || y.name)) return false;
+                    if ((x.info || x.content) !== (y.info || y.content)) return false;
+                    if (Boolean(x.hidden || x.is_hidden) !== Boolean(y.hidden || y.is_hidden)) return false;
+                }
+                return true;
+            }
+
+            function areHiddenEqual(a, b) {
+                if (a === b) return true;
+                if (!Array.isArray(a) || !Array.isArray(b)) return false;
+                if (a.length !== b.length) return false;
+                const sA = new Set(a.map(x => String(typeof x === 'object' && x ? (x.topic || x.name || '') : x).trim().toLowerCase()));
+                const sB = new Set(b.map(x => String(typeof x === 'object' && x ? (x.topic || x.name || '') : x).trim().toLowerCase()));
+                if (sA.size !== sB.size) return false;
+                for (const item of sA) {
+                    if (!sB.has(item)) return false;
+                }
+                return true;
+            }
+
             function renderStickyNotes(items, hiddenList) {
                 if (Array.isArray(items)) {
                     cachedNotes = items;
                 }
-                if (Array.isArray(hiddenList)) {
+                if (Array.isArray(hiddenList) && hiddenList.length > 0) {
                     cachedHidden = hiddenList;
                 }
 
@@ -3548,23 +3534,9 @@
                     }).filter(Boolean)
                 );
 
-                const visibleItems = [];
-                const hiddenItems = [];
-
-                for (const item of notes) {
-                    if (isHiddenItem(item, hiddenSet)) {
-                        hiddenItems.push(item);
-                    } else {
-                        visibleItems.push(item);
-                    }
-                }
-
                 if (badge) {
                     if (notes.length > 0) {
-                        const countText = hiddenRevealed
-                            ? String(notes.length)
-                            : (visibleItems.length > 0 ? String(visibleItems.length) : (hiddenItems.length > 0 ? `${hiddenItems.length} 🔒` : '0'));
-                        badge.textContent = countText;
+                        badge.textContent = String(notes.length);
                         badge.style.display = 'inline-block';
                     } else {
                         badge.style.display = 'none';
@@ -3576,93 +3548,41 @@
                     return;
                 }
 
-                let html = '';
-
-                if (visibleItems.length === 0 && hiddenItems.length > 0) {
-                    html += '<div style="font-size: 0.78rem; color: #94a3b8; font-style: italic;">No standard sticky notes active.</div>';
-                } else {
-                    html += visibleItems.map(item => `
-                        <div class="sticky-note-card">
+                list.innerHTML = notes.map(item => {
+                    const isHidden = isHiddenItem(item, hiddenSet);
+                    const cardClass = isHidden ? 'sticky-note-card is-hidden-sticky' : 'sticky-note-card';
+                    const hiddenBadgeHtml = isHidden ? '<span class="sticky-note-hidden-badge">Hidden</span>' : '';
+                    return `
+                        <div class="${cardClass}">
                             <div class="sticky-note-card-header">
-                                <span class="sticky-note-card-topic">${escapeHtml(item.topic || item.name || '')}</span>
+                                <span class="sticky-note-card-topic">
+                                    ${escapeHtml(item.topic || item.name || '')}
+                                    ${hiddenBadgeHtml}
+                                </span>
                             </div>
                             <div class="sticky-note-card-info">${escapeHtml(item.info || item.content || '')}</div>
                         </div>
-                    `).join('');
-                }
-
-                if (hiddenItems.length > 0) {
-                    const count = hiddenItems.length;
-                    const label = hiddenRevealed
-                        ? `🙈 Hide ${count} hidden sticky${count > 1 ? ' notes' : ' note'}`
-                        : `👁️ Show ${count} hidden sticky${count > 1 ? ' notes' : ' note'}`;
-                    const btnClass = hiddenRevealed
-                        ? 'sticky-notes-hidden-toggle-btn revealed'
-                        : 'sticky-notes-hidden-toggle-btn';
-                    const containerDisplay = hiddenRevealed ? 'flex' : 'none';
-
-                    html += `
-                        <div class="sticky-notes-hidden-section">
-                            <button type="button" id="sticky-notes-hidden-toggle-btn" class="${btnClass}" title="Toggle reveal of hidden stickies">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                    ${hiddenRevealed
-                            ? '<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/>'
-                            : '<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/>'
-                        }
-                                </svg>
-                                <span class="sticky-notes-hidden-toggle-text">${label}</span>
-                            </button>
-                            <div id="sticky-notes-hidden-container" class="sticky-notes-hidden-container" style="display: ${containerDisplay};">
-                                ${hiddenItems.map(item => `
-                                    <div class="sticky-note-card is-hidden-sticky">
-                                        <div class="sticky-note-card-header">
-                                            <span class="sticky-note-card-topic">
-                                                ${escapeHtml(item.topic || item.name || '')}
-                                                <span class="sticky-note-hidden-badge">Hidden</span>
-                                            </span>
-                                        </div>
-                                        <div class="sticky-note-card-info">${escapeHtml(item.info || item.content || '')}</div>
-                                    </div>
-                                `).join('')}
-                            </div>
-                        </div>
                     `;
-                }
-
-                list.innerHTML = html;
-
-                const toggleBtn = document.getElementById('sticky-notes-hidden-toggle-btn');
-                if (toggleBtn) {
-                    toggleBtn.addEventListener('click', (e) => {
-                        e.stopPropagation();
-                        e.preventDefault();
-                        hiddenRevealed = !hiddenRevealed;
-                        renderStickyNotes(cachedNotes, cachedHidden);
-                        if (hiddenRevealed) {
-                            const hiddenContainer = document.getElementById('sticky-notes-hidden-container');
-                            if (hiddenContainer) {
-                                hiddenContainer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-                            }
-                        }
-                    });
-                }
+                }).join('');
             }
 
             function resolveTheaterId() {
-                let tid = new URLSearchParams(window.location.search).get('theater_id');
-                if (!tid && typeof currenttheaterId !== 'undefined' && currenttheaterId) {
-                    tid = currenttheaterId;
+                try {
+                    const sp = new URLSearchParams(window.location.search);
+                    const tid = sp.get('theater_id');
+                    if (tid) return tid;
+                } catch (_) { }
+                if (typeof window !== 'undefined') {
+                    if (window.currenttheaterId) return window.currenttheaterId;
+                    if (window.theaterId) return window.theaterId;
                 }
-                if (!tid && typeof theaterId !== 'undefined' && theaterId) {
-                    tid = theaterId;
-                }
-                if (!tid) {
+                try {
                     const pathParts = window.location.pathname.split('/').filter(Boolean);
                     if (pathParts.length >= 2 && pathParts[0] === 'theaters') {
-                        tid = pathParts[1];
+                        return pathParts[1];
                     }
-                }
-                return tid;
+                } catch (_) { }
+                return null;
             }
 
             async function triggerStickyNotesFetch() {
@@ -3680,15 +3600,43 @@
                         return;
                     }
 
-                    const url = `/theaters/${encodeURIComponent(currentTheaterId)}/sticky-notes`;
-                    const response = await fetch(url);
-                    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-                    const data = await response.json();
-                    cachedNotes = data.sticky_notes || [];
-                    if (Array.isArray(data.hidden_stickies)) {
-                        cachedHidden = data.hidden_stickies;
+                    let joinKey = '';
+                    try {
+                        joinKey = new URLSearchParams(window.location.search).get('join_key') || '';
+                    } catch (_) { }
+                    const query = joinKey ? `?join_key=${encodeURIComponent(joinKey)}` : '';
+                    let response = null;
+                    try {
+                        response = await fetch(`/theaters/${encodeURIComponent(currentTheaterId)}/sticky-notes${query}`);
+                    } catch (_) { }
+
+                    if (!response || !response.ok) {
+                        try {
+                            const apiQuery = `theater_id=${encodeURIComponent(currentTheaterId)}${joinKey ? `&join_key=${encodeURIComponent(joinKey)}` : ''}`;
+                            response = await fetch(`/api/sticky-notes?${apiQuery}`);
+                        } catch (_) { }
                     }
-                    renderStickyNotes(cachedNotes, cachedHidden);
+
+                    if (response && response.ok) {
+                        const data = await response.json();
+                        let notesChanged = false;
+                        let hiddenChanged = false;
+                        if (Array.isArray(data.sticky_notes)) {
+                            if (!areNotesEqual(cachedNotes, data.sticky_notes)) {
+                                cachedNotes = data.sticky_notes;
+                                notesChanged = true;
+                            }
+                        }
+                        if (Array.isArray(data.hidden_stickies) && data.hidden_stickies.length > 0) {
+                            if (!areHiddenEqual(cachedHidden, data.hidden_stickies)) {
+                                cachedHidden = data.hidden_stickies;
+                                hiddenChanged = true;
+                            }
+                        }
+                        if (notesChanged || hiddenChanged || !list.hasChildNodes()) {
+                            renderStickyNotes(cachedNotes, cachedHidden);
+                        }
+                    }
                 } catch (err) {
                     console.error('Failed to load sticky notes:', err);
                     if (!cachedNotes) {
@@ -3702,28 +3650,51 @@
             }
 
             window.updateCanvasStickyNotes = function (notes, hidden) {
+                let notesChanged = false;
+                let hiddenChanged = false;
+
                 if (Array.isArray(notes)) {
-                    cachedNotes = notes;
-                    if (Array.isArray(hidden)) {
-                        cachedHidden = hidden;
+                    if (!areNotesEqual(cachedNotes, notes)) {
+                        cachedNotes = notes;
+                        notesChanged = true;
                     }
+                }
+                if (Array.isArray(hidden) && hidden.length > 0) {
+                    if (!areHiddenEqual(cachedHidden, hidden)) {
+                        cachedHidden = hidden;
+                        hiddenChanged = true;
+                    }
+                }
+
+                if (notesChanged || hiddenChanged || !list.hasChildNodes()) {
                     renderStickyNotes(cachedNotes, cachedHidden);
                 }
             };
 
+            let leaveTimeout = null;
             btn.addEventListener('mouseenter', () => {
+                if (leaveTimeout) {
+                    clearTimeout(leaveTimeout);
+                    leaveTimeout = null;
+                }
                 btn.classList.add('expanded');
                 triggerStickyNotesFetch();
             });
 
             btn.addEventListener('mouseleave', () => {
                 if (!isPinned) {
-                    btn.classList.remove('expanded');
+                    if (leaveTimeout) clearTimeout(leaveTimeout);
+                    leaveTimeout = setTimeout(() => {
+                        if (!isPinned) {
+                            btn.classList.remove('expanded');
+                        }
+                        leaveTimeout = null;
+                    }, 250);
                 }
             });
 
             btn.addEventListener('click', (e) => {
-                if (e.target.closest('#sticky-notes-hidden-toggle-btn') || e.target.closest('.sticky-note-card')) {
+                if (e.target.closest('.sticky-note-card')) {
                     return;
                 }
                 isPinned = !isPinned;
@@ -6308,7 +6279,7 @@
             event.stopPropagation();
             const tab = event.key === 'Home' ? chatPanelTabBtn
                 : event.key === 'End' ? chatOpenStampsBtn
-                : event.target === chatPanelTabBtn ? chatOpenStampsBtn : chatPanelTabBtn;
+                    : event.target === chatPanelTabBtn ? chatOpenStampsBtn : chatPanelTabBtn;
             tab.focus();
             tab.click();
         });
@@ -6352,7 +6323,7 @@
                     const parsed = JSON.parse(rawGlobal);
                     if (parsed && typeof parsed === 'object') return parsed;
                 }
-            } catch (_) {}
+            } catch (_) { }
             return {};
         }
 
@@ -6386,7 +6357,7 @@
                 const json = JSON.stringify(map);
                 localStorage.setItem(getStampUsageStorageKey(), json);
                 localStorage.setItem('narratron_stamp_usage', json);
-            } catch (_) {}
+            } catch (_) { }
             if (cachedUserStamps) {
                 renderStampManagerGrid(cachedUserStamps);
             }
@@ -6516,10 +6487,10 @@
                         const json = JSON.stringify(payload);
                         try {
                             e.dataTransfer.setData('application/json', json);
-                        } catch (_) {}
+                        } catch (_) { }
                         try {
                             e.dataTransfer.setData('text/plain', json);
-                        } catch (_) {}
+                        } catch (_) { }
                         e.dataTransfer.effectAllowed = 'copyMove';
                     });
 
@@ -6637,8 +6608,8 @@
             // Pulling another of the same will just replace it.
             const existingIndex = doodleActions.findIndex(
                 item => item.type === 'stamp' &&
-                        String(item.stamp_id) === String(action.stamp_id) &&
-                        String(item.user_id) === String(action.user_id)
+                    String(item.stamp_id) === String(action.stamp_id) &&
+                    String(item.user_id) === String(action.user_id)
             );
             if (existingIndex >= 0) {
                 action.id = doodleActions[existingIndex].id || action.id;
@@ -6674,11 +6645,11 @@
                     let raw = '';
                     try {
                         raw = e.dataTransfer.getData('application/json');
-                    } catch (_) {}
+                    } catch (_) { }
                     if (!raw) {
                         try {
                             raw = e.dataTransfer.getData('text/plain') || e.dataTransfer.getData('text');
-                        } catch (_) {}
+                        } catch (_) { }
                     }
                     if (!raw) return;
                     const stampData = JSON.parse(raw);
@@ -6817,7 +6788,7 @@
             const selected = button.dataset.assetId === 'no_music' ? silent : !silent && (
                 button.dataset.playlistName
                     ? button.dataset.playlistName === (assetMusicState.music_id || assetMusicState.playlist)
-                        && tracks.includes(button.dataset.trackUrl)
+                    && tracks.includes(button.dataset.trackUrl)
                     : button.dataset.trackUrl === playingTrack
             );
             button.classList.toggle('currently-playing', selected);
@@ -9794,14 +9765,15 @@
             <p>Report malicious activity, file a bug, or suggest an improvement. Sign in to submit a report.</p>
             <p id="report-theater-description">Malicious activity reports include a theater snapshot for review.</p>
             <label for="report-theater-reason">Report type</label>
-            <select id="report-theater-reason" required style="display: block; width: 100%; margin: 0.5rem 0 1rem; padding: 0.6rem;">
+            <select id="report-theater-reason" required
+                style="display: block; width: 100%; margin: 0.5rem 0 1rem; padding: 0.6rem;">
                 <option value="">Select a report type</option>
                 <optgroup label="Malicious activity">
-                <option value="harmful_content">Harmful content</option>
-                <option value="harassment">Harassment or bullying</option>
-                <option value="sexual_content">Inappropriate sexual content</option>
-                <option value="illegal_content">Illegal content</option>
-                <option value="other">Other</option>
+                    <option value="harmful_content">Harmful content</option>
+                    <option value="harassment">Harassment or bullying</option>
+                    <option value="sexual_content">Inappropriate sexual content</option>
+                    <option value="illegal_content">Illegal content</option>
+                    <option value="other">Other</option>
                 </optgroup>
                 <optgroup label="Product feedback">
                     <option value="bug">Bug report</option>
@@ -10169,8 +10141,7 @@
 
             <div style="display: flex; flex-direction: column; gap: 12px;">
                 <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px;">
-                    <button id="action-wheel-rebind" type="button" class="pullout-menu-item"
-                        style="min-width: 0;"
+                    <button id="action-wheel-rebind" type="button" class="pullout-menu-item" style="min-width: 0;"
                         title="Click, then press any mouse button or key combination to rebind the action wheel">
                         <span class="pullout-item-icon">🖱</span>
                         <span id="action-wheel-binding-label">Action Wheel: Right mouse</span>
@@ -10423,7 +10394,8 @@
             z-index: 5;
         }
 
-        #action-wheel-rebind.rebinding, #action-wheel-2-rebind.rebinding {
+        #action-wheel-rebind.rebinding,
+        #action-wheel-2-rebind.rebinding {
             background: rgba(234, 179, 8, .25);
             color: #fef08a;
         }
@@ -10503,12 +10475,21 @@
         }
     </style>
     <style>
-        #orator-action-wheel [data-secondary] { display: none; }
-        #orator-action-wheel[data-mode="secondary"] [data-primary] { display: none; }
-        #orator-action-wheel[data-mode="secondary"] [data-secondary] { display: block; }
+        #orator-action-wheel [data-secondary] {
+            display: none;
+        }
+
+        #orator-action-wheel[data-mode="secondary"] [data-primary] {
+            display: none;
+        }
+
+        #orator-action-wheel[data-mode="secondary"] [data-secondary] {
+            display: block;
+        }
+
         #orator-action-wheel[data-mode="secondary"] {
             background: linear-gradient(to bottom,
-                var(--sec-up) 0% 49.7%, var(--wheel-divider) 49.7% 50.3%, var(--sec-down) 50.3% 100%);
+                    var(--sec-up) 0% 49.7%, var(--wheel-divider) 49.7% 50.3%, var(--sec-down) 50.3% 100%);
         }
     </style>
     <div id="orator-action-wheel" role="group" aria-label="Orator action wheel" hidden>
