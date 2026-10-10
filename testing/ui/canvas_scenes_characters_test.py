@@ -395,7 +395,7 @@ def test_scenes_tab_push_to_canvas(scenes_chars_page: Page) -> None:
     assert scenes_chars_page.evaluate("window._imageRefreshed") is True
 
 
-def test_characters_tab_renders_traits_and_descriptions(scenes_chars_page: Page) -> None:
+def test_characters_tab_renders_descriptions_without_gender_or_voice_tags(scenes_chars_page: Page) -> None:
     scenes_chars_page.evaluate("""
         window._isActiveOratorState = true;
         applyRoleUI(true);
@@ -425,9 +425,12 @@ def test_characters_tab_renders_traits_and_descriptions(scenes_chars_page: Page)
     assert scenes_chars_page.locator(".character-card-name").all_text_contents() == ["Elena Vance", "Marcus Gray"]
     assert scenes_chars_page.locator("#stamp-manager-count").text_content() == "2"
 
-    # Elena has 3 trait badges (Female, Warm, Confident)
+    # Gender and voice tags are omitted; descriptions are displayed
+    assert scenes_chars_page.locator(".character-trait-badge").count() == 0
     elena_card = scenes_chars_page.locator('.character-card[data-character-id="elena"]')
-    assert elena_card.locator(".character-trait-badge").all_text_contents() == ["Female", "Warm", "Confident"]
+    assert elena_card.locator(".character-card-desc").text_content() == "A daring archaeologist who loves ancient riddles."
+    marcus_card = scenes_chars_page.locator('.character-card[data-character-id="marcus"]')
+    assert marcus_card.locator(".character-card-desc").text_content() == "A grumpy tavern keeper with a heart of gold."
 
 
 def test_scenes_and_characters_count_not_overwritten_by_late_stamp_render_and_images_visible(scenes_chars_page: Page) -> None:

@@ -144,3 +144,18 @@ class TestDoodles(UITestCase):
 
         manager.doodles.add([{"type": "clear"}])
         self.assertEqual(manager.doodles.doodles, [])
+
+    def test_canvas_right_click_and_action_wheel_marker_toggle_wiring(self) -> None:
+        canvas = (Path(__file__).resolve().parents[2] / "templates" / "canvas.html").read_text(encoding="utf-8")
+        wheel_js = (Path(__file__).resolve().parents[2] / "static" / "js" / "action-wheel.js").read_text(encoding="utf-8")
+
+        self.assertIn("let lastSelectedTool = { type: 'marker', color: '#ef4444' };", canvas)
+        self.assertIn("function toggleToolSelection()", canvas)
+        self.assertIn("document.addEventListener('contextmenu', (event) => {", canvas)
+        self.assertIn("onCenterAction: () => {", canvas)
+        self.assertIn("toggleToolSelection();", canvas)
+        self.assertIn("Toggle<br>marker", canvas)
+        self.assertIn("if (e.button !== 0) return;", canvas)
+        self.assertIn("onCenterAction = null,", wheel_js)
+        self.assertIn("isRightClickBound()", wheel_js)
+        self.assertIn("Release in the center to toggle marker", wheel_js)

@@ -12,9 +12,10 @@ def wheel_page() -> Iterator[Page]:
     template = Path("templates/canvas.html").read_text(encoding="utf-8")
     source = Path("static/js/action-wheel.js").read_text(encoding="utf-8").replace("export ", "")
     markup = template[template.index('    <style>\n        #orator-action-wheel'):template.index('    <div id="action-wheel-status"')]
-    script = source + '''window.sent = []; window.isOrator = true;
+    script = source + '''window.sent = []; window.isOrator = true; window.centerTriggered = 0;
         window.wheelController = initializeActionWheel({isOrator: () => window.isOrator,
-            sendAction: async action => { window.sent.push(action); }});'''
+            sendAction: async action => { window.sent.push(action); },
+            onCenterAction: () => { window.centerTriggered += 1; }});'''
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=True)
         page = browser.new_page(viewport={"width": 800, "height": 600})
@@ -666,3 +667,237 @@ def test_orator_page_bar_previous_moves_cursor_and_has_no_sync() -> None:
         assert sync_button.is_hidden()
         assert errors == []
         browser.close()
+
+
+def test_action_wheel_center_invokes_center_action(wheel_page: Page) -> None:
+    page = wheel_page
+    page.mouse.move(400, 300)
+    page.mouse.down(button="right")
+    wheel = page.locator("#orator-action-wheel")
+    assert wheel.is_visible()
+    center = wheel.locator(".wheel-center")
+    assert "Toggle" in center.inner_text()
+    # Release in center
+    page.mouse.up(button="right")
+    assert wheel.is_hidden()
+    assert page.evaluate("window.centerTriggered") == 1
+    assert page.evaluate("window.sent") == []
+
+    # Dragging to action does not invoke center action
+    page.mouse.move(400, 300)
+    page.mouse.down(button="right")
+    page.mouse.move(400, 220)
+    page.mouse.up(button="right")
+    page.wait_for_function("window.sent.length === 1")
+    assert page.evaluate("window.sent") == ["toggle_canvas_pin"]
+    assert page.evaluate("window.centerTriggered") == 1
+
+
+def test_secondary_action_wheel_center_does_not_invoke_center_action(wheel_page: Page) -> None:
+    page = wheel_page
+    page.mouse.move(400, 300)
+    page.mouse.down(button="left")
+    page.mouse.down(button="right")
+    wheel = page.locator("#orator-action-wheel")
+    assert wheel.is_visible()
+    assert wheel.get_attribute("data-mode") == "secondary"
+    center = wheel.locator(".wheel-center")
+    assert "cancel" in center.inner_text()
+    page.mouse.up(button="right")
+    page.mouse.up(button="left")
+    assert wheel.is_hidden()
+    assert page.evaluate("window.centerTriggered") == 0
+    assert page.evaluate("window.sent") == []
+
+
+def test_canvas_marker_toggle_for_orator_and_viewer() -> None:
+    template = Path("templates/canvas.html").read_text(encoding="utf-8")
+    is_orator_holder = [True]
+
+    def respond(route: Route) -> None:
+        path = urlsplit(route.request.url).path
+        if path == "/canvas":
+            route.fulfill(body=template, content_type="text/html")
+        elif path.startswith("/static/"):
+            asset = Path(path.lstrip("/"))
+            if asset.is_file():
+                route.fulfill(path=asset)
+            else:
+                route.fulfill(status=404)
+        elif path == "/api/auth/me":
+            route.fulfill(json={"authenticated": True, "user": {"id": 1, "username": "user1"}})
+        elif path == "/api/theaters/stage":
+            route.fulfill(json={"metadata": {"is_owner": is_orator_holder[0], "is_active_orator": is_orator_holder[0]}})
+        elif path == "/api/theaters/stage/baton":
+            active_id = 1 if is_orator_holder[0] else 999
+            route.fulfill(json={"owner": {"id": 1}, "active_orator": {"id": active_id}, "viewer_collab_enabled": True})
+        elif path == "/api/latest":
+            route.fulfill(json={"viewer_collab_enabled": True})
+        elif path.startswith("/api/"):
+            route.fulfill(json={})
+        else:
+            route.fulfill(status=404)
+
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+
+        # 1. Test Orator Action Wheel Center Marker Toggle
+        page = browser.new_page(viewport={"width": 1200, "height": 800})
+        page.add_init_script("localStorage.setItem('narratron_orator_howto_seen', 'true');")
+        page.route("**/*", respond)
+        page.goto("http://wheel.test/canvas?theater_id=stage")
+        page.wait_for_function("window._isActiveOratorState === true", timeout=5000)
+
+        # Initially no marker is selected
+        red_btn = page.locator('.color-btn[data-color="#ef4444"]')
+        assert not red_btn.evaluate("el => el.classList.contains('active')")
+
+        # Orator right-clicks canvas: action wheel opens
+        page.mouse.move(500, 400)
+        page.mouse.down(button="right")
+        wheel = page.locator("#orator-action-wheel")
+        assert wheel.is_visible()
+        assert "Toggle" in wheel.locator(".wheel-center").inner_text()
+
+        # Releasing in center toggles marker selection to last selected marker (default red)
+        page.mouse.up(button="right")
+        assert wheel.is_hidden()
+        assert red_btn.evaluate("el => el.classList.contains('active')")
+        assert not page.locator("#doodle-canvas").evaluate("el => el.classList.contains('drawing-disabled')")
+
+        # Right-clicking and releasing in center again deselects marker
+        page.mouse.down(button="right")
+        page.mouse.up(button="right")
+        assert not red_btn.evaluate("el => el.classList.contains('active')")
+        assert page.locator("#doodle-canvas").evaluate("el => el.classList.contains('drawing-disabled')")
+
+        # Select a different marker (blue)
+        blue_btn = page.locator('.color-btn[data-color="#3b82f6"]')
+        blue_btn.click()
+        assert blue_btn.evaluate("el => el.classList.contains('active')")
+        assert not page.locator("#doodle-canvas").evaluate("el => el.classList.contains('drawing-disabled')")
+
+        # Right-clicking and releasing in center deselects blue marker
+        page.mouse.move(500, 400)
+        page.mouse.down(button="right")
+        page.mouse.up(button="right")
+        assert not blue_btn.evaluate("el => el.classList.contains('active')")
+        assert page.locator("#doodle-canvas").evaluate("el => el.classList.contains('drawing-disabled')")
+
+        # Right-clicking and releasing in center re-selects blue marker
+        page.mouse.down(button="right")
+        page.mouse.up(button="right")
+        assert blue_btn.evaluate("el => el.classList.contains('active')")
+        assert not page.locator("#doodle-canvas").evaluate("el => el.classList.contains('drawing-disabled')")
+
+        # Select text tool
+        text_btn = page.locator("#text-annotation-toggle")
+        text_btn.click()
+        assert text_btn.evaluate("el => el.classList.contains('active')")
+
+        # Move mouse over canvas and right-clicking in center deselects text tool
+        page.mouse.move(500, 400)
+        page.mouse.down(button="right")
+        page.mouse.up(button="right")
+        assert not text_btn.evaluate("el => el.classList.contains('active')")
+
+        # Right-clicking and releasing in center re-selects text tool
+        page.mouse.down(button="right")
+        page.mouse.up(button="right")
+        assert text_btn.evaluate("el => el.classList.contains('active')")
+
+        page.close()
+
+        # 2. Test Viewer Canvas Right-Click Marker Toggle
+        is_orator_holder[0] = False
+        viewer_page = browser.new_page(viewport={"width": 1200, "height": 800})
+        viewer_page.add_init_script("localStorage.setItem('narratron_orator_howto_seen', 'true');")
+        viewer_page.add_init_script("localStorage.setItem('narratron_viewer_collab_guide_seen:stage', 'true');")
+        viewer_page.route("**/*", respond)
+        viewer_page.goto("http://wheel.test/canvas?theater_id=stage")
+        viewer_page.wait_for_function("typeof window._isActiveOratorState !== 'undefined'", timeout=5000)
+        assert viewer_page.evaluate("window._isActiveOratorState") is False
+
+        # Initially no marker selected
+        v_red_btn = viewer_page.locator('.color-btn[data-color="#ef4444"]')
+        assert not v_red_btn.evaluate("el => el.classList.contains('active')")
+
+        # Viewer selects red marker
+        v_red_btn.click()
+        assert v_red_btn.evaluate("el => el.classList.contains('active')")
+
+        # Viewer right-clicks canvas: marker is deselected
+        viewer_page.mouse.click(500, 400, button="right")
+        assert not v_red_btn.evaluate("el => el.classList.contains('active')")
+
+        # Viewer right-clicks canvas again: switches back to recently selected marker (red)
+        viewer_page.mouse.click(500, 400, button="right")
+        assert v_red_btn.evaluate("el => el.classList.contains('active')")
+
+        # Viewer selects blue marker
+        v_blue_btn = viewer_page.locator('.color-btn[data-color="#3b82f6"]')
+        v_blue_btn.click()
+        assert v_blue_btn.evaluate("el => el.classList.contains('active')")
+
+        # Right-click deselects blue marker
+        viewer_page.mouse.click(500, 400, button="right")
+        assert not v_blue_btn.evaluate("el => el.classList.contains('active')")
+
+        # Right-click switches back to blue marker
+        viewer_page.mouse.click(500, 400, button="right")
+        assert v_blue_btn.evaluate("el => el.classList.contains('active')")
+
+        # Viewer with collab mode tests text tool toggle
+        viewer_page.wait_for_function("!document.getElementById('text-annotation-toggle').disabled", timeout=5000)
+        v_text_btn = viewer_page.locator("#text-annotation-toggle")
+        v_text_btn.click()
+        assert v_text_btn.evaluate("el => el.classList.contains('active')")
+
+        # Right-click deselects text tool
+        viewer_page.mouse.click(500, 400, button="right")
+        assert not v_text_btn.evaluate("el => el.classList.contains('active')")
+
+        # Right-click switches back to text tool
+        viewer_page.mouse.click(500, 400, button="right")
+        assert v_text_btn.evaluate("el => el.classList.contains('active')")
+
+        viewer_page.close()
+        browser.close()
+
+
+def test_left_plus_right_click_in_center_opens_action_wheel_2(wheel_page: Page) -> None:
+    page = wheel_page
+    # Right click down opens action wheel 1
+    page.mouse.move(400, 300)
+    page.mouse.down(button="right")
+    wheel = page.locator("#orator-action-wheel")
+    assert wheel.is_visible()
+    assert wheel.get_attribute("data-mode") == "primary"
+
+    # While holding right click, pressing left click in the center opens action wheel 2
+    page.mouse.down(button="left")
+    assert wheel.is_visible()
+    assert wheel.get_attribute("data-mode") == "secondary"
+    assert page.locator('[data-secondary][data-direction="up"]').is_visible()
+    assert page.locator('[data-primary][data-direction="up"]').is_hidden()
+
+    # Releasing both in center cancels secondary wheel without firing center action
+    page.mouse.up(button="left")
+    page.mouse.up(button="right")
+    assert wheel.is_hidden()
+    assert page.evaluate("window.centerTriggered") == 0
+    assert page.evaluate("window.sent") == []
+
+    # Also test left down first, then right down in center opens action wheel 2
+    page.mouse.move(400, 300)
+    page.mouse.down(button="left")
+    page.mouse.down(button="right")
+    assert wheel.is_visible()
+    assert wheel.get_attribute("data-mode") == "secondary"
+    page.mouse.move(400, 220)
+    page.mouse.up(button="right")
+    page.mouse.up(button="left")
+    page.wait_for_function("window.sent.length === 1")
+    assert page.evaluate("window.sent") == ["update_story"]
+    assert page.evaluate("window.centerTriggered") == 0
+

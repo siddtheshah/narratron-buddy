@@ -16,6 +16,7 @@ export function initializeActionWheel({
     onPreviousImage = null,
     onRebindStart = () => {},
     onOpen = () => {},
+    onCenterAction = null,
     document: doc = document,
     window: win = window,
     canvasTarget = null,
@@ -139,7 +140,7 @@ export function initializeActionWheel({
         const canvas = getCanvas();
         if (!canvas) return true;
         if (target && target !== doc && target !== doc.body && target !== doc.documentElement) {
-            if (target === canvas || canvas.contains(target)) return true;
+            if (target === canvas || canvas.contains(target) || (wheel && (target === wheel || wheel.contains(target)))) return true;
             return false;
         }
         return isPointOverCanvas(x, y);
@@ -187,16 +188,26 @@ export function initializeActionWheel({
         wheel.setAttribute('aria-label', trigger.secondary ? 'Story and UI action wheel' : 'Orator action wheel');
         wheel.style.left = `${centerX}px`; wheel.style.top = `${centerY}px`; wheel.hidden = false;
         wheel.dataset.selected = '';
+        const centerEl = wheel.querySelector('.wheel-center');
+        if (centerEl) centerEl.innerHTML = trigger.secondary ? 'Release<br>to cancel' : 'Toggle<br>marker';
         consume(event);
         onOpen();
-        show('Move to an action and release · Release in the center to cancel');
+        const centerMsg = trigger.secondary ? 'Release in the center to cancel' : 'Release in the center to toggle marker';
+        show(`Move to an action and release · ${centerMsg}`);
     };
     const finish = async event => {
         const direction = selection();
         const activeActions = drag.secondary ? secondaryActions : actions;
         const activeLabels = drag.secondary ? secondaryLabels : labels;
+        const isSecondary = Boolean(drag.secondary);
         cancel(); consume(event);
-        if (!direction || !isOrator()) return;
+        if (!direction) {
+            if (!isSecondary && isOrator() && typeof onCenterAction === 'function') {
+                try { onCenterAction(); } catch (_) {}
+            }
+            return;
+        }
+        if (!isOrator()) return;
         busy = true;
         const action = activeActions[direction];
         if (action === 'previous_image' && typeof onPreviousImage === 'function') {
@@ -292,7 +303,8 @@ export function initializeActionWheel({
         wheel.dataset.selected = direction || '';
         for (const item of wheel.querySelectorAll('[data-direction]')) item.classList.toggle('selected', item.dataset.direction === direction);
         const activeLabels = drag.secondary ? secondaryLabels : labels;
-        show(direction ? `${activeLabels[direction]} — release to apply` : 'Release in the center to cancel');
+        const centerLabel = drag.secondary ? 'Release in the center to cancel' : 'Release in the center to toggle marker';
+        show(direction ? `${activeLabels[direction]} — release to apply` : centerLabel);
     }, true);
     win.addEventListener('pointermove', event => {
         if (drag) event.stopImmediatePropagation();
@@ -354,6 +366,9 @@ export function initializeActionWheel({
             }
             labels.up = `${currentCanvasPinned ? 'Unpin' : 'Pin'} image`;
             labels.down = `${currentMusicPinned ? 'Unpin' : 'Pin'} music`;
+        },
+        isRightClickBound() {
+            return isOrator() && Boolean(binding?.type === 'mouse' && binding.button === 2);
         },
     };
     updateBindingUI();

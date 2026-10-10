@@ -3904,6 +3904,11 @@
             isOrator: isCurrentOrator,
             canvasTarget: document.getElementById('image-container'),
             onOpen: () => { isDrawing = false; flushDrawBatch(); },
+            onCenterAction: () => {
+                if (typeof toggleToolSelection === 'function') {
+                    toggleToolSelection();
+                }
+            },
             onRebindStart: () => {
                 isRebindingHotkey = false;
                 isRebindingTextHotkey = false;
@@ -5327,6 +5332,7 @@
         const textAnnotationColors = document.querySelectorAll('.text-annotation-color');
 
         let currentColor = null;
+        let lastSelectedTool = { type: 'marker', color: '#ef4444' };
         let currentBrushSize = 3;
         let isDrawing = false;
         let lastNormX = 0;
@@ -5532,6 +5538,9 @@
 
         function setTextAnnotationMode(active, openMenu = active) {
             textAnnotationMode = Boolean(active && canAddTextAnnotation());
+            if (textAnnotationMode) {
+                lastSelectedTool = { type: 'text' };
+            }
             if (textAnnotationMode && currentColor) {
                 currentColor = null;
                 colorBtns.forEach(button => {
@@ -5560,6 +5569,9 @@
         }
 
         function setDrawingColor(color) {
+            if (color !== null) {
+                lastSelectedTool = { type: 'marker', color: color };
+            }
             if (color !== null && textAnnotationMode) {
                 textAnnotationMode = false;
                 textAnnotationToggle?.classList.remove('active');
@@ -5583,6 +5595,29 @@
             }
         }
 
+        function toggleToolSelection() {
+            if (!doodlesEnabled) return;
+            const isToolActive = (currentColor !== null) || textAnnotationMode;
+            if (isToolActive) {
+                if (textAnnotationMode) {
+                    activeTextEditor?.remove();
+                    activeTextEditor = null;
+                    setTextAnnotationMode(false, false);
+                } else {
+                    setDrawingColor(null);
+                }
+            } else {
+                if (lastSelectedTool.type === 'text' && canAddTextAnnotation()) {
+                    setTextAnnotationMode(true, false);
+                } else {
+                    const colorToSelect = (lastSelectedTool.type === 'marker' && lastSelectedTool.color)
+                        ? lastSelectedTool.color
+                        : '#ef4444';
+                    setDrawingColor(colorToSelect);
+                }
+            }
+        }
+
         document.addEventListener('click', (event) => {
             if (!imgContainer) return;
             const clickedCanvas = imgContainer.contains(event.target);
@@ -5592,6 +5627,20 @@
             }
             pagingControls?.classList.toggle('canvas-selected', clickedCanvas && currentColor === null);
             if (textAnnotationMode) pagingControls?.classList.remove('canvas-selected');
+        });
+
+        document.addEventListener('contextmenu', (event) => {
+            if (!imgContainer) return;
+            const clickedCanvas = imgContainer === event.target || imgContainer.contains(event.target);
+            if (!clickedCanvas) return;
+            if (event.target.closest('button, a, select, [role="dialog"], #orator-command-overlay, #doodle-toolbar, #history-paging-controls')) {
+                return;
+            }
+            if (isCurrentOrator() && actionWheel && typeof actionWheel.isRightClickBound === 'function' && actionWheel.isRightClickBound()) {
+                return;
+            }
+            event.preventDefault();
+            toggleToolSelection();
         });
 
         textAnnotationToggle?.addEventListener('click', () => {
@@ -5944,6 +5993,7 @@
         let currentStrokeId = null;
 
         canvas.addEventListener('mousedown', (e) => {
+            if (e.button !== 0) return;
             if (!doodlesEnabled || !currentColor) return;
             isDrawing = true;
             currentStrokeId = (typeof crypto !== 'undefined' && crypto.randomUUID)
@@ -7278,27 +7328,6 @@
                 nameEl.className = 'character-card-name';
                 nameEl.textContent = char.name;
                 card.appendChild(nameEl);
-
-                const traitsContainer = document.createElement('div');
-                traitsContainer.className = 'character-card-traits';
-
-                if (char.gender) {
-                    const badge = document.createElement('span');
-                    badge.className = 'character-trait-badge';
-                    badge.textContent = char.gender;
-                    traitsContainer.appendChild(badge);
-                }
-                if (Array.isArray(char.voice_tags)) {
-                    char.voice_tags.slice(0, 2).forEach(tag => {
-                        const badge = document.createElement('span');
-                        badge.className = 'character-trait-badge';
-                        badge.textContent = tag;
-                        traitsContainer.appendChild(badge);
-                    });
-                }
-                if (traitsContainer.children.length > 0) {
-                    card.appendChild(traitsContainer);
-                }
 
                 const textToShow = char.description || char.personality || char.quirk || '';
                 if (textToShow) {
@@ -10410,6 +10439,19 @@
             z-index: 10;
             pointer-events: none;
             user-select: none;
+            transition: all 0.15s ease;
+        }
+
+        #orator-action-wheel[data-selected=""] .wheel-center {
+            border-color: #818cf8;
+            color: #f8fafc;
+            box-shadow: 0 0 12px rgba(99, 102, 241, 0.4);
+        }
+
+        #orator-action-wheel[data-mode="secondary"][data-selected=""] .wheel-center {
+            border-color: #64748b;
+            color: #94a3b8;
+            box-shadow: 0 0 16px rgba(0, 0, 0, 0.5);
         }
     </style>
     <style>
@@ -10430,7 +10472,7 @@
         <span class="wheel-action" data-primary data-direction="upleft">⏮🖼<br>Prev image</span>
         <span class="wheel-action" data-secondary data-direction="up">📖<br>Update Story</span>
         <span class="wheel-action" data-secondary data-direction="down">🎛<br>Update UI</span>
-        <span class="wheel-center">Release<br>to cancel</span>
+        <span class="wheel-center">Toggle<br>marker</span>
     </div>
     <div id="action-wheel-status" role="status" aria-live="polite" hidden
         style="position:fixed;bottom:32px;left:50%;transform:translateX(-50%);z-index:10000;background:#1e293b;color:#f8fafc;padding:12px 18px;border-radius:10px;pointer-events:none;">
