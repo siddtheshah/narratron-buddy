@@ -12,7 +12,7 @@ def test_canvas_reveals_final_layout_after_chat_slide_and_window_resize() -> Non
     styles = re.search(r"<style>(.*?)</style>", template, re.DOTALL)
     assert styles is not None
     start = template.index("        // Cover intermediate layouts")
-    end = template.index("        if (popoutCollapseBtn)", start)
+    end = template.index("        // Default-hide chat panel", start)
     script = """
         let userToggledPanel = false;
         let isPanelCollapsed = false;

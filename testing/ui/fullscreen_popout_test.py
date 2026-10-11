@@ -35,7 +35,7 @@ class TestFullscreenPopout(UITestCase):
             "toggleFullScreen",
             "fullscreen-cinematic",
             "showCinematicUI",
-            'id="popout-collapse-btn"',
+            'id="chat-side-toggle-btn"',
             'id="popout-expand-btn"',
             'id="popout-window-btn"',
             'id="popped-out-placeholder"',
