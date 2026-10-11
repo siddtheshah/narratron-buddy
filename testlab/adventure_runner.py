@@ -62,8 +62,14 @@ from google.genai import types
 from pydantic import BaseModel, Field
 
 from components.canvas.canvas_state_service import CanvasStateService
+from components.image_library import ImageLibrary
 from components.theater_manager import TheaterManager
-from services.live_agent import AGENT_INSTRUCTION_TEMPLATE, get_playlists_context, get_references_context
+from services.live_agent import (
+    AGENT_INSTRUCTION_TEMPLATE,
+    AUDIENCE_SUGGESTIONS_TEMPLATE,
+    get_playlists_context,
+    get_references_context,
+)
 from tools.story import StoryTool, VertexGemini
 from tools.notepad_tool import NotepadTool
 from tools.tool_bundle import ToolBundle
@@ -90,6 +96,7 @@ class MockCanvasState:
         self.current_music: Optional[str] = None
         self.music_status: str = "stopped"
         self.current_thought: Optional[str] = None
+        self.last_user_help_question: Optional[str] = None
         self.last_interactive_canvas_request: Optional[str] = None
         self.active_animation: Optional[str] = None
         self.tool_logs: List[Dict[str, Any]] = []
@@ -114,6 +121,7 @@ class MockCanvasState:
             "current_music": self.current_music,
             "music_status": self.music_status,
             "current_thought": self.current_thought,
+            "last_user_help_question": self.last_user_help_question,
             "last_interactive_canvas_request": self.last_interactive_canvas_request,
             "active_animation": self.active_animation,
             "tool_logs_count": len(self.tool_logs),
@@ -178,17 +186,17 @@ class MockToolBundle:
 
     def show_image(
         self,
-        file_path_or_name: str,
+        reference_handle: str,
         transition: str = "crossfade",
         effect: str = "gleam3",
     ) -> str:
-        """Shows an image on the canvas."""
-        self.canvas_state.current_image = file_path_or_name
+        """Shows an image on the canvas using its stable reference handle."""
+        self.canvas_state.current_image = reference_handle
         self.canvas_state.current_image_effect = effect
-        result = f"Displaying image '{file_path_or_name}' (transition={transition}, effect={effect})."
+        result = f"Displaying image '{reference_handle}' (transition={transition}, effect={effect})."
         return self._record(
             "show_image",
-            {"file_path_or_name": file_path_or_name, "transition": transition, "effect": effect},
+            {"reference_handle": reference_handle, "transition": transition, "effect": effect},
             result,
         )
 
@@ -209,6 +217,18 @@ class MockToolBundle:
         self.canvas_state.current_thought = text
         result = f"Updated thought panel: {text}"
         return self._record("send_chat_message", {"text": text}, result)
+
+    # --- User Help Tools ---
+
+    def user_help_tool(self, question: str) -> str:
+        """Answer a Narratron interface question and post the answer to shared chat.
+
+        Args:
+            question: The user's question about the Narratron interface or controls.
+        """
+        self.canvas_state.last_user_help_question = question
+        result = f"User help answer posted in chat for question: {question}"
+        return self._record("user_help_tool", {"question": question}, result)
 
     # --- Music Tools ---
 
@@ -231,13 +251,64 @@ class MockToolBundle:
         result = "Music resumed."
         return self._record("resume_music", {}, result)
 
-    def create_music(self, prompt: str, handle: str = "") -> str:
+    def create_music(self, prompt: str, handle: Optional[str] = None) -> str:
         """Generate custom background music and play it on the canvas."""
         music_id = handle or f"gen_track_{len(self.canvas_state.tool_logs) + 1}"
         self.canvas_state.current_music = music_id
         self.canvas_state.music_status = "playing"
         result = f"Generated and playing custom track '{music_id}' for prompt: {prompt}."
         return self._record("create_music", {"prompt": prompt, "handle": handle}, result)
+
+    # --- Character and Scene Reference Tools (Non-Adventure Mode) ---
+
+    def create_or_update_character(
+        self,
+        name: str,
+        description: str = "",
+        personality: str = "",
+        motivation: str = "",
+        quirk: str = "",
+        gender: str = "",
+        voice_tags: str = "",
+    ) -> str:
+        """Add or update an NPC character in the current narration session."""
+        result = f"Character '{name}' profile updated."
+        return self._record(
+            "create_or_update_character",
+            {
+                "name": name,
+                "description": description,
+                "personality": personality,
+                "motivation": motivation,
+                "quirk": quirk,
+                "gender": gender,
+                "voice_tags": voice_tags,
+            },
+            result,
+        )
+
+    def create_or_update_scene(
+        self,
+        name: str,
+        description: str = "",
+    ) -> str:
+        """Add or update a scene reference in the current narration session."""
+        result = f"Scene '{name}' reference updated."
+        return self._record(
+            "create_or_update_scene",
+            {"name": name, "description": description},
+            result,
+        )
+
+    def lookup_character(self, query: str = "") -> str:
+        """List all session characters or search by name or trait."""
+        result = f"Character lookup for '{query}': no matching characters."
+        return self._record("lookup_character", {"query": query}, result)
+
+    def clear_characters(self) -> str:
+        """Clear all active character profiles."""
+        result = "All character profiles cleared."
+        return self._record("clear_characters", {}, result)
 
     # --- Interactive Canvas (A2UI) Tools ---
 
@@ -259,17 +330,20 @@ class MockToolBundle:
         self,
         scene_prompt: str,
         animation_name: str,
-        reference_images: List[str] | str | None = None,
-    ) -> Dict[str, Any]:
+        reference_images: Optional[List[str] | str] = None,
+        technique: Optional[str] = None,
+    ) -> str:
         """Creates an animation."""
         anim_id = f"anim_{uuid.uuid4().hex[:6]}"
-        result = {"animation_id": anim_id, "status": "ready"}
+        self.canvas_state.active_animation = anim_id
+        result = f"Animation generation started in background with ID '{anim_id}'."
         return self._record(
             "create_animation",
             {
                 "scene_prompt": scene_prompt,
                 "animation_name": animation_name,
                 "reference_images": reference_images,
+                "technique": technique,
             },
             result,
         )
@@ -495,7 +569,7 @@ class AdventureSession:
 
         save_theater_config(self.session_id, self.config, theater_manager=self.theater_manager)
 
-    def _process_user_action_wrapper(self, user_action: str, nudge: str = "") -> Dict[str, Any]:
+    def process_user_action(self, user_action: str, nudge: str = "") -> Dict[str, Any]:
         """Wrapper for process_user_action that resolves synchronously and delivers the planner result."""
         clean_action = str(user_action or "").strip()
         clean_nudge = str(nudge or "").strip()
@@ -545,72 +619,127 @@ class AdventureSession:
             "scene_reaction": result,
         }
 
-    def _build_tool_catalog(self) -> List[Any]:
-        """Build tool bundle matching the exact catalog of services/agent.py."""
-        tools = [
-            self.mock_tools.list_references,
-            self.mock_tools.create_image,
+    # Backward compatibility alias
+    _process_user_action_wrapper = process_user_action
+
+    def _build_tool_catalog(self) -> List[Callable[..., Any]]:
+        """Build tool bundle matching the exact catalog of services/live_agent.py."""
+        config = self.config
+        story_planning_config = config.get("story_planning", {})
+        adventure_mode = bool(story_planning_config.get("adventure_mode", False))
+        image_config = config.get("image_generation", {})
+        image_generation_enabled = bool(image_config.get("enabled", True))
+        user_help_config = config.get("user_help", {})
+        user_help_config = user_help_config if type(user_help_config) is dict else {}
+        user_help_enabled = bool(user_help_config.get("enabled", True))
+
+        tools: List[Callable[..., Any]] = [
             self.mock_tools.show_image,
-            self.mock_tools.browse_images,
-            self.mock_tools.search_image_by_metadata,
             self.mock_tools.send_chat_message,
+        ]
+
+        if user_help_enabled:
+            tools.append(self.mock_tools.user_help_tool)
+
+        tools.extend([
             self.mock_tools.play_music,
             self.mock_tools.pause_music,
             self.mock_tools.resume_music,
-        ]
+        ])
 
-        # Story planning tool
-        if bool(self.config.get("story_planning", {}).get("adventure_mode", False)):
-            tools.append(self._process_user_action_wrapper)
+        if image_generation_enabled:
+            tools.append(self.mock_tools.create_image)
+
+        if adventure_mode:
+            tools.append(self.process_user_action)
         else:
             tools.append(self.story_tool.update_sticky_note)
+            tools.extend([
+                self.mock_tools.create_or_update_character,
+                self.mock_tools.create_or_update_scene,
+                self.mock_tools.lookup_character,
+                self.mock_tools.clear_characters,
+            ])
 
-        # Interactive Canvas
-        if bool(self.config.get("interactive_canvas", {}).get("enabled", False)):
+        if bool(config.get("interactive_canvas", {}).get("enabled", False)):
             tools.extend([
                 self.mock_tools.update_interactive_canvas,
                 self.mock_tools.clear_interactive_canvas,
             ])
 
-        # Generated Music
-        if bool(self.config.get("music", {}).get("use_generated_music", False)):
+        if bool(config.get("music", {}).get("use_generated_music", False)):
             tools.append(self.mock_tools.create_music)
 
-        # Animation
-        if bool(self.config.get("animation", {}).get("enabled", False)):
+        if bool(config.get("animation", {}).get("enabled", False)):
             tools.extend([
                 self.mock_tools.create_animation,
                 self.mock_tools.play_animation,
                 self.mock_tools.browse_animations,
             ])
 
-        # Observability
-        if bool(self.config.get("observability_tool", {}).get("enabled", False)):
+        if bool((config.get("observability_tool") or {}).get("enabled", False)):
             tools.append(self.mock_tools.request_canvas_observability)
 
         return tools
 
     def _create_agent(self) -> Agent:
         """Create ADK Agent using AGENT_INSTRUCTION_TEMPLATE and adventure config."""
-        tool_bundle = ToolBundle(self.tools)
+        theater = self.theater_manager.theater(self.session_id)
+        image_library = ImageLibrary(theater)
+        preloaded_references: List[Dict[str, str]] = list(image_library.list_references())
         adventure_mode = bool(self.config.get("story_planning", {}).get("adventure_mode", False))
-        ref_context = ""
-        if not adventure_mode:
-            references = get_references_context(tool_bundle)
-            if not references.strip():
-                references = "No preloaded reference images found."
-            ref_context = "\n\n## Preloaded References Context (Loaded at Agent Init)\n" + references
+        if adventure_mode and self.story_tool.reference_manager is not None:
+            for name, path in self.story_tool.reference_manager.available_character_images().items():
+                preloaded_references.append({
+                    "name": name,
+                    "alias": f"<{name}>",
+                    "path": path,
+                    "description": "Character portrait; use the exact name tag in image and animation prompts.",
+                })
+            for name, path in self.story_tool.reference_manager.available_scene_images().items():
+                preloaded_references.append({
+                    "name": name,
+                    "alias": name,
+                    "path": path,
+                    "description": "Scene reference.",
+                })
+        elif self.mock_tools.references:
+            for ref in self.mock_tools.references:
+                if isinstance(ref, dict) and "name" in ref and "path" in ref:
+                    preloaded_references.append({
+                        "name": str(ref["name"]),
+                        "alias": str(ref.get("alias") or ref["name"]),
+                        "path": str(ref["path"]),
+                        "description": str(ref.get("description") or "Preloaded reference image."),
+                    })
+
+        tool_bundle = ToolBundle(self.tools, preloaded_references=preloaded_references)
+
+        references = get_references_context(tool_bundle)
+        if not references.strip():
+            references = "No preloaded reference images found."
+        ref_context = "\n\n## Preloaded References Context (Loaded at Agent Init)\n" + references
 
         user_help_config = self.config.get("user_help", {})
         user_help_config = user_help_config if type(user_help_config) is dict else {}
 
-        theater = self.theater_manager.theater(self.session_id)
         playlists = get_playlists_context(theater)
         if type(playlists) is not str or not playlists.strip():
             playlists = "No preloaded music playlists found."
         playlist_context = "\n\n## Preloaded Music Playlists Context (Loaded at Agent Init)\n" + playlists
 
         special_instructions = str(self.config.get("live_agent", {}).get("special_instructions", "")).strip()
+
+        observability_enabled = bool((self.config.get("observability_tool") or {}).get("enabled", False))
+        image_generation_enabled = bool(self.config.get("image_generation", {}).get("enabled", True))
+
+        audience_suggestions = Template(
+            AUDIENCE_SUGGESTIONS_TEMPLATE,
+        ).render(
+            adventure_mode=adventure_mode,
+            observability_enabled=observability_enabled,
+            image_generation_enabled=image_generation_enabled,
+        ).strip()
 
         instruction = Template(
             AGENT_INSTRUCTION_TEMPLATE,
@@ -620,11 +749,13 @@ class AdventureSession:
             playlist_context=playlist_context,
             special_instructions=special_instructions,
             animation_enabled=bool(self.config.get("animation", {}).get("enabled", False)),
-            image_generation_enabled=bool(self.config.get("image_generation", {}).get("enabled", True)),
+            image_generation_enabled=image_generation_enabled,
             use_generated_music=bool(self.config.get("music", {}).get("use_generated_music", False)),
-            adventure_mode=bool(self.config.get("story_planning", {}).get("adventure_mode", False)),
+            adventure_mode=adventure_mode,
             interactive_canvas_enabled=bool(self.config.get("interactive_canvas", {}).get("enabled", False)),
             user_help_enabled=bool(user_help_config.get("enabled", True)),
+            observability_enabled=observability_enabled,
+            audience_suggestions=audience_suggestions,
             theater_id=self.session_id,
             theater_name=self.adventure_id,
             config=self.config,

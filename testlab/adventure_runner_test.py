@@ -140,13 +140,31 @@ def test_mock_tool_bundle_behavior_and_logging():
     assert "Groove HUD" in a2ui_res
     assert canvas.last_interactive_canvas_request == "Render Groove HUD"
 
-    # 6. Verify tool logs
-    assert len(canvas.tool_logs) >= 5
+    # 6. Show Image with reference handle
+    show_res = bundle.show_image("cruiser_1", transition="crossfade", effect="gleam3")
+    assert "cruiser_1" in show_res
+    assert canvas.current_image == "cruiser_1"
+
+    # 7. User Help
+    help_res = bundle.user_help_tool("How do I mute music?")
+    assert "How do I mute music?" in help_res
+    assert canvas.last_user_help_question == "How do I mute music?"
+
+    # 8. Animation
+    anim_res = bundle.create_animation("Cruiser jump to warp", "warp_jump")
+    assert "warp_jump" in anim_res or "anim_" in anim_res
+    assert canvas.active_animation is not None
+
+    # 9. Verify tool logs
+    assert len(canvas.tool_logs) >= 8
     logged_tools = [log_entry["tool"] for log_entry in canvas.tool_logs]
     assert "create_image" in logged_tools
+    assert "show_image" in logged_tools
     assert "play_music" in logged_tools
     assert "send_chat_message" in logged_tools
+    assert "user_help_tool" in logged_tools
     assert "update_interactive_canvas" in logged_tools
+    assert "create_animation" in logged_tools
 
 
 def test_adventure_session_assembly_and_prompt(sample_adventure):
@@ -161,13 +179,16 @@ def test_adventure_session_assembly_and_prompt(sample_adventure):
         assert "synthetic test persona" in instruction.lower()
         assert "Interactive Canvas" in instruction
 
-        # Verify tool catalog matches services/agent.py expectations
+        # Verify tool catalog matches services/live_agent.py expectations
         tool_names = [getattr(t, "__name__", str(t)) for t in session.tools]
         assert "create_image" in tool_names
         assert "play_music" in tool_names
         assert "send_chat_message" in tool_names
-        assert "_process_user_action_wrapper" in tool_names
+        assert "user_help_tool" in tool_names
+        assert "process_user_action" in tool_names or "_process_user_action_wrapper" in tool_names
         assert "update_interactive_canvas" in tool_names
+        assert {"list_references", "browse_images", "search_image_by_metadata"}.isdisjoint(tool_names)
+        assert "## Preloaded References Context" in instruction
 
         # Initial state verification
         state = session.get_state()
@@ -235,7 +256,7 @@ def test_adventure_session_turn_execution_mocked(sample_adventure):
                 assert "create_image" in tool_names
 
                 # Check updated state
-                state = res["state"]
+                assert res["state"]["sticky_notes"] is not None
                 assert session.mock_canvas.current_music == "groove_alpha"
                 assert session.mock_canvas.music_status == "playing"
     finally:
@@ -696,4 +717,59 @@ def test_main_cli_autoplay_flags(monkeypatch):
             assert call_kwargs["max_turns"] == 3
             assert call_kwargs["include_stickies"] is False
             mock_session.cleanup.assert_called_once()
+
+
+def test_adventure_session_tool_profile_non_adventure_mode(sample_adventure, monkeypatch):
+    # Rewrite theater.yaml with adventure_mode=False
+    theater_yaml = """
+story_planning:
+  adventure_mode: false
+live_agent:
+  special_instructions: "Narrate an ongoing chronicle."
+"""
+    (sample_adventure / "theater.yaml").write_text(theater_yaml.strip(), encoding="utf-8")
+
+    session = AdventureSession(adventure_id_or_path="synthetic-test-adventure")
+    try:
+        tool_names = [getattr(t, "__name__", str(t)) for t in session.tools]
+        assert "update_sticky_note" in tool_names
+        assert "create_or_update_character" in tool_names
+        assert "create_or_update_scene" in tool_names
+        assert "lookup_character" in tool_names
+        assert "clear_characters" in tool_names
+        assert "process_user_action" not in tool_names
+        assert "_process_user_action_wrapper" not in tool_names
+        assert "user_help_tool" in tool_names
+        assert {"list_references", "browse_images", "search_image_by_metadata"}.isdisjoint(tool_names)
+    finally:
+        session.cleanup()
+
+
+def test_adventure_session_tool_profile_disabled_peripherals(sample_adventure, monkeypatch):
+    theater_yaml = """
+story_planning:
+  adventure_mode: true
+image_generation:
+  enabled: false
+user_help:
+  enabled: false
+music:
+  use_generated_music: true
+animation:
+  enabled: true
+"""
+    (sample_adventure / "theater.yaml").write_text(theater_yaml.strip(), encoding="utf-8")
+
+    session = AdventureSession(adventure_id_or_path="synthetic-test-adventure")
+    try:
+        tool_names = [getattr(t, "__name__", str(t)) for t in session.tools]
+        assert "create_image" not in tool_names
+        assert "user_help_tool" not in tool_names
+        assert "create_music" in tool_names
+        assert "create_animation" in tool_names
+        assert "play_animation" in tool_names
+        assert "browse_animations" in tool_names
+        assert "show_image" in tool_names
+    finally:
+        session.cleanup()
 
