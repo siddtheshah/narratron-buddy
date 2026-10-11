@@ -32,6 +32,7 @@ class ReferenceTool(BaseTools):
             raise ValueError("reference_manager is required.")
         self.reference_manager = reference_manager
 
+    @terminal
     @logged_tool_call
     def create_or_update_character(
         self,
@@ -76,6 +77,7 @@ class ReferenceTool(BaseTools):
         return character.describe()
 
 
+    @terminal
     @logged_tool_call
     def create_or_update_scene(
         self,

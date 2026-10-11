@@ -41,7 +41,7 @@ class TestCrossfade(UITestCase):
             result = tool.show_image("test_image", transition=transition, effect=effect)
             self.assertIn("Successfully", result)
             tool.visual.on_show_image.assert_called_once_with(
-                str(image.with_suffix(".webp")), transition=transition, effect=effect
+                tool._ensure_webp_for_display(str(image)), transition=transition, effect=effect
             )
             tool.visual.on_show_image.reset_mock()
 

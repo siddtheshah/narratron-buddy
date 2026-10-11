@@ -1219,9 +1219,13 @@ async def test_get_theater_sticky_notes_endpoint():
     mock_session = SimpleNamespace(story_planning_tools=SimpleNamespace(notepad=mock_notepad))
     mock_agent_mgr.get_session.return_value = mock_session
 
+    mock_tm = MagicMock()
+    mock_tm.get_theater_config.return_value = {}
+
     with patch.object(theaters, "_require_canvas_access_async", new=AsyncMock()), \
          patch.object(theaters, "_safe_path_param"), \
-         patch.object(object_registry, "live_agent_manager", mock_agent_mgr):
+         patch.object(object_registry, "live_agent_manager", mock_agent_mgr), \
+         patch.object(theaters, "theater_manager", mock_tm):
 
         request = MagicMock()
         res = await theaters.get_theater_sticky_notes("stage", request)

@@ -9,7 +9,7 @@ from playwright.sync_api import Route, sync_playwright
 
 def test_canvas_help_is_private_and_skips_the_live_agent() -> None:
     template = Path("templates/canvas.html").read_text(encoding="utf-8")
-    form = re.search(r'<form id="chat-form">.*?</form>', template, re.DOTALL)
+    form = re.search(r'<form id="chat-form"[^>]*>.*?</form>', template, re.DOTALL)
     assert form is not None
     script = Path("static/js/chat-controller.js").read_text(encoding="utf-8")
     script = script.replace("export function", "function").replace("import { initializeChatEmotes } from './chat-emotes.js';", "")
