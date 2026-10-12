@@ -23,6 +23,30 @@ from utils.config_loader import get_theater_default_config
 from unittest.mock import AsyncMock, MagicMock, patch
 
 
+def test_story_log_output_is_fresh_after_append(tmp_path: Path) -> None:
+    from components.theater_manager import TheaterManager
+
+    manager = TheaterManager(base_theaters_dir=tmp_path / "theaters")
+    theater = manager.theater("story-log-test")
+    theater.append_output_file("story_log.jsonl", '{"type":"user_action","action":"First"}\n')
+    url = "/theaters/story-log-test/output/story_log.jsonl"
+    with patch.object(theaters, "theater_manager", manager), \
+         patch.object(theaters, "_require_canvas_access_async", AsyncMock()), \
+         TestClient(app) as client:
+        first = client.get(url)
+        assert first.status_code == 200
+        assert first.headers["Cache-Control"] == "no-store"
+        theater.append_output_file("story_log.jsonl", '{"type":"user_action","action":"Second"}\n')
+        updated = client.get(url, headers={"If-Modified-Since": first.headers["last-modified"]})
+        assert updated.status_code == 200
+        assert '"Second"' in updated.text
+        assert updated.headers["Cache-Control"] == "no-store"
+
+        image = theater.output_dir() / "scene.jpg"
+        image.write_bytes(b"scene")
+        assert client.get("/theaters/story-log-test/output/scene.jpg").headers["Cache-Control"] == "private, max-age=3600"
+
+
 @pytest.mark.parametrize("source", ["adventure", "folder", "zip"])
 def test_deployment_preserves_character_folders(tmp_path: Path, source: str) -> None:
     from absl.testing import flagsaver

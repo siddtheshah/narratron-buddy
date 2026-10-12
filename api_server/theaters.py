@@ -485,7 +485,7 @@ async def serve_theater_output(
     theater_id: str,
     filename: str,
     join_key: Optional[str] = None,
-):
+) -> Response:
     await _require_canvas_access_async(request, theater_id, join_key=join_key)
     _safe_path_param(theater_id, "theater_id")
     output_dir = theater_manager.theater(theater_id).output_dir()
@@ -504,11 +504,11 @@ async def serve_theater_output(
             else:
                 raise HTTPException(status_code=404, detail="Theater output file not found")
     output_headers = {
-        "Cache-Control": "private, max-age=3600",
+        "Cache-Control": "no-store" if filename == "story_log.jsonl" else "private, max-age=3600",
         "Vary": "Cookie",
     }
     response = FileResponse(file_path, headers=output_headers, stat_result=file_path.stat())
-    if StaticFiles().is_not_modified(response.headers, request.headers):
+    if filename != "story_log.jsonl" and StaticFiles().is_not_modified(response.headers, request.headers):
         return NotModifiedResponse(response.headers)
     return response
 

@@ -113,17 +113,23 @@ export function initializeStoryLogInspector(theaterId) {
     if (!content || !theaterId) return;
 
     let isOpen = false;
+    let refreshTimer = null;
+    let loading = false;
+    let lastLogText = null;
 
     async function loadStoryLog() {
-        content.textContent = 'Loading story log…';
+        if (!isOpen || document.hidden || loading) return;
+        loading = true;
+        if (lastLogText === null) content.textContent = 'Loading story log…';
         try {
-            const response = await fetch(`/theaters/${encodeURIComponent(theaterId)}/output/story_log.jsonl`);
-            if (response.status === 404) {
-                content.textContent = 'No story actions have been recorded yet.';
-                return;
-            }
-            if (!response.ok) throw new Error(`Unable to load story log (${response.status})`);
-            const entries = (await response.text()).split('\n').filter(Boolean).map((line) => JSON.parse(line));
+            const response = await fetch(`/theaters/${encodeURIComponent(theaterId)}/output/story_log.jsonl`, {
+                cache: 'no-store',
+            });
+            if (!response.ok && response.status !== 404) throw new Error(`Unable to load story log (${response.status})`);
+            const logText = response.status === 404 ? '' : await response.text();
+            if (logText === lastLogText) return;
+            const entries = logText.split('\n').filter(line => line.trim()).map((line) => JSON.parse(line));
+            lastLogText = logText;
             content.replaceChildren();
             if (!entries.length) {
                 content.textContent = 'No story actions have been recorded yet.';
@@ -141,7 +147,18 @@ export function initializeStoryLogInspector(theaterId) {
             requestAnimationFrame(() => positionLatestAction(inspector, content));
         } catch (error) {
             console.error('Failed to load story log:', error);
-            content.textContent = 'The story log could not be loaded.';
+            if (lastLogText === null) content.textContent = 'The story log could not be loaded.';
+        } finally {
+            loading = false;
+        }
+    }
+
+    function syncRefresh() {
+        if (refreshTimer !== null) clearInterval(refreshTimer);
+        refreshTimer = null;
+        if (isOpen && !document.hidden) {
+            loadStoryLog();
+            refreshTimer = setInterval(loadStoryLog, 2000);
         }
     }
 
@@ -158,10 +175,10 @@ export function initializeStoryLogInspector(theaterId) {
             toggleBtn.setAttribute('aria-expanded', String(isOpen));
             toggleBtn.classList.toggle('active', isOpen);
         }
-        if (isOpen) {
-            loadStoryLog();
-        }
+        syncRefresh();
     }
+
+    document.addEventListener('visibilitychange', syncRefresh);
 
     if (toggleBtn) {
         toggleBtn.addEventListener('click', (e) => {
