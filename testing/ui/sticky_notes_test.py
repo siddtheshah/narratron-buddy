@@ -67,6 +67,17 @@ class TestStickyNotesUI(unittest.TestCase):
         self.assertIn('event.target.closest("#sticky-notes-toggle-btn")', renderer_content)
         self.assertIn('event.target.closest("#suggestions-toggle-btn")', renderer_content)
 
+    def test_stickies_hidden_toggle_does_not_pin_button(self) -> None:
+        canvas_path = Path("templates/canvas.html")
+        content = canvas_path.read_text(encoding="utf-8")
+
+        # Ensure toggleBtn click listener does not pin the sticky notes window
+        toggle_click_snippet = content[content.find("toggleBtn.addEventListener('click'") : content.find("toggleBtn.addEventListener('click'") + 400]
+        self.assertNotIn("isPinned = true", toggle_click_snippet)
+        self.assertIn("mouseleave", content)
+        self.assertIn("btn.classList.remove('expanded')", content)
+
 
 if __name__ == "__main__":
     unittest.main()
+

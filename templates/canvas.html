@@ -3731,8 +3731,6 @@
                     toggleBtn.addEventListener('click', (e) => {
                         e.stopPropagation();
                         e.preventDefault();
-                        isPinned = true;
-                        btn.classList.add('expanded');
                         const nextRevealed = !isHiddenRevealed();
                         hiddenRevealed = nextRevealed;
                         setStickiesRevealedInCache(resolveTheaterId(), nextRevealed);
