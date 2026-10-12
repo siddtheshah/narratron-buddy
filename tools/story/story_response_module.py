@@ -126,9 +126,13 @@ Respond ONLY with valid JSON conforming to the scene reaction schema.
 
 # Tool Usage Guidelines
 - **Lore Search & Reading (`search_lore`, `read_lore`)**: Ground the narrative, characters, factions, and setting in established theater lore. You may call `search_lore` to perform a keyword search across all lore files and find the most relevant documents by relevance score, and `read_lore` to read full lore documents or directories. `search_lore` and `read_lore` are capped separately: you may call search_lore at most 3 times and read_lore at most 3 times in a single turn. Once you have sufficient context, proceed immediately to return the scene reaction. If no lore is available, invent the lore freely without calling search_lore or read_lore.
+{% if enable_dice -%}
 - **Dice Rolling (`roll_dice`)**: When an action's outcome is genuinely uncertain, call roll_dice and use the returned result to decide the consequence; do not fabricate a roll.
   - **Player Reactionary Rolls (`procedural=False`, default)**: Use for resolving player actions, skill checks, contests, or direct consequences of player decisions. These rolls are visibly animated and displayed on the canvas for the player.
   - **Procedural Rolls (`procedural=True`)**: Use for background procedural generation, random encounter tables, weather, NPC demeanor, or hidden world checks. These rolls are hidden from the canvas.
+{% else -%}
+- Dice rolling is disabled. Resolve uncertain outcomes through established lore and narrative consequences without rolling dice or inventing roll results.
+{% endif -%}
 - **Character Lookup (`lookup_character`)**: Call `lookup_character` to list all known session characters or search for a specific NPC by name, role, or trait to view their full profile, personality, motivation, and quirk when encountering or referencing characters created earlier in the story.
 - **Character Creation & Updates (`create_or_update_character`)**: You may call `create_or_update_character` to create or update an NPC profile with explicit gender ('male', 'female', or 'nonbinary') and voice tags. If the character doesn't exist, it is generated; if it exists, specified fields are updated.
 - **Scene Reference (`create_or_update_scene`)**: Call `create_or_update_scene` to establish or update scenery and location reference visuals by name and concept description.
@@ -259,12 +263,14 @@ def build_responder_instructions(
     style: str = "",
     lore_context: str = "",
     max_sticky_notes: int = 5,
+    enable_dice: bool = True,
 ) -> str:
     return _RESPONDER_INSTRUCTION_TEMPLATE.render(
         context=context,
         style=style,
         lore_context=lore_context,
         max_sticky_notes=max_sticky_notes,
+        enable_dice=enable_dice,
     ).strip()
 
 
@@ -636,6 +642,8 @@ class StoryResponseModule:
                 for player reactionary rolls (e.g., resolving a player's action, skill checks,
                 saving throws, contests) so the roll is visibly animated on the canvas.
         """
+        if self.config.get("enable_dice", True) is False:
+            return {"error": "Dice rolling is disabled."}
         safe_sides = max(2, min(100, int(sides)))
         safe_count = max(1, min(10, int(count)))
         safe_modifier = max(-100, min(100, int(modifier)))
@@ -836,6 +844,7 @@ class StoryResponseModule:
             style=self.style,
             lore_context=lore_context,
             max_sticky_notes=self.notepad.max_sticky_notes,
+            enable_dice=self.config.get("enable_dice", True) is not False,
         )
 
     def _build_responder_turn_prompt(self, user_action: str, nudge: str = "") -> str:
@@ -897,7 +906,7 @@ class StoryResponseModule:
                 self.update_player_character,
                 self.create_or_update_character,
                 self.create_or_update_scene,
-                self.roll_dice,
+                *([self.roll_dice] if self.config.get("enable_dice", True) is not False else []),
             ],
             output_schema=SceneReaction,
             output_key="scene_reaction",

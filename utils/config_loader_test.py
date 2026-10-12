@@ -14,6 +14,14 @@ from utils.config_loader import (
 )
 
 class TestConfigLoader(BaseTestCase):
+    def test_dice_default_and_explicit_override(self) -> None:
+        self.assertIs(get_theater_default_config()["story_planning"]["enable_dice"], True)
+        with tempfile.TemporaryDirectory() as directory:
+            manager = TheaterManager(base_theaters_dir=Path(directory))
+            save_theater_config("dice_disabled", {"story_planning": {"enable_dice": False}}, theater_manager=manager)
+            config = get_theater_config("dice_disabled", theater_manager=manager)
+            self.assertIs(config["story_planning"]["enable_dice"], False)
+
     def test_app_reference_model_overrides_theater_and_preserves_visual_style(self) -> None:
         config = {"visuals": {"model": "gemini", "style": "Watercolor", "reference_model": "gemini"}}
         app_config = {

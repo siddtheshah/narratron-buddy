@@ -302,6 +302,35 @@ class TestStoryResponseModuleBehavior(unittest.TestCase):
             session_id="response-test-session",
         )
 
+    def test_dice_configuration_controls_tools_and_instructions(self) -> None:
+        for settings, enabled in [({}, True), ({"enable_dice": True}, True), ({"enable_dice": False}, False)]:
+            with self.subTest(settings=settings):
+                self.theater.config.return_value = {"story_planning": settings}
+                module = StoryResponseModule(
+                    theater=self.theater,
+                    canvas_manager=self.canvas,
+                    notepad=self.notepad,
+                    lore_library=self.lore_library,
+                    reference_manager=self.reference_manager,
+                    session_service=InMemorySessionService(),
+                    session_id="dice-config-test",
+                )
+                with patch("tools.story.story_response_module.Agent") as agent:
+                    module._create_responder_agent()
+                self.assertEqual(module.roll_dice in agent.call_args.kwargs["tools"], enabled)
+                instruction = module._build_responder_instruction()
+                self.assertEqual("`roll_dice`" in instruction, enabled)
+                self.assertEqual("Dice rolling is disabled" in instruction, not enabled)
+                if not enabled:
+                    for procedural in (False, True):
+                        with patch("random.randint") as randint:
+                            result = module.roll_dice(procedural=procedural)
+                        self.assertEqual(result, {"error": "Dice rolling is disabled."})
+                        randint.assert_not_called()
+                    self.assertEqual(module.get_die_rolls_this_turn(), [])
+                    self.canvas.tool_response.set_activity.assert_not_called()
+                    self.story_state.record_die_roll.assert_not_called()
+
     def test_rolls_and_resets_dice(self) -> None:
         # 1. Player reactionary roll (default procedural=False) -> shown on canvas
         roll = self.module.roll_dice(

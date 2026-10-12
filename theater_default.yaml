@@ -64,6 +64,8 @@ story_planning:
         - current_present_character_references_only
 
     adventure_mode: false
+    # Allow player-action and hidden procedural dice rolls. Defaults to true.
+    enable_dice: true
     # Immediately generate and publish an opening scene through the story
     # planner when the user connects to an Adventure Mode session.
     auto_begin: false
