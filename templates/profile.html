@@ -4,270 +4,48 @@
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Narratron - Profile</title><link rel="icon" href="/favicon.png">
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@simonwep/pickr@1.9.1/dist/themes/monolith.min.css">
-  <link rel="stylesheet" href="/static/css/auth-flow.css">
-  <script src="https://cdn.jsdelivr.net/npm/@simonwep/pickr@1.9.1/dist/pickr.min.js"></script>
-  <script src="/static/js/auth-flow.js"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@simonwep/pickr@1.9.1/dist/themes/monolith.min.css"><link rel="stylesheet" href="/static/css/auth-flow.css">
+  <script src="https://cdn.jsdelivr.net/npm/@simonwep/pickr@1.9.1/dist/pickr.min.js"></script><script src="/static/js/auth-flow.js"></script>
   <style>
-    :root{--bg:#0b0d12;--card:rgba(22,27,38,.8);--border:rgba(255,255,255,.1);--text:#f8fafc;--muted:#94a3b8}*{box-sizing:border-box}body{margin:0;min-height:100vh;font-family:Outfit,sans-serif;color:var(--text);background:radial-gradient(circle at 20% 15%,rgba(99,102,241,.16),transparent 35%),var(--bg)}main{max-width:760px;margin:4rem auto;padding:0 1.25rem}.card{background:var(--card);border:1px solid var(--border);border-radius:18px;padding:2rem;box-shadow:0 18px 50px rgba(0,0,0,.22)}h1{margin:0}.identity{display:flex;align-items:center;gap:.7rem}.swatch{width:18px;height:18px;border-radius:50%;border:2px solid rgba(255,255,255,.7)}.section{font-size:1rem;margin:2rem 0 .6rem;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}p{line-height:1.55;white-space:pre-wrap}.empty,.private{color:var(--muted)}.stats{display:grid;grid-template-columns:repeat(2,1fr);gap:.8rem}.stat{padding:1rem;border-radius:12px;background:rgba(255,255,255,.045)}.stat b{display:block;font-size:1.45rem}.stat span,label{color:var(--muted);font-size:.88rem}textarea,input[type="text"],input[type="number"]{width:100%;padding:.8rem;color:var(--text);background:#10131c;border:1px solid var(--border);border-radius:10px;font:inherit}textarea{min-height:130px;resize:vertical}label{display:flex;gap:.55rem;align-items:center;margin:1rem 0}button{border:0;border-radius:9px;padding:.7rem 1rem;font:inherit;font-weight:600;color:white;background:#6366f1;cursor:pointer;transition:all .15s ease}#status{margin-left:.75rem;color:#86efac}.gift-box{margin-top:2rem;padding:1.25rem;border:1px solid rgba(129,140,248,.35);border-radius:12px;background:rgba(99,102,241,.08)}.gift-box p{margin:.4rem 0 1rem;color:var(--muted);font-size:.9rem}.gift-row{display:flex;gap:.75rem;align-items:center}.gift-row input{max-width:180px}.gift-link{margin-top:.85rem;color:#a5b4fc;word-break:break-all;font-size:.9rem}.danger-section{margin-top:2.5rem;padding-top:1.5rem;border-top:1px solid rgba(239,68,68,.2)}.danger-box{background:rgba(239,68,68,.07);border:1px solid rgba(239,68,68,.25);border-radius:12px;padding:1.25rem;margin-top:1rem}.danger-btn{background:transparent;color:#f87171;border:1px solid rgba(239,68,68,.4)}.danger-btn:hover{background:rgba(239,68,68,.15);border-color:#f87171}.danger-confirm-btn{background:#dc2626;color:white;border:0}.danger-confirm-btn:disabled{opacity:.4;cursor:not-allowed}.cancel-btn{background:rgba(255,255,255,.08);color:var(--text);border:1px solid var(--border);margin-right:.75rem}.cancel-btn:hover{background:rgba(255,255,255,.14)}.stamps-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:.85rem;margin-top:.8rem}.stamp-card{position:relative;background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:12px;padding:.75rem;display:flex;flex-direction:column;align-items:center;text-align:center;transition:transform .18s ease,border-color .18s ease}.stamp-card:hover{transform:translateY(-2px);border-color:rgba(129,140,248,.4)}.stamp-thumb-wrap{width:76px;height:76px;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.25);border-radius:8px;overflow:hidden;margin-bottom:.5rem}.stamp-thumb{max-width:100%;max-height:100%;object-fit:contain}.stamp-title{font-size:.82rem;font-weight:500;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;width:100%;margin-bottom:.4rem}.stamp-delete-btn{background:rgba(239,68,68,.12);color:#fca5a5;border:1px solid rgba(239,68,68,.3);border-radius:6px;padding:.3rem .55rem;font-size:.75rem;cursor:pointer;width:100%;transition:background .15s ease}.stamp-delete-btn:hover{background:rgba(239,68,68,.25);color:#fee2e2}.stamp-upload-box{margin-top:1.25rem;padding:1.25rem;border:1px dashed rgba(129,140,248,.35);border-radius:12px;background:rgba(99,102,241,.04)}.stamp-upload-form{display:flex;flex-wrap:wrap;gap:.75rem;align-items:center;margin-top:.75rem}.stamp-upload-form input[type="file"]{display:none}.stamp-file-label{display:inline-flex;align-items:center;gap:.5rem;padding:.6rem .9rem;background:rgba(255,255,255,.08);border:1px solid var(--border);border-radius:8px;cursor:pointer;font-size:.85rem;color:var(--text);margin:0;transition:background .15s ease}.stamp-file-label:hover{background:rgba(255,255,255,.14)}.stamp-file-name{font-size:.82rem;color:var(--muted);max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    :root{--bg:#0b0d12;--surface:rgba(20,25,36,.84);--surface-muted:rgba(255,255,255,.045);--border:rgba(255,255,255,.1);--text:#f8fafc;--muted:#94a3b8;--accent:#818cf8}*{box-sizing:border-box}body{margin:0;min-height:100vh;font-family:Outfit,sans-serif;color:var(--text);background:radial-gradient(circle at 18% 9%,rgba(99,102,241,.2),transparent 32%),radial-gradient(circle at 88% 26%,rgba(14,165,233,.08),transparent 28%),var(--bg)}main{max-width:1100px;margin:3.5rem auto;padding:0 1.25rem}.profile-shell{display:grid;grid-template-columns:255px minmax(0,1fr);gap:1.25rem;align-items:start}.profile-sidebar,.panel{background:var(--surface);border:1px solid var(--border);box-shadow:0 20px 60px rgba(0,0,0,.2);backdrop-filter:blur(16px)}.profile-sidebar{border-radius:18px;padding:1.25rem;position:sticky;top:1.25rem}.identity{display:flex;gap:.85rem;align-items:center;padding:.35rem .3rem 1.3rem;margin-bottom:.9rem;border-bottom:1px solid var(--border)}.avatar{width:46px;height:46px;display:grid;place-items:center;border-radius:14px;background:linear-gradient(135deg,var(--accent),#38bdf8);color:#fff;font-size:1.1rem;font-weight:700}.identity h1{font-size:1.2rem;margin:0;overflow-wrap:anywhere}.identity p{margin:.15rem 0 0;color:var(--muted);font-size:.8rem}.tab-list{display:grid;gap:.35rem}.tab-button{width:100%;display:flex;align-items:center;gap:.75rem;border:1px solid transparent;border-radius:10px;padding:.7rem .75rem;background:transparent;color:var(--muted);font:inherit;text-align:left;cursor:pointer;transition:.16s ease}.tab-button:hover{color:var(--text);background:rgba(255,255,255,.06)}.tab-button.active{color:#fff;background:rgba(129,140,248,.18);border-color:rgba(129,140,248,.35)}.tab-icon{width:1.25rem;text-align:center;font-size:1rem}.tab-label{font-weight:500}.tab-note{margin-left:auto;color:#a5b4fc;font-size:.75rem}.tab-divider{height:1px;background:var(--border);margin:.65rem .3rem}.tab-button.danger{color:#fca5a5}.tab-button.danger.active{background:rgba(239,68,68,.12);border-color:rgba(239,68,68,.28)}.panel{min-height:500px;border-radius:18px;padding:2rem}.panel-header{display:flex;justify-content:space-between;gap:1rem;align-items:flex-start;padding-bottom:1.4rem;margin-bottom:1.6rem;border-bottom:1px solid var(--border)}.eyebrow{margin:0 0 .35rem;color:#a5b4fc;text-transform:uppercase;letter-spacing:.11em;font-size:.72rem;font-weight:700}.panel h2{font-size:1.6rem;margin:0}.panel-subtitle{margin:.4rem 0 0;color:var(--muted);line-height:1.45}.tab-panel{display:none}.tab-panel.active{display:block}.bio-copy{margin:0;line-height:1.65;white-space:pre-wrap}.empty,.private{color:var(--muted)}.stats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.85rem}.stat{padding:1.15rem;border-radius:12px;background:var(--surface-muted);border:1px solid var(--border)}.stat b{display:block;font-size:1.55rem}.stat span,label{color:var(--muted);font-size:.88rem}.section-label{font-size:.78rem;margin:1.75rem 0 .7rem;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;font-weight:600}textarea,input[type="text"],input[type="number"]{width:100%;padding:.8rem;color:var(--text);background:#10131c;border:1px solid var(--border);border-radius:10px;font:inherit}textarea:focus,input:focus{outline:2px solid rgba(129,140,248,.5);border-color:transparent}textarea{min-height:150px;resize:vertical}label{display:flex;gap:.55rem;align-items:center;margin:1rem 0}button{border:0;border-radius:9px;padding:.7rem 1rem;font:inherit;font-weight:600;color:#fff;background:#6366f1;cursor:pointer;transition:all .15s ease}button:hover{filter:brightness(1.12)}button:disabled{opacity:.5;cursor:not-allowed}#status{margin-left:.75rem;color:#86efac}.action-row{display:flex;align-items:center;margin-top:1rem}.gift-box,.stamp-upload-box,.danger-box{padding:1.25rem;border:1px solid rgba(129,140,248,.3);border-radius:12px;background:rgba(99,102,241,.07)}.gift-box p{margin:.4rem 0 1rem;color:var(--muted);font-size:.9rem}.gift-row{display:flex;gap:.75rem;align-items:center}.gift-row input{max-width:180px}.gift-link{margin-top:.85rem;color:#a5b4fc;word-break:break-all;font-size:.9rem}.stamps-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:.85rem}.stamp-card{position:relative;background:var(--surface-muted);border:1px solid var(--border);border-radius:12px;padding:.75rem;display:flex;flex-direction:column;align-items:center;text-align:center;transition:transform .18s ease,border-color .18s ease}.stamp-card:hover{transform:translateY(-2px);border-color:rgba(129,140,248,.45)}.stamp-thumb-wrap{width:80px;height:80px;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.25);border-radius:9px;overflow:hidden;margin-bottom:.55rem}.stamp-thumb{max-width:100%;max-height:100%;object-fit:contain}.stamp-title{font-size:.82rem;font-weight:500;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;width:100%;margin-bottom:.5rem}.stamp-delete-btn{background:rgba(239,68,68,.12);color:#fca5a5;border:1px solid rgba(239,68,68,.3);border-radius:6px;padding:.3rem .55rem;font-size:.75rem;width:100%}.stamp-upload-form{display:flex;flex-wrap:wrap;gap:.75rem;align-items:center;margin-top:.75rem}.stamp-upload-form input[type="file"]{display:none}.stamp-file-label{display:inline-flex;align-items:center;gap:.5rem;padding:.6rem .9rem;background:rgba(255,255,255,.08);border:1px solid var(--border);border-radius:8px;cursor:pointer;font-size:.85rem;color:var(--text);margin:0}.stamp-file-name{font-size:.82rem;color:var(--muted);max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.danger-box{border-color:rgba(239,68,68,.28);background:rgba(239,68,68,.07)}.danger-btn{background:transparent;color:#f87171;border:1px solid rgba(239,68,68,.45)}.danger-confirm-btn{background:#dc2626}.cancel-btn{background:rgba(255,255,255,.08);color:var(--text);border:1px solid var(--border);margin-right:.75rem}@media(max-width:760px){main{margin:1.5rem auto}.profile-shell{grid-template-columns:1fr}.profile-sidebar{position:static;padding:.8rem}.identity{padding:.35rem .4rem .9rem;margin-bottom:.5rem}.tab-list{display:flex;overflow-x:auto;gap:.4rem;padding-bottom:.15rem}.tab-divider{display:none}.tab-button{flex:0 0 auto;width:auto;padding:.6rem .7rem}.tab-note{display:none}.panel{min-height:0;padding:1.25rem}.panel-header{margin-bottom:1.25rem;padding-bottom:1rem}.panel h2{font-size:1.35rem}.stats{grid-template-columns:1fr}.gift-row{align-items:stretch;flex-direction:column}.gift-row input{max-width:none}.stamp-upload-form>*{max-width:100%!important}.action-row{flex-wrap:wrap;gap:.6rem}.action-row #status{margin-left:0}}
   </style>
 </head>
 <body>
   <!-- SHARED_TOPBAR -->
-  <main><div class="card" id="profile"><p class="empty">Loading profile…</p></div></main>
+  <main><div id="profile"><p class="empty">Loading profile…</p></div></main>
   <script>
     const username = decodeURIComponent(location.pathname.split('/').pop());
-    const el = document.getElementById('profile');
-    let profilePicker = null;
-    let selectedProfileColor = '#818cf8';
+    const el = document.getElementById('profile'); let profilePicker = null; let selectedProfileColor = '#818cf8';
     const esc = value => String(value || '').replace(/[&<>'"]/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[char]));
-
+    const panel = (id, title, subtitle, body, active = false) => `<section id="${id}" class="tab-panel ${active ? 'active' : ''}" role="tabpanel"><header class="panel-header"><div><p class="eyebrow">Profile</p><h2>${title}</h2><p class="panel-subtitle">${subtitle}</p></div></header>${body}</section>`;
+    const tab = (id, icon, label, note = '', danger = false, active = false) => `<button type="button" class="tab-button ${danger ? 'danger' : ''} ${active ? 'active' : ''}" role="tab" aria-selected="${active}" aria-controls="${id}" data-tab="${id}"><span class="tab-icon">${icon}</span><span class="tab-label">${label}</span>${note ? `<span class="tab-note">${note}</span>` : ''}</button>`;
+    function activateTab(id) { document.querySelectorAll('.tab-button').forEach(button => { const selected = button.dataset.tab === id; button.classList.toggle('active', selected); button.setAttribute('aria-selected', String(selected)); }); document.querySelectorAll('.tab-panel').forEach(tabPanel => tabPanel.classList.toggle('active', tabPanel.id === id)); }
     async function load() {
       const response = await fetch(`/api/users/${encodeURIComponent(username)}/profile`);
-      if (!response.ok) { el.innerHTML = '<h1>Profile not found</h1><p class="empty">This user does not exist.</p>'; return; }
-      const profile = await response.json();
-      const color = /^#[0-9a-fA-F]{6}$/.test(profile.profile_color || '') ? profile.profile_color : '#818cf8';
+      if (!response.ok) { el.innerHTML = '<div class="panel"><h1>Profile not found</h1><p class="empty">This user does not exist.</p></div>'; return; }
+      const profile = await response.json(); const color = /^#[0-9a-fA-F]{6}$/.test(profile.profile_color || '') ? profile.profile_color : '#818cf8'; const initial = esc(profile.username).slice(0,1).toUpperCase();
       const bio = profile.bio ? esc(profile.bio) : '<span class="empty">This user has not written a bio yet.</span>';
       const stats = profile.stats ? `<div class="stats"><div class="stat"><b>${Number(profile.stats.lifetime_credits_used).toFixed(1)}</b><span>Credits used</span></div><div class="stat"><b>${profile.stats.theater_views}</b><span>Theater views</span></div></div>` : '<p class="private">This user keeps their stats private.</p>';
-      const editor = profile.is_owner ? `
-        <div class="gift-box">
-          <h2 class="section" style="margin-top:0;color:#c7d2fe;">Gift credits</h2>
-          <p>Create a single-use link that expires in one week. You are charged only when it is claimed.</p>
-          <div class="gift-row"><input id="gift-credits" type="number" min="0.1" step="0.1" placeholder="Credits"><button id="create-gift" type="button">Create Gift Link</button></div>
-          <div id="gift-status" class="gift-link"></div>
-        </div>
-        <h2 class="section">Edit profile</h2>
-        <textarea id="bio" maxlength="1000" placeholder="Tell people about yourself">${esc(profile.bio)}</textarea>
-        <label>Name color <span id="color-picker"></span></label>
-        <label><input id="visible" type="checkbox" ${profile.stats_visible ? 'checked' : ''}> Show my stats publicly</label>
-        <div style="display:flex;align-items:center;margin-top:1rem;">
-          <button id="save">Save profile</button>
-          <span id="status"></span>
-        </div>
-        <div class="danger-section">
-          <h2 class="section" style="color:#f87171;margin-top:0;">Danger Zone</h2>
-          <p style="color:var(--muted);font-size:0.9rem;margin-bottom:1rem;">Permanently remove your account along with all your deployed theaters, credits, and data.</p>
-          <button id="start-delete-btn" class="danger-btn" type="button">Delete Account</button>
-          <div id="delete-confirm-box" class="danger-box" style="display:none;">
-            <p style="margin:0 0 0.8rem;color:#fca5a5;font-weight:500;">Are you sure? This action is permanent and cannot be undone.</p>
-            <p style="margin:0;font-size:0.88rem;color:var(--muted);">Please type <b>${esc(profile.username)}</b> below to confirm:</p>
-            <input id="delete-confirm-input" type="text" placeholder="${esc(profile.username)}" autocomplete="off" style="margin:0.8rem 0;">
-            <div style="display:flex;align-items:center;margin-top:0.5rem;">
-              <button id="cancel-delete-btn" class="cancel-btn" type="button">Cancel</button>
-              <button id="confirm-delete-btn" class="danger-confirm-btn" type="button" disabled>Permanently Delete Account</button>
-              <span id="delete-status" style="margin-left:0.75rem;color:#f87171;"></span>
-            </div>
-          </div>
-        </div>
-      ` : '';
-
-      const stamps = Array.isArray(profile.stamps) ? profile.stamps : [];
-      const stampCount = stamps.length;
-      let stampsHtml = '';
-      if (stampCount === 0) {
-        stampsHtml = '<p class="empty" id="stamps-empty">No stamps stored yet.</p>';
-      } else {
-        stampsHtml = '<div class="stamps-grid" id="stamps-grid">';
-        for (const stamp of stamps) {
-          stampsHtml += `
-            <div class="stamp-card" id="stamp-card-${stamp.id}">
-              <div class="stamp-thumb-wrap">
-                <img src="${esc(stamp.url || '/api/stamps/' + stamp.id)}" alt="${esc(stamp.name)}" class="stamp-thumb" loading="lazy">
-              </div>
-              <div class="stamp-title" title="${esc(stamp.name)}">${esc(stamp.name)}</div>
-              ${profile.is_owner ? `<button type="button" class="stamp-delete-btn" onclick="deleteStamp(${stamp.id})">Delete</button>` : ''}
-            </div>
-          `;
-        }
-        stampsHtml += '</div>';
-      }
-
-      const stampsUploadSection = profile.is_owner ? `
-        <div class="stamp-upload-box" id="stamp-upload-section">
-          <div style="display:flex;justify-content:space-between;align-items:center;">
-            <span style="font-size:0.9rem;font-weight:500;color:#c7d2fe;">Upload a new stamp</span>
-            <span style="font-size:0.82rem;color:var(--muted);">${stampCount} / 10 used</span>
-          </div>
-          ${stampCount < 10 ? `
-            <div class="stamp-upload-form">
-              <label class="stamp-file-label" for="stamp-file-input">Choose Image</label>
-              <input id="stamp-file-input" type="file" accept="image/png,image/jpeg,image/webp,image/gif">
-              <span id="stamp-file-chosen" class="stamp-file-name">No file chosen</span>
-              <input id="stamp-name-input" type="text" placeholder="Stamp name (optional)" style="max-width:180px;padding:0.6rem;">
-              <button id="stamp-upload-btn" type="button" style="padding:0.6rem 1rem;">Upload</button>
-              <span id="stamp-upload-status" style="font-size:0.85rem;margin-left:0.5rem;"></span>
-            </div>
-          ` : `
-            <p style="margin:0.6rem 0 0;font-size:0.88rem;color:#fca5a5;">You have reached the maximum limit of 10 stamps. Delete an existing stamp to upload a new one.</p>
-          `}
-        </div>
-      ` : '';
-
-      el.innerHTML = `<div class="identity"><span class="swatch" style="background:${color}"></span><h1 style="color:${color}">${esc(profile.username)}</h1></div><h2 class="section">Bio</h2><p>${bio}</p><h2 class="section">Stats</h2>${stats}<h2 class="section">Stamps (${stampCount} / 10)</h2>${stampsHtml}${stampsUploadSection}${editor}`;
-      if (profilePicker) profilePicker.destroyAndRemove();
-      selectedProfileColor = color;
-      if (profile.is_owner && window.Pickr) {
-        profilePicker = Pickr.create({el:'#color-picker',theme:'monolith',default:color,components:{preview:true,opacity:false,hue:true,interaction:{hex:true,input:true,save:true}}})
-          .on('change', picked => { selectedProfileColor = picked.toHEXA().toString(); })
-          .on('save', picked => { selectedProfileColor = picked.toHEXA().toString(); profilePicker.hide(); });
-      }
-      const save = document.getElementById('save');
-      if (save) save.onclick = async () => {
-        const result = await fetch('/api/users/me/profile', {method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({bio:document.getElementById('bio').value,stats_visible:document.getElementById('visible').checked,profile_color:selectedProfileColor})});
-        document.getElementById('status').textContent = result.ok ? 'Saved' : 'Could not save';
-        if (result.ok) load();
-      };
-
-      const createGift = document.getElementById('create-gift');
-      if (createGift) createGift.onclick = async () => {
-        const amount = Number(document.getElementById('gift-credits').value);
-        const status = document.getElementById('gift-status');
-        if (!Number.isFinite(amount) || amount <= 0) { status.textContent = 'Enter a positive number of credits.'; return; }
-        createGift.disabled = true;
-        status.textContent = 'Creating link…';
-        try {
-          const result = await fetch('/api/credit-gifts', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({credits:amount})});
-          const data = await result.json().catch(() => ({}));
-          if (!result.ok) { status.textContent = data.detail || 'Could not create gift link.'; return; }
-          status.innerHTML = `Share this link (expires ${new Date(data.expires_at).toLocaleString()}): <a href="${esc(data.link)}">${esc(data.link)}</a>`;
-          if (navigator.clipboard) navigator.clipboard.writeText(data.link).catch(() => {});
-        } catch (_) { status.textContent = 'Network error while creating gift link.'; }
-        finally { createGift.disabled = false; }
-      };
-
-      const startDeleteBtn = document.getElementById('start-delete-btn');
-      const deleteConfirmBox = document.getElementById('delete-confirm-box');
-      const deleteConfirmInput = document.getElementById('delete-confirm-input');
-      const cancelDeleteBtn = document.getElementById('cancel-delete-btn');
-      const confirmDeleteBtn = document.getElementById('confirm-delete-btn');
-      const deleteStatus = document.getElementById('delete-status');
-
-      if (startDeleteBtn && deleteConfirmBox) {
-        startDeleteBtn.onclick = () => {
-          startDeleteBtn.style.display = 'none';
-          deleteConfirmBox.style.display = 'block';
-          deleteConfirmInput.value = '';
-          confirmDeleteBtn.disabled = true;
-          deleteConfirmInput.focus();
-        };
-      }
-
-      if (cancelDeleteBtn && deleteConfirmBox) {
-        cancelDeleteBtn.onclick = () => {
-          deleteConfirmBox.style.display = 'none';
-          startDeleteBtn.style.display = 'inline-block';
-          deleteStatus.textContent = '';
-        };
-      }
-
-      if (deleteConfirmInput && confirmDeleteBtn) {
-        deleteConfirmInput.oninput = () => {
-          confirmDeleteBtn.disabled = deleteConfirmInput.value.trim() !== profile.username;
-        };
-      }
-
-      if (confirmDeleteBtn) {
-        confirmDeleteBtn.onclick = async () => {
-          if (deleteConfirmInput.value.trim() !== profile.username) return;
-          confirmDeleteBtn.disabled = true;
-          deleteConfirmInput.disabled = true;
-          deleteStatus.style.color = '#f87171';
-          deleteStatus.textContent = 'Deleting account…';
-          try {
-            const resp = await fetch('/api/users/me', { method: 'DELETE' });
-            if (resp.ok) {
-              deleteStatus.style.color = '#86efac';
-              deleteStatus.textContent = 'Account deleted. Redirecting…';
-              setTimeout(() => {
-                window.location.href = '/deploy';
-              }, 1000);
-            } else {
-              const data = await resp.json().catch(() => ({}));
-              deleteStatus.style.color = '#f87171';
-              deleteStatus.textContent = data.detail || 'Could not delete account.';
-              confirmDeleteBtn.disabled = false;
-              deleteConfirmInput.disabled = false;
-            }
-          } catch (err) {
-            deleteStatus.style.color = '#f87171';
-            deleteStatus.textContent = 'Network error while deleting account.';
-            confirmDeleteBtn.disabled = false;
-            deleteConfirmInput.disabled = false;
-          }
-        };
-      }
-
-      window.deleteStamp = async function(stampId) {
-        if (!confirm('Are you sure you want to delete this stamp?')) return;
-        try {
-          const resp = await fetch(`/api/users/me/stamps/${stampId}`, { method: 'DELETE' });
-          if (resp.ok) {
-            load();
-          } else {
-            const err = await resp.json().catch(() => ({}));
-            alert(err.detail || 'Could not delete stamp.');
-          }
-        } catch (_) {
-          alert('Network error while deleting stamp.');
-        }
-      };
-
-      const stampFileInput = document.getElementById('stamp-file-input');
-      const stampFileChosen = document.getElementById('stamp-file-chosen');
-      const stampUploadBtn = document.getElementById('stamp-upload-btn');
-      const stampNameInput = document.getElementById('stamp-name-input');
-      const stampUploadStatus = document.getElementById('stamp-upload-status');
-
-      if (stampFileInput && stampFileChosen) {
-        stampFileInput.onchange = () => {
-          const file = stampFileInput.files[0];
-          stampFileChosen.textContent = file ? file.name : 'No file chosen';
-          if (file && stampNameInput && !stampNameInput.value.trim()) {
-            stampNameInput.value = file.name.replace(/\.[^/.]+$/, '');
-          }
-        };
-      }
-
-      if (stampUploadBtn) {
-        stampUploadBtn.onclick = async () => {
-          if (!stampFileInput || !stampFileInput.files.length) {
-            stampUploadStatus.style.color = '#f87171';
-            stampUploadStatus.textContent = 'Please choose an image file first.';
-            return;
-          }
-          const file = stampFileInput.files[0];
-          const formData = new FormData();
-          formData.append('file', file);
-          if (stampNameInput && stampNameInput.value.trim()) {
-            formData.append('name', stampNameInput.value.trim());
-          }
-          stampUploadBtn.disabled = true;
-          stampUploadStatus.style.color = 'var(--muted)';
-          stampUploadStatus.textContent = 'Uploading stamp…';
-          try {
-            const resp = await fetch('/api/users/me/stamps', {
-              method: 'POST',
-              body: formData,
-            });
-            const data = await resp.json().catch(() => ({}));
-            if (resp.ok) {
-              stampUploadStatus.style.color = '#86efac';
-              stampUploadStatus.textContent = 'Stamp uploaded!';
-              load();
-            } else {
-              stampUploadStatus.style.color = '#f87171';
-              stampUploadStatus.textContent = data.detail || 'Could not upload stamp.';
-              stampUploadBtn.disabled = false;
-            }
-          } catch (_) {
-            stampUploadStatus.style.color = '#f87171';
-            stampUploadStatus.textContent = 'Network error while uploading stamp.';
-            stampUploadBtn.disabled = false;
-          }
-        };
-      }
-    }
-    load();
+      const stamps = Array.isArray(profile.stamps) ? profile.stamps : []; const stampCount = stamps.length;
+      const stampCards = stampCount ? `<div class="stamps-grid">${stamps.map(stamp => `<div class="stamp-card"><div class="stamp-thumb-wrap"><img src="${esc(stamp.url || '/api/stamps/' + stamp.id)}" alt="${esc(stamp.name)}" class="stamp-thumb" loading="lazy"></div><div class="stamp-title" title="${esc(stamp.name)}">${esc(stamp.name)}</div>${profile.is_owner ? `<button type="button" class="stamp-delete-btn" onclick="deleteStamp(${stamp.id})">Delete</button>` : ''}</div>`).join('')}</div>` : '<p class="empty">No stamps stored yet.</p>';
+      const upload = profile.is_owner ? `<div class="stamp-upload-box"><div style="display:flex;justify-content:space-between;gap:1rem;align-items:center;"><strong style="font-size:.9rem;color:#c7d2fe;">Add a stamp</strong><span class="empty">${stampCount} / 10 used</span></div>${stampCount < 10 ? `<div class="stamp-upload-form"><label class="stamp-file-label" for="stamp-file-input">Choose Image</label><input id="stamp-file-input" type="file" accept="image/png,image/jpeg,image/webp,image/gif"><span id="stamp-file-chosen" class="stamp-file-name">No file chosen</span><input id="stamp-name-input" type="text" placeholder="Stamp name (optional)" style="max-width:180px;padding:.6rem;"><button id="stamp-upload-btn" type="button" style="padding:.6rem 1rem;">Upload</button><span id="stamp-upload-status" style="font-size:.85rem;"></span></div>` : '<p style="margin:.6rem 0 0;color:#fca5a5;font-size:.88rem;">You have reached your limit. Delete a stamp before adding another.</p>'}</div>` : '';
+      const overview = panel('overview','Overview','A glimpse into this storyteller’s Narratron journey.',`<div class="section-label">Bio</div><p class="bio-copy">${bio}</p><div class="section-label">Stats</div>${stats}`,true);
+      const stampsPanel = panel('stamps','Stamps',`${stampCount} of 10 personal stamps collected.`,`${stampCards}${upload}`);
+      const settings = profile.is_owner ? panel('settings','Profile settings','Customize how your profile appears to other storytellers.',`<div class="section-label" style="margin-top:0;">About you</div><textarea id="bio" maxlength="1000" placeholder="Tell people about yourself">${esc(profile.bio)}</textarea><label>Name color <span id="color-picker"></span></label><label><input id="visible" type="checkbox" ${profile.stats_visible ? 'checked' : ''}> Show my stats publicly</label><div class="action-row"><button id="save" type="button">Save changes</button><span id="status" aria-live="polite"></span></div>`) : '';
+      const gifts = profile.is_owner ? panel('gifts','Gift credits','Create a single-use gift link for another storyteller.',`<div class="gift-box"><p>Create a link that expires in one week. You are charged only when the recipient claims it.</p><div class="gift-row"><input id="gift-credits" type="number" min="0.1" step="0.1" placeholder="Credits"><button id="create-gift" type="button">Create gift link</button></div><div id="gift-status" class="gift-link" aria-live="polite"></div></div>`) : '';
+      const danger = profile.is_owner ? panel('danger','Danger zone','Account removal is permanent and cannot be undone.',`<div class="danger-box"><p style="margin:0 0 1rem;color:#fca5a5;">Remove your account, deployed theaters, credits, and saved data.</p><button id="start-delete-btn" class="danger-btn" type="button">Delete account</button><div id="delete-confirm-box" style="display:none;margin-top:1rem;"><p style="margin:0 0 .75rem;color:var(--muted);font-size:.88rem;">Type <b>${esc(profile.username)}</b> to confirm.</p><input id="delete-confirm-input" type="text" placeholder="${esc(profile.username)}" autocomplete="off"><div class="action-row"><button id="cancel-delete-btn" class="cancel-btn" type="button">Cancel</button><button id="confirm-delete-btn" class="danger-confirm-btn" type="button" disabled>Permanently delete</button><span id="delete-status" style="color:#f87171;" aria-live="polite"></span></div></div></div>`) : '';
+      const tabs = tab('overview','◉','Overview','Profile',false,true)+tab('stamps','✦','Stamps',String(stampCount))+(profile.is_owner ? `<div class="tab-divider"></div>${tab('settings','⚙','Settings')}${tab('gifts','↗','Gift credits')}${tab('danger','!','Danger zone','',true)}` : '');
+      el.innerHTML = `<div class="profile-shell" style="--accent:${color}"><aside class="profile-sidebar"><div class="identity"><div class="avatar">${initial}</div><div><h1 style="color:${color}">${esc(profile.username)}</h1><p>${profile.is_owner ? 'Your profile' : 'Storyteller profile'}</p></div></div><nav class="tab-list" role="tablist" aria-label="Profile sections">${tabs}</nav></aside><div class="panel">${overview}${stampsPanel}${settings}${gifts}${danger}</div></div>`;
+      document.querySelectorAll('.tab-button').forEach(button => button.addEventListener('click', () => activateTab(button.dataset.tab)));
+      if (profilePicker) profilePicker.destroyAndRemove(); selectedProfileColor = color;
+      if (profile.is_owner && window.Pickr) profilePicker = Pickr.create({el:'#color-picker',theme:'monolith',default:color,components:{preview:true,opacity:false,hue:true,interaction:{hex:true,input:true,save:true}}}).on('change', picked => { selectedProfileColor = picked.toHEXA().toString(); }).on('save', picked => { selectedProfileColor = picked.toHEXA().toString(); profilePicker.hide(); });
+      const save = document.getElementById('save'); if (save) save.onclick = async () => { const result = await fetch('/api/users/me/profile',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({bio:document.getElementById('bio').value,stats_visible:document.getElementById('visible').checked,profile_color:selectedProfileColor})}); document.getElementById('status').textContent = result.ok ? 'Saved' : 'Could not save'; if (result.ok) load(); };
+      const createGift = document.getElementById('create-gift'); if (createGift) createGift.onclick = async () => { const amount = Number(document.getElementById('gift-credits').value); const status = document.getElementById('gift-status'); if (!Number.isFinite(amount) || amount <= 0) { status.textContent = 'Enter a positive number of credits.'; return; } createGift.disabled = true; status.textContent = 'Creating link…'; try { const result = await fetch('/api/credit-gifts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({credits:amount})}); const data = await result.json().catch(() => ({})); if (!result.ok) { status.textContent = data.detail || 'Could not create gift link.'; return; } status.innerHTML = `Share this link (expires ${new Date(data.expires_at).toLocaleString()}): <a href="${esc(data.link)}">${esc(data.link)}</a>`; if (navigator.clipboard) navigator.clipboard.writeText(data.link).catch(() => {}); } catch (_) { status.textContent = 'Network error while creating gift link.'; } finally { createGift.disabled = false; } };
+      const startDeleteBtn = document.getElementById('start-delete-btn'); const deleteConfirmBox = document.getElementById('delete-confirm-box'); const deleteConfirmInput = document.getElementById('delete-confirm-input'); const cancelDeleteBtn = document.getElementById('cancel-delete-btn'); const confirmDeleteBtn = document.getElementById('confirm-delete-btn'); const deleteStatus = document.getElementById('delete-status');
+      if (startDeleteBtn) startDeleteBtn.onclick = () => { startDeleteBtn.style.display = 'none'; deleteConfirmBox.style.display = 'block'; deleteConfirmInput.value = ''; confirmDeleteBtn.disabled = true; deleteConfirmInput.focus(); }; if (cancelDeleteBtn) cancelDeleteBtn.onclick = () => { deleteConfirmBox.style.display = 'none'; startDeleteBtn.style.display = 'inline-block'; deleteStatus.textContent = ''; }; if (deleteConfirmInput) deleteConfirmInput.oninput = () => { confirmDeleteBtn.disabled = deleteConfirmInput.value.trim() !== profile.username; }; if (confirmDeleteBtn) confirmDeleteBtn.onclick = async () => { if (deleteConfirmInput.value.trim() !== profile.username) return; confirmDeleteBtn.disabled = true; deleteConfirmInput.disabled = true; deleteStatus.textContent = 'Deleting account…'; try { const resp = await fetch('/api/users/me',{method:'DELETE'}); if (resp.ok) { deleteStatus.style.color='#86efac'; deleteStatus.textContent='Account deleted. Redirecting…'; setTimeout(() => { window.location.href='/deploy'; },1000); } else { const data=await resp.json().catch(() => ({})); deleteStatus.textContent=data.detail || 'Could not delete account.'; confirmDeleteBtn.disabled=false; deleteConfirmInput.disabled=false; } } catch (_) { deleteStatus.textContent='Network error while deleting account.'; confirmDeleteBtn.disabled=false; deleteConfirmInput.disabled=false; } };
+      window.deleteStamp = async stampId => { if (!confirm('Are you sure you want to delete this stamp?')) return; try { const resp = await fetch(`/api/users/me/stamps/${stampId}`,{method:'DELETE'}); if (resp.ok) load(); else { const err=await resp.json().catch(() => ({})); alert(err.detail || 'Could not delete stamp.'); } } catch (_) { alert('Network error while deleting stamp.'); } };
+      const stampFileInput=document.getElementById('stamp-file-input'); const stampFileChosen=document.getElementById('stamp-file-chosen'); const stampUploadBtn=document.getElementById('stamp-upload-btn'); const stampNameInput=document.getElementById('stamp-name-input'); const stampUploadStatus=document.getElementById('stamp-upload-status'); if (stampFileInput) stampFileInput.onchange=()=>{const file=stampFileInput.files[0]; stampFileChosen.textContent=file ? file.name : 'No file chosen'; if(file && !stampNameInput.value.trim()) stampNameInput.value=file.name.replace(/\.[^/.]+$/,'');}; if(stampUploadBtn) stampUploadBtn.onclick=async()=>{if(!stampFileInput.files.length){stampUploadStatus.style.color='#f87171';stampUploadStatus.textContent='Please choose an image file first.';return;}const formData=new FormData();formData.append('file',stampFileInput.files[0]);if(stampNameInput.value.trim())formData.append('name',stampNameInput.value.trim());stampUploadBtn.disabled=true;stampUploadStatus.textContent='Uploading stamp…';try{const resp=await fetch('/api/users/me/stamps',{method:'POST',body:formData});const data=await resp.json().catch(()=>({}));if(resp.ok){stampUploadStatus.style.color='#86efac';stampUploadStatus.textContent='Stamp uploaded!';load();}else{stampUploadStatus.style.color='#f87171';stampUploadStatus.textContent=data.detail || 'Could not upload stamp.';stampUploadBtn.disabled=false;}}catch(_){stampUploadStatus.style.color='#f87171';stampUploadStatus.textContent='Network error while uploading stamp.';stampUploadBtn.disabled=false;}};
+    } load();
   </script>
 </body>
 </html>
