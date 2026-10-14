@@ -88,6 +88,7 @@
             height: 100%;
             gap: 1rem;
             min-width: 0;
+            container-type: inline-size;
         }
 
         /* Top Bar & Bottom Bar Styling */
@@ -107,6 +108,50 @@
             box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
             align-self: center;
             max-width: 100%;
+            box-sizing: border-box;
+        }
+
+        /* Scale the canvas controls against the space left beside the chat panel.
+           Viewport breakpoints alone cannot account for that panel's width. */
+        @container (max-width: 760px) {
+            header {
+                gap: 0.45rem;
+                padding: 0.45rem 0.7rem;
+            }
+
+            header h1 {
+                display: none;
+            }
+
+            header > button {
+                width: 30px !important;
+                height: 30px !important;
+                font-size: 0.8rem !important;
+            }
+
+            #orator-controls,
+            #role-container,
+            #baton-container {
+                margin-left: 0.25rem !important;
+                padding-left: 0.45rem !important;
+            }
+
+            #orator-controls {
+                gap: 0.4rem !important;
+            }
+
+            #orator-controls button {
+                padding: 4px 8px !important;
+                font-size: 0.72rem !important;
+            }
+
+            #role-badge,
+            #baton-status-badge {
+                padding: 3px 7px !important;
+                font-size: clamp(0.65rem, 1.7cqw, 0.8rem) !important;
+                letter-spacing: 0.05em !important;
+                white-space: nowrap;
+            }
         }
 
         #bottom-bar {
