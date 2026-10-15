@@ -169,11 +169,15 @@ async function checkAuthStatus({ refresh = false } = {}) {
         const hasBuyModal = typeof window.openBuyCreditsModal === 'function';
         bar.innerHTML = `
           <${hasBuyModal ? 'button type="button"' : 'div'} class="credit-badge" ${hasBuyModal ? 'onclick="openBuyCreditsModal()"' : ''} title="Account credits balance">
-            ⚡ ${(data.user.credits || 0).toFixed(1)} Credits
+            ⚡ ${(data.user.credits || 0).toFixed(1)}
             ${hasBuyModal ? '<span class="buy-credits-plus-btn">+ Buy</span>' : ''}
           </${hasBuyModal ? 'button' : 'div'}>
-          <a class="user-pill" href="/users/${encodeURIComponent(data.user.username)}">👤 ${data.user.username}</a>
-          <button class="auth-nav-btn" onclick="submitLogout()">Logout</button>
+          <div class="user-menu">
+            <a class="user-pill" href="/users/${encodeURIComponent(data.user.username)}">👤 ${data.user.username}</a>
+            <div class="user-menu-dropdown" role="menu" aria-label="Account menu">
+              <button class="user-menu-item" type="button" role="menuitem" onclick="submitLogout()">Log out</button>
+            </div>
+          </div>
         `;
       }
     } else {

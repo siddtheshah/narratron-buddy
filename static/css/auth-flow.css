@@ -55,6 +55,54 @@
   transform: translateY(-1px);
 }
 
+.user-menu {
+  position: relative;
+}
+
+.user-menu-dropdown {
+  position: absolute;
+  z-index: 300;
+  top: calc(100% + 8px);
+  right: 0;
+  min-width: 100%;
+  padding: 6px;
+  border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.12));
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.98);
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.3);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-4px);
+  transition: opacity 0.16s ease, transform 0.16s ease, visibility 0.16s ease;
+}
+
+.user-menu:hover .user-menu-dropdown,
+.user-menu:focus-within .user-menu-dropdown {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+
+.user-menu-item {
+  width: 100%;
+  border: 0;
+  border-radius: 8px;
+  padding: 9px 12px;
+  background: transparent;
+  color: var(--text-main, #f8fafc);
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.user-menu-item:hover,
+.user-menu-item:focus-visible {
+  background: rgba(255, 255, 255, 0.12);
+  outline: none;
+}
+
 .credit-badge {
   display: flex;
   align-items: center;
@@ -85,6 +133,22 @@
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.5px;
+}
+
+@media (max-width: 760px) {
+  .user-menu {
+    display: contents;
+  }
+
+  .user-menu-dropdown {
+    position: static;
+    width: 100%;
+    margin-top: -4px;
+    opacity: 1;
+    visibility: visible;
+    transform: none;
+    box-sizing: border-box;
+  }
 }
 
 /* Modal Overlay & Card */

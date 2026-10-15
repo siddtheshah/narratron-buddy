@@ -305,9 +305,15 @@ def test_topbar_shows_credits_and_refreshes_after_generation(editor_page: Page, 
         page.locator(".mobile-menu-toggle").click()
     badge = page.locator(".narratron-topbar .credit-badge")
     expect(badge).to_be_visible()
-    expect(badge).to_have_text("⚡ 100.0 Credits + Buy")
+    expect(badge).to_have_text("⚡ 100.0 + Buy")
     assert badge.evaluate("element => getComputedStyle(element).color") == "rgb(52, 211, 153)"
     assert page.locator("#credit-balance, .credit-link").count() == 0
+    user_menu = page.locator(".user-menu")
+    expect(user_menu.locator(".user-pill")).to_have_text("👤 harbor_owner")
+    if width >= 761:
+        user_menu.hover()
+    expect(user_menu.locator(".user-menu-item")).to_have_text("Log out")
+    assert page.locator(".user-account-bar > .auth-nav-btn").count() == 0
     if width < 761:
         page.keyboard.press("Escape")
     page.locator(".manual-generation > summary").click()
@@ -315,7 +321,7 @@ def test_topbar_shows_credits_and_refreshes_after_generation(editor_page: Page, 
     page.locator("#generation-prompt").fill("A misty harbor.")
     page.locator("#generation-submit").click()
     expect(page.locator("#builder-status")).to_have_text("Saved references/harbor.png to your draft.")
-    expect(badge).to_have_text("⚡ 96.0 Credits + Buy")
+    expect(badge).to_have_text("⚡ 96.0 + Buy")
 
 
 @pytest.mark.parametrize("trigger", ["send", "organize-assets", "suggest-world"])
@@ -329,7 +335,7 @@ def test_assistant_discloses_price_and_refreshes_balance(editor_page: Page, trig
     else:
         page.locator(f"#{trigger}").click()
     expect(page.locator("#assistant-messages")).to_contain_text("Here are ideas for your world.")
-    expect(page.locator(".credit-badge")).to_have_text("⚡ 99.9 Credits + Buy")
+    expect(page.locator(".credit-badge")).to_have_text("⚡ 99.9 + Buy")
     expect(page.locator("#builder-status")).to_contain_text("Charged 0.1 credits")
 
 
@@ -352,11 +358,11 @@ def test_unaffordable_assistant_preserves_prompt_for_retry(editor_page: Page) ->
     page.locator("#assistant-send").click()
     expect(page.locator("#builder-status")).to_contain_text("Each assistant turn requires 0.1 credits")
     expect(page.locator("#assistant-input")).to_have_value("Develop my world.")
-    expect(page.locator(".credit-badge")).to_have_text("⚡ 100.0 Credits + Buy")
+    expect(page.locator(".credit-badge")).to_have_text("⚡ 100.0 + Buy")
     expect(page.locator("#assistant-send")).to_be_enabled()
     page.evaluate("window.assistantMode = 'success'")
     page.locator("#assistant-send").click()
-    expect(page.locator(".credit-badge")).to_have_text("⚡ 99.9 Credits + Buy")
+    expect(page.locator(".credit-badge")).to_have_text("⚡ 99.9 + Buy")
 
 
 @pytest.mark.parametrize("width", [1280, 390])
@@ -397,7 +403,7 @@ def test_credit_purchase_saves_edits_and_refreshes_the_balance(editor_page: Page
     page.locator(".credit-badge").click()
     page.locator("#pkgStarter").click()
     page.locator("#btnCompletePurchase").click()
-    expect(page.locator(".credit-badge")).to_have_text("⚡ 200.0 Credits + Buy")
+    expect(page.locator(".credit-badge")).to_have_text("⚡ 200.0 + Buy")
     saved: dict[str, str] = page.evaluate("window.savedAtPurchase")
     assert saved == {"theater.yaml": "live_agent: {}\n"}
     payload: dict[str, str | bool] = page.evaluate("window.purchaseRequest")
@@ -414,7 +420,7 @@ def test_credit_checkout_failure_can_be_retried(editor_page: Page) -> None:
     page.locator("#btnCompletePurchase").click()
     expect(page.locator("#buyCreditsModalError")).to_have_text("Checkout is unavailable. Please try again.")
     expect(page.locator("#btnCompletePurchase")).to_be_enabled()
-    expect(page.locator(".credit-badge")).to_have_text("⚡ 100.0 Credits + Buy")
+    expect(page.locator(".credit-badge")).to_have_text("⚡ 100.0 + Buy")
     page.evaluate("window.paymentMode = 'checkout'")
     page.locator("#btnCompletePurchase").click()
     page.wait_for_url("http://narratron.test/checkout")
