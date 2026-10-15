@@ -111,6 +111,40 @@
             box-sizing: border-box;
         }
 
+        @property --summon-trace-angle {
+            syntax: '<angle>';
+            inherits: false;
+            initial-value: 0deg;
+        }
+
+        /* Draw attention to the first action available to a new Orator. */
+        #agent-start-stop-btn.summon-guide {
+            position: relative;
+            isolation: isolate;
+        }
+
+        #agent-start-stop-btn.summon-guide::after {
+            content: '';
+            position: absolute;
+            inset: -3px;
+            z-index: 1;
+            padding: 2px;
+            border-radius: inherit;
+            background: conic-gradient(from var(--summon-trace-angle), #fef08a, #ffffff, #22d3ee, transparent 34%, transparent 66%, #fef08a);
+            filter: drop-shadow(0 0 5px rgba(254, 240, 138, 0.95));
+            -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+            -webkit-mask-composite: xor;
+            mask-composite: exclude;
+            animation: summon-border-trace 2.2s linear infinite;
+            pointer-events: none;
+        }
+
+        @keyframes summon-border-trace {
+            to {
+                --summon-trace-angle: 1turn;
+            }
+        }
+
         /* Scale the canvas controls against the space left beside the chat panel.
            Viewport breakpoints alone cannot account for that panel's width. */
         @container (max-width: 760px) {
@@ -2805,7 +2839,7 @@
             <a href="/" id="back-btn" title="Back to Theater Launcher"
                 style="text-decoration: none; background: rgba(255,255,255,0.08); border: 1px solid var(--glass-border); color: #f8fafc; border-radius: 50%; width: 34px; height: 34px; font-size: 0.9rem; display: flex; align-items: center; justify-content: center; transition: all 0.2s; font-family: inherit;">🏠</a>
             <div class="status-dot disconnected" id="status-indicator" title="Connection status"></div>
-            <h1>Narratron Canvas</h1>
+            <h1>Narratron</h1>
             <button id="share-theater-btn" title="Copy theater share link"
                 style="background: rgba(99, 102, 241, 0.2); border: 1px solid rgba(99, 102, 241, 0.4); color: #a5b4fc; border-radius: 50%; width: 34px; height: 34px; font-size: 0.9rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s; font-family: inherit; padding: 0;">
                 🔗
@@ -2837,13 +2871,22 @@
             <!-- Orator controls: summon for text commands; connect only for microphone input. -->
             <div id="orator-controls"
                 style="display: none; align-items: center; gap: 10px; margin-left: 1rem; border-left: 1px solid var(--glass-border); padding-left: 1rem;">
-                <button id="agent-start-stop-btn"
+                <button id="agent-start-stop-btn" class="summon-guide"
                     style="background: #10b981; border: none; color: #fff; border-radius: 20px; padding: 6px 14px; font-size: 0.8rem; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 5px; transition: all 0.2s;">
                     🚀 Summon
                 </button>
                 <button id="agent-connect-btn"
                     style="background: #3b82f6; border: none; color: #fff; border-radius: 20px; padding: 6px 14px; font-size: 0.8rem; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 5px; transition: all 0.2s;">
-                    🎙️ Enable Mic
+                    🎙️ Mic On
+                </button>
+            </div>
+
+            <!-- Baton status and controls -->
+            <div id="baton-container"
+                style="margin-left: 1rem; display: flex; align-items: center; border-left: 1px solid var(--glass-border); padding-left: 1rem;">
+                <button id="baton-status-badge" type="button" aria-haspopup="dialog"
+                    style="font-size: 0.8rem; font-weight: 600; color: #fff; background: #ec4899; padding: 4px 10px; border-radius: 12px; border: 1px solid #fbcfe8; display: flex; align-items: center; gap: 5px; cursor: pointer; box-shadow: 0 0 12px rgba(236, 72, 153, 0.45);">
+                    👑 Owner is Orator
                 </button>
             </div>
 
@@ -2852,15 +2895,6 @@
                 style="margin-left: 1rem; display: flex; align-items: center; gap: 10px; border-left: 1px solid var(--glass-border); padding-left: 1rem;">
                 <span id="role-badge"
                     style="font-size: 0.8rem; text-transform: uppercase; letter-spacing: 1px; color: #a5b4fc; background: rgba(99, 102, 241, 0.2); padding: 4px 10px; border-radius: 12px; border: 1px solid rgba(99, 102, 241, 0.4);">Viewer</span>
-            </div>
-
-            <!-- Baton status and controls -->
-            <div id="baton-container"
-                style="margin-left: 1rem; display: flex; align-items: center; border-left: 1px solid var(--glass-border); padding-left: 1rem;">
-                <button id="baton-status-badge" type="button" aria-haspopup="dialog"
-                    style="font-size: 0.8rem; font-weight: 600; color: #fbbf24; background: rgba(251, 191, 36, 0.15); padding: 4px 10px; border-radius: 12px; border: 1px solid rgba(251, 191, 36, 0.3); display: flex; align-items: center; gap: 5px;">
-                    👑 Owner is Orator
-                </button>
             </div>
         </header>
 
@@ -7925,13 +7959,14 @@
             if (batonStatusBadge) {
                 const holder = batonState.active_orator || batonState.owner;
                 const holderName = holder && (holder.username || holder.name) || 'Unknown';
-                batonStatusBadge.textContent = `Baton: @${holderName}`;
+                batonStatusBadge.textContent = `👑 @${holderName}`;
                 batonStatusBadge.disabled = !isOwner;
                 batonStatusBadge.style.cursor = isOwner ? 'pointer' : 'default';
                 batonStatusBadge.title = isOwner ? 'Open baton menu' : `Baton is held by @${holderName}`;
-                batonStatusBadge.style.background = isActiveOrator ? 'rgba(34, 197, 94, 0.2)' : 'rgba(251, 191, 36, 0.15)';
-                batonStatusBadge.style.color = isActiveOrator ? '#4ade80' : '#fbbf24';
-                batonStatusBadge.style.borderColor = isActiveOrator ? 'rgba(34, 197, 94, 0.4)' : 'rgba(251, 191, 36, 0.3)';
+                batonStatusBadge.style.background = isOwner ? '#ec4899' : 'rgba(236, 72, 153, 0.15)';
+                batonStatusBadge.style.color = isOwner ? '#fff' : '#f9a8d4';
+                batonStatusBadge.style.borderColor = isOwner ? '#fbcfe8' : 'rgba(236, 72, 153, 0.3)';
+                batonStatusBadge.style.boxShadow = isOwner ? '0 0 12px rgba(236, 72, 153, 0.45)' : 'none';
             }
 
             if (menuTakeBackBatonBtn) {
@@ -8340,9 +8375,11 @@
             if (started) {
                 agentStartStopBtn.textContent = '🛑 Banish';
                 agentStartStopBtn.style.background = '#ef4444'; // Red
+                agentStartStopBtn.classList.remove('summon-guide');
             } else {
                 agentStartStopBtn.textContent = '🚀 Summon';
                 agentStartStopBtn.style.background = '#10b981'; // Emerald
+                agentStartStopBtn.classList.add('summon-guide');
             }
             if (started) ensureAgentConnectionWhenActive();
         }
@@ -8350,10 +8387,10 @@
         function updateMicToggleUI() {
             if (!agentConnectBtn) return;
             agentConnectBtn.textContent = isRecording
-                ? '🎙️ Mute Mic'
+                ? '🎙️ Mic Off'
                 : isMicAwaiting
                     ? '🎙️ Awaiting'
-                    : '🎙️ Enable Mic';
+                    : '🎙️ Mic On';
             agentConnectBtn.style.background = isRecording ? '#ef4444' : isMicAwaiting ? '#eab308' : '#3b82f6';
             agentConnectBtn.disabled = isMicAwaiting;
             agentConnectBtn.setAttribute('aria-pressed', String(isRecording));
@@ -9015,7 +9052,7 @@
         window.enableAudioInput = () => {
             isRecording = true;
             if (agentConnectBtn) {
-                agentConnectBtn.textContent = '🎙️ Mute Mic';
+                agentConnectBtn.textContent = '🎙️ Mic Off';
                 agentConnectBtn.style.background = '#ef4444';
             }
         };
@@ -10132,10 +10169,10 @@
                         </div>
                         <div class="step-desc">
                             When the agent is running and this tab is active, the canvas connects automatically. Click
-                            <strong>Enable Mic</strong> (or press hotkey <code
+                            <strong>Mic On</strong> (or press hotkey <code
                                 style="background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 4px; color: #a5b4fc;"
                                 id="howto-mic-hotkey-display">Ctrl+Shift+[</code>)
-                            to begin real-time microphone streaming, then click <strong>Mute Mic</strong> to stop it.
+                            to begin real-time microphone streaming, then click <strong>Mic Off</strong> to stop it.
                         </div>
                     </div>
                 </div>
@@ -10400,7 +10437,7 @@
             <div
                 style="font-size: 0.85rem; color: #fbbf24; background: rgba(251, 191, 36, 0.1); padding: 8px 12px; border-radius: 8px; border: 1px solid rgba(251, 191, 36, 0.3); margin-bottom: 1rem; text-align: center;">
                 💡 <strong>Tip:</strong> The canvas connects automatically while the agent is running and this tab is
-                active. Use <strong>🎙️ Enable Mic</strong> in the top bar when you want to speak.
+                active. Use <strong>🎙️ Mic On</strong> in the top bar when you want to speak.
             </div>
 
 
