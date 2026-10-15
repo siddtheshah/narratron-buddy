@@ -1082,6 +1082,25 @@ def test_resolve_prompt_for_file_fallback_stem(
     assert state._resolve_prompt_for_file(str(normal_img)) == "Image: Ancient Temple Ruins"
 
 
+@patch("components.canvas.visual_state.extract_image_prompt", return_value="")
+@patch("components.canvas.visual_state.extract_image_metadata_title", return_value="")
+@patch("components.canvas.visual_state.extract_image_metadata_description", return_value="")
+def test_resolve_prompt_for_foldered_reference_uses_display_name(
+    _description: Mock, _title: Mock, _prompt: Mock, tmp_path: Path
+) -> None:
+    character_portrait = tmp_path / "references" / "characters" / "Mara Venn" / "2.png"
+    scene_image = tmp_path / "references" / "scenes" / "Old Harbor" / "1.png"
+    character_portrait.parent.mkdir(parents=True)
+    scene_image.parent.mkdir(parents=True)
+    character_portrait.write_text("data", encoding="utf-8")
+    scene_image.write_text("data", encoding="utf-8")
+
+    state = VisualState(make_theater())
+
+    assert state._resolve_prompt_for_file(str(character_portrait)) == "Mara Venn"
+    assert state._resolve_prompt_for_file(str(scene_image)) == "Old Harbor"
+
+
 def test_resolve_reference_fallback(tmp_path: Path) -> None:
     theater = Mock(spec=Theater)
     theater.theater_id = None

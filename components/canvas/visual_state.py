@@ -735,7 +735,15 @@ class VisualState:
                 except Exception:
                     pass
 
-        # 5. Fallback based on filename stem
+        # 5. Character portraits and scenes are conventionally stored as
+        # ``references/<kind>/<Display Name>/1.png``. The image number is an
+        # implementation detail, not a useful canvas tooltip.
+        if path_obj.parent.parent.name.casefold() in {"characters", "scenes"}:
+            display_name = path_obj.parent.name.replace("_", " ").strip()
+            if display_name:
+                return display_name
+
+        # 6. Fallback based on filename stem
         stem_clean = path_obj.stem.replace("_", " ").replace("-", " ").title()
         if "reference" in str(path_obj).lower() or "ref" in path_obj.stem.lower():
             return f"Reference Visual: {stem_clean}"
