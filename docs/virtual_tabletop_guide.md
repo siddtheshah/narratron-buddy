@@ -5,7 +5,7 @@ Narratron Buddy is designed to combine an AI **narrative assistant** with the in
 While traditional VTTs require manual map imports, complex grid calibrations, and heavy character sheet engines, Narratron takes a lightweight, agentic approach:
 
 1. **Character sheets live outside Narratron:** Sheets remain in specialized external tools (e.g. D&D Beyond, Demiplane, or Pathbuilder) and send dice rolls into Narratron chat via browser extensions like [Beyond20](/docs/beyond20).
-2. **Tactical battlemaps are generated on demand:** The GM can summon 2D overhead battlemaps with tactical grids simply by asking Narratron's narrative assistant.
+2. **Tactical battlemaps use scenes:** Set up a tactical map as a scene before play by uploading it or generating it ahead of time, or generate a new 2D overhead battlemap with a tactical grid live during the session.
 3. **The Gamemaster directs pacing via the Action Wheel:** A radial gesture HUD lets the GM lock or advance maps, control background music, and direct the audiovisual atmosphere with split-second mouse gestures.
 4. **Miniatures and tokens are placed using Stamps:** Both the GM and players can drop custom tokens, adjust sizing, reposition minis across the grid, and layer tactical markers directly onto the canvas.
 
@@ -38,9 +38,15 @@ Outside a theater, use **Ask about Narratron** on the front page to learn about 
 
 ---
 
-## 2. Generating 2D Tactical Battlemaps & Grids
+## 2. Tactical Battlemap Scenes & Grids
 
-Instead of searching third-party websites or manually aligning grid pixels in image editors, the GM can generate overhead tactical battlemaps directly within the Narratron session.
+Tactical maps are scenes: the GM can upload or generate them before the session, then select them when the encounter begins. For an unexpected location, the GM can also generate an overhead tactical battlemap directly within the live Narratron session.
+
+This avoids searching third-party websites or manually aligning grid pixels in image editors while still allowing the table to prepare encounter maps in advance.
+
+### Preparing a Tactical Map Scene
+
+Before the session, add the map as a scene by uploading a prepared battlemap or generating one ahead of time. When combat begins, switch to that scene and pin it for the encounter. Prepared scenes are useful for planned set pieces; live generation is useful when the story heads somewhere unexpected.
 
 ### Requesting a Battlemap
 
