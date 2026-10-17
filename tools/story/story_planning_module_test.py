@@ -1,10 +1,12 @@
 """Dependency-boundary tests for ``StoryPlanningModule``."""
 
 from collections.abc import AsyncIterator
+from pathlib import Path
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 from components.canvas import StoryState
+from components.canvas.game_state import GameState
 from components.canvas_state import CanvasStateManager
 from components.theater_manager import Theater
 from google.adk.plugins import ReflectAndRetryToolPlugin
@@ -522,6 +524,36 @@ class TestStoryPlanningModuleState(unittest.TestCase):
             {note["topic"] for note in notes},
             {"HUD", "Location", "Quest"},
         )
+
+    def test_planner_reads_game_and_can_only_take_narratron_actions(self) -> None:
+        game = GameState(Path("adventures/the-trader"), Mock(), Mock())
+        self.module.game_state = game
+        snapshot = self.module._game_state_json()
+        self.assertIn('"instructions": "This game is one exchange', snapshot)
+        self.assertIn('"trader_inventory"', snapshot)
+        self.assertIn('"narratron_place"', snapshot)
+        self.assertNotIn('"player_place"', snapshot)
+        denied = self.module.take_game_action("player_place", '{"item":"Pack mule"}', 0)
+        self.assertIn("cannot take", denied)
+        self.assertEqual(game.revision, 0)
+        accepted = self.module.take_game_action("narratron_place", '{"item":"Dates"}', 0)
+        self.assertIn('"trader_offer": ["Dates"]', accepted)
+        self.assertEqual(game.revision, 1)
+
+    def test_game_action_heartbeat_identifies_committed_panel_action(self) -> None:
+        prompt = _DEEP_PLANNING_TURN_PROMPT_TEMPLATE.render(
+            game_state_json='{"revision": 1}',
+            turn_events=[{
+                "source": "game", "turn_id": 0,
+                "game_action_json": '{"name": "player_place", "arguments": {"item": "Pack mule"}, "revision": 0}',
+                "committed_game_state_json": '{"revision": 1, "state": {"player_offer": ["Pack mule"]}}',
+            }],
+            is_initial=True,
+        )
+        self.assertIn("### Player Game Action", prompt)
+        self.assertIn('"name": "player_place"', prompt)
+        self.assertIn('"player_offer": ["Pack mule"]', prompt)
+        self.assertNotIn("### Turn 0", prompt)
 
     def test_updates_structured_sticky_note_and_validates_dividers(self) -> None:
         result = self.module.notepad.update_sticky_note("HUD", "HP: 80 | MP: 40")

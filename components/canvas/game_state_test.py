@@ -119,6 +119,15 @@ def test_recursive_functions_are_rejected() -> None:
         GameProgram(GameDefinition.model_validate(data))
 
 
+def test_view_cannot_expose_narratron_only_action() -> None:
+    definition = counter_definition()
+    definition.transitions["add"].actor = "narratron"
+    with pytest.raises(ValueError, match="Narratron-only"):
+        from components.canvas.game_runtime import validate_game_package
+
+        validate_game_package(definition.model_dump_json().encode("utf-8"))
+
+
 def test_nested_macros_share_a_work_budget() -> None:
     data = counter_definition().model_dump()
     data['constants'] = {'values': list(range(30))}
@@ -195,3 +204,24 @@ def test_notification_failure_keeps_committed_action(tmp_path: Path) -> None:
     assert restored.state == game.state
     with pytest.raises(StaleGameAction):
         game.act(GameAction(name='add', arguments={'amount': 1}, revision=0))
+
+
+def test_player_actions_wake_story_callback_after_commit(tmp_path: Path) -> None:
+    game = make_game(tmp_path)
+    callback = Mock(side_effect=RuntimeError("planner unavailable"))
+    game.on_player_action = callback
+    action = GameAction(name='add', arguments={'amount': 1}, revision=0)
+    game.act(action)
+    callback.assert_called_once_with(action, {'revision': 1, 'state': {'count': 1}})
+    assert game.state == {'count': 1}
+    assert game.revision == 1
+
+
+def test_player_action_event_preserves_each_committed_state(tmp_path: Path) -> None:
+    game = make_game(tmp_path)
+    callback = Mock()
+    game.on_player_action = callback
+    game.act(GameAction(name='add', arguments={'amount': 1}, revision=0))
+    game.act(GameAction(name='add', arguments={'amount': 2}, revision=1))
+    assert callback.call_args_list[0].args[1] == {'revision': 1, 'state': {'count': 1}}
+    assert callback.call_args_list[1].args[1] == {'revision': 2, 'state': {'count': 3}}

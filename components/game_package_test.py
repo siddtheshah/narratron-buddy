@@ -1,5 +1,6 @@
 from io import BytesIO
 from pathlib import Path
+from typing import Literal
 from zipfile import ZipFile
 from unittest.mock import Mock
 
@@ -35,6 +36,52 @@ def test_zip_game_declaration_is_mounted_and_editable(tmp_path: Path) -> None:
     assert safe_asset_path(tmp_path, "game/game.json") == tmp_path / "game/game.json"
     assert upload_path("checkers/game/game.json", folder=True) == "game/game.json"
     validate_text("game/game.json", content.decode("utf-8"))
+
+
+@pytest.mark.parametrize("first_finalizer", ["player", "narratron"])
+@pytest.mark.parametrize("first_offer", ["player", "narratron"])
+def test_trader_exchange_requires_both_finalizers(first_finalizer: str, first_offer: str) -> None:
+    game = GameState(Path("adventures/the-trader"), Mock(), Mock())
+    assert game.error == ""
+
+    def act(name: str, actor: Literal["player", "narratron"], arguments: dict[str, str] | None = None) -> None:
+        game.act(GameAction(name=name, arguments=arguments or {}, revision=game.revision), actor=actor)
+
+    offers = [
+        ("player_place", "player", {"item": "Pack mule"}),
+        ("player_place", "player", {"item": "Brass balance scale"}),
+        ("narratron_place", "narratron", {"item": "Dates"}),
+    ]
+    if first_offer == "narratron":
+        offers = [offers[2], *offers[:2]]
+    for name, actor, arguments in offers:
+        act(name, actor, arguments)
+    first = f"{first_finalizer}_finalize"
+    second = "narratron_finalize" if first_finalizer == "player" else "player_finalize"
+    act(first, "player" if first_finalizer == "player" else "narratron")
+    assert game.state["completed_trades"] == 0
+    assert "Pack mule" in game.state["player_inventory"]
+    act(second, "narratron" if first_finalizer == "player" else "player")
+    assert game.state["completed_trades"] == 1
+    assert "Dates" in game.state["player_inventory"]
+    assert "Pack mule" in game.state["trader_inventory"]
+    assert "Brass balance scale" in game.state["trader_inventory"]
+    assert game.state["player_offer"] == game.state["trader_offer"] == []
+
+
+def test_trader_game_checks_inventory_and_actor_permissions() -> None:
+    game = GameState(Path("adventures/the-trader"), Mock(), Mock())
+    before = game.serialize()
+    with pytest.raises(ValueError, match="actor"):
+        game.act(GameAction(name="narratron_place", arguments={"item": "Dates"}, revision=0))
+    with pytest.raises(ValueError, match="actor"):
+        game.act(GameAction(name="player_place", arguments={"item": "Pack mule"}, revision=0), actor="narratron")
+    with pytest.raises(ValueError, match="not permitted"):
+        game.act(GameAction(name="player_place", arguments={"item": "Dates"}, revision=0))
+    assert game.serialize() == before
+    assert set(game.story_snapshot("narratron")["actions"]) == {"narratron_place", "narratron_clear", "narratron_finalize"}
+    assert "actions" not in game.story_snapshot("responder")
+    assert "instructions" not in game.story_snapshot("responder")
 
 
 def set_position(game: GameState, pieces: dict[int, int], quiet: int = 0) -> None:

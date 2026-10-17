@@ -8,9 +8,10 @@ import logging
 from typing import Any, Callable, Dict, Optional, Union
 
 from google.adk.sessions import InMemorySessionService
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, JsonValue
 
 from components.canvas.story_state import StoryState
+from components.canvas.game_runtime import GameAction
 from components.canvas_state import CanvasStateManager
 from components.theater_manager import Theater
 from providers import ImageProvider, ImageProviderError, SpeechProvider, TextResponseProvider, get_image_provider
@@ -152,6 +153,7 @@ class StoryTool(BaseTools):
             session_id=self.planning_session_id,
             notepad=self.notepad,
             story_log_context_fn=self.format_recent_story_log,
+            game_state=canvas_manager.game,
         )
         self.response_module = StoryResponseModule(
             theater=theater,
@@ -161,6 +163,7 @@ class StoryTool(BaseTools):
             notepad=self.notepad,
             session_service=self.response_session_service,
             session_id=self.response_session_id,
+            game_state=canvas_manager.game,
         )
 
         # Cross-module communication stays explicit and is wired only after
@@ -168,6 +171,8 @@ class StoryTool(BaseTools):
         self.notepad.on_change = self.response_module.save_to_session_state
         self.response_module.on_scene_reaction = self._handle_scene_reaction
         self.response_module.on_failure = lambda: self.record_tool_failure("process_user_action")
+        if canvas_manager.game is not None:
+            canvas_manager.game.on_player_action = self._handle_player_game_action
         self.notepad.sync_story_state()
         self.sync_character_bindings()
 
@@ -280,6 +285,18 @@ class StoryTool(BaseTools):
         self.sync_character_bindings()
         if self._on_scene_reaction:
             self._on_scene_reaction(result)
+
+    def _handle_player_game_action(self, action: GameAction, new_state: dict[str, JsonValue]) -> None:
+        """Queue the player action with its committed state for the planner."""
+        self.planning_module.queue_deep_planning(
+            0,
+            "Game panel action",
+            {
+                "source": "game",
+                "game_action": action.model_dump(mode="json"),
+                "game_state": new_state,
+            },
+        )
 
     def __getattr__(self, name: str) -> Any:
         """Expose the response module's existing public tool surface."""

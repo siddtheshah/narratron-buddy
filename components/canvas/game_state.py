@@ -7,6 +7,7 @@ import json
 import logging
 from pathlib import Path
 from threading import RLock
+from typing import Literal
 
 from pydantic import Field, JsonValue, TypeAdapter
 
@@ -34,6 +35,7 @@ class GameState:
         self._lock = RLock()
         self._persist = persist
         self._notify = notify
+        self.on_player_action: Callable[[GameAction, dict[str, JsonValue]], None] | None = None
         self.program: GameProgram | None = None
         self.state: dict[str, JsonValue] = {}
         self.revision = 0
@@ -101,6 +103,21 @@ class GameState:
                 return {"error": self.error} if self.error else None
             return {"definition_hash": self.definition_hash, "revision": self.revision, "view": json.loads(json.dumps(self._view)), "error": self.error}
 
+    def story_snapshot(self, audience: Literal["responder", "narratron"]) -> dict[str, JsonValue] | None:
+        """Give the responder facts and the planner its package-owned instructions."""
+        with self._lock:
+            if self.program is None:
+                return None
+            snapshot: dict[str, JsonValue] = {"revision": self.revision, "state": self.state}
+            if audience == "narratron":
+                snapshot["instructions"] = self.program.definition.instructions
+                snapshot["actions"] = {
+                    name: {"description": transition.description, "parameters": transition.parameters}
+                    for name, transition in self.program.definition.transitions.items()
+                    if transition.actor == "narratron"
+                }
+            return json.loads(json.dumps(snapshot))
+
     def report_error(self, message: str) -> None:
         """Publish a game-only diagnostic without changing the playable state."""
         with self._lock:
@@ -113,7 +130,7 @@ class GameState:
         except Exception:
             logger.exception("Game update notification failed at revision %s", self.revision)
 
-    def act(self, action: GameAction) -> dict[str, JsonValue] | None:
+    def act(self, action: GameAction, actor: Literal["player", "narratron"] = "player") -> dict[str, JsonValue] | None:
         with self._lock:
             if self.program is None:
                 raise ValueError("This theater has no playable game.")
@@ -124,6 +141,8 @@ class GameState:
             transition = self.program.definition.transitions.get(action.name)
             if transition is None:
                 raise ValueError("Unknown game action.")
+            if transition.actor != actor:
+                raise ValueError("This actor cannot take that game action.")
             previous, previous_view, revision = self.state, self._view, self.revision
             try:
                 self.program.action_validators[action.name].validate(action.arguments)
@@ -146,4 +165,11 @@ class GameState:
                 raise ValueError(str(exc)[:250]) from exc
             self.error = ""
             self._notify_safely()
+            if actor == "player" and self.on_player_action is not None:
+                try:
+                    snapshot = self.story_snapshot("responder")
+                    assert snapshot is not None
+                    self.on_player_action(action, snapshot)
+                except Exception:
+                    logger.exception("Player game action callback failed at revision %s", self.revision)
             return self.payload()

@@ -29,6 +29,8 @@ from components.canvas.story_state import (
     StoryStateSnapshot,
 )
 from components.canvas_state import CanvasStateManager
+from components.canvas.game_runtime import GameAction
+from components.canvas.game_state import GameState
 from components.theater_manager import Theater
 from components.reference_manager import CharacterLookupResult, ReferenceManager, PlayerCharacter
 from components.lore_library import LoreLibrary
@@ -75,6 +77,12 @@ You are the sole owner of Adventure Mode sticky notes. Assimilate the committed 
 - If there are stickies that are for plot building or reveals, these are a priority for you to set up and maintain.
 - For stickies that track numeric state, ensure you follow the appropriate rules defined in the lore to faithfully update them.
 - For you, accuracy is more important than speed.
+{% if has_game -%}
+- The Current Game State in each heartbeat is authoritative. Read its `instructions`, `state`, `revision`, and listed Narratron `actions` before deciding whether to act. The game instructions explain when its actions are appropriate; apply them alongside established story facts and player agency.
+- Call `take_game_action(name, arguments_json, revision)` only when a listed Narratron action is justified by the current game state and committed story. Encode arguments as a JSON object matching that action's `parameters`. Never submit a player action or infer that the player clicked a game button from narration alone.
+- Each successful game action changes the revision. Read the returned state and revision before another action. If an action is rejected, reread the current game state and decide again. If no action is justified, leave the game untouched.
+- A Player Game Action event contains the submitted action and the state immediately after it committed. Use that pair to interpret the event; the Current Game State above may include later actions.
+{% endif -%}
 
 # Character, Lore, and Image Tools
 You can canonically manage the player character using `update_player_character` (name, visual description) and query them with `get_player_character_info`. You can canonically create or update NPC records using `create_or_update_character`, manage scenery and locations using `create_or_update_scene`, and look up all characters using `lookup_character`.
@@ -114,12 +122,22 @@ Available theater lore (top-level documents and directories):
 _DEEP_PLANNING_TURN_PROMPT_TEMPLATE = Template(
 """# Heartbeat Work
 This is one shallow, bounded planning heartbeat. Assimilate only the supplied queue batch, then return a useful complete plan without exhaustive deliberation. Later heartbeats can refine it.
+{% if game_state_json -%}
+# Current Game State and Narratron Actions
+{{ game_state_json }}
+{% endif -%}
 {% if turn_events -%}
 ## Newly Committed Turn Queue
 {% for event in turn_events -%}
+{% if event.source == 'game' -%}
+### Player Game Action
+- Submitted action: {{ event.game_action_json }}
+- Committed new state: {{ event.committed_game_state_json }}
+{% else -%}
 ### Turn {{ event.turn_id }}
 - Player action: {{ event.user_action }}
 - Immediate narration: {{ event.narration }}
+{% endif -%}
 {% if event.dialogue -%}
 - NPC dialogue:
 {% for line in event.dialogue -%}
@@ -239,6 +257,7 @@ class StoryPlanningModule:
         notepad: Notepad,
         story_log_context_fn: Optional[Callable[[], str]] = None,
         image_library: Optional[ImageLibrary] = None,
+        game_state: GameState | None = None,
     ) -> None:
         if theater is None:
             raise ValueError("theater is required.")
@@ -258,6 +277,7 @@ class StoryPlanningModule:
         self.theater = theater
         self.theater_id: str = theater.theater_id or ""
         self.canvas_manager = canvas_manager
+        self.game_state = game_state
         self.lore_library = lore_library
         self.image_library = image_library or ImageLibrary(theater)
         self.reference_manager = reference_manager
@@ -533,7 +553,26 @@ class StoryPlanningModule:
             style=self.style,
             sticky_schema_json=sticky_schema_json,
             lore_context=lore_context or "",
+            has_game=self.game_state is not None and self.game_state.program is not None,
         ).strip()
+
+    def take_game_action(self, name: str, arguments_json: str, revision: int) -> str:
+        """Apply one Narratron-only game action using JSON arguments and the current revision."""
+        if self.game_state is None:
+            return "No game is available."
+        try:
+            arguments = json.loads(arguments_json)
+            action = GameAction(name=name, arguments=arguments, revision=revision)
+            self.game_state.act(action, actor="narratron")
+            return json.dumps(self.game_state.story_snapshot("narratron"), ensure_ascii=False)
+        except (ValueError, TypeError) as exc:
+            return f"Game action rejected: {exc}"
+
+    def _game_state_json(self) -> str:
+        if self.game_state is None:
+            return ""
+        snapshot = self.game_state.story_snapshot("narratron")
+        return json.dumps(snapshot, ensure_ascii=False) if snapshot is not None else ""
 
     def _create_deep_planner_agent(self) -> Agent:
         generate_content_config = None
@@ -564,6 +603,7 @@ class StoryPlanningModule:
                 self.find_image_names,
                 self.notepad.check_schema,
                 self.notepad.update_sticky_note,
+                *([self.take_game_action] if self.game_state is not None and self.game_state.program is not None else []),
             ],
             disallow_transfer_to_parent=True,
             disallow_transfer_to_peers=True,
@@ -813,8 +853,11 @@ class StoryPlanningModule:
             current_deep_plan_revision = self._deep_plan_revision
         event_payloads = [
             {
+                "source": str(scene_reaction.get("source") or "story"),
                 "turn_id": turn_id,
                 "user_action": user_action,
+                "game_action_json": json.dumps(scene_reaction.get("game_action"), ensure_ascii=False),
+                "committed_game_state_json": json.dumps(scene_reaction.get("game_state"), ensure_ascii=False),
                 "narration": str(scene_reaction.get("narration") or "").strip(),
                 "dialogue": scene_reaction.get("dialogue") or [],
                 "planning_signals": scene_reaction.get("planning_signals") or [],
@@ -856,6 +899,7 @@ class StoryPlanningModule:
         if is_initial:
             prompt_input = _DEEP_PLANNING_TURN_PROMPT_TEMPLATE.render(
                 is_initial=True,
+                game_state_json=self._game_state_json(),
                 turn_events=event_payloads,
                 current_notes=self.notepad.get_present_sticky_notes(),
                 player_character=current_pc_obj,
@@ -877,6 +921,7 @@ class StoryPlanningModule:
             )
             prompt_input = _DEEP_PLANNING_TURN_PROMPT_TEMPLATE.render(
                 is_initial=False,
+                game_state_json=self._game_state_json(),
                 turn_events=event_payloads,
                 sticky_diffs=story_diff.sticky_diffs,
                 player_character_diff=story_diff.player_character_diff,

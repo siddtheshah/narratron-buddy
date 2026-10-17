@@ -27,6 +27,7 @@ from google.adk.sessions import InMemorySessionService
 from google.genai import types
 
 from components.canvas_state import CanvasStateManager
+from components.canvas.game_state import GameState
 from components.theater_manager import Theater
 from components.reference_manager import Character, CharacterLookupResult, ReferenceManager, PlayerCharacter
 from components.lore_library import LoreLibrary
@@ -191,6 +192,10 @@ No lore documents are available for this theater. Invent the lore, world details
 _RESPONDER_TURN_PROMPT_TEMPLATE = Template(
 """# Current Story State
 {{ story_state }}
+{% if game_state_json %}
+# Current Game State (read only)
+{{ game_state_json }}
+{% endif %}
 
 # Player Action
 {{ user_action }}{% if nudge %}
@@ -278,11 +283,13 @@ def build_responder_turn_prompt(
     story_state: str,
     user_action: str,
     nudge: str = "",
+    game_state_json: str = "",
 ) -> str:
     return _RESPONDER_TURN_PROMPT_TEMPLATE.render(
         story_state=story_state,
         user_action=user_action,
         nudge=nudge,
+        game_state_json=game_state_json,
     ).strip()
 
 
@@ -298,6 +305,7 @@ class StoryResponseModule:
         reference_manager: ReferenceManager,
         session_service: InMemorySessionService,
         session_id: str,
+        game_state: GameState | None = None,
     ):
         if notepad is None:
             raise ValueError("notepad is required.")
@@ -312,6 +320,7 @@ class StoryResponseModule:
 
         self.theater = theater
         self.canvas_manager = canvas_manager
+        self.game_state = game_state
         raw_config = theater.config() or {}
         subconfig = raw_config.get("story_planning", raw_config) if "story_planning" in raw_config else raw_config
         self.config = subconfig if isinstance(subconfig, dict) else {}
@@ -861,6 +870,10 @@ class StoryResponseModule:
             story_state=story_state,
             user_action=user_action,
             nudge=nudge,
+            game_state_json=(
+                json.dumps(self.game_state.story_snapshot("responder"), ensure_ascii=False)
+                if self.game_state is not None and self.game_state.program is not None else ""
+            ),
         )
 
     def _create_responder_agent(self) -> Agent:

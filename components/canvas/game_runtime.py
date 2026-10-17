@@ -39,6 +39,8 @@ class FunctionDefinition(GameModel):
 
 
 class TransitionDefinition(GameModel):
+    actor: Literal["player", "narratron"] = "player"
+    description: str = Field(default="", max_length=500)
     parameters: dict[str, JsonValue]
     guard: str = Field(default="true", max_length=4000)
     bindings: list[Binding] = Field(default_factory=list, max_length=32)
@@ -62,6 +64,7 @@ class ViewNode(GameModel):
 
 class GameDefinition(GameModel):
     version: Literal[2]
+    instructions: str = Field(default="", max_length=4000)
     initial: dict[str, JsonValue]
     state_schema: dict[str, JsonValue]
     constants: dict[str, JsonValue] = Field(default_factory=dict)
@@ -293,6 +296,8 @@ class Execution:
                 name = STRING_ADAPTER.validate_python(self.evaluate(node.action.name, scope), strict=True)
                 if name not in self.program.definition.transitions:
                     raise ValueError("View references an unknown transition.")
+                if self.program.definition.transitions[name].actor != "player":
+                    raise ValueError("View cannot expose a Narratron-only transition.")
                 action = RenderedAction(name=name, arguments=MAP_ADAPTER.validate_python(self.evaluate(node.action.arguments, scope), strict=True), confirmation=node.action.confirmation)
             children = [child for template in node.children for child in self.render(template, scope)]
             rendered.append(RenderedNode(kind=node.kind, props=props, children=children, action=action))

@@ -843,6 +843,20 @@ class TestResponderInstructionAndTurnPrompt(unittest.TestCase):
         self.assertTrue(prompt.startswith("# Current Story State\nYour sticky notes:\n- HUD: HP: 100"))
         self.assertIn("# Player Action\nI look north.\n\n[Live Agent Nudge to Accommodate]: Fog rolls in.", prompt)
 
+    def test_turn_prompt_includes_read_only_game_state(self) -> None:
+        from unittest.mock import Mock
+        from components.canvas.game_state import GameState
+
+        self.module.game_state = GameState(Path("adventures/the-trader"), Mock(), Mock())
+        self.reference_manager.count.return_value = 0
+        self.reference_manager.get_player_character.return_value = None
+        prompt = self.module._build_responder_turn_prompt("I inspect the exchange table.")
+        self.assertIn("# Current Game State (read only)", prompt)
+        self.assertIn('"player_inventory"', prompt)
+        self.assertNotIn('"player_place"', prompt)
+        self.assertNotIn('"narratron_place"', prompt)
+        self.assertNotIn('"instructions"', prompt)
+
 
 if __name__ == "__main__":
     unittest.main()

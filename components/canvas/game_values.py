@@ -74,13 +74,15 @@ def decode_null(value: None, budget: ValueBudget, depth: int) -> None:
 
 
 @decode.register(celtypes.ListType)
-def decode_list(value: celtypes.ListType, budget: ValueBudget, depth: int) -> list[JsonValue]:
+@decode.register(list)
+def decode_list(value: celtypes.ListType | list[celtypes.Value], budget: ValueBudget, depth: int) -> list[JsonValue]:
     budget.charge(len(value) + 2)
     return [convert(item, budget, depth + 1) for item in value]
 
 
 @decode.register(celtypes.MapType)
-def decode_map(value: celtypes.MapType, budget: ValueBudget, depth: int) -> dict[str, JsonValue]:
+@decode.register(dict)
+def decode_map(value: celtypes.MapType | dict[celtypes.Value, celtypes.Value], budget: ValueBudget, depth: int) -> dict[str, JsonValue]:
     budget.charge(len(value) * 2 + 2)
     result: dict[str, JsonValue] = {}
     for key, item in value.items():
