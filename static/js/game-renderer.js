@@ -5,8 +5,8 @@ const STYLES = new Set(['gap', 'padding', 'color', 'background', 'fontSize', 'fo
 const ATTRIBUTES = new Set(['viewBox', 'x', 'y', 'width', 'height', 'cx', 'cy', 'r', 'rx', 'fill', 'stroke', 'stroke-width', 'text-anchor', 'dominant-baseline']);
 
 export function createGameRenderer({ container, toggleButton, actionUrl, canEdit, refresh,
-    stylesheetUrl = '/static/css/game-renderer.css?v=4', initiallyOpen = false,
-    onPendingChange = () => {} }) {
+    stylesheetUrl = '/static/css/game-renderer.css?v=5', initiallyOpen = false,
+    onPendingChange = () => {}, onMove = () => {} }) {
     const stylesheet = document.createElement('link');
     stylesheet.rel = 'stylesheet';
     stylesheet.href = stylesheetUrl;
@@ -16,6 +16,13 @@ export function createGameRenderer({ container, toggleButton, actionUrl, canEdit
     let error = '';
     let signature = '';
     let open = initiallyOpen;
+    let latestLeft = 50;
+    let latestTop = 50;
+    let activePointerId = null;
+    let startX = 0;
+    let startY = 0;
+    let startLeft = 0;
+    let startTop = 0;
 
     toggleButton.addEventListener('click', event => {
         event.stopPropagation();
@@ -109,9 +116,89 @@ export function createGameRenderer({ container, toggleButton, actionUrl, canEdit
         const panel = document.createElement('section');
         panel.className = 'game-panel';
         panel.setAttribute('aria-busy', String(pending));
+        if (!panel.classList.contains('dragging')) {
+            panel.style.left = `${latestLeft}%`;
+            panel.style.top = `${latestTop}%`;
+        }
         for (const event of ['pointerdown', 'pointermove', 'pointerup', 'click', 'dblclick', 'wheel']) {
             panel.addEventListener(event, e => e.stopPropagation());
         }
+
+        let move = null;
+        if (canEdit()) {
+            panel.classList.add('game-panel-editable', 'a2ui-surface-editable');
+            const controls = document.createElement('div');
+            controls.className = 'game-panel-controls a2ui-surface-controls';
+
+            move = document.createElement('button');
+            move.type = 'button';
+            move.className = 'game-panel-control game-move a2ui-surface-control a2ui-move';
+            move.title = 'Drag to reposition';
+            move.setAttribute('aria-label', 'Drag to reposition this game');
+            move.textContent = '⠿';
+            move.style.touchAction = 'none';
+
+            panel.addEventListener('pointerdown', event => {
+                // Only the outer padding and move control are drag handles.
+                if (event.target !== panel && !move.contains(event.target)) return;
+                if (event.button !== 0 || activePointerId !== null || !canEdit()) return;
+                activePointerId = event.pointerId;
+                startX = event.clientX;
+                startY = event.clientY;
+                startLeft = latestLeft;
+                startTop = latestTop;
+                move.classList.add('dragging');
+                panel.classList.add('dragging');
+                panel.setPointerCapture(event.pointerId);
+                event.preventDefault();
+                event.stopPropagation();
+            });
+
+            controls.append(move);
+            panel.append(controls);
+        }
+
+        panel.addEventListener('pointermove', event => {
+            if (event.pointerId !== activePointerId) return;
+            const rect = container.getBoundingClientRect();
+            if (!rect.width || !rect.height) return;
+            latestLeft = Math.max(2, Math.min(98, startLeft + ((event.clientX - startX) / rect.width) * 100));
+            latestTop = Math.max(2, Math.min(98, startTop + ((event.clientY - startY) / rect.height) * 100));
+            panel.style.left = `${latestLeft}%`;
+            panel.style.top = `${latestTop}%`;
+            event.stopPropagation();
+        });
+
+        const finishDrag = async event => {
+            if (event.pointerId !== activePointerId) return;
+            activePointerId = null;
+            if (move) move.classList.remove('dragging');
+            panel.classList.remove('dragging');
+            if (panel.hasPointerCapture(event.pointerId)) {
+                panel.releasePointerCapture(event.pointerId);
+            }
+            event.stopPropagation();
+            if (event.type !== 'pointerup') {
+                latestLeft = startLeft;
+                latestTop = startTop;
+                panel.style.left = `${latestLeft}%`;
+                panel.style.top = `${latestTop}%`;
+                return;
+            }
+            if (latestLeft === startLeft && latestTop === startTop) return;
+            try {
+                if (typeof onMove === 'function') {
+                    await onMove({ left_pct: latestLeft, top_pct: latestTop });
+                }
+            } catch (failure) {
+                console.error('Could not persist game panel position:', failure);
+            }
+        };
+
+        panel.addEventListener('pointerup', finishDrag);
+        panel.addEventListener('pointercancel', finishDrag);
+        panel.addEventListener('lostpointercapture', finishDrag);
+
         for (const node of game.view || []) panel.append(nodeView(node));
         if (pending) {
             const status = message('Resolving action…', 'game-message');
@@ -134,6 +221,10 @@ export function createGameRenderer({ container, toggleButton, actionUrl, canEdit
             if (nextSignature === signature) return;
             signature = nextSignature;
             game = next;
+            if (activePointerId === null) {
+                if (next?.placement?.left_pct !== undefined) latestLeft = Number(next.placement.left_pct) || 50;
+                if (next?.placement?.top_pct !== undefined) latestTop = Number(next.placement.top_pct) || 50;
+            }
             draw();
         },
     };
