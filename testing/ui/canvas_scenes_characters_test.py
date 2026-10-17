@@ -9,7 +9,7 @@ from playwright.sync_api import Page, Route, sync_playwright
 from playwright.sync_api import expect
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def scenes_chars_page() -> Iterator[Page]:
     canvas_html = Path("templates/canvas.html").read_text(encoding="utf-8")
     chat_css = Path("static/css/chat.css").read_text(encoding="utf-8")

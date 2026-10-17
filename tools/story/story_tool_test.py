@@ -221,6 +221,32 @@ class TestStoryToolComposition(unittest.TestCase):
 class TestStoryToolStateIntegration(unittest.TestCase):
     def setUp(self) -> None:
         self.story_state = StoryState()
+        self.text_beautifier = MagicMock()
+        self.text_beautifier.beautify_scene.side_effect = (
+            lambda narration, dialogue: {
+                "narration": narration,
+                "narration_spans": (
+                    [{"text": narration, "effect": "none", "font": "default", "color": None}]
+                    if narration
+                    else []
+                ),
+                "dialogue": [
+                    {
+                        **item,
+                        "spans": [
+                            {
+                                "text": str(item.get("text") or ""),
+                                "effect": "none",
+                                "font": "default",
+                                "color": None,
+                            }
+                        ],
+                    }
+                    for item in (dialogue or [])
+                ],
+            }
+        )
+        self.story_state.text_beautifier = self.text_beautifier
         self.canvas = MagicMock(spec=CanvasStateManager)
         self.canvas.notepad = None
         self.canvas.story = self.story_state

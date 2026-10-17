@@ -4,8 +4,6 @@ from unittest.mock import MagicMock, Mock
 import pytest
 
 from components.canvas.story_state import (
-    CharacterState,
-    PlayerCharacterState,
     StoryState,
     speaker_key,
 )
@@ -66,6 +64,12 @@ def test_scene_waits_for_beautification_then_commits_once() -> None:
 
 def test_set_scene_preserves_long_narration_for_the_canvas() -> None:
     state = StoryState()
+    beautifier = Mock()
+    beautifier.beautify_scene.return_value = {
+        "narration_spans": [],
+        "dialogue": [],
+    }
+    state.text_beautifier = beautifier
     narration = " ".join(f"word{index}" for index in range(100))
 
     state.set_scene(narration, [])

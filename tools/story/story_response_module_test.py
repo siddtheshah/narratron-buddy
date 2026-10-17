@@ -621,7 +621,7 @@ class TestBuildSceneReactionPrompt(unittest.TestCase):
         fields = set(SceneReaction.model_fields.keys())
         self.assertEqual(
             fields,
-            {"narration", "dialogue", "manifested_characters", "planning_signals", "scene_reference", "scene_reference"},
+            {"narration", "dialogue", "manifested_characters", "planning_signals", "scene_reference"},
         )
         self.assertNotIn("character_updates", fields)
         self.assertNotIn("player_character_update", fields)
@@ -768,7 +768,7 @@ class TestResponderInstructionAndTurnPrompt(unittest.TestCase):
         self.assertIn("# Tool Usage Guidelines", instruction)
         self.assertIn("# Scene Reaction Output Requirements", instruction)
         self.assertIn("# Character Generation", instruction)
-        self.assertIn("# Scene Labeling", instruction)
+        self.assertIn("# Scene Reference", instruction)
 
         # Style and lore variable values are placed at the end to maximize prefix caching
         self.assertIn("# Story-Planning Style (User Specified)\nMythic space opera", instruction)

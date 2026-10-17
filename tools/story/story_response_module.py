@@ -1210,8 +1210,7 @@ class StoryResponseModule:
         self.save_to_session_state()
         self._publish_scene(narration, dialogue)
         logger.debug(
-            "[StoryResponseModule] Scene name: %s",
-            scene_name or "(unspecified)",
+            "[StoryResponseModule] Scene reference: %s", scene_reference
         )
         callback = self.on_story_response_completed
         if callback:
