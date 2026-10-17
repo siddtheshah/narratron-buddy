@@ -736,14 +736,39 @@ class StoryResponseModule:
         quirk: str = "",
         voice_tags: Optional[list[str]] = None,
         gender: Optional[str] = None,
-    ) -> Optional[Character]:
+    ) -> str:
         """Create or update an NPC profile with an explicit gender ('male', 'female', or 'nonbinary').
 
         Acts as an upsert: if the character already exists, updates all specified fields.
+        Returns immediately while profile and portrait generation run in the background.
         If the character is to be created per the story module's views, prioritizes traits
         assigned in serialized story state so the character remains consistent across initializations.
         """
-        logger.debug(f"[StoryResponseModule] create_or_update_character called for character {name}")
+        clean_name = name.strip()
+        if not clean_name:
+            return "Character name cannot be empty."
+        tags = list(voice_tags) if voice_tags is not None else None
+
+        def update() -> None:
+            profile = self._create_or_update_character(
+                clean_name, description, personality, motivation, quirk, tags, gender,
+            )
+            if profile is None:
+                raise RuntimeError(f"Failed to create or update character '{clean_name}'.")
+
+        self.reference_manager.submit_reference_update("character", clean_name, update)
+        return f"Character update for '{clean_name}' started in background."
+
+    def _create_or_update_character(
+        self,
+        name: str,
+        description: str = "",
+        personality: str = "",
+        motivation: str = "",
+        quirk: str = "",
+        voice_tags: Optional[list[str]] = None,
+        gender: Optional[str] = None,
+    ) -> Optional[Character]:
         if self.reference_manager.story_state is None and self.canvas_manager is not None:
             self.reference_manager.story_state = self.canvas_manager.story
         profile = self.reference_manager.create_or_update_character(
@@ -764,17 +789,21 @@ class StoryResponseModule:
         name: str,
         description: str = "",
     ) -> str:
-        """Create or update a scene reference visual by name and concept description."""
+        """Start creating or updating a scene reference visual in the background."""
         clean_name = str(name).strip()
         if not clean_name:
             return "Scene name cannot be empty."
-        entry = self.reference_manager.create_or_update_scene(
-            name=clean_name,
-            description=str(description).strip(),
-        )
-        if entry is None:
-            return f"Failed to generate or resolve scene reference for '{clean_name}'."
-        return f"Scene reference for '{clean_name}' is set."
+
+        def update() -> None:
+            entry = self.reference_manager.create_or_update_scene(
+                name=clean_name,
+                description=str(description).strip(),
+            )
+            if entry is None:
+                raise RuntimeError(f"Failed to generate or resolve scene reference for '{clean_name}'.")
+
+        self.reference_manager.submit_reference_update("scene", clean_name, update)
+        return f"Scene update for '{clean_name}' started in background."
 
     def clear_scene(self) -> str:
         """Remove characters from the current scene while preserving durable story context."""

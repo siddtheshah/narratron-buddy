@@ -56,6 +56,7 @@ class ImageTools(BaseTools):
         self.visuals_config = visuals_config if isinstance(visuals_config, dict) else {}
         self.theater = theater
         self.cooldown_duration = float(self.image_config.get("cooldown_duration", 0.0))
+        self.reference_wait_timeout = max(0.0, float(self.image_config.get("reference_wait_timeout", 60.0)))
         self.adventure_mode = bool(adventure_mode)
 
         self.default_style = str(self.visuals_config.get("style", "")).strip()
@@ -300,6 +301,17 @@ class ImageTools(BaseTools):
         self._set_canvas_activity(True)
         try:
             if self.reference_manager is not None:
+                try:
+                    self.reference_manager.wait_for_reference_updates(
+                        re.findall(r"<([^<>]+)>", image_prompt),
+                        timeout=self.reference_wait_timeout,
+                    )
+                except (TimeoutError, RuntimeError) as exc:
+                    self._set_canvas_activity(False)
+                    self.record_tool_failure("image_cycle")
+                    self._trigger_after_tool_call("create_image")
+                    self._on_cycle_tool_completed("image_cycle")
+                    return f"Error: {exc}"
                 if self.reference_manager.image_provider is None:
                     self.reference_manager.image_provider = self._get_image_provider()
                 generated_refs = self.reference_manager.generate_references_from_context(
@@ -524,6 +536,14 @@ class ImageTools(BaseTools):
                 self._trigger_after_tool_call("show_image")
                 return res
 
+        if self.reference_manager is not None:
+            try:
+                self.reference_manager.wait_for_reference_updates(
+                    [file_path], timeout=self.reference_wait_timeout,
+                )
+            except (TimeoutError, RuntimeError) as exc:
+                self._trigger_after_tool_call("show_image")
+                return f"Error: {exc}"
         if self.reference_manager is not None and self.visual is not None:
             for name, path in self.reference_manager.available_scene_images().items():
                 self.visual.register_image(path, name)

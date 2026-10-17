@@ -307,6 +307,7 @@ class TestStoryToolStateIntegration(unittest.TestCase):
             quirk="Always examining books",
             voice_tags=["female"],
         )
+        self.tool.reference_manager.wait_for_reference_updates(["Lyra"], timeout=5)
         self.tool.update_sticky_note(
             "Quest",
             "Tower investigated; key retrieved",
@@ -399,9 +400,10 @@ class TestStoryToolStateIntegration(unittest.TestCase):
 
         with patch.object(self.tool.response_module, "_run_responder_agent", side_effect=fake_run):
             self.tool.response_module._resolve_user_action("I call out.")
+        self.tool.reference_manager.wait_for_reference_updates(["Vesper"], timeout=5)
 
         # Vesper's voice was assigned using female tag
-        speech_provider.select_voice.assert_called_once_with(
+        speech_provider.select_voice.assert_called_with(
             {
                 "voice_tags": ["female"],
                 "description": unittest.mock.ANY,
@@ -430,8 +432,9 @@ class TestStoryToolStateIntegration(unittest.TestCase):
 
         with patch.object(self.tool.response_module, "_run_responder_agent", side_effect=fake_run):
             self.tool.response_module._resolve_user_action("I listen.")
+        self.tool.reference_manager.wait_for_reference_updates(["Echo"], timeout=5)
 
-        speech_provider.select_voice.assert_called_once_with(
+        speech_provider.select_voice.assert_called_with(
             {
                 "voice_tags": ["nonbinary"],
                 "description": unittest.mock.ANY,

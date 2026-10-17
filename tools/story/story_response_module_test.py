@@ -2,6 +2,7 @@
 
 import unittest
 import tempfile
+from threading import Event
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -439,6 +440,35 @@ class TestStoryResponseModuleBehavior(unittest.TestCase):
         self.module.reset_lore_call_counts()
         self.assertIn("Lore details", self.module.read_lore("lore.txt"))
 
+    def test_reference_updates_return_while_generation_is_running(self) -> None:
+        for kind in ("character", "scene"):
+            with self.subTest(kind=kind):
+                started = Event()
+                release = Event()
+
+                def generate(*args: str, **kwargs: str) -> Character | dict[str, str]:
+                    started.set()
+                    if not release.wait(5):
+                        raise TimeoutError("Test did not release generation")
+                    return Character(name="Mira", gender="female") if kind == "character" else {"name": "Mira"}
+
+                target = "_create_or_update_character" if kind == "character" else "create_or_update_scene"
+                owner = self.module if kind == "character" else self.reference_manager
+                try:
+                    with patch.object(owner, target, side_effect=generate):
+                        message = (
+                            self.module.create_or_update_character("Mira")
+                            if kind == "character" else self.module.create_or_update_scene("Mira")
+                        )
+                        self.assertIn("started in background", message)
+                        self.assertTrue(started.wait(1))
+                        with self.assertRaises(TimeoutError):
+                            self.reference_manager.wait_for_reference_updates(["Mira"], timeout=0)
+                        release.set()
+                        self.reference_manager.wait_for_reference_updates(["Mira"], timeout=5)
+                finally:
+                    release.set()
+
     def test_delegates_character_management_to_shared_manager(self) -> None:
         self.module.create_or_update_character(
             name="Kaelen",
@@ -448,6 +478,7 @@ class TestStoryResponseModuleBehavior(unittest.TestCase):
             quirk="Whistles old tunes",
             voice_tags=["male"],
         )
+        self.reference_manager.wait_for_reference_updates(["Kaelen"], timeout=5)
 
         characters = self.module.get_present_characters()
         self.assertEqual(len(characters), 1)
@@ -463,7 +494,7 @@ class TestStoryResponseModuleBehavior(unittest.TestCase):
         self.assertEqual(self.module.get_present_characters(), [])
 
     def test_module_create_or_update_character_upsert_and_persists_to_session_state(self) -> None:
-        profile = self.module.create_or_update_character(
+        result = self.module.create_or_update_character(
             name="Cedric",
             description="Knight of the Realm",
             personality="Brave and dutiful",
@@ -471,6 +502,9 @@ class TestStoryResponseModuleBehavior(unittest.TestCase):
             quirk="Polishes visor constantly",
             gender="male",
         )
+        self.assertIn("started in background", result)
+        self.reference_manager.wait_for_reference_updates(["Cedric"], timeout=5)
+        profile = self.module.lookup_character("Cedric").characters[0]
         self.assertIsNotNone(profile)
         self.assertEqual(profile["name"], "Cedric")
         self.assertEqual(profile["description"], "Knight of the Realm")
@@ -479,10 +513,12 @@ class TestStoryResponseModuleBehavior(unittest.TestCase):
         self.story_state.set_story_planning_state.assert_called()
 
         # Perform upsert on existing character
-        updated = self.module.create_or_update_character(
+        self.module.create_or_update_character(
             name="Cedric",
             description="Knight Commander of the Realm",
         )
+        self.reference_manager.wait_for_reference_updates(["Cedric"], timeout=5)
+        updated = self.module.lookup_character("Cedric").characters[0]
         self.assertIsNotNone(updated)
         self.assertEqual(updated["description"], "Knight Commander of the Realm")
         self.assertEqual(updated["personality"], "Brave and dutiful")
@@ -490,7 +526,9 @@ class TestStoryResponseModuleBehavior(unittest.TestCase):
         self.assertEqual(updated["quirk"], "Polishes visor constantly")
 
         # Backwards compatibility check
-        via_alias = self.module.create_or_update_character(name="Cedric", description="Grand Marshal")
+        self.module.create_or_update_character(name="Cedric", description="Grand Marshal")
+        self.reference_manager.wait_for_reference_updates(["Cedric"], timeout=5)
+        via_alias = self.module.lookup_character("Cedric").characters[0]
         self.assertEqual(via_alias["description"], "Grand Marshal")
 
     def test_resolves_user_action_does_not_coordinate_planning(self) -> None:
@@ -699,7 +737,7 @@ class TestStoryResponseModulePlayerCharacter(unittest.TestCase):
             name="Cedric", gender="male", image_reference="private_alias",
             image_reference_path="private/Cedric/1.png",
         )
-        res = self.module.create_or_update_character(name="Cedric", gender="male")
+        res = self.module._create_or_update_character(name="Cedric", gender="male")
         self.assertEqual(res["name"], "Cedric")
         self.assertIsNone(res.image_reference)
         self.assertIsNone(res.image_reference_path)
@@ -722,6 +760,9 @@ class TestStoryResponseModulePlayerCharacter(unittest.TestCase):
         res = self.module.create_or_update_scene("Ruined Keep", "Dark ruins")
         self.assertIn("Ruined Keep", res)
         self.assertNotIn("scenes/ruined_keep/1.png", res)
+        self.reference_manager.submit_reference_update.assert_called_once()
+        self.reference_manager.create_or_update_scene.assert_not_called()
+        self.reference_manager.submit_reference_update.call_args.args[2]()
         self.reference_manager.create_or_update_scene.assert_called_once_with(
             name="Ruined Keep",
             description="Dark ruins",

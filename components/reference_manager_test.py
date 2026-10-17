@@ -42,6 +42,49 @@ class TestNormalizeVoiceTags(unittest.TestCase):
 
 
 class TestReferenceManager(unittest.TestCase):
+    def test_background_updates_are_ordered_and_unrelated_references_do_not_wait(self) -> None:
+        release = threading.Event()
+        started = threading.Event()
+        second_started = threading.Event()
+        updates: list[str] = []
+
+        def first() -> None:
+            started.set()
+            if not release.wait(5):
+                raise TimeoutError("Test did not release first update")
+            updates.append("first")
+
+        def second() -> None:
+            second_started.set()
+            updates.append("second")
+
+        try:
+            self.manager.submit_reference_update("scene", "Old Harbor", first)
+            self.assertTrue(started.wait(1))
+            self.manager.submit_reference_update("scene", "old_harbor", second)
+            self.manager.wait_for_reference_updates(["Elsewhere"], timeout=0)
+            self.assertFalse(second_started.is_set())
+            with self.assertRaises(TimeoutError):
+                self.manager.wait_for_reference_updates(["OLD HARBOR"], timeout=0)
+            release.set()
+            self.manager.wait_for_reference_updates(["old_harbor"], timeout=5)
+            self.assertEqual(updates, ["first", "second"])
+        finally:
+            release.set()
+            self.manager.wait_for_reference_updates(["Old Harbor"], timeout=5)
+
+    def test_failed_background_update_surfaces_and_can_be_retried(self) -> None:
+        def fail() -> None:
+            raise ValueError("Provider unavailable")
+
+        retried = threading.Event()
+        self.manager.submit_reference_update("character", "Mira", fail)
+        with self.assertRaisesRegex(RuntimeError, "Failed to prepare character"):
+            self.manager.wait_for_reference_updates(["Mira"], timeout=5)
+        self.manager.submit_reference_update("character", "Mira", retried.set)
+        self.manager.wait_for_reference_updates(["Mira"], timeout=5)
+        self.assertTrue(retried.is_set())
+
     def test_model_context_hides_bindings_without_changing_persisted_characters(self) -> None:
         character = Character(
             name="Arthur Modella", gender="male", description="A wizard",

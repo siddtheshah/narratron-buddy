@@ -28,6 +28,92 @@ def create_fake_image_bytes() -> bytes:
 
 
 class TestImageTools(BaseTestCase):
+    @patch("tools.image.image_tool.get_image_provider")
+    def test_create_image_waits_for_pending_character_and_scene(self, mock_provider: MagicMock) -> None:
+        for kind in ("character", "scene"):
+            with self.subTest(kind=kind):
+                theater = self.manager.theater(f"pending_{kind}")
+                manager = ReferenceManager(theater)
+                tools = self.make_image_tools(
+                    self.config, theater_id=theater.theater_id, theater_manager=self.manager,
+                    reference_manager=manager,
+                )
+                mock_provider.return_value.generate.return_value = self._provider_result()
+                mock_provider.return_value.generate.reset_mock()
+                source = Path(self.temp_dir) / f"{kind}.png"
+                Image.new("RGB", (10, 10), "blue").save(source)
+                release = threading.Event()
+                waiting = threading.Event()
+                results: list[str] = []
+
+                def update() -> None:
+                    if not release.wait(5):
+                        raise TimeoutError("Test did not release reference update")
+                    if kind == "character":
+                        manager.create_or_update_character(
+                            "Old Hero", personality="Brave", motivation="Help", quirk="Hums",
+                            gender="male", image_reference=str(source),
+                        )
+                    else:
+                        manager.create_or_update_scene("Old Hero", image_reference=str(source))
+
+                original_wait = manager.wait_for_reference_updates
+
+                def wait(names: list[str], timeout: float) -> None:
+                    waiting.set()
+                    original_wait(names, timeout)
+
+                def request_image() -> None:
+                    results.append(tools.create_image("<old_hero> at dawn", image_name="dawn", display=False))
+
+                manager.submit_reference_update(kind, "Old Hero", update)
+                request = threading.Thread(target=request_image)
+                try:
+                    with patch.object(manager, "wait_for_reference_updates", side_effect=wait):
+                        request.start()
+                        self.assertTrue(waiting.wait(1))
+                        mock_provider.return_value.generate.assert_not_called()
+                        release.set()
+                        request.join(5)
+                        self.assertFalse(request.is_alive())
+                        tools.join_generation()
+                    self.assertIn("started in background", results[0])
+                    generated = mock_provider.return_value.generate.call_args.args[0]
+                    self.assertEqual(len(generated.references), 1)
+                finally:
+                    release.set()
+                    request.join(5)
+                    original_wait(["Old Hero"], timeout=5)
+                    tools.join_generation()
+
+    @patch("tools.image.image_tool.get_image_provider")
+    def test_pending_reference_timeout_does_not_start_duplicate_generation(self, mock_provider: MagicMock) -> None:
+        theater = self.manager.theater("pending_timeout")
+        manager = make_reference_manager(theater)
+        tools = self.make_image_tools(
+            self.config, theater_id=theater.theater_id, theater_manager=self.manager,
+            reference_manager=manager,
+        )
+        tools.reference_wait_timeout = 0
+        release = threading.Event()
+
+        def update() -> None:
+            if not release.wait(5):
+                raise TimeoutError("Test did not release update")
+
+        manager.submit_reference_update("scene", "Harbor", update)
+        try:
+            with patch.object(manager, "generate_references_from_context") as generate:
+                result = tools.create_image("<Harbor> at dawn", image_name="dawn")
+                self.assertIn("Timed out waiting for scene", result)
+                self.assertFalse(tools.is_generating)
+                generate.assert_not_called()
+                mock_provider.assert_not_called()
+            self.assertIn("Timed out waiting for scene", tools.show_image("Harbor"))
+        finally:
+            release.set()
+            manager.wait_for_reference_updates(["Harbor"], timeout=5)
+
     def test_show_image_requires_handle_and_resolves_latest_scene(self) -> None:
         theater = self.manager.theater("scene_handles")
         scene_dir = theater.scenes_dir() / "Stormy Battlefield"

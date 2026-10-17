@@ -7,11 +7,12 @@ import logging
 import os
 import re
 import shutil
-from concurrent.futures import ThreadPoolExecutor
-from threading import Lock
+from concurrent.futures import Future, ThreadPoolExecutor
+from threading import Lock, Thread
+from time import monotonic
 from io import BytesIO
 from pathlib import Path
-from typing import Any, Literal, Mapping, Optional, Protocol, Sequence, Union
+from typing import Any, Callable, Literal, Mapping, Optional, Protocol, Sequence, Union
 
 from PIL import Image
 import yaml
@@ -562,6 +563,8 @@ class ReferenceManager:
         self.scene_image_style = scene_image_style.strip()
         self._scene_descriptions: dict[str, str] = {}
         self._scene_images_lock = Lock()
+        self._reference_updates_lock = Lock()
+        self._reference_updates: dict[tuple[str, str], Future[None]] = {}
         self.max_active_characters = DEFAULT_MAX_ACTIVE_CHARACTERS
         self._characters: dict[str, Character] = {}
         self._characters_lock = Lock()
@@ -598,6 +601,54 @@ class ReferenceManager:
         self._latest_canvas_capture: Optional[str] = None
         self._load_canvas_captures()
         self._sync_story_state()
+
+    def submit_reference_update(
+        self, kind: Literal["character", "scene"], name: str, update: Callable[[], None],
+    ) -> None:
+        """Queue an update, preserving submission order for each named reference."""
+        key = (kind, self._slug_key(name))
+        completion: Future[None] = Future()
+        with self._reference_updates_lock:
+            previous = self._reference_updates.get(key)
+            self._reference_updates[key] = completion
+
+        def run() -> None:
+            if previous is not None:
+                try:
+                    previous.result()
+                except Exception:
+                    pass  # A failed update must not prevent a later retry.
+            try:
+                update()
+            except Exception as exc:
+                logger.exception("Background %s update failed for %s", kind, name)
+                completion.set_exception(exc)
+            else:
+                completion.set_result(None)
+
+        try:
+            Thread(target=run, daemon=True).start()
+        except Exception as exc:
+            completion.set_exception(exc)
+            raise
+
+    def wait_for_reference_updates(self, names: Sequence[str], timeout: float = 60.0) -> None:
+        """Wait for requested updates with one shared deadline; surface failures."""
+        deadline = monotonic() + max(0.0, timeout)
+        keys = {self._slug_key(name) for name in names}
+        with self._reference_updates_lock:
+            pending = [
+                (kind, name, completion)
+                for (kind, name), completion in self._reference_updates.items()
+                if name in keys
+            ]
+        for kind, name, completion in pending:
+            try:
+                completion.result(timeout=max(0.0, deadline - monotonic()))
+            except TimeoutError as exc:
+                raise TimeoutError(f"Timed out waiting for {kind} reference '{name}'.") from exc
+            except Exception as exc:
+                raise RuntimeError(f"Failed to prepare {kind} reference '{name}'.") from exc
 
     @property
     def characters_dir(self) -> Path | None:
