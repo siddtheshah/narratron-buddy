@@ -76,6 +76,12 @@ class ChatMessage(BaseModel):
 
 def validate_text(path: str, content: str) -> None:
     """Reject malformed configuration before it can replace a working draft."""
+    if path == "game/game.json":
+        from components.canvas.game_runtime import validate_game_package, MAX_GAME_BYTES
+
+        if len(content.encode("utf-8")) > MAX_GAME_BYTES:
+            raise ValueError("Game definition exceeds size limit.")
+        validate_game_package(content.encode("utf-8"))
     if path.endswith((".yaml", ".yml")):
         mapping = TypeAdapter(dict[str, JsonValue]).validate_python(yaml.safe_load(content))
         if path == "theater.yaml" and not mapping:
@@ -106,7 +112,7 @@ def safe_asset_path(root: Path, relative: str) -> Path:
     if any(re.fullmatch(r"(?i)(con|prn|aux|nul|com[0-9]|lpt[0-9])(?:\..*)?", part) for part in parts):
         raise ValueError("Reserved asset filename.")
     suffix = PurePosixPath(normalized).suffix.lower()
-    allowed = normalized in ROOT_FILES
+    allowed = normalized in ROOT_FILES or normalized == "game/game.json"
     allowed |= len(parts) >= 2 and parts[0] == "references" and suffix in IMAGE_EXTENSIONS
     allowed |= len(parts) >= 2 and parts[0] == "stamps" and suffix in IMAGE_EXTENSIONS
     if parts[:2] == ["references", "characters"]:
@@ -142,7 +148,7 @@ def upload_path(filename: str, folder: bool) -> str:
         if len(parts) == 3 and PurePosixPath(parts[2]).suffix.lower() in IMAGE_EXTENSIONS:
             return f"references/scenes/{PurePosixPath(parts[2]).stem}/1{PurePosixPath(parts[2]).suffix.lower()}"
         return relative
-    if relative in ROOT_FILES or parts[0] in {"references", "stamps", "playlists", "lore"}:
+    if relative in ROOT_FILES or parts[0] in {"references", "stamps", "playlists", "lore", "game"}:
         return relative
     if parts[0] == "characters":
         if len(parts) == 2 and PurePosixPath(parts[1]).suffix.lower() in IMAGE_EXTENSIONS:

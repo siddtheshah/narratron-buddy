@@ -492,7 +492,9 @@ def extract_asset_package(
                 if not parts or parts[-1].startswith("."):
                     continue
                 filename, content = parts[-1], archive.read(info.filename)
-                if filename.lower() in ("planning.yaml", "planning.yml"):
+                if parts[-2:] == ["game", "game.json"]:
+                    reference_files.append(("game/game.json", content))
+                elif filename.lower() in ("planning.yaml", "planning.yml"):
                     reference_files.append(("planning.yaml", content))
                 elif "references" in parts or (filename.lower().endswith((".png", ".jpg", ".jpeg", ".webp", ".gif")) and "playlists" not in parts):
                     reference_files.append((info.filename, content))
@@ -665,6 +667,13 @@ class TheaterManager:
         characters_dir = theater_dir / "references" / "characters"
         for filename, content in reference_files or []:
             parts = validate_asset_path(filename)
+            if parts[-2:] == ["game", "game.json"]:
+                from components.canvas.game_runtime import validate_game_package, MAX_GAME_BYTES
+
+                if len(content) > MAX_GAME_BYTES:
+                    raise ValueError("Game definition exceeds size limit.")
+                validate_game_package(content)
+                continue
             if "stamps" in parts or parts[-1].lower() in {"metadata.json", "planning.yaml", "planning.yml"}:
                 if "stamps" in parts:
                     asset_destination(theater_dir / "stamps", "/".join(parts[parts.index("stamps") + 1:]))
@@ -730,6 +739,16 @@ class TheaterManager:
                 continue
             if relative_filename == "metadata.json" or (parts and parts[-1].lower() == "metadata.json"):
                 asset_destination(theater_dir, "metadata.json").write_bytes(content)
+                continue
+            if parts[-2:] == ["game", "game.json"]:
+                from components.canvas.game_runtime import validate_game_package, MAX_GAME_BYTES
+
+                if len(content) > MAX_GAME_BYTES:
+                    raise ValueError("Game definition exceeds size limit.")
+                validate_game_package(content)
+                game_path = asset_destination(theater_dir, "game/game.json")
+                game_path.parent.mkdir(parents=True, exist_ok=True)
+                game_path.write_bytes(content)
                 continue
             if relative_filename in ("planning.yaml", "planning.yml") or (parts and parts[-1].lower() in ("planning.yaml", "planning.yml")):
                 asset_destination(theater_dir, "planning.yaml").write_bytes(content)

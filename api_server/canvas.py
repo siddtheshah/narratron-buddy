@@ -26,6 +26,8 @@ from api_server.shared import (
 )
 from api_server.dependencies import live_agent_manager
 from components.canvas.canvas_state_manager import CanvasStateManager
+from components.canvas.game_state import GameAction, StaleGameAction
+from pydantic import JsonValue
 
 logger = logging.getLogger(__name__)
 
@@ -550,6 +552,29 @@ def post_a2ui_action(
         raise HTTPException(status_code=409, detail="The live agent could not receive the action.")
     state.ui.delete_surface(payload.action.surfaceId)
     return {"status": "accepted", "surface_id": payload.action.surfaceId}
+
+
+@app.post("/api/game/action")
+def post_game_action(
+    payload: GameAction,
+    request: Request,
+    theater_id: str,
+    join_key: str | None = None,
+) -> dict[str, JsonValue] | None:
+    """Apply a revision-checked move without requiring a live story agent."""
+    _require_canvas_access(request, theater_id, join_key=join_key)
+    deployment = db.get_deployment(theater_id)
+    if not can_control_agent_websocket(deployment, current_user=get_current_user(request)):
+        raise HTTPException(status_code=403, detail="Only the active orator can control the game.")
+    state = _state(theater_id)
+    if state.game is None:
+        raise HTTPException(status_code=404, detail="This theater has no game.")
+    try:
+        return state.game.act(payload)
+    except StaleGameAction as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.post("/api/orator/command")

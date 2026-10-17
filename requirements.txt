@@ -1,4 +1,5 @@
 fastapi
+cel-python>=0.4,<0.5
 uvicorn
 google-adk>=2.9.0
 google-genai>=2.0.0

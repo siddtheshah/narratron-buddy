@@ -2910,6 +2910,7 @@
             <div id="canvas-text-layer"></div>
             <div id="canvas-selection-box" class="canvas-selection-box"></div>
             <div id="a2ui-canvas-layer" aria-live="polite"></div>
+            <div id="game-state-layer" hidden></div>
             <div id="narration-pane-mount"></div>
             <div id="orator-command-overlay" role="dialog" aria-modal="true" aria-labelledby="orator-command-title"
                 aria-hidden="true">
@@ -3017,6 +3018,15 @@
                     </div>
                 </div>
             </div>
+
+            <button id="game-state-toggle-btn" type="button" hidden title="Open game"
+                aria-label="Toggle game" aria-controls="game-state-layer" aria-expanded="false">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <rect x="3" y="3" width="18" height="18" rx="3" />
+                    <path d="M9 3v18M15 3v18M3 9h18M3 15h18" />
+                </svg>
+            </button>
 
             <!-- Story Planning Sticky Notes Floating Button -->
             <div id="sticky-notes-toggle-btn" title="Story Sticky Notes (Hover to expand)">
@@ -3994,6 +4004,7 @@
             });
         import { createDoodleRenderer, createImageRenderer } from "/static/js/canvas-renderers.js?v=movable-text-video-loop-silent-20261005-2";
         import { createA2UICanvasRenderer } from "/static/js/a2ui-canvas-renderer.js?v=20261005-1";
+        import { createGameRenderer } from "/static/js/game-renderer.js?v=3";
         import { createNarrationPane } from "/static/js/narration-pane.js";
 
         let lastTime = -1;
@@ -4032,6 +4043,13 @@
         const narrationPane = await createNarrationPane(document.getElementById('narration-pane-mount'));
         const sceneDialogueOverlay = narrationPane.element;
         const a2uiCanvasLayer = document.getElementById('a2ui-canvas-layer');
+        const gameRenderer = createGameRenderer({
+            container: document.getElementById('game-state-layer'),
+            toggleButton: document.getElementById('game-state-toggle-btn'),
+            actionUrl: () => `/api/game/action?theater_id=${encodeURIComponent(currenttheaterId || '')}`,
+            canEdit: () => isCurrentOrator(),
+            refresh: () => fetchLatestImage(),
+        });
         const a2uiCanvasRenderer = createA2UICanvasRenderer({
             container: a2uiCanvasLayer,
             actionUrl: () => `/api/a2ui/action?theater_id=${encodeURIComponent(currenttheaterId || '')}`,
@@ -5198,6 +5216,7 @@
                     data.committed_scene_speech_generation,
                 );
                 a2uiCanvasRenderer.render(data.interactive_surfaces);
+                gameRenderer.render(data.game_state);
                 if (data.sticky_notes !== undefined && typeof window.updateCanvasStickyNotes === 'function') {
                     window.updateCanvasStickyNotes(data.sticky_notes, data.hidden_stickies);
                 }

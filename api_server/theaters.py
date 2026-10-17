@@ -979,6 +979,8 @@ async def create_and_deploy_theater(request: Request):
                         except Exception:
                             pass
                         reference_files.append(("metadata.json", content))
+                    elif parts[-2:] == ["game", "game.json"]:
+                        reference_files.append(("game/game.json", content))
                     elif "references" in parts or (
                         clean_name.lower().endswith((".png", ".jpg", ".jpeg", ".webp", ".gif"))
                         and "playlists" not in parts

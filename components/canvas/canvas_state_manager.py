@@ -14,6 +14,7 @@ from typing import Any, Optional
 
 from components.canvas import AudioState, ChatManager, ConnectionState, DoodleState, StoryState, ToolResponseState, UIState, VisualState
 from components.theater_manager import Theater
+from components.canvas.game_state import GameState
 
 logger = logging.getLogger("components.canvas_state")
 MAX_AGENT_THOUGHT_LENGTH = 360
@@ -31,6 +32,7 @@ class CanvasStateManager:
     tool_response: Optional[ToolResponseState] = None
     story: Optional[StoryState] = None
     chat: Optional[ChatManager] = None
+    game: GameState | None = None
 
     def __init__(self, theater: Theater) -> None:
         self.theater = theater
@@ -54,6 +56,7 @@ class CanvasStateManager:
             adventure_mode=bool(story_planning_config.get("adventure_mode", False)),
         )
         self.chat = ChatManager(self.theater)
+        self.game = GameState(self.theater.directory(), self.persist, self.notify_changed)
         self.load_state_from_disk()
         self.visual.initialize_starting_image()
 
@@ -82,6 +85,7 @@ class CanvasStateManager:
             data = json.loads(source.read_text(encoding="utf-8")); state = data.get("canvas_state", data)
             self.visual.load(state); self.audio.load(state); self.doodles.load(state)
             self.ui.load(state); self.story.load(state)
+            self.game.load(state.get("game_state"))
             self.chat.messages = list(state.get("chat_messages", [])); self.chat.load_suggestions(state.get("suggestions", []))
         except (OSError, ValueError, TypeError) as exc:
             logger.warning("Failed to load canvas state for %s: %s", self.theater_id, exc)
@@ -89,7 +93,7 @@ class CanvasStateManager:
     def serialized_state(self) -> dict[str, object]:
         audio_serialized = {k: v for k, v in self.audio.serialize().items() if k != "orator_cursor"}
         return {**self.visual.serialize(), **audio_serialized, **self.doodles.serialize(),
-                **self.ui.serialize(), **self.story.serialize(),
+                **self.ui.serialize(), **self.story.serialize(), **self.game.serialize(),
                 "suggestions": self.chat.export_suggestions(), "chat_messages": self.chat.get_messages()}
 
     def save_local_theater_data(self, theater_dir: Optional[Path] = None) -> tuple[dict[str, object], list[dict[str, object]]]:
@@ -113,4 +117,5 @@ class CanvasStateManager:
                 "tool_activity": self.tool_response.activity_payload(),
                 "agent_thought": self.tool_response.agent_thought_payload(),
                 **self.story.payload(), "sticky_notes": self.story.sticky_notes(),
-                "interactive_surfaces": list(self.ui.interactive_surfaces.values())}
+                "interactive_surfaces": list(self.ui.interactive_surfaces.values()),
+                "game_state": self.game.payload()}
