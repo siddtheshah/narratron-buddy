@@ -37,16 +37,34 @@ communication. Fix missing mocks at the service boundary; do not add
 `--force-enable-socket` to make tests pass. In-process ASGI transports need no
 network access.
 
+Windows asyncio uses a loopback TCP socket pair for its wakeup pipe. The test
+harness supplies this connected pair without lifting the guard for other threads
+or allowing ordinary TCP sockets.
+
 `pytest-env` sets `PYTHON_DOTENV_DISABLED=1` before collection so local `.env`
 files cannot silently configure live integrations. Install development
 dependencies with `uv sync` before running tests; these plugins are required.
 
-This is the first enforcement layer, not complete process or filesystem
-isolation: inherited environment variables, application databases/directories,
-browser processes, and other subprocesses still need their own isolation.
-In particular, `pytest-socket` does not block browser HTTP requests. The live
-narration evaluation scripts below run outside pytest and still use external
-services; keep their execution explicit.
+Test startup removes inherited integration credentials and isolates gcloud's
+credential directory. Environment and runtime flag changes are restored after
+each test. Shared
+application services and default storage constructors use fresh test-owned
+directories; the registry database and canvas-state cache are reset per test.
+Import-time text providers are replaced only while the registry is constructed,
+so provider unit tests continue to exercise real factories with explicit mocks.
+The planner fixture joins background workers before removing runner mocks.
+Tests that only inspect cooldown scheduling mock timer creation so callbacks
+cannot run after their temporary files have been removed.
+
+UI tests have a separate Playwright guard: HTTP requests and WebSockets must be
+fulfilled by test routes, and service workers are disabled. Unexpected requests
+are aborted and fail teardown. Register endpoint and image fixtures before
+triggering UI actions; do not use `route.continue_()` to bypass isolation.
+
+These guards are not an operating-system sandbox: arbitrary explicit filesystem
+paths and unrelated subprocesses still require test-owned fixtures. The live
+narration evaluation scripts below run outside pytest and use external services;
+keep their execution explicit.
 
 Always invoke pytest via `uv run pytest`. The test runner is configured with `pytest-xdist` (`addopts = -n auto` in `pytest.ini`) to execute tests in parallel across available CPU workers by default:
 

@@ -59,7 +59,8 @@ def test_upvote_reports_missing_suggestion():
     assert error.value.status_code == 404
 
 
-def test_get_sticky_notes_uses_session_or_canvas_state():
+@patch("api_server.canvas.theater_manager.get_theater_config", return_value={})
+def test_get_sticky_notes_uses_session_or_canvas_state(mock_config: MagicMock) -> None:
     mock_agent_mgr = MagicMock()
     mock_notepad = MagicMock()
     mock_notepad.get_present_sticky_notes.return_value = [{"topic": "Clue", "info": "Old map"}]

@@ -20,6 +20,8 @@ from testlab.adventure_runner import (
 )
 from testlab.server import app
 
+pytestmark = pytest.mark.usefixtures("offline_lab_text_providers")
+
 
 def test_synchronous_action_queues_planning_before_wait(sample_adventure: Path) -> None:
     session = AdventureSession(adventure_id_or_path="synthetic-test-adventure")

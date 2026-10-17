@@ -75,6 +75,7 @@ class TestStampStorage(unittest.TestCase):
         self.assertEqual(result_img.getpixel((0, 0))[3], 0)
         self.assertEqual(result_img.getpixel((50, 50))[3], 128)
 
+    @flagsaver.flagsaver(testing_use_local=True)
     def test_save_read_and_delete_stamp(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             storage = StampStorage(base_dir=tmp_dir)

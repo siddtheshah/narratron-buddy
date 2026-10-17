@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 from playwright.sync_api import Page, Route, sync_playwright
 from playwright.sync_api import expect
+from testing.reference_images import png_bytes
 
 
 @pytest.fixture
@@ -53,6 +54,15 @@ def scenes_chars_page() -> Iterator[Page]:
             route.fulfill(content_type="text/html", body=shell_html)
 
         page.route("http://narratron.test/", serve_shell)
+
+        def serve_image(route: Route) -> None:
+            route.fulfill(content_type="image/png", body=png_bytes())
+
+        def serve_empty_scenes(route: Route) -> None:
+            route.fulfill(json=[])
+
+        page.route("http://narratron.test/img/**", serve_image)
+        page.route("**/api/theaters/*/scenes", serve_empty_scenes)
         page.goto("http://narratron.test/")
 
         page.add_script_tag(content="""

@@ -4,7 +4,12 @@ from collections.abc import Iterator
 from urllib.parse import urlsplit
 
 import pytest
-from playwright.sync_api import Error, Page, Route, sync_playwright
+from playwright.sync_api import Error, Page, Route, WebSocketRoute, sync_playwright
+
+
+def mock_canvas_socket(route: WebSocketRoute) -> None:
+    """Keep canvas subscriptions local while these tests exercise pointer controls."""
+    return None
 
 
 @pytest.fixture
@@ -300,6 +305,7 @@ def test_action_wheel_initializes_on_full_canvas() -> None:
 
         page.on("pageerror", record_error)
         page.route("**/*", respond)
+        page.route_web_socket("ws://wheel.test/ws/**", mock_canvas_socket)
         page.goto("http://wheel.test/canvas?theater_id=stage")
         page.wait_for_function("window._isActiveOratorState === true", timeout=5000)
         # Default must be right click
@@ -493,6 +499,7 @@ def test_previous_image_pages_orator_and_sync_button_ends_navigational_state() -
 
         page.on("pageerror", lambda err: errors.append(str(err)))
         page.route("**/*", respond)
+        page.route_web_socket("ws://wheel.test/ws/**", mock_canvas_socket)
         page.goto("http://wheel.test/canvas?theater_id=stage")
         page.wait_for_function("window._isActiveOratorState === true", timeout=5000)
         page.wait_for_function("document.getElementById('page-indicator').textContent.trim() === '2 / 2'")
@@ -558,6 +565,7 @@ def test_previous_image_pages_orator_and_sync_button_ends_navigational_state() -
                 route.fulfill(status=404)
 
         viewer_page.route("**/*", respond_viewer)
+        viewer_page.route_web_socket("ws://wheel.test/ws/**", mock_canvas_socket)
         viewer_page.goto("http://wheel.test/canvas?theater_id=stage")
         viewer_page.wait_for_function("window._isActiveOratorState === false", timeout=5000)
         # Viewer starts synced to orator cursor (1 / 2)
@@ -640,6 +648,7 @@ def test_orator_page_bar_previous_moves_cursor_and_has_no_sync() -> None:
         errors: list[str] = []
         page.on("pageerror", lambda err: errors.append(str(err)))
         page.route("**/*", respond)
+        page.route_web_socket("ws://wheel.test/ws/**", mock_canvas_socket)
         page.goto("http://wheel.test/canvas?theater_id=stage")
         page.wait_for_function("window._isActiveOratorState === true", timeout=5000)
         page.wait_for_function("document.getElementById('page-indicator').textContent.trim() === '3 / 3'")
@@ -745,6 +754,7 @@ def test_canvas_marker_toggle_for_orator_and_viewer() -> None:
         page = browser.new_page(viewport={"width": 1200, "height": 800})
         page.add_init_script("localStorage.setItem('narratron_orator_howto_seen', 'true');")
         page.route("**/*", respond)
+        page.route_web_socket("ws://wheel.test/ws/**", mock_canvas_socket)
         page.goto("http://wheel.test/canvas?theater_id=stage")
         page.wait_for_function("window._isActiveOratorState === true", timeout=5000)
 
@@ -814,6 +824,7 @@ def test_canvas_marker_toggle_for_orator_and_viewer() -> None:
         viewer_page.add_init_script("localStorage.setItem('narratron_orator_howto_seen', 'true');")
         viewer_page.add_init_script("localStorage.setItem('narratron_viewer_collab_guide_seen:stage', 'true');")
         viewer_page.route("**/*", respond)
+        viewer_page.route_web_socket("ws://wheel.test/ws/**", mock_canvas_socket)
         viewer_page.goto("http://wheel.test/canvas?theater_id=stage")
         viewer_page.wait_for_function("typeof window._isActiveOratorState !== 'undefined'", timeout=5000)
         assert viewer_page.evaluate("window._isActiveOratorState") is False

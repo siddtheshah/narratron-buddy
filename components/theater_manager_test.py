@@ -161,9 +161,13 @@ class TestTheaterRootSelection(unittest.TestCase):
             (Path(__file__).parent.parent / "ephemeral").resolve(),
         )
 
-    def test_theater_manager_defaults_to_ephemeral_root(self):
-        tm = TheaterManager()
-        self.assertEqual(tm.base_dir, get_ephemeral_root().resolve())
+    def test_theater_manager_defaults_to_ephemeral_root(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with patch("components.theater_manager.ensure_ephemeral_root", return_value=root) as ensure_root:
+                tm = TheaterManager()
+            self.assertEqual(tm.base_dir, root)
+            ensure_root.assert_called_once_with()
 
 
 class TestTheaterManager(unittest.TestCase):

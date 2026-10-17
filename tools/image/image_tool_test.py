@@ -696,7 +696,8 @@ class TestImageTools(BaseTestCase):
         tools.visual.advance_cycle()
         self.assertIsNone(tools.visual.next_cycle_image)
 
-    def test_show_image_cycle_cooldown_schedules_and_updates(self) -> None:
+    @patch("tools.image.image_tool.ImageTools._schedule_cooldown_timer")
+    def test_show_image_cycle_cooldown_schedules_and_updates(self, mock_timer: MagicMock) -> None:
         tools = self.make_image_tools(self.config, theater_id="cooldown_show", theater_manager=self.manager)
         tools.cooldown_duration = 10.0
         img1 = os.path.join(tools.reference_dir, "pic1.jpg")
@@ -718,9 +719,13 @@ class TestImageTools(BaseTestCase):
         pending = tools.get_pending_cycle_call("image_cycle")
         self.assertIsNotNone(pending)
         self.assertEqual(pending["args"], ("pic3.jpg",))
+        mock_timer.assert_called()
 
+    @patch("tools.image.image_tool.ImageTools._schedule_cooldown_timer")
     @patch("tools.image.image_tool.get_image_provider")
-    def test_create_image_cycle_cooldown_schedules_and_updates(self, mock_get_provider: MagicMock) -> None:
+    def test_create_image_cycle_cooldown_schedules_and_updates(
+        self, mock_get_provider: MagicMock, mock_timer: MagicMock,
+    ) -> None:
         provider = mock_get_provider.return_value
         provider.generate.return_value = self._provider_result()
         tools = self.make_image_tools(self.config, theater_id="cooldown_create", theater_manager=self.manager)
@@ -740,6 +745,7 @@ class TestImageTools(BaseTestCase):
         self.assertEqual(pending["args"], ("scene three",))
         self.assertEqual(pending["kwargs"], {"image_name": "img3", "display": False})
         tools.join_generation()
+        mock_timer.assert_called()
 
     @patch("tools.image.image_tool.get_image_provider")
     def test_image_tools_share_one_pending_slot_across_methods(self, mock_get_provider: MagicMock) -> None:

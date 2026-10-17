@@ -6,6 +6,7 @@ from tempfile import TemporaryDirectory
 from typing import Optional
 from unittest.mock import ANY, MagicMock, patch
 
+import object_registry
 from components.theater_manager import Theater, TheaterManager
 from providers.image_provider import ImageProvider
 from services.live_agent import (
@@ -21,7 +22,7 @@ def make_test_theater(theater_id: str, config: dict, tmp_path: Optional[Path] = 
     theater = MagicMock(spec=Theater)
     theater.theater_id = theater_id
     theater.config.return_value = config
-    base_dir = tmp_path or Path("/tmp")
+    base_dir = tmp_path or object_registry.theater_manager.base_dir / theater_id
     theater.directory.return_value = base_dir / "theater"
     theater.output_dir.return_value = base_dir / "output"
     theater.references_dir.return_value = base_dir / "references"
@@ -44,6 +45,13 @@ class TestCreateAgent(unittest.TestCase):
         catalog_patch = patch("services.live_agent.MusicCatalog.from_config")
         catalog_patch.start()
         self.addCleanup(catalog_patch.stop)
+        for target in (
+            "services.live_agent.FalQwenLayeredProvider",
+            "services.live_agent.get_video_provider",
+        ):
+            provider_patch = patch(target)
+            provider_patch.start()
+            self.addCleanup(provider_patch.stop)
 
     @patch("services.live_agent.Agent")
     @patch("services.live_agent.get_app_config")
@@ -495,7 +503,7 @@ class TestCreateAgent(unittest.TestCase):
                 self.assertEqual(image_tools.image_provider_options, {"model": "live-image-model"})
 
     @patch("services.live_agent.get_text_response_provider")
-    def test_create_tool_bundle_omits_image_creation_when_disabled(self, mock_get_text_provider):
+    def test_create_tool_bundle_omits_image_creation_when_disabled(self, mock_get_text_provider: MagicMock) -> None:
         from services.live_agent import create_tool_bundle_for_session
 
         theater = make_test_theater(
@@ -507,7 +515,8 @@ class TestCreateAgent(unittest.TestCase):
                 "animation": {"enabled": True},
             },
         )
-        bundle = create_tool_bundle_for_session(theater)
+        with patch("tools.animation_tool.get_image_provider", return_value=MagicMock(spec=ImageProvider)):
+            bundle = create_tool_bundle_for_session(theater)
         tool_names = [tool.name for tool in bundle.tools]
         self.assertNotIn("create_image", tool_names)
         self.assertIn("show_image", tool_names)
@@ -622,7 +631,6 @@ class TestCreateAgent(unittest.TestCase):
         canvas_mgr = mock_canvas_mgr_cls.return_value
         image_lib = mock_img_lib_cls.return_value
         lore_lib = mock_lore_lib_cls.return_value
-        notepad = canvas_mgr.notepad
         char_mgr = mock_char_mgr_cls.return_value
 
         bundle = create_tool_bundle_for_session(theater)

@@ -1,6 +1,9 @@
 from fastapi.testclient import TestClient
+import pytest
 
 from testlab.server import app
+
+pytestmark = pytest.mark.usefixtures("offline_lab_text_providers")
 
 
 def test_story_planner_lab_routes_create_isolated_session():
