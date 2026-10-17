@@ -96,7 +96,7 @@ After tool calls, respond with a brief confirmation. Do not include a sticky-not
 
 1. Search lore library for relevant context using `search_lore`
 2. Read relevant lore documents using `read_lore`
-3. Update sticky notes using any explicit rules from lore.
+3. Update sticky notes using any explicit rules from lore. {% if has_game %}Take game actions to respond to player game actions. {% endif %}
 4. Come up with some interesting possible developments given current state.
 5. Use your taste and imagination to make additional updates to sticky notes and characters based on that plan.
 
@@ -224,14 +224,7 @@ The following images were generated since the last heartbeat:
 {% endfor -%}
 
 {% endif -%}
-{% if recent_images -%}
-# Recently Generated Images
-The most recent generated images available to reference in sticky notes (newest first):
-{% for img in recent_images -%}
-- Alias: `{{ img.alias }}` | Name: `{{ img.name }}`{% if img.title %} | Title: "{{ img.title }}"{% endif %}{% if img.description and img.description != ('Image ' ~ img.name) and img.description != ('Image ' ~ img.name ~ '.jpg') and img.description != ('Image ' ~ img.name ~ '.png') and img.description != ('Image ' ~ img.name ~ '.webp') %} | Description: {{ img.description }}{% endif %}
-{% endfor -%}
 
-{% endif -%}
 {% if deep_plan_json -%}
 # Current Deep Plan
 {{ deep_plan_json }}
@@ -558,6 +551,8 @@ class StoryPlanningModule:
 
     def take_game_action(self, name: str, arguments_json: str, revision: int) -> str:
         """Apply one Narratron-only game action using JSON arguments and the current revision."""
+        logger.debug(f"[StoryPlanningModule] take_game_action: {name}")
+        logger.debug(f"[StoryPlanningModule] take_game_action: {arguments_json}")
         if self.game_state is None:
             return "No game is available."
         try:
