@@ -18,6 +18,7 @@ from components.canvas.game_values import MAX_VALUE_BYTES, checked_json
 
 MAX_GAME_BYTES = 65_536
 MAX_STEPS = 500_000
+MAX_MODEL_STATE_BYTES = 16_384
 BOOL_ADAPTER = TypeAdapter(bool)
 STRING_ADAPTER = TypeAdapter(str)
 MAP_ADAPTER = TypeAdapter(dict[str, JsonValue])
@@ -41,6 +42,7 @@ class FunctionDefinition(GameModel):
 class TransitionDefinition(GameModel):
     actor: Literal["player", "narratron"] = "player"
     description: str = Field(default="", max_length=500)
+    available: str = Field(default="true", max_length=4000)
     parameters: dict[str, JsonValue]
     guard: str = Field(default="true", max_length=4000)
     bindings: list[Binding] = Field(default_factory=list, max_length=32)
@@ -65,6 +67,7 @@ class ViewNode(GameModel):
 class GameDefinition(GameModel):
     version: Literal[2]
     instructions: str = Field(default="", max_length=4000)
+    model_state: str | None = Field(default=None, min_length=1, max_length=4000)
     initial: dict[str, JsonValue]
     state_schema: dict[str, JsonValue]
     constants: dict[str, JsonValue] = Field(default_factory=dict)
@@ -161,6 +164,8 @@ class GameProgram:
         self.programs: dict[str, Runner] = {}
         self.dependencies: dict[str, list[str]] = {}
         self.initial_view: list[JsonValue] = []
+        self.initial_model_state: JsonValue = definition.initial
+        self.initial_narratron_actions: dict[str, JsonValue] = {}
         self.state_validator = validate_schema(definition.state_schema)
         self.action_validators = {name: validate_schema(transition.parameters) for name, transition in definition.transitions.items()}
         self.state_validator.validate(definition.initial)
@@ -176,7 +181,12 @@ class GameProgram:
             self.compile(binding.expr, allowed_functions)
         for expression in definition.invariants:
             self.compile(expression, allowed_functions)
+        if definition.model_state is not None:
+            self.compile(definition.model_state, allowed_functions)
         for transition in definition.transitions.values():
+            self.compile(transition.available, allowed_functions)
+            if "action" in self.dependencies[transition.available]:
+                raise ValueError("Action availability cannot depend on action arguments.")
             self.compile(transition.guard, allowed_functions)
             self.compile(transition.result, allowed_functions)
             for binding in transition.bindings:
@@ -278,6 +288,25 @@ class Execution:
             if not BOOL_ADAPTER.validate_python(self.evaluate(expression, context), strict=True):
                 raise ValueError("Game state invariant failed.")
 
+    def model_context(self, context: dict[str, JsonValue]) -> tuple[JsonValue, dict[str, JsonValue]]:
+        """Render package-selected model facts and currently available Narratron actions."""
+        definition = self.program.definition
+        model_state = (
+            self.evaluate(definition.model_state, context)
+            if definition.model_state is not None else context["state"]
+        )
+        if definition.model_state is not None and len(json.dumps(model_state, ensure_ascii=False).encode("utf-8")) > MAX_MODEL_STATE_BYTES:
+            raise ValueError("Model-facing game state exceeds its size budget.")
+        actions: dict[str, JsonValue] = {}
+        for name, transition in definition.transitions.items():
+            if transition.actor != "narratron":
+                continue
+            if BOOL_ADAPTER.validate_python(self.evaluate(transition.available, context), strict=True):
+                actions[name] = {"description": transition.description, "parameters": transition.parameters}
+        if len(json.dumps(actions, ensure_ascii=False).encode("utf-8")) > MAX_VALUE_BYTES:
+            raise ValueError("Model-facing game actions exceed their size budget.")
+        return model_state, actions
+
     def render(self, node: ViewNode, context: dict[str, JsonValue]) -> list[RenderedNode]:
         contexts = [context]
         if node.repeat is not None:
@@ -314,6 +343,7 @@ def validate_game_package(content: bytes) -> GameProgram:
         context = execution.context(definition.initial)
         execution.validate(definition.initial, context)
         program.initial_view = [node.model_dump(mode="json") for node in execution.render(definition.view, context)]
+        program.initial_model_state, program.initial_narratron_actions = execution.model_context(context)
         if len(json.dumps(program.initial_view).encode("utf-8")) > MAX_VALUE_BYTES:
             raise ValueError("Rendered view exceeds its size budget.")
         return program

@@ -78,7 +78,7 @@ You are the sole owner of Adventure Mode sticky notes. Assimilate the committed 
 - For stickies that track numeric state, ensure you follow the appropriate rules defined in the lore to faithfully update them.
 - For you, accuracy is more important than speed.
 {% if has_game -%}
-- The Current Game State in each heartbeat is authoritative. Read its `instructions`, `state`, `revision`, and listed Narratron `actions` before deciding whether to act. The game instructions explain when its actions are appropriate; apply them alongside established story facts and player agency.
+- The Current Game State in each heartbeat is the package-selected model view. Read its `instructions`, `state`, `revision`, and listed Narratron `actions` before deciding whether to act. The game instructions explain when its actions are appropriate; apply them alongside established story facts and player agency. The game runtime validates the complete underlying state and every submitted action.
 - Call `take_game_action(name, arguments_json, revision)` only when a listed Narratron action is justified by the current game state and committed story. Encode arguments as a JSON object matching that action's `parameters`. Never submit a player action or infer that the player clicked a game button from narration alone.
 - Each successful game action changes the revision. Read the returned state and revision before another action. If an action is rejected, reread the current game state and decide again. If no action is justified, leave the game untouched.
 - A Player Game Action event contains the submitted action and the state immediately after it committed. Use that pair to interpret the event; the Current Game State above may include later actions.

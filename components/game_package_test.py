@@ -11,6 +11,7 @@ from components.theater_manager import TheaterManager, extract_asset_package
 from services.adventure_service import AdventureService
 from services.theater_builder import safe_asset_path, upload_path, validate_text
 from components.canvas.game_state import GameAction, GameState
+from testing.game_fixtures import exchange_definition, make_game
 
 
 def test_game_survives_adventure_mount_and_canvas_reload(tmp_path: Path) -> None:
@@ -40,17 +41,17 @@ def test_zip_game_declaration_is_mounted_and_editable(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize("first_finalizer", ["player", "narratron"])
 @pytest.mark.parametrize("first_offer", ["player", "narratron"])
-def test_trader_exchange_requires_both_finalizers(first_finalizer: str, first_offer: str) -> None:
-    game = GameState(Path("adventures/the-trader"), Mock(), Mock())
+def test_exchange_requires_both_finalizers(tmp_path: Path, first_finalizer: str, first_offer: str) -> None:
+    game = make_game(tmp_path, exchange_definition())
     assert game.error == ""
 
     def act(name: str, actor: Literal["player", "narratron"], arguments: dict[str, str] | None = None) -> None:
         game.act(GameAction(name=name, arguments=arguments or {}, revision=game.revision), actor=actor)
 
     offers = [
-        ("player_place", "player", {"item": "Pack mule"}),
-        ("player_place", "player", {"item": "Brass balance scale"}),
-        ("narratron_place", "narratron", {"item": "Dates"}),
+        ("player_place", "player", {"item": "red"}),
+        ("player_place", "player", {"item": "blue"}),
+        ("narratron_place", "narratron", {"item": "green"}),
     ]
     if first_offer == "narratron":
         offers = [offers[2], *offers[:2]]
@@ -59,27 +60,29 @@ def test_trader_exchange_requires_both_finalizers(first_finalizer: str, first_of
     first = f"{first_finalizer}_finalize"
     second = "narratron_finalize" if first_finalizer == "player" else "player_finalize"
     act(first, "player" if first_finalizer == "player" else "narratron")
-    assert game.state["completed_trades"] == 0
-    assert "Pack mule" in game.state["player_inventory"]
+    assert game.state["trades"] == 0
+    assert "red" in game.state["player_inventory"]
     act(second, "narratron" if first_finalizer == "player" else "player")
-    assert game.state["completed_trades"] == 1
-    assert "Dates" in game.state["player_inventory"]
-    assert "Pack mule" in game.state["trader_inventory"]
-    assert "Brass balance scale" in game.state["trader_inventory"]
-    assert game.state["player_offer"] == game.state["trader_offer"] == []
+    assert game.state["trades"] == 1
+    assert "green" in game.state["player_inventory"]
+    assert "red" in game.state["narratron_inventory"]
+    assert "blue" in game.state["narratron_inventory"]
+    assert game.state["player_offer"] == game.state["narratron_offer"] == []
 
 
-def test_trader_game_checks_inventory_and_actor_permissions() -> None:
-    game = GameState(Path("adventures/the-trader"), Mock(), Mock())
+def test_exchange_checks_inventory_and_actor_permissions(tmp_path: Path) -> None:
+    game = make_game(tmp_path, exchange_definition())
     before = game.serialize()
     with pytest.raises(ValueError, match="actor"):
-        game.act(GameAction(name="narratron_place", arguments={"item": "Dates"}, revision=0))
+        game.act(GameAction(name="narratron_place", arguments={"item": "green"}, revision=0))
     with pytest.raises(ValueError, match="actor"):
-        game.act(GameAction(name="player_place", arguments={"item": "Pack mule"}, revision=0), actor="narratron")
+        game.act(GameAction(name="player_place", arguments={"item": "red"}, revision=0), actor="narratron")
     with pytest.raises(ValueError, match="not permitted"):
-        game.act(GameAction(name="player_place", arguments={"item": "Dates"}, revision=0))
+        game.act(GameAction(name="player_place", arguments={"item": "green"}, revision=0))
     assert game.serialize() == before
-    assert set(game.story_snapshot("narratron")["actions"]) == {"narratron_place", "narratron_clear", "narratron_finalize"}
+    assert set(game.story_snapshot("narratron")["actions"]) == {"narratron_place"}
+    game.act(GameAction(name="narratron_place", arguments={"item": "green"}, revision=0), actor="narratron")
+    assert set(game.story_snapshot("narratron")["actions"]) == {"narratron_finalize"}
     assert "actions" not in game.story_snapshot("responder")
     assert "instructions" not in game.story_snapshot("responder")
 

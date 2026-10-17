@@ -128,6 +128,44 @@ def test_view_cannot_expose_narratron_only_action() -> None:
         validate_game_package(definition.model_dump_json().encode("utf-8"))
 
 
+def test_model_projection_and_available_narratron_actions(tmp_path: Path) -> None:
+    definition = counter_definition()
+    definition.model_state = '{"summary": "Count " + string(state.count)}'
+    definition.transitions['clear'].actor = 'narratron'
+    definition.transitions['clear'].available = 'state.count > 0'
+    game = make_game(tmp_path, definition)
+    assert game.story_snapshot('narratron')['state'] == {'summary': 'Count 0'}
+    assert game.story_snapshot('narratron')['actions'] == {}
+    game.act(GameAction(name='add', arguments={'amount': 2}, revision=0))
+    snapshot = game.story_snapshot('narratron')
+    assert snapshot['state'] == {'summary': 'Count 2'}
+    assert set(snapshot['actions']) == {'clear'}
+    assert game.state == {'count': 2}
+
+
+@pytest.mark.parametrize('field', ['model_state', 'available'])
+def test_model_context_failure_rolls_back_action(tmp_path: Path, field: str) -> None:
+    definition = counter_definition()
+    definition.transitions['clear'].actor = 'narratron'
+    if field == 'model_state':
+        definition.model_state = 'state.count == 0 ? state.count : 1 / 0'
+    else:
+        definition.transitions['clear'].available = 'state.count == 0 ? true : 1 / 0 == 0'
+    game = make_game(tmp_path, definition)
+    before = game.story_snapshot('narratron')
+    with pytest.raises(ValueError):
+        game.act(GameAction(name='add', arguments={'amount': 1}, revision=0))
+    assert game.story_snapshot('narratron') == before
+    assert game.revision == 0
+
+
+def test_action_availability_cannot_reference_arguments() -> None:
+    definition = counter_definition()
+    definition.transitions['clear'].available = 'action.item == "x"'
+    with pytest.raises(ValueError, match='availability'):
+        GameProgram(definition)
+
+
 def test_nested_macros_share_a_work_budget() -> None:
     data = counter_definition().model_dump()
     data['constants'] = {'values': list(range(30))}

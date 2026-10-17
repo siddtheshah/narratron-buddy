@@ -42,6 +42,8 @@ class GameState:
         self.definition_hash = ""
         self.error = ""
         self._view: list[JsonValue] = []
+        self._model_state: JsonValue = {}
+        self._narratron_actions: dict[str, JsonValue] = {}
         path = directory / GAME_FILE
         try:
             if not path.exists():
@@ -53,6 +55,8 @@ class GameState:
             self.definition_hash = sha256(content).hexdigest()
             self.state = json.loads(json.dumps(self.program.definition.initial))
             self._view = json.loads(json.dumps(self.program.initial_view))
+            self._model_state = json.loads(json.dumps(self.program.initial_model_state))
+            self._narratron_actions = json.loads(json.dumps(self.program.initial_narratron_actions))
         except Exception as exc:
             logger.warning("Game package failed to load: %s", exc, exc_info=True)
             self.error = "Game package could not be loaded. Check its declaration and CEL expressions."
@@ -68,14 +72,17 @@ class GameState:
         view = [node.model_dump(mode="json") for node in execution.render(self.program.definition.view, context)]
         if len(json.dumps(view).encode("utf-8")) > MAX_VALUE_BYTES:
             raise ValueError("Rendered view exceeds its size budget.")
+        model_state, actions = execution.model_context(context)
         self._view = view
+        self._model_state = model_state
+        self._narratron_actions = actions
         return view
 
     def load(self, saved: JsonValue) -> None:
         if saved is None or self.program is None:
             return
         with self._lock:
-            previous_view = self._view
+            previous_view, previous_model_state, previous_actions = self._view, self._model_state, self._narratron_actions
             try:
                 # Inspect the hash before parsing the version-specific saved payload.
                 data = TypeAdapter(dict[str, JsonValue]).validate_python(saved)
@@ -88,6 +95,8 @@ class GameState:
             except Exception:
                 # A broken game save must not interrupt loading story/chat state.
                 self._view = previous_view
+                self._model_state = previous_model_state
+                self._narratron_actions = previous_actions
                 self.error = "Saved game could not be loaded; the current game state was retained."
                 logger.exception("Saved game failed to load")
 
@@ -108,14 +117,10 @@ class GameState:
         with self._lock:
             if self.program is None:
                 return None
-            snapshot: dict[str, JsonValue] = {"revision": self.revision, "state": self.state}
+            snapshot: dict[str, JsonValue] = {"revision": self.revision, "state": self._model_state}
             if audience == "narratron":
                 snapshot["instructions"] = self.program.definition.instructions
-                snapshot["actions"] = {
-                    name: {"description": transition.description, "parameters": transition.parameters}
-                    for name, transition in self.program.definition.transitions.items()
-                    if transition.actor == "narratron"
-                }
+                snapshot["actions"] = self._narratron_actions
             return json.loads(json.dumps(snapshot))
 
     def report_error(self, message: str) -> None:
@@ -143,7 +148,9 @@ class GameState:
                 raise ValueError("Unknown game action.")
             if transition.actor != actor:
                 raise ValueError("This actor cannot take that game action.")
-            previous, previous_view, revision = self.state, self._view, self.revision
+            previous, previous_view, previous_model_state, previous_actions, revision = (
+                self.state, self._view, self._model_state, self._narratron_actions, self.revision
+            )
             try:
                 self.program.action_validators[action.name].validate(action.arguments)
                 execution = self.program.execution()
@@ -159,7 +166,9 @@ class GameState:
                 self.revision += 1
                 self._persist()
             except Exception as exc:
-                self.state, self._view, self.revision = previous, previous_view, revision
+                self.state, self._view, self._model_state, self._narratron_actions, self.revision = (
+                    previous, previous_view, previous_model_state, previous_actions, revision
+                )
                 logger.exception("Game action failed: %s", action.name)
                 self.report_error("Game action failed; the previous game state was retained.")
                 raise ValueError(str(exc)[:250]) from exc

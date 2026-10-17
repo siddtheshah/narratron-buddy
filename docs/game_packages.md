@@ -49,9 +49,13 @@ expressions. Literal text therefore includes CEL string quotes.
 ## State and transitions
 
 - `initial`: an arbitrary JSON object. There are no reserved game field names.
-- `instructions`: optional game-specific guidance shown to story modules with the
-  current game state. Explain when the Narratron side should use its actions and
-  which game fields are authoritative.
+- `instructions`: optional game-specific guidance shown to the story planner
+  with the current game state. Explain when the Narratron side should use its
+  actions and which projected fields are authoritative.
+- `model_state`: optional CEL expression that projects the complete game state
+  into a concise JSON value for story modules. The full state remains persisted
+  and validated; this projection is limited to 16 KiB. If omitted, story modules
+  see the full state.
 - `state_schema`: JSON Schema for every initial, restored and resulting state.
 - `constants`: optional immutable JSON data available to expressions.
 - `functions`: ordered named pure CEL expressions with `parameters` and `expr`.
@@ -66,6 +70,9 @@ expressions. Literal text therefore includes CEL string quotes.
   available as `action`. Bindings cannot overwrite names already in scope.
 - Each transition can set `actor` to `"player"` or `"narratron"` and include a
   short `description`. The default actor is `"player"` for existing packages.
+  An optional state-only `available` CEL expression controls whether a Narratron
+  action appears in the planner's current action list. The transition's `guard`
+  remains the authoritative check when an action is submitted.
   View buttons may reference only player actions. The canvas action endpoint
   likewise accepts only player actions. The story planner sees the current state,
   revision, and Narratron action contracts, and can submit only those actions.

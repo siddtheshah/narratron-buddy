@@ -530,14 +530,14 @@ class TestStoryPlanningModuleState(unittest.TestCase):
         self.module.game_state = game
         snapshot = self.module._game_state_json()
         self.assertIn('"instructions": "This game is one exchange', snapshot)
-        self.assertIn('"trader_inventory"', snapshot)
+        self.assertIn('"merchant_inventory"', snapshot)
         self.assertIn('"narratron_place"', snapshot)
         self.assertNotIn('"player_place"', snapshot)
         denied = self.module.take_game_action("player_place", '{"item":"Pack mule"}', 0)
         self.assertIn("cannot take", denied)
         self.assertEqual(game.revision, 0)
         accepted = self.module.take_game_action("narratron_place", '{"item":"Dates"}', 0)
-        self.assertIn('"trader_offer": ["Dates"]', accepted)
+        self.assertIn('"merchant_offer": ["Dates"]', accepted)
         self.assertEqual(game.revision, 1)
 
     def test_game_action_heartbeat_identifies_committed_panel_action(self) -> None:
