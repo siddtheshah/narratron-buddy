@@ -205,7 +205,7 @@ def test_adventure_session_turn_execution_mocked(sample_adventure):
     try:
         mock_reaction = {
             "narration": "The bass synthesizer reverberates across the bridge.",
-            "scene_label": "Syncopated Bridge",
+            "scene_reference": "Syncopated Bridge",
             "dialogue": [{"speaker": "Captain Funk", "text": "Groove locked in!"}],
             "manifested_characters": [],
             "planning_signals": [
@@ -307,7 +307,7 @@ def test_adventure_runner_lab_api_routes(sample_adventure):
 
     mock_reaction = {
         "narration": "The synth console springs to life.",
-        "scene_label": "Cockpit",
+        "scene_reference": "Cockpit",
         "dialogue": [],
         "manifested_characters": [],
         "planning_signals": ["Beat 1", "Beat 2", "Beat 3"],
@@ -365,7 +365,7 @@ def test_send_message_inside_running_event_loop(sample_adventure):
     try:
         mock_reaction = {
             "narration": "The synth console springs to life.",
-            "scene_label": "Cockpit",
+            "scene_reference": "Cockpit",
             "dialogue": [],
             "manifested_characters": [],
             "planning_signals": ["Beat 1", "Beat 2", "Beat 3"],

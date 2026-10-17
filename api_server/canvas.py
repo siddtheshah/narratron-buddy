@@ -887,7 +887,8 @@ def get_sticky_notes(request: Request, theater_id: str):
     elif notepad and hasattr(notepad, "get_present_elements"):
         notes = notepad.get_present_elements()
         return {"sticky_notes": notes, "hidden_stickies": hidden_stickies, "count": len(notes)}
-    notes = _state(theater_id).story.sticky_notes()
+    canvas_state = _state(theater_id)
+    notes = canvas_state.notepad.get_present_sticky_notes() if canvas_state.notepad is not None else []
     return {"sticky_notes": notes, "hidden_stickies": hidden_stickies, "count": len(notes)}
 
 

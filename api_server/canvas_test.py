@@ -73,7 +73,7 @@ def test_get_sticky_notes_uses_session_or_canvas_state():
     # Test fallback to canvas_states
     mock_agent_mgr.get_session.return_value = None
     mock_canvas_states = MagicMock()
-    mock_canvas_states.get.return_value.story.sticky_notes.return_value = [{"topic": "Fallback", "info": "Cached note"}]
+    mock_canvas_states.get.return_value.notepad.get_present_sticky_notes.return_value = [{"topic": "Fallback", "info": "Cached note"}]
     with patch.object(canvas, "_require_canvas_access"), patch.object(object_registry, "live_agent_manager", mock_agent_mgr), patch.object(object_registry, "canvas_states", mock_canvas_states):
         result = canvas.get_sticky_notes(request(), "stage")
     assert result == {"sticky_notes": [{"topic": "Fallback", "info": "Cached note"}], "hidden_stickies": [], "count": 1}
@@ -86,7 +86,7 @@ def test_get_sticky_notes_returns_configured_hidden_stickies():
         {"topic": "Visible", "info": "Public"},
         {"topic": "Secret", "info": "Hidden detail"},
     ]
-    mock_session = SimpleNamespace(story_planning_tools=SimpleNamespace(notepad=mock_notepad))
+    mock_session = SimpleNamespace(notepad_tool=SimpleNamespace(notepad=mock_notepad))
     mock_agent_mgr.get_session.return_value = mock_session
 
     mock_tm = MagicMock()

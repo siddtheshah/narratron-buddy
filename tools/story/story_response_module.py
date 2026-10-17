@@ -152,9 +152,8 @@ Respond ONLY with valid JSON conforming to the scene reaction schema.
 - If a character is disguised, make sure you give them an alias that hides their nature, rather than using their real name.
 - Every generated character must have an explicit gender assignment ('male', 'female', or 'nonbinary') to ensure appropriate voice synthesis.
 
-# Scene Labeling & Reference
-- **Scene Labeling**: Ensure the scene has a label (`scene_label`). The location name is generally a good choice. Keep using that label until a major shift occurs.
-- **Scene Reference**: If established in lore or reference assets for the current location or background scenery, provide the scene name or label in `scene_reference` to signal the live agent which scene reference to use for background scenery. If no specific reference exists for this scenery, set it to null. Use `create_or_update_scene` to create or update scene references.
+# Scene Reference
+- **Scene Reference**: If the scene takes placed in a named location which is established in lore, or requires a new important named location, provide the scene name or label in `scene_reference` to signal the live agent which scene reference to use for background scenery. If no specific reference exists for this scenery, set it to null. Use `create_or_update_scene` to create or update scene references.
 {% if style -%}
 
 # Typical Response Procedure
@@ -220,10 +219,9 @@ class SceneReaction(BaseModel):
     dialogue: List[ResponseDialogue] = Field(default_factory=list, description="At most three NPC lines; never for the player.")
     manifested_characters: List[str] = Field(default_factory=list, description="Names of NPCs that entered or became prominent.")
     planning_signals: List[str] = Field(default_factory=list, description="Direct internal communication to deep planner, including sticky note update cues.")
-    scene_label: Optional[str] = Field(default=None, description="Current scene label/location.")
     scene_reference: Optional[str] = Field(
         default=None,
-        description="Reference image identifier or path for background scenery, signaling the live agent which reference image to use.",
+        description="Reference scene identifier",
     )
 
 
@@ -1191,7 +1189,6 @@ class StoryResponseModule:
             turn_id = self._turn_id
 
         deep_plan_revision_used = 0
-        scene_name = str(parsed.get("scene_label") or "").strip()
         raw_scene_reference = parsed.get("scene_reference")
         scene_reference = str(raw_scene_reference).strip() if raw_scene_reference else None
         result = {
@@ -1201,7 +1198,6 @@ class StoryResponseModule:
             "dialogue": dialogue,
             "manifested_characters": manifested_characters,
             "planning_signals": planning_signals,
-            "scene_label": scene_name,
             "scene_reference": scene_reference,
             "lore_activity": self.get_lore_activity_this_turn(),
             "lore_docs_browsed": self.get_lore_docs_browsed_this_turn(),
@@ -1293,12 +1289,6 @@ class StoryResponseModule:
             if sp_state:
                 self.import_response_state(sp_state)
                 return
-
-            saved_notes = self.canvas_manager.story.get_sticky_notes()
-            if self.notepad.sticky_definitions:
-                return
-            if saved_notes:
-                self.notepad.import_state({"sticky_notes": saved_notes})
         except Exception as e:
             logger.warning(
                 "[StoryResponseModule] Failed to reload story planning state from session state: %s",

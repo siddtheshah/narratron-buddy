@@ -49,6 +49,12 @@ class CanvasFixture:
     game: GameState | None = None
     notepad: Notepad | None = None
 
+    def persist(self) -> None:
+        pass
+
+    def notify_changed(self, *domains: str) -> None:
+        pass
+
 
 @pytest.fixture
 def notepad() -> MagicMock:
@@ -217,11 +223,10 @@ def test_format_canvas_state_only_includes_raw_notes_outside_adventure_mode(
     assert "[Available Scene Visuals]: Harbor: harbor.png" in state
 
 
-def test_format_canvas_state_uses_notepad_instead_of_story_notes(
+def test_format_canvas_state_uses_notepad(
     notepad: MagicMock, reference_manager: MagicMock,
 ) -> None:
     story = StoryState()
-    story.set_sticky_notes([{"topic": "objective", "info": "Old objective"}])
     notepad.get_present_elements.return_value = [
         {"name": "objective", "content": "Find the lost compass"},
     ]
@@ -229,7 +234,6 @@ def test_format_canvas_state_uses_notepad_instead_of_story_notes(
     state = format_canvas_state(CanvasFixture(story=story, notepad=notepad), reference_manager)
 
     assert "[Sticky Notes]: objective: Find the lost compass" in state
-    assert "Old objective" not in state
     notepad.get_present_elements.assert_called_once_with()
 
 

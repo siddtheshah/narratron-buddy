@@ -25,8 +25,13 @@ from google.genai import types
 from components.canvas.story_state import (
     CharacterState,
     PlayerCharacterState,
+    StoryState,
+)
+from tools.story.story_snapshot import (
     StoryStateDiff,
     StoryStateSnapshot,
+    create_snapshot,
+    diff,
 )
 from components.canvas_state import CanvasStateManager
 from components.canvas.game_runtime import GameAction
@@ -682,7 +687,10 @@ class StoryPlanningModule:
         all_known_images = previous_known | {
             str(img.get("name") or "") for img in recent_images if img.get("name")
         }
-        self._last_state_snapshot = self.canvas_manager.story.create_snapshot(
+        story_state = self.canvas_manager.story if self.canvas_manager is not None and self.canvas_manager.story is not None else StoryState()
+        self._last_state_snapshot = create_snapshot(
+            story_state=story_state,
+            notepad=self.notepad,
             stickies=current_stickies,
             player_character=current_pc,
             characters=current_chars,
@@ -825,8 +833,11 @@ class StoryPlanningModule:
         current_deep_plan_revision: int,
         current_through_turn: int,
     ) -> StoryStateDiff:
-        return self.canvas_manager.story.diff(
+        story = self.canvas_manager.story if self.canvas_manager is not None else None
+        return diff(
             previous=previous,
+            story_state=story,
+            notepad=self.notepad,
             current_stickies=current_stickies,
             current_pc=current_pc,
             current_chars=current_chars,
@@ -904,7 +915,7 @@ class StoryPlanningModule:
         else:
             prev = self._last_state_snapshot
             assert prev is not None
-            story_diff = self.canvas_manager.story.diff(
+            story_diff = self._compute_state_diffs(
                 previous=prev,
                 current_stickies=current_stickies,
                 current_pc=current_pc,

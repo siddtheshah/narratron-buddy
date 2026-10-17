@@ -517,12 +517,6 @@ class Notepad:
                         self._recently_changed.add(topic)
                 self._sticky_notes = notes
                 self._restore_required_and_enforce_limit()
-        self.sync_story_state()
-
-    def sync_story_state(self) -> None:
-        """Publish every note; the canvas controls whether topics are hidden."""
-        if self.canvas_manager is not None and self.canvas_manager.story is not None:
-            self.canvas_manager.story.set_sticky_notes(self.get_present_sticky_notes())
 
     def export_state(self) -> Dict[str, Any]:
         with self._sticky_notes_lock:
@@ -576,6 +570,5 @@ class Notepad:
             self._recently_changed.clear()
 
     def _changed(self) -> None:
-        self.sync_story_state()
         if self.on_change:
             self.on_change()

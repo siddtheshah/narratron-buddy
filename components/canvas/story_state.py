@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import base64
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Mapping
 from concurrent.futures import ThreadPoolExecutor
 import logging
 import re
 import threading
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Optional
 
 from pydantic import BaseModel
@@ -68,29 +68,7 @@ class CharacterState:
         return default
 
 
-@dataclass
-class StoryStateSnapshot:
-    stickies: dict[str, str] = field(default_factory=dict)
-    player_character: Optional[PlayerCharacterState] = None
-    characters: dict[str, CharacterState] = field(default_factory=dict)
-    known_image_names: set[str] = field(default_factory=set)
-    deep_plan_revision: int = 0
 
-
-@dataclass
-class StoryStateDiff:
-    sticky_diffs: list[str] = field(default_factory=list)
-    player_character_diff: str = ""
-    character_diffs: list[str] = field(default_factory=list)
-    new_images: list[dict[str, object]] = field(default_factory=list)
-    deep_plan_diff: str = ""
-
-    def __iter__(self) -> Iterator[object]:
-        yield self.sticky_diffs
-        yield self.player_character_diff
-        yield self.character_diffs
-        yield self.new_images
-        yield self.deep_plan_diff
 
 
 def speaker_key(speaker: str) -> str:
@@ -124,7 +102,6 @@ class StoryState:
         self._persist = persist
         self._notify_changed = notify_changed
         self.publish_audio_fn = publish_audio_fn
-        self.named_elements: list[dict[str, str]] = []
         self.story_planning_state: dict[str, Any] = {}
         self.scene_dialogue: list[dict[str, Any]] = []
         self.narration = ""
@@ -159,9 +136,6 @@ class StoryState:
     @text_beautifier.setter
     def text_beautifier(self, value: Any) -> None:
         self._text_beautifier = value
-    def sticky_notes(self) -> list[dict[str, str]]:
-        notes = self.story_planning_state.get("sticky_notes", self.named_elements)
-        return [note for note in notes if isinstance(note, dict)] if isinstance(notes, list) else []
     def load(
         self,
         data: dict[str, object] | None = None,
@@ -184,10 +158,6 @@ class StoryState:
 
         if data is None or not isinstance(data, dict):
             return
-
-        named = data.get("named_elements")
-        if isinstance(named, list):
-            self.named_elements = [dict(x) for x in named if isinstance(x, dict)]
 
         planning = data.get("story_planning_state")
         if isinstance(planning, dict):
@@ -248,7 +218,6 @@ class StoryState:
 
     def serialize(self) -> dict[str, object]:
         result: dict[str, object] = {
-            "named_elements": self.named_elements,
             "story_planning_state": self.story_planning_state,
             "scene_dialogue": self.scene_dialogue,
             "narration": self.narration,
@@ -342,147 +311,12 @@ class StoryState:
         self.last_die_roll = dict(roll) if isinstance(roll, dict) else None
         if self._notify_changed:
             self._notify_changed("latest")
-    def get_sticky_notes(self) -> list[dict[str, str]]:
-        """Return active sticky notes."""
-        return self.sticky_notes()
-
-    def create_snapshot(
-        self,
-        stickies: Optional[dict[str, str]] = None,
-        player_character: Optional[PlayerCharacterState] = None,
-        characters: Optional[dict[str, CharacterState]] = None,
-        known_image_names: Optional[set[str]] = None,
-        deep_plan_revision: int = 0,
-    ) -> StoryStateSnapshot:
-        """Create a point-in-time snapshot of the story state for diff tracking."""
-        current_stickies = (
-            stickies
-            if stickies is not None
-            else {
-                note.get("topic") or note.get("name", ""): note.get("info") or note.get("content", "")
-                for note in self.get_sticky_notes()
-                if note.get("topic") or note.get("name")
-            }
-        )
-        return StoryStateSnapshot(
-            stickies=dict(current_stickies),
-            player_character=player_character if player_character is not None else self.player_character,
-            characters=dict(characters if characters is not None else self.characters),
-            known_image_names=set(known_image_names or set()),
-            deep_plan_revision=deep_plan_revision,
-        )
-
-    def diff(
-        self,
-        previous: StoryStateSnapshot,
-        current_stickies: Optional[dict[str, str]] = None,
-        current_pc: Optional[PlayerCharacterState] = None,
-        current_chars: Optional[dict[str, CharacterState]] = None,
-        recent_images: Optional[list[dict[str, object]]] = None,
-        current_deep_plan_revision: int = 0,
-        current_through_turn: int = 0,
-        current_snapshot: Optional[StoryStateSnapshot] = None,
-    ) -> StoryStateDiff:
-        """Compute diffs between a previous snapshot and current story state."""
-        if current_snapshot is not None:
-            stickies = current_snapshot.stickies
-            pc = current_snapshot.player_character
-            chars = current_snapshot.characters
-            rev = current_snapshot.deep_plan_revision
-        else:
-            stickies = (
-                current_stickies
-                if current_stickies is not None
-                else {
-                    note.get("topic") or note.get("name", ""): note.get("info") or note.get("content", "")
-                    for note in self.get_sticky_notes()
-                    if note.get("topic") or note.get("name")
-                }
-            )
-            pc = current_pc
-            chars = current_chars if current_chars is not None else {}
-            rev = current_deep_plan_revision
-
-        sticky_diffs: list[str] = []
-        for topic, info in stickies.items():
-            if topic not in previous.stickies:
-                sticky_diffs.append(f"+ Added [{topic}]: {info}")
-        for topic, info in stickies.items():
-            if topic in previous.stickies and previous.stickies[topic] != info:
-                sticky_diffs.append(
-                    f"~ Updated [{topic}]: was \"{previous.stickies[topic]}\" -> now \"{info}\""
-                )
-        for topic in previous.stickies:
-            if topic not in stickies:
-                sticky_diffs.append(f"- Removed [{topic}]")
-
-        pc_diff = ""
-        if pc != previous.player_character:
-            if pc is not None:
-                parts: list[str] = [f"Name: {pc.name or 'Unnamed Explorer'}"]
-                if pc.image_description:
-                    parts.append(f"Visual: {pc.image_description}")
-                pc_diff = " | ".join(parts)
-            else:
-                pc_diff = "(Player character removed)"
-
-        character_diffs: list[str] = []
-        for name, c in chars.items():
-            if name not in previous.characters:
-                character_diffs.append(
-                    f"+ Added {name}: Personality: {c.personality or 'N/A'} | "
-                    f"Motivation: {c.motivation or 'N/A'} | Quirk: {c.quirk or 'N/A'}"
-                )
-        for name, c in chars.items():
-            if name in previous.characters and c != previous.characters[name]:
-                character_diffs.append(
-                    f"~ Updated {name}: Personality: {c.personality or 'N/A'} | "
-                    f"Motivation: {c.motivation or 'N/A'} | Quirk: {c.quirk or 'N/A'}"
-                )
-        for name in previous.characters:
-            if name not in chars:
-                character_diffs.append(f"- Removed {name}")
-
-        images = recent_images or []
-        new_images: list[dict[str, object]] = [
-            img for img in images
-            if str(img.get("name") or "") not in previous.known_image_names
-        ]
-
-        dp_diff = ""
-        if rev != previous.deep_plan_revision:
-            turn_info = f" (through turn {current_through_turn})" if current_through_turn > 0 else ""
-            dp_diff = (
-                f"Deep plan revision advanced from {previous.deep_plan_revision} "
-                f"to {rev}{turn_info}."
-            )
-
-        return StoryStateDiff(
-            sticky_diffs=sticky_diffs,
-            player_character_diff=pc_diff,
-            character_diffs=character_diffs,
-            new_images=new_images,
-            deep_plan_diff=dp_diff,
-        )
-
-    def set_sticky_notes(self, notes: list[dict[str, str]]) -> None:
-        """Persist sticky notes to story state and notify canvas clients."""
-        self.named_elements = [dict(n) for n in (notes or []) if isinstance(n, dict)]
-        if not isinstance(self.story_planning_state, dict):
-            self.story_planning_state = {}
-        self.story_planning_state["sticky_notes"] = list(self.named_elements)
-        if self._persist:
-            self._persist()
-        if self._notify_changed:
-            self._notify_changed("latest")
     def get_story_planning_state(self) -> dict[str, Any]:
         """Return a snapshot of full story planning state."""
         return dict(self.story_planning_state) if isinstance(self.story_planning_state, dict) else {}
     def set_story_planning_state(self, state: dict[str, Any]) -> None:
-        """Persist full story planning state, synchronize sticky notes, and notify canvas clients."""
+        """Persist full story planning state and notify canvas clients."""
         self.story_planning_state = normalize_character_models(state) if isinstance(state, dict) else {}
-        if "sticky_notes" in self.story_planning_state and isinstance(self.story_planning_state["sticky_notes"], list):
-            self.named_elements = [dict(n) for n in self.story_planning_state["sticky_notes"] if isinstance(n, dict)]
         if self._persist:
             self._persist()
         if self._notify_changed:
@@ -572,10 +406,6 @@ class StoryState:
         character = self._character(speaker)
         if character:
             return " ".join(str(character.get(key) or "") for key in ("name", "description", "personality", "motivation", "quirk")).strip()
-        normalized = speaker.strip().lower()
-        for note in self.sticky_notes():
-            if str(note.get("topic") or note.get("name") or "").strip().lower() == normalized:
-                return f"{note.get('topic') or note.get('name', '')} {note.get('info') or note.get('content') or note.get('description') or ''}".strip()
         return speaker
     def _character(self, speaker: str) -> dict[str, object] | None:
         characters = self.story_planning_state.get("characters", [])

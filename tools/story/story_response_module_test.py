@@ -499,8 +499,7 @@ class TestStoryResponseModuleBehavior(unittest.TestCase):
             "dialogue": [{"speaker": "Kaelen", "text": "Stay quiet."}],
             "manifested_characters": ["Kaelen"],
             "planning_signals": ["Shrine discovered", "Kaelen scouted"],
-            "scene_label": "Ruined Shrine",
-            "scene_reference": "references/ruined_shrine.png",
+            "scene_reference": "Ruined Shrine",
         }
 
         player = PlayerCharacter(
@@ -515,8 +514,7 @@ class TestStoryResponseModuleBehavior(unittest.TestCase):
             result = self.module._resolve_user_action("I sneak into the shrine.")
 
         self.assertEqual(result["narration"], scene_delta["narration"])
-        self.assertEqual(result["scene_label"], "Ruined Shrine")
-        self.assertEqual(result["scene_reference"], "references/ruined_shrine.png")
+        self.assertEqual(result["scene_reference"], "Ruined Shrine")
         self.assertEqual(result["player_character"], {"name": "Arthur", "image_description": "A wizard"})
         self.assertEqual(player.reference_path, "private/Arthur/1.png")
         self.story_state.set_scene.assert_called_once_with(
@@ -559,7 +557,7 @@ class TestStoryResponseModuleBehavior(unittest.TestCase):
             "dialogue": [{"speaker": "Rowan", "text": "Greetings."}],
             "manifested_characters": ["Rowan"],
             "planning_signals": [],
-            "scene_label": "Town Square",
+            "scene_reference": "Town Square",
         }
 
         with patch.object(self.module, "_run_responder_agent", return_value=scene_delta):
@@ -623,7 +621,7 @@ class TestBuildSceneReactionPrompt(unittest.TestCase):
         fields = set(SceneReaction.model_fields.keys())
         self.assertEqual(
             fields,
-            {"narration", "dialogue", "manifested_characters", "planning_signals", "scene_label", "scene_reference"},
+            {"narration", "dialogue", "manifested_characters", "planning_signals", "scene_reference", "scene_reference"},
         )
         self.assertNotIn("character_updates", fields)
         self.assertNotIn("player_character_update", fields)
@@ -632,11 +630,9 @@ class TestBuildSceneReactionPrompt(unittest.TestCase):
     def test_scene_reaction_model_validates_scene_reference(self) -> None:
         reaction = SceneReaction(
             narration="You enter the quiet valley under the twin moons.",
-            scene_label="Quiet Valley",
-            scene_reference="references/quiet_valley.png",
+            scene_reference="Quiet Valley",
         )
-        self.assertEqual(reaction.scene_reference, "references/quiet_valley.png")
-        self.assertEqual(reaction.scene_label, "Quiet Valley")
+        self.assertEqual(reaction.scene_reference, "Quiet Valley")
 
 
 class TestStoryResponseModulePlayerCharacter(unittest.TestCase):

@@ -185,9 +185,8 @@ class TestNotepad(unittest.TestCase):
             canvas_manager=canvas_manager,
         )
 
-        pad.sync_story_state()
         self.assertEqual(
-            canvas_manager.story.get_sticky_notes(),
+            pad.get_present_sticky_notes(),
             [
                 {"topic": "Location", "info": "Observatory", "name": "Location", "content": "Observatory"},
                 {"topic": "Secret", "info": "Hidden passage", "name": "Secret", "content": "Hidden passage"},
@@ -196,7 +195,7 @@ class TestNotepad(unittest.TestCase):
 
         pad.update_sticky_note("Mood", "Uneasy")
         self.assertEqual(
-            [note["topic"] for note in canvas_manager.story.get_sticky_notes()],
+            [note["topic"] for note in pad.get_present_sticky_notes()],
             ["Location", "Secret", "Mood"],
         )
 
@@ -204,7 +203,7 @@ class TestNotepad(unittest.TestCase):
             SimpleNamespace(sticky_notes=[{"topic": "Quest", "info": "Reach the observatory"}])
         )
         self.assertEqual(
-            [(note["topic"], note["info"]) for note in canvas_manager.story.get_sticky_notes()],
+            [(note["topic"], note["info"]) for note in pad.get_present_sticky_notes()],
             [("Quest", "Reach the observatory")],
         )
 

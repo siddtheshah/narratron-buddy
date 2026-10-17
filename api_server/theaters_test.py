@@ -1240,7 +1240,7 @@ async def test_get_theater_sticky_notes_endpoint():
     mock_notepad.get_present_sticky_notes.return_value = [
         {"topic": "Ancient Key", "info": "Rust-covered bronze key found under floorboards."}
     ]
-    mock_session = SimpleNamespace(story_planning_tools=SimpleNamespace(notepad=mock_notepad))
+    mock_session = SimpleNamespace(notepad_tool=SimpleNamespace(notepad=mock_notepad))
     mock_agent_mgr.get_session.return_value = mock_session
 
     mock_tm = MagicMock()
@@ -1270,7 +1270,7 @@ async def test_get_theater_sticky_notes_with_hidden_stickies():
         {"topic": "Ancient Key", "info": "Rust-covered bronze key."},
         {"topic": "Secret Letter", "info": "Treasonous correspondence."},
     ]
-    mock_session = SimpleNamespace(story_planning_tools=SimpleNamespace(notepad=mock_notepad))
+    mock_session = SimpleNamespace(notepad_tool=SimpleNamespace(notepad=mock_notepad))
     mock_agent_mgr.get_session.return_value = mock_session
 
     mock_tm = MagicMock()
@@ -1291,6 +1291,33 @@ async def test_get_theater_sticky_notes_with_hidden_stickies():
 
         assert res["hidden_stickies"] == ["Secret Letter", "Planner Audit"]
         assert len(res["sticky_notes"]) == 2
+
+
+@pytest.mark.asyncio
+async def test_get_theater_sticky_notes_fallback_to_canvas_state_notepad():
+    mock_agent_mgr = MagicMock()
+    mock_agent_mgr.get_session.return_value = None
+
+    mock_canvas_states = MagicMock()
+    mock_canvas_states.get.return_value.notepad.get_present_sticky_notes.return_value = [
+        {"topic": "Fallback Key", "info": "Cached sticky from notepad state."}
+    ]
+
+    mock_tm = MagicMock()
+    mock_tm.get_theater_config.return_value = {}
+
+    with patch.object(theaters, "_require_canvas_access_async", new=AsyncMock()), \
+         patch.object(theaters, "_safe_path_param"), \
+         patch.object(object_registry, "live_agent_manager", mock_agent_mgr), \
+         patch.object(theaters, "canvas_states", mock_canvas_states), \
+         patch.object(theaters, "theater_manager", mock_tm):
+
+        request = MagicMock()
+        res = await theaters.get_theater_sticky_notes("stage", request)
+
+        assert res["sticky_notes"] == [{"topic": "Fallback Key", "info": "Cached sticky from notepad state."}]
+        assert res["count"] == 1
+
 
 
 def test_list_adventures_endpoint():

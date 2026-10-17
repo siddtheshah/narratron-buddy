@@ -63,6 +63,14 @@ from tools.story.story_response_module import (
     MAX_READ_LORE_CALLS_PER_TURN,
     MAX_SEARCH_LORE_CALLS_PER_TURN,
 )
+from tools.story.story_snapshot import (
+    StorySnapshot,
+    StorySnapshotDiff,
+    StoryStateDiff,
+    StoryStateSnapshot,
+    create_snapshot,
+    diff,
+)
 from tools.story.story_tool import StoryLogEntry, StoryPlanningTools, StoryResponseOutput, StoryResponseTool, StoryTool
 from google.adk.plugins import ReflectAndRetryToolPlugin
 
@@ -129,4 +137,10 @@ __all__ = [
     "MAX_DEEP_READ_LORE_CALLS_PER_RUN",
     "MAX_DEEP_SEARCH_LORE_CALLS_PER_RUN",
     "SUPPORTED_VOICE_TAGS",
+    "StorySnapshot",
+    "StorySnapshotDiff",
+    "StoryStateSnapshot",
+    "StoryStateDiff",
+    "create_snapshot",
+    "diff",
 ]

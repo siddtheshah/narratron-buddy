@@ -276,7 +276,7 @@ class TestStoryToolStateIntegration(unittest.TestCase):
 
         quest_sticky = next(
             sticky
-            for sticky in self.story_state.sticky_notes()
+            for sticky in self.tool.get_present_sticky_notes()
             if (sticky.get("topic") or sticky.get("name")) == "Quest"
         )
         self.assertEqual(
@@ -345,7 +345,7 @@ class TestStoryToolStateIntegration(unittest.TestCase):
             "dialogue": [{"speaker": "Vesper", "text": "Who goes there?"}],
             "manifested_characters": ["Vesper"],
             "planning_signals": [],
-            "scene_label": "Foggy Crossroads",
+            "scene_reference": "Foggy Crossroads",
         }
 
         def fake_run(action: str, nudge: str = "") -> dict[str, object]:
@@ -376,7 +376,7 @@ class TestStoryToolStateIntegration(unittest.TestCase):
             "dialogue": [{"speaker": "Echo", "text": "Listen closely."}],
             "manifested_characters": ["Echo"],
             "planning_signals": [],
-            "scene_label": "Spirit Grove",
+            "scene_reference": "Spirit Grove",
         }
 
         def fake_run(action: str, nudge: str = "") -> dict[str, object]:

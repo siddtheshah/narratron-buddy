@@ -15,8 +15,8 @@ from components.reference_manager import Character
 
 def test_story_state_isolated_from_other_theaters() -> None:
     first, second = StoryState(), StoryState()
-    first.named_elements.append({"name": "Ada"})
-    assert second.named_elements == []
+    first.narration_spans.append({"text": "glow"})
+    assert second.narration_spans == []
 
 
 def test_enable_scene_speech_requires_an_injected_provider() -> None:
@@ -110,15 +110,11 @@ def test_character_voice_tags_and_description_from_planning_state() -> None:
                     "personality": "Curious",
                 }
             ],
-            "sticky_notes": [
-                {"name": "Old Tower", "content": "An ancient crumbling tower on the hill"}
-            ],
         }
     })
 
     assert state.get_character_voice_tags("Mara") == ["female"]
     assert "clever inventor" in state.get_character_description("Mara")
-    assert "ancient crumbling tower" in state.get_character_description("Old Tower")
     assert state.get_character_description("Unknown Stranger") == "Unknown Stranger"
 
 
@@ -287,7 +283,6 @@ def test_story_state_publish_audio_fn_delegates_to_connection_state_broadcast() 
 def test_load_and_serialize_round_trip() -> None:
     state = StoryState()
     data = {
-        "named_elements": [{"name": "Sword", "type": "item"}],
         "story_planning_state": {"arc": "climax"},
         "scene_dialogue": [{"speaker": "Hero", "text": "Victory!"}],
         "narration": "The sun rises over the citadel.",
@@ -299,7 +294,6 @@ def test_load_and_serialize_round_trip() -> None:
     state.load(data)
 
     serialized = state.serialize()
-    assert serialized["named_elements"] == [{"name": "Sword", "type": "item"}]
     assert serialized["story_planning_state"] == {"arc": "climax"}
     assert serialized["scene_dialogue"] == [{"speaker": "Hero", "text": "Victory!"}]
     assert serialized["narration"] == "The sun rises over the citadel."
@@ -307,17 +301,6 @@ def test_load_and_serialize_round_trip() -> None:
     assert serialized["character_voice_assignments"] == {"hero": "voice_1"}
     assert serialized["committed_scene_speech_generation"] == 4
     assert state.payload() == serialized
-
-
-def test_sticky_notes_falls_back_to_named_elements() -> None:
-    state = StoryState()
-    state.named_elements = [{"name": "Relic", "type": "artifact"}]
-    # No sticky_notes key in story_planning_state
-    assert state.sticky_notes() == [{"name": "Relic", "type": "artifact"}]
-
-    # When explicit sticky_notes present in planning state
-    state.story_planning_state["sticky_notes"] = [{"name": "Note 1", "info": "Clue"}]
-    assert state.sticky_notes() == [{"name": "Note 1", "info": "Clue"}]
 
 
 def test_get_character_voice_tags_filters_to_binary_gender_and_handles_single_string() -> None:
@@ -387,37 +370,17 @@ def test_get_and_set_story_planning_state_persists_and_notifies() -> None:
     state = StoryState(persist=persist, notify_changed=notify)
 
     planning_data = {
-        "deep_plan": {
-            "sticky_notes": [{"topic": "Key", "info": "Brass key"}],
-        },
-        "sticky_notes": [{"topic": "Key", "info": "Brass key"}],
+        "arc": "climax",
+        "characters": [{"name": "Hero"}],
     }
     state.set_story_planning_state(planning_data)
 
     expected = {
-        "deep_plan": {
-            "sticky_notes": [{"topic": "Key", "info": "Brass key"}],
-        },
-        "sticky_notes": [{"topic": "Key", "info": "Brass key"}],
+        "arc": "climax",
+        "characters": [{"name": "Hero"}],
     }
     assert state.get_story_planning_state() == expected
     assert state.serialize()["story_planning_state"] == expected
-    assert state.sticky_notes() == [{"topic": "Key", "info": "Brass key"}]
-    assert state.named_elements == [{"topic": "Key", "info": "Brass key"}]
-    persist.assert_called_once_with()
-    notify.assert_called_once_with("latest")
-
-
-def test_get_and_set_sticky_notes_persists_and_notifies() -> None:
-    persist, notify = Mock(), Mock()
-    state = StoryState(persist=persist, notify_changed=notify)
-
-    notes = [{"topic": "Chest", "info": "Heavy lock"}]
-    state.set_sticky_notes(notes)
-
-    assert state.get_sticky_notes() == notes
-    assert state.story_planning_state["sticky_notes"] == notes
-    assert state.named_elements == notes
     persist.assert_called_once_with()
     notify.assert_called_once_with("latest")
 
@@ -773,61 +736,4 @@ def test_dispatch_forwards_voice_tags_and_accent_augmentation() -> None:
     assert request.accent_augmentation is False
 
 
-def test_story_state_create_snapshot_and_diff() -> None:
-    state = StoryState()
-    state.set_sticky_notes([
-        {"topic": "HUD", "info": "HP: 100"},
-        {"topic": "OldNote", "info": "Keep quiet"},
-    ])
-    prev_snapshot = state.create_snapshot(
-        player_character=PlayerCharacterState(name="Hero", image_description="A warrior"),
-        characters={"Guide": CharacterState(name="Guide", personality="Helpful", motivation="Save realm", quirk="Hums")},
-        known_image_names={"castle_gate"},
-        deep_plan_revision=1,
-    )
 
-    # Now change state
-    state.set_sticky_notes([
-        {"topic": "HUD", "info": "HP: 75"},
-        {"topic": "NewClue", "info": "Ancient key found"},
-    ])
-    diff_result = state.diff(
-        previous=prev_snapshot,
-        current_pc=PlayerCharacterState(name="Hero", image_description="A wounded warrior", reference="hero_portrait"),
-        current_chars={
-            "Guide": CharacterState(name="Guide", personality="Helpful", motivation="Run away", quirk="Hums", image_reference="private/guide/2.png"),
-            "Villain": CharacterState(name="Villain", personality="Cruel", motivation="Rule all", quirk="Laughs", image_reference="villain_alias"),
-        },
-        recent_images=[
-            {"name": "castle_gate", "alias": "gate"},
-            {"name": "dungeon_cell", "alias": "cell", "title": "Cell"},
-        ],
-        current_deep_plan_revision=2,
-        current_through_turn=3,
-    )
-
-    # Check sticky diffs
-    assert "+ Added [NewClue]: Ancient key found" in diff_result.sticky_diffs
-    assert '~ Updated [HUD]: was "HP: 100" -> now "HP: 75"' in diff_result.sticky_diffs
-    assert "- Removed [OldNote]" in diff_result.sticky_diffs
-
-    # Check player character diff
-    assert "A wounded warrior" in diff_result.player_character_diff
-    assert "hero_portrait" not in diff_result.player_character_diff
-
-    # Check character diffs
-    assert any("Updated Guide" in d for d in diff_result.character_diffs)
-    assert any("Added Villain" in d for d in diff_result.character_diffs)
-    assert all("private/guide/2.png" not in d and "villain_alias" not in d for d in diff_result.character_diffs)
-
-    # Check image diffs
-    assert len(diff_result.new_images) == 1
-    assert diff_result.new_images[0]["name"] == "dungeon_cell"
-
-    # Check deep plan diff
-    assert "revision advanced from 1 to 2" in diff_result.deep_plan_diff
-
-    # Test tuple unpacking support
-    sticky_diffs, pc_diff, char_diffs, new_images, dp_diff = diff_result
-    assert sticky_diffs == diff_result.sticky_diffs
-    assert pc_diff == diff_result.player_character_diff

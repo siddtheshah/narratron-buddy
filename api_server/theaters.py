@@ -1340,10 +1340,9 @@ async def get_theater_suggestions(theater_id: str, request: Request):
     if notepad and hasattr(notepad, "get_present_elements"):
         named_elements = notepad.get_present_elements()
     if not named_elements and canvas_states:
-        try:
-            named_elements = canvas_states.get(theater_id).story.sticky_notes()
-        except Exception:
-            pass
+        c_state = canvas_states.get(theater_id)
+        if c_state is not None and c_state.notepad is not None:
+            named_elements = c_state.notepad.get_present_elements()
 
     force_refresh = request.query_params.get("refresh") in ("true", "1")
     res, fingerprint = suggestion_service.generate_suggestions(
@@ -1373,10 +1372,9 @@ async def get_theater_sticky_notes(theater_id: str, request: Request):
         sticky_notes = notepad.get_present_elements()
 
     if not sticky_notes and canvas_states:
-        try:
-            sticky_notes = canvas_states.get(theater_id).story.sticky_notes()
-        except Exception:
-            pass
+        c_state = canvas_states.get(theater_id)
+        if c_state is not None and c_state.notepad is not None:
+            sticky_notes = c_state.notepad.get_present_sticky_notes()
 
     hidden_stickies = []
     try:

@@ -23,7 +23,6 @@ class NotepadTool(BaseTools):
         self.notepad = canvas_manager.notepad
         self.notepad.on_change = self.save_to_session_state
         self.reload_from_session_state()
-        self.notepad.sync_story_state()
 
     @terminal
     @logged_tool_call
@@ -59,10 +58,6 @@ class NotepadTool(BaseTools):
             state = self.canvas_manager.story.get_story_planning_state()
             if state:
                 self.notepad.import_state(state)
-            else:
-                saved_notes = self.canvas_manager.story.get_sticky_notes()
-                if saved_notes:
-                    self.notepad.import_state({"sticky_notes": saved_notes})
         except Exception:
             return
 

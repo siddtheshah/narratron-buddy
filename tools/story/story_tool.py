@@ -10,8 +10,15 @@ from typing import Any, Callable, Dict, Optional, Union
 from google.adk.sessions import InMemorySessionService
 from pydantic import BaseModel, Field, JsonValue
 
-from components.canvas.story_state import StoryState
+from components.canvas.story_state import CharacterState, PlayerCharacterState, StoryState
 from components.canvas.game_runtime import GameAction
+from tools.story.story_snapshot import (
+    ImageRecord,
+    StoryStateDiff,
+    StoryStateSnapshot,
+    create_snapshot as create_story_snapshot,
+    diff as compute_story_diff,
+)
 from components.canvas_state import CanvasStateManager
 from components.theater_manager import Theater
 from providers import ImageProvider, ImageProviderError, SpeechProvider, TextResponseProvider, get_image_provider
@@ -175,7 +182,6 @@ class StoryTool(BaseTools):
         self.response_module.on_failure = lambda: self.record_tool_failure("process_user_action")
         if canvas_manager.game is not None:
             canvas_manager.game.on_player_action = self._handle_player_game_action
-        self.notepad.sync_story_state()
         self.sync_character_bindings()
 
     def sync_character_voice_tags(self) -> None:
@@ -406,6 +412,58 @@ class StoryTool(BaseTools):
 
     def get_required_sticky_notes(self) -> list[str]:
         return self.notepad.get_required_sticky_notes()
+
+    def create_snapshot(
+        self,
+        *,
+        stickies: Optional[dict[str, str]] = None,
+        player_character: Optional[PlayerCharacterState] = None,
+        characters: Optional[dict[str, CharacterState]] = None,
+        known_image_names: Optional[set[str]] = None,
+        deep_plan_revision: int = 0,
+    ) -> StoryStateSnapshot:
+        """Create a point-in-time snapshot built from StoryState and Notepad together."""
+        story = (
+            self.canvas_manager.story
+            if self.canvas_manager is not None and self.canvas_manager.story is not None
+            else StoryState()
+        )
+        return create_story_snapshot(
+            story,
+            self.notepad,
+            stickies=stickies,
+            player_character=player_character,
+            characters=characters,
+            known_image_names=known_image_names,
+            deep_plan_revision=deep_plan_revision,
+        )
+
+    def diff(
+        self,
+        previous: StoryStateSnapshot,
+        *,
+        current_stickies: Optional[dict[str, str]] = None,
+        current_pc: Optional[PlayerCharacterState] = None,
+        current_chars: Optional[dict[str, CharacterState]] = None,
+        recent_images: Optional[list[ImageRecord]] = None,
+        current_deep_plan_revision: int = 0,
+        current_through_turn: int = 0,
+        current_snapshot: Optional[StoryStateSnapshot] = None,
+    ) -> StoryStateDiff:
+        """Compute diffs between a previous snapshot and current story state + notepad."""
+        story = self.canvas_manager.story if self.canvas_manager is not None else None
+        return compute_story_diff(
+            previous=previous,
+            story_state=story,
+            notepad=self.notepad,
+            current_stickies=current_stickies,
+            current_pc=current_pc,
+            current_chars=current_chars,
+            recent_images=recent_images,
+            current_deep_plan_revision=current_deep_plan_revision,
+            current_through_turn=current_through_turn,
+            current_snapshot=current_snapshot,
+        )
 
 
 # Compatibility names retained while callers migrate to ``StoryTool``.

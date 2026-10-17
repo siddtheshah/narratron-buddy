@@ -103,10 +103,6 @@ class CanvasStateManager:
                     sp_state = self.story.get_story_planning_state()
                     if sp_state:
                         self.notepad.import_state(sp_state)
-                    else:
-                        saved_notes = self.story.get_sticky_notes()
-                        if saved_notes:
-                            self.notepad.import_state({"sticky_notes": saved_notes})
             self.chat.messages = list(state.get("chat_messages", [])); self.chat.load_suggestions(state.get("suggestions", []))
         except (OSError, ValueError, TypeError) as exc:
             logger.warning("Failed to load canvas state for %s: %s", self.theater_id, exc)
@@ -135,7 +131,7 @@ class CanvasStateManager:
 
     def get_latest_state(self) -> dict[str, object]:
         visual = self.visual.payload()
-        sticky_notes = self.notepad.get_present_sticky_notes() if self.notepad is not None else self.story.sticky_notes()
+        sticky_notes = self.notepad.get_present_sticky_notes() if self.notepad is not None else []
         return {**visual, "music": self.audio.payload(), "music_pinned": self.audio.pinned,
                 "music_orator_cursor": self.audio.payload().get("orator_cursor"),
                 "doodles_enabled": self.doodles.enabled,
