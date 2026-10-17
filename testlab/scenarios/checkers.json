@@ -1,0 +1,16 @@
+{
+  "name": "checkers-player-opening",
+  "steps": [
+    {
+      "move": {"name": "select", "arguments": {"index": 40}},
+      "min_ai_actions": 0,
+      "expected_state": {"selected": 40, "turn": 1}
+    },
+    {
+      "move": {"name": "move", "arguments": {"source": 40, "target": 33}},
+      "min_ai_actions": 1,
+      "require_quiescent": true,
+      "expected_state": {"turn": 1, "winner": 0, "draw": false}
+    }
+  ]
+}

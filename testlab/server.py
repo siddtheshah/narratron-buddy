@@ -63,12 +63,14 @@ from components.theater_manager import TheaterManager
 from services.text_beautifier import TextBeautifier
 
 from tools.story import StoryTool
+from testlab.game_lab import router as game_lab_router
 
 ROOT = Path(__file__).resolve().parent
 PROJECT_ROOT = ROOT.parent
 load_dotenv(PROJECT_ROOT / ".env")
 
 app = FastAPI(title="Narratron Test Lab")
+app.include_router(game_lab_router)
 app.mount("/static", StaticFiles(directory=ROOT / "static"), name="static")
 app.mount("/effects-static", StaticFiles(directory=PROJECT_ROOT / "static"), name="effects-static")
 app.mount("/carousel", StaticFiles(directory=PROJECT_ROOT / "templates" / "carousel"), name="carousel")

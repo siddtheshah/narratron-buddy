@@ -4,16 +4,18 @@ const SVG = new Set(['svg', 'rect', 'circle', 'svg_text']);
 const STYLES = new Set(['gap', 'padding', 'color', 'background', 'fontSize', 'fontWeight', 'borderRadius', 'outline', 'aspectRatio', 'textAlign']);
 const ATTRIBUTES = new Set(['viewBox', 'x', 'y', 'width', 'height', 'cx', 'cy', 'r', 'rx', 'fill', 'stroke', 'stroke-width', 'text-anchor', 'dominant-baseline']);
 
-export function createGameRenderer({ container, toggleButton, actionUrl, canEdit, refresh }) {
+export function createGameRenderer({ container, toggleButton, actionUrl, canEdit, refresh,
+    stylesheetUrl = '/static/css/game-renderer.css?v=4', initiallyOpen = false,
+    onPendingChange = () => {} }) {
     const stylesheet = document.createElement('link');
     stylesheet.rel = 'stylesheet';
-    stylesheet.href = '/static/css/game-renderer.css?v=4';
+    stylesheet.href = stylesheetUrl;
     document.head.append(stylesheet);
     let game = null;
     let pending = false;
     let error = '';
     let signature = '';
-    let open = false;
+    let open = initiallyOpen;
 
     toggleButton.addEventListener('click', event => {
         event.stopPropagation();
@@ -27,6 +29,7 @@ export function createGameRenderer({ container, toggleButton, actionUrl, canEdit
         if (pending || !canEdit() || !game?.view) return;
         if (action.confirmation && !window.confirm(action.confirmation)) return;
         pending = true;
+        onPendingChange(true);
         error = '';
         const revision = game.revision;
         const definitionHash = game.definition_hash;
@@ -43,6 +46,7 @@ export function createGameRenderer({ container, toggleButton, actionUrl, canEdit
             error = failure.message || 'Could not submit action.';
         } finally {
             pending = false;
+            onPendingChange(false);
             draw();
             refresh();
         }

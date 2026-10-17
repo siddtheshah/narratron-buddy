@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Game Testing Lab</title>
+<style>
+body{background:#111827;color:#e5e7eb;font:16px system-ui;max-width:1200px;margin:32px auto;padding:0 20px}a{color:#93c5fd}label{display:block;margin:16px 0 6px}input,select,textarea,button{font:inherit;color:inherit;background:#1f2937;border:1px solid #64748b;border-radius:6px;padding:10px;box-sizing:border-box}input,select,textarea{width:100%}textarea{font:14px monospace;min-height:300px}button{cursor:pointer}button:disabled{cursor:wait;opacity:.65}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#1f2937;padding:16px;max-height:600px;overflow:auto;font-size:13px}.pass{color:#86efac}.fail{color:#fca5a5}.settings{display:grid;grid-template-columns:2fr 1fr 1fr;gap:16px}.workspace{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:24px;margin-top:24px}.controls{display:flex;gap:12px;align-items:center;margin:18px 0}details{margin-top:24px}summary{cursor:pointer}#game-preview .game-panel{box-sizing:border-box;width:100%;max-height:none;box-shadow:none}.game-button{margin:0}.placeholder{border:1px dashed #64748b;padding:40px;text-align:center;color:#94a3b8}@media(max-width:800px){.workspace,.settings{grid-template-columns:1fr}#game-preview .game-panel{width:100%}}
+</style>
+</head>
+<body>
+<a href="/">← Test Lab</a><h1>Game Testing Lab</h1>
+<p>Load a game and use its board and buttons just as you would in canvas. Narratron responds to triggering moves. This session uses temporary state.</p>
+<form id="load-form">
+<div class="settings">
+<div><label for="game">Game package (workspace path)</label><input id="game" list="games" value="adventures/example_adventure/game/game.json" required><datalist id="games"></datalist></div>
+<div><label for="provider">Text provider</label><select id="provider"></select></div>
+<div><label for="model">Text model</label><input id="model" value="gemini-3.5-flash-lite" placeholder="gemini-3.5-flash-lite"></div>
+</div>
+<div class="controls"><button id="load">Load fresh game</button><button id="close" type="button" disabled>Close session</button></div>
+</form>
+<p id="status" role="status" aria-live="polite">Choose a game and load it to start playing.</p>
+<div class="workspace">
+<section><h2>Playable game</h2><button id="toggle" type="button" hidden>Show / hide game</button><div id="placeholder" class="placeholder">The game board will appear here.</div><div id="game-preview" hidden></div></section>
+<section><h2>Game state &amp; AI responses</h2><p id="turn-summary">No moves yet.</p><div id="replies" aria-live="polite"></div><details><summary>Current model state and available AI actions</summary><pre id="state">Load a game to inspect state.</pre></details><details><summary>Full turn transcript</summary><pre id="transcript">[]</pre></details><button id="download" type="button" hidden>Download session transcript</button></section>
+</div>
+<details><summary>Automated scenario validation</summary>
+<p>For repeatable checks, replay a JSON scenario from a separate fresh game.</p>
+<form id="scenario-form"><label for="scenario">Scenario JSON</label><textarea id="scenario" spellcheck="false" required>{
+  "name": "checkers-player-opening",
+  "steps": [
+    {"move": {"name": "select", "arguments": {"index": 40}}, "min_ai_actions": 0, "expected_state": {"selected": 40, "turn": 1}},
+    {"move": {"name": "move", "arguments": {"source": 40, "target": 33}}, "min_ai_actions": 1, "require_quiescent": true, "expected_state": {"turn": 1, "winner": 0, "draw": false}}
+  ]
+}</textarea><div class="controls"><button id="run">Run scenario validation</button></div></form><pre id="report" hidden></pre>
+</details>
+<script type="module">
+import { createGameRenderer } from '/game-lab-assets/js/game-renderer.js';
+const el = id => document.getElementById(id);
+let sessionId = null;
+let snapshot = null;
+let loading = false;
+async function request(url, options = {}) {
+    const response = await fetch(url, options);
+    const result = await response.json();
+    if (!response.ok) throw new Error(typeof result.detail === 'string' ? result.detail : JSON.stringify(result.detail || result));
+    return result;
+}
+function status(message, failed = false) {
+    el('status').textContent = message;
+    el('status').className = failed ? 'fail' : '';
+}
+function show(data) {
+    snapshot = data;
+    renderer.render(data.game);
+    el('placeholder').hidden = true;
+    el('close').disabled = false;
+    el('download').hidden = false;
+    el('state').textContent = JSON.stringify(data.state, null, 2);
+    el('transcript').textContent = JSON.stringify(data.turns, null, 2);
+    const aiCount = data.turns.reduce((sum, turn) => sum + turn.ai_actions.length, 0);
+    el('turn-summary').textContent = `Revision ${data.game.revision} · ${data.turns.length} player actions · ${aiCount} AI actions`;
+    el('replies').replaceChildren();
+    for (const turn of data.turns) {
+        for (const response of turn.responses) {
+            const paragraph = document.createElement('p');
+            paragraph.textContent = `Narratron: ${response.response}`;
+            el('replies').append(paragraph);
+        }
+    }
+    status(data.game.error || 'Ready for your next move.', Boolean(data.game.error));
+}
+async function refresh() {
+    if (!sessionId) return;
+    const currentSession = sessionId;
+    try {
+        const data = await request(`/api/game-lab/sessions/${currentSession}`);
+        if (sessionId === currentSession) show(data);
+    }
+    catch (error) { status(error.message, true); }
+}
+const renderer = createGameRenderer({
+    container: el('game-preview'), toggleButton: el('toggle'),
+    actionUrl: () => `/api/game-lab/sessions/${sessionId}/action`,
+    canEdit: () => Boolean(sessionId) && !loading,
+    refresh,
+    stylesheetUrl: '/game-lab-assets/css/game-renderer.css',
+    initiallyOpen: true,
+    onPendingChange: pending => {
+        el('load').disabled = pending;
+        el('close').disabled = pending;
+        if (pending) status('Applying your move and waiting for Narratron…');
+    },
+});
+async function catalog() {
+    try {
+        const data = await request('/api/game-lab/catalog');
+        for (const path of data.games) { const option = document.createElement('option'); option.value = path; el('games').append(option); }
+        for (const provider of data.providers) { const option = document.createElement('option'); option.value = provider.id; option.textContent = `${provider.name || provider.id} (${provider.status})`; el('provider').append(option); }
+        el('provider').value = 'gemini-3';
+    } catch (error) { status(error.message, true); }
+}
+el('load-form').addEventListener('submit', async event => {
+    event.preventDefault();
+    loading = true; el('load').disabled = true;
+    if (snapshot) renderer.render(snapshot.game);
+    status('Loading game…');
+    try {
+        const data = await request('/api/game-lab/sessions', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({game_path: el('game').value, provider_id: el('provider').value, model: el('model').value || null})});
+        if (sessionId) await request(`/api/game-lab/sessions/${sessionId}`, {method: 'DELETE'});
+        sessionId = data.session_id;
+        loading = false;
+        renderer.render(null);
+        show(data);
+        if (el('game-preview').hidden) el('toggle').click();
+    } catch (error) { status(error.message, true); }
+    finally { loading = false; el('load').disabled = false; if (snapshot) renderer.render(snapshot.game); }
+});
+el('close').addEventListener('click', async () => {
+    if (!sessionId) return;
+    try {
+        await request(`/api/game-lab/sessions/${sessionId}`, {method: 'DELETE'});
+        sessionId = null; snapshot = null; renderer.render(null);
+        el('placeholder').hidden = false; el('close').disabled = true; el('download').hidden = true;
+        el('state').textContent = 'Session closed.'; el('transcript').textContent = '[]'; el('replies').replaceChildren(); el('turn-summary').textContent = 'No moves yet.';
+        status('Session closed. Load a game to start again.');
+    } catch (error) { status(error.message, true); }
+});
+el('scenario-form').addEventListener('submit', async event => {
+    event.preventDefault(); el('run').disabled = true; status('Running scenario…');
+    try {
+        const result = await request('/api/game-lab/run', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({game_path: el('game').value, scenario: JSON.parse(el('scenario').value), provider_id: el('provider').value, model: el('model').value || null})});
+        el('report').textContent = JSON.stringify(result, null, 2); el('report').hidden = false;
+        status(`${result.passed ? 'PASS' : 'FAIL'}: ${result.scenario}`, !result.passed);
+    } catch (error) { status(error.message, true); }
+    finally { el('run').disabled = false; }
+});
+el('download').addEventListener('click', () => {
+    const url = URL.createObjectURL(new Blob([JSON.stringify(snapshot, null, 2)], {type: 'application/json'}));
+    const link = document.createElement('a'); link.href = url; link.download = 'game-session.json'; link.click(); URL.revokeObjectURL(url);
+});
+catalog();
+</script>
+</body></html>
