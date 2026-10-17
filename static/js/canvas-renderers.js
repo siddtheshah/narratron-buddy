@@ -1103,6 +1103,7 @@ export function createDoodleRenderer({ canvas, isVisible = () => true, textLayer
             event.target.closest(".a2ui-surface") ||
             event.target.closest("#sticky-notes-toggle-btn") ||
             event.target.closest("#suggestions-toggle-btn") ||
+            event.target.closest("#hide-canvas-text-btn") ||
             event.target.closest("#prompt-toggle-btn") ||
             event.target.closest("#canvas-pin-btn") ||
             event.target.closest("#agent-activity-tray") ||
@@ -1142,6 +1143,7 @@ export function createDoodleRenderer({ canvas, isVisible = () => true, textLayer
         if (event.target && event.target.closest && (
             event.target.closest("#sticky-notes-toggle-btn") ||
             event.target.closest("#suggestions-toggle-btn") ||
+            event.target.closest("#hide-canvas-text-btn") ||
             event.target.closest("#prompt-toggle-btn") ||
             event.target.closest("#canvas-pin-btn") ||
             event.target.closest(".canvas-stamp-annotation") ||
