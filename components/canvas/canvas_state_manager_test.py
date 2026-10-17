@@ -155,3 +155,41 @@ def test_normal_doodles_clear_only_when_visual_changes(tmp_path: Path) -> None:
     assert len(manager.doodles.doodles) == 1
     manager._on_visual_changed(True)
     assert manager.doodles.doodles == []
+
+
+def test_manager_initializes_and_persists_notepad(tmp_path: Path) -> None:
+    theater = FakeTheaterManager(tmp_path).theater("notepad_theater")
+    manager = CanvasStateManager(theater)
+    assert manager.notepad is not None
+    manager.notepad.update_sticky_note("Clue", "Golden key")
+    assert manager.get_latest_state()["sticky_notes"] == [
+        {"topic": "Clue", "info": "Golden key", "name": "Clue", "content": "Golden key"}
+    ]
+    manager.persist()
+
+    reloaded = CanvasStateManager(theater)
+    assert reloaded.notepad is not None
+    present = reloaded.notepad.get_present_sticky_notes()
+    assert len(present) == 1
+    assert present[0]["topic"] == "Clue"
+    assert present[0]["info"] == "Golden key"
+
+
+def test_manager_hydrates_notepad_from_story_planning_state(tmp_path: Path) -> None:
+    directory = tmp_path / "legacy_notes"
+    directory.mkdir()
+    (directory / "theater.json").write_text(json.dumps({
+        "canvas_state": {
+            "story_planning_state": {
+                "sticky_notes": [{"topic": "Quest", "info": "Find the goblet"}],
+            }
+        }
+    }), encoding="utf-8")
+
+    theater = FakeTheaterManager(tmp_path).theater("legacy_notes")
+    manager = CanvasStateManager(theater)
+    assert manager.notepad is not None
+    present = manager.notepad.get_present_sticky_notes()
+    assert len(present) == 1
+    assert present[0]["topic"] == "Quest"
+    assert present[0]["info"] == "Find the goblet"

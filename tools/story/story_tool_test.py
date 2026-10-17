@@ -24,6 +24,7 @@ class TestStoryToolComposition(unittest.TestCase):
         self.theater.theater_id = "boundary_theater"
         self.theater.config.return_value = {"story_planning": {"session_id": "shared-session"}}
         self.canvas = MagicMock(spec=CanvasStateManager)
+        self.canvas.notepad = None
         self.canvas.story = MagicMock(spec=StoryState)
         self.canvas.story.speech_provider = MagicMock(spec=SpeechProvider)
         self.provider = MagicMock(spec=TextResponseProvider)
@@ -46,7 +47,7 @@ class TestStoryToolComposition(unittest.TestCase):
         character_type.assert_called_once_with(
             theater=self.theater,
             text_response_provider=self.provider,
-            notepad=tool.notepad,
+            canvas_manager=self.canvas,
             story_state=self.canvas.story,
             image_provider=None,
             speech_provider=self.canvas.story.speech_provider,
@@ -61,8 +62,8 @@ class TestStoryToolComposition(unittest.TestCase):
         self.assertNotIn("text_response_provider", planning_kwargs)
         self.assertNotIn("text_response_provider", response_kwargs)
         self.assertNotIn("planning_module", response_kwargs)
-        self.assertIs(planning_kwargs["notepad"], tool.notepad)
-        self.assertIs(response_kwargs["notepad"], tool.notepad)
+        self.assertNotIn("notepad", planning_kwargs)
+        self.assertNotIn("notepad", response_kwargs)
         self.assertIsNot(
             planning_kwargs["session_service"],
             response_kwargs["session_service"],
@@ -86,7 +87,7 @@ class TestStoryToolComposition(unittest.TestCase):
             response = response_type.return_value
             tool = StoryTool(self.theater, self.canvas, self.provider)
 
-        self.assertIs(character_type.call_args.kwargs["notepad"], tool.notepad)
+        self.assertIs(character_type.call_args.kwargs["canvas_manager"], self.canvas)
 
         callback = MagicMock()
         tool.on_scene_reaction = callback
@@ -221,6 +222,7 @@ class TestStoryToolStateIntegration(unittest.TestCase):
     def setUp(self) -> None:
         self.story_state = StoryState()
         self.canvas = MagicMock(spec=CanvasStateManager)
+        self.canvas.notepad = None
         self.canvas.story = self.story_state
         self.canvas.tool_response = MagicMock()
 

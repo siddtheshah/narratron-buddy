@@ -61,7 +61,6 @@ class StoryTool(BaseTools):
         image_provider: ImageProvider | None = None,
         speech_provider: SpeechProvider | None = None,
         reference_manager: Optional[ReferenceManager] = None,
-        notepad: Optional[Notepad] = None,
         lore_library: Optional[LoreLibrary] = None,
     ) -> None:
         if text_response_provider is None:
@@ -86,13 +85,18 @@ class StoryTool(BaseTools):
         )
         self.action_cooldown_base_seconds = self.cooldown_duration
         # This is the single note collection for both story modules.
-        self.notepad = notepad if notepad is not None else Notepad(
-            theater,
-            canvas_manager=canvas_manager,
-            # Adventure planning defaults to strict per-sticky contracts, but
-            # theater authors may deliberately opt out.
-            enforce_structured=bool(self.config.get("enforce_structured", True)),
-        )
+        if canvas_manager is not None and canvas_manager.notepad is not None:
+            self.notepad = canvas_manager.notepad
+        else:
+            self.notepad = Notepad(
+                theater,
+                canvas_manager=canvas_manager,
+                # Adventure planning defaults to strict per-sticky contracts, but
+                # theater authors may deliberately opt out.
+                enforce_structured=bool(self.config.get("enforce_structured", True)),
+            )
+            if canvas_manager is not None:
+                canvas_manager.notepad = self.notepad
         self._story_log: list[Dict[str, Any]] = []
         self._pending_actions: list[str] = []
         self.on_scene_reaction = None
@@ -122,14 +126,14 @@ class StoryTool(BaseTools):
             self.reference_manager = ReferenceManager(
                 theater=theater,
                 text_response_provider=text_response_provider,
-                notepad=self.notepad,
+                canvas_manager=canvas_manager,
                 story_state=story_state,
                 image_provider=character_image_provider,
                 speech_provider=speech_provider,
                 character_image_style=str(visuals_config.get("style") or "").strip(),
             )
         configured_session_id = str(self.config.get("session_id") or "").strip()
-        theater_id = getattr(theater, "theater_id", "")
+        theater_id = theater.theater_id or ""
         self.planning_session_service = InMemorySessionService()
         self.planning_session_id = (
             f"{configured_session_id}_planning"
@@ -151,7 +155,6 @@ class StoryTool(BaseTools):
             reference_manager=self.reference_manager,
             session_service=self.planning_session_service,
             session_id=self.planning_session_id,
-            notepad=self.notepad,
             story_log_context_fn=self.format_recent_story_log,
             game_state=canvas_manager.game,
         )
@@ -160,7 +163,6 @@ class StoryTool(BaseTools):
             canvas_manager=canvas_manager,
             lore_library=self.lore_library,
             reference_manager=self.reference_manager,
-            notepad=self.notepad,
             session_service=self.response_session_service,
             session_id=self.response_session_id,
             game_state=canvas_manager.game,

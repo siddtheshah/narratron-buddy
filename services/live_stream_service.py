@@ -24,10 +24,11 @@ logger = logging.getLogger(__name__)
 
 def format_canvas_state(
     canvas_state_manager: CanvasStateManager,
-    notepad: Notepad,
-    reference_manager: ReferenceManager,
+    reference_manager: Optional[ReferenceManager] = None,
 ) -> str:
     """Format canvas and current-scene state injected into the live agent context."""
+    notepad = canvas_state_manager.notepad
+
     visual = canvas_state_manager.visual
     audio = canvas_state_manager.audio
 
@@ -44,38 +45,39 @@ def format_canvas_state(
         )
 
     if not canvas_state_manager.story.adventure_mode:
-        elements = notepad.get_present_elements()
+        elements = notepad.get_present_elements() if notepad is not None else []
         if elements:
             rendered_elements = "; ".join(
                 f"{element['name']}: {element['content']}" for element in elements
             )
             parts.append(f"[Sticky Notes]: {rendered_elements}")
 
-    available_images = reference_manager.available_character_images()
-    player = reference_manager.get_player_character()
-    player_name = (player.name or "Player") if player is not None else ""
-    player_key = " ".join(player_name.replace("_", " ").casefold().split())
-    npc_tags: list[str] = []
-    for name in available_images:
-        name_key = " ".join(name.replace("_", " ").casefold().split())
-        if player_key and name_key == player_key:
-            parts.append(f"[Player Character Reference]: <{name}>")
-        else:
-            npc_tags.append(f"<{name}>")
-    if npc_tags:
-        names = ", ".join(npc_tags)
-        parts.append(
-            f"[Available Character Visuals]: {names}. Use these exact tags in visual prompts "
-            "to attach the latest character portraits automatically."
-        )
+    if reference_manager is not None:
+        available_images = reference_manager.available_character_images()
+        player = reference_manager.get_player_character()
+        player_name = (player.name or "Player") if player is not None else ""
+        player_key = " ".join(player_name.replace("_", " ").casefold().split())
+        npc_tags: list[str] = []
+        for name in available_images:
+            name_key = " ".join(name.replace("_", " ").casefold().split())
+            if player_key and name_key == player_key:
+                parts.append(f"[Player Character Reference]: <{name}>")
+            else:
+                npc_tags.append(f"<{name}>")
+        if npc_tags:
+            names = ", ".join(npc_tags)
+            parts.append(
+                f"[Available Character Visuals]: {names}. Use these exact tags in visual prompts "
+                "to attach the latest character portraits automatically."
+            )
 
-    scene_images = reference_manager.available_scene_images()
-    if scene_images:
-        scenes = "; ".join(f"{name}: {path}" for name, path in scene_images.items())
-        parts.append(
-            f"[Available Scene Visuals]: {scenes}. Use these paths in reference_images "
-            "to attach scene visuals to image and animation requests."
-        )
+        scene_images = reference_manager.available_scene_images()
+        if scene_images:
+            scenes = "; ".join(f"{name}: {path}" for name, path in scene_images.items())
+            parts.append(
+                f"[Available Scene Visuals]: {scenes}. Use these paths in reference_images "
+                "to attach scene visuals to image and animation requests."
+            )
 
     return "\n".join(parts)
 

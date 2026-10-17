@@ -2,6 +2,7 @@
 
 from collections.abc import AsyncIterator
 from pathlib import Path
+import tempfile
 import unittest
 from unittest.mock import MagicMock, Mock, patch
 
@@ -15,6 +16,7 @@ from components.reference_manager import Character, CharacterLookupResult, Refer
 from components.lore_library import LoreLibrary
 from components.image_library import ImageLibrary
 from components.notepad import Notepad
+from testing.game_fixtures import make_game, exchange_definition
 from tools.story.story_planning_module import (
     StoryPlanningModule,
     VertexGemini,
@@ -105,6 +107,7 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
         ):
             canvas = MagicMock(spec=CanvasStateManager)
             canvas.story = StoryState()
+            canvas.notepad = Notepad(theater, canvas_manager=canvas)
             return StoryPlanningModule(
                 theater=theater,
                 canvas_manager=canvas,
@@ -112,7 +115,6 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
                 reference_manager=MagicMock(spec=ReferenceManager),
                 session_service=MagicMock(spec=InMemorySessionService),
                 session_id="planning-boundary-session",
-                notepad=Notepad(theater, canvas_manager=canvas),
             )
 
     def test_uses_injected_provider_and_lore_library(self) -> None:
@@ -124,6 +126,7 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
         theater.config.return_value = {"story_planning": {"max_sticky_notes": 7}}
         theater.read_planning_schema.return_value = None
         canvas = MagicMock(spec=CanvasStateManager)
+        canvas.notepad = Notepad(theater, canvas_manager=canvas)
         session_service = MagicMock(spec=InMemorySessionService)
 
         with (
@@ -139,7 +142,6 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
                 image_library=image_library,
                 session_service=session_service,
                 session_id="planning-boundary-session",
-                notepad=Notepad(theater, canvas_manager=canvas),
             )
 
         self.assertIs(module.lore_library, lore_library)
@@ -211,6 +213,7 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
         canvas = MagicMock(spec=CanvasStateManager)
         session_service = MagicMock(spec=InMemorySessionService)
 
+        canvas.notepad = Notepad(theater, canvas_manager=canvas)
         with (
             patch.object(StoryPlanningModule, "_create_deep_planner_agent"),
             patch("tools.story.story_planning_module.App") as mock_app_class,
@@ -223,7 +226,6 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
                 reference_manager=MagicMock(spec=ReferenceManager),
                 session_service=session_service,
                 session_id="default-plugin-session",
-                notepad=Notepad(theater, canvas_manager=canvas),
             )
 
         self.assertEqual(len(module.plugins), 1)
@@ -243,6 +245,7 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
         theater.config.return_value = {}
         theater.read_planning_schema.return_value = None
         canvas = MagicMock(spec=CanvasStateManager)
+        canvas.notepad = Notepad(theater, canvas_manager=canvas)
         session_service = MagicMock(spec=InMemorySessionService)
 
         with (
@@ -257,7 +260,6 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
                 reference_manager=MagicMock(spec=ReferenceManager),
                 session_service=session_service,
                 session_id="restart-session",
-                notepad=Notepad(theater, canvas_manager=canvas),
             )
             mock_app_class.reset_mock()
             module.restart_deep_planner_agent()
@@ -398,8 +400,9 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
         theater.config.return_value = {}
         theater.read_planning_schema.return_value = None
         canvas = MagicMock(spec=CanvasStateManager)
-        session_service = MagicMock(spec=InMemorySessionService)
         notepad = Notepad(theater, canvas_manager=canvas)
+        canvas.notepad = notepad
+        session_service = MagicMock(spec=InMemorySessionService)
 
         with self.assertRaisesRegex(ValueError, "theater is required"):
             StoryPlanningModule(  # type: ignore[arg-type]
@@ -409,7 +412,6 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
                 reference_manager=reference_manager,
                 session_service=session_service,
                 session_id="planning-boundary-session",
-                notepad=notepad,
             )
         with self.assertRaisesRegex(ValueError, "canvas_manager is required"):
             StoryPlanningModule(  # type: ignore[arg-type]
@@ -419,7 +421,6 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
                 reference_manager=reference_manager,
                 session_service=session_service,
                 session_id="planning-boundary-session",
-                notepad=notepad,
             )
         with self.assertRaisesRegex(ValueError, "lore_library is required"):
             StoryPlanningModule(  # type: ignore[arg-type]
@@ -429,7 +430,6 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
                 reference_manager=reference_manager,
                 session_service=session_service,
                 session_id="planning-boundary-session",
-                notepad=notepad,
             )
         with self.assertRaisesRegex(ValueError, "reference_manager is required"):
             StoryPlanningModule(  # type: ignore[arg-type]
@@ -439,7 +439,6 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
                 reference_manager=None,
                 session_service=session_service,
                 session_id="planning-boundary-session",
-                notepad=notepad,
             )
         with self.assertRaisesRegex(ValueError, "session_service is required"):
             StoryPlanningModule(  # type: ignore[arg-type]
@@ -449,7 +448,6 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
                 reference_manager=reference_manager,
                 session_service=None,
                 session_id="planning-boundary-session",
-                notepad=notepad,
             )
         with self.assertRaisesRegex(ValueError, "session_id is required"):
             StoryPlanningModule(  # type: ignore[arg-type]
@@ -459,17 +457,17 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
                 reference_manager=reference_manager,
                 session_service=session_service,
                 session_id="",
-                notepad=notepad,
             )
-        with self.assertRaisesRegex(ValueError, "notepad is required"):
-            StoryPlanningModule(  # type: ignore[arg-type]
+        with self.assertRaisesRegex(ValueError, "canvas_manager.notepad is required"):
+            canvas_no_notepad = MagicMock(spec=CanvasStateManager)
+            canvas_no_notepad.notepad = None
+            StoryPlanningModule(
                 theater=theater,
-                canvas_manager=canvas,
+                canvas_manager=canvas_no_notepad,
                 lore_library=lore_library,
                 reference_manager=reference_manager,
                 session_service=session_service,
                 session_id="planning-boundary-session",
-                notepad=None,
             )
 
 
@@ -502,6 +500,7 @@ class TestStoryPlanningModuleState(unittest.TestCase):
         theater: Theater | None = None,
         session_id: str,
     ) -> StoryPlanningModule:
+        self.canvas.notepad = Notepad(theater or self.theater, canvas_manager=self.canvas)
         return StoryPlanningModule(
             theater=theater or self.theater,
             canvas_manager=self.canvas,
@@ -509,7 +508,6 @@ class TestStoryPlanningModuleState(unittest.TestCase):
             reference_manager=self.reference_manager,
             session_service=self.session_service,
             session_id=session_id,
-            notepad=Notepad(theater or self.theater, canvas_manager=self.canvas),
         )
 
     def test_initial_sticky_notes_and_required(self) -> None:
@@ -526,19 +524,20 @@ class TestStoryPlanningModuleState(unittest.TestCase):
         )
 
     def test_planner_reads_game_and_can_only_take_narratron_actions(self) -> None:
-        game = GameState(Path("adventures/the-trader"), Mock(), Mock())
-        self.module.game_state = game
-        snapshot = self.module._game_state_json()
-        self.assertIn('"instructions": "This game is one exchange', snapshot)
-        self.assertIn('"merchant_inventory"', snapshot)
-        self.assertIn('"narratron_place"', snapshot)
-        self.assertNotIn('"player_place"', snapshot)
-        denied = self.module.take_game_action("player_place", '{"item":"Pack mule"}', 0)
-        self.assertIn("cannot take", denied)
-        self.assertEqual(game.revision, 0)
-        accepted = self.module.take_game_action("narratron_place", '{"item":"Dates"}', 0)
-        self.assertIn('"merchant_offer": ["Dates"]', accepted)
-        self.assertEqual(game.revision, 1)
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            game = make_game(Path(tmp_dir), exchange_definition())
+            self.module.game_state = game
+            snapshot = self.module._game_state_json()
+            self.assertIn('"instructions": "Test exchange', snapshot)
+            self.assertIn('"stock"', snapshot)
+            self.assertIn('"narratron_place"', snapshot)
+            self.assertNotIn('"player_place"', snapshot)
+            denied = self.module.take_game_action("player_place", '{"item":"red"}', 0)
+            self.assertIn("cannot take", denied)
+            self.assertEqual(game.revision, 0)
+            accepted = self.module.take_game_action("narratron_place", '{"item":"green"}', 0)
+            self.assertIn('"table": {"player": [], "narratron": ["green"]}', accepted)
+            self.assertEqual(game.revision, 1)
 
     def test_game_action_heartbeat_identifies_committed_panel_action(self) -> None:
         prompt = _DEEP_PLANNING_TURN_PROMPT_TEMPLATE.render(
@@ -785,13 +784,8 @@ class TestDeepPlanningPromptTemplate(unittest.TestCase):
 
     def test_renders_recently_generated_images_in_prompt(self) -> None:
         rendered = _DEEP_PLANNING_TURN_PROMPT_TEMPLATE.render(
-            deep_plan_json="",
-            current_notes=[],
-            structured_sticky_json="",
-            sticky_schema_json="",
-            turn_events=[],
-            max_sticky_notes=5,
-            recent_images=[
+            is_initial=False,
+            new_images=[
                 {
                     "name": "dungeon_entrance",
                     "alias": "dungeon_entrance",
@@ -800,7 +794,7 @@ class TestDeepPlanningPromptTemplate(unittest.TestCase):
                 }
             ],
         )
-        self.assertIn("# Recently Generated Images", rendered)
+        self.assertIn("## Newly Generated Images", rendered)
         self.assertIn("Alias: `dungeon_entrance`", rendered)
         self.assertIn('Title: "The Iron Gate"', rendered)
         self.assertIn("Description: Ancient runes glowing blue", rendered)

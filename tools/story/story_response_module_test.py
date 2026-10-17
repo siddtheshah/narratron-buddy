@@ -46,6 +46,7 @@ class TestStoryResponseModuleDependencies(unittest.TestCase):
         self.session_service = MagicMock(spec=InMemorySessionService)
         self.session_id = "response-boundary-session"
         self.notepad = Notepad(self.theater, canvas_manager=self.canvas)
+        self.canvas.notepad = self.notepad
 
     def test_dialogue_supports_a_tts_voice_instruction(self) -> None:
         dialogue = ResponseDialogue(
@@ -66,7 +67,6 @@ class TestStoryResponseModuleDependencies(unittest.TestCase):
             module = StoryResponseModule(
                 theater=self.theater,
                 canvas_manager=self.canvas,
-                notepad=self.notepad,
                 lore_library=self.lore_library,
                 reference_manager=self.reference_manager,
                 session_service=self.session_service,
@@ -89,7 +89,6 @@ class TestStoryResponseModuleDependencies(unittest.TestCase):
             module = StoryResponseModule(
                 theater=self.theater,
                 canvas_manager=self.canvas,
-                notepad=self.notepad,
                 lore_library=self.lore_library,
                 reference_manager=self.reference_manager,
                 session_service=self.session_service,
@@ -116,7 +115,6 @@ class TestStoryResponseModuleDependencies(unittest.TestCase):
             module = StoryResponseModule(
                 theater=self.theater,
                 canvas_manager=self.canvas,
-                notepad=self.notepad,
                 lore_library=self.lore_library,
                 reference_manager=self.reference_manager,
                 session_service=self.session_service,
@@ -140,12 +138,11 @@ class TestStoryResponseModuleDependencies(unittest.TestCase):
             module = StoryResponseModule(
                 theater=self.theater,
                 canvas_manager=self.canvas,
-                notepad=self.notepad,
                 lore_library=self.lore_library,
                 reference_manager=self.reference_manager,
                 session_service=self.session_service,
                 session_id=self.session_id,
-        )
+            )
         self.assertTrue(module.priority_paygo)
         self.assertTrue(module.use_enterprise)
         self.assertEqual(module.vertex_location, "global")
@@ -160,7 +157,6 @@ class TestStoryResponseModuleDependencies(unittest.TestCase):
             module = StoryResponseModule(
                 theater=self.theater,
                 canvas_manager=self.canvas,
-                notepad=self.notepad,
                 lore_library=self.lore_library,
                 reference_manager=self.reference_manager,
                 session_service=self.session_service,
@@ -179,7 +175,6 @@ class TestStoryResponseModuleDependencies(unittest.TestCase):
             module = StoryResponseModule(
                 theater=self.theater,
                 canvas_manager=self.canvas,
-                notepad=self.notepad,
                 lore_library=self.lore_library,
                 reference_manager=self.reference_manager,
                 session_service=self.session_service,
@@ -204,7 +199,6 @@ class TestStoryResponseModuleDependencies(unittest.TestCase):
             StoryResponseModule(  # type: ignore[arg-type]
                 theater=self.theater,
                 canvas_manager=self.canvas,
-                notepad=self.notepad,
                 lore_library=None,
                 reference_manager=self.reference_manager,
                 session_service=self.session_service,
@@ -214,7 +208,6 @@ class TestStoryResponseModuleDependencies(unittest.TestCase):
             StoryResponseModule(  # type: ignore[arg-type]
                 theater=self.theater,
                 canvas_manager=self.canvas,
-                notepad=self.notepad,
                 lore_library=self.lore_library,
                 reference_manager=None,
                 session_service=self.session_service,
@@ -224,7 +217,6 @@ class TestStoryResponseModuleDependencies(unittest.TestCase):
             StoryResponseModule(  # type: ignore[arg-type]
                 theater=self.theater,
                 canvas_manager=self.canvas,
-                notepad=self.notepad,
                 lore_library=self.lore_library,
                 reference_manager=self.reference_manager,
                 session_service=None,
@@ -234,17 +226,17 @@ class TestStoryResponseModuleDependencies(unittest.TestCase):
             StoryResponseModule(
                 theater=self.theater,
                 canvas_manager=self.canvas,
-                notepad=self.notepad,
                 lore_library=self.lore_library,
                 reference_manager=self.reference_manager,
                 session_service=self.session_service,
                 session_id="",
             )
-        with self.assertRaisesRegex(ValueError, "notepad is required"):
-            StoryResponseModule(  # type: ignore[arg-type]
+        with self.assertRaisesRegex(ValueError, "canvas_manager.notepad is required"):
+            canvas_no_notepad = MagicMock(spec=CanvasStateManager)
+            canvas_no_notepad.notepad = None
+            StoryResponseModule(
                 theater=self.theater,
-                canvas_manager=self.canvas,
-                notepad=None,
+                canvas_manager=canvas_no_notepad,
                 lore_library=self.lore_library,
                 reference_manager=self.reference_manager,
                 session_service=self.session_service,
@@ -278,6 +270,7 @@ class TestStoryResponseModuleBehavior(unittest.TestCase):
         self.provider = MagicMock(spec=TextResponseProvider)
         self.lore_library = LoreLibrary(theater=self.theater)
         self.notepad = Notepad(self.theater, canvas_manager=self.canvas)
+        self.canvas.notepad = self.notepad
         self.image_library = MagicMock(spec=ImageLibrary)
         self.image_library.find_image_names.return_value = []
         self.image_provider = MagicMock(spec=ImageProvider)
@@ -287,7 +280,7 @@ class TestStoryResponseModuleBehavior(unittest.TestCase):
         self.reference_manager = ReferenceManager(
             theater=self.theater,
             text_response_provider=self.provider,
-            notepad=self.notepad,
+            canvas_manager=self.canvas,
             story_state=self.story_state,
             image_provider=self.image_provider,
             speech_provider=self.speech_provider,
@@ -295,7 +288,6 @@ class TestStoryResponseModuleBehavior(unittest.TestCase):
         self.module = StoryResponseModule(
             theater=self.theater,
             canvas_manager=self.canvas,
-            notepad=self.notepad,
             lore_library=self.lore_library,
             reference_manager=self.reference_manager,
             session_service=InMemorySessionService(),
@@ -309,7 +301,6 @@ class TestStoryResponseModuleBehavior(unittest.TestCase):
                 module = StoryResponseModule(
                     theater=self.theater,
                     canvas_manager=self.canvas,
-                    notepad=self.notepad,
                     lore_library=self.lore_library,
                     reference_manager=self.reference_manager,
                     session_service=InMemorySessionService(),
@@ -661,12 +652,12 @@ class TestStoryResponseModulePlayerCharacter(unittest.TestCase):
         self.canvas = MagicMock(spec=CanvasStateManager)
         self.lore_library = MagicMock(spec=LoreLibrary)
         self.notepad = Notepad(self.theater, canvas_manager=self.canvas)
+        self.canvas.notepad = self.notepad
         self.session_service = MagicMock(spec=InMemorySessionService)
         self.reference_manager = MagicMock(spec=ReferenceManager)
         self.module = StoryResponseModule(
             theater=self.theater,
             canvas_manager=self.canvas,
-            notepad=self.notepad,
             lore_library=self.lore_library,
             reference_manager=self.reference_manager,
             session_service=self.session_service,
@@ -761,12 +752,12 @@ class TestResponderInstructionAndTurnPrompt(unittest.TestCase):
         self.lore_library = MagicMock(spec=LoreLibrary)
         self.lore_library.get_lore_context.return_value = "Lore docs: space_history.md"
         self.notepad = Notepad(self.theater, canvas_manager=self.canvas)
+        self.canvas.notepad = self.notepad
         self.session_service = MagicMock(spec=InMemorySessionService)
         self.reference_manager = MagicMock(spec=ReferenceManager)
         self.module = StoryResponseModule(
             theater=self.theater,
             canvas_manager=self.canvas,
-            notepad=self.notepad,
             lore_library=self.lore_library,
             reference_manager=self.reference_manager,
             session_service=self.session_service,
@@ -847,15 +838,14 @@ class TestResponderInstructionAndTurnPrompt(unittest.TestCase):
         from unittest.mock import Mock
         from components.canvas.game_state import GameState
 
-        self.module.game_state = GameState(Path("adventures/the-trader"), Mock(), Mock())
+        self.module.game_state = GameState(Path("adventures/example_adventure"), Mock(), Mock())
         self.reference_manager.count.return_value = 0
         self.reference_manager.get_player_character.return_value = None
-        prompt = self.module._build_responder_turn_prompt("I inspect the exchange table.")
+        prompt = self.module._build_responder_turn_prompt("I inspect the game board.")
         self.assertIn("# Current Game State (read only)", prompt)
-        self.assertIn('"player_inventory"', prompt)
-        self.assertNotIn('"player_place"', prompt)
-        self.assertNotIn('"narratron_place"', prompt)
+        self.assertIn('"board"', prompt)
         self.assertNotIn('"instructions"', prompt)
+        self.assertNotIn('"actions"', prompt)
 
 
 if __name__ == "__main__":

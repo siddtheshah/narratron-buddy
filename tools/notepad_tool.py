@@ -18,19 +18,10 @@ class NotepadTool(BaseTools):
         self,
         theater: Theater,
         canvas_manager: CanvasStateManager,
-        notepad: Optional[Notepad] = None,
     ) -> None:
         super().__init__(theater=theater, canvas_manager=canvas_manager)
-        if notepad is not None:
-            self.notepad = notepad
-            self.notepad.on_change = self.save_to_session_state
-        else:
-            self.notepad = Notepad(
-                theater,
-                on_change=self.save_to_session_state,
-                canvas_manager=canvas_manager,
-                enforce_structured=False,
-            )
+        self.notepad = canvas_manager.notepad
+        self.notepad.on_change = self.save_to_session_state
         self.reload_from_session_state()
         self.notepad.sync_story_state()
 
@@ -54,7 +45,7 @@ class NotepadTool(BaseTools):
 
     def save_to_session_state(self) -> None:
         try:
-            if self.canvas_manager and hasattr(self.canvas_manager, "story"):
+            if self.canvas_manager is not None and self.canvas_manager.story is not None:
                 self.canvas_manager.story.set_story_planning_state(self.notepad.export_state())
         except Exception:
             # A sticky-note update should still succeed if a transient canvas
@@ -63,7 +54,7 @@ class NotepadTool(BaseTools):
 
     def reload_from_session_state(self) -> None:
         try:
-            if not self.canvas_manager or not hasattr(self.canvas_manager, "story"):
+            if self.canvas_manager is None or self.canvas_manager.story is None:
                 return
             state = self.canvas_manager.story.get_story_planning_state()
             if state:

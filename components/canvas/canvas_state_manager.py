@@ -15,6 +15,7 @@ from typing import Any, Optional
 from components.canvas import AudioState, ChatManager, ConnectionState, DoodleState, StoryState, ToolResponseState, UIState, VisualState
 from components.theater_manager import Theater
 from components.canvas.game_state import GameState
+from components.notepad import Notepad
 
 logger = logging.getLogger("components.canvas_state")
 MAX_AGENT_THOUGHT_LENGTH = 360
@@ -33,6 +34,7 @@ class CanvasStateManager:
     story: Optional[StoryState] = None
     chat: Optional[ChatManager] = None
     game: GameState | None = None
+    notepad: Optional[Notepad] = None
 
     def __init__(self, theater: Theater) -> None:
         self.theater = theater
@@ -49,14 +51,21 @@ class CanvasStateManager:
         self.ui = UIState(self.persist, self.notify_changed)
         self.tool_response = ToolResponseState(self.notify_changed)
         story_planning_config = theater.config().get("story_planning", {})
+        adventure_mode = bool(story_planning_config.get("adventure_mode", False))
         self.story = StoryState(
             self.persist,
             self.notify_changed,
             publish_audio_fn=self.connections.broadcast,
-            adventure_mode=bool(story_planning_config.get("adventure_mode", False)),
+            adventure_mode=adventure_mode,
         )
         self.chat = ChatManager(self.theater)
         self.game = GameState(self.theater.directory(), self.persist, self.notify_changed)
+        enforce_structured = bool(story_planning_config.get("enforce_structured", True)) if adventure_mode else False
+        self.notepad = Notepad(
+            self.theater,
+            canvas_manager=self,
+            enforce_structured=enforce_structured,
+        )
         self.load_state_from_disk()
         self.visual.initialize_starting_image()
 
@@ -86,15 +95,32 @@ class CanvasStateManager:
             self.visual.load(state); self.audio.load(state); self.doodles.load(state)
             self.ui.load(state); self.story.load(state)
             self.game.load(state.get("game_state"))
+            if self.notepad is not None:
+                notepad_data = state.get("notepad")
+                if isinstance(notepad_data, dict):
+                    self.notepad.import_state(notepad_data)
+                else:
+                    sp_state = self.story.get_story_planning_state()
+                    if sp_state:
+                        self.notepad.import_state(sp_state)
+                    else:
+                        saved_notes = self.story.get_sticky_notes()
+                        if saved_notes:
+                            self.notepad.import_state({"sticky_notes": saved_notes})
             self.chat.messages = list(state.get("chat_messages", [])); self.chat.load_suggestions(state.get("suggestions", []))
         except (OSError, ValueError, TypeError) as exc:
             logger.warning("Failed to load canvas state for %s: %s", self.theater_id, exc)
 
     def serialized_state(self) -> dict[str, object]:
         audio_serialized = {k: v for k, v in self.audio.serialize().items() if k != "orator_cursor"}
-        return {**self.visual.serialize(), **audio_serialized, **self.doodles.serialize(),
-                **self.ui.serialize(), **self.story.serialize(), **self.game.serialize(),
-                "suggestions": self.chat.export_suggestions(), "chat_messages": self.chat.get_messages()}
+        serialized = {
+            **self.visual.serialize(), **audio_serialized, **self.doodles.serialize(),
+            **self.ui.serialize(), **self.story.serialize(), **self.game.serialize(),
+            "suggestions": self.chat.export_suggestions(), "chat_messages": self.chat.get_messages(),
+        }
+        if self.notepad is not None:
+            serialized["notepad"] = self.notepad.export_state()
+        return serialized
 
     def save_local_theater_data(self, theater_dir: Optional[Path] = None) -> tuple[dict[str, object], list[dict[str, object]]]:
         directory = theater_dir or self.theater.directory(); directory.mkdir(parents=True, exist_ok=True)
@@ -109,6 +135,7 @@ class CanvasStateManager:
 
     def get_latest_state(self) -> dict[str, object]:
         visual = self.visual.payload()
+        sticky_notes = self.notepad.get_present_sticky_notes() if self.notepad is not None else self.story.sticky_notes()
         return {**visual, "music": self.audio.payload(), "music_pinned": self.audio.pinned,
                 "music_orator_cursor": self.audio.payload().get("orator_cursor"),
                 "doodles_enabled": self.doodles.enabled,
@@ -116,6 +143,6 @@ class CanvasStateManager:
                 "viewer_collab_enabled": self.ui.viewer_collab_enabled,
                 "tool_activity": self.tool_response.activity_payload(),
                 "agent_thought": self.tool_response.agent_thought_payload(),
-                **self.story.payload(), "sticky_notes": self.story.sticky_notes(),
+                **self.story.payload(), "sticky_notes": sticky_notes,
                 "interactive_surfaces": list(self.ui.interactive_surfaces.values()),
                 "game_state": self.game.payload()}

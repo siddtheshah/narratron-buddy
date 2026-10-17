@@ -247,7 +247,6 @@ class StoryPlanningModule:
         reference_manager: ReferenceManager,
         session_service: InMemorySessionService,
         session_id: str,
-        notepad: Notepad,
         story_log_context_fn: Optional[Callable[[], str]] = None,
         image_library: Optional[ImageLibrary] = None,
         game_state: GameState | None = None,
@@ -256,6 +255,8 @@ class StoryPlanningModule:
             raise ValueError("theater is required.")
         if canvas_manager is None:
             raise ValueError("canvas_manager is required.")
+        if canvas_manager.notepad is None:
+            raise ValueError("canvas_manager.notepad is required.")
         if lore_library is None:
             raise ValueError("lore_library is required.")
         if reference_manager is None:
@@ -264,8 +265,7 @@ class StoryPlanningModule:
             raise ValueError("session_service is required.")
         if not session_id:
             raise ValueError("session_id is required.")
-        if notepad is None:
-            raise ValueError("notepad is required.")
+        self.notepad = canvas_manager.notepad
 
         self.theater = theater
         self.theater_id: str = theater.theater_id or ""
@@ -280,8 +280,7 @@ class StoryPlanningModule:
         self.session_service = session_service
         self.session_id = str(session_id)
         self._story_log_context_fn = story_log_context_fn or (lambda: "")
-        self.notepad = notepad
-        self.config = notepad.config
+        self.config = self.notepad.config
 
         self.adventure_mode: bool = bool(self.config.get("adventure_mode", False))
         configured_style = self.config.get("style", DEFAULT_STORY_PLANNING_STYLE)

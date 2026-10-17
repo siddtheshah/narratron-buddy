@@ -13,7 +13,9 @@ from typing import Any, Callable, Dict, Optional
 from jinja2 import Template
 from pydantic import BaseModel, Field, create_model
 
-from components.canvas_state import CanvasStateManager
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from components.canvas_state import CanvasStateManager
 from components.theater_manager import Theater
 
 
@@ -197,26 +199,29 @@ class Notepad:
 
     def _read_planning_schema(self) -> Any:
         schema_data = None
-        if hasattr(self.theater, "read_planning_schema"):
+        if self.theater is not None:
             try:
                 schema_data = self.theater.read_planning_schema()
             except Exception as exc:
                 logger.warning("[Notepad] Failed to read Theater planning schema: %s", exc)
-        if not schema_data and hasattr(self.theater, "directory"):
-            theater_dir = self.theater.directory()
-            if isinstance(theater_dir, Path):
-                for name in ("planning.yaml", "planning.yml"):
-                    path = theater_dir / name
-                    if path.is_file():
-                        try:
-                            import yaml
+        if not schema_data and self.theater is not None:
+            try:
+                theater_dir = self.theater.directory()
+                if isinstance(theater_dir, Path):
+                    for name in ("planning.yaml", "planning.yml"):
+                        path = theater_dir / name
+                        if path.is_file():
+                            try:
+                                import yaml
 
-                            loaded_schema = yaml.safe_load(path.read_text(encoding="utf-8"))
-                            if isinstance(loaded_schema, dict):
-                                schema_data = loaded_schema
-                                break
-                        except Exception as exc:
-                            logger.warning("[Notepad] Failed to load planning schema from %s: %s", path, exc)
+                                loaded_schema = yaml.safe_load(path.read_text(encoding="utf-8"))
+                                if isinstance(loaded_schema, dict):
+                                    schema_data = loaded_schema
+                                    break
+                            except Exception as exc:
+                                logger.warning("[Notepad] Failed to load planning schema from %s: %s", path, exc)
+            except Exception as exc:
+                logger.warning("[Notepad] Failed to read directory from Theater: %s", exc)
         if isinstance(schema_data, dict):
             return schema_data
         return self.config.get(
@@ -516,10 +521,8 @@ class Notepad:
 
     def sync_story_state(self) -> None:
         """Publish every note; the canvas controls whether topics are hidden."""
-        story_state = getattr(self.canvas_manager, "story", None)
-        setter = getattr(story_state, "set_sticky_notes", None)
-        if callable(setter):
-            setter(self.get_present_sticky_notes())
+        if self.canvas_manager is not None and self.canvas_manager.story is not None:
+            self.canvas_manager.story.set_sticky_notes(self.get_present_sticky_notes())
 
     def export_state(self) -> Dict[str, Any]:
         with self._sticky_notes_lock:

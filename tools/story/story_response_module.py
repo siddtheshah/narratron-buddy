@@ -300,15 +300,17 @@ class StoryResponseModule:
         self,
         theater: Theater,
         canvas_manager: CanvasStateManager,
-        notepad: Notepad,
         lore_library: LoreLibrary,
         reference_manager: ReferenceManager,
         session_service: InMemorySessionService,
         session_id: str,
         game_state: GameState | None = None,
-    ):
-        if notepad is None:
-            raise ValueError("notepad is required.")
+    ) -> None:
+        if canvas_manager is None:
+            raise ValueError("canvas_manager is required.")
+        if canvas_manager.notepad is None:
+            raise ValueError("canvas_manager.notepad is required.")
+        self.notepad = canvas_manager.notepad
         if lore_library is None:
             raise ValueError("lore_library is required.")
         if reference_manager is None:
@@ -402,8 +404,6 @@ class StoryResponseModule:
         self.on_story_response_completed: Optional[Callable[[], None]] = (
             self.config.get("on_story_response_completed")
         )
-
-        self.notepad = notepad
 
         self.plugins: List[BasePlugin] = [ReflectAndRetryToolPlugin()]
 

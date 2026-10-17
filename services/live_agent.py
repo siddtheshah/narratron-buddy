@@ -261,11 +261,12 @@ def create_tool_bundle_for_session(
         canvas_manager = CanvasStateManager(theater)
     image_library = ImageLibrary(theater)
     lore_library = LoreLibrary(theater=theater)
-    notepad = Notepad(
-        theater,
-        canvas_manager=canvas_manager,
-        enforce_structured=bool(story_planning_config.get("enforce_structured", True)) if adventure_mode else False,
-    )
+    if canvas_manager.notepad is None:
+        canvas_manager.notepad = Notepad(
+            theater,
+            canvas_manager=canvas_manager,
+            enforce_structured=bool(story_planning_config.get("enforce_structured", True)) if adventure_mode else False,
+        )
 
     story_planning_text_provider = get_text_response_provider(
         str(story_planning_config.get("text_provider", "gemini-3")),
@@ -295,7 +296,7 @@ def create_tool_bundle_for_session(
     reference_manager = ReferenceManager(
         theater=theater,
         text_response_provider=story_planning_text_provider,
-        notepad=notepad,
+        canvas_manager=canvas_manager,
         story_state=story_state,
         image_provider=reference_image_provider,
         speech_provider=speech_provider,
@@ -350,7 +351,6 @@ def create_tool_bundle_for_session(
             text_response_provider=story_planning_text_provider,
             image_library=image_library,
             reference_manager=reference_manager,
-            notepad=notepad,
             lore_library=lore_library,
         )
         tools.append(story_planning_tools.process_user_action)
@@ -358,7 +358,6 @@ def create_tool_bundle_for_session(
         notepad_tools = NotepadTool(
             theater,
             canvas_manager=canvas_manager,
-            notepad=notepad,
         )
         tools.append(notepad_tools.update_sticky_note)
         reference_tools = ReferenceTool(

@@ -17,6 +17,7 @@ from components.notepad import Notepad
 from components.reference_manager import Character, ReferenceManager, PlayerCharacter
 from components.theater_manager import TheaterManager
 from components.canvas.story_state import CharacterState, PlayerCharacterState, StoryState
+from components.canvas.game_state import GameState
 from tools.notepad_tool import NotepadTool
 
 
@@ -45,6 +46,8 @@ class CanvasFixture:
     chat: MagicMock = field(default_factory=MagicMock)
     doodles: list[dict] = field(default_factory=list)
     story: StoryState = field(default_factory=StoryState)
+    game: GameState | None = None
+    notepad: Notepad | None = None
 
 
 @pytest.fixture
@@ -63,12 +66,12 @@ def reference_manager() -> MagicMock:
     return manager
 
 
-def test_format_canvas_state_includes_available_character_visual_tags(notepad: MagicMock) -> None:
+def test_format_canvas_state_includes_available_character_visual_tags() -> None:
     manager = MagicMock(spec=ReferenceManager)
     manager.available_scene_images.return_value = {}
     manager.get_player_character.return_value = None
     manager.available_character_images.return_value = {"Arthur Modella": "session/1.png", "Grim Vallos": "session/2.png"}
-    state = format_canvas_state(CanvasFixture(), notepad, manager)
+    state = format_canvas_state(CanvasFixture(), manager)
     assert "[Available Character Visuals]: <Arthur Modella>, <Grim Vallos>" in state
     assert "latest character portraits automatically" in state
     assert "[Active Characters]" not in state
@@ -77,14 +80,14 @@ def test_format_canvas_state_includes_available_character_visual_tags(notepad: M
     manager.available_character_images.assert_called_once_with()
 
 
-def test_format_canvas_state_distinguishes_player_reference_from_npcs(notepad: MagicMock) -> None:
+def test_format_canvas_state_distinguishes_player_reference_from_npcs() -> None:
     manager = MagicMock(spec=ReferenceManager)
     manager.available_scene_images.return_value = {}
     manager.get_player_character.return_value = PlayerCharacter(
         name="Mara", image_description="Private appearance", reference="private_alias",
     )
     manager.available_character_images.return_value = {"Mara": "private/mara.png", "Cedric": "private/cedric.png"}
-    state = format_canvas_state(CanvasFixture(), notepad, manager)
+    state = format_canvas_state(CanvasFixture(), manager)
     assert "[Player Character Reference]: <Mara>" in state
     assert "[Available Character Visuals]: <Cedric>" in state
     assert state.count("<Mara>") == 1
@@ -93,49 +96,49 @@ def test_format_canvas_state_distinguishes_player_reference_from_npcs(notepad: M
     assert "private/" not in state
 
 
-def test_format_canvas_state_omits_player_tag_without_available_portrait(notepad: MagicMock) -> None:
+def test_format_canvas_state_omits_player_tag_without_available_portrait() -> None:
     manager = MagicMock(spec=ReferenceManager)
     manager.available_scene_images.return_value = {}
     manager.get_player_character.return_value = PlayerCharacter(name="Mara")
     manager.available_character_images.return_value = {"Cedric": "private/cedric.png"}
-    state = format_canvas_state(CanvasFixture(), notepad, manager)
+    state = format_canvas_state(CanvasFixture(), manager)
     assert "[Player Character Reference]" not in state
     assert "<Mara>" not in state
     assert "<Cedric>" in state
 
 
-def test_format_canvas_state_labels_unnamed_player_reference(notepad: MagicMock) -> None:
+def test_format_canvas_state_labels_unnamed_player_reference() -> None:
     manager = MagicMock(spec=ReferenceManager)
     manager.available_scene_images.return_value = {}
     manager.get_player_character.return_value = PlayerCharacter()
     manager.available_character_images.return_value = {"Player": "private/player.png"}
-    state = format_canvas_state(CanvasFixture(), notepad, manager)
+    state = format_canvas_state(CanvasFixture(), manager)
     assert "[Player Character Reference]: <Player>" in state
     assert "[Available Character Visuals]" not in state
 
 
-def test_format_canvas_state_reads_current_character_catalog_without_story_sync(tmp_path: Path, notepad: MagicMock) -> None:
+def test_format_canvas_state_reads_current_character_catalog_without_story_sync(tmp_path: Path) -> None:
     theater = TheaterManager(tmp_path).theater("stage")
     manager = ReferenceManager(theater, MagicMock(spec=TextResponseProvider))
     story = StoryState()
     canvas = CanvasFixture(story=story)
-    assert "[Available Character Visuals]" not in format_canvas_state(canvas, notepad, manager)
+    assert "[Available Character Visuals]" not in format_canvas_state(canvas, manager)
 
     portrait = theater.updated_characters_dir() / "Arthur_Modella" / "1.png"
     portrait.parent.mkdir(parents=True)
     Image.new("RGB", (8, 8), "blue").save(portrait)
-    assert "[Available Character Visuals]: <Arthur Modella>" in format_canvas_state(canvas, notepad, manager)
+    assert "[Available Character Visuals]: <Arthur Modella>" in format_canvas_state(canvas, manager)
 
     portrait.unlink()
-    assert "[Available Character Visuals]" not in format_canvas_state(canvas, notepad, manager)
+    assert "[Available Character Visuals]" not in format_canvas_state(canvas, manager)
     assert "available_character_images" not in story.serialize()
 
 
-def test_format_canvas_state_reads_current_scene_visuals(tmp_path: Path, notepad: MagicMock) -> None:
+def test_format_canvas_state_reads_current_scene_visuals(tmp_path: Path) -> None:
     theater = TheaterManager(tmp_path).theater("stage")
     manager = ReferenceManager(theater, MagicMock(spec=TextResponseProvider))
     canvas = CanvasFixture()
-    assert "[Available Scene Visuals]" not in format_canvas_state(canvas, notepad, manager)
+    assert "[Available Scene Visuals]" not in format_canvas_state(canvas, manager)
 
     authored = theater.scenes_dir() / "Old_Harbor" / "1.png"
     authored.parent.mkdir(parents=True)
@@ -143,7 +146,7 @@ def test_format_canvas_state_reads_current_scene_visuals(tmp_path: Path, notepad
     forest = theater.scenes_dir() / "Moonlit_Forest" / "1.png"
     forest.parent.mkdir(parents=True)
     Image.new("RGB", (8, 8), "green").save(forest)
-    state = format_canvas_state(canvas, notepad, manager)
+    state = format_canvas_state(canvas, manager)
     assert "[Available Scene Visuals]:" in state
     assert f"Old Harbor: {authored}" in state
     assert f"Moonlit Forest: {forest}" in state
@@ -153,15 +156,15 @@ def test_format_canvas_state_reads_current_scene_visuals(tmp_path: Path, notepad
     updated = theater.updated_scenes_dir() / "Old_Harbor" / "2.png"
     updated.parent.mkdir(parents=True)
     Image.new("RGB", (8, 8), "red").save(updated)
-    state = format_canvas_state(canvas, notepad, manager)
+    state = format_canvas_state(canvas, manager)
     assert f"Old Harbor: {updated}" in state
     assert str(authored) not in state
 
     updated.unlink()
-    assert f"Old Harbor: {authored}" in format_canvas_state(canvas, notepad, manager)
+    assert f"Old Harbor: {authored}" in format_canvas_state(canvas, manager)
     authored.unlink()
     forest.unlink()
-    assert "[Available Scene Visuals]" not in format_canvas_state(canvas, notepad, manager)
+    assert "[Available Scene Visuals]" not in format_canvas_state(canvas, manager)
 
 
 def test_format_canvas_state_includes_sticky_notes(tmp_path: Path, reference_manager: MagicMock) -> None:
@@ -169,15 +172,15 @@ def test_format_canvas_state_includes_sticky_notes(tmp_path: Path, reference_man
     theater.config = MagicMock(return_value={})
     elements = StoryTool(
         theater,
-        canvas_manager=MagicMock(),
+        canvas_manager=CanvasFixture(),
         text_response_provider=MagicMock(),
     )
     elements.update_sticky_note("hero", "Mara, a cartographer")
     elements.update_sticky_note("tone", "Hopeful and tense")
 
+    canvas = CanvasFixture(notepad=elements.notepad)
     state = format_canvas_state(
-        CanvasFixture(),
-        notepad=elements.notepad,
+        canvas,
         reference_manager=reference_manager,
     )
 
@@ -199,7 +202,8 @@ def test_format_canvas_state_only_includes_raw_notes_outside_adventure_mode(
     reference_manager.available_character_images.return_value = {"Guide": "guide.png"}
     reference_manager.available_scene_images.return_value = {"Harbor": "harbor.png"}
 
-    state = format_canvas_state(canvas, pad, reference_manager)
+    canvas.notepad = pad
+    state = format_canvas_state(canvas, reference_manager)
 
     if adventure_mode:
         assert "[Sticky Notes]" not in state
@@ -222,7 +226,7 @@ def test_format_canvas_state_uses_notepad_instead_of_story_notes(
         {"name": "objective", "content": "Find the lost compass"},
     ]
 
-    state = format_canvas_state(CanvasFixture(story=story), notepad, reference_manager)
+    state = format_canvas_state(CanvasFixture(story=story, notepad=notepad), reference_manager)
 
     assert "[Sticky Notes]: objective: Find the lost compass" in state
     assert "Old objective" not in state
@@ -234,14 +238,14 @@ def test_format_canvas_state_omits_active_character_details(tmp_path: Path) -> N
     theater.config = MagicMock(return_value={"adventure_mode": True})
     elements = StoryTool(
         theater,
-        canvas_manager=MagicMock(),
+        canvas_manager=CanvasFixture(),
         text_response_provider=MagicMock(),
     )
     elements.create_or_update_character(name="Vaelen", personality="Brave", motivation="Find the talisman", quirk="Flips a coin on choices")
 
+    canvas = CanvasFixture(notepad=elements.notepad)
     state = format_canvas_state(
-        CanvasFixture(),
-        notepad=elements.notepad,
+        canvas,
         reference_manager=elements.reference_manager,
     )
 
@@ -252,18 +256,23 @@ def test_format_canvas_state_omits_active_character_details(tmp_path: Path) -> N
 def test_format_canvas_state_includes_elements_from_notepad_tool(tmp_path: Path, reference_manager: MagicMock) -> None:
     theater = MagicMock(wraps=TheaterManager(tmp_path).theater("stage_notepad"))
     theater.config = MagicMock(return_value={})
-    canvas = CanvasFixture(story=StoryState())
+    mock_notepad = MagicMock(spec=Notepad)
+    mock_notepad.get_present_elements.return_value = [
+        {"name": "objective", "content": "Find the lost compass"}
+    ]
+    canvas = CanvasFixture(story=StoryState(), notepad=mock_notepad)
     notepad_tool = NotepadTool(
         theater,
         canvas_manager=canvas,  # type: ignore[arg-type]
     )
     notepad_tool.update_sticky_note("objective", "Find the lost compass")
+    mock_notepad.update_sticky_note.assert_called_once_with("objective", "Find the lost compass")
 
-    state = format_canvas_state(canvas, notepad_tool.notepad, reference_manager)
+    state = format_canvas_state(canvas, reference_manager)
     assert "[Sticky Notes]: objective: Find the lost compass" in state
 
 
-def test_format_canvas_state_omits_character_details_from_reference_manager(tmp_path: Path, notepad: MagicMock, reference_manager: MagicMock) -> None:
+def test_format_canvas_state_omits_character_details_from_reference_manager(tmp_path: Path, reference_manager: MagicMock) -> None:
     theater = MagicMock(wraps=TheaterManager(tmp_path).theater("stage_char_tool"))
     theater.config = MagicMock(return_value={})
     canvas = CanvasFixture()
@@ -277,7 +286,7 @@ def test_format_canvas_state_omits_character_details_from_reference_manager(tmp_
             quirk="Whistles quietly",
         )
     ]
-    state = format_canvas_state(canvas, notepad, char_mgr)
+    state = format_canvas_state(canvas, char_mgr)
     assert "[Active Characters]" not in state
 
 
@@ -299,7 +308,8 @@ def test_format_canvas_state_omits_character_image_handles_for_npcs(tmp_path: Pa
         image_reference="lyra_portrait",
     )
 
-    state = format_canvas_state(canvas, elements.notepad, elements.reference_manager)
+    canvas.notepad = elements.notepad
+    state = format_canvas_state(canvas, elements.reference_manager)
 
     assert "[Active Characters]" not in state
     assert "lyra_portrait" not in state
@@ -324,7 +334,8 @@ def test_format_canvas_state_omits_character_image_handles_for_player(tmp_path: 
         )
     )
 
-    state = format_canvas_state(canvas, elements.notepad, elements.reference_manager)
+    canvas.notepad = elements.notepad
+    state = format_canvas_state(canvas, elements.reference_manager)
 
     assert "[Player Character]" not in state
     assert "valen_img" not in state
@@ -332,7 +343,7 @@ def test_format_canvas_state_omits_character_image_handles_for_player(tmp_path: 
     assert "Image Reference" not in state
 
 
-def test_format_canvas_state_shows_reference_tags_without_character_details(notepad: MagicMock) -> None:
+def test_format_canvas_state_shows_reference_tags_without_character_details() -> None:
     story = StoryState()
     story.set_player_character(
         PlayerCharacterState(
@@ -356,7 +367,7 @@ def test_format_canvas_state_shows_reference_tags_without_character_details(note
     manager.available_scene_images.return_value = {}
     manager.get_player_character.return_value = PlayerCharacter(name="Mara")
     manager.available_character_images.return_value = {"Mara": "private/mara.png", "Cedric": "private/cedric.png"}
-    state = format_canvas_state(canvas, notepad, manager)
+    state = format_canvas_state(canvas, manager)
 
     assert "[Player Character Reference]: <Mara>" in state
     assert "[Available Character Visuals]: <Cedric>" in state
@@ -372,30 +383,30 @@ def test_format_canvas_state_shows_reference_tags_without_character_details(note
     assert "Image Reference" not in state
 
 
-def test_canvas_observability_preserves_collaboration_data_when_disabled(notepad: MagicMock, reference_manager: MagicMock) -> None:
+def test_canvas_observability_preserves_collaboration_data_when_disabled(reference_manager: MagicMock) -> None:
     doodles = [{"type": "draw", "x0": 0, "y0": 0, "x1": 1, "y1": 1}]
     canvas = CanvasFixture(doodles=doodles)
 
-    format_canvas_state(canvas, notepad, reference_manager)
+    format_canvas_state(canvas, reference_manager)
 
     canvas.chat.consume_top_suggestion.assert_not_called()
     assert canvas.doodles == doodles
 
 
-def test_canvas_observability_preserves_suggestion_when_collaboration_is_enabled(notepad: MagicMock, reference_manager: MagicMock) -> None:
+def test_canvas_observability_preserves_suggestion_when_collaboration_is_enabled(reference_manager: MagicMock) -> None:
     canvas = CanvasFixture(ui=CanvasUIFixture(viewer_collab_enabled=True))
     canvas.chat.consume_top_suggestion.return_value = {
         "author": "Ada", "text": "Open the hidden door", "upvote_count": 2,
     }
 
-    state = format_canvas_state(canvas, notepad, reference_manager)
+    state = format_canvas_state(canvas, reference_manager)
 
     assert "[Viewer Suggestion]" not in state
     canvas.chat.consume_top_suggestion.assert_not_called()
 
 
-def test_canvas_observability_informs_agent_when_orator_pins_visual(notepad: MagicMock, reference_manager: MagicMock) -> None:
-    state = format_canvas_state(CanvasFixture(visual=CanvasVisualFixture(pinned=True)), notepad, reference_manager)
+def test_canvas_observability_informs_agent_when_orator_pins_visual(reference_manager: MagicMock) -> None:
+    state = format_canvas_state(CanvasFixture(visual=CanvasVisualFixture(pinned=True)), reference_manager)
 
     assert "[Canvas Pin]: The orator has pinned the current canvas." in state
     assert "tools will decline while pinned" in state

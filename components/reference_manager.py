@@ -34,6 +34,10 @@ from components.notepad import Notepad
 from components.theater_manager import Theater
 from utils.image_utils import embed_image_metadata
 
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from components.canvas_state import CanvasStateManager
+
 logger = logging.getLogger(__name__)
 
 DEFAULT_MAX_ACTIVE_CHARACTERS = 5
@@ -535,7 +539,7 @@ class ReferenceManager:
         self,
         theater: Theater,
         text_response_provider: Optional[TextResponseProvider] = None,
-        notepad: Optional[Notepad] = None,
+        canvas_manager: Optional[CanvasStateManager] = None,
         story_state: Optional[StoryState] = None,
         image_provider: Optional[ImageProvider] = None,
         speech_provider: Optional[SpeechProvider] = None,
@@ -546,7 +550,11 @@ class ReferenceManager:
             raise ValueError("theater is required.")
         self.theater: Theater = theater
         self.text_response_provider: Optional[TextResponseProvider] = text_response_provider
-        self.notepad: Optional[Notepad] = notepad
+        self.canvas_manager: Optional[CanvasStateManager] = canvas_manager
+        if canvas_manager is not None and canvas_manager.notepad is not None:
+            self.notepad: Optional[Notepad] = canvas_manager.notepad
+        else:
+            self.notepad: Optional[Notepad] = None
         self._story_state = story_state if story_state is not None else StoryState()
         self.image_provider: Optional[ImageProvider] = image_provider
         self.speech_provider: Optional[SpeechProvider] = speech_provider

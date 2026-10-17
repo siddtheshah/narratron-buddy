@@ -24,12 +24,15 @@ from services.live_agent_manager import (
 )
 from tools.observability_tool import ObservabilityTools
 from tools.image import ImageTools
+from components.notepad import Notepad
 from services.priority_live_request_queue import PriorityLiveRequestQueue
 
 
 def canvas_observability_fixture(image_path=None, collaboration_enabled=False, doodles=None):
     canvas = MagicMock()
     canvas.theater = None
+    canvas.notepad = MagicMock(spec=Notepad)
+    canvas.notepad.get_present_elements.return_value = []
     canvas.story.adventure_mode = False
     canvas.visual.shown_image_path = image_path
     canvas.visual.shown_image_prompt = None
@@ -1817,7 +1820,6 @@ class TestLiveAgentSessionManager(unittest.TestCase):
 
                 mock_format_canvas_state.assert_called_once_with(
                     session.canvas_state_manager,
-                    mock_notepad_tools.notepad,
                     mock_manager,
                 )
 

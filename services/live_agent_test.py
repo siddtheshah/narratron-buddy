@@ -275,7 +275,6 @@ class TestCreateAgent(unittest.TestCase):
             text_response_provider=ANY,
             image_library=ANY,
             reference_manager=ANY,
-            notepad=ANY,
             lore_library=ANY,
         )
         mock_music_cls.assert_called_once_with(
@@ -623,7 +622,7 @@ class TestCreateAgent(unittest.TestCase):
         canvas_mgr = mock_canvas_mgr_cls.return_value
         image_lib = mock_img_lib_cls.return_value
         lore_lib = mock_lore_lib_cls.return_value
-        notepad = mock_notepad_cls.return_value
+        notepad = canvas_mgr.notepad
         char_mgr = mock_char_mgr_cls.return_value
 
         bundle = create_tool_bundle_for_session(theater)
@@ -632,11 +631,8 @@ class TestCreateAgent(unittest.TestCase):
         mock_canvas_mgr_cls.assert_called_once_with(theater)
         mock_img_lib_cls.assert_called_once_with(theater)
         mock_lore_lib_cls.assert_called_once_with(theater=theater)
-        mock_notepad_cls.assert_called_once_with(
-            theater, canvas_manager=canvas_mgr, enforce_structured=True
-        )
         mock_char_mgr_cls.assert_called_once()
-        self.assertIs(mock_char_mgr_cls.call_args.kwargs["notepad"], notepad)
+        self.assertIs(mock_char_mgr_cls.call_args.kwargs["canvas_manager"], canvas_mgr)
         self.assertNotIn("image_library", mock_char_mgr_cls.call_args.kwargs)
 
         mock_image_tools_cls.assert_called_once_with(
@@ -652,7 +648,6 @@ class TestCreateAgent(unittest.TestCase):
             text_response_provider=mock_get_text_provider.return_value,
             image_library=image_lib,
             reference_manager=char_mgr,
-            notepad=notepad,
             lore_library=lore_lib,
         )
         mock_animation_tools_cls.assert_called_once()
