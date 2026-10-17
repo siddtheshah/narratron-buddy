@@ -215,11 +215,18 @@ def test_adventure_session_turn_execution_mocked(sample_adventure):
             ],
         }
 
-        # Mock responder execution so _resolve_user_action processes the reaction.
-        with patch.object(
-            session.story_tool.response_module,
-            "_run_responder_agent",
-            return_value=mock_reaction,
+        # Mock responder and deep planner execution so no live model calls are made.
+        with (
+            patch.object(
+                session.story_tool.response_module,
+                "_run_responder_agent",
+                return_value=mock_reaction,
+            ),
+            patch.object(
+                session.story_tool.planning_module,
+                "_run_deep_planner_agent",
+                return_value={"tool_updates": True},
+            ),
         ):
             # Simulate ADK runner execution
             mock_events = [
@@ -321,12 +328,19 @@ def test_adventure_runner_lab_api_routes(sample_adventure):
             content=MagicMock(parts=[MagicMock(text="You observe the glittering dust of the syncopated nebula.")]),
         )
 
-    with patch.object(
-        active_session.story_tool.response_module,
-        "_run_responder_agent",
-        return_value=mock_reaction,
+    with (
+        patch.object(
+            active_session.story_tool.response_module,
+            "_run_responder_agent",
+            return_value=mock_reaction,
+        ),
+        patch.object(
+            active_session.story_tool.planning_module,
+            "_run_deep_planner_agent",
+            return_value={"tool_updates": True},
+        ),
+        patch.object(active_session.runner, "run_async", side_effect=fake_run_async),
     ):
-        with patch.object(active_session.runner, "run_async", side_effect=fake_run_async):
             msg_res = client.post(
                 f"/api/adventure-runner/sessions/{session_id}/messages",
                 json={"message": "Look around"},
@@ -378,12 +392,19 @@ def test_send_message_inside_running_event_loop(sample_adventure):
                 content=MagicMock(parts=[MagicMock(text="Response from agent.")]),
             )
 
-        with patch.object(
-            session.story_tool.response_module,
-            "_run_responder_agent",
-            return_value=mock_reaction,
+        with (
+            patch.object(
+                session.story_tool.response_module,
+                "_run_responder_agent",
+                return_value=mock_reaction,
+            ),
+            patch.object(
+                session.story_tool.planning_module,
+                "_run_deep_planner_agent",
+                return_value={"tool_updates": True},
+            ),
+            patch.object(session.runner, "run_async", side_effect=fake_run_async),
         ):
-            with patch.object(session.runner, "run_async", side_effect=fake_run_async):
                 # Call send_message directly from within an active asyncio event loop
                 async def run_in_active_loop():
                     return session.send_message("Test inside loop")

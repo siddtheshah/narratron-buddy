@@ -496,16 +496,54 @@ class TestAnimationTools(BaseTestCase):
         started = threading.Event()
         release = threading.Event()
         planner = MagicMock()
-        technique_resp = MagicMock(parsed={"technique": "layered", "reasoning": "backdrop"}, provider="p", model="m", request_id="1", usage={})
+        technique_resp = MagicMock(
+            parsed={"technique": "layered", "reasoning": "backdrop"},
+            provider="p",
+            model="m",
+            request_id="1",
+            usage={},
+        )
+        layer_resp = MagicMock(
+            parsed={
+                "background": "A traveler under stars.",
+                "layers": [
+                    {"description": "A silhouette traveler walking", "effect": "pan_left"},
+                    {"description": "Gently twinkling stars", "effect": "halo"},
+                ],
+            },
+            provider="p",
+            model="m",
+            request_id="2",
+            usage={},
+        )
+        call_count = 0
 
         def plan(_request):
-            started.set()
-            release.wait(timeout=2)
-            return technique_resp
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                started.set()
+                release.wait(timeout=2)
+                return technique_resp
+            return layer_resp
 
         planner.generate.side_effect = plan
         image_provider = MagicMock()
+        image_provider.generate.return_value = ImageGenerationResult(
+            image_bytes=fake_image_bytes(),
+            mime_type="image/jpeg",
+            provider="mock-image",
+            model="mock-v1",
+        )
         layered_provider = MagicMock(model="fal-ai/qwen-image-layered")
+        layered_provider.decompose.return_value = MagicMock(
+            images=[
+                (fake_image_bytes(), "image/png"),
+                (fake_image_bytes(), "image/png"),
+            ],
+            request_id="req-layered",
+            usage={},
+        )
         image_tools = self.make_image_tools(self.config, "single_flight", self.manager)
         tools = self.make_animation_tools(image_tools, image_provider, planner, layered_provider, {"cooldown_duration": 10.0})
         first_result = []
@@ -519,6 +557,7 @@ class TestAnimationTools(BaseTestCase):
         first.join(timeout=2)
         tools.join_generation(timeout=2)
         self.assertIn("generation started", first_result[0])
+        tools.cancel_pending_cycle_call("create_animation")
 
 
     def test_animation_layer_accepts_twist_and_bend_effects(self):
@@ -1269,6 +1308,7 @@ class TestAnimationTools(BaseTestCase):
         self.assertIsNotNone(pending)
         self.assertEqual(pending["args"], ("third animation", "anim_third"))
         tools.join_generation()
+        tools.cancel_pending_cycle_call("create_animation")
 
     @patch("tools.image.image_tool.get_image_provider")
     def test_create_animation_auto_adds_reference_manager_references(self, mock_get_provider) -> None:

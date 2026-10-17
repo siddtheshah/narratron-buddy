@@ -779,6 +779,9 @@ class BaseTools:
     def cancel_pending_cycle_call(self, tool_name: str) -> bool:
         """Cancel any pending cycle call for tool_name. Returns True if cancelled."""
         with self._cycle_cooldown_lock:
+            timer = self._cooldown_timers.pop(tool_name, None)
+            if timer is not None:
+                timer.cancel()
             return self._pending_cycle_calls.pop(tool_name, None) is not None
 
     def _dispatch_pending_cycle_call(self, tool_name: str) -> None:

@@ -28,6 +28,26 @@ UI integration tests are the exception: place them in `testing/ui/`, also using 
   - `services/live_stream_service_test.py` (tests `services/live_stream_service.py`)
 
 ### Running Unit Tests
+
+Pytest enforces offline Python networking by default with `pytest-socket`.
+TCP/UDP sockets and DNS lookups are blocked, including during application imports
+and collection. Unix domain sockets remain available for local event-loop
+communication. Fix missing mocks at the service boundary; do not add
+`enable_socket` markers, `socket_enabled` fixtures, host allowlists, or
+`--force-enable-socket` to make tests pass. In-process ASGI transports need no
+network access.
+
+`pytest-env` sets `PYTHON_DOTENV_DISABLED=1` before collection so local `.env`
+files cannot silently configure live integrations. Install development
+dependencies with `uv sync` before running tests; these plugins are required.
+
+This is the first enforcement layer, not complete process or filesystem
+isolation: inherited environment variables, application databases/directories,
+browser processes, and other subprocesses still need their own isolation.
+In particular, `pytest-socket` does not block browser HTTP requests. The live
+narration evaluation scripts below run outside pytest and still use external
+services; keep their execution explicit.
+
 Always invoke pytest via `uv run pytest`. The test runner is configured with `pytest-xdist` (`addopts = -n auto` in `pytest.ini`) to execute tests in parallel across available CPU workers by default:
 
 ```bash
