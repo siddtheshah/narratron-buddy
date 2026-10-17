@@ -295,6 +295,45 @@ class TestStoryResponseModuleBehavior(unittest.TestCase):
             session_id="response-test-session",
         )
 
+    def test_planning_trigger_is_available_to_responder(self) -> None:
+        with patch("tools.story.story_response_module.Agent") as agent:
+            self.module._create_responder_agent()
+        self.assertIn(self.module.trigger_story_planning, agent.call_args.kwargs["tools"])
+        self.assertIn("trigger_story_planning(reason)", self.module._build_responder_instruction())
+
+    def test_planning_request_includes_completed_turn_and_resets(self) -> None:
+        def resolve(action: str, nudge: str = "") -> dict[str, str | list[str]]:
+            self.assertIn("Story planning requested", self.module.trigger_story_planning("  Revise the quest  "))
+            self.assertIn("already been requested", self.module.trigger_story_planning("Another reason"))
+            return {"narration": "The key breaks.", "planning_signals": ["The key is unusable."]}
+
+        with patch.object(self.module, "_run_responder_agent", side_effect=resolve):
+            result = self.module._resolve_user_action("I turn the key.")
+
+        self.assertEqual(result["planning_request"], "Revise the quest")
+        self.assertEqual(result["user_action"], "I turn the key.")
+        self.assertEqual(result["narration"], "The key breaks.")
+        self.assertEqual(result["planning_signals"], ["The key is unusable.", "[PLANNING REQUEST] Revise the quest"])
+        with patch.object(self.module, "_run_responder_agent", return_value={"narration": "Stillness."}):
+            next_result = self.module._resolve_user_action("I wait.")
+        self.assertNotIn("planning_request", next_result)
+        self.assertEqual(next_result["planning_signals"], [])
+
+    def test_failed_turn_discards_planning_request(self) -> None:
+        def fail(action: str, nudge: str = "") -> dict[str, str]:
+            self.module.trigger_story_planning("Revise the quest")
+            raise RuntimeError("Responder failed")
+
+        with patch.object(self.module, "_run_responder_agent", side_effect=fail):
+            with self.assertRaisesRegex(RuntimeError, "Responder failed"):
+                self.module._resolve_user_action("I turn the key.")
+        self.assertIsNone(self.module._planning_request_reason)
+
+    def test_planning_request_rejects_empty_or_oversized_reason(self) -> None:
+        self.assertIn("reason is required", self.module.trigger_story_planning("  "))
+        self.assertIn("500 characters or fewer", self.module.trigger_story_planning("x" * 501))
+        self.assertIsNone(self.module._planning_request_reason)
+
     def test_dice_configuration_controls_tools_and_instructions(self) -> None:
         for settings, enabled in [({}, True), ({"enable_dice": True}, True), ({"enable_dice": False}, False)]:
             with self.subTest(settings=settings):

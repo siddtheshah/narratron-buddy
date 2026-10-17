@@ -286,11 +286,12 @@ class StoryTool(BaseTools):
         else:
             self.record_tool_failure("process_user_action")
         self.append_story_log_entry(entry)
-        if self._pending_actions:
-            action = self._pending_actions.pop(0)
-            if "error" not in result:
-                result["deep_plan_revision_used"] = self.planning_module.get_deep_plan().get("revision", 0)
-                self.planning_module.queue_deep_planning(result.get("turn_id", 0), action, result)
+        action = self._pending_actions.pop(0) if self._pending_actions else None
+        if action is None and result.get("planning_request"):
+            action = str(result["user_action"])
+        if action is not None and "error" not in result:
+            result["deep_plan_revision_used"] = self.planning_module.get_deep_plan().get("revision", 0)
+            self.planning_module.queue_deep_planning(result.get("turn_id", 0), action, result)
         self.sync_character_bindings()
         if self._on_scene_reaction:
             self._on_scene_reaction(result)

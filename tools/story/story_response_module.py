@@ -31,7 +31,6 @@ from components.canvas.game_state import GameState
 from components.theater_manager import Theater
 from components.reference_manager import Character, CharacterLookupResult, ReferenceManager, PlayerCharacter
 from components.lore_library import LoreLibrary
-from components.notepad import Notepad
 from tools.story.story_models import (
     VertexGemini,
     DEFAULT_COMPACTION_TRIGGER_TOKENS,
@@ -107,6 +106,7 @@ You are the fast, authoritative turn responder for an interactive story.
 Resolve only the immediate consequences of the player's submitted action and decide when NPCs should manifest or materially change.
 A separate deep-planning agent owns long-term continuity and is the sole agent that directly modifies sticky notes. Treat active notes as authoritative planning guidance, but never modify them directly or create a competing long-term plan during this turn.
 Crucially, you are the front-line observer of all immediate turn fallout. While your other half commits sticky note updates, you MUST explicitly communicate to the planner via `planning_signals` with direct instructions directed only to it. You are responsible for ensuring high recall of sticky note updates by explicitly flagging any active sticky notes that require updating based on this turn's resolution so the planner does not miss them.
+Use `trigger_story_planning(reason)` when this turn requires the planner's attention, such as a major revelation, a changed goal, a continuity conflict, or sticky notes that need revision. The request runs in the background after your response is complete, with the resolved action and scene fallout. Continue resolving the immediate turn; do not wait for planning or invent its outcome.
 Respond ONLY with valid JSON conforming to the scene reaction schema.
 
 # Core Improv & Player Agency Principles
@@ -349,6 +349,7 @@ class StoryResponseModule:
         self._turn_id_lock = Lock()
         self._last_scene_reaction: Dict[str, Any] = {}
         self._last_action_response_word_count: int = 0
+        self._planning_request_reason: str | None = None
 
         # User input gate
         self.require_user_input: bool = bool(self.config.get("require_user_input", False))
@@ -903,6 +904,18 @@ class StoryResponseModule:
             ),
         )
 
+    def trigger_story_planning(self, reason: str) -> str:
+        """Request background planning after this turn, explaining what needs attention."""
+        clean_reason = reason.strip()
+        if not clean_reason:
+            return "A reason is required to request story planning."
+        if len(clean_reason) > MAX_PLANNING_SIGNAL_CHARS:
+            return f"Planning request reasons must be {MAX_PLANNING_SIGNAL_CHARS} characters or fewer."
+        if self._planning_request_reason is not None:
+            return "Story planning has already been requested for this turn; include further details in planning_signals."
+        self._planning_request_reason = clean_reason
+        return "Story planning requested. The planner will receive the completed turn and your reason after this response."
+
     def _create_responder_agent(self) -> Agent:
         config_kwargs: dict[str, Any] = {
             "http_options": types.HttpOptions(
@@ -946,6 +959,7 @@ class StoryResponseModule:
                 self.update_player_character,
                 self.create_or_update_character,
                 self.create_or_update_scene,
+                self.trigger_story_planning,
                 *([self.roll_dice] if self.config.get("enable_dice", True) is not False else []),
             ],
             output_schema=SceneReaction,
@@ -1192,7 +1206,12 @@ class StoryResponseModule:
         if not self.adventure_mode:
             return {"error": "Adventure Mode is not enabled for this theater."}
 
-        parsed = self._run_responder_agent(action, nudge=nudge)
+        self._planning_request_reason = None
+        try:
+            parsed = self._run_responder_agent(action, nudge=nudge)
+            planning_request = self._planning_request_reason
+        finally:
+            self._planning_request_reason = None
         if not isinstance(parsed, dict):
             raise ValueError("Story responder must return a JSON object.")
         if "error" in parsed:
@@ -1232,6 +1251,10 @@ class StoryResponseModule:
             "lore_docs_browsed": self.get_lore_docs_browsed_this_turn(),
             "die_rolls": die_rolls,
         }
+        if planning_request is not None:
+            result["planning_request"] = planning_request
+            result["user_action"] = action
+            planning_signals.append(f"[PLANNING REQUEST] {planning_request}")
         player_char = self.reference_manager.get_player_character()
         result["player_character"] = player_char.for_model_context().model_dump(exclude_none=True) if player_char else None
         self._last_scene_reaction = result

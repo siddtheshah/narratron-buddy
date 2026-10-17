@@ -122,6 +122,55 @@ class TestStoryToolComposition(unittest.TestCase):
         self.assertEqual(tool._story_log[-1]["type"], "user_action")
         self.assertEqual(tool._story_log[-1]["action"], "Player placed a coin")
 
+    def test_scene_reaction_queues_explicit_planning_request_once(self) -> None:
+        for pending_action in (None, "I turn the key."):
+            with (
+                self.subTest(pending_action=pending_action),
+                patch("tools.story.story_tool.ReferenceManager"),
+                patch("tools.story.story_tool.LoreLibrary"),
+                patch("tools.story.story_tool.StoryPlanningModule"),
+                patch("tools.story.story_tool.StoryResponseModule"),
+            ):
+                tool = StoryTool(self.theater, self.canvas, self.provider)
+                tool.planning_module.get_deep_plan.return_value = {"revision": 3}
+                if pending_action is not None:
+                    tool._pending_actions.append(pending_action)
+                result = {
+                    "turn_id": 7,
+                    "user_action": "I turn the key.",
+                    "narration": "The key breaks.",
+                    "planning_request": "Revise the quest",
+                    "planning_signals": ["[PLANNING REQUEST] Revise the quest"],
+                }
+                tool._handle_scene_reaction(result)
+                tool.planning_module.queue_deep_planning.assert_called_once_with(7, "I turn the key.", result)
+                self.assertEqual(result["deep_plan_revision_used"], 3)
+                self.assertEqual(tool._pending_actions, [])
+
+    def test_scene_reaction_without_pending_action_or_request_does_not_queue(self) -> None:
+        with (
+            patch("tools.story.story_tool.ReferenceManager"),
+            patch("tools.story.story_tool.LoreLibrary"),
+            patch("tools.story.story_tool.StoryPlanningModule"),
+            patch("tools.story.story_tool.StoryResponseModule"),
+        ):
+            tool = StoryTool(self.theater, self.canvas, self.provider)
+        tool._handle_scene_reaction({"narration": "Stillness."})
+        tool.planning_module.queue_deep_planning.assert_not_called()
+
+    def test_failed_scene_reaction_does_not_queue_planning(self) -> None:
+        with (
+            patch("tools.story.story_tool.ReferenceManager"),
+            patch("tools.story.story_tool.LoreLibrary"),
+            patch("tools.story.story_tool.StoryPlanningModule"),
+            patch("tools.story.story_tool.StoryResponseModule"),
+        ):
+            tool = StoryTool(self.theater, self.canvas, self.provider)
+        tool._pending_actions.append("I turn the key.")
+        tool._handle_scene_reaction({"error": "Responder failed"})
+        tool.planning_module.queue_deep_planning.assert_not_called()
+        self.assertEqual(tool._pending_actions, [])
+
     def test_delegates_public_surface_to_response_module(self) -> None:
         with (
             patch("tools.story.story_tool.ReferenceManager"),
