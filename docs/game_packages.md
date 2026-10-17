@@ -77,10 +77,13 @@ expressions. Literal text therefore includes CEL string quotes.
   likewise accepts only player actions. The story planner sees the current state,
   revision, and Narratron action contracts, and can submit only those actions.
   The story responder sees the current game state in its turn prompt, without
-  action contracts or package instructions, and cannot mutate it. A successful
-  player game action queues a planner heartbeat with both the submitted action
-  and an independent snapshot of the newly committed state, so the Narratron side
-  can react without waiting for a separate narrated turn.
+  action contracts or package instructions, and cannot mutate it. An optional
+  `triggering` boolean (default `true`) controls whether a player action notifies
+  Narratron and queues a planner heartbeat; set `triggering: false` for exploratory
+  UI interactions like selection. A successful triggering player game action queues
+  a planner heartbeat with both the submitted action and an independent snapshot of
+  the newly committed state, so the Narratron side can react without waiting for a
+  separate narrated turn.
 
 The host validates arguments, computes derived values, checks the guard, evaluates
 transition bindings and result, validates the candidate state and invariants, and

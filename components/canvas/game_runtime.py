@@ -47,6 +47,7 @@ class TransitionDefinition(GameModel):
     guard: str = Field(default="true", max_length=4000)
     bindings: list[Binding] = Field(default_factory=list, max_length=32)
     result: str = Field(min_length=1, max_length=4000)
+    triggering: bool = Field(default=True)
 
 
 class ViewAction(GameModel):

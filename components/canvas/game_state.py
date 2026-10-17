@@ -47,6 +47,7 @@ class GameState:
         path = directory / GAME_FILE
         try:
             if not path.exists():
+                logger.debug("[GameState] No game package found at %s", path)
                 return
             if not path.resolve().is_relative_to(directory.resolve()) or path.stat().st_size > MAX_GAME_BYTES:
                 raise ValueError("Game package path or size is invalid.")
@@ -57,6 +58,13 @@ class GameState:
             self._view = json.loads(json.dumps(self.program.initial_view))
             self._model_state = json.loads(json.dumps(self.program.initial_model_state))
             self._narratron_actions = json.loads(json.dumps(self.program.initial_narratron_actions))
+            logger.debug(
+                "[GameState] Loaded game package from %s (definition_hash=%s, revision=%d, initial_state=%s)",
+                path,
+                self.definition_hash[:8],
+                self.revision,
+                self.state,
+            )
         except Exception as exc:
             logger.warning("Game package failed to load: %s", exc, exc_info=True)
             self.error = "Game package could not be loaded. Check its declaration and CEL expressions."
@@ -64,6 +72,7 @@ class GameState:
 
     def _prepare(self, state: dict[str, JsonValue]) -> list[JsonValue]:
         assert self.program is not None
+        logger.debug("[GameState] Preparing state (revision=%d): %s", self.revision, state)
         if len(json.dumps(state, allow_nan=False).encode("utf-8")) > MAX_VALUE_BYTES:
             raise ValueError("Game state exceeds its size budget.")
         execution = self.program.execution()
@@ -76,22 +85,43 @@ class GameState:
         self._view = view
         self._model_state = model_state
         self._narratron_actions = actions
+        logger.debug(
+            "[GameState] Prepared state successfully (nodes=%d, actions=%s)",
+            len(view),
+            list(actions.keys()),
+        )
         return view
 
     def load(self, saved: JsonValue) -> None:
         if saved is None or self.program is None:
+            logger.debug(
+                "[GameState] Skipping load: saved_present=%s, program_present=%s",
+                saved is not None,
+                self.program is not None,
+            )
             return
         with self._lock:
+            logger.debug("[GameState] Loading saved game (current_revision=%d)", self.revision)
             previous_view, previous_model_state, previous_actions = self._view, self._model_state, self._narratron_actions
             try:
                 # Inspect the hash before parsing the version-specific saved payload.
                 data = TypeAdapter(dict[str, JsonValue]).validate_python(saved)
                 if data.get("definition_hash") != self.definition_hash:
+                    logger.debug(
+                        "[GameState] Definition hash mismatch (saved=%s, current=%s); initializing fresh game",
+                        data.get("definition_hash"),
+                        self.definition_hash,
+                    )
                     self.error = "Game definition changed; a fresh game was initialized."
                     return
                 restored = SavedGame.model_validate(data)
                 self._prepare(restored.state)
                 self.state, self.revision = restored.state, restored.revision
+                logger.debug(
+                    "[GameState] Restored saved game to revision=%d (state=%s)",
+                    self.revision,
+                    self.state,
+                )
             except Exception:
                 # A broken game save must not interrupt loading story/chat state.
                 self._view = previous_view
@@ -103,7 +133,9 @@ class GameState:
     def serialize(self) -> dict[str, JsonValue]:
         with self._lock:
             if self.program is None:
+                logger.debug("[GameState] Serializing empty game state (no program)")
                 return {"game_state": None}
+            logger.debug("[GameState] Serializing game state (revision=%d)", self.revision)
             return {"game_state": SavedGame(definition_hash=self.definition_hash, state=self.state, revision=self.revision).model_dump(mode="json")}
 
     def payload(self) -> dict[str, JsonValue] | None:
@@ -116,7 +148,9 @@ class GameState:
         """Give the responder facts and the planner its package-owned instructions."""
         with self._lock:
             if self.program is None:
+                logger.debug("[GameState] Story snapshot requested for audience '%s' but no program is loaded", audience)
                 return None
+            logger.debug("[GameState] Generating story snapshot for audience '%s' at revision=%d", audience, self.revision)
             snapshot: dict[str, JsonValue] = {"revision": self.revision, "state": self._model_state}
             if audience == "narratron":
                 snapshot["instructions"] = self.program.definition.instructions
@@ -126,11 +160,13 @@ class GameState:
     def report_error(self, message: str) -> None:
         """Publish a game-only diagnostic without changing the playable state."""
         with self._lock:
+            logger.debug("[GameState] Reporting error (revision=%d): %s", self.revision, message)
             self.error = message
             self._notify_safely()
 
     def _notify_safely(self) -> None:
         try:
+            logger.debug("[GameState] Notifying canvas listener at revision=%d", self.revision)
             self._notify("latest")
         except Exception:
             logger.exception("Game update notification failed at revision %s", self.revision)
@@ -138,16 +174,37 @@ class GameState:
     def act(self, action: GameAction, actor: Literal["player", "narratron"] = "player") -> dict[str, JsonValue] | None:
         with self._lock:
             if self.program is None:
+                logger.debug("[GameState] Act rejected: no playable game")
                 raise ValueError("This theater has no playable game.")
             if action.revision != self.revision:
+                logger.debug(
+                    "[GameState] Act rejected: stale revision (action_revision=%d, current_revision=%d)",
+                    action.revision,
+                    self.revision,
+                )
                 raise StaleGameAction("The game changed. Review its current state and try again.")
             if len(action.model_dump_json().encode("utf-8")) > 4096:
+                logger.debug("[GameState] Act rejected: action exceeds size budget")
                 raise ValueError("Game action exceeds its size budget.")
             transition = self.program.definition.transitions.get(action.name)
             if transition is None:
+                logger.debug("[GameState] Act rejected: unknown action '%s'", action.name)
                 raise ValueError("Unknown game action.")
             if transition.actor != actor:
+                logger.debug(
+                    "[GameState] Act rejected: actor mismatch for '%s' (action actor='%s', required actor='%s')",
+                    action.name,
+                    actor,
+                    transition.actor,
+                )
                 raise ValueError("This actor cannot take that game action.")
+            logger.debug(
+                "[GameState] Executing action '%s' by actor '%s' at revision=%d (arguments=%s)",
+                action.name,
+                actor,
+                self.revision,
+                action.arguments,
+            )
             previous, previous_view, previous_model_state, previous_actions, revision = (
                 self.state, self._view, self._model_state, self._narratron_actions, self.revision
             )
@@ -157,6 +214,7 @@ class GameState:
                 context = execution.context(self.state)
                 context["action"] = action.arguments
                 if not TypeAdapter(bool).validate_python(execution.evaluate(transition.guard, context), strict=True):
+                    logger.debug("[GameState] Guard condition failed for action '%s'", action.name)
                     raise ValueError("This action is not permitted in the current game state.")
                 execution.bindings(transition.bindings, context)
                 candidate = TypeAdapter(dict[str, JsonValue]).validate_python(execution.evaluate(transition.result, context), strict=True)
@@ -165,6 +223,12 @@ class GameState:
                 self.state = candidate
                 self.revision += 1
                 self._persist()
+                logger.debug(
+                    "[GameState] Action '%s' applied: revision advanced to %d, new state=%s",
+                    action.name,
+                    self.revision,
+                    self.state,
+                )
             except Exception as exc:
                 self.state, self._view, self._model_state, self._narratron_actions, self.revision = (
                     previous, previous_view, previous_model_state, previous_actions, revision
@@ -174,10 +238,15 @@ class GameState:
                 raise ValueError(str(exc)[:250]) from exc
             self.error = ""
             self._notify_safely()
-            if actor == "player" and self.on_player_action is not None:
+            if actor == "player" and transition.triggering and self.on_player_action is not None:
                 try:
                     snapshot = self.story_snapshot("responder")
                     assert snapshot is not None
+                    logger.debug(
+                        "[GameState] Invoking on_player_action callback for action '%s' at revision=%d",
+                        action.name,
+                        self.revision,
+                    )
                     self.on_player_action(action, snapshot)
                 except Exception:
                     logger.exception("Player game action callback failed at revision %s", self.revision)

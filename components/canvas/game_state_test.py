@@ -1,6 +1,7 @@
 """Game-agnostic contract tests: the same runtime also runs a counter."""
 from concurrent.futures import ThreadPoolExecutor
 import json
+import logging
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -263,3 +264,83 @@ def test_player_action_event_preserves_each_committed_state(tmp_path: Path) -> N
     game.act(GameAction(name='add', arguments={'amount': 2}, revision=1))
     assert callback.call_args_list[0].args[1] == {'revision': 1, 'state': {'count': 1}}
     assert callback.call_args_list[1].args[1] == {'revision': 2, 'state': {'count': 3}}
+
+
+def test_game_state_emits_debug_logs(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    with caplog.at_level(logging.DEBUG, logger="components.canvas.game_state"):
+        game = make_game(tmp_path)
+        game.story_snapshot("responder")
+        game.serialize()
+        game.act(GameAction(name="add", arguments={"amount": 1}, revision=0))
+        game.report_error("debug check")
+        saved = game.serialize()["game_state"]
+        game.load(saved)
+
+    log_text = caplog.text
+    assert "[GameState] Loaded game package from" in log_text
+    assert "[GameState] Preparing state (revision=0)" in log_text
+    assert "[GameState] Prepared state successfully" in log_text
+    assert "[GameState] Generating story snapshot for audience 'responder'" in log_text
+    assert "[GameState] Serializing game state (revision=0)" in log_text
+    assert "[GameState] Executing action 'add' by actor 'player'" in log_text
+    assert "[GameState] Action 'add' applied: revision advanced to 1" in log_text
+    assert "[GameState] Reporting error (revision=1): debug check" in log_text
+    assert "[GameState] Notifying canvas listener at revision=1" in log_text
+    assert "[GameState] Loading saved game (current_revision=1)" in log_text
+    assert "[GameState] Restored saved game to revision=1" in log_text
+
+
+def test_non_triggering_player_action_does_not_wake_story_callback(tmp_path: Path) -> None:
+    definition = counter_definition()
+    definition.transitions["add"].triggering = False
+    game = make_game(tmp_path, definition)
+    callback = Mock()
+    game.on_player_action = callback
+    game.act(GameAction(name="add", arguments={"amount": 1}, revision=0))
+    callback.assert_not_called()
+    assert game.state == {"count": 1}
+    assert game.revision == 1
+
+
+def test_example_adventure_checkers_narratron_interaction(tmp_path: Path) -> None:
+    example_path = Path("adventures/example_adventure")
+    game = GameState(example_path, Mock(), Mock())
+    callback = Mock()
+    game.on_player_action = callback
+
+    # Initial state is Red's turn (turn == 1). Narratron actions should be empty.
+    snap = game.story_snapshot("narratron")
+    assert snap is not None
+    assert snap["instructions"] != ""
+    state_dict = snap["state"]
+    assert type(state_dict) is dict
+    assert state_dict["turn"] == 1
+    assert state_dict["turn_name"] == "Red"
+    assert state_dict["red_count"] == 12
+    assert state_dict["ivory_count"] == 12
+    assert snap["actions"] == {}
+
+    # Player selects a piece (triggering: false). Callback must NOT be invoked.
+    game.act(GameAction(name="select", arguments={"index": 40}, revision=0), actor="player")
+    callback.assert_not_called()
+    assert game.state["selected"] == 40
+    assert game.revision == 1
+
+    # Player moves piece (triggering: true). Callback MUST be invoked.
+    game.act(GameAction(name="move", arguments={"source": 40, "target": 33}, revision=1), actor="player")
+    callback.assert_called_once()
+    assert game.state["turn"] == -1
+    assert game.revision == 2
+
+    # Now it is Ivory's turn (turn == -1). Narratron snapshot should include narratron_move.
+    snap_after_move = game.story_snapshot("narratron")
+    assert snap_after_move is not None
+    actions_dict = snap_after_move["actions"]
+    assert type(actions_dict) is dict
+    assert "narratron_move" in actions_dict
+
+    # Narratron executes an Ivory move.
+    game.act(GameAction(name="narratron_move", arguments={"source": 17, "target": 26}, revision=2), actor="narratron")
+    assert game.state["turn"] == 1
+    assert game.revision == 3
+

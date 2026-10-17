@@ -1472,7 +1472,8 @@
         "additionalProperties": false
       },
       "guard": "moves.exists(m, m.source == action.index)",
-      "result": "{\"board\": state.board, \"turn\": state.turn, \"forced\": state.forced, \"winner\": state.winner, \"draw\": state.draw, \"quiet\": state.quiet, \"receipt\": state.receipt, \"selected\": state.selected == action.index ? -1 : action.index}"
+      "result": "{\"board\": state.board, \"turn\": state.turn, \"forced\": state.forced, \"winner\": state.winner, \"draw\": state.draw, \"quiet\": state.quiet, \"receipt\": state.receipt, \"selected\": state.selected == action.index ? -1 : action.index}",
+      "triggering": false
     },
     "move": {
       "parameters": {
@@ -1530,14 +1531,77 @@
           "expr": "chosen.jump || promoted ? 0 : state.quiet + 1"
         }
       ],
-      "result": "{\"board\": board, \"turn\": nextTurn, \"forced\": forced, \"selected\": continuing ? action.target : -1, \"winner\": won ? -nextTurn : 0, \"draw\": !won && quiet >= 80, \"quiet\": quiet, \"receipt\": coordinate(action.source) + \" → \" + coordinate(action.target) + (chosen.jump ? \" · captured a piece\" : \"\") + (promoted ? \" · crowned king\" : \"\") + (continuing ? \" · continue jumping\" : \"\")}"
+      "result": "{\"board\": board, \"turn\": nextTurn, \"forced\": forced, \"selected\": continuing ? action.target : -1, \"winner\": won ? -nextTurn : 0, \"draw\": !won && quiet >= 80, \"quiet\": quiet, \"receipt\": coordinate(action.source) + \" \u2192 \" + coordinate(action.target) + (chosen.jump ? \" \u00b7 captured a piece\" : \"\") + (promoted ? \" \u00b7 crowned king\" : \"\") + (continuing ? \" \u00b7 continue jumping\" : \"\")}",
+      "triggering": true
     },
     "reset": {
       "parameters": {
         "type": "object",
         "additionalProperties": false
       },
-      "result": "initial"
+      "result": "initial",
+      "triggering": true
+    },
+    "narratron_move": {
+      "actor": "narratron",
+      "description": "Make an Ivory move on Narratron's turn (turn == -1).",
+      "available": "state.turn == -1 && state.winner == 0 && !state.draw",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 63
+          },
+          "target": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 63
+          }
+        },
+        "required": [
+          "source",
+          "target"
+        ],
+        "additionalProperties": false
+      },
+      "guard": "state.turn == -1 && moves.exists(m, m.source == action.source && m.target == action.target)",
+      "bindings": [
+        {
+          "name": "chosen",
+          "expr": "moves.filter(m, m.source == action.source && m.target == action.target)[0]"
+        },
+        {
+          "name": "promoted",
+          "expr": "state.board[action.source] * state.board[action.source] == 1 && ((state.turn == 1 && action.target < 8) || (state.turn == -1 && action.target >= 56))"
+        },
+        {
+          "name": "board",
+          "expr": "constants.indices.map(i, i == action.source || (chosen.jump && i == chosen.middle) ? 0 : i == action.target ? (promoted ? 2 * state.turn : state.board[action.source]) : state.board[i])"
+        },
+        {
+          "name": "continuing",
+          "expr": "chosen.jump && !promoted && size(legal(board, state.turn, action.target)) > 0"
+        },
+        {
+          "name": "nextTurn",
+          "expr": "continuing ? state.turn : -state.turn"
+        },
+        {
+          "name": "forced",
+          "expr": "continuing ? action.target : -1"
+        },
+        {
+          "name": "won",
+          "expr": "size(legal(board, nextTurn, forced)) == 0"
+        },
+        {
+          "name": "quiet",
+          "expr": "chosen.jump || promoted ? 0 : state.quiet + 1"
+        }
+      ],
+      "result": "{\"board\": board, \"turn\": nextTurn, \"forced\": forced, \"selected\": -1, \"winner\": won ? -nextTurn : 0, \"draw\": !won && quiet >= 80, \"quiet\": quiet, \"receipt\": \"Ivory: \" + coordinate(action.source) + \" \u2192 \" + coordinate(action.target) + (chosen.jump ? \" \u00b7 captured a piece\" : \"\") + (promoted ? \" \u00b7 crowned king\" : \"\") + (continuing ? \" \u00b7 continue jumping\" : \"\")}"
     }
   },
   "view": {
@@ -1573,7 +1637,7 @@
         "kind": "text",
         "props": {
           "id": "\"status\"",
-          "text": "state.winner != 0 ? sideName(state.winner) + \" wins\" : state.draw ? \"Draw — quiet-turn limit reached\" : sideName(state.turn) + \" to move\" + (state.forced >= 0 ? \" · continue the jump\" : \"\")",
+          "text": "state.winner != 0 ? sideName(state.winner) + \" wins\" : state.draw ? \"Draw \u2014 quiet-turn limit reached\" : sideName(state.turn) + \" to move\" + (state.forced >= 0 ? \" \u00b7 continue the jump\" : \"\")",
           "color": "\"#f8d887\""
         }
       },
@@ -1632,7 +1696,7 @@
                       "dominant-baseline": "\"middle\"",
                       "fontSize": "\"60px\"",
                       "fill": "\"#ffffff\"",
-                      "text": "state.board[cell] == 2 || state.board[cell] == -2 ? \"♛\" : \"\""
+                      "text": "state.board[cell] == 2 || state.board[cell] == -2 ? \"\u265b\" : \"\""
                     }
                   }
                 ]
@@ -1657,5 +1721,7 @@
         }
       }
     ]
-  }
+  },
+  "instructions": "Checkers game in the Library of Origins. You play Ivory (turn == -1) against the player's Red (turn == 1). When turn == -1 and moves are available, use 'narratron_move' to advance an Ivory piece.",
+  "model_state": "{\"board\": state.board, \"turn\": state.turn, \"turn_name\": sideName(state.turn), \"winner\": state.winner, \"draw\": state.draw, \"receipt\": state.receipt, \"red_count\": constants.indices.filter(i, state.board[i] > 0).size(), \"ivory_count\": constants.indices.filter(i, state.board[i] < 0).size(), \"legal_moves\": moves.map(m, {\"source\": m.source, \"target\": m.target, \"from\": coordinate(m.source), \"to\": coordinate(m.target), \"jump\": m.jump})}"
 }
