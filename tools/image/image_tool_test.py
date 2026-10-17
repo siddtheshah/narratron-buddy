@@ -29,6 +29,25 @@ def create_fake_image_bytes() -> bytes:
 
 class TestImageTools(BaseTestCase):
     @patch("tools.image.image_tool.get_image_provider")
+    def test_disabled_reference_generation_creates_scene_image_without_portraits(self, mock_provider: MagicMock) -> None:
+        config = {**self.config, "reference_generation_enabled": False}
+        tools = self.make_image_tools(config, theater_id="no_references", theater_manager=self.manager)
+        manager = tools.reference_manager
+        assert manager is not None
+        manager.create_or_update_character(
+            "Mira", personality="Brave", motivation="Help", quirk="Hums", gender="female",
+        )
+        self.assertIsNotNone(manager.create_or_update_scene("Harbor", "A quiet harbor"))
+        mock_provider.return_value.generate.return_value = self._provider_result()
+        result = tools.create_image("<Mira> in <Harbor>", image_name="harbor", display=False)
+        tools.join_generation()
+        self.assertIn("started in background", result)
+        mock_provider.return_value.generate.assert_called_once()
+        self.assertEqual(mock_provider.return_value.generate.call_args.args[0].references, [])
+        self.assertEqual(manager.available_character_images(), {})
+        self.assertEqual(manager.available_scene_images(), {})
+
+    @patch("tools.image.image_tool.get_image_provider")
     def test_create_image_waits_for_pending_character_and_scene(self, mock_provider: MagicMock) -> None:
         for kind in ("character", "scene"):
             with self.subTest(kind=kind):

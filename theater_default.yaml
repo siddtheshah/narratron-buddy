@@ -17,6 +17,10 @@ visuals:
     cycle_length: 8
     style: "charming"
 
+# Generate portraits and scene reference images alongside character/scene records.
+# Existing reference images remain usable when this is false.
+reference_generation_enabled: true
+
 image_generation:
     # Maximum seconds to wait for background character/scene reference updates.
     reference_wait_timeout: 30

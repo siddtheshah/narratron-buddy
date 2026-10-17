@@ -550,6 +550,7 @@ class ReferenceManager:
         if theater is None:
             raise ValueError("theater is required.")
         self.theater: Theater = theater
+        self.reference_generation_enabled: bool = bool(theater.config().get("reference_generation_enabled", True))
         self.text_response_provider: Optional[TextResponseProvider] = text_response_provider
         self.canvas_manager: Optional[CanvasStateManager] = canvas_manager
         if canvas_manager is not None and canvas_manager.notepad is not None:
@@ -887,6 +888,8 @@ class ReferenceManager:
         generates a new iteration using the previous image for visual continuity.
         An explicit image reference imports an image into the session library.
         Generation failures preserve the previous image.
+        With reference generation disabled, records without imagery return only
+        their name and description.
         """
         name = name.strip()
         if not self._slug_key(name):
@@ -913,24 +916,28 @@ class ReferenceManager:
                     shutil.copy2(source, destination)
                 if not source.resolve().is_relative_to(authored_root):
                     previous = get_latest_iteration_file(directory)
-            elif previous is None or (
-                clean_description and key in self._scene_descriptions
-                and clean_description != self._scene_descriptions[key]
+            elif self.reference_generation_enabled and (
+                previous is None or (
+                    clean_description and key in self._scene_descriptions
+                    and clean_description != self._scene_descriptions[key]
+                )
             ):
                 generated = self._generate_scene_reference(name, clean_description, directory, previous)
                 if generated is not None:
                     previous = generated
                 elif previous is not None or not self._initializing_references:
                     return self._scene_image_entry(name, previous) if previous is not None else None
-            if clean_description:
+            if clean_description or (not self.reference_generation_enabled and key not in self._scene_descriptions):
                 self._scene_descriptions[key] = clean_description
             self._save_scene_traits(name)
+            if previous is None and not self.reference_generation_enabled:
+                return {"name": name, "description": self._scene_descriptions[key]}
             return self._scene_image_entry(name, previous) if previous is not None else None
 
     def _generate_scene_reference(
         self, name: str, description: str, directory: Path, previous: Path | None,
     ) -> Path | None:
-        if self.image_provider is None:
+        if not self.reference_generation_enabled or self.image_provider is None:
             return None
         prompt = (
             f"Scene reference image of {name}. "
@@ -1377,7 +1384,7 @@ class ReferenceManager:
         character: Character,
         previous_reference_path: str | None = None,
     ) -> dict[str, str] | None:
-        if self.image_provider is None:
+        if not self.reference_generation_enabled or self.image_provider is None:
             return None
 
         char_dir = self._character_reference_dir(character.name)
@@ -1493,7 +1500,7 @@ class ReferenceManager:
         player: PlayerCharacter,
         previous_reference_path: str | None = None,
     ) -> dict[str, str] | None:
-        if self.image_provider is None:
+        if not self.reference_generation_enabled or self.image_provider is None:
             return None
         name_label = player.name or "the protagonist"
         char_dir = self._character_reference_dir(player.name or "player")
@@ -2367,6 +2374,8 @@ class ReferenceManager:
         """Extract missing reference tags from context, classify as characters or scenes, and generate them immediately."""
         if type(context) is not str:
             raise ValueError("context must be a string.")
+        if not self.reference_generation_enabled:
+            return {}
         if not context.strip():
             return {}
 
@@ -2495,6 +2504,8 @@ class ReferenceManager:
                 if path is None and visual is not None:
                     path = visual.resolve_image_path(name)
                 if path is None:
+                    if not self.reference_generation_enabled:
+                        continue
                     return [], f"Error: Character visual '<{name}>' not found. Use an available character name."
                 normalized = os.path.normcase(os.path.abspath(path))
                 if normalized not in seen_paths:

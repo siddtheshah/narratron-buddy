@@ -42,6 +42,47 @@ class TestNormalizeVoiceTags(unittest.TestCase):
 
 
 class TestReferenceManager(unittest.TestCase):
+    def test_disabled_reference_generation_persists_records_without_images(self) -> None:
+        self.theater.config.return_value = {"reference_generation_enabled": False}
+        manager = ReferenceManager(self.theater, image_provider=self.image_provider)
+        self.assertFalse(manager.reference_generation_enabled)
+        character = manager.create_or_update_character(
+            "Mira", description="A ranger", personality="Brave", motivation="Help",
+            quirk="Hums", gender="female",
+        )
+        assert character is not None
+        self.assertEqual(character.name, "Mira")
+        self.assertIsNone(character.image_reference_path)
+        scene = manager.create_or_update_scene("Harbor", "A quiet harbor")
+        self.assertEqual(scene, {"name": "Harbor", "description": "A quiet harbor"})
+        self.assertEqual(manager.create_or_update_scene("Harbor"), scene)
+        manager.update_player_character(name="Explorer", image_description="A traveler")
+        self.assertEqual(manager.available_character_images(), {})
+        self.assertEqual(manager.available_scene_images(), {})
+        self.assertEqual(manager.generate_references_from_context("<Mira> in <Harbor>"), {})
+        self.assertEqual(manager.resolve_provider_references(prompt="<Mira> in <Harbor>"), ([], None))
+        restarted = ReferenceManager(self.theater, image_provider=self.image_provider)
+        self.assertEqual(restarted.lookup_character("Mira").characters[0].description, "A ranger")
+        self.assertEqual(restarted.create_or_update_scene("Harbor"), scene)
+        self.image_provider.generate.assert_not_called()
+
+    def test_disabled_reference_generation_keeps_imported_images_usable(self) -> None:
+        self.theater.config.return_value = {"reference_generation_enabled": False}
+        source = Path(self.reference_directory.name) / "source.png"
+        Image.new("RGB", (8, 8), "blue").save(source)
+        manager = ReferenceManager(self.theater, image_provider=self.image_provider)
+        manager.create_or_update_character(
+            "Mira", personality="Brave", motivation="Help", quirk="Hums", gender="female",
+            image_reference=str(source),
+        )
+        manager.create_or_update_scene("Harbor", "A quiet harbor", image_reference=str(source))
+        manager.create_or_update_character("Mira", description="Wearing a red cloak")
+        manager.create_or_update_scene("Harbor", "A stormy harbor")
+        references, error = manager.resolve_provider_references(prompt="<Mira> in <Harbor> beside <Missing>")
+        self.assertIsNone(error)
+        self.assertEqual(len(references), 2)
+        self.image_provider.generate.assert_not_called()
+
     def test_background_updates_are_ordered_and_unrelated_references_do_not_wait(self) -> None:
         release = threading.Event()
         started = threading.Event()
@@ -119,6 +160,8 @@ class TestReferenceManager(unittest.TestCase):
         self.reference_directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.reference_directory.cleanup)
         self.theater = MagicMock(spec=Theater)
+        self.theater.config.return_value = {}
+        self.theater.canvas_captures_dir.return_value = Path(self.reference_directory.name) / "output/canvas_captures"
         self.theater.scenes_dir.return_value = Path(self.reference_directory.name) / "references/scenes"
         self.theater.updated_scenes_dir.return_value = Path(self.reference_directory.name) / "output/scenes"
         self.theater.characters_dir.return_value = Path(self.reference_directory.name) / "references/characters"
