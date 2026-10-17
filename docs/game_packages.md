@@ -146,6 +146,19 @@ Stale revisions return 409. Illegal actions return 400. Viewer submissions retur
 403. Successful actions return the new revision and materialized view and notify
 canvas subscribers. Retries with the same revision cannot apply twice.
 
+Game failures are isolated from story and chat loading. Invalid packages expose
+a game-only error; invalid saved games retain the current valid game state and
+report the restore failure. Transition and rendering failures roll back the
+action. Unexpected endpoint failures return a controlled HTTP 500 without
+internal exception details. Notification failures are logged without rolling
+back an already persisted move; refreshing retrieves the committed revision.
+Failed actions also publish a game error to canvas subscribers. The game button
+shows an error badge while the panel remains closed until clicked; the panel
+shows the message alongside the last valid view. A successful action clears the
+error. Internal tracebacks remain in server logs.
+These exception boundaries run in the server process, not a separate sandbox
+process, so they do not protect against process termination or resource exhaustion.
+
 For the updated example, redeploy `adventures/example_adventure` to load its new
 package. A running theater retains its loaded program until its canvas state
 manager is recreated; in-place rule hot reload is not implemented.

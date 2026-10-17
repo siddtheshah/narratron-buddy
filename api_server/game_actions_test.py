@@ -46,3 +46,14 @@ def test_game_action_checks_theater_access(game_route: GameState) -> None:
     with patch.object(canvas, "_require_canvas_access", side_effect=HTTPException(403)), pytest.raises(HTTPException):
         canvas.post_game_action(GameAction(name="reset", revision=0), Request({"type": "http"}), "private")
     assert game_route.revision == 0
+
+
+def test_unexpected_game_failure_is_a_controlled_http_error(game_route: GameState) -> None:
+    action = GameAction(name="reset", revision=0)
+    request = Request({"type": "http"})
+    with patch.object(game_route, "act", side_effect=RuntimeError("internal details")), pytest.raises(HTTPException) as error:
+        canvas.post_game_action(action, request, "checkers")
+    assert error.value.status_code == 500
+    assert "internal details" not in error.value.detail
+    assert 'unexpected error' in game_route.payload()['error']
+    assert canvas.post_game_action(action, request, "checkers")["revision"] == 1

@@ -2,6 +2,7 @@
 #game-state-layer[hidden] { display: none; }
 #game-state-toggle-btn { position: absolute; bottom: 1.5rem; left: 8.1rem; z-index: 25; display: grid; place-items: center; width: 44px; height: 44px; padding: 0; border-radius: 22px; color: #67e8f9; background: var(--glass-bg, #101a2bf5); backdrop-filter: blur(15px); border: 1px solid #67e8f966; box-shadow: 0 10px 25px #0006; cursor: pointer; }
 #game-state-toggle-btn[hidden] { display: none; }
+#game-state-toggle-btn[data-game-error="true"]::after { content: '!'; position: absolute; top: -4px; right: -4px; width: 18px; height: 18px; border-radius: 50%; background: #b91c1c; color: white; font: bold 13px/18px system-ui, sans-serif; text-align: center; }
 #game-state-toggle-btn:hover, #game-state-toggle-btn[aria-expanded="true"] { background: #1b3547; border-color: #67e8f9; }
 #game-state-toggle-btn:focus-visible { outline: 2px solid #67e8f9; outline-offset: 3px; }
 .game-panel { pointer-events: auto; width: min(510px, 88vw, 68vh); max-height: 88vh; overflow: auto; padding: 18px; border: 1px solid #52647b; border-radius: 16px; color: #eef3fb; background: #101a2bf5; box-shadow: 0 16px 60px #0008; font-family: system-ui, sans-serif; }

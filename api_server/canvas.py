@@ -575,6 +575,10 @@ def post_game_action(
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Unexpected game action failure for theater %s", theater_id)
+        state.game.report_error("The game encountered an unexpected error. Refresh the game before trying again.")
+        raise HTTPException(status_code=500, detail="The game action failed. Refresh the game before trying again.") from exc
 
 
 @app.post("/api/orator/command")

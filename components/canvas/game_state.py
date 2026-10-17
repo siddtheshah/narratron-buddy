@@ -41,9 +41,9 @@ class GameState:
         self.error = ""
         self._view: list[JsonValue] = []
         path = directory / GAME_FILE
-        if not path.exists():
-            return
         try:
+            if not path.exists():
+                return
             if not path.resolve().is_relative_to(directory.resolve()) or path.stat().st_size > MAX_GAME_BYTES:
                 raise ValueError("Game package path or size is invalid.")
             content = path.read_bytes()
@@ -52,7 +52,7 @@ class GameState:
             self.state = json.loads(json.dumps(self.program.definition.initial))
             self._view = json.loads(json.dumps(self.program.initial_view))
         except Exception as exc:
-            logger.warning("Game package failed to load: %s", exc)
+            logger.warning("Game package failed to load: %s", exc, exc_info=True)
             self.error = "Game package could not be loaded. Check its declaration and CEL expressions."
             self.program = None
 
@@ -73,14 +73,21 @@ class GameState:
         if saved is None or self.program is None:
             return
         with self._lock:
-            # Inspect the hash before parsing the version-specific saved payload.
-            data = TypeAdapter(dict[str, JsonValue]).validate_python(saved)
-            if data.get("definition_hash") != self.definition_hash:
-                self.error = "Game definition changed; a fresh game was initialized."
-                return
-            restored = SavedGame.model_validate(data)
-            self._prepare(restored.state)
-            self.state, self.revision = restored.state, restored.revision
+            previous_view = self._view
+            try:
+                # Inspect the hash before parsing the version-specific saved payload.
+                data = TypeAdapter(dict[str, JsonValue]).validate_python(saved)
+                if data.get("definition_hash") != self.definition_hash:
+                    self.error = "Game definition changed; a fresh game was initialized."
+                    return
+                restored = SavedGame.model_validate(data)
+                self._prepare(restored.state)
+                self.state, self.revision = restored.state, restored.revision
+            except Exception:
+                # A broken game save must not interrupt loading story/chat state.
+                self._view = previous_view
+                self.error = "Saved game could not be loaded; the current game state was retained."
+                logger.exception("Saved game failed to load")
 
     def serialize(self) -> dict[str, JsonValue]:
         with self._lock:
@@ -93,6 +100,18 @@ class GameState:
             if self.program is None:
                 return {"error": self.error} if self.error else None
             return {"definition_hash": self.definition_hash, "revision": self.revision, "view": json.loads(json.dumps(self._view)), "error": self.error}
+
+    def report_error(self, message: str) -> None:
+        """Publish a game-only diagnostic without changing the playable state."""
+        with self._lock:
+            self.error = message
+            self._notify_safely()
+
+    def _notify_safely(self) -> None:
+        try:
+            self._notify("latest")
+        except Exception:
+            logger.exception("Game update notification failed at revision %s", self.revision)
 
     def act(self, action: GameAction) -> dict[str, JsonValue] | None:
         with self._lock:
@@ -122,6 +141,9 @@ class GameState:
                 self._persist()
             except Exception as exc:
                 self.state, self._view, self.revision = previous, previous_view, revision
+                logger.exception("Game action failed: %s", action.name)
+                self.report_error("Game action failed; the previous game state was retained.")
                 raise ValueError(str(exc)[:250]) from exc
-            self._notify("latest")
+            self.error = ""
+            self._notify_safely()
             return self.payload()

@@ -7,7 +7,7 @@ const ATTRIBUTES = new Set(['viewBox', 'x', 'y', 'width', 'height', 'cx', 'cy', 
 export function createGameRenderer({ container, toggleButton, actionUrl, canEdit, refresh }) {
     const stylesheet = document.createElement('link');
     stylesheet.rel = 'stylesheet';
-    stylesheet.href = '/static/css/game-renderer.css?v=3';
+    stylesheet.href = '/static/css/game-renderer.css?v=4';
     document.head.append(stylesheet);
     let game = null;
     let pending = false;
@@ -95,7 +95,10 @@ export function createGameRenderer({ container, toggleButton, actionUrl, canEdit
         if (!game) open = false;
         toggleButton.hidden = !game;
         toggleButton.setAttribute('aria-expanded', String(open));
-        toggleButton.title = open ? 'Close game' : 'Open game';
+        const hasError = Boolean(error || game?.error);
+        toggleButton.dataset.gameError = String(hasError);
+        toggleButton.setAttribute('aria-label', hasError ? 'Toggle game — game error' : 'Toggle game');
+        toggleButton.title = hasError ? 'Game error — click to view details' : (open ? 'Close game' : 'Open game');
         container.hidden = !game || !open;
         container.replaceChildren();
         if (!game) return;
