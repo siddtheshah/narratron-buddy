@@ -180,6 +180,7 @@ class StoryTool(BaseTools):
         self.notepad.on_change = self.response_module.save_to_session_state
         self.response_module.on_scene_reaction = self._handle_scene_reaction
         self.response_module.on_failure = lambda: self.record_tool_failure("process_user_action")
+        self.planning_module.on_trigger_story_response = self.trigger_story_response
         if canvas_manager.game is not None:
             canvas_manager.game.on_player_action = self._handle_player_game_action
         self.sync_character_bindings()
@@ -305,6 +306,17 @@ class StoryTool(BaseTools):
                 "game_state": new_state,
             },
         )
+
+    def trigger_story_response(self, user_action: str = "", nudge: str = "") -> dict[str, JsonValue] | str:
+        """Trigger an immediate story response from the responder module for a game action."""
+        clean_action = str(user_action or "").strip()
+        if not clean_action:
+            clean_action = "Player took a game action."
+        self.response_module.record_user_input()
+        self.append_story_log_entry({"type": "user_action", "action": clean_action})
+        if nudge:
+            return self.response_module.process_user_action(clean_action, nudge=nudge)
+        return self.response_module.process_user_action(clean_action)
 
     def __getattr__(self, name: str) -> Any:
         """Expose the response module's existing public tool surface."""

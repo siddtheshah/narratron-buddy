@@ -539,6 +539,65 @@ class TestStoryPlanningModuleState(unittest.TestCase):
             self.assertIn('"table": {"player": [], "narratron": ["green"]}', accepted)
             self.assertEqual(game.revision, 1)
 
+    def test_trigger_story_response_requires_handler(self) -> None:
+        self.module.on_trigger_story_response = None
+        result = self.module.trigger_story_response("Player placed red piece")
+        self.assertIn("unavailable", result)
+
+    def test_trigger_story_response_rejected_during_non_game_heartbeat(self) -> None:
+        self.module.on_trigger_story_response = MagicMock(return_value={"status": "processing"})
+        self.module._running_heartbeat = True
+        self.module._current_heartbeat_has_game_action = False
+        try:
+            result = self.module.trigger_story_response("Player placed red piece")
+            self.assertIn("only be triggered when responding to a player game move", result)
+            self.module.on_trigger_story_response.assert_not_called()
+        finally:
+            self.module._running_heartbeat = False
+
+    def test_trigger_story_response_successful_during_game_heartbeat(self) -> None:
+        handler = MagicMock(return_value={"status": "processing"})
+        self.module.on_trigger_story_response = handler
+        self.module._running_heartbeat = True
+        self.module._current_heartbeat_has_game_action = True
+        self.module._current_game_action = {"name": "place_card", "arguments": {"card": "Ace"}}
+        try:
+            result = self.module.trigger_story_response("Player placed the Ace of Spades", nudge="Build tension")
+            self.assertIn("Story response triggered for: Player placed the Ace of Spades", result)
+            handler.assert_called_once_with("Player placed the Ace of Spades", "Build tension")
+
+            duplicate = self.module.trigger_story_response("Another reaction")
+            self.assertIn("already been triggered", duplicate)
+        finally:
+            self.module._running_heartbeat = False
+            self.module._current_heartbeat_has_game_action = False
+            self.module._current_game_action = None
+            self.module._story_response_triggered_this_heartbeat = False
+
+    def test_trigger_story_response_defaults_user_action_from_game_action(self) -> None:
+        handler = MagicMock(return_value={"status": "processing"})
+        self.module.on_trigger_story_response = handler
+        self.module._running_heartbeat = True
+        self.module._current_heartbeat_has_game_action = True
+        self.module._current_game_action = {"name": "jump_piece"}
+        try:
+            result = self.module.trigger_story_response()
+            self.assertIn("Player took game action: jump_piece", result)
+            handler.assert_called_once_with("Player took game action: jump_piece", "")
+        finally:
+            self.module._running_heartbeat = False
+            self.module._current_heartbeat_has_game_action = False
+            self.module._current_game_action = None
+            self.module._story_response_triggered_this_heartbeat = False
+
+    def test_instruction_template_includes_trigger_story_response_when_has_game(self) -> None:
+        rendered = _DEEP_PLANNING_INSTRUCTION_TEMPLATE.render(
+            has_game=True,
+            style="Adventure style",
+        )
+        self.assertIn("trigger_story_response", rendered)
+        self.assertIn("choose to trigger a story response", rendered)
+
     def test_game_action_heartbeat_identifies_committed_panel_action(self) -> None:
         prompt = _DEEP_PLANNING_TURN_PROMPT_TEMPLATE.render(
             game_state_json='{"revision": 1}',

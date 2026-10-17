@@ -94,6 +94,7 @@ class TestStoryToolComposition(unittest.TestCase):
         self.assertIs(tool.on_scene_reaction, callback)
         self.assertIs(response.on_scene_reaction.__self__, tool)
         self.assertIs(self.canvas.game.on_player_action.__self__, tool)
+        self.assertIs(tool.planning_module.on_trigger_story_response.__self__, tool)
         action = GameAction(name="player_place", arguments={"item": "Pack mule"}, revision=0)
         new_state = {"revision": 1, "state": {"player_offer": ["Pack mule"]}}
         self.canvas.game.on_player_action(action, new_state)
@@ -102,6 +103,24 @@ class TestStoryToolComposition(unittest.TestCase):
             "Game panel action",
             {"source": "game", "game_action": action.model_dump(mode="json"), "game_state": new_state},
         )
+
+    def test_tool_trigger_story_response_delegates_to_response_module(self) -> None:
+        with (
+            patch("tools.story.story_tool.ReferenceManager"),
+            patch("tools.story.story_tool.LoreLibrary"),
+            patch("tools.story.story_tool.StoryPlanningModule"),
+            patch("tools.story.story_tool.StoryResponseModule") as response_type,
+        ):
+            response = response_type.return_value
+            response.process_user_action.return_value = {"status": "processing"}
+            tool = StoryTool(self.theater, self.canvas, self.provider)
+
+        res = tool.trigger_story_response("Player placed a coin", nudge="Make it dramatic")
+        self.assertEqual(res, {"status": "processing"})
+        response.record_user_input.assert_called_once()
+        response.process_user_action.assert_called_once_with("Player placed a coin", nudge="Make it dramatic")
+        self.assertEqual(tool._story_log[-1]["type"], "user_action")
+        self.assertEqual(tool._story_log[-1]["action"], "Player placed a coin")
 
     def test_delegates_public_surface_to_response_module(self) -> None:
         with (

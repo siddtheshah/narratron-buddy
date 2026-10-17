@@ -21,6 +21,7 @@ from google.adk.plugins.base_plugin import BasePlugin
 from google.adk.runners import RunConfig, Runner
 from google.adk.sessions import InMemorySessionService
 from google.genai import types
+from pydantic import JsonValue
 
 from components.canvas.story_state import (
     CharacterState,
@@ -87,6 +88,7 @@ You are the sole owner of Adventure Mode sticky notes. Assimilate the committed 
 - Call `take_game_action(name, arguments_json, revision)` only when a listed Narratron action is justified by the current game state and committed story. Encode arguments as a JSON object matching that action's `parameters`. Never submit a player action or infer that the player clicked a game button from narration alone.
 - Each successful game action changes the revision. Read the returned state and revision before another action. If an action is rejected, reread the current game state and decide again. If no action is justified, leave the game untouched.
 - A Player Game Action event contains the submitted action and the state immediately after it committed. Use that pair to interpret the event; the Current Game State above may include later actions.
+- When responding to a Player Game Action, you can choose to trigger a story response using `trigger_story_response(user_action, nudge)` if the player's move or resulting game development warrants immediate scene narration, NPC dialogue, or narrative reaction. If the move is minor, routine, or purely mechanical and does not warrant a story reaction, do not call `trigger_story_response`.
 {% endif -%}
 
 # Character, Lore, and Image Tools
@@ -101,7 +103,7 @@ After tool calls, respond with a brief confirmation. Do not include a sticky-not
 
 1. Search lore library for relevant context using `search_lore`
 2. Read relevant lore documents using `read_lore`
-3. Update sticky notes using any explicit rules from lore. {% if has_game %}Take game actions to respond to player game actions. {% endif %}
+3. Update sticky notes using any explicit rules from lore. {% if has_game %}Take game actions to respond to player game actions, and choose whether to call `trigger_story_response` to narrate significant game moves. {% endif %}
 4. Come up with some interesting possible developments given current state.
 5. Use your taste and imagination to make additional updates to sticky notes and characters based on that plan.
 
@@ -351,6 +353,14 @@ class StoryPlanningModule:
 
         self.plugins: list[BasePlugin] = [ReflectAndRetryToolPlugin()]
 
+        self.on_trigger_story_response: Optional[
+            Callable[[str, str], dict[str, JsonValue] | str]
+        ] = None
+        self._running_heartbeat: bool = False
+        self._current_heartbeat_has_game_action: bool = False
+        self._current_game_action: Optional[dict[str, JsonValue]] = None
+        self._story_response_triggered_this_heartbeat: bool = False
+
         self._deep_planner_agent: Agent = self._create_deep_planner_agent()
         self._deep_planner_app: App = App(
             name="narratron_story_deep_planner",
@@ -567,6 +577,34 @@ class StoryPlanningModule:
         except (ValueError, TypeError) as exc:
             return f"Game action rejected: {exc}"
 
+    def trigger_story_response(self, user_action: str = "", nudge: str = "") -> str:
+        """Trigger an immediate story response (narration and dialogue) for a player game move.
+
+        Args:
+            user_action: Optional description of the action or event to narrate.
+                If omitted, the player's game action will be used.
+            nudge: Optional directing instruction or focus for the story responder.
+        """
+        logger.debug(f"[StoryPlanningModule] trigger_story_response: action={user_action!r}, nudge={nudge!r}")
+        if self._running_heartbeat and not self._current_heartbeat_has_game_action:
+            return "Story response can only be triggered when responding to a player game move."
+        if self._story_response_triggered_this_heartbeat:
+            return "Story response has already been triggered for this game move."
+        if self.on_trigger_story_response is None:
+            return "Story response is unavailable: no trigger handler configured."
+        action_text = str(user_action or "").strip()
+        if not action_text:
+            if self._current_game_action is not None:
+                act_name = str(self._current_game_action.get("name") or "action")
+                action_text = f"Player took game action: {act_name}"
+            else:
+                action_text = "Player took a game action."
+        self._story_response_triggered_this_heartbeat = True
+        res = self.on_trigger_story_response(action_text, str(nudge or "").strip())
+        if type(res) is dict and "error" in res:
+            return f"Failed to trigger story response: {res['error']}"
+        return f"Story response triggered for: {action_text}"
+
     def _game_state_json(self) -> str:
         if self.game_state is None:
             return ""
@@ -603,6 +641,7 @@ class StoryPlanningModule:
                 self.notepad.check_schema,
                 self.notepad.update_sticky_note,
                 *([self.take_game_action] if self.game_state is not None and self.game_state.program is not None else []),
+                *([self.trigger_story_response] if self.game_state is not None or self.on_trigger_story_response is not None else []),
             ],
             disallow_transfer_to_parent=True,
             disallow_transfer_to_peers=True,
@@ -851,127 +890,145 @@ class StoryPlanningModule:
         turn_events: list[tuple[int, str, dict[str, object]]],
     ) -> dict[str, object]:
         self.reset_deep_lore_call_counts()
-        runner = self._get_or_create_deep_planner_runner()
-        with self._deep_plan_lock:
-            deep_plan_json = json.dumps(self._deep_plan, ensure_ascii=False, indent=2)
-            current_through_turn = self._deep_plan_through_turn_id
-            current_deep_plan_revision = self._deep_plan_revision
-        event_payloads = [
-            {
-                "source": str(scene_reaction.get("source") or "story"),
-                "turn_id": turn_id,
-                "user_action": user_action,
-                "game_action_json": json.dumps(scene_reaction.get("game_action"), ensure_ascii=False),
-                "committed_game_state_json": json.dumps(scene_reaction.get("game_state"), ensure_ascii=False),
-                "narration": str(scene_reaction.get("narration") or "").strip(),
-                "dialogue": scene_reaction.get("dialogue") or [],
-                "planning_signals": scene_reaction.get("planning_signals") or [],
-                "characters": scene_reaction.get("manifested_characters") or [],
-                "die_rolls": scene_reaction.get("die_rolls") or [],
-            }
-            for turn_id, user_action, scene_reaction in turn_events
-        ]
-        heartbeat_through_turn = (
-            turn_events[-1][0] if turn_events else current_through_turn
-        )
-
-        current_stickies = {
-            note["topic"]: note["info"]
-            for note in self.notepad.get_present_sticky_notes()
-        }
-        current_pc_obj = self.reference_manager.get_player_character()
-        current_pc: Optional[PlayerCharacterState] = None
-        if current_pc_obj is not None:
-            current_pc = PlayerCharacterState(
-                name=current_pc_obj.name,
-                image_description=current_pc_obj.image_description,
-                reference=current_pc_obj.reference,
-            )
-        current_chars_list = self.reference_manager.get_present_characters()
-        current_chars: dict[str, CharacterState] = {
-            c.name: CharacterState(
-                name=c.name,
-                personality=c.personality,
-                motivation=c.motivation,
-                quirk=c.quirk,
-                image_reference=c.image_reference,
-            )
-            for c in current_chars_list
-        }
-        recent_images = self._get_recent_images()
-
-        is_initial = self._last_state_snapshot is None
-        if is_initial:
-            prompt_input = _DEEP_PLANNING_TURN_PROMPT_TEMPLATE.render(
-                is_initial=True,
-                game_state_json=self._game_state_json(),
-                turn_events=event_payloads,
-                current_notes=self.notepad.get_present_sticky_notes(),
-                player_character=current_pc_obj,
-                characters=current_chars_list,
-                recent_images=recent_images,
-                deep_plan_json=deep_plan_json if deep_plan_json != "{}" else "",
-            ).strip()
-        else:
-            prev = self._last_state_snapshot
-            assert prev is not None
-            story_diff = self._compute_state_diffs(
-                previous=prev,
-                current_stickies=current_stickies,
-                current_pc=current_pc,
-                current_chars=current_chars,
-                recent_images=recent_images,
-                current_deep_plan_revision=current_deep_plan_revision,
-                current_through_turn=heartbeat_through_turn,
-            )
-            prompt_input = _DEEP_PLANNING_TURN_PROMPT_TEMPLATE.render(
-                is_initial=False,
-                game_state_json=self._game_state_json(),
-                turn_events=event_payloads,
-                sticky_diffs=story_diff.sticky_diffs,
-                player_character_diff=story_diff.player_character_diff,
-                character_diffs=story_diff.character_diffs,
-                new_images=story_diff.new_images,
-                deep_plan_diff=story_diff.deep_plan_diff,
-            ).strip()
-
-        async def run_turn() -> dict[str, object]:
-            run_config = (
-                RunConfig(context_window_compression=self._run_compression_config)
-                if self._run_compression_config
-                else None
-            )
-            async for event in runner.run_async(
-                user_id="story_deep_planner",
-                session_id=self.session_id,
-                new_message=types.Content(role="user", parts=[types.Part(text=prompt_input)]),
-                run_config=run_config,
-            ):
-                # Sticky writes occur through notepad tools as the agent runs.
-                pass
-            # Record state snapshot at the end of the agent's turn
-            self._record_state_snapshot()
-            # A heartbeat that finds nothing to change is still a valid pass.
-            return {"tool_updates": True}
-
+        has_game_action: bool = False
+        latest_game_action: Optional[dict[str, JsonValue]] = None
+        for _, _, reaction in turn_events:
+            if reaction.get("source") == "game":
+                has_game_action = True
+                game_act = reaction.get("game_action")
+                if type(game_act) is dict:
+                    latest_game_action = game_act
+        self._current_heartbeat_has_game_action = has_game_action
+        self._current_game_action = latest_game_action
+        self._story_response_triggered_this_heartbeat = False
+        self._running_heartbeat = True
         try:
-            return asyncio.run(
-                asyncio.wait_for(run_turn(), timeout=self.deep_planner_timeout_seconds)
+            runner = self._get_or_create_deep_planner_runner()
+            with self._deep_plan_lock:
+                deep_plan_json = json.dumps(self._deep_plan, ensure_ascii=False, indent=2)
+                current_through_turn = self._deep_plan_through_turn_id
+                current_deep_plan_revision = self._deep_plan_revision
+            event_payloads = [
+                {
+                    "source": str(scene_reaction.get("source") or "story"),
+                    "turn_id": turn_id,
+                    "user_action": user_action,
+                    "game_action_json": json.dumps(scene_reaction.get("game_action"), ensure_ascii=False),
+                    "committed_game_state_json": json.dumps(scene_reaction.get("game_state"), ensure_ascii=False),
+                    "narration": str(scene_reaction.get("narration") or "").strip(),
+                    "dialogue": scene_reaction.get("dialogue") or [],
+                    "planning_signals": scene_reaction.get("planning_signals") or [],
+                    "characters": scene_reaction.get("manifested_characters") or [],
+                    "die_rolls": scene_reaction.get("die_rolls") or [],
+                }
+                for turn_id, user_action, scene_reaction in turn_events
+            ]
+            heartbeat_through_turn = (
+                turn_events[-1][0] if turn_events else current_through_turn
             )
-        except (asyncio.TimeoutError, TimeoutError):
-            logger.error(
-                "[StoryPlanningModule] Deep planner timed out after %.1f seconds at turn=%d",
-                self.deep_planner_timeout_seconds,
-                heartbeat_through_turn,
-            )
-            self.restart_deep_planner_agent()
-            return {"error": "Deep planner timed out; the previous plan was preserved."}
-        except Exception as exc:
-            logger.exception(
-                "[StoryPlanningModule] Deep planner heartbeat failed through turn=%d",
-                heartbeat_through_turn,
-            )
-            return {"error": f"Deep planner failed: {exc}"}
+
+            current_stickies = {
+                note["topic"]: note["info"]
+                for note in self.notepad.get_present_sticky_notes()
+            }
+            current_pc_obj = self.reference_manager.get_player_character()
+            current_pc: Optional[PlayerCharacterState] = None
+            if current_pc_obj is not None:
+                current_pc = PlayerCharacterState(
+                    name=current_pc_obj.name,
+                    image_description=current_pc_obj.image_description,
+                    reference=current_pc_obj.reference,
+                )
+            current_chars_list = self.reference_manager.get_present_characters()
+            current_chars: dict[str, CharacterState] = {
+                c.name: CharacterState(
+                    name=c.name,
+                    personality=c.personality,
+                    motivation=c.motivation,
+                    quirk=c.quirk,
+                    image_reference=c.image_reference,
+                )
+                for c in current_chars_list
+            }
+            recent_images = self._get_recent_images()
+
+            is_initial = self._last_state_snapshot is None
+            if is_initial:
+                prompt_input = _DEEP_PLANNING_TURN_PROMPT_TEMPLATE.render(
+                    is_initial=True,
+                    game_state_json=self._game_state_json(),
+                    turn_events=event_payloads,
+                    current_notes=self.notepad.get_present_sticky_notes(),
+                    player_character=current_pc_obj,
+                    characters=current_chars_list,
+                    recent_images=recent_images,
+                    deep_plan_json=deep_plan_json if deep_plan_json != "{}" else "",
+                ).strip()
+            else:
+                prev = self._last_state_snapshot
+                assert prev is not None
+                story_diff = self._compute_state_diffs(
+                    previous=prev,
+                    current_stickies=current_stickies,
+                    current_pc=current_pc,
+                    current_chars=current_chars,
+                    recent_images=recent_images,
+                    current_deep_plan_revision=current_deep_plan_revision,
+                    current_through_turn=heartbeat_through_turn,
+                )
+                prompt_input = _DEEP_PLANNING_TURN_PROMPT_TEMPLATE.render(
+                    is_initial=False,
+                    game_state_json=self._game_state_json(),
+                    turn_events=event_payloads,
+                    sticky_diffs=story_diff.sticky_diffs,
+                    player_character_diff=story_diff.player_character_diff,
+                    character_diffs=story_diff.character_diffs,
+                    new_images=story_diff.new_images,
+                    deep_plan_diff=story_diff.deep_plan_diff,
+                ).strip()
+
+            async def run_turn() -> dict[str, object]:
+                run_config = (
+                    RunConfig(context_window_compression=self._run_compression_config)
+                    if self._run_compression_config
+                    else None
+                )
+                async for event in runner.run_async(
+                    user_id="story_deep_planner",
+                    session_id=self.session_id,
+                    new_message=types.Content(role="user", parts=[types.Part(text=prompt_input)]),
+                    run_config=run_config,
+                ):
+                    # Sticky writes occur through notepad tools as the agent runs.
+                    pass
+                # Record state snapshot at the end of the agent's turn
+                self._record_state_snapshot()
+                # A heartbeat that finds nothing to change is still a valid pass.
+                return {"tool_updates": True}
+
+            try:
+                return asyncio.run(
+                    asyncio.wait_for(run_turn(), timeout=self.deep_planner_timeout_seconds)
+                )
+            except (asyncio.TimeoutError, TimeoutError):
+                logger.error(
+                    "[StoryPlanningModule] Deep planner timed out after %.1f seconds at turn=%d",
+                    self.deep_planner_timeout_seconds,
+                    heartbeat_through_turn,
+                )
+                self.restart_deep_planner_agent()
+                return {"error": "Deep planner timed out; the previous plan was preserved."}
+            except Exception as exc:
+                logger.exception(
+                    "[StoryPlanningModule] Deep planner heartbeat failed through turn=%d",
+                    heartbeat_through_turn,
+                )
+                return {"error": f"Deep planner failed: {exc}"}
+        finally:
+            self._running_heartbeat = False
+            self._current_heartbeat_has_game_action = False
+            self._current_game_action = None
+            self._story_response_triggered_this_heartbeat = False
 
     def export_planning_state(self) -> dict[str, object]:
         with self._deep_plan_lock:
