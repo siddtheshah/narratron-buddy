@@ -15,10 +15,22 @@ class TestHideCanvasTextUI(unittest.TestCase):
         self.assertIn('initHideCanvasTextHandler', content)
         self.assertIn('setCanvasTextHidden', content)
         self.assertIn('#hide-canvas-text-btn {', content)
+        self.assertIn('right: 4.8rem;', content)
         self.assertIn('#image-container.hide-canvas-text #scene-dialogue-overlay', content)
         self.assertIn('#image-container.hide-canvas-text #canvas-text-layer', content)
         self.assertIn('display: none !important;', content)
         self.assertIn('narratron-hide-canvas-text', content)
+
+    def test_canvas_pin_button_is_circular(self) -> None:
+        canvas_path = Path("templates/canvas.html")
+        content = canvas_path.read_text(encoding="utf-8")
+
+        self.assertIn('#canvas-pin-btn {', content)
+        pin_css_snippet = content[content.find('#canvas-pin-btn {'):content.find('#canvas-pin-btn {') + 600]
+        self.assertIn('width: 44px;', pin_css_snippet)
+        self.assertIn('height: 44px;', pin_css_snippet)
+        self.assertIn('border-radius: 22px;', pin_css_snippet)
+        self.assertIn('padding: 0;', pin_css_snippet)
 
     def test_hide_text_button_pointer_and_drag_capture_exclusion(self) -> None:
         canvas_path = Path("templates/canvas.html")
@@ -37,16 +49,14 @@ class TestHideCanvasTextUI(unittest.TestCase):
         canvas_path = Path("templates/canvas.html")
         content = canvas_path.read_text(encoding="utf-8")
 
-        self.assertIn("if (hideCanvasTextBtn) hideCanvasTextBtn.style.left = '8.1rem';", content)
-        self.assertIn("if (hideCanvasTextBtn) hideCanvasTextBtn.style.left = '1.5rem';", content)
-        self.assertIn("if (gameStateToggleBtn) gameStateToggleBtn.style.left = '11.4rem';", content)
-        self.assertIn("if (gameStateToggleBtn) gameStateToggleBtn.style.left = '4.8rem';", content)
+        self.assertIn("hideCanvasTextBtn.style.right = '4.8rem';", content)
+        self.assertIn("hideCanvasTextBtn.style.right = '1.5rem';", content)
 
     def test_game_renderer_css_positioning(self) -> None:
         css_path = Path("static/css/game-renderer.css")
         self.assertTrue(css_path.exists(), "game-renderer.css should exist")
         css_content = css_path.read_text(encoding="utf-8")
-        self.assertIn("left: 11.4rem;", css_content)
+        self.assertIn("left: 8.1rem;", css_content)
 
 
 if __name__ == "__main__":

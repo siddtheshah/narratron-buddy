@@ -1321,11 +1321,11 @@
             margin-left: 6px;
         }
 
-        /* Hide Canvas Text Floating Button (Lower Left) */
+        /* Hide Canvas Text Floating Button (Lower Right) */
         #hide-canvas-text-btn {
             position: absolute;
             bottom: 1.5rem;
-            left: 8.1rem;
+            right: 4.8rem;
             z-index: 25;
             display: flex;
             align-items: center;
@@ -1397,9 +1397,11 @@
             z-index: 25;
             display: none;
             align-items: center;
-            gap: 0.45rem;
+            justify-content: center;
+            width: 44px;
+            height: 44px;
             min-height: 44px;
-            padding: 0 0.9rem;
+            padding: 0;
             border: 1px solid rgba(148, 163, 184, 0.45);
             border-radius: 22px;
             background: rgba(15, 23, 42, 0.82);
@@ -1408,8 +1410,17 @@
             backdrop-filter: blur(12px);
             -webkit-backdrop-filter: blur(12px);
             cursor: pointer;
-            font: 600 0.8rem 'Outfit', sans-serif;
+            font-size: 1.15rem;
+            line-height: 1;
             transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease, transform 0.2s ease;
+        }
+
+        #canvas-pin-btn #canvas-pin-icon {
+            font-size: 1.15rem;
+            line-height: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
 
         #canvas-pin-btn:hover:not(:disabled) {
@@ -3046,6 +3057,21 @@
             <button id="canvas-pin-btn" type="button" aria-pressed="false" title="Pin the current canvas visual">
                 <span id="canvas-pin-icon" aria-hidden="true">📌</span>
             </button>
+            <!-- Hide All Text On Canvas Floating Button (Lower Right) -->
+            <button id="hide-canvas-text-btn" type="button" aria-pressed="false"
+                title="Hide all text on canvas" aria-label="Hide all text on canvas">
+                <svg class="hide-text-icon-visible" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <polyline points="4 7 4 4 20 4 20 7" />
+                    <line x1="9" y1="20" x2="15" y2="20" />
+                    <line x1="12" y1="4" x2="12" y2="20" />
+                </svg>
+                <svg class="hide-text-icon-hidden" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display: none;">
+                    <polyline points="4 7 4 4 20 4 20 7" />
+                    <line x1="9" y1="20" x2="15" y2="20" />
+                    <line x1="12" y1="4" x2="12" y2="20" />
+                    <line x1="3" y1="3" x2="21" y2="21" stroke="#f87171" stroke-width="2.2" />
+                </svg>
+            </button>
             <div id="prompt-toggle-btn" title="View Prompt">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
                     stroke-linecap="round" stroke-linejoin="round">
@@ -3108,22 +3134,6 @@
                     </div>
                 </div>
             </div>
-
-            <!-- Hide All Text On Canvas Floating Button (Lower Left) -->
-            <button id="hide-canvas-text-btn" type="button" aria-pressed="false"
-                title="Hide all text on canvas" aria-label="Hide all text on canvas">
-                <svg class="hide-text-icon-visible" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                    <polyline points="4 7 4 4 20 4 20 7" />
-                    <line x1="9" y1="20" x2="15" y2="20" />
-                    <line x1="12" y1="4" x2="12" y2="20" />
-                </svg>
-                <svg class="hide-text-icon-hidden" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display: none;">
-                    <polyline points="4 7 4 4 20 4 20 7" />
-                    <line x1="9" y1="20" x2="15" y2="20" />
-                    <line x1="12" y1="4" x2="12" y2="20" />
-                    <line x1="3" y1="3" x2="21" y2="21" stroke="#f87171" stroke-width="2.2" />
-                </svg>
-            </button>
 
 
 
@@ -7946,8 +7956,10 @@
                 if (doodlesToggleBtn) doodlesToggleBtn.style.display = 'inline-flex';
                 if (suggestionsToggleBtn) suggestionsToggleBtn.style.display = 'flex';
                 if (stickyNotesToggleBtn) stickyNotesToggleBtn.style.display = 'flex';
-                if (hideCanvasTextBtn) hideCanvasTextBtn.style.left = '8.1rem';
-                if (gameStateToggleBtn) gameStateToggleBtn.style.left = '11.4rem';
+                if (hideCanvasTextBtn) {
+                    hideCanvasTextBtn.style.left = '';
+                    hideCanvasTextBtn.style.right = '4.8rem';
+                }
                 if (collabSection) collabSection.style.display = 'flex';
                 if (hideSuggestionsBtn) hideSuggestionsBtn.style.display = 'inline-flex';
 
@@ -7977,8 +7989,10 @@
                 if (doodlesToggleBtn) doodlesToggleBtn.style.display = 'none';
                 if (suggestionsToggleBtn) suggestionsToggleBtn.style.display = 'none';
                 if (stickyNotesToggleBtn) stickyNotesToggleBtn.style.display = 'none';
-                if (hideCanvasTextBtn) hideCanvasTextBtn.style.left = '1.5rem';
-                if (gameStateToggleBtn) gameStateToggleBtn.style.left = '4.8rem';
+                if (hideCanvasTextBtn) {
+                    hideCanvasTextBtn.style.left = '';
+                    hideCanvasTextBtn.style.right = '1.5rem';
+                }
                 if (collabSection) collabSection.style.display = 'none';
                 if (hideSuggestionsBtn) hideSuggestionsBtn.style.display = 'none';
 
