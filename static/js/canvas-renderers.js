@@ -1327,16 +1327,21 @@ export function createDoodleRenderer({ canvas, isVisible = () => true, textLayer
                 }
             } else if (event.key === "Delete" || event.key === "Backspace") {
                 let handled = false;
-                if (selectedSegmentIds.size > 0 && typeof onRemoveSegment === "function") {
-                    const removed = getSelectedSegments();
+                const segmentsToRemove = (selectedSegmentIds.size > 0 && typeof onRemoveSegment === "function")
+                    ? getSelectedSegments()
+                    : [];
+                const stampsToRemove = (selectedStampItems.size > 0 && typeof onRemoveStamp === "function" && canMoveStamp())
+                    ? Array.from(selectedStampItems).map(node => node.annotation).filter(Boolean)
+                    : [];
+
+                if (segmentsToRemove.length > 0) {
                     clearSelectedSegments();
-                    onRemoveSegment(removed);
+                    onRemoveSegment(segmentsToRemove);
                     handled = true;
                 }
-                if (selectedStampItems.size > 0 && typeof onRemoveStamp === "function" && canMoveStamp()) {
-                    const toRemove = Array.from(selectedStampItems).map(node => node.annotation).filter(Boolean);
+                if (stampsToRemove.length > 0) {
                     selectMovableStamp(null);
-                    toRemove.forEach(ann => onRemoveStamp(ann));
+                    stampsToRemove.forEach(ann => onRemoveStamp(ann));
                     handled = true;
                 }
                 if (handled) {
@@ -1552,15 +1557,6 @@ export function createDoodleRenderer({ canvas, isVisible = () => true, textLayer
             item.addEventListener("pointerup", finishMove);
             item.addEventListener("pointercancel", finishMove);
             item.addEventListener("lostpointercapture", finishMove);
-            item.addEventListener("keydown", event => {
-                if ((event.key === "Delete" || event.key === "Backspace") && canMoveStamp()) {
-                    event.preventDefault();
-                    selectMovableStamp(null);
-                    onRemoveStamp(item.annotation);
-                } else if (event.key === "Escape") {
-                    selectMovableStamp(null);
-                }
-            });
             stampLayer.appendChild(item);
         }
         item.annotation = action;

@@ -277,3 +277,96 @@ def test_clicking_off_stamp_drops_selection(segment_page: Page) -> None:
     remaining_stamps: int = segment_page.evaluate("() => window.getDoodleActions().filter(a => a.type === 'stamp').length")
     assert remaining_stamps == 1
 
+
+def test_selection_box_multiple_stamps_and_doodles_deletion(segment_page: Page) -> None:
+    # Add a second stamp alongside the initial stamp and doodle strokes
+    segment_page.evaluate("""() => {
+        const action = {
+            id: 'stamp-2',
+            type: 'stamp',
+            url: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg"/>',
+            name: 'Stamp 2',
+            x: 0.85,
+            y: 0.2,
+            size: 80,
+            rotation: 0
+        };
+        window.getDoodleActions().push(action);
+        window.renderer.redraw(window.getDoodleActions());
+    }""")
+
+    # Verify initial actions: 2 stamps, 3 doodle segments (2 in stroke-1, 1 in stroke-2)
+    initial_stamps: int = segment_page.evaluate("() => window.getDoodleActions().filter(a => a.type === 'stamp').length")
+    assert initial_stamps == 2
+    initial_doodles: int = segment_page.evaluate("() => window.getDoodleActions().filter(a => a.type === 'draw').length")
+    assert initial_doodles == 3
+
+    # Drag selection box across stroke-1 (x=0.1..0.5, y=0.2) and both stamps (x=0.7 and 0.85, y=0.2)
+    segment_page.mouse.move(50, 40)
+    segment_page.mouse.down()
+    segment_page.mouse.move(760, 160)
+    segment_page.mouse.up()
+
+    # Verify both stamps and both segments of stroke-1 are selected
+    selected_stamps_count: int = segment_page.evaluate("() => window.renderer.getSelectedStamps().length")
+    assert selected_stamps_count == 2
+    selected_segments_count: int = segment_page.evaluate("() => window.renderer.getSelectedSegments().length")
+    assert selected_segments_count == 2
+
+    # Press Delete key to remove all selected items
+    segment_page.keyboard.press("Delete")
+
+    # ALL stamps must be deleted
+    remaining_stamps: int = segment_page.evaluate("() => window.getDoodleActions().filter(a => a.type === 'stamp').length")
+    assert remaining_stamps == 0
+    removed_stamps_count: int = segment_page.evaluate("() => window.removedStamps.length")
+    assert removed_stamps_count == 2
+
+    # Selected doodle stroke-1 must be deleted, unselected stroke-2 must remain
+    remaining_doodles: int = segment_page.evaluate("() => window.getDoodleActions().filter(a => a.type === 'draw').length")
+    assert remaining_doodles == 1
+    remaining_doodle_id: str = segment_page.evaluate("() => window.getDoodleActions().find(a => a.type === 'draw').id")
+    assert remaining_doodle_id == "seg-2"
+
+
+def test_selection_box_multiple_stamps_deletion_without_doodles(segment_page: Page) -> None:
+    # Add a second stamp
+    segment_page.evaluate("""() => {
+        const action = {
+            id: 'stamp-2',
+            type: 'stamp',
+            url: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg"/>',
+            name: 'Stamp 2',
+            x: 0.85,
+            y: 0.2,
+            size: 80,
+            rotation: 0
+        };
+        window.getDoodleActions().push(action);
+        window.renderer.redraw(window.getDoodleActions());
+    }""")
+
+    # Drag selection box around ONLY the two stamps (x=500..760, y=40..160)
+    segment_page.mouse.move(500, 40)
+    segment_page.mouse.down()
+    segment_page.mouse.move(760, 160)
+    segment_page.mouse.up()
+
+    # Verify both stamps are selected, and no doodle segments are selected
+    selected_stamps_count: int = segment_page.evaluate("() => window.renderer.getSelectedStamps().length")
+    assert selected_stamps_count == 2
+    selected_segments_count: int = segment_page.evaluate("() => window.renderer.getSelectedSegments().length")
+    assert selected_segments_count == 0
+
+    # Press Delete key to remove selected stamps
+    segment_page.keyboard.press("Delete")
+
+    # ALL stamps must be deleted
+    remaining_stamps: int = segment_page.evaluate("() => window.getDoodleActions().filter(a => a.type === 'stamp').length")
+    assert remaining_stamps == 0
+
+    # All doodles must remain intact
+    remaining_doodles: int = segment_page.evaluate("() => window.getDoodleActions().filter(a => a.type === 'draw').length")
+    assert remaining_doodles == 3
+
+
