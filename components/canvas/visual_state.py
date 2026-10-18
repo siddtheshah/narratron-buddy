@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import glob
-import hashlib
 import logging
 import os
 from pathlib import Path
@@ -13,7 +12,6 @@ from typing import Any, Literal, Optional, Tuple, TypeAlias, TypedDict, Union
 
 from components.theater_manager import Theater
 from utils.image_utils import (
-    compress_image_to_webp,
     extract_image_prompt,
     extract_image_metadata_description,
     extract_image_metadata_title,
@@ -177,7 +175,8 @@ class VisualState:
             root = Path(directory)
             if not root.exists():
                 continue
-            for image_path in root.rglob("*"):
+            # Register WebP last so stem aliases prefer it over legacy copies.
+            for image_path in sorted(root.rglob("*"), key=lambda path: (path.suffix.lower() == ".webp", path.as_posix())):
                 if image_path.is_relative_to(root / "characters"):
                     continue
                 if image_path.is_file() and image_path.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp"}:
@@ -234,9 +233,10 @@ class VisualState:
             for candidate in (
                 root / requested,
                 root / base_name,
-                root / f"{requested}.jpg",
-                root / f"{requested}.png",
                 root / f"{requested}.webp",
+                root / f"{requested}.png",
+                root / f"{requested}.jpg",
+                root / f"{requested}.jpeg",
             ):
                 if candidate.is_file():
                     if candidate.is_relative_to(root / "characters"):
@@ -261,34 +261,6 @@ class VisualState:
             or self.has_active_animation()
         )
 
-    def _ensure_webp_for_display(self, file_path: str) -> str:
-        """Ensures a compressed WebP version of the image exists in output_dir for frontend display."""
-        if not file_path:
-            return file_path
-        if file_path.lower().endswith(".webp"):
-            return file_path
-
-        img_dir = self.theater.image_artifacts_dir()
-        out_dir = str(img_dir) if img_dir is not None else (os.path.dirname(file_path) or ".")
-
-        try:
-            os.makedirs(out_dir, exist_ok=True)
-            stem = Path(file_path).stem
-            canonical = str(Path(file_path).resolve())
-            path_hash = hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:10]
-            webp_filename = f"{stem}_{path_hash}.webp"
-            webp_path = os.path.join(out_dir, webp_filename)
-
-            if os.path.exists(webp_path) and os.path.exists(file_path):
-                if os.path.getmtime(webp_path) >= os.path.getmtime(file_path):
-                    return webp_path
-
-            compressed = compress_image_to_webp(file_path, output_path=webp_path, quality=80)
-            return compressed if compressed and os.path.exists(compressed) else file_path
-        except Exception as exc:
-            logger.warning("[VisualState] Failed to compress image to webp: %s", exc)
-            return file_path
-
     def update_image(
         self,
         path: str,
@@ -306,7 +278,7 @@ class VisualState:
 
         Args:
             path: Original file path or reference image path.
-            display_path: Optional WebP or frontend-optimized display path.
+            display_path: Optional existing display asset; defaults to the original path.
             transition: Visual transition ('crossfade', 'fade', 'none').
             effect: Canvas animation effect ('gleam3', 'dream', etc.).
             prompt: Text prompt or description of the image.
@@ -459,7 +431,6 @@ class VisualState:
         if res_type == "image":
             raw_path = str(resource.get("path") or "")
             display_path = str(resource.get("display_path") or raw_path)
-            display_path = self._ensure_webp_for_display(display_path)
             transition = resource.get("transition") or "crossfade"
             effect = resource.get("effect") or "gleam3"
             prompt = resource.get("prompt") or self._resolve_prompt_for_file(raw_path)
@@ -500,7 +471,7 @@ class VisualState:
             try:
                 target = resource.get("display_path") or resource.get("path")
                 self.on_show_image(
-                    self._ensure_webp_for_display(str(target)),
+                    str(target),
                     transition=resource.get("transition", "crossfade"),
                     effect=resource.get("effect", "gleam3"),
                 )
@@ -982,7 +953,7 @@ class VisualState:
 
         if self.on_show_image and not anim and self.shown_image_path:
             self.on_show_image(
-                self._ensure_webp_for_display(str(self.shown_image_path)),
+                str(self.shown_image_path),
                 transition=self.shown_image_transition,
                 effect=self.shown_image_effect,
             )

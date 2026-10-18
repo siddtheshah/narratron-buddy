@@ -962,7 +962,7 @@ class ReferenceManager:
             output = directory / f"{iteration}{ext}"
             exif = image.getexif()
             embed_image_metadata(exif, f"Scene reference for {name} (iteration {iteration}). {prompt}")
-            image.save(output, "PNG" if ext == ".png" else "WEBP" if ext == ".webp" else "JPEG", exif=exif)
+            image.save(output, "PNG" if ext == ".png" else "WEBP" if ext == ".webp" else "JPEG", exif=exif, quality=95)
             return output
         except (ImageProviderError, OSError, ValueError) as exc:
             logger.warning("[ReferenceManager] Could not create scene image for %s: %s", name, exc)
@@ -1438,7 +1438,7 @@ class ReferenceManager:
             output = char_dir / f"{next_num}{ext}"
             exif = image.getexif()
             embed_image_metadata(exif, f"Character reference for {character.name} (iteration {next_num}). {prompt}")
-            image.save(output, "PNG" if ext == ".png" else "WEBP" if ext == ".webp" else "JPEG", exif=exif)
+            image.save(output, "PNG" if ext == ".png" else "WEBP" if ext == ".webp" else "JPEG", exif=exif, quality=95)
             alias = f"output/artifacts/updated_references/characters/{char_dir.name}/{output.name}"
             return {
                 "name": f"{char_dir.name}_{next_num}",
@@ -1557,7 +1557,7 @@ class ReferenceManager:
             output = char_dir / f"{next_num}{ext}"
             exif = image.getexif()
             embed_image_metadata(exif, f"Player character reference for {name_label} (iteration {next_num}). {prompt}")
-            image.save(output, "PNG" if ext == ".png" else "WEBP" if ext == ".webp" else "JPEG", exif=exif)
+            image.save(output, "PNG" if ext == ".png" else "WEBP" if ext == ".webp" else "JPEG", exif=exif, quality=95)
             alias = f"output/artifacts/updated_references/characters/{char_dir.name}/{output.name}"
             return {
                 "name": f"{char_dir.name}_{next_num}",

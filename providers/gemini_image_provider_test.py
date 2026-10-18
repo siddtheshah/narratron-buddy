@@ -1,10 +1,13 @@
+import pytest
 from unittest.mock import MagicMock, patch
+
+from testing.reference_images import png_bytes
 
 from providers.gemini_image_provider import GeminiImageProvider
 from providers.image_provider import ImageGenerationRequest
 
 
-def test_gemini_image_provider_uses_developer_api_key(monkeypatch):
+def test_gemini_image_provider_uses_developer_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("GEMINI_API_KEY", "test-api-key")
     with patch("providers.gemini_image_provider.genai.Client") as client:
         GeminiImageProvider()
@@ -12,13 +15,13 @@ def test_gemini_image_provider_uses_developer_api_key(monkeypatch):
     client.assert_called_once_with(api_key="test-api-key")
 
 
-def test_gemini_image_provider_configures_aspect_ratio():
+def test_gemini_image_provider_configures_aspect_ratio() -> None:
     mock_client = MagicMock()
     mock_response = MagicMock()
     mock_candidate = MagicMock()
     mock_part = MagicMock()
     mock_inline = MagicMock()
-    mock_inline.data = b"image_bytes"
+    mock_inline.data = png_bytes()
     mock_inline.mime_type = "image/png"
     mock_part.inline_data = mock_inline
     mock_candidate.content.parts = [mock_part]
@@ -30,7 +33,8 @@ def test_gemini_image_provider_configures_aspect_ratio():
     provider = GeminiImageProvider(client=mock_client)
     result = provider.generate(ImageGenerationRequest(prompt="cinematic mountain vista"))
 
-    assert result.image_bytes == b"image_bytes"
+    assert result.image_bytes[:4] == b"RIFF"
+    assert result.mime_type == "image/webp"
     assert result.provider == "gemini"
     mock_client.models.generate_content.assert_called_once()
     call_kwargs = mock_client.models.generate_content.call_args.kwargs
@@ -39,7 +43,7 @@ def test_gemini_image_provider_configures_aspect_ratio():
     assert config.image_config.aspect_ratio == "16:9"
 
 
-def test_gemini_image_provider_interleaves_labeled_reference_parts():
+def test_gemini_image_provider_interleaves_labeled_reference_parts() -> None:
     from providers.image_provider import ImageReference
 
     mock_client = MagicMock()
@@ -47,7 +51,7 @@ def test_gemini_image_provider_interleaves_labeled_reference_parts():
     mock_candidate = MagicMock()
     mock_part = MagicMock()
     mock_inline = MagicMock()
-    mock_inline.data = b"image_bytes"
+    mock_inline.data = png_bytes()
     mock_inline.mime_type = "image/png"
     mock_part.inline_data = mock_inline
     mock_candidate.content.parts = [mock_part]
@@ -68,7 +72,8 @@ def test_gemini_image_provider_interleaves_labeled_reference_parts():
         )
     )
 
-    assert result.image_bytes == b"image_bytes"
+    assert result.image_bytes[:4] == b"RIFF"
+    assert result.mime_type == "image/webp"
     call_kwargs = mock_client.models.generate_content.call_args.kwargs
     contents = call_kwargs["contents"]
     # Check that contents contains label text parts interleaved with image parts

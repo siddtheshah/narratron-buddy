@@ -24,7 +24,6 @@ from services.live_agent_manager import (
 )
 from tools.observability_tool import ObservabilityTools
 from tools.image import ImageTools
-from components.notepad import Notepad
 from services.priority_live_request_queue import PriorityLiveRequestQueue
 
 
@@ -41,7 +40,7 @@ def canvas_observability_fixture(image_path=None, collaboration_enabled=False, d
     canvas.chat.consume_top_suggestion.return_value = None
     canvas.doodles.snapshot_batches.return_value = doodles or []
     canvas.doodles.has_visible_annotations.return_value = bool(doodles)
-    canvas.doodles.snapshot_png.return_value = None
+    canvas.doodles.snapshot_webp.return_value = None
     return canvas
 
 
@@ -899,7 +898,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
         session = self.make_observability_session()
         session.live_request_queue = MagicMock()
         canvas = canvas_observability_fixture(collaboration_enabled=True, doodles=[{"type": "draw"}])
-        canvas.doodles.snapshot_png.return_value = b"first-annotation"
+        canvas.doodles.snapshot_webp.return_value = b"first-annotation"
         session.canvas_state_manager = canvas
         self.assertTrue(session.send_agent_requested_observability())
         self.assertFalse(session.send_agent_requested_observability())
@@ -907,7 +906,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
         asyncio.run(session._send_doodle_snapshot())
         self.assertEqual(session.live_request_queue.send_content.call_count, 1)
 
-        canvas.doodles.snapshot_png.return_value = b"changed-annotation"
+        canvas.doodles.snapshot_webp.return_value = b"changed-annotation"
         asyncio.run(session._send_doodle_snapshot())
         self.assertEqual(session.live_request_queue.send_content.call_count, 2)
         self.assertFalse(session.send_agent_requested_observability())
@@ -962,7 +961,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
             )
             self.assertIsNone(error)
             self.assertEqual(references[0].data, first_capture)
-            self.assertEqual(references[0].mime_type, "image/png")
+            self.assertEqual(references[0].mime_type, "image/webp")
             self.assertFalse(session.send_agent_requested_observability())
 
             canvas.doodles.doodles[0]["color"] = "#00ff00"
@@ -983,7 +982,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
             canvas = canvas_observability_fixture(collaboration_enabled=True)
             canvas.theater = TheaterManager(directory).theater("story_snapshot")
             canvas.doodles.has_visible_annotations.return_value = True
-            canvas.doodles.snapshot_png.return_value = b"annotated-png"
+            canvas.doodles.snapshot_webp.return_value = b"annotated-png"
             session = self.make_observability_session()
             session.canvas_state_manager = canvas
             session.live_request_queue = MagicMock()
@@ -1250,7 +1249,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
         canvas = canvas_observability_fixture(
             collaboration_enabled=True, doodles=[{"type": "draw"}],
         )
-        canvas.doodles.snapshot_png.return_value = b"annotated-png"
+        canvas.doodles.snapshot_webp.return_value = b"annotated-png"
         session.canvas_state_manager = canvas
         configure_observability_dependencies(session)
 
@@ -1259,9 +1258,9 @@ class TestLiveAgentSessionManager(unittest.TestCase):
         content = session.live_request_queue.send_content.call_args.args[0]
         self.assertEqual(len(content.parts), 3)
         self.assertIn("audience annotations", content.parts[1].text)
-        self.assertEqual(content.parts[2].inline_data.mime_type, "image/png")
+        self.assertEqual(content.parts[2].inline_data.mime_type, "image/webp")
         self.assertEqual(content.parts[2].inline_data.data, b"annotated-png")
-        canvas.doodles.snapshot_png.assert_called_once_with(None)
+        canvas.doodles.snapshot_webp.assert_called_once_with(None)
 
     def test_agent_requested_observability_attaches_text_only_annotation(self) -> None:
         """Text without any stroke must still select the annotated composite."""
@@ -1280,7 +1279,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
             doodles=[{"type": "text", "text": "Secret door", "x": 0.2, "y": 0.3}],
         )
         canvas.doodles.snapshot_batches.return_value = []
-        canvas.doodles.snapshot_png.return_value = b"text-annotated-png"
+        canvas.doodles.snapshot_webp.return_value = b"text-annotated-png"
         session.canvas_state_manager = canvas
         configure_observability_dependencies(session)
 
@@ -1291,7 +1290,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
         self.assertIn("audience annotations", content.parts[1].text)
         self.assertEqual(content.parts[2].inline_data.data, b"text-annotated-png")
         canvas.doodles.has_visible_annotations.assert_called()
-        canvas.doodles.snapshot_png.assert_called_once_with(None)
+        canvas.doodles.snapshot_webp.assert_called_once_with(None)
 
     def test_doodle_snapshot_is_rendered_off_the_event_loop(self) -> None:
         async def run_test() -> None:
@@ -1311,7 +1310,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
             canvas = canvas_observability_fixture(
                 collaboration_enabled=True, doodles=[{"type": "draw"}],
             )
-            canvas.doodles.snapshot_png.return_value = b"fake-png"
+            canvas.doodles.snapshot_webp.return_value = b"fake-png"
             session.canvas_state_manager = canvas
             configure_observability_dependencies(session)
             session._event_loop = asyncio.get_running_loop()
@@ -1321,7 +1320,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
             # produced in a worker and delivered separately.
             self.assertEqual(session.live_request_queue.send_content.call_count, 1)
             await asyncio.sleep(0.05)
-            self.assertEqual(canvas.doodles.snapshot_png.call_count, 1)
+            self.assertEqual(canvas.doodles.snapshot_webp.call_count, 1)
             self.assertEqual(session.live_request_queue.send_content.call_count, 2)
 
         asyncio.run(run_test())

@@ -10,7 +10,7 @@ from typing import Any, Callable
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-from providers.image_provider import ImageProviderError
+from providers.image_provider import ImageProviderError, generated_image_to_webp
 
 
 @dataclass(frozen=True)
@@ -87,7 +87,8 @@ class FalQwenLayeredProvider:
             url = item.get("url") if isinstance(item, dict) else None
             if not url:
                 continue
-            images.append(self._download(url))
+            content, _mime_type = self._download(url)
+            images.append((generated_image_to_webp(content), "image/webp"))
         if len(images) < 2:
             raise ImageProviderError("Qwen Image Layered returned fewer than two layer images.")
         return LayeredImageResult(

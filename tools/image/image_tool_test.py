@@ -204,7 +204,7 @@ class TestImageTools(BaseTestCase):
         request = provider.generate.call_args.args[0]
         self.assertEqual(request.prompt, "A duel, graphic content, explicit violence, sparks fly. Keep the scene graphic, intense, and cinematic.")
         self.assertTrue(any("Image prompt cleanup original=" in entry for entry in logs.output))
-        paths = list(tools.theater.image_artifacts_dir().glob("*.jpg"))
+        paths = list(tools.theater.image_artifacts_dir().glob("*.webp"))
         self.assertEqual(len(paths), 1)
         with Image.open(paths[0]) as image:
             self.assertNotIn("no graphic content", str(image.getexif()))
@@ -237,7 +237,7 @@ class TestImageTools(BaseTestCase):
         self.assertEqual(len(request.references), 1)
         self.assertEqual(request.references[0].label, "Arthur Modella")
         self.assertEqual(request.references[0].data, (theater.characters_dir() / "Arthur Modella" / "1.png").read_bytes())
-        image_files = list(theater.image_artifacts_dir().glob("*.jpg"))
+        image_files = list(theater.image_artifacts_dir().glob("*.webp"))
         self.assertEqual(len(image_files), 1)
         with Image.open(image_files[0]) as image:
             metadata = str(image.getexif())
@@ -605,7 +605,7 @@ class TestImageTools(BaseTestCase):
         self.assertTrue(tools.is_story_plan_completed)
 
     @patch("tools.image.image_tool.get_image_provider")
-    def test_create_image_saves_full_quality_and_compressed_webp_and_displays_webp(self, mock_get_provider):
+    def test_create_image_saves_and_displays_high_quality_webp(self, mock_get_provider: MagicMock) -> None:
         provider = mock_get_provider.return_value
         provider.generate.return_value = self._provider_result()
         mock_canvas_service = MagicMock()
@@ -620,14 +620,16 @@ class TestImageTools(BaseTestCase):
         tools.create_image("a glowing forest", image_name="forest_01", display=True)
         tools.join_generation()
 
-        # Full quality JPEG exists on disk
-        full_quality_path = str(next(Path(tools.output_dir).glob("forest_01_*.jpg")))
+        # The canonical high-quality WebP exists on disk
+        full_quality_path = str(next(Path(tools.output_dir).glob("forest_01_*.webp")))
         self.assertTrue(os.path.exists(full_quality_path))
-        self.assertTrue(full_quality_path.endswith(".jpg"))
+        self.assertTrue(full_quality_path.endswith(".webp"))
 
-        # Compressed WebP exists on disk
+        # No duplicate JPEG or PNG is written
         webp_path = os.path.splitext(full_quality_path)[0] + ".webp"
         self.assertTrue(os.path.exists(webp_path))
+        self.assertEqual(list(Path(tools.output_dir).glob("*.jpg")), [])
+        self.assertEqual(list(Path(tools.output_dir).glob("*.png")), [])
 
         # Canvas state service received the WebP path for display
         mock_canvas_service.visual.update_visual.assert_called_once()
@@ -654,9 +656,9 @@ class TestImageTools(BaseTestCase):
         self.assertTrue(theater_dir.is_dir())
         self.assertTrue(config_path.is_file())
         self.assertTrue(reference_path.is_file())
-        self.assertTrue(any(Path(tools.output_dir).glob("observatory_*.jpg")))
+        self.assertTrue(any(Path(tools.output_dir).glob("observatory_*.webp")))
 
-    def test_show_image_sends_compressed_webp_to_canvas_state_service(self):
+    def test_show_image_sends_original_to_canvas_state_service_without_copying(self) -> None:
         mock_canvas_service = MagicMock()
         mock_canvas_service.visual.pinned = False
         tools = self.make_image_tools(
@@ -668,16 +670,18 @@ class TestImageTools(BaseTestCase):
 
         img_ref = os.path.join(tools.reference_dir, "ref_card.jpg")
         Image.new("RGB", (20, 20), color="purple").save(img_ref)
+        mock_canvas_service.visual.resolve_image_handle.return_value = img_ref
 
         tools.show_image("ref_card.jpg")
 
         mock_canvas_service.visual.update_visual.assert_called_once()
         kwargs = mock_canvas_service.visual.update_visual.call_args.kwargs
         displayed_path = kwargs.get("display_path")
-        self.assertTrue(displayed_path.endswith(".webp"))
+        self.assertEqual(displayed_path, img_ref)
         self.assertTrue(os.path.exists(displayed_path))
+        self.assertEqual(list(Path(tools.output_dir).glob("*.webp")), [])
 
-    def test_show_image_resolves_underscore_alias_and_publishes_webp_to_canvas(self):
+    def test_show_image_resolves_underscore_alias_and_publishes_original_to_canvas(self) -> None:
         canvas_state_service = CanvasStateService(self.manager)
         tools = self.make_image_tools(
             self.config,
@@ -693,11 +697,12 @@ class TestImageTools(BaseTestCase):
 
         state = canvas_state_service.get("monk_alias_test").get_latest_state()
         shown_path = canvas_state_service.get("monk_alias_test").visual.shown_image_path
-        self.assertTrue(shown_path.endswith(".webp"))
+        self.assertEqual(shown_path, reference_path)
         self.assertIn("the monk", shown_path)
         self.assertTrue(os.path.exists(shown_path))
-        self.assertTrue(state["latest"].endswith(".webp"))
-        self.assertIn("the monk", state["latest"])
+        self.assertTrue(state["latest"].endswith(".png"))
+        self.assertEqual(state["latest"], tools.theater.get_url_for_path(reference_path))
+        self.assertEqual(list(Path(tools.output_dir).glob("*.webp")), [])
 
     def test_show_image_refreshes_references_added_after_session_start(self):
         tools = self.make_image_tools(self.config, theater_id="late_reference", theater_manager=self.manager)
@@ -1238,17 +1243,13 @@ class TestImageTools(BaseTestCase):
         self.assertIn("References: hero.png, castle.jpg", payload_prompt)
 
         # Full-quality image on disk has embedded EXIF metadata with references
-        full_quality_path = str(next(Path(tools.output_dir).glob("warrior_castle_*.jpg")))
+        full_quality_path = str(next(Path(tools.output_dir).glob("warrior_castle_*.webp")))
         from utils.image_utils import extract_image_prompt
         full_meta = extract_image_prompt(full_quality_path)
         self.assertIn("A warrior outside a castle", full_meta)
         self.assertIn("References: hero.png, castle.jpg", full_meta)
 
-        # Compressed WebP image on disk also has embedded EXIF metadata with references
-        webp_path = os.path.splitext(full_quality_path)[0] + ".webp"
-        webp_meta = extract_image_prompt(webp_path)
-        self.assertIn("A warrior outside a castle", webp_meta)
-        self.assertIn("References: hero.png, castle.jpg", webp_meta)
+        self.assertEqual(len(list(Path(tools.output_dir).glob("warrior_castle_*"))), 1)
 
     def test_character_images_in_characters_dir_not_visible_in_overall_image_tool(self) -> None:
         tools = self.make_image_tools(self.config, theater_id="char_vis_test", theater_manager=self.manager)

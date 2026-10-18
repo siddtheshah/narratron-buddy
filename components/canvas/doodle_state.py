@@ -336,7 +336,7 @@ class DoodleState:
 
         return None
 
-    def snapshot_png(
+    def snapshot_webp(
         self,
         image_path: str | None,
         stamp_resolver: Optional[Callable[[DoodleAction], bytes | None]] = None,
@@ -422,7 +422,7 @@ class DoodleState:
                 except (KeyError, TypeError, ValueError):
                     continue
             output = io.BytesIO()
-            image.convert("RGB").save(output, format="PNG", compress_level=1)
+            image.convert("RGB").save(output, format="WEBP", lossless=True)
             return output.getvalue()
         except Exception as exc:
             logger.warning("Failed to render viewer doodle snapshot: %s", exc)

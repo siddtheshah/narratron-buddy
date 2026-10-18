@@ -707,7 +707,7 @@ class LiveAgentSession:
         """Return the current visible canvas image as an inline part.
 
         Prefer the server-rendered doodle composite during collaboration.  It
-        is PNG regardless of the source-image format and is therefore also a
+        is lossless WebP regardless of the source-image format and is also a
         reliable decode path for the Live API.  Fall back to the source image
         when there is no visible annotation or the composite cannot be made.
         """
@@ -718,10 +718,10 @@ class LiveAgentSession:
             and canvas.doodles.has_visible_annotations()
         ):
             try:
-                snapshot = canvas.doodles.snapshot_png(canvas.visual.shown_image_path)
+                snapshot = canvas.doodles.snapshot_webp(canvas.visual.shown_image_path)
                 if snapshot:
                     return types.Part(
-                        inline_data=types.Blob(mime_type="image/png", data=snapshot)
+                        inline_data=types.Blob(mime_type="image/webp", data=snapshot)
                     )
             except Exception:
                 logger.exception(
@@ -776,10 +776,10 @@ class LiveAgentSession:
             logger.debug("No running event loop available for doodle snapshot in theater %s", self.theater_id)
 
     async def _send_doodle_snapshot(self) -> None:
-        """Render the composite PNG in a worker, then enqueue it for the agent."""
+        """Render the composite WebP in a worker, then enqueue it for the agent."""
         try:
             snapshot = await asyncio.to_thread(
-                self.canvas_state_manager.doodles.snapshot_png,
+                self.canvas_state_manager.doodles.snapshot_webp,
                 self.canvas_state_manager.visual.shown_image_path,
             )
             if snapshot and self.websocket_connected:
@@ -787,7 +787,7 @@ class LiveAgentSession:
                     role="user",
                     parts=[
                         types.Part(text="[Viewer Annotations]: A composite canvas image with audience annotations is attached."),
-                        types.Part(inline_data=types.Blob(mime_type="image/png", data=snapshot)),
+                        types.Part(inline_data=types.Blob(mime_type="image/webp", data=snapshot)),
                     ],
                 )
                 with self.state_lock:

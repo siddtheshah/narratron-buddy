@@ -4,10 +4,44 @@ from pathlib import Path
 import time
 from typing import Any
 from unittest.mock import Mock, patch
+from PIL import Image
 import pytest
 
 from components.canvas.visual_state import VisualState
-from components.theater_manager import Theater
+from components.theater_manager import Theater, TheaterManager
+
+
+@pytest.mark.parametrize("extension", ["webp", "png", "jpg", "jpeg"])
+def test_display_reuses_original_image_without_creating_live_copies(tmp_path: Path, extension: str) -> None:
+    theater = TheaterManager(tmp_path).theater("original")
+    reference = theater.references_dir() / f"harbor.{extension}"
+    reference.parent.mkdir(parents=True)
+    Image.new("RGB", (32, 24), "blue").save(reference)
+    visual = VisualState(theater)
+    visual.cycle_length = 0
+    callback = Mock()
+    visual.on_show_image = callback
+    original_bytes = reference.read_bytes()
+    existing_files = set(theater.directory().rglob("*"))
+    result = visual.update_visual(type="image", path=str(reference))
+    assert result["status"] == "displayed"
+    assert visual.shown_image_path == str(reference)
+    callback.assert_called_once_with(str(reference), transition="crossfade", effect="gleam3")
+    assert set(theater.directory().rglob("*")) == existing_files
+    assert reference.read_bytes() == original_bytes
+
+
+def test_image_alias_prefers_webp_but_explicit_upload_paths_still_work(tmp_path: Path) -> None:
+    theater = TheaterManager(tmp_path).theater("formats")
+    folder = theater.references_dir()
+    folder.mkdir(parents=True)
+    for extension in ("webp", "png", "jpg", "jpeg"):
+        (folder / f"harbor.{extension}").write_bytes(b"image")
+    visual = VisualState(theater)
+    assert visual.resolve_image_path("harbor") == str(folder / "harbor.webp")
+    for extension in ("png", "jpg", "jpeg", "webp"):
+        path = folder / f"harbor.{extension}"
+        assert visual.resolve_image_path(str(path)) == str(path)
 
 
 def make_theater(theater_id: Any = "th_test", config: dict | None = None) -> Mock:

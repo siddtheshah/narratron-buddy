@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 import shutil
 import tempfile
 
@@ -141,7 +142,14 @@ class TestImageLibrary:
         recent = self.library.get_recent_images(limit=5, generated_only=True)
         assert len(recent) == 1
         assert recent[0]["name"] == "hero_portrait_1700000000"
-        assert recent[0]["path"] == jpg_path
+        assert recent[0]["path"] == webp_path
+
+    @pytest.mark.parametrize("extension", ["webp", "png", "jpg", "jpeg"])
+    def test_reference_discovery_reads_standard_and_uploaded_formats(self, extension: str) -> None:
+        path = Path(self.library.reference_dir) / f"harbor.{extension}"
+        Image.new("RGB", (12, 8), "blue").save(path)
+        self.library._load_references()
+        assert [entry["path"] for entry in self.library.find_image_names("harbor")] == [str(path)]
 
     def test_get_recent_images_respects_limit(self) -> None:
         for i in range(5):

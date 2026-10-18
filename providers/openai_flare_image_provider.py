@@ -41,7 +41,7 @@ class OpenAIFlareImageProvider(ImageProvider):
             client = OpenAI(api_key=api_key, timeout=300.0, max_retries=0)
         self.client = client
 
-    def generate(self, request: ImageGenerationRequest) -> ImageGenerationResult:
+    def _generate(self, request: ImageGenerationRequest) -> ImageGenerationResult:
         size = self._size(request)
         try:
             if request.references:

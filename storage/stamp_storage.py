@@ -80,22 +80,9 @@ def process_stamp_image(
         image.thumbnail((max_dimension, max_dimension), Image.Resampling.LANCZOS)
 
     output = io.BytesIO()
-    if image_format == "JPEG":
-        if image.mode in {"RGBA", "P"}:
-            image = image.convert("RGB")
-        image.save(output, format="JPEG", quality=85, optimize=True)
-        content_type = "image/jpeg"
-    elif image_format == "WEBP":
-        image.save(output, format="WEBP", quality=85)
-        content_type = "image/webp"
-    elif image_format == "GIF":
-        image.save(output, format="GIF")
-        content_type = "image/gif"
-    else:
-        image.save(output, format="PNG", optimize=True)
-        content_type = "image/png"
-
-    return output.getvalue(), content_type
+    # Uploaded formats stay supported; processed stamps use alpha-capable WebP.
+    image.convert("RGBA").save(output, format="WEBP", quality=95, method=6)
+    return output.getvalue(), "image/webp"
 
 
 class StampStorage:
@@ -140,7 +127,9 @@ class StampStorage:
         """Save a stamp image locally and to GCS, returning just the stored filename."""
         clean_name = re.sub(r"[^a-zA-Z0-9_\-\.]", "_", filename).lstrip(".")
         if not clean_name:
-            clean_name = "stamp.png"
+            clean_name = "stamp"
+        if content_type == "image/webp":
+            clean_name = str(Path(clean_name).with_suffix(".webp"))
         unique_prefix = secrets.token_hex(4)
         safe_filename = f"{unique_prefix}_{clean_name}"
         rel_gcs_path = f"stamps/{user_id}/{safe_filename}"

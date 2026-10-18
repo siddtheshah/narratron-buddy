@@ -13,6 +13,21 @@ from components.canvas.audio_state import AudioState
 from services.theater_assets import animations, playlists
 
 
+@pytest.mark.parametrize("extension", ["webp", "jpg"])
+def test_animation_catalog_reads_standard_and_legacy_frames_without_manifest(tmp_path: Path, extension: str) -> None:
+    theater = TheaterManager(tmp_path).theater("frames")
+    folder = theater.output_dir() / "animations" / "scene"
+    folder.mkdir(parents=True)
+    expected: list[str] = []
+    for number in range(1, 4):
+        path = folder / f"frame_{number}.{extension}"
+        path.write_bytes(b"frame")
+        expected.append(str(path.resolve()))
+    assets = animations(theater)
+    assert len(assets) == 1
+    assert assets[0].frames == expected
+
+
 @pytest.mark.asyncio
 async def test_no_music_clears_shared_playback_even_when_pinned() -> None:
     request = Request({"type": "http", "headers": []})

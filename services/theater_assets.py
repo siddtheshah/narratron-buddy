@@ -112,7 +112,8 @@ def animations(theater: Theater) -> list[AnimationAsset]:
                     layer.path = local_path(layer.path)
                 preview = theater.get_url_for_path(manifest.base_image)
             else:
-                frames = [local_path(frame) for frame in (manifest.frames or [f"frame_{n}.jpg" for n in range(1, 4)])]
+                default_extension = "webp" if all((folder / f"frame_{n}.webp").is_file() for n in range(1, 4)) else "jpg"
+                frames = [local_path(frame) for frame in (manifest.frames or [f"frame_{n}.{default_extension}" for n in range(1, 4)])]
                 if len(frames) != 3:
                     continue
                 preview = theater.get_url_for_path(frames[0])

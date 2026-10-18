@@ -41,23 +41,23 @@ def test_doodle_state_set_enabled_persists() -> None:
     assert len(writes) == 2
 
 
-def test_doodle_state_snapshot_png_renders_strokes() -> None:
+def test_doodle_state_snapshot_webp_renders_strokes() -> None:
     with tempfile.TemporaryDirectory() as temp_dir:
         img_path = Path(temp_dir) / "test_scene.png"
         img = Image.new("RGBA", (200, 200), (0, 0, 0, 255))
         img.save(img_path)
 
         state = DoodleState(lambda: None)
-        assert state.snapshot_png(None) is None
-        assert state.snapshot_png(str(img_path)) is None
+        assert state.snapshot_webp(None) is None
+        assert state.snapshot_webp(str(img_path)) is None
 
         state.add([
             {"type": "draw", "x0": 0.1, "y0": 0.1, "x1": 0.9, "y1": 0.9, "color": "#ff0000", "size": 10},
         ])
 
-        png_bytes = state.snapshot_png(str(img_path))
+        png_bytes = state.snapshot_webp(str(img_path))
         assert png_bytes is not None
-        assert png_bytes.startswith(b"\x89PNG")
+        assert png_bytes.startswith(b"RIFF")
 
         with Image.open(io.BytesIO(png_bytes)) as rendered:
             assert rendered.size[0] > 0
@@ -79,7 +79,7 @@ def test_doodle_state_replays_and_renders_text_annotations() -> None:
 
         assert state.text_annotations() == [action]
         assert state.has_visible_annotations() is True
-        png_bytes = state.snapshot_png(str(img_path))
+        png_bytes = state.snapshot_webp(str(img_path))
         assert png_bytes is not None
         with Image.open(io.BytesIO(png_bytes)) as rendered:
             assert any(
@@ -103,11 +103,11 @@ def test_text_edits_replace_saved_annotation_and_observability_pixels(tmp_path: 
         "text": "First", "color": "#ffffff", "size": 32.0, "font": "Outfit",
     }
     state.save_text(original)
-    before = state.snapshot_png(str(image_path))
+    before = state.snapshot_webp(str(image_path))
     state.save_text({**original, "text": "Edited clue"})
     assert len(state.doodles) == 1
     assert state.text_annotations()[0]["text"] == "Edited clue"
-    assert state.snapshot_png(str(image_path)) != before
+    assert state.snapshot_webp(str(image_path)) != before
     reloaded = DoodleState(lambda: None)
     reloaded.load(state.serialize())
     assert reloaded.text_annotations() == state.text_annotations()
@@ -154,7 +154,7 @@ def test_doodle_snapshot_batches_styling_and_filtering() -> None:
     assert batches[2] == {"color": "#00ff00", "size": 5, "points": [2, 2, 3, 3]}
 
 
-def test_doodle_state_snapshot_png_handles_malformed_stroke_coordinates() -> None:
+def test_doodle_state_snapshot_webp_handles_malformed_stroke_coordinates() -> None:
     with tempfile.TemporaryDirectory() as temp_dir:
         img_path = Path(temp_dir) / "base.png"
         Image.new("RGBA", (100, 100), (255, 255, 255, 255)).save(img_path)
@@ -169,9 +169,9 @@ def test_doodle_state_snapshot_png_handles_malformed_stroke_coordinates() -> Non
             {"type": "comment", "content": "note"},
         ])
 
-        png = state.snapshot_png(str(img_path))
+        png = state.snapshot_webp(str(img_path))
         assert png is not None
-        assert png.startswith(b"\x89PNG")
+        assert png.startswith(b"RIFF")
 
 
 def test_doodle_state_load_handles_malformed_payload() -> None:
@@ -339,7 +339,7 @@ def test_stamps_always_under_doodles_layering() -> None:
     assert [d.get("id") for d in state.doodles if d.get("type") == "stamp"] == ["stamp-1", "stamp-2"]
 
 
-def test_snapshot_png_renders_stamp_imagery() -> None:
+def test_snapshot_webp_renders_stamp_imagery() -> None:
     import io
     with tempfile.TemporaryDirectory() as temp_dir:
         base_path = Path(temp_dir) / "base.png"
@@ -360,9 +360,9 @@ def test_snapshot_png_renders_stamp_imagery() -> None:
             "size": 80.0,
         })
 
-        snapshot_bytes = state.snapshot_png(str(base_path))
+        snapshot_bytes = state.snapshot_webp(str(base_path))
         assert snapshot_bytes is not None
-        assert snapshot_bytes.startswith(b"\x89PNG")
+        assert snapshot_bytes.startswith(b"RIFF")
         assert snapshot_bytes != base_path.read_bytes()
 
         rendered = Image.open(io.BytesIO(snapshot_bytes)).convert("RGB")
@@ -374,7 +374,7 @@ def test_snapshot_png_renders_stamp_imagery() -> None:
         assert corner_pixel == (0, 0, 0)
 
 
-def test_snapshot_png_rotates_stamp_clockwise(tmp_path: Path) -> None:
+def test_snapshot_webp_rotates_stamp_clockwise(tmp_path: Path) -> None:
     base_path = tmp_path / "base.png"
     stamp_path = tmp_path / "stamp.png"
     Image.new("RGB", (1000, 1000), (0, 0, 0)).save(base_path)
@@ -386,7 +386,7 @@ def test_snapshot_png_rotates_stamp_clockwise(tmp_path: Path) -> None:
         "type": "stamp", "id": "rotated", "stamp_id": 1, "user_id": 1,
         "url": str(stamp_path), "x": 0.5, "y": 0.5, "size": 80, "rotation": 90,
     })
-    snapshot = state.snapshot_png(str(base_path))
+    snapshot = state.snapshot_webp(str(base_path))
     assert snapshot is not None
     with Image.open(io.BytesIO(snapshot)) as rendered:
         assert rendered.getpixel((500, 470))[:3] == (255, 0, 0)
@@ -394,7 +394,7 @@ def test_snapshot_png_rotates_stamp_clockwise(tmp_path: Path) -> None:
         assert rendered.getpixel((470, 500))[:3] == (0, 0, 0)
 
 
-def test_snapshot_png_renders_theater_stamp() -> None:
+def test_snapshot_webp_renders_theater_stamp() -> None:
     import io
     with tempfile.TemporaryDirectory() as temp_dir:
         base_path = Path(temp_dir) / "base.png"
@@ -422,7 +422,7 @@ def test_snapshot_png_renders_theater_stamp() -> None:
             "size": 80.0,
         })
 
-        snapshot_bytes = state.snapshot_png(str(base_path))
+        snapshot_bytes = state.snapshot_webp(str(base_path))
         assert snapshot_bytes is not None
 
         rendered = Image.open(io.BytesIO(snapshot_bytes)).convert("RGB")
@@ -430,7 +430,7 @@ def test_snapshot_png_renders_theater_stamp() -> None:
         assert center_pixel == (0, 255, 0)
 
 
-def test_snapshot_png_uses_custom_stamp_resolver() -> None:
+def test_snapshot_webp_uses_custom_stamp_resolver() -> None:
     import io
     with tempfile.TemporaryDirectory() as temp_dir:
         base_path = Path(temp_dir) / "base.png"
@@ -457,7 +457,7 @@ def test_snapshot_png_uses_custom_stamp_resolver() -> None:
             "size": 80.0,
         })
 
-        snapshot_bytes = state.snapshot_png(str(base_path))
+        snapshot_bytes = state.snapshot_webp(str(base_path))
         assert snapshot_bytes is not None
 
         rendered = Image.open(io.BytesIO(snapshot_bytes)).convert("RGB")

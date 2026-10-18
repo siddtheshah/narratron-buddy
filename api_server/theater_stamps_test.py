@@ -46,9 +46,9 @@ def stamps(tmp_path: Path) -> Iterator[StampHarness]:
     buffer = BytesIO()
     image = Image.new("RGBA", (32, 32), (0, 0, 0, 0))
     image.putpixel((16, 16), (255, 0, 0, 255))
-    image.save(buffer, format="PNG")
+    image.save(buffer, format="WEBP", quality=95)
     provider.generate.return_value = ImageGenerationResult(
-        image_bytes=buffer.getvalue(), mime_type="image/png", provider="mock", model="mock",
+        image_bytes=buffer.getvalue(), mime_type="image/webp", provider="mock", model="mock",
     )
     broadcast = AsyncMock()
 
@@ -131,7 +131,7 @@ def test_billing_failure_removes_stamp_from_runtime_and_repository(stamps: Stamp
     result = stamps.client.post("/api/theaters/stage/stamps/generate", json={"name": "Hero", "prompt": "Hero"})
     assert result.status_code == 503
     assert stamps.manager.theater("stage").stamps() == []
-    assert list((stamps.repository.theater_path("stage") / "stamps").glob("*.png")) == []
+    assert list((stamps.repository.theater_path("stage") / "stamps").glob("*.webp")) == []
     stamps.broadcast.assert_not_awaited()
 
 

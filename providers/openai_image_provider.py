@@ -36,7 +36,7 @@ class OpenAIImageProvider(ImageProvider):
             client = OpenAI(api_key=api_key)
         self.client = client
 
-    def generate(self, request: ImageGenerationRequest) -> ImageGenerationResult:
+    def _generate(self, request: ImageGenerationRequest) -> ImageGenerationResult:
         kwargs = {
             "model": self.model,
             "prompt": request.prompt,

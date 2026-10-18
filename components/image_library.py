@@ -73,12 +73,10 @@ class ImageLibrary:
 
     @staticmethod
     def _is_preferred_format(new_path: str, existing_path: str) -> bool:
-        """Prefer png/jpg/jpeg over webp for catalog representation when stems match."""
+        """Prefer the standard WebP asset when multiple formats share a stem."""
         new_ext = Path(new_path).suffix.lower()
         existing_ext = Path(existing_path).suffix.lower()
-        if existing_ext == ".webp" and new_ext in (".png", ".jpg", ".jpeg"):
-            return True
-        return False
+        return new_ext == ".webp" and existing_ext != ".webp"
 
     @staticmethod
     def _entry(path: str) -> dict[str, str]:

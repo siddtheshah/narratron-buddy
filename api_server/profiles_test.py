@@ -204,11 +204,11 @@ async def test_upload_stamp_success() -> None:
         "id": 12,
         "user_id": 8,
         "name": "Star",
-        "filename": "abc_star.png",
-        "content_type": "image/png",
+        "filename": "abc_star.webp",
+        "content_type": "image/webp",
     }
     registry_storage = MagicMock()
-    registry_storage.save_stamp.return_value = "abc_star.png"
+    registry_storage.save_stamp.return_value = "abc_star.webp"
 
     with patch.object(object_registry, "db", registry_db), \
          patch.object(profiles, "stamp_storage", registry_storage), \
@@ -219,7 +219,7 @@ async def test_upload_stamp_success() -> None:
     assert result["id"] == 12
     assert result["url"] == "/api/stamps/12"
     registry_storage.save_stamp.assert_called_once()
-    registry_db.create_user_stamp.assert_called_once_with(8, "Star", "abc_star.png", "image/png")
+    registry_db.create_user_stamp.assert_called_once_with(8, "Star", "abc_star.webp", "image/webp")
 
 
 def test_delete_stamp_requires_login() -> None:

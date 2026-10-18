@@ -35,7 +35,7 @@ class GeminiImageProvider(ImageProvider):
             client = genai.Client(api_key=api_key)
         self.client = client
 
-    def generate(self, request: ImageGenerationRequest) -> ImageGenerationResult:
+    def _generate(self, request: ImageGenerationRequest) -> ImageGenerationResult:
         parts: list[types.Part | str] = []
         for ref in request.references:
             label = ref.label or Path(ref.name).stem or ref.name

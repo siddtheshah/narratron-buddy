@@ -1,20 +1,22 @@
 import logging
 
+from testing.reference_images import png_bytes
+
 from providers.hybrid_image_provider import HybridImageProvider
 from providers.image_provider import ImageGenerationRequest, ImageGenerationResult, ImageProvider, ImageReference
 from providers.local_image_prompt_classifier import DISTILLED_ROUTING_EXAMPLES, LocalImagePromptClassifier
 
 
 class FakeProvider(ImageProvider):
-    def __init__(self, provider_id: str):
+    def __init__(self, provider_id: str) -> None:
         self.id = provider_id
         self.display_name = provider_id
         self.model = f"{provider_id}-model"
         self.calls = []
 
-    def generate(self, request):
+    def _generate(self, request: ImageGenerationRequest) -> ImageGenerationResult:
         self.calls.append(request)
-        return ImageGenerationResult(b"image", "image/png", self.id, self.model, usage={"source": self.id})
+        return ImageGenerationResult(png_bytes(), "image/png", self.id, self.model, usage={"source": self.id})
 
 
 class AssertNoCallTextProvider:

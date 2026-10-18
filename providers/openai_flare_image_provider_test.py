@@ -1,4 +1,4 @@
-"""Flare requests use quality rendering and explicit alpha-capable PNG output."""
+"""Flare uses alpha-capable source images and returns canonical WebP output."""
 
 import base64
 from unittest.mock import MagicMock, patch
@@ -7,15 +7,17 @@ from openai import OpenAI
 from openai.types.images_response import ImagesResponse
 import pytest
 
+from testing.reference_images import png_bytes
+
 from providers.image_provider import ImageGenerationRequest, ImageProviderError, ImageReference
 from providers.openai_flare_image_provider import OpenAIFlareImageProvider
 from providers.registry import get_image_provider, list_image_provider_specs
 
 
-def image_client(content: bytes = b"png-image") -> MagicMock:
+def image_client(content: bytes | None = None) -> MagicMock:
     client = MagicMock(spec=OpenAI)
     response = ImagesResponse(
-        created=1, data=[{"b64_json": base64.b64encode(content).decode("ascii")}],
+        created=1, data=[{"b64_json": base64.b64encode(png_bytes() if content is None else content).decode("ascii")}],
         usage={"input_tokens": 10, "output_tokens": 20, "total_tokens": 30,
                "input_tokens_details": {"image_tokens": 0, "text_tokens": 10}},
     )
@@ -25,7 +27,7 @@ def image_client(content: bytes = b"png-image") -> MagicMock:
     return client
 
 
-def test_flare_generates_high_quality_transparent_square_png() -> None:
+def test_flare_returns_webp_from_high_quality_transparent_square_png() -> None:
     client = image_client()
     result = OpenAIFlareImageProvider(client=client).generate(
         ImageGenerationRequest(prompt="Goblin", aspect_ratio="1:1", background="transparent")
@@ -35,9 +37,10 @@ def test_flare_generates_high_quality_transparent_square_png() -> None:
         quality="high", n=1, output_format="png", background="transparent",
     )
     client.images.edit.assert_not_called()
-    assert result.image_bytes == b"png-image"
+    assert result.image_bytes[:4] == b"RIFF"
+    assert result.mime_type == "image/webp"
     assert result.provider == "openai-gpt-image-flare"
-    assert result.mime_type == "image/png"
+    assert result.mime_type == "image/webp"
     assert result.request_id == "flare-request"
     assert result.usage["total_tokens"] == 30
 

@@ -3,12 +3,44 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
-from typing import Any, Literal, Mapping, Sequence
+from dataclasses import dataclass, field, replace
+from io import BytesIO
+from typing import Literal, Mapping, Sequence
+
+from PIL import Image, UnidentifiedImageError
+from pydantic import JsonValue
+
+
+GENERATED_WEBP_QUALITY = 95
 
 
 class ImageProviderError(RuntimeError):
     """A provider-normalized generation failure safe to show in diagnostics."""
+
+
+def generated_image_to_webp(content: bytes) -> bytes:
+    """Encode generated rasters once, retaining dimensions, alpha, and metadata."""
+    try:
+        with Image.open(BytesIO(content)) as image:
+            image.load()
+            if image.format == "WEBP":
+                return content
+            exif = image.getexif()
+            # Carry PNG text used by reference discovery into WebP EXIF.
+            for key, tag in (("Prompt", 0x010E), ("Title", 0x9C9B), ("MetadataDescription", 0x9286)):
+                text = image.info.get(key)
+                if text and tag not in exif:
+                    exif[tag] = str(text).encode("utf-16le") if tag == 0x9C9B else str(text)
+            raster = image.convert("RGBA" if "A" in image.getbands() or "transparency" in image.info else "RGB")
+            buffer = BytesIO()
+            raster.save(
+                buffer, "WEBP", quality=GENERATED_WEBP_QUALITY, method=6,
+                exif=exif, icc_profile=image.info.get("icc_profile", b""),
+                xmp=image.info.get("xmp", b""),
+            )
+            return buffer.getvalue()
+    except (UnidentifiedImageError, OSError, ValueError, SyntaxError, Image.DecompressionBombError) as error:
+        raise ImageProviderError("Provider returned an image that could not be encoded as WebP.") from error
 
 
 @dataclass(frozen=True)
@@ -63,7 +95,7 @@ class ImageGenerationResult:
     provider: str
     model: str
     request_id: str | None = None
-    usage: Mapping[str, Any] = field(default_factory=dict)
+    usage: Mapping[str, JsonValue] = field(default_factory=dict)
 
 
 class ImageProvider(ABC):
@@ -73,6 +105,11 @@ class ImageProvider(ABC):
     display_name: str
     model: str
 
-    @abstractmethod
     def generate(self, request: ImageGenerationRequest) -> ImageGenerationResult:
-        """Generate a single image or raise :class:`ImageProviderError`."""
+        """Generate one high-quality WebP or raise :class:`ImageProviderError`."""
+        result = self._generate(request)
+        return replace(result, image_bytes=generated_image_to_webp(result.image_bytes), mime_type="image/webp")
+
+    @abstractmethod
+    def _generate(self, request: ImageGenerationRequest) -> ImageGenerationResult:
+        """Retrieve the provider's original raster before shared WebP encoding."""

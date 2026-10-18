@@ -1,13 +1,15 @@
+from testing.reference_images import png_bytes
+
 from providers.fal_flux_klein_provider import FalFluxKleinProvider
 from providers.image_provider import ImageGenerationRequest, ImageReference
 
 
-def test_fal_klein_uses_text_endpoint_and_downloads_result():
+def test_fal_klein_uses_text_endpoint_and_downloads_result() -> None:
     calls = []
     provider = FalFluxKleinProvider(
         api_key="test-key",
         request_json=lambda endpoint, payload: calls.append((endpoint, payload)) or {"images": [{"url": "https://example.test/image.png"}], "seed": 42},
-        download=lambda url: (b"generated", "image/png"),
+        download=lambda url: (png_bytes(), "image/png"),
     )
 
     result = provider.generate(ImageGenerationRequest(prompt="a small green house", width=1024, height=768))
@@ -18,17 +20,18 @@ def test_fal_klein_uses_text_endpoint_and_downloads_result():
             {"prompt": "a small green house", "num_images": 1, "output_format": "png", "image_size": {"width": 1024, "height": 768}},
         )
     ]
-    assert result.image_bytes == b"generated"
+    assert result.image_bytes[:4] == b"RIFF"
+    assert result.mime_type == "image/webp"
     assert result.model == "fal-ai/flux-2/klein/9b"
     assert result.usage == {"seed": 42}
 
 
-def test_fal_klein_uses_edit_endpoint_and_data_uri_for_references():
+def test_fal_klein_uses_edit_endpoint_and_data_uri_for_references() -> None:
     calls = []
     provider = FalFluxKleinProvider(
         api_key="test-key",
         request_json=lambda endpoint, payload: calls.append((endpoint, payload)) or {"images": [{"url": "https://example.test/image.png"}]},
-        download=lambda url: (b"generated", "image/png"),
+        download=lambda url: (png_bytes(), "image/png"),
     )
 
     provider.generate(

@@ -77,7 +77,7 @@ class HybridImageProvider(ImageProvider):
             self.classifier.model,
         )
 
-    def generate(self, request: ImageGenerationRequest) -> ImageGenerationResult:
+    def _generate(self, request: ImageGenerationRequest) -> ImageGenerationResult:
         prompt_preview = request.prompt[:120].replace("\n", " ")
         logger.info(
             "%s generate() called: prompt='%s', references=%d, aspect_ratio=%s",

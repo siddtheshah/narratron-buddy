@@ -136,9 +136,9 @@
           const emptyHint = document.createElement('span');
           emptyHint.className = 'empty-folder-hint';
           emptyHint.textContent = path === 'references/characters'
-            ? 'No character portraits yet (references/characters/<Name>/1.png)'
+            ? 'No character portraits yet (references/characters/<Name>/1.webp)'
             : (path === 'references/scenes'
-              ? 'No scene images yet (references/scenes/<Scene>/1.png)'
+              ? 'No scene images yet (references/scenes/<Scene>/1.webp)'
               : 'Empty folder');
           contents.append(emptyHint);
         }

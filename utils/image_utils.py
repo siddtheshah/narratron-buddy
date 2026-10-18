@@ -125,7 +125,7 @@ def compress_image_to_webp(
                 output_path = src_path.with_suffix(".webp")
 
             with Image.open(src_path) as img:
-                img_to_save = img.convert("RGB") if img.mode not in ("RGB", "RGBA") else img.copy()
+                img_to_save = img.convert("RGBA" if "A" in img.getbands() or "transparency" in img.info else "RGB")
                 exif = img.getexif()
                 if prompt:
                     embed_image_metadata(exif, prompt)
@@ -136,7 +136,7 @@ def compress_image_to_webp(
         elif isinstance(image_source, Image.Image):
             if output_path is None:
                 raise ValueError("output_path is required when image_source is a PIL Image.")
-            img_to_save = image_source.convert("RGB") if image_source.mode not in ("RGB", "RGBA") else image_source
+            img_to_save = image_source.convert("RGBA" if "A" in image_source.getbands() or "transparency" in image_source.info else "RGB")
             exif = image_source.getexif()
             if prompt:
                 embed_image_metadata(exif, prompt)

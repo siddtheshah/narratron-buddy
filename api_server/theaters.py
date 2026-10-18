@@ -117,8 +117,8 @@ async def generate_theater_stamp(
         # Image jobs can overlap; hold the billing lock only for account checks and settlement.
         try:
             image = await asyncio.to_thread(generate_theater_image, root, kind="stamp", prompt=prompt, references=[])
-            if not image.image_bytes or image.mime_type != "image/png":
-                raise ValueError("Stamp generation must return a PNG image.")
+            if not image.image_bytes or image.mime_type != "image/webp":
+                raise ValueError("Stamp generation must return a WebP image.")
         except Exception as error:
             logger.exception("Theater stamp generation failed")
             raise HTTPException(status_code=502, detail="Stamp generation failed; no credits were charged.") from error
@@ -127,7 +127,7 @@ async def generate_theater_stamp(
             filename = ""
             try:
                 safe_name = re.sub(r"[^a-zA-Z0-9_-]", "_", name).strip("_") or "stamp"
-                filename = f"{safe_name}_{uuid.uuid4().hex[:12]}.png"
+                filename = f"{safe_name}_{uuid.uuid4().hex[:12]}.webp"
                 await asyncio.to_thread(_save_generated_stamp, theater_id, filename, image.image_bytes)
             except Exception as error:
                 if filename:

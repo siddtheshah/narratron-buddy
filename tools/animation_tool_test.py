@@ -184,7 +184,7 @@ class TestAnimationTools(BaseTestCase):
         animation = canvas_state_service.get("tri_frame_canvas").get_latest_state()["animation"]
         self.assertEqual(animation["type"], "triframe")
         self.assertEqual(len(animation["frames"]), 3)
-        self.assertIn(f"/output/animations/{animation_id}/frame_1.jpg", animation["frames"][0])
+        self.assertIn(f"/output/animations/{animation_id}/frame_1.webp", animation["frames"][0])
 
     @patch("tools.image.image_tool.get_image_provider")
     def test_create_animation_passes_references_to_each_frame(self, mock_get_provider):

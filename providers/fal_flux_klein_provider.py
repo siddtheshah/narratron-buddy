@@ -37,7 +37,7 @@ class FalFluxKleinProvider(ImageProvider):
         self._request_json = request_json or self._post_json
         self._download = download or self._download_image
 
-    def generate(self, request: ImageGenerationRequest) -> ImageGenerationResult:
+    def _generate(self, request: ImageGenerationRequest) -> ImageGenerationResult:
         if len(request.references) > 4:
             raise ImageProviderError("FLUX.2 Klein 9B on FAL accepts at most four reference images.")
         endpoint = self.edit_model if request.references else self.model

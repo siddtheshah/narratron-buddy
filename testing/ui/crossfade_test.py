@@ -12,7 +12,7 @@ from testing.ui.base import UITestCase
 
 
 class TestCrossfade(UITestCase):
-    def test_show_image_forwards_transition_and_effect_to_callback(self):
+    def test_show_image_forwards_transition_and_effect_to_callback(self) -> None:
         from tools.image import ImageTools
 
         theater_id = "image_tool_transition"
@@ -41,7 +41,7 @@ class TestCrossfade(UITestCase):
             result = tool.show_image("test_image", transition=transition, effect=effect)
             self.assertIn("Successfully", result)
             tool.visual.on_show_image.assert_called_once_with(
-                tool._ensure_webp_for_display(str(image)), transition=transition, effect=effect
+                str(image), transition=transition, effect=effect
             )
             tool.visual.on_show_image.reset_mock()
 

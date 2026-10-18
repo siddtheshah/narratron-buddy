@@ -39,7 +39,6 @@ from providers import (
     list_speech_provider_specs,
     list_video_provider_specs,
     VideoGenerationRequest,
-    VideoProviderError,
 )
 from testlab.image_benchmark import ROOT as BENCHMARK_ROOT, BenchmarkPrompt, get_prompt, prompt_catalog
 from testlab.music_benchmark import BenchmarkMusicPrompt, get_music_prompt, music_prompt_catalog
@@ -1435,7 +1434,7 @@ def _run_animation_benchmark(run_id: str, provider_id: str, prompt: str, provide
             _animation_runs[run_id]["events"].append({"stage": "generating_base", "at": time.time()})
             _animation_runs[run_id]["debug"] = {"plan": plan, "planner": planner_debug, "flattened_prompt": flattened_prompt, "decomposition_prompt": decomposition_prompt}
         base = get_image_provider(provider_id, provider_options).generate(ImageGenerationRequest(prompt=flattened_prompt, aspect_ratio="16:9"))
-        base_extension = ".png" if (base.mime_type or "").endswith("png") else ".jpg"
+        base_extension = mimetypes.guess_extension(base.mime_type) or ".webp"
         base_filename = f"base{base_extension}"
         (output_dir / base_filename).write_bytes(base.image_bytes)
         with _runs_lock:
@@ -1445,7 +1444,7 @@ def _run_animation_benchmark(run_id: str, provider_id: str, prompt: str, provide
         ))
         layers = []
         for index, (data, mime_type) in enumerate(result.images[:len(plan)]):
-            filename = f"layer_{index + 1}.png"
+            filename = f"layer_{index + 1}{mimetypes.guess_extension(mime_type) or '.webp'}"
             (output_dir / filename).write_bytes(data)
             layers.append({**plan[index], "order": index, "url": f"/benchmark-animations/{run_id}/{filename}", "mime_type": mime_type})
         manifest = {"id": run_id, "base_url": f"/benchmark-animations/{run_id}/{base_filename}", "layers": layers, "plan": plan, "provider": {"base": base.provider, "base_model": base.model, "qwen_model": "fal-ai/qwen-image-layered", "qwen_request_id": result.request_id, "qwen_usage": result.usage}}

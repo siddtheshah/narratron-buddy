@@ -358,11 +358,11 @@ class AnimationTools(BaseTools):
             logger.debug("[AnimationTools] Layered animation %s LLM plan=%s", animation_id, plan)
             flattened_prompt = self._flatten_layer_plan(scene_prompt.strip(), plan)
             base_result = self.image_provider.generate(ImageGenerationRequest(prompt=self._apply_default_style(flattened_prompt), aspect_ratio="16:9"))
-            base_path = self._save_named_image(base_result.image_bytes, animation_dir / "base.jpg", flattened_prompt)
+            base_path = self._save_named_image(base_result.image_bytes, animation_dir / "base.webp", flattened_prompt)
             decomposition_prompt = self._decomposition_prompt(scene_prompt.strip(), plan)
             provider = self.layered_provider
             layered = provider.decompose(LayeredImageRequest(image_bytes=base_result.image_bytes, mime_type=base_result.mime_type or "image/jpeg", prompt=decomposition_prompt, num_layers=len(plan)))
-            layer_paths = [self._save_named_image(image_bytes, animation_dir / f"layer_{index + 1}.png", decomposition_prompt) for index, (image_bytes, _mime_type) in enumerate(layered.images[:len(plan)])]
+            layer_paths = [self._save_named_image(image_bytes, animation_dir / f"layer_{index + 1}.webp", decomposition_prompt) for index, (image_bytes, _mime_type) in enumerate(layered.images[:len(plan)])]
             if len(layer_paths) < 2:
                 raise ImageProviderError("Layer decomposition did not produce enough playable layers.")
             manifest = {
@@ -628,12 +628,11 @@ class AnimationTools(BaseTools):
 
     @staticmethod
     def _save_named_image(image_bytes: bytes, path: Path, prompt: str) -> str:
+        path = path.with_suffix(".webp")
         image = Image.open(BytesIO(image_bytes))
-        if path.suffix.lower() == ".jpg" and image.mode != "RGB":
-            image = image.convert("RGB")
         exif = image.getexif()
         embed_image_metadata(exif, prompt)
-        image.save(path, "PNG" if path.suffix.lower() == ".png" else "JPEG", exif=exif, quality=95)
+        image.save(path, "WEBP", exif=exif, quality=95, method=6)
         return str(path)
 
     def _register_layered_aliases(self, animation_id: str, base_path: str, layer_paths: list[str]) -> None:
@@ -830,13 +829,11 @@ class AnimationTools(BaseTools):
         if not image_bytes:
             raise ImageProviderError("Provider returned no binary image data.")
         image = Image.open(BytesIO(image_bytes))
-        if image.mode != "RGB":
-            image = image.convert("RGB")
-        filename = f"frame_{frame_number}.jpg"
+        filename = f"frame_{frame_number}.webp"
         filepath = os.path.join(animation_dir, filename)
         exif = image.getexif()
         embed_image_metadata(exif, prompt)
-        image.save(filepath, "JPEG", exif=exif, quality=95)
+        image.save(filepath, "WEBP", exif=exif, quality=95, method=6)
         return filepath
 
     def _register_frame_aliases(
@@ -873,10 +870,11 @@ class AnimationTools(BaseTools):
                         return abs_frames
             except (OSError, json.JSONDecodeError):
                 pass
-        frame_paths = [str(animation_dir / f"frame_{number}.jpg") for number in range(1, 4)]
-        if all(Path(path).is_file() for path in frame_paths):
-            self._animations[clean_id] = frame_paths
-            return frame_paths
+        for extension in ("webp", "jpg"):
+            frame_paths = [str(animation_dir / f"frame_{number}.{extension}") for number in range(1, 4)]
+            if all(Path(path).is_file() for path in frame_paths):
+                self._animations[clean_id] = frame_paths
+                return frame_paths
         return []
 
     @logged_tool_call
@@ -993,14 +991,15 @@ class AnimationTools(BaseTools):
                 "video_duration_seconds": 5,
             }
 
-        frame_paths = [str(subfolder / f"frame_{number}.jpg") for number in range(1, 4)]
-        if all(Path(p).is_file() for p in frame_paths):
-            return {
-                "id": anim_id,
-                "type": "triframe",
-                "scene_prompt": "",
-                "frames": [self._to_relative_path(p) for p in frame_paths],
-            }
+        for extension in ("webp", "jpg"):
+            frame_paths = [str(subfolder / f"frame_{number}.{extension}") for number in range(1, 4)]
+            if all(Path(p).is_file() for p in frame_paths):
+                return {
+                    "id": anim_id,
+                    "type": "triframe",
+                    "scene_prompt": "",
+                    "frames": [self._to_relative_path(p) for p in frame_paths],
+                }
         return None
 
     def _notify_image_created(self, filepath: str) -> None:

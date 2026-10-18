@@ -5,6 +5,8 @@ from pathlib import Path
 import tempfile
 import unittest
 
+import pytest
+
 from PIL import Image
 from absl.testing import flagsaver
 
@@ -13,6 +15,28 @@ from storage.stamp_storage import (
     get_stamps_root,
     process_stamp_image,
 )
+
+
+@pytest.mark.parametrize("format", ["PNG", "JPEG", "WEBP", "GIF"])
+def test_uploaded_stamp_formats_are_processed_as_webp(format: str) -> None:
+    source = io.BytesIO()
+    Image.new("RGB", (600, 300), "red").save(source, format)
+    data, mime = process_stamp_image(source.getvalue())
+    assert mime == "image/webp"
+    with Image.open(io.BytesIO(data)) as image:
+        assert image.format == "WEBP"
+        assert image.size == (256, 128)
+
+
+@flagsaver.flagsaver(testing_use_local=True)
+def test_processed_stamp_filename_matches_webp_bytes(tmp_path: Path) -> None:
+    source = io.BytesIO()
+    Image.new("RGBA", (16, 16), (255, 0, 0, 128)).save(source, "PNG")
+    data, mime = process_stamp_image(source.getvalue())
+    storage = StampStorage(base_dir=tmp_path)
+    filename = storage.save_stamp(7, "uploaded.png", data, mime)
+    assert filename.endswith("_uploaded.webp")
+    assert storage.read_stamp(7, filename) == data
 
 
 class TestStampStorage(unittest.TestCase):
@@ -31,14 +55,14 @@ class TestStampStorage(unittest.TestCase):
     def test_process_stamp_image_normal(self) -> None:
         raw_bytes = self._create_test_image_bytes(50, 50, "PNG")
         processed, ctype = process_stamp_image(raw_bytes)
-        self.assertEqual(ctype, "image/png")
+        self.assertEqual(ctype, "image/webp")
         img = Image.open(io.BytesIO(processed))
         self.assertEqual(img.size, (50, 50))
 
     def test_process_stamp_image_resizes_large_image(self) -> None:
         raw_bytes = self._create_test_image_bytes(600, 400, "PNG")
         processed, ctype = process_stamp_image(raw_bytes, max_dimension=256)
-        self.assertEqual(ctype, "image/png")
+        self.assertEqual(ctype, "image/webp")
         img = Image.open(io.BytesIO(processed))
         width, height = img.size
         self.assertLessEqual(width, 256)
@@ -56,7 +80,7 @@ class TestStampStorage(unittest.TestCase):
     def test_process_stamp_image_formats(self) -> None:
         jpeg_bytes = self._create_test_image_bytes(80, 80, "JPEG")
         processed_jpeg, ctype_jpeg = process_stamp_image(jpeg_bytes)
-        self.assertEqual(ctype_jpeg, "image/jpeg")
+        self.assertEqual(ctype_jpeg, "image/webp")
 
         webp_bytes = self._create_test_image_bytes(80, 80, "WEBP")
         processed_webp, ctype_webp = process_stamp_image(webp_bytes)
@@ -69,7 +93,7 @@ class TestStampStorage(unittest.TestCase):
         img.save(buf, format="PNG")
 
         processed, ctype = process_stamp_image(buf.getvalue())
-        self.assertEqual(ctype, "image/png")
+        self.assertEqual(ctype, "image/webp")
         result_img = Image.open(io.BytesIO(processed))
         self.assertEqual(result_img.mode, "RGBA")
         self.assertEqual(result_img.getpixel((0, 0))[3], 0)

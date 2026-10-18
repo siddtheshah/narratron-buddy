@@ -137,7 +137,7 @@ def test_assistant_receives_image_previews_for_unnamed_uploads(tmp_path: Path) -
     assert len(contents) == 7
     assert contents[1].text == "Preview of references/IMG_001.png"
     assert {contents[3].text, contents[5].text} == {"Preview of stamps/cart.png", "Preview of stamps/shovel.png"}
-    assert contents[2].inline_data.mime_type == "image/jpeg"
+    assert contents[2].inline_data.mime_type == "image/webp"
     with Image.open(BytesIO(contents[2].inline_data.data)) as preview:
         assert preview.width <= 512
         assert preview.height <= 512

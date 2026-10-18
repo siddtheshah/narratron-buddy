@@ -1,4 +1,3 @@
-import hashlib
 import logging
 import os
 from pathlib import Path
@@ -9,6 +8,7 @@ from io import BytesIO
 from typing import Any, Callable, Dict, Optional
 
 from PIL import Image
+from providers.image_provider import GENERATED_WEBP_QUALITY
 
 from providers import (
     ImageGenerationRequest,
@@ -20,7 +20,6 @@ from tools.base_tool import BaseTools, CANVAS_PINNED_MESSAGE, blocked_when_canva
 from tools.tool_metadata import terminal
 from tools.image.prompt_cleanup import clean_image_prompt
 from utils.image_utils import (
-    compress_image_to_webp,
     embed_image_metadata,
     extract_image_metadata_description,
     extract_image_prompt,
@@ -186,30 +185,6 @@ class ImageTools(BaseTools):
         self._trigger_after_tool_call("list_references")
         return results
 
-    def _ensure_webp_for_display(self, file_path: str) -> str:
-        """Ensures a compressed WebP version of the image exists in output_dir for frontend display."""
-        if not file_path:
-            return file_path
-        if file_path.lower().endswith(".webp"):
-            return file_path
-
-        stem = Path(file_path).stem
-        canonical = str(Path(file_path).resolve())
-        path_hash = hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:10]
-        webp_filename = f"{stem}_{path_hash}.webp"
-        webp_path = os.path.join(self.output_dir, webp_filename)
-
-        try:
-            if os.path.exists(webp_path) and os.path.exists(file_path):
-                if os.path.getmtime(webp_path) >= os.path.getmtime(file_path):
-                    return webp_path
-        except Exception:
-            pass
-
-        prompt = extract_image_prompt(file_path)
-        compressed = compress_image_to_webp(file_path, output_path=webp_path, quality=80, prompt=prompt or None)
-        return compressed if compressed and os.path.exists(compressed) else file_path
-
     def join_generation(self, timeout: float = 10.0) -> None:
         """Helper for unit tests or teardown to wait for background image generation thread."""
         thread = self._last_generation_thread
@@ -359,16 +334,14 @@ class ImageTools(BaseTools):
 
                     if image_bytes:
                         image = Image.open(BytesIO(image_bytes))
-                        if image.mode != "RGB":
-                            image = image.convert("RGB")
+                        if image.mode not in ("RGB", "RGBA"):
+                            image = image.convert("RGBA" if "transparency" in image.info else "RGB")
                         
                         timestamp = int(time.time())
-                        filename = f"{clean_image_name}_{timestamp}.jpg"
-                        webp_filename = f"{clean_image_name}_{timestamp}.webp"
+                        filename = f"{clean_image_name}_{timestamp}.webp"
                         
                         out_folder = self.output_dir
                         filepath = os.path.join(out_folder, filename)
-                        webp_filepath = os.path.join(out_folder, webp_filename)
                          
                         ref_names: list[str] = []
                         character_names = {
@@ -396,21 +369,14 @@ class ImageTools(BaseTools):
                         exif = image.getexif()
                         embed_image_metadata(exif, metadata_prompt)
                          
-                        # Save full quality image
-                        image.save(filepath, "JPEG", exif=exif, quality=95)
-
-                        # Save compressed webp image for frontend display
-                        try:
-                            image.save(webp_filepath, "WEBP", exif=exif, quality=80)
-                        except Exception as e:
-                            logger.warning(f"[ImageTools] Failed to save webp compressed image: {e}")
+                        image.save(filepath, "WEBP", exif=exif, quality=GENERATED_WEBP_QUALITY, method=6)
 
                         saved_paths.append(filepath)
                         
                         if self.visual:
                             self.visual.register_image(filepath, image_name, clean_image_name)
                         
-                        logger.debug(f"[ImageTools] Saved image from {generation_details} to {filepath} and WebP to {webp_filepath} (Name alias: {image_name})")
+                        logger.debug(f"[ImageTools] Saved WebP from {generation_details} to {filepath} (Name alias: {image_name})")
                         if self.on_image_created:
                             try:
                                 self.on_image_created(filepath)
@@ -429,7 +395,7 @@ class ImageTools(BaseTools):
                                 update_res = self.canvas_manager.visual.update_visual(
                                     type="image",
                                     path=saved_path,
-                                    display_path=webp_filepath,
+                                    display_path=filepath,
                                     transition="crossfade",
                                     effect=effect,
                                     prompt=metadata_prompt,
@@ -444,7 +410,7 @@ class ImageTools(BaseTools):
                                     self._currently_displayed_image_effect = effect
                                 show_img = getattr(self.canvas_manager.visual, "show_image", None)
                                 if callable(show_img) and type(show_img).__name__ in ("MagicMock", "Mock", "AsyncMock"):
-                                    show_img(webp_filepath)
+                                    show_img(filepath)
                     else:
                         self.record_tool_failure("image_cycle")
                         logger.error("[ImageTools] Failed to generate image: provider returned no binary image data.")
@@ -596,9 +562,9 @@ class ImageTools(BaseTools):
             self._trigger_after_tool_call("show_image")
             return res
 
-        display_path = self._ensure_webp_for_display(resolved_path)
-        if not display_path.lower().endswith(".webp") or not os.path.exists(display_path):
-            res = f"Error: Unable to prepare a WebP display image for '{file_path}'."
+        display_path = resolved_path
+        if not os.path.isfile(display_path):
+            res = f"Error: Unable to read the display image for '{file_path}'."
             logger.error("[ImageTools] %s", res)
             self._trigger_after_tool_call("show_image")
             return res
@@ -614,7 +580,7 @@ class ImageTools(BaseTools):
                 display_path=display_path,
                 transition=transition,
                 effect=effect,
-                prompt=extract_image_prompt(display_path) or extract_image_prompt(resolved_path),
+                prompt=extract_image_prompt(resolved_path),
                 priority=PRIORITY_SHOW,
                 source="show_image",
                 url_for_path=self.theater.get_url_for_path,

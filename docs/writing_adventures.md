@@ -92,8 +92,8 @@ adventures/my-custom-adventure/
 ├── references/             # Location images, portraits, and cover art
 │   ├── characters/         # One folder per character
 │   │   └── Keeper Orun/
-│   │       └── 1.png
-│   └── cover.png
+│   │       └── 1.webp
+│   └── cover.webp
 └── playlists/              # Thematic audio folders with sound files
     ├── ambient/
     │   └── wind_whispers.mp3
@@ -114,7 +114,7 @@ adventures/my-custom-adventure/
   "genre": "Sci-Fi / Fantasy",
   "tags": ["Mystery", "Sci-Fi", "Exploration", "Puzzles"],
   "created_at": "2026-09-07T12:00:00Z",
-  "cover_image": "references/cover.png",
+  "cover_image": "references/cover.webp",
   "difficulty": "Medium",
   "recommended_players": "1-4"
 }
@@ -126,7 +126,7 @@ adventures/my-custom-adventure/
 - **`author`** *(string, required)*: Creator name or handle.
 - **`genre`** *(string, required)*: e.g., `"Dark Fantasy"`, `"Cyberpunk"`, `"Cozy Mystery"`.
 - **`tags`** *(array of strings)*: Discoverability keywords.
-- **`cover_image`** *(string)*: Relative path to the cover artwork within the adventure package (e.g. `"references/cover.png"`).
+- **`cover_image`** *(string)*: Relative path to the cover artwork within the adventure package (e.g. `"references/cover.webp"`).
 - **`difficulty`** *(string)*: `"Easy"`, `"Medium"`, or `"Hard"`.
 - **`recommended_players`** *(string)*: e.g. `"1"`, `"1-4"`, `"2-6"`.
 
@@ -148,7 +148,7 @@ live_agent:
     special_instructions: "Carry user actions faithfully and guide the adventure with dramatic tension and clear consequences."
 
 # Starting visual displayed on the canvas when the adventure starts
-starting_image: "references/cover.png"
+starting_image: "references/cover.webp"
 
 # Pacing and style direction for generative canvas visuals
 visuals:
@@ -244,7 +244,7 @@ Because it is always persisted in story context, **it is best practice to use `r
    
    image_reference: Keeper Orun
    ```
-   Place the corresponding portrait inside `references/characters/Keeper Orun/`, for example `references/characters/Keeper Orun/1.png`.
+   Place the corresponding portrait inside `references/characters/Keeper Orun/`, for example `references/characters/Keeper Orun/1.webp`.
 
    **Why this is a best practice**: When the story planner reads the lore file during play, using the canonical character name lets the planner bind the correct portrait and the live agent use `<Keeper Orun>` in visual prompts.
 
@@ -272,15 +272,15 @@ Because it is always persisted in story context, **it is best practice to use `r
 ### 4.4. Visual References (`references/`)
 
 The `references/` folder contains environment images, maps, cover art, and artifacts. Character portraits belong in the `references/characters/` folder.
-- Images can be in `.png`, `.jpg`, `.jpeg`, or `.webp` format.
-- **Cover Image**: Every adventure should have a cover image (e.g. `references/cover.png`). Reference this filename in `metadata.json` and `starting_image` in `theater.yaml`.
+- Use `.webp` for new images. PNG, JPEG, and WebP uploads remain supported; existing images do not need to be converted.
+- **Cover Image**: Every adventure should have a cover image (e.g. `references/cover.webp`). Reference this filename in `metadata.json` and `starting_image` in `theater.yaml`.
 - During play, the agent can call `list_references` or `show_image` to present these pre-made visual assets to players. Annotating `image_reference: references/<filename>` in your lore documents ensures the agent automatically and reliably binds visual assets to scenes and other non-character assets.
 
 ---
 
 ### Scene imagery (`references/scenes/`)
 
-Store each scene's images in its own folder, for example `references/scenes/Old Harbor/1.png`, `2.png`. PNG, JPEG, and WebP are supported; the highest numbered iteration is used. Loose images directly under `references/scenes/` are ignored.
+Store each scene's images in its own folder, for example `references/scenes/Old Harbor/1.webp`, `2.webp`. PNG, JPEG, and WebP are supported; the highest numbered iteration is used. Loose images directly under `references/scenes/` are ignored.
 
 Add `scene.yaml` beside each scene's portraits:
 
@@ -294,7 +294,7 @@ To preserve session updates for future play, copy the desired images back into t
 
 ### Character portraits (`references/characters/`)
 
-Each character must have its own folder, with portrait iterations such as `references/characters/Arthur Modella/1.png`, `2.png`. Loose files directly under `references/characters/` are unsupported; the folder also holds `character.yaml` for the character traits. Supported formats are PNG, JPEG, and WebP. The highest numbered iteration is used; a non-numbered portrait can serve as the initial image.
+Each character must have its own folder, with portrait iterations such as `references/characters/Arthur Modella/1.webp`, `2.webp`. Loose files directly under `references/characters/` are unsupported; the folder also holds `character.yaml` for the character traits. Supported formats are PNG, JPEG, and WebP. The highest numbered iteration is used; a non-numbered portrait can serve as the initial image.
 
 When the reference manager starts, it reads authored portraits directly without copying them into output. Existing session portraits take precedence. Appearance changes create the next image iteration under `output/artifacts/updated_references/characters/`, using the previous authored or session portrait for continuity. The initial authored image is not duplicated in output, and the authored folder stays unchanged.
 
