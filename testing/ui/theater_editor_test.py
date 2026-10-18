@@ -185,6 +185,18 @@ def editor_page() -> Iterator[Page]:
                     window.downloadedDraft = true;
                     return {ok: true, blob: async () => new Blob(['mock zip'], {type: 'application/zip'})};
                 }
+                if (request.pathname.endsWith('/upload')) {
+                    const uploadedFiles = options.body.getAll('files');
+                    window.lastUploadedFilenames = uploadedFiles.map(f => f.name);
+                    for (const f of uploadedFiles) {
+                        const path = f.name.includes('/') ? f.name : `references/${f.name}`;
+                        if (!draft.files.some(file => file.path === path)) {
+                            draft.files.push({path, kind: path.endsWith('.txt') ? 'text' : 'image'});
+                        }
+                    }
+                    draft.draft.revision++;
+                    return {ok: true, json: async () => structuredClone(draft)};
+                }
                 return {ok: true, json: async () => structuredClone(draft)};
             };
         """)
@@ -209,13 +221,13 @@ def test_nested_folders_expand_with_mouse_and_keyboard(editor_page: Page, width:
     expect(chars_folder).to_be_visible()
     expect(chars_folder.locator(":scope > summary .folder-count")).to_have_text("0")
     chars_folder.locator(":scope > summary").click()
-    expect(chars_folder.locator(".empty-folder-hint")).to_have_text("No character portraits yet (references/characters/<Name>/1.png)")
+    expect(chars_folder.locator(".empty-folder-hint")).to_have_text("No character portraits yet (references/characters/<Name>/1.webp)")
 
     scenes_folder = page.locator('details[data-path="references/scenes"]')
     expect(scenes_folder).to_be_visible()
     expect(scenes_folder.locator(":scope > summary .folder-count")).to_have_text("0")
     scenes_folder.locator(":scope > summary").click()
-    expect(scenes_folder.locator(".empty-folder-hint")).to_have_text("No scene images yet (references/scenes/<Scene>/1.png)")
+    expect(scenes_folder.locator(".empty-folder-hint")).to_have_text("No scene images yet (references/scenes/<Scene>/1.webp)")
 
     lore = page.locator('details[data-path="lore"]')
     captain = page.locator('.file-button[title="lore/characters/captain.txt"]')
@@ -827,6 +839,168 @@ def test_reset_theater_button_dialog_flow(editor_page: Page) -> None:
     expect(dialog).not_to_be_visible()
     expect(page.locator("#builder-status")).to_have_text("Theater reset.")
     assert page.evaluate("() => window.resetTheater")
+
+
+def test_upload_non_png_files_does_not_open_png_dialog(editor_page: Page) -> None:
+    page = editor_page
+    dialog = page.locator("#png-warning-dialog")
+    expect(dialog).not_to_be_visible()
+
+    # Upload a webp image
+    page.locator("#assets-input").set_input_files([
+        {"name": "landscape.webp", "mimeType": "image/webp", "buffer": b"RIFF\x1a\x00\x00\x00WEBPVP8 "},
+    ])
+    expect(dialog).not_to_be_visible()
+    expect(page.locator("#builder-status")).to_contain_text("Uploaded 1 files.")
+    uploaded = page.evaluate("() => window.lastUploadedFilenames")
+    assert uploaded == ["landscape.webp"]
+
+
+def test_upload_png_file_shows_warning_dialog_and_can_cancel(editor_page: Page) -> None:
+    page = editor_page
+    dialog = page.locator("#png-warning-dialog")
+    expect(dialog).not_to_be_visible()
+
+    # Upload a png image
+    page.locator("#assets-input").set_input_files([
+        {"name": "hero_portrait.png", "mimeType": "image/png", "buffer": b"\x89PNG\r\n\x1a\n"},
+    ])
+
+    expect(dialog).to_be_visible()
+    expect(page.locator("#png-warning-prompt")).to_contain_text(
+        "PNG images stream much slower than WebP or JPG images"
+    )
+    expect(page.locator("#png-warning-files")).to_contain_text("hero_portrait.png")
+
+    # Cancel via Cancel button
+    page.locator("#png-warning-cancel").click()
+    expect(dialog).not_to_be_visible()
+    uploaded = page.evaluate("() => window.lastUploadedFilenames")
+    assert uploaded is None
+
+    # Re-upload and cancel via Escape
+    page.locator("#assets-input").set_input_files([
+        {"name": "hero_portrait.png", "mimeType": "image/png", "buffer": b"\x89PNG\r\n\x1a\n"},
+    ])
+    expect(dialog).to_be_visible()
+    page.keyboard.press("Escape")
+    expect(dialog).not_to_be_visible()
+    uploaded = page.evaluate("() => window.lastUploadedFilenames")
+    assert uploaded is None
+
+
+def test_upload_png_file_can_skip_conversion_and_upload_as_png(editor_page: Page) -> None:
+    page = editor_page
+    dialog = page.locator("#png-warning-dialog")
+
+    page.locator("#assets-input").set_input_files([
+        {"name": "hero_portrait.png", "mimeType": "image/png", "buffer": b"\x89PNG\r\n\x1a\n"},
+    ])
+    expect(dialog).to_be_visible()
+
+    # Click Upload as PNG
+    page.locator("#png-warning-skip").click()
+    expect(dialog).not_to_be_visible()
+    expect(page.locator("#builder-status")).to_contain_text("Uploaded 1 files.")
+    uploaded = page.evaluate("() => window.lastUploadedFilenames")
+    assert uploaded == ["hero_portrait.png"]
+
+
+def test_upload_png_file_converts_to_webp_by_default(editor_page: Page) -> None:
+    page = editor_page
+    dialog = page.locator("#png-warning-dialog")
+
+    page.locator("#assets-input").set_input_files([
+        {"name": "hero_portrait.png", "mimeType": "image/png", "buffer": b"\x89PNG\r\n\x1a\n"},
+    ])
+    expect(dialog).to_be_visible()
+    expect(page.locator("#png-convert-format")).to_have_value("image/webp")
+
+    # Click Convert & Upload
+    page.locator("#png-warning-convert").click()
+    expect(dialog).not_to_be_visible()
+    expect(page.locator("#builder-status")).to_contain_text("Uploaded 1 files.")
+    uploaded = page.evaluate("() => window.lastUploadedFilenames")
+    assert uploaded == ["hero_portrait.webp"]
+
+
+def test_upload_png_file_can_convert_to_jpg(editor_page: Page) -> None:
+    page = editor_page
+    dialog = page.locator("#png-warning-dialog")
+
+    page.locator("#assets-input").set_input_files([
+        {"name": "battlemap.png", "mimeType": "image/png", "buffer": b"\x89PNG\r\n\x1a\n"},
+    ])
+    expect(dialog).to_be_visible()
+
+    # Select JPG format
+    page.locator("#png-convert-format").select_option("image/jpeg")
+
+    # Click Convert & Upload
+    page.locator("#png-warning-convert").click()
+    expect(dialog).not_to_be_visible()
+    expect(page.locator("#builder-status")).to_contain_text("Uploaded 1 files.")
+    uploaded = page.evaluate("() => window.lastUploadedFilenames")
+    assert uploaded == ["battlemap.jpg"]
+
+
+def test_upload_png_file_remember_convert_choice_prevents_future_popup(editor_page: Page) -> None:
+    page = editor_page
+    dialog = page.locator("#png-warning-dialog")
+
+    # First upload: check "Remember this choice" and convert
+    page.locator("#assets-input").set_input_files([
+        {"name": "first.png", "mimeType": "image/png", "buffer": b"\x89PNG\r\n\x1a\n"},
+    ])
+    expect(dialog).to_be_visible()
+    remember_cb = page.locator("#png-remember-choice")
+    expect(remember_cb).not_to_be_checked()
+    remember_cb.check()
+    page.locator("#png-warning-convert").click()
+    expect(dialog).not_to_be_visible()
+    expect(page.locator("#builder-status")).to_contain_text("Uploaded 1 files.")
+    assert page.evaluate("() => window.lastUploadedFilenames") == ["first.webp"]
+
+    # Verify preference was saved in localStorage
+    pref = page.evaluate("() => JSON.parse(localStorage.getItem('narratron.builder.png_upload_preference'))")
+    assert pref == {"action": "convert", "format": "image/webp"}
+
+    # Second upload: popup is bypassed, automatically converted!
+    page.locator("#assets-input").set_input_files([
+        {"name": "second.png", "mimeType": "image/png", "buffer": b"\x89PNG\r\n\x1a\n"},
+    ])
+    expect(dialog).not_to_be_visible()
+    expect(page.locator("#builder-status")).to_contain_text("Uploaded 1 files.")
+    assert page.evaluate("() => window.lastUploadedFilenames") == ["second.webp"]
+
+
+def test_upload_png_file_remember_skip_choice_prevents_future_popup(editor_page: Page) -> None:
+    page = editor_page
+    dialog = page.locator("#png-warning-dialog")
+
+    # First upload: check "Remember this choice" and click Upload as PNG
+    page.locator("#assets-input").set_input_files([
+        {"name": "raw1.png", "mimeType": "image/png", "buffer": b"\x89PNG\r\n\x1a\n"},
+    ])
+    expect(dialog).to_be_visible()
+    page.locator("#png-remember-choice").check()
+    page.locator("#png-warning-skip").click()
+    expect(dialog).not_to_be_visible()
+    expect(page.locator("#builder-status")).to_contain_text("Uploaded 1 files.")
+    assert page.evaluate("() => window.lastUploadedFilenames") == ["raw1.png"]
+
+    pref = page.evaluate("() => JSON.parse(localStorage.getItem('narratron.builder.png_upload_preference'))")
+    assert pref == {"action": "skip", "format": None}
+
+    # Second upload: popup is bypassed, automatically uploads as PNG
+    page.locator("#assets-input").set_input_files([
+        {"name": "raw2.png", "mimeType": "image/png", "buffer": b"\x89PNG\r\n\x1a\n"},
+    ])
+    expect(dialog).not_to_be_visible()
+    expect(page.locator("#builder-status")).to_contain_text("Uploaded 1 files.")
+    assert page.evaluate("() => window.lastUploadedFilenames") == ["raw2.png"]
+
+
 
 
 

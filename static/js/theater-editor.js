@@ -228,6 +228,129 @@
     el('assistant-proposal').hidden = true;
     render(await api('/api/theater-editor/drafts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: el('new-name').value.trim() || 'My Theater', populate_default: populateDefault }) }));
   }
+  function convertPngFile(file, targetType = 'image/webp', quality = 0.85) {
+    return new Promise(resolve => {
+      const isPng = (file.name && file.name.toLowerCase().endsWith('.png')) || file.type === 'image/png';
+      if (!isPng) {
+        resolve(file);
+        return;
+      }
+      const ext = targetType === 'image/jpeg' ? '.jpg' : '.webp';
+      const newName = file.name.replace(/\.png$/i, ext);
+      const newRelPath = file.webkitRelativePath ? file.webkitRelativePath.replace(/\.png$/i, ext) : '';
+
+      const finishWithConverted = blob => {
+        const converted = new File([blob], newName, { type: targetType, lastModified: Date.now() });
+        if (newRelPath) {
+          try {
+            Object.defineProperty(converted, 'webkitRelativePath', {
+              value: newRelPath,
+              writable: false,
+              configurable: true,
+            });
+          } catch (e) {
+            converted._customRelativePath = newRelPath;
+          }
+        }
+        resolve(converted);
+      };
+
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        try {
+          const canvas = document.createElement('canvas');
+          canvas.width = img.naturalWidth || img.width || 1;
+          canvas.height = img.naturalHeight || img.height || 1;
+          const ctx = canvas.getContext('2d');
+          if (targetType === 'image/jpeg') {
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+          }
+          ctx.drawImage(img, 0, 0);
+          canvas.toBlob(blob => {
+            if (!blob) {
+              finishWithConverted(file);
+              return;
+            }
+            finishWithConverted(blob);
+          }, targetType, quality);
+        } catch (err) {
+          finishWithConverted(file);
+        }
+      };
+      img.onerror = () => {
+        URL.revokeObjectURL(url);
+        finishWithConverted(file);
+      };
+      img.src = url;
+    });
+  }
+
+  async function convertPngFiles(files, targetType = 'image/webp') {
+    return Promise.all(files.map(file => convertPngFile(file, targetType)));
+  }
+
+  const PNG_PREFERENCE_KEY = 'narratron.builder.png_upload_preference';
+
+  function getPngPreference() {
+    try {
+      const item = localStorage.getItem(PNG_PREFERENCE_KEY);
+      return item ? JSON.parse(item) : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function savePngPreference(action, format = null) {
+    try {
+      if (el('png-remember-choice')?.checked) {
+        localStorage.setItem(PNG_PREFERENCE_KEY, JSON.stringify({ action, format }));
+      }
+    } catch (e) {
+      /* ignore storage errors */
+    }
+  }
+
+  let pendingUpload = null;
+
+  async function handleUploadRequest(files, isFolder) {
+    if (!files || !files.length) return;
+    const pngFiles = files.filter(f => (f.name && f.name.toLowerCase().endsWith('.png')) || f.type === 'image/png');
+    if (pngFiles.length === 0) {
+      upload(files, isFolder);
+      return;
+    }
+
+    const savedPreference = getPngPreference();
+    if (savedPreference) {
+      if (savedPreference.action === 'convert') {
+        status('Converting PNG images before uploading…');
+        const processedFiles = await convertPngFiles(files, savedPreference.format || 'image/webp');
+        upload(processedFiles, isFolder);
+        return;
+      }
+      if (savedPreference.action === 'skip') {
+        upload(files, isFolder);
+        return;
+      }
+    }
+
+    const pngDialog = el('png-warning-dialog');
+    if (pngDialog && typeof pngDialog.showModal === 'function') {
+      pendingUpload = { files, isFolder };
+      const summaryEl = el('png-warning-files');
+      if (summaryEl) {
+        summaryEl.textContent = `${pngFiles.length} PNG image${pngFiles.length > 1 ? 's' : ''} detected: ${pngFiles.map(f => f.name).join(', ')}`;
+      }
+      if (el('png-remember-choice')) el('png-remember-choice').checked = false;
+      pngDialog.showModal();
+    } else {
+      upload(files, isFolder);
+    }
+  }
+
   async function upload(files, folder) {
     if (!files.length) return;
     await run(async () => {
@@ -235,7 +358,7 @@
       await save();
       const form = new FormData();
       form.append('revision', state.draft.revision); form.append('folder', folder);
-      for (const file of files) form.append('files', file, folder ? file.webkitRelativePath : file.name);
+      for (const file of files) form.append('files', file, folder ? (file.webkitRelativePath || file._customRelativePath || file.name) : file.name);
       render(await api(endpoint('/upload'), { method: 'POST', body: form }));
       clearPreview();
       status(`Uploaded ${files.length} files. Ask the assistant to organize them or develop your world.`);
@@ -527,8 +650,8 @@
   el('start-folder').addEventListener('click', () => el('folder-input').click());
   el('upload-folder').addEventListener('click', () => el('folder-input').click());
   el('upload-assets').addEventListener('click', () => el('assets-input').click());
-  el('folder-input').addEventListener('change', event => { const files = [...event.target.files]; event.target.value = ''; upload(files, true); });
-  el('assets-input').addEventListener('change', event => { const files = [...event.target.files]; event.target.value = ''; upload(files, false); });
+  el('folder-input').addEventListener('change', event => { const files = [...event.target.files]; event.target.value = ''; handleUploadRequest(files, true); });
+  el('assets-input').addEventListener('change', event => { const files = [...event.target.files]; event.target.value = ''; handleUploadRequest(files, false); });
   el('file-editor').addEventListener('input', () => { textDirty = true; updateSaveState(); });
   el('draft-name').addEventListener('input', () => { nameDirty = true; updateSaveState(); });
   el('save-draft').addEventListener('click', () => run(async () => { await save(); status('Draft saved.'); }, 'Saving draft…'));
@@ -665,6 +788,55 @@
         performResetTheater();
       });
     }
+  }
+  const pngDialog = el('png-warning-dialog');
+  const pngCancel = el('png-warning-cancel');
+  const pngSkip = el('png-warning-skip');
+  const pngForm = el('png-warning-form');
+  if (pngCancel && pngDialog) {
+    pngCancel.addEventListener('click', () => {
+      pendingUpload = null;
+      pngDialog.close('cancel');
+    });
+  }
+  if (pngDialog) {
+    pngDialog.addEventListener('click', event => {
+      if (event.target === pngDialog) {
+        pendingUpload = null;
+        pngDialog.close('cancel');
+      }
+    });
+    pngDialog.addEventListener('keydown', event => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        pendingUpload = null;
+        pngDialog.close('cancel');
+      }
+    });
+  }
+  if (pngSkip && pngDialog) {
+    pngSkip.addEventListener('click', () => {
+      if (!pendingUpload) return;
+      const { files, isFolder } = pendingUpload;
+      savePngPreference('skip');
+      pendingUpload = null;
+      pngDialog.close('skip');
+      upload(files, isFolder);
+    });
+  }
+  if (pngForm && pngDialog) {
+    pngForm.addEventListener('submit', async event => {
+      event.preventDefault();
+      if (!pendingUpload) return;
+      const { files, isFolder } = pendingUpload;
+      const targetFormat = el('png-convert-format')?.value || 'image/webp';
+      savePngPreference('convert', targetFormat);
+      pendingUpload = null;
+      pngDialog.close('convert');
+      status('Converting PNG images before uploading…');
+      const processedFiles = await convertPngFiles(files, targetFormat);
+      upload(processedFiles, isFolder);
+    });
   }
   window.addEventListener('beforeunload', event => { if (dirty()) { event.preventDefault(); event.returnValue = ''; } });
   window.addEventListener('narratron:auth-changed', event => {
