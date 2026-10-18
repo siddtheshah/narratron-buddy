@@ -16,12 +16,28 @@ def test_tool_response_state_initial_payloads() -> None:
         "image_generating": False,
         "animation_generating": False,
         "user_action_processing": False,
+        "reference_generating": False,
         "live_ready": False,
         "dice_rolling": False,
         "dice_result": None,
     }
     thought = state.agent_thought_payload()
     assert thought == {"text": "", "time": 0.0}
+
+
+def test_set_activity_reference_generation() -> None:
+    events: list[str] = []
+    state = ToolResponseState(events.append)
+
+    state.set_activity("reference", True)
+    assert state.reference_generation_active is True
+    assert state.activity_payload()["reference_generating"] is True
+
+    state.set_activity("reference", False)
+    assert state.reference_generation_active is False
+    assert state.activity_payload()["reference_generating"] is False
+
+    assert events == ["latest", "latest"]
 
 
 def test_set_activity_animation_and_user_action() -> None:

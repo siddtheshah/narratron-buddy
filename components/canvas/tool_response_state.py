@@ -9,6 +9,7 @@ class ToolActivityPayload(TypedDict):
     image_generating: bool
     animation_generating: bool
     user_action_processing: bool
+    reference_generating: bool
     live_ready: bool
     dice_rolling: bool
     dice_result: dict[str, object] | None
@@ -19,6 +20,7 @@ class ToolResponseState:
         self._notify_changed = notify_changed
         self.image_generation_active = False; self.animation_generation_active = False
         self.user_action_processing_active = False; self.live_connection_active = False
+        self.reference_generation_active = False
         self.live_connection_until = 0.0; self.dice_roll_until = 0.0
         self.dice_roll_result: dict[str, object] | None = None
         self.current_agent_thought = ""; self.current_agent_thought_time = 0.0
@@ -28,6 +30,7 @@ class ToolResponseState:
         if tool == "image": self.image_generation_active = bool(active)
         elif tool == "animation": self.animation_generation_active = bool(active)
         elif tool == "user_action": self.user_action_processing_active = bool(active)
+        elif tool == "reference": self.reference_generation_active = bool(active)
         elif tool == "live":
             self.live_connection_active = bool(active)
             self.live_connection_until = time.time() + max(0.0, recent_seconds) if active and recent_seconds > 0 else 0.0
@@ -40,6 +43,7 @@ class ToolResponseState:
         dice_rolling = time.time() < self.dice_roll_until
         return {"image_generating": self.image_generation_active, "animation_generating": self.animation_generation_active,
                 "user_action_processing": self.user_action_processing_active,
+                "reference_generating": self.reference_generation_active,
                 "live_ready": self.live_connection_active or time.time() < self.live_connection_until,
                 "dice_rolling": dice_rolling, "dice_result": self.dice_roll_result if dice_rolling else None}
 

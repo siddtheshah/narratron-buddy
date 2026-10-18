@@ -13,6 +13,7 @@ from providers import TextResponseProvider
 from services.live_stream_service import format_canvas_state, handle_live_websocket_connection
 from tools.story import StoryTool
 from components.canvas.canvas_state_manager import CanvasStateManager
+from components.canvas.tool_response_state import ToolResponseState
 from components.notepad import Notepad
 from components.reference_manager import Character, ReferenceManager, PlayerCharacter
 from components.theater_manager import TheaterManager
@@ -48,6 +49,7 @@ class CanvasFixture:
     story: StoryState = field(default_factory=StoryState)
     game: GameState | None = None
     notepad: Notepad | None = None
+    tool_response: ToolResponseState | None = None
 
     def persist(self) -> None:
         pass

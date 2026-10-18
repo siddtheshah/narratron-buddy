@@ -23,6 +23,7 @@ from providers import (
     TextResponseResult,
 )
 from components.canvas.story_state import StoryState
+from components.canvas.tool_response_state import ToolResponseState
 from components.canvas_state import CanvasStateManager
 from services.quirk_service import QuirkGeneratorService
 from components.reference_manager import Character, ReferenceManager, PlayerCharacter, normalize_voice_tags
@@ -125,6 +126,23 @@ class TestReferenceManager(unittest.TestCase):
         self.manager.submit_reference_update("character", "Mira", retried.set)
         self.manager.wait_for_reference_updates(["Mira"], timeout=5)
         self.assertTrue(retried.is_set())
+
+    def test_submit_reference_update_manages_canvas_activity(self) -> None:
+        started = threading.Event()
+        release = threading.Event()
+
+        def background_job() -> None:
+            started.set()
+            release.wait(timeout=5)
+
+        self.canvas_manager.tool_response = MagicMock(spec=ToolResponseState)
+        self.manager.submit_reference_update("character", "Mira", background_job)
+        self.assertTrue(started.wait(timeout=5))
+        self.canvas_manager.tool_response.set_activity.assert_called_with("reference", active=True)
+
+        release.set()
+        self.manager.wait_for_reference_updates(["Mira"], timeout=5)
+        self.canvas_manager.tool_response.set_activity.assert_called_with("reference", active=False)
 
     def test_model_context_hides_bindings_without_changing_persisted_characters(self) -> None:
         character = Character(

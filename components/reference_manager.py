@@ -566,6 +566,7 @@ class ReferenceManager:
         self._scene_images_lock = Lock()
         self._reference_updates_lock = Lock()
         self._reference_updates: dict[tuple[str, str], Future[None]] = {}
+        self._active_background_jobs: int = 0
         self.max_active_characters = DEFAULT_MAX_ACTIVE_CHARACTERS
         self._characters: dict[str, Character] = {}
         self._characters_lock = Lock()
@@ -603,6 +604,11 @@ class ReferenceManager:
         self._load_canvas_captures()
         self._sync_story_state()
 
+    def _set_canvas_activity(self, active: bool) -> None:
+        """Notify connected canvases that background asset generation has started or finished."""
+        if self.canvas_manager is not None and self.canvas_manager.tool_response is not None:
+            self.canvas_manager.tool_response.set_activity("reference", active=active)
+
     def submit_reference_update(
         self, kind: Literal["character", "scene"], name: str, update: Callable[[], None],
     ) -> None:
@@ -612,6 +618,11 @@ class ReferenceManager:
         with self._reference_updates_lock:
             previous = self._reference_updates.get(key)
             self._reference_updates[key] = completion
+            self._active_background_jobs += 1
+            should_activate = self._active_background_jobs == 1
+
+        if should_activate:
+            self._set_canvas_activity(True)
 
         def run() -> None:
             if previous is not None:
@@ -626,10 +637,21 @@ class ReferenceManager:
                 completion.set_exception(exc)
             else:
                 completion.set_result(None)
+            finally:
+                with self._reference_updates_lock:
+                    self._active_background_jobs = max(0, self._active_background_jobs - 1)
+                    should_deactivate = self._active_background_jobs == 0
+                if should_deactivate:
+                    self._set_canvas_activity(False)
 
         try:
             Thread(target=run, daemon=True).start()
         except Exception as exc:
+            with self._reference_updates_lock:
+                self._active_background_jobs = max(0, self._active_background_jobs - 1)
+                should_deactivate = self._active_background_jobs == 0
+            if should_deactivate:
+                self._set_canvas_activity(False)
             completion.set_exception(exc)
             raise
 
