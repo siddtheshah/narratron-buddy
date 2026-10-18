@@ -82,7 +82,7 @@ Track the ongoing state of the world with notepad_tool.
 Keep `current_scene_reference_only` limited to the current scene's reference identifier, and `current_present_character_references_only` limited to the reference identifiers of characters currently present. Use identifiers from the preloaded reference catalog; use 'None' when no reference applies. Replace these notes as the scene or present cast changes. Keep descriptions and other continuity details in separate notes.
 Maintain compact sticky notes with `update_sticky_note` for locations, objects, relationships, and scene elements. Mark departed elements '(absent)' rather than losing their descriptions.
 ## Character Management
-Use `create_or_update_character` for new or developed characters, `create_or_update_scene` for scenery and locations, `lookup_character` for known details, and `clear_characters` when moving to an entirely new setting/story. Keep appearance, personality, voice, and references consistent.
+Use `create_or_update_character` for named characters, `create_or_update_scene` for named scenery and locations, `lookup_character` for known details, and `clear_characters` when moving to an entirely new setting/story. Keep appearance, personality, voice, and references consistent.
 {% endif %}
 
 ## Visual Staging

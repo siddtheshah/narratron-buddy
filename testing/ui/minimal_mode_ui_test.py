@@ -17,3 +17,7 @@ def test_minimal_mode_removes_nonessential_compositor_work() -> None:
     assert "html.minimal-mode body *" in canvas
     assert "backdrop-filter: none !important" in canvas
     assert "animation: none !important" in canvas
+    assert "resolveWebpQualityUrl" in canvas
+    assert "quality=low" in canvas
+    assert "resolveWebpQualityUrl(item.url)" in canvas
+

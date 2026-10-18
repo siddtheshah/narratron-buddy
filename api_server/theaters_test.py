@@ -807,6 +807,58 @@ music:
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.content, b"test-image")
 
+    def test_serve_theater_output_webp_lower_quality(self) -> None:
+        from PIL import Image
+
+        reg_res = self.client.post("/api/auth/register", json={
+            "age_attested": True,
+            "username": "webp_qual_tester",
+            "email": "webp_qual@example.com",
+            "password": "Password123",
+        })
+        self.assertEqual(reg_res.status_code, 200)
+
+        create_res = self.client.post(
+            "/api/theaters/create-and-deploy",
+            data={"name": "WebP Quality Route Test Theater"},
+        )
+        self.assertEqual(create_res.status_code, 200)
+        theater_id = create_res.json()["theater_id"]
+
+        # Create a detailed image and save as high-quality WebP
+        th = theater_manager.theater(theater_id)
+        output_file = th.output_dir() / "scene.webp"
+        im = Image.new("RGB", (100, 100))
+        for x in range(100):
+            for y in range(100):
+                im.putpixel((x, y), ((x * 7) % 256, (y * 11) % 256, ((x + y) * 13) % 256))
+        im.save(output_file, format="WEBP", quality=95)
+        high_quality_size = output_file.stat().st_size
+
+        # 1. Fetching without quality returns full quality
+        resp_full = self.client.get(f"/theaters/{theater_id}/output/scene.webp")
+        self.assertEqual(resp_full.status_code, 200)
+        self.assertEqual(len(resp_full.content), high_quality_size)
+
+        # 2. Fetching with quality=low returns lower quality (smaller payload)
+        resp_low = self.client.get(f"/theaters/{theater_id}/output/scene.webp?quality=low")
+        self.assertEqual(resp_low.status_code, 200)
+        self.assertLess(len(resp_low.content), high_quality_size)
+        self.assertEqual(resp_low.headers.get("content-type"), "image/webp")
+
+        # 3. Cache directory contains the low quality WebP file
+        cache_files = list((th.artifacts_dir() / "cache" / "images").glob("*.webp"))
+        self.assertGreaterEqual(len(cache_files), 1)
+
+        # 4. Reference route also supports quality=low
+        ref_file = th.references_dir() / "ref.webp"
+        ref_file.parent.mkdir(parents=True, exist_ok=True)
+        im.save(ref_file, format="WEBP", quality=95)
+        resp_ref_low = self.client.get(f"/theaters/{theater_id}/references/ref.webp?quality=low")
+        self.assertEqual(resp_ref_low.status_code, 200)
+        self.assertLess(len(resp_ref_low.content), ref_file.stat().st_size)
+
+
     def test_theater_owner_can_toggle_viewer_collaboration(self):
         reg_res = self.client.post("/api/auth/register", json={
             "age_attested": True,

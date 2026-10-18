@@ -5039,7 +5039,29 @@
         const playVideoAnimation = imageRenderer.playVideoAnimation ? imageRenderer.playVideoAnimation.bind(imageRenderer) : null;
         const stopImageAnimation = imageRenderer.stopSequence ? imageRenderer.stopSequence.bind(imageRenderer) : null;
 
+        function resolveWebpQualityUrl(rawUrl) {
+            if (!rawUrl || typeof rawUrl !== 'string') return rawUrl;
+            if (!minimalMode) return rawUrl;
+            const pathPart = rawUrl.split('?')[0].split('#')[0].toLowerCase();
+            if (!pathPart.endsWith('.webp')) return rawUrl;
+            try {
+                const urlObj = new URL(rawUrl, window.location.origin);
+                if (!urlObj.searchParams.has('quality')) {
+                    urlObj.searchParams.set('quality', 'low');
+                }
+                if (rawUrl.startsWith('/') || !rawUrl.includes('://')) {
+                    return urlObj.pathname + urlObj.search + urlObj.hash;
+                }
+                return urlObj.toString();
+            } catch (_) {
+                const sep = rawUrl.includes('?') ? '&' : '?';
+                return `${rawUrl}${sep}quality=low`;
+            }
+        }
+        window.__resolveWebpQualityUrl = resolveWebpQualityUrl;
+
         function setMinimalMode(enabled) {
+            const previousMode = minimalMode;
             minimalMode = Boolean(enabled);
             document.documentElement.classList.toggle('minimal-mode', minimalMode);
             try {
@@ -5050,6 +5072,13 @@
             }
             if (minimalMode) stopImageAnimation?.();
             imageRenderer.setImageEffectsEnabled?.(!minimalMode);
+            if (previousMode !== minimalMode && currentViewIndex >= 0 && currentViewIndex < imageHistory.length) {
+                if (typeof loadedHistoryResources !== 'undefined') {
+                    loadedHistoryResources.forEach((res) => unloadHistoryResource(res));
+                    loadedHistoryResources.clear();
+                }
+                displayHistoryImage(currentViewIndex, 'none');
+            }
         }
 
         window.addEventListener('resize', resizeRendererCanvas);
@@ -5201,7 +5230,7 @@
             const item = imageHistory[index];
             if (!item || !item.url || item.animation) return;
             const img = new Image();
-            img.src = item.url;
+            img.src = resolveWebpQualityUrl(item.url);
             trackHistoryResource(index, { type: 'image', img });
         }
 
@@ -5223,7 +5252,10 @@
         }
 
         function playTriFrameAnimation(animation) {
-            playImageSequence(animation.frames.map((url) => url + (url.includes('?') ? '&' : '?') + 't=' + new Date().getTime()), {
+            playImageSequence(animation.frames.map((url) => {
+                const effective = resolveWebpQualityUrl(url);
+                return effective + (effective.includes('?') ? '&' : '?') + 't=' + new Date().getTime();
+            }), {
                 frameDuration: animation.frame_duration_ms || 1400,
                 crossfadeDuration: animation.crossfade_duration_ms || 500,
             });
@@ -5240,7 +5272,7 @@
                         ? animation.layers?.[0]?.url
                         : animation.poster_url;
                 if (stillUrl) {
-                    applyImageTransition(stillUrl, 'none', 'none');
+                    applyImageTransition(resolveWebpQualityUrl(stillUrl), 'none', 'none');
                 }
                 return;
             }
@@ -5341,7 +5373,8 @@
                     animation: item.animation,
                 });
             } else if (item.url) {
-                const imgUrl = item.url + (item.url.includes('?') ? '&' : '?') + 't=' + new Date().getTime();
+                const effectiveUrl = resolveWebpQualityUrl(item.url);
+                const imgUrl = effectiveUrl + (effectiveUrl.includes('?') ? '&' : '?') + 't=' + new Date().getTime();
                 applyImageTransition(imgUrl, transition, item.effect || 'gleam3');
                 const cachedImg = new Image();
                 cachedImg.src = imgUrl;
@@ -6894,7 +6927,7 @@
                 card.draggable = canDrag;
                 card.dataset.stampId = String(stamp.id);
                 card.dataset.stampName = stamp.name || 'Stamp';
-                card.dataset.stampUrl = stamp.url;
+                card.dataset.stampUrl = typeof resolveWebpQualityUrl === 'function' ? resolveWebpQualityUrl(stamp.url) : stamp.url;
                 const stampLabel = stamp.name || 'Stamp';
                 card.title = canDrag
                     ? `Drag "${stampLabel}" onto canvas`
@@ -6904,7 +6937,7 @@
 
                 const img = document.createElement('img');
                 img.className = 'stamp-card-thumb';
-                img.src = stamp.url;
+                img.src = typeof resolveWebpQualityUrl === 'function' ? resolveWebpQualityUrl(stamp.url) : stamp.url;
                 img.alt = stamp.name;
                 img.draggable = false;
 
@@ -7198,10 +7231,13 @@
             if (!Array.isArray(items)) return;
             items.forEach(item => {
                 const url = item && (item.url || item.image_url);
-                if (url && typeof url === 'string' && !preloadedImageUrls.has(url)) {
-                    preloadedImageUrls.add(url);
-                    const img = new Image();
-                    img.src = url;
+                if (url && typeof url === 'string') {
+                    const effectiveUrl = typeof resolveWebpQualityUrl === 'function' ? resolveWebpQualityUrl(url) : url;
+                    if (!preloadedImageUrls.has(effectiveUrl)) {
+                        preloadedImageUrls.add(effectiveUrl);
+                        const img = new Image();
+                        img.src = effectiveUrl;
+                    }
                 }
             });
         }

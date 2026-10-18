@@ -2,8 +2,10 @@
 
 import asyncio
 from copy import deepcopy
+import hashlib
 import json
 import logging
+from pathlib import Path
 import re
 from typing import Any, Dict, Optional, Union
 import uuid
@@ -13,6 +15,8 @@ from fastapi import Request, Response, HTTPException
 from fastapi.responses import FileResponse
 from starlette.staticfiles import NotModifiedResponse, StaticFiles
 from pydantic import BaseModel, Field, JsonValue
+
+from utils.image_utils import compress_image_to_webp
 
 from api_server.shared import (
     app,
@@ -402,9 +406,55 @@ async def push_theater_scene(
     }
 
 
+LOW_QUALITY_WEBP_LEVEL: int = 50
+
+
+def _resolve_requested_quality(quality: Optional[str]) -> Optional[int]:
+    if quality is None:
+        return None
+    normalized = quality.strip().lower()
+    if normalized in {"low", "lower", "performance", "min", "minimal"}:
+        return LOW_QUALITY_WEBP_LEVEL
+    if normalized.isdigit():
+        val = int(normalized)
+        if 1 <= val < 95:
+            return val
+    return None
+
+
+def _get_or_create_low_quality_webp(
+    theater_id: str,
+    file_path: Path,
+    quality: int,
+) -> Path:
+    if file_path.suffix.lower() != ".webp":
+        return file_path
+
+    th = theater_manager.theater(theater_id)
+    cache_dir = th.artifacts_dir() / "cache" / "images"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+
+    stem = file_path.stem
+    path_hash = hashlib.sha256(str(file_path.resolve()).encode("utf-8")).hexdigest()[:12]
+    cached_path = cache_dir / f"{stem}_{path_hash}_q{quality}.webp"
+
+    if cached_path.exists() and file_path.exists():
+        if cached_path.stat().st_mtime >= file_path.stat().st_mtime:
+            return cached_path
+
+    compressed = compress_image_to_webp(file_path, output_path=cached_path, quality=quality)
+    if compressed is not None and cached_path.exists():
+        return cached_path
+    return file_path
+
+
 @app.get("/theaters/{theater_id}/stamps/{filename:path}")
 async def serve_theater_stamp(
-    request: Request, theater_id: str, filename: str, join_key: Optional[str] = None,
+    request: Request,
+    theater_id: str,
+    filename: str,
+    join_key: Optional[str] = None,
+    quality: Optional[str] = None,
 ) -> Response:
     await _require_canvas_access_async(request, theater_id, join_key=join_key)
     _safe_path_param(theater_id, "theater_id")
@@ -414,9 +464,13 @@ async def serve_theater_stamp(
         raise HTTPException(status_code=400, detail="Invalid stamp path")
     if not image.is_file() or image.suffix.lower() not in {".png", ".jpg", ".jpeg", ".webp", ".gif"}:
         raise HTTPException(status_code=404, detail="Theater stamp not found")
+    target_file = image
+    target_quality = _resolve_requested_quality(quality)
+    if target_quality is not None and image.suffix.lower() == ".webp":
+        target_file = await asyncio.to_thread(_get_or_create_low_quality_webp, theater_id, image, target_quality)
     response = FileResponse(
-        image,
-        stat_result=image.stat(),
+        target_file,
+        stat_result=target_file.stat(),
         headers={"Cache-Control": "private, max-age=3600", "Vary": "Cookie"},
     )
     if StaticFiles().is_not_modified(response.headers, request.headers):
@@ -429,6 +483,7 @@ async def serve_theater_reference(
     theater_id: str,
     filename: str,
     join_key: Optional[str] = None,
+    quality: Optional[str] = None,
 ) -> Response:
     await _require_canvas_access_async(request, theater_id, join_key=join_key)
     _safe_path_param(theater_id, "theater_id")
@@ -440,22 +495,27 @@ async def serve_theater_reference(
         raise HTTPException(status_code=404, detail="Theater reference file not found")
     from components.reference_images import reference_image_type
 
+    target_file = file_path
+    target_quality = _resolve_requested_quality(quality)
+    if target_quality is not None and file_path.suffix.lower() == ".webp":
+        target_file = await asyncio.to_thread(_get_or_create_low_quality_webp, theater_id, file_path, target_quality)
+
     headers = {
         "X-Content-Type-Options": "nosniff",
         "Content-Security-Policy": "sandbox; default-src 'none'",
         "Cache-Control": "private, max-age=3600",
         "Vary": "Cookie",
     }
-    stat_result = file_path.stat()
+    stat_result = target_file.stat()
     try:
-        media_type = await asyncio.to_thread(reference_image_type, file_path.name, file_path.read_bytes())
+        media_type = await asyncio.to_thread(reference_image_type, target_file.name, target_file.read_bytes())
     except ValueError:
         # Existing deployments may contain documents accepted before validation.
-        fallback_resp = FileResponse(file_path, media_type="application/octet-stream", filename=file_path.name, headers=headers, stat_result=stat_result)
+        fallback_resp = FileResponse(target_file, media_type="application/octet-stream", filename=target_file.name, headers=headers, stat_result=stat_result)
         if StaticFiles().is_not_modified(fallback_resp.headers, request.headers):
             return NotModifiedResponse(fallback_resp.headers)
         return fallback_resp
-    response = FileResponse(file_path, media_type=media_type, headers=headers, stat_result=stat_result)
+    response = FileResponse(target_file, media_type=media_type, headers=headers, stat_result=stat_result)
     if StaticFiles().is_not_modified(response.headers, request.headers):
         return NotModifiedResponse(response.headers)
     return response
@@ -485,6 +545,7 @@ async def serve_theater_output(
     theater_id: str,
     filename: str,
     join_key: Optional[str] = None,
+    quality: Optional[str] = None,
 ) -> Response:
     await _require_canvas_access_async(request, theater_id, join_key=join_key)
     _safe_path_param(theater_id, "theater_id")
@@ -503,11 +564,17 @@ async def serve_theater_output(
                 file_path = found[0]
             else:
                 raise HTTPException(status_code=404, detail="Theater output file not found")
+
+    target_file = file_path
+    target_quality = _resolve_requested_quality(quality)
+    if target_quality is not None and file_path.suffix.lower() == ".webp":
+        target_file = await asyncio.to_thread(_get_or_create_low_quality_webp, theater_id, file_path, target_quality)
+
     output_headers = {
         "Cache-Control": "no-store" if filename == "story_log.jsonl" else "private, max-age=3600",
         "Vary": "Cookie",
     }
-    response = FileResponse(file_path, headers=output_headers, stat_result=file_path.stat())
+    response = FileResponse(target_file, headers=output_headers, stat_result=target_file.stat())
     if filename != "story_log.jsonl" and StaticFiles().is_not_modified(response.headers, request.headers):
         return NotModifiedResponse(response.headers)
     return response
