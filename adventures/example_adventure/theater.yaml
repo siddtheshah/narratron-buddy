@@ -7,7 +7,7 @@ live_agent:
     special_instructions: "Guide the player through the Library of Origins, a mysterious sanctuary of discarded story ideas, forgotten characters, and unfinished drafts. Encourage thoughtful exploration, evoke quiet wonder, and keep interactions engaging."
 
 # Default visual displayed on load (must match a file in references/)
-starting_image: "library_of_origins_cover.jpg"
+starting_image: "library_of_origins_cover.webp"
 
 # Visuals & generative prompt styling
 visuals:
