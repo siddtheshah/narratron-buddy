@@ -24,6 +24,7 @@ def deploy_page() -> Iterator[Page]:
             route.fulfill(body=template, content_type="text/html")
         elif urlsplit(route.request.url).path in (
             "/static/js/credit-purchase.js", "/static/css/credit-purchase.css",
+            "/static/js/device-navigation.js",
         ):
             path = urlsplit(route.request.url).path
             route.fulfill(
@@ -60,6 +61,27 @@ def deploy_page() -> Iterator[Page]:
         yield page
         browser.close()
     assert errors == []
+
+
+def test_mobile_theater_actions_open_remote_instead_of_canvas(deploy_page: Page) -> None:
+    page = deploy_page
+    page.evaluate("""() => {
+        const previousFetch = window.fetch;
+        window.fetch = async (url, options) => url === '/api/theaters'
+            ? {ok: true, json: async () => [{theater_id: 'stage', name: 'Stage', is_owner: true, join_key: 'SECRET'}]}
+            : previousFetch(url, options);
+        loadTheaters();
+    }""")
+    canvas = page.get_by_role("button", name="Launch Canvas", exact=True)
+    remote = page.get_by_role("link", name="Open remote", exact=True)
+    expect(canvas).to_be_visible()
+    expect(remote).not_to_be_visible()
+    page.set_viewport_size({"width": 390, "height": 844})
+    expect(canvas).not_to_be_visible()
+    expect(remote).to_be_visible()
+    expect(page.locator('.mobile-canvas-note')).to_be_visible()
+    remote.click()
+    expect(page).to_have_url("http://narratron.test/remote?theater_id=stage")
 
 
 def test_deploy_uses_the_shared_credit_purchase_modal(deploy_page: Page) -> None:

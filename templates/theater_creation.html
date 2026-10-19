@@ -5,6 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Narratron - Theater Deployer</title>
+    <script src="/static/js/device-navigation.js"></script>
     <link rel="icon" type="image/png" href="/favicon.png">
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/css/auth-flow.css">
@@ -452,6 +453,11 @@
             border-radius: 4px;
             font-size: 0.74rem;
         }
+
+        .theater-action-icon.remote-launch, .mobile-canvas-note { display: none; }
+        html.mobile-device .canvas-launch { display: none; }
+        html.mobile-device .remote-launch { display: inline-flex; }
+        html.mobile-device .mobile-canvas-note { display: block; }
 
         /* Theater Creation Path Cards */
         .creation-paths-container {
@@ -910,6 +916,7 @@
         <div class="hero">
             <h1>Theater Deployer</h1>
             <p>Start a blank canvas, launch an adventure, or deploy a theater package.</p>
+            <p class="mobile-canvas-note">Use the remote on your phone as the active orator. Open the full canvas on a desktop for visuals, microphone input, and audio.</p>
             <div class="canvas-return-banner" id="canvasReturnBanner" role="status">
                 <span>Ready to make it your own? Use the <a href="/theater-editor">Theater Editor</a> to add reference
                     images and music, or expand Blank Canvas settings to configure your tools.</span>
@@ -2078,7 +2085,7 @@
 
                 if (response.ok && result.theater_id) {
                     await checkAuthStatus();
-                    window.location.href = `/canvas?theater_id=${encodeURIComponent(result.theater_id)}`;
+                    window.location.href = window.NarratronNavigation.theaterUrl(result.theater_id);
                 } else {
                     alert('Error deploying theater: ' + (result.detail || `Server error (${response.status})`));
                 }
@@ -2160,7 +2167,8 @@
                         joinKeyHtml += `<button class="copy-key-btn" onclick="copyJoinKey('${s.join_key}', this)">📋 Copy</button>`;
                     }
 
-                    let actionsHtml = `<button class="btn-sm btn-success theater-action-icon" title="Launch Canvas" aria-label="Launch Canvas" onclick="openCanvas('${s.theater_id}', ${s.is_owner ? 'true' : 'false'}, '${s.join_key || ''}')"><span aria-hidden="true">▶</span></button>`;
+                    let actionsHtml = `<button class="btn-sm btn-success theater-action-icon canvas-launch" title="Launch Canvas" aria-label="Launch Canvas" onclick="openCanvas('${s.theater_id}', ${s.is_owner ? 'true' : 'false'}, '${s.join_key || ''}')"><span aria-hidden="true">▶</span></button>`;
+                    actionsHtml += ` <a href="/remote?theater_id=${encodeURIComponent(s.theater_id)}" class="btn-sm btn-success theater-action-icon remote-launch" title="Open remote" aria-label="Open remote"><span aria-hidden="true">📱</span></a>`;
                     actionsHtml += ` <a href="/api/theaters/${s.theater_id}/export-assets" class="btn-sm btn-secondary theater-action-icon" title="Export Assets" aria-label="Export Assets" download><span aria-hidden="true">📦</span></a>`;
                     if (s.is_owner) {
                         actionsHtml += ` <a href="/theater-editor?theater_id=${encodeURIComponent(s.theater_id)}" class="btn-sm btn-secondary theater-action-icon" title="Edit in Builder" aria-label="Edit in Builder"><span aria-hidden="true">✦</span></a>`;
@@ -2243,6 +2251,10 @@
         let pendingCanvastheaterId = null;
 
         function openCanvas(theaterId, isOwner = false, joinKey = '') {
+            if (window.NarratronNavigation.isMobile()) {
+                window.location.href = window.NarratronNavigation.theaterUrl(theaterId);
+                return;
+            }
             if (isOwner) {
                 window.location.href = `/canvas?theater_id=${encodeURIComponent(theaterId)}`;
                 return;
@@ -2285,7 +2297,7 @@
                     }
                     closeJoinKeyModal();
                     const isOwnerTheater = (data.user_id && currentUser && data.user_id === currentUser.id);
-                    window.location.href = `/canvas?theater_id=${encodeURIComponent(data.theater_id)}`;
+                    window.location.href = window.NarratronNavigation.theaterUrl(data.theater_id);
                 } else {
                     err.textContent = data.detail || 'Invalid Join Key.';
                     err.style.display = 'block';

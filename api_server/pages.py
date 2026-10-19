@@ -594,13 +594,19 @@ async def read_obs_canvas(
         _grant_canvas_access(response, request, theater_id, resolved_join_key)
     return response
 
-@app.get("/canvas", response_class=HTMLResponse)
+@app.get("/canvas", response_class=HTMLResponse, response_model=None)
 async def read_canvas(
     request: Request,
     theater_id: Optional[str] = None,
     join_key: Optional[str] = None,
-):
+) -> str | RedirectResponse:
     """Serve the Canvas interface for a specific theater."""
+    if re.search(r"Android|iPhone|iPad|iPod|Mobile", request.headers.get("user-agent", ""), re.IGNORECASE):
+        destination = f"/remote?theater_id={quote(theater_id, safe='')}" if theater_id else "/deploy"
+        return RedirectResponse(
+            destination, status_code=303,
+            headers={"Vary": "User-Agent", "Cache-Control": "no-store"},
+        )
     if theater_id:
         deployment = await _require_canvas_access_async(request, theater_id, join_key)
         if _valid_join_key(deployment["join_key"], join_key):

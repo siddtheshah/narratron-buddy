@@ -9,6 +9,39 @@ from fastapi.testclient import TestClient
 from api_server import pages
 
 
+@pytest.mark.parametrize("user_agent", [
+    "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) Mobile",
+    "Mozilla/5.0 (Linux; Android 15) Mobile",
+    "Mozilla/5.0 (iPad; CPU OS 18_0 like Mac OS X)",
+])
+def test_mobile_canvas_redirects_before_loading_theater(user_agent: str) -> None:
+    with patch.object(pages, "_require_canvas_access_async", AsyncMock()) as access:
+        response = TestClient(pages.app).get(
+            "/canvas?theater_id=stage&join_key=SECRET", headers={"User-Agent": user_agent},
+            follow_redirects=False,
+        )
+    assert response.status_code == 303
+    assert response.headers["location"] == "/remote?theater_id=stage"
+    assert response.headers["cache-control"] == "no-store"
+    assert "Narratron Canvas" not in response.text
+    access.assert_not_called()
+
+
+def test_mobile_canvas_without_theater_returns_to_deploy() -> None:
+    response = TestClient(pages.app).get(
+        "/canvas", headers={"User-Agent": "Mobile"}, follow_redirects=False,
+    )
+    assert response.status_code == 303
+    assert response.headers["location"] == "/deploy"
+
+
+def test_desktop_canvas_has_no_remote_button() -> None:
+    response = TestClient(pages.app).get("/canvas", headers={"User-Agent": "Desktop"})
+    assert response.status_code == 200
+    assert 'id="remote-theater-btn"' not in response.text
+    assert 'id="main-container"' in response.text
+
+
 def test_about_renderer_escapes_markup_and_keeps_safe_inline_formatting():
     html = pages.render_about_markdown("# <unsafe>\n\n- **bold** and [safe](https://example.test)\n- [bad](javascript:alert(1))")
     assert "<h1>&lt;unsafe&gt;</h1>" in html
@@ -210,7 +243,7 @@ def test_demos_page_reads_template():
 
 def test_canvas_with_verified_join_key_redirects_and_grants_cookie():
     deployment = {"theater_id": "stage", "join_key": "JOIN"}
-    request = SimpleNamespace(url=SimpleNamespace(remove_query_params=lambda _: "/canvas?theater_id=stage"))
+    request = SimpleNamespace(headers={}, url=SimpleNamespace(remove_query_params=lambda _: "/canvas?theater_id=stage"))
     with patch.object(pages, "_require_canvas_access_async", AsyncMock(return_value=deployment)), patch.object(pages, "_valid_join_key", return_value=True), patch.object(pages, "_grant_canvas_access") as grant:
         response = __import__("asyncio").run(pages.read_canvas(request, "stage", "JOIN"))
     assert response.status_code == 303
@@ -227,7 +260,7 @@ def test_canvas_reconstructs_missing_theater_using_theater_repository(tmp_path):
     mock_repo.reconstruct_theater.return_value = True
     registry_db = MagicMock()
     registry_db.record_theater_view_async = AsyncMock()
-    request = SimpleNamespace(query_params={}, client=None)
+    request = SimpleNamespace(headers={}, query_params={}, client=None)
     deployment = {"theater_id": "stage", "join_key": "JOIN"}
     with patch.object(pages, "theater_manager", manager), patch.object(pages, "theater_repository", mock_repo), patch.object(pages, "db", registry_db), patch.object(pages, "_require_canvas_access_async", AsyncMock(return_value=deployment)), patch.object(pages, "_valid_join_key", return_value=False), patch.object(pages, "get_current_user_async", AsyncMock(return_value=None)):
         __import__("asyncio").run(pages.read_canvas(request, "stage"))
@@ -235,7 +268,7 @@ def test_canvas_reconstructs_missing_theater_using_theater_repository(tmp_path):
 
 
 def test_canvas_includes_narration_pane_mount_without_server_templating():
-    request = SimpleNamespace(query_params={}, client=None)
+    request = SimpleNamespace(headers={}, query_params={}, client=None)
 
     response = __import__("asyncio").run(pages.read_canvas(request))
 

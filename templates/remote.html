@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#11151f">
+    <meta name="robots" content="noindex, nofollow">
+    <meta name="referrer" content="no-referrer">
+    <title>Narratron Remote</title>
+    <script src="/static/js/device-navigation.js"></script>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/static/css/remote.css">
+    <script src="/static/js/remote.js" defer></script>
+</head>
+<body>
+<main>
+    <header><a href="/" aria-label="Narratron home">NARRATRON</a><span class="badge">REMOTE</span></header>
+    <h1>Your story.<br>Your controls.</h1>
+    <p class="intro">Keep your theater on the big screen. Direct the moment from here.</p>
+    <form id="connect-form" class="panel">
+        <label for="theater">Theater link or ID</label>
+        <div class="connect-row"><input id="theater" name="theater" required autocomplete="off" placeholder="Paste your canvas link"><button type="submit">Connect</button></div>
+        <p class="hint">Sign in on this device as the active orator. Keep the main canvas open to use its microphone and play audio.</p>
+        <a href="/" id="sign-in-link">Open Narratron to sign in</a>
+    </form>
+    <div class="connection"><span id="connection-status" role="status">Choose a theater to connect.</span><a id="canvas-link" hidden>Open canvas ↗</a></div>
+    <fieldset id="controls" disabled>
+        <legend class="sr-only">Theater controls</legend>
+        <section class="panel" aria-labelledby="scene-title">
+            <div class="section-heading"><h2 id="scene-title">Scene</h2><span>01</span></div>
+            <button class="primary" data-action="new_image" data-live>✦ New image</button>
+            <div class="button-row"><button data-action="previous_image">← Previous</button><button data-action="next_image">Next →</button></div>
+            <button data-action="toggle_canvas_pin" aria-pressed="false" id="scene-pin">Pin scene</button>
+        </section>
+        <section class="panel" aria-labelledby="music-title">
+            <div class="section-heading"><h2 id="music-title">Music</h2><span>02</span></div>
+            <button class="primary" data-action="new_music" data-live>♫ New music</button>
+            <div class="button-row"><button data-action="previous_music">← Previous track</button><button data-action="toggle_music_pin" aria-pressed="false" id="music-pin">Pin music</button></div>
+        </section>
+        <section class="panel" aria-labelledby="direction-title">
+            <div class="section-heading"><h2 id="direction-title">Direction</h2><span>03</span></div>
+            <div class="button-row"><button data-action="update_story" data-live>Update story</button><button data-action="update_ui" data-live>Update interactables</button></div>
+            <button id="collaboration" aria-pressed="false">Audience collaboration off</button>
+            <form id="command-form">
+                <label for="command">Tell Narratron what happens next</label>
+                <textarea id="command" maxlength="2000" rows="3" placeholder="A storm rolls in over the harbor…" required></textarea>
+                <button class="primary" type="submit" data-live>Send instruction</button>
+            </form>
+        </section>
+    </fieldset>
+    <p id="feedback" role="status" aria-live="polite"></p>
+    <footer>Connected to your theater. In control of your story.</footer>
+</main>
+</body>
+</html>

@@ -100,6 +100,23 @@ connected as spectators. The harness verifies the baton UI updates for every
 viewer and writes request and handoff delivery timings to `evaluation_results/`.
 
 
+## Phone Remote
+
+Open the deploy page on your phone and tap a theater's phone button to open
+its remote, or visit `/remote?theater_id=YOUR_THEATER_ID`. You can also open `/remote`
+and paste a canvas link or theater ID. Sign in on the phone using the account
+that currently holds the orator baton. Both devices must reach the same Narratron
+server; a phone cannot reach your computer through a `localhost` URL.
+
+The remote supports scene history, new images and music, scene and music pins,
+story and interactable updates, audience collaboration, and typed instructions.
+Keep the main canvas open for audio playback and microphone input. Start
+Narratron there to enable generation and instructions. The remote checks access
+and state every three seconds while visible; commands use the existing protected
+orator APIs. A join link alone does not grant control.
+The full canvas is available on desktop. Mobile canvas visits redirect to the
+remote, and mobile deploy actions open the remote instead of the canvas.
+
 ## Exporting the Frontend
 
 You need to set up ngrok to expose the frontend. https://dashboard.ngrok.com/get-started/setup
