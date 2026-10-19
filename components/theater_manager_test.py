@@ -17,6 +17,7 @@ from components.theater_manager import (
     asset_destination,
     extract_asset_package,
     get_ephemeral_root,
+    validate_theater_id,
 )
 
 
@@ -386,4 +387,65 @@ def test_theater_scenes_and_characters_listing(tmp_path: Path) -> None:
     assert characters[0]["voice_tags"] == ["whisper"]
     assert "The%20Caretaker" in characters[0]["url"]
     assert characters[0]["id"] == "theater:stage:character:The Caretaker"
+
+
+@pytest.mark.parametrize("invalid_id", [
+    "",
+    "   ",
+    ".",
+    "..",
+    "/outside",
+    "\\outside",
+    "C:outside",
+    "C:\\outside",
+    "nested/name",
+    "nested\\name",
+    "CON",
+    "NUL",
+    "%2e%2e",
+    "theater%2e",
+    "theater%2fescape",
+    "trailing. ",
+])
+def test_validate_theater_id_rejects_unsafe_identifiers(invalid_id: str) -> None:
+    with pytest.raises(ValueError):
+        validate_theater_id(invalid_id)
+
+
+def test_validate_theater_id_accepts_clean_identifiers() -> None:
+    assert validate_theater_id("valid-theater_123") == "valid-theater_123"
+    assert validate_theater_id("stage") == "stage"
+
+
+def test_theater_manager_get_theater_dir_enforces_containment(tmp_path: Path) -> None:
+    manager = TheaterManager(tmp_path)
+    # Valid child
+    assert manager._get_theater_dir("valid-id") == tmp_path.resolve() / "valid-id"
+
+    # Symlink escape simulation
+    outside = tmp_path.parent / "escaped_dir"
+    target_requested = tmp_path.resolve() / "linked_theater"
+    original_resolve = Path.resolve
+
+    def mock_resolve(path: Path, strict: bool = False) -> Path:
+        return outside if path == target_requested else original_resolve(path, strict=strict)
+
+    with patch.object(Path, "resolve", mock_resolve), pytest.raises(ValueError):
+        manager._get_theater_dir("linked_theater")
+
+
+def test_theater_manager_destroy_theater_rejects_traversal_and_escapes(tmp_path: Path) -> None:
+    manager = TheaterManager(tmp_path)
+    with patch("shutil.rmtree") as mock_rmtree:
+        # Traversal IDs fail before rmtree
+        with pytest.raises(ValueError):
+            manager.destroy_theater("..")
+        with pytest.raises(ValueError):
+            manager.destroy_theater(".")
+        with pytest.raises(ValueError):
+            manager.destroy_theater("%2e%2e")
+        with pytest.raises(ValueError):
+            manager.destroy_theater("C:outside")
+        mock_rmtree.assert_not_called()
+
 

@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from absl.testing import flagsaver
 
@@ -73,6 +74,36 @@ class TheaterRepositoryTest(unittest.TestCase):
         del_ok = self.repo.delete_theater(theater_id)
         self.assertTrue(del_ok)
         self.assertFalse(self.repo.theater_exists(theater_id))
+
+    def test_theater_path_rejects_unsafe_identifiers_and_escapes(self) -> None:
+        for unsafe_id in ["", "  ", ".", "..", "/outside", "C:outside", "nested/name", "nested\\name", "CON", "%2e%2e"]:
+            with self.assertRaises(ValueError):
+                self.repo.theater_path(unsafe_id)
+
+    def test_delete_theater_rejects_root_parent_and_symlink_escapes(self) -> None:
+        with patch("shutil.rmtree") as mock_rmtree:
+            with self.assertRaises(ValueError):
+                self.repo.delete_theater("..")
+            with self.assertRaises(ValueError):
+                self.repo.delete_theater(".")
+            with self.assertRaises(ValueError):
+                self.repo.delete_theater("%2e%2e")
+            with self.assertRaises(ValueError):
+                self.repo.delete_theater("C:outside")
+            mock_rmtree.assert_not_called()
+
+        # Symlink escape simulation
+        outside = self.repo_dir.parent / "escaped_repo"
+        target_requested = (self.repo_dir / "linked_theater").resolve()
+        original_resolve = Path.resolve
+
+        def mock_resolve(path: Path, strict: bool = False) -> Path:
+            return outside if path == target_requested else original_resolve(path, strict=strict)
+
+        with patch.object(Path, "resolve", mock_resolve), patch("shutil.rmtree") as mock_rmtree:
+            with self.assertRaises(ValueError):
+                self.repo.delete_theater("linked_theater")
+            mock_rmtree.assert_not_called()
 
 
 if __name__ == "__main__":

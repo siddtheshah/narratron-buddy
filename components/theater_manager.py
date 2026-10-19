@@ -10,7 +10,7 @@ import secrets
 import shutil
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple, TypedDict
-from urllib.parse import quote
+from urllib.parse import quote, unquote
 import zipfile
 
 from pydantic import BaseModel, Field
@@ -54,6 +54,23 @@ def validate_asset_path(filename: str) -> list[str]:
     ):
         raise ValueError("Asset paths must be relative paths without traversal or invalid components.")
     return parts
+
+
+def validate_theater_id(theater_id: str) -> str:
+    """Validate a theater identifier and reject paths, traversals, and reserved names."""
+    if not theater_id or not theater_id.strip():
+        raise ValueError("Theater ID cannot be empty.")
+    if "%" in theater_id:
+        raise ValueError("Theater ID must not contain percent-encoded characters.")
+    parts = validate_asset_path(theater_id)
+    if len(parts) != 1:
+        raise ValueError("Theater ID must be a single path component.")
+    unquoted = unquote(theater_id)
+    if unquoted != theater_id:
+        unquoted_parts = validate_asset_path(unquoted)
+        if len(unquoted_parts) != 1:
+            raise ValueError("Theater ID must be a single path component.")
+    return parts[0]
 
 
 def asset_destination(root: Path, relative_path: str) -> Path:
@@ -532,10 +549,21 @@ class TheaterManager:
         self.base_dir.mkdir(parents=True, exist_ok=True)
 
     def _get_theater_dir(self, theater_id: str) -> Path:
-        return self.base_dir / theater_id
+        validate_theater_id(theater_id)
+        resolved_base = self.base_dir.resolve()
+        theater_dir = (self.base_dir / theater_id).resolve()
+        if (
+            theater_dir == resolved_base
+            or theater_dir == resolved_base.parent
+            or resolved_base not in theater_dir.parents
+            or theater_dir.parent != resolved_base
+        ):
+            raise ValueError(f"Theater path cannot escape base directory: {theater_id}")
+        return theater_dir
 
     def theater(self, theater_id: str) -> Theater:
         """Return a theater-bound interface without creating its workspace."""
+        validate_theater_id(theater_id)
         return Theater(manager=self, theater_id=theater_id)
 
     def _get_theater_reference_dir(self, theater_id: str) -> Path:
@@ -655,10 +683,8 @@ class TheaterManager:
         from utils.config_loader import get_theater_default_config, save_theater_config
 
         # Validate the whole batch before creating a workspace or writing assets.
-        theater_parts = validate_asset_path(theater_id)
-        if len(theater_parts) != 1:
-            raise ValueError("Theater ID must be a single path component.")
-        theater_dir = asset_destination(self.base_dir, theater_id)
+        validate_theater_id(theater_id)
+        theater_dir = self._get_theater_dir(theater_id)
         if theater_dir.exists():
             raise ValueError(f"Theater with ID '{theater_id}' already exists.")
         reference_dir = theater_dir / "references"
@@ -888,6 +914,10 @@ class TheaterManager:
         for entry in self.base_dir.iterdir() if self.base_dir.exists() else []:
             if entry.is_dir() and (entry / "theater.json").exists():
                 try:
+                    validate_theater_id(entry.name)
+                except ValueError:
+                    continue
+                try:
                     theaters.append(TheaterMetadata.model_validate_json((entry / "theater.json").read_text(encoding="utf-8")))
                 except (OSError, ValueError) as error:
                     logger.warning("Skipping invalid theater metadata in %s: %s", entry, error)
@@ -909,6 +939,15 @@ class TheaterManager:
 
     def destroy_theater(self, theater_id: str) -> bool:
         theater_dir = self._get_theater_dir(theater_id)
+        resolved_base = self.base_dir.resolve()
+        resolved_dir = theater_dir.resolve()
+        if (
+            resolved_dir == resolved_base
+            or resolved_dir == resolved_base.parent
+            or resolved_base not in resolved_dir.parents
+            or resolved_dir.parent != resolved_base
+        ):
+            raise ValueError(f"Unsafe theater directory for destruction: {resolved_dir}")
         if not theater_dir.exists():
             return False
         shutil.rmtree(theater_dir)

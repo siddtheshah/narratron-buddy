@@ -1009,6 +1009,98 @@ music:
         # Verify deployment is removed from DB
         self.assertIsNone(db.get_deployment(theater_id))
 
+    def test_destroy_theater_rejects_encoded_dot_segments(self):
+        reg_res = self.client.post("/api/auth/register", json={
+            "age_attested": True,
+            "username": "dot_user",
+            "email": "dot_user@example.com",
+            "password": "Password123"
+        })
+        self.assertEqual(reg_res.status_code, 200)
+
+        with patch("shutil.rmtree") as mock_rmtree:
+            res1 = self.client.delete("/api/theaters/%2e%2e")
+            self.assertEqual(res1.status_code, 400)
+
+            res2 = self.client.delete("/api/theaters/%252e%252e")
+            self.assertEqual(res2.status_code, 400)
+
+            mock_rmtree.assert_not_called()
+
+    def test_destroy_theater_rejects_windows_separators_and_drives(self):
+        reg_res = self.client.post("/api/auth/register", json={
+            "age_attested": True,
+            "username": "win_sep_user",
+            "email": "win_sep@example.com",
+            "password": "Password123"
+        })
+        self.assertEqual(reg_res.status_code, 200)
+
+        with patch("shutil.rmtree") as mock_rmtree:
+            res1 = self.client.delete("/api/theaters/C:outside")
+            self.assertEqual(res1.status_code, 400)
+
+            res2 = self.client.delete("/api/theaters/nested%5cname")
+            self.assertEqual(res2.status_code, 400)
+
+            res3 = self.client.delete("/api/theaters/..%5coutside")
+            self.assertEqual(res3.status_code, 400)
+
+            # Slashes in path segment are rejected by routing (404) or handler (400)
+            res4 = self.client.delete("/api/theaters/nested%2fname")
+            self.assertIn(res4.status_code, (400, 404))
+
+            mock_rmtree.assert_not_called()
+
+    def test_destroy_theater_rejects_missing_deployment(self):
+        reg_res = self.client.post("/api/auth/register", json={
+            "age_attested": True,
+            "username": "missing_dep_user",
+            "email": "missing_dep@example.com",
+            "password": "Password123"
+        })
+        self.assertEqual(reg_res.status_code, 200)
+
+        with patch("shutil.rmtree") as mock_rmtree:
+            res = self.client.delete("/api/theaters/nonexistent-theater")
+            self.assertEqual(res.status_code, 404)
+            mock_rmtree.assert_not_called()
+
+    def test_destroy_theater_rejects_other_owners_theater(self):
+        # Register user A and create theater
+        reg_a = self.client.post("/api/auth/register", json={
+            "age_attested": True,
+            "username": "owner_a",
+            "email": "owner_a@example.com",
+            "password": "Password123"
+        })
+        self.assertEqual(reg_a.status_code, 200)
+
+        create_res = self.client.post(
+            "/api/theaters/create-and-deploy",
+            data={"name": "Owner A Theater", "style": "cyberpunk"},
+        )
+        self.assertEqual(create_res.status_code, 200)
+        theater_id = create_res.json()["theater_id"]
+
+        # Register and login user B
+        reg_b = self.client.post("/api/auth/register", json={
+            "age_attested": True,
+            "username": "attacker_b",
+            "email": "attacker_b@example.com",
+            "password": "Password123"
+        })
+        self.assertEqual(reg_b.status_code, 200)
+
+        with patch("shutil.rmtree") as mock_rmtree:
+            del_res = self.client.delete(f"/api/theaters/{theater_id}")
+            self.assertEqual(del_res.status_code, 403)
+            mock_rmtree.assert_not_called()
+
+        # Verify theater and deployment still exist
+        self.assertIsNotNone(db.get_deployment(theater_id))
+        self.assertTrue(theater_manager.theater(theater_id).directory().exists())
+
     def test_export_assets_no_duplication(self):
         import zipfile
         from api_server.app import canvas_states

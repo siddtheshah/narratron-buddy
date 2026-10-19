@@ -51,6 +51,7 @@ from components.theater_manager import (
     TheaterCharacter,
     extract_asset_package,
     validate_asset_path,
+    validate_theater_id,
 )
 from utils.config_loader import get_theater_config, get_theater_default_config
 
@@ -1175,14 +1176,22 @@ def deploy_existing_theater(theater_id: str, request: Request):
     return {"status": "ok", "theater": meta}
 
 @app.delete("/api/theaters/{theater_id}")
-def destroy_theater(theater_id: str, request: Request):
+def destroy_theater(theater_id: str, request: Request) -> dict[str, str]:
     """Remove and clean up a local theater instance. Requires owner login."""
     user = get_current_user(request)
     if not user:
         raise HTTPException(status_code=401, detail="Authentication required to delete theaters.")
 
+    try:
+        validate_theater_id(theater_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid theater identifier: {e}") from e
+
     dep = db.get_deployment(theater_id)
-    if dep and dep.get("user_id") is not None and dep["user_id"] != user["id"]:
+    if not dep:
+        raise HTTPException(status_code=404, detail="Theater not found or could not be removed")
+
+    if dep.get("user_id") is None or dep["user_id"] != user["id"]:
         raise HTTPException(status_code=403, detail="Permission denied. Only the theater owner can delete this theater.")
 
     disk_removed = theater_manager.destroy_theater(theater_id)

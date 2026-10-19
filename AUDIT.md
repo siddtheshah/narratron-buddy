@@ -18,7 +18,9 @@ Evidence labels:
 
 ## Security and correctness findings
 
-### S01 — [P1] Theater deletion accepts a parent-directory path
+### S01 — [RESOLVED] [P1] Theater deletion accepts a parent-directory path
+
+**Status: Resolved.**
 
 **Evidence: Reproduced.** `DELETE /api/theaters/%2e%2e` reaches the delete handler with `theater_id == ".."`. With an ordinary authenticated account and no corresponding deployment row, the handler calls `shutil.rmtree` for the parent of the theater workspace root. The probe intercepted that call; it deleted no directory.
 
@@ -28,7 +30,13 @@ Evidence labels:
 
 **Patch scope:** require an existing deployment owned by the caller; validate theater identifiers before any filesystem operation; enforce resolved containment inside the manager and repository themselves. Reject the root and parent directories explicitly.
 
-**Regression check:** encoded dot segments, Windows separators/drives, missing deployment records, symlink escapes, and another owner's theater must never reach deletion.
+**Resolution:**
+- Implemented `validate_theater_id` in `components/theater_manager.py` to validate single-component paths and reject empty strings, percent-encoded characters, traversal components (`.`, `..`), Windows drives/separators, reserved names, and invalid characters.
+- Enforced resolved containment in `TheaterManager._get_theater_dir`, `TheaterManager.destroy_theater`, `TheaterRepository.theater_path`, and `TheaterRepository.delete_theater` with explicit rejection of root, parent, and escaping paths.
+- Updated `DELETE /api/theaters/{theater_id}` in `api_server/theaters.py` to validate `theater_id` and require an existing deployment record owned by the authenticated caller prior to invoking deletion.
+- Added comprehensive regression tests in `components/theater_manager_test.py`, `storage/theater_repository_test.py`, and `api_server/theaters_test.py` covering encoded dot segments, Windows separators/drives, missing deployment records, symlink escapes, and non-owner access.
+
+**Regression check:** encoded dot segments, Windows separators/drives, missing deployment records, symlink escapes, and another owner's theater must never reach deletion. Verified with automated regression tests.
 
 ### S02 — [P1] Playlist uploads can host active HTML on the application origin
 

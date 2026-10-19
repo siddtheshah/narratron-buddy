@@ -11,6 +11,8 @@ from pathlib import Path
 import shutil
 from typing import Any, Dict, List, Optional
 
+from components.theater_manager import validate_theater_id
+
 from absl import flags
 
 if "testing_use_local" not in flags.FLAGS:
@@ -55,7 +57,17 @@ class TheaterRepository:
         return self._base_dir
 
     def theater_path(self, theater_id: str) -> Path:
-        return self._base_dir / theater_id
+        validate_theater_id(theater_id)
+        resolved_base = self._base_dir.resolve()
+        target = (self._base_dir / theater_id).resolve()
+        if (
+            target == resolved_base
+            or target == resolved_base.parent
+            or resolved_base not in target.parents
+            or target.parent != resolved_base
+        ):
+            raise ValueError(f"Theater path cannot escape repository base directory: {theater_id}")
+        return target
 
     def export_theater(
         self,
@@ -147,13 +159,18 @@ class TheaterRepository:
     def delete_theater(self, theater_id: str) -> bool:
         """Delete theater directory from repository."""
         target = self.theater_path(theater_id)
+        resolved_base = self._base_dir.resolve()
+        resolved_target = target.resolve()
+        if (
+            resolved_target == resolved_base
+            or resolved_target == resolved_base.parent
+            or resolved_base not in resolved_target.parents
+            or resolved_target.parent != resolved_base
+        ):
+            raise ValueError(f"Unsafe repository directory for deletion: {resolved_target}")
         if target.exists():
-            try:
-                shutil.rmtree(target)
-                return True
-            except Exception as e:
-                logger.warning("Failed to delete theater %s: %s", theater_id, e)
-                return False
+            shutil.rmtree(target)
+            return True
         return False
 
     def list_theaters(self) -> List[Dict[str, Any]]:
@@ -162,6 +179,10 @@ class TheaterRepository:
         if self._base_dir.exists():
             for item in self._base_dir.iterdir():
                 if item.is_dir() and (item / "theater.json").exists():
+                    try:
+                        validate_theater_id(item.name)
+                    except ValueError:
+                        continue
                     meta = self.get_theater_metadata(item.name)
                     if meta:
                         theaters.append(meta)
