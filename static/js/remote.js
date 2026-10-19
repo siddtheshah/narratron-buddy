@@ -8,10 +8,21 @@
     const previewImage = document.getElementById('preview-image');
     const previewStatus = document.getElementById('preview-status');
     const previewPlaceholder = document.getElementById('preview-placeholder');
-    const remoteControls = document.getElementById('remote-controls');
     const previewView = document.getElementById('canvas-preview');
-    const openPreview = document.getElementById('open-preview');
-    const closePreview = document.getElementById('close-preview');
+    const tabs = [...document.querySelectorAll('[data-view]')];
+    const views = tabs.map(tab => document.getElementById(tab.getAttribute('aria-controls')));
+    const viewContainer = document.getElementById('remote-views');
+    const scenesCarousel = document.getElementById('scenes-carousel');
+    const musicCarousel = document.getElementById('music-carousel');
+    const assetStatus = document.getElementById('asset-status');
+    const retryAssets = document.getElementById('retry-assets');
+    const toast = document.getElementById('toast');
+    const toastMessage = document.getElementById('toast-message');
+    const toastDismiss = document.getElementById('toast-dismiss');
+    let toastTimer = null;
+    let lastRefreshError = null;
+    let assetSequence = 0;
+    let assetsLoading = false;
     const theaterId = new URLSearchParams(location.search).get('theater_id');
     let state = null;
     let busy = false;
@@ -20,55 +31,228 @@
     let pollTimer;
     let previewUrl = null;
     let previewLoaded = false;
-    let openedPreview = false;
 
-    function renderView() {
-        const showPreview = location.hash === '#preview';
-        remoteControls.hidden = showPreview;
-        previewView.hidden = !showPreview;
-        document.title = showPreview ? 'Canvas preview · Narratron Remote' : 'Narratron Remote';
-        if (showPreview) {
-            updatePreview();
-            closePreview.focus();
-        } else {
-            openPreview.focus();
-        }
+    function activeIndex() {
+        const index = tabs.findIndex(tab => location.hash === `#${tab.dataset.view}`);
+        return index < 0 ? 1 : index;
     }
 
-    openPreview.addEventListener('click', () => {
-        openedPreview = true;
-        location.hash = 'preview';
+    function renderView(focus = false) {
+        const selected = activeIndex();
+        tabs.forEach((tab, index) => {
+            tab.setAttribute('aria-selected', String(index === selected));
+            tab.tabIndex = index === selected ? 0 : -1;
+            views[index].hidden = index !== selected;
+        });
+        document.title = `${tabs[selected].textContent} · Narratron Remote`;
+        if (focus) tabs[selected].focus();
+        if (selected === 2) updatePreview();
+        if (selected === 0) void loadAssets();
+    }
+
+    function selectView(index) {
+        if (index < 0 || index >= tabs.length || index === activeIndex()) return;
+        location.hash = tabs[index].dataset.view;
+    }
+
+    tabs.forEach((tab, index) => {
+        tab.addEventListener('click', () => selectView(index));
+        tab.addEventListener('keydown', event => {
+            const next = event.key === 'ArrowRight' ? (index + 1) % tabs.length
+                : event.key === 'ArrowLeft' ? (index + tabs.length - 1) % tabs.length
+                : event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : null;
+            if (next === null) return;
+            event.preventDefault();
+            selectView(next);
+        });
     });
-    function dismissPreview() {
-        if (openedPreview) {
-            history.back();
-        } else {
-            history.replaceState(null, '', location.pathname + location.search);
-            renderView();
-        }
-    }
-    closePreview.addEventListener('click', dismissPreview);
-    window.addEventListener('hashchange', renderView);
+    window.addEventListener('hashchange', () => renderView(true));
 
-    const previewFrame = previewView.querySelector('.preview-frame');
     let swipeStart = null;
-    previewFrame.addEventListener('touchstart', event => {
-        swipeStart = event.touches.length === 1
+    viewContainer.addEventListener('touchstart', event => {
+        const nested = event.target.closest('.asset-carousel, .asset-card, input, button');
+        swipeStart = event.touches.length === 1 && !nested
             ? {x: event.touches[0].clientX, y: event.touches[0].clientY} : null;
     }, {passive: true});
-    previewFrame.addEventListener('touchmove', event => {
+    viewContainer.addEventListener('touchmove', event => {
         if (event.touches.length !== 1) swipeStart = null;
     }, {passive: true});
-    previewFrame.addEventListener('touchcancel', () => { swipeStart = null; }, {passive: true});
-    previewFrame.addEventListener('touchend', event => {
+    viewContainer.addEventListener('touchcancel', () => { swipeStart = null; }, {passive: true});
+    viewContainer.addEventListener('touchend', event => {
         const start = swipeStart;
         swipeStart = null;
-        if (!start || event.touches.length || previewView.hidden) return;
+        if (!start || event.touches.length || !event.changedTouches.length) return;
         const touch = event.changedTouches[0];
-        const distanceX = touch.clientX - start.x;
-        const distanceY = touch.clientY - start.y;
-        if (distanceY >= 80 && distanceY > Math.abs(distanceX) * 1.5) dismissPreview();
+        const dx = touch.clientX - start.x;
+        const dy = touch.clientY - start.y;
+        if (Math.abs(dx) >= 60 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+            selectView(activeIndex() + (dx < 0 ? 1 : -1));
+        }
     }, {passive: true});
+
+    function createAssetCard(item, type) {
+        const card = document.createElement('article');
+        card.className = 'asset-card';
+        card.setAttribute('role', 'button');
+        card.setAttribute('tabindex', '0');
+        card.setAttribute('aria-label', item.name);
+        card.title = `Double tap to send "${item.name}" to canvas`;
+        if (type === 'scene') {
+            card.style.setProperty('--card-accent', '#cd9aff');
+            if (item.url) {
+                const image = document.createElement('img');
+                image.src = item.url;
+                image.alt = item.name;
+                image.loading = 'lazy';
+                image.referrerPolicy = 'no-referrer';
+                card.append(image);
+            } else {
+                const placeholder = document.createElement('div');
+                placeholder.className = 'music-placeholder';
+                placeholder.style.color = '#cd9aff';
+                placeholder.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect width="18" height="18" x="3" y="3" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>';
+                card.append(placeholder);
+            }
+        } else {
+            card.style.setProperty('--card-accent', '#45e0ff');
+            const placeholder = document.createElement('div');
+            placeholder.className = 'music-placeholder';
+            placeholder.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>';
+            card.append(placeholder);
+        }
+
+        const title = document.createElement('h3');
+        title.textContent = item.name;
+        card.append(title);
+
+        function trigger() {
+            if (!state || busy) return;
+            const path = `${basePath()}/${type === 'scene' ? 'scenes' : 'playlists'}/push`;
+            const payload = type === 'scene' ? {scene_id: item.id} : {id: item.id};
+            void send(card, path, payload);
+        }
+
+        let pointerStartX = 0;
+        let pointerStartY = 0;
+        let moved = false;
+        let lastTap = 0;
+        let lastTriggerTime = 0;
+
+        card.addEventListener('pointerdown', event => {
+            pointerStartX = event.clientX;
+            pointerStartY = event.clientY;
+            moved = false;
+        });
+
+        card.addEventListener('pointermove', event => {
+            if (Math.hypot(event.clientX - pointerStartX, event.clientY - pointerStartY) > 10) {
+                moved = true;
+            }
+        });
+
+        card.addEventListener('pointerup', event => {
+            if (moved) return;
+            if (event.button !== 0 && event.pointerType === 'mouse') return;
+            const now = Date.now();
+            if (now - lastTap < 400) {
+                lastTap = 0;
+                if (now - lastTriggerTime >= 500) {
+                    lastTriggerTime = now;
+                    trigger();
+                }
+            } else {
+                lastTap = now;
+            }
+        });
+
+        card.addEventListener('dblclick', event => {
+            event.preventDefault();
+            const now = Date.now();
+            if (now - lastTriggerTime >= 500) {
+                lastTriggerTime = now;
+                trigger();
+            }
+        });
+
+        card.addEventListener('keydown', event => {
+            if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                const now = Date.now();
+                if (now - lastTap < 500) {
+                    lastTap = 0;
+                    if (now - lastTriggerTime >= 500) {
+                        lastTriggerTime = now;
+                        trigger();
+                    }
+                } else {
+                    lastTap = now;
+                }
+            }
+        });
+
+        return card;
+    }
+
+    async function loadAssets() {
+        const sequence = ++assetSequence;
+        scenesCarousel.replaceChildren();
+        musicCarousel.replaceChildren();
+        retryAssets.hidden = true;
+        assetsLoading = true;
+        assetStatus.textContent = state ? 'Loading assets…' : 'Reconnect to browse assets.';
+        if (!state) { assetsLoading = false; return; }
+        try {
+            const [scenes, playlists] = await Promise.all([
+                request(`${basePath()}/scenes`),
+                request(`${basePath()}/playlists`),
+            ]);
+            if (sequence !== assetSequence || !state) return;
+
+            const musicEntries = (playlists || []).flatMap(group => [
+                {...group, isGroup: true},
+                ...(group.tracks || []).map(track => ({...track, playlistName: group.name, isTrack: true})),
+            ]);
+
+            if (!scenes.length && !musicEntries.length) {
+                assetStatus.textContent = 'No scenes available in this theater yet.';
+            } else if (!scenes.length) {
+                assetStatus.textContent = 'No scenes available in this theater yet.';
+            } else {
+                assetStatus.textContent = '';
+            }
+
+            if (scenes.length) {
+                for (const scene of scenes) {
+                    scenesCarousel.append(createAssetCard(scene, 'scene'));
+                }
+            } else {
+                const empty = document.createElement('div');
+                empty.className = 'asset-empty';
+                empty.textContent = 'No scenes available.';
+                scenesCarousel.append(empty);
+            }
+
+            if (musicEntries.length) {
+                for (const music of musicEntries) {
+                    musicCarousel.append(createAssetCard(music, 'music'));
+                }
+            } else {
+                const empty = document.createElement('div');
+                empty.className = 'asset-empty';
+                empty.textContent = 'No music available.';
+                musicCarousel.append(empty);
+            }
+        } catch (error) {
+            if (sequence !== assetSequence) return;
+            assetStatus.textContent = error.message;
+            retryAssets.hidden = false;
+            showToast(error.message, 'error');
+        } finally {
+            if (sequence === assetSequence) assetsLoading = false;
+        }
+    }
+
+    retryAssets.addEventListener('click', () => { void loadAssets(); });
 
     function renderPreview() {
         previewImage.hidden = !state || !previewLoaded;
@@ -102,6 +286,49 @@
         previewUrl = null;
     });
 
+    function dismissToast() {
+        if (!toast || toast.hidden) return;
+        clearTimeout(toastTimer);
+        toast.classList.remove('show');
+        const onEnd = () => {
+            toast.removeEventListener('transitionend', onEnd);
+            if (!toast.classList.contains('show')) {
+                toast.hidden = true;
+            }
+        };
+        toast.addEventListener('transitionend', onEnd);
+        setTimeout(() => {
+            if (!toast.classList.contains('show')) {
+                toast.hidden = true;
+            }
+        }, 300);
+    }
+
+    function showToast(text, type = 'error') {
+        if (!toast || !toastMessage) return;
+        clearTimeout(toastTimer);
+        toastMessage.textContent = text;
+        toast.dataset.type = type;
+        toast.hidden = false;
+        void toast.offsetWidth;
+        toast.classList.add('show');
+        toastTimer = setTimeout(() => {
+            dismissToast();
+        }, 5000);
+    }
+
+    if (toastDismiss) {
+        toastDismiss.addEventListener('click', () => {
+            dismissToast();
+        });
+    }
+
+    document.addEventListener('keydown', event => {
+        if (event.key === 'Escape' && toast && !toast.hidden && toast.classList.contains('show')) {
+            dismissToast();
+        }
+    });
+
     function message(text, error = false) {
         feedback.textContent = text;
         feedback.dataset.error = String(error);
@@ -109,6 +336,16 @@
 
     function render() {
         controls.disabled = !state || busy;
+        if (!state) {
+            assetSequence += 1;
+            assetsLoading = false;
+            scenesCarousel.replaceChildren();
+            musicCarousel.replaceChildren();
+            assetStatus.textContent = 'Reconnect to browse assets.';
+        } else if (!views[0].hidden && !assetsLoading && !scenesCarousel.children.length && !musicCarousel.children.length && retryAssets.hidden
+            && assetStatus.textContent === 'Reconnect to browse assets.') {
+            void loadAssets();
+        }
         controls.querySelectorAll('[data-live]').forEach(button => {
             button.disabled = !state?.agent_running;
         });
@@ -163,6 +400,7 @@
             const next = await request(`${basePath()}/remote`);
             if (version !== generation || sequence !== refreshSequence) return;
             state = next;
+            lastRefreshError = null;
             updatePreview();
             status.dataset.connected = 'true';
             status.textContent = next.agent_running ? 'Connected · Agent on' : 'Connected · Agent off';
@@ -171,8 +409,13 @@
             state = null;
             updatePreview();
             status.dataset.connected = 'false';
-            status.textContent = error.name === 'TypeError' || error.name === 'TimeoutError'
+            status.textContent = 'Disconnected';
+            const detail = error.name === 'TypeError' || error.name === 'TimeoutError'
                 ? 'Connection lost. Retrying…' : error.message;
+            if (lastRefreshError !== detail) {
+                lastRefreshError = detail;
+                showToast(detail, 'error');
+            }
         } finally {
             if (version === generation && sequence === refreshSequence) {
                 render();
@@ -187,7 +430,7 @@
         busy = true;
         refreshSequence += 1;
         clearTimeout(pollTimer);
-        controls.querySelectorAll('[data-error]').forEach(control => {
+        viewContainer.querySelectorAll('[data-error]').forEach(control => {
             delete control.dataset.error;
             control.removeAttribute('aria-describedby');
         });
@@ -199,14 +442,17 @@
             if (version !== generation) return;
             onSuccess();
             message('Accepted.');
+            if (button.closest('.asset-card')) assetStatus.textContent = 'Sent to canvas.';
         } catch (error) {
             if (version !== generation) return;
             const detail = error.name === 'TypeError' || error.name === 'TimeoutError'
                 ? 'Delivery could not be confirmed. Check the canvas before trying again.' : error.message;
             button.dataset.error = detail;
-            button.closest('.bar').dataset.error = detail;
+            button.closest('.bar, .asset-card').dataset.error = detail;
             button.setAttribute('aria-describedby', 'feedback');
-            message(detail, true);
+            message('', true);
+            if (button.closest('.asset-card')) assetStatus.textContent = detail;
+            showToast(detail, 'error');
         } finally {
             if (version === generation) {
                 await refresh(version);
@@ -232,7 +478,11 @@
     document.getElementById('command-form').addEventListener('submit', event => {
         event.preventDefault();
         const text = command.value.trim();
-        if (!text) { message('Enter an instruction first.', true); return; }
+        if (!text) {
+            message('', true);
+            showToast('Enter an instruction first.', 'error');
+            return;
+        }
         void send(event.currentTarget.querySelector('button[type="submit"]'), `/api/orator/command?${new URLSearchParams({theater_id: theaterId})}`, {text}, () => {
             if (command.value.trim() === text) command.value = '';
         });
@@ -250,6 +500,8 @@
         canvasLink.hidden = false;
         void refresh(generation);
     } else {
-        status.textContent = 'Open the remote from your theater.';
+        const msg = 'Open the remote from your theater.';
+        status.textContent = msg;
+        showToast(msg, 'error');
     }
 })();

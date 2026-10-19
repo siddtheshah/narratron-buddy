@@ -15,7 +15,25 @@
 <body>
 <main>
     <header><a href="/" aria-label="Narratron home"><span class="brand-mark" aria-hidden="true">N</span>NARRATRON</a><span id="theater-id" aria-label="Theater ID"></span><a id="canvas-link" hidden>Open canvas ↗</a><span class="badge">REMOTE</span></header>
-    <div id="remote-controls">
+    <nav class="remote-tabs" role="tablist" aria-label="Remote screens">
+        <button id="assets-tab" role="tab" aria-controls="asset-manager" aria-selected="false" tabindex="-1" data-view="assets">Asset Manager</button>
+        <button id="controls-tab" role="tab" aria-controls="remote-controls" aria-selected="true" data-view="controls">Control Panel</button>
+        <button id="preview-tab" role="tab" aria-controls="canvas-preview" aria-selected="false" tabindex="-1" data-view="preview">Preview</button>
+    </nav>
+    <div id="remote-views">
+    <section id="asset-manager" role="tabpanel" aria-labelledby="assets-tab" tabindex="0" hidden>
+        <div class="asset-section">
+            <h2 class="asset-category-title">Scenes</h2>
+            <div id="scenes-carousel" class="asset-carousel" role="group" aria-label="Scenes carousel" tabindex="0"></div>
+        </div>
+        <div class="asset-section">
+            <h2 class="asset-category-title">Music</h2>
+            <div id="music-carousel" class="asset-carousel" role="group" aria-label="Music carousel" tabindex="0"></div>
+        </div>
+        <p id="asset-status" role="status"></p>
+        <button id="retry-assets" hidden>Retry loading assets</button>
+    </section>
+    <div id="remote-controls" role="tabpanel" aria-labelledby="controls-tab" tabindex="0">
     <fieldset id="controls" disabled>
         <legend class="sr-only">Theater controls</legend>
         <section class="bar" aria-labelledby="agent-title">
@@ -46,22 +64,33 @@
             <h2 id="direction-title">Direction</h2>
             <button data-action="update_story" data-live>Update story</button>
         </section>
-        <form id="command-form" class="bar">
+        <form id="command-form" class="bar" novalidate>
             <label for="command" class="sr-only">Tell Narratron what happens next</label>
             <input id="command" maxlength="2000" placeholder="Direct the story…" required>
             <button class="primary" type="submit" data-live aria-label="Send instruction">Send</button>
         </form>
     </fieldset>
-    <button id="open-preview" type="button" aria-controls="canvas-preview">Preview canvas</button>
     </div>
-    <section id="canvas-preview" aria-labelledby="preview-title" hidden>
-        <div class="preview-heading"><button id="close-preview" type="button" aria-label="Back to controls">←</button><h2 id="preview-title">Canvas preview</h2><span id="preview-status" role="status">Connecting…</span></div>
+    <section id="canvas-preview" role="tabpanel" aria-labelledby="preview-tab" tabindex="0" hidden>
+        <div class="preview-heading"><h2 id="preview-title">Canvas preview</h2><span id="preview-status" role="status">Connecting…</span></div>
         <div class="preview-frame">
             <img id="preview-image" alt="Current canvas scene" hidden decoding="async" referrerpolicy="no-referrer">
             <p id="preview-placeholder">Waiting for the canvas…</p>
         </div>
     </section>
+    </div>
     <p id="feedback" class="sr-only" role="status" aria-live="polite"></p>
 </main>
+<div id="toast-container" class="toast-container" aria-live="assertive" aria-atomic="true">
+    <div id="toast" class="toast" role="alert" hidden>
+        <span class="toast-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        </span>
+        <span id="toast-message" class="toast-message"></span>
+        <button type="button" id="toast-dismiss" class="toast-dismiss" aria-label="Dismiss error" title="Dismiss error">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </button>
+    </div>
+</div>
 </body>
 </html>
