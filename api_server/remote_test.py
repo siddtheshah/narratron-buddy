@@ -57,12 +57,14 @@ def test_remote_page_requires_login_before_serving_controls(
     assert response.headers["cache-control"] == "no-store"
 
 
-def test_remote_page_rejects_non_orator(
+def test_remote_page_allows_viewer_without_contributor_permission(
     remote_services: tuple[TestClient, MagicMock, MagicMock],
 ) -> None:
     client, current_user, _ = remote_services
     current_user.return_value = {"id": 3}
-    assert client.get("/remote?theater_id=stage").status_code == 403
+    response = client.get("/remote?theater_id=stage")
+    assert response.status_code == 200
+    assert 'data-pure-viewer="true"' in response.text
 
 
 def test_remote_returns_state_for_active_orator(
@@ -76,19 +78,47 @@ def test_remote_returns_state_for_active_orator(
         "theater_id": "stage", "agent_running": False, "pinned": True,
         "music_pinned": False, "viewer_collab_enabled": True,
         "preview_url": "/theaters/stage/output/scene.webp",
+        "is_contributor": True,
+        "is_owner": False,
+        "is_orator": True,
     }
     manager.get_session.return_value = MagicMock(is_alive=True)
     assert client.get("/api/theaters/stage/remote").json()["agent_running"] is True
 
 
-@pytest.mark.parametrize("user_id", [1, 3])
-def test_remote_rejects_owner_after_handoff_and_viewers(
-    remote_services: tuple[TestClient, MagicMock, MagicMock], user_id: int,
+def test_remote_allows_owner_after_handoff_and_pure_viewers(
+    remote_services: tuple[TestClient, MagicMock, MagicMock],
 ) -> None:
-    client, current_user, manager = remote_services
-    current_user.return_value = {"id": user_id}
-    assert client.get("/api/theaters/stage/remote").status_code == 403
-    manager.get_session.assert_not_called()
+    client, current_user, _ = remote_services
+    # Owner after handoff can access remote to view Collab and take back baton
+    current_user.return_value = {"id": 1}
+    res_owner = client.get("/api/theaters/stage/remote")
+    assert res_owner.status_code == 200
+    assert res_owner.json()["is_contributor"] is True
+    assert res_owner.json()["is_owner"] is True
+    assert res_owner.json()["is_orator"] is False
+
+    # Viewer without contributor permissions is allowed and flagged as non-contributor
+    current_user.return_value = {"id": 3}
+    res_viewer = client.get("/api/theaters/stage/remote")
+    assert res_viewer.status_code == 200
+    assert res_viewer.json()["is_contributor"] is False
+    assert res_viewer.json()["is_owner"] is False
+    assert res_viewer.json()["is_orator"] is False
+
+
+def test_remote_rejects_requests_without_canvas_access(
+    remote_services: tuple[TestClient, MagicMock, MagicMock],
+) -> None:
+    client, _, _ = remote_services
+    from fastapi import HTTPException
+    with patch.object(
+        remote,
+        "_require_canvas_access",
+        side_effect=HTTPException(status_code=403, detail="A valid join key is required to access this theater."),
+    ):
+        assert client.get("/remote?theater_id=stage").status_code == 403
+        assert client.get("/api/theaters/stage/remote").status_code == 403
 
 
 def test_remote_requires_login(

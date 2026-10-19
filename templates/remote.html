@@ -16,9 +16,10 @@
 <main>
     <header><a href="/" aria-label="Narratron home"><span class="brand-mark" aria-hidden="true">N</span>NARRATRON</a><span id="theater-id" aria-label="Theater ID"></span><a id="canvas-link" hidden>Open canvas ↗</a><span class="badge">REMOTE</span></header>
     <nav class="remote-tabs" role="tablist" aria-label="Remote screens">
-        <button id="assets-tab" role="tab" aria-controls="asset-manager" aria-selected="false" tabindex="-1" data-view="assets">Asset Manager</button>
-        <button id="controls-tab" role="tab" aria-controls="remote-controls" aria-selected="true" data-view="controls">Control Panel</button>
+        <button id="assets-tab" role="tab" aria-controls="asset-manager" aria-selected="false" tabindex="-1" data-view="assets">Assets</button>
+        <button id="inputs-tab" role="tab" aria-controls="remote-controls" aria-selected="true" data-view="inputs">Inputs</button>
         <button id="preview-tab" role="tab" aria-controls="canvas-preview" aria-selected="false" tabindex="-1" data-view="preview">Preview</button>
+        <button id="baton-tab" role="tab" aria-controls="remote-baton" aria-selected="false" tabindex="-1" data-view="baton">Baton</button>
     </nav>
     <div id="remote-views">
     <section id="asset-manager" role="tabpanel" aria-labelledby="assets-tab" tabindex="0" hidden>
@@ -33,7 +34,7 @@
         <p id="asset-status" role="status"></p>
         <button id="retry-assets" hidden>Retry loading assets</button>
     </section>
-    <div id="remote-controls" role="tabpanel" aria-labelledby="controls-tab" tabindex="0">
+    <div id="remote-controls" role="tabpanel" aria-labelledby="inputs-tab" tabindex="0">
     <fieldset id="controls" disabled>
         <legend class="sr-only">Theater controls</legend>
         <section class="bar" aria-labelledby="agent-title">
@@ -103,9 +104,54 @@
             <p id="preview-placeholder">Waiting for the canvas…</p>
         </div>
     </section>
+    <section id="remote-baton" role="tabpanel" aria-labelledby="baton-tab" tabindex="0" hidden>
+        <div class="collab-panel">
+            <div class="collab-baton-header">
+                <div class="baton-status-info">
+                    <span class="baton-badge-icon" aria-hidden="true">👑</span>
+                    <span id="baton-holder-display" class="baton-holder-name">Loading baton…</span>
+                </div>
+                <button id="menu-take-back-baton-btn" type="button" class="take-back-baton-btn" style="display: none;">
+                    Take back baton
+                </button>
+            </div>
+            <div class="collab-section">
+                <h3 class="collab-section-title">Connected Viewers</h3>
+                <div id="active-viewers-list" class="collab-user-list">
+                    <div class="collab-empty">No other connected viewers online.</div>
+                </div>
+            </div>
+            <div class="collab-section">
+                <h3 class="collab-section-title">Contributors</h3>
+                <div id="contributors-list" class="collab-user-list">
+                    <div class="collab-empty">No contributors added yet.</div>
+                </div>
+            </div>
+        </div>
+    </section>
     </div>
     <p id="feedback" class="sr-only" role="status" aria-live="polite"></p>
 </main>
+<div id="baton-request-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="baton-request-modal-title" aria-hidden="true" style="display: none;">
+    <div class="modal-card baton-modal-card">
+        <div class="baton-modal-icon" aria-hidden="true">🎙️</div>
+        <h3 id="baton-request-modal-title" class="baton-modal-title">Baton Pass Request!</h3>
+        <div id="baton-request-text" class="baton-modal-desc">
+            The theater owner is passing you the microphone baton!
+        </div>
+        <div class="baton-timer-track">
+            <div id="baton-timer-bar" class="baton-timer-bar"></div>
+        </div>
+        <div class="baton-modal-actions">
+            <button type="button" id="accept-baton-btn" class="baton-btn-accept">
+                Accept Baton 🎙️
+            </button>
+            <button type="button" id="decline-baton-btn" class="baton-btn-decline">
+                Decline
+            </button>
+        </div>
+    </div>
+</div>
 <div id="toast-container" class="toast-container" aria-live="assertive" aria-atomic="true">
     <div id="toast" class="toast" role="alert" hidden>
         <span class="toast-icon" aria-hidden="true">

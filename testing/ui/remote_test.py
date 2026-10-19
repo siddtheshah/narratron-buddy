@@ -30,10 +30,25 @@ def remote_page() -> Iterator[Page]:
                 route.fulfill(json=[])
             elif path.endswith("/remote"):
                 route.fulfill(json={"agent_running": True, "pinned": False, "music_pinned": False,
-                                    "viewer_collab_enabled": False})
+                                    "viewer_collab_enabled": False, "is_owner": True, "is_orator": True,
+                                    "is_contributor": True})
+            elif path.endswith("/baton"):
+                route.fulfill(json={
+                    "owner": {"id": 1, "username": "owner"},
+                    "active_orator": {"id": 1, "username": "owner"},
+                    "contributors": [],
+                    "active_viewers": [],
+                    "baton_request": None,
+                })
+            elif path.endswith("/auth/me"):
+                route.fulfill(json={"authenticated": True, "user": {"id": 1, "username": "owner"}})
             else:
                 route.fulfill(json={"status": "accepted"})
 
+        def mock_ws(ws: WebSocketRoute) -> None:
+            pass
+
+        page.route_web_socket("**/ws/**", mock_ws)
         page.route("**/*", serve)
         page.goto("http://remote.test/remote?theater_id=stage")
         page.wait_for_function("!document.getElementById('controls').disabled")
@@ -89,7 +104,7 @@ def test_preview_tracks_scene_changes_without_reloading_unchanged_images(remote_
     page.get_by_role("tab", name="Preview", exact=True).click()
     page.get_by_text("Current scene", exact=True).wait_for()
     assert page.locator("#preview-image").is_visible()
-    page.get_by_role("tab", name="Control Panel", exact=True).click()
+    page.get_by_role("tab", name="Inputs", exact=True).click()
     page.get_by_role("button", name="Pin scene", exact=True).click()
     page.wait_for_function("!document.getElementById('controls').disabled")
     assert len(images) == 1
@@ -105,7 +120,7 @@ def test_preview_tracks_scene_changes_without_reloading_unchanged_images(remote_
         route.fulfill(status=403, json={"detail": "Only the active orator can use this remote."})
 
     page.route("**/api/theaters/stage/remote", revoked)
-    page.get_by_role("tab", name="Control Panel", exact=True).click()
+    page.get_by_role("tab", name="Inputs", exact=True).click()
     page.get_by_role("button", name="Next scene", exact=True).click()
     page.wait_for_function("document.getElementById('controls').disabled && document.getElementById('connection-status').dataset.connected === 'false'")
     page.get_by_role("tab", name="Preview", exact=True).click()
@@ -119,7 +134,7 @@ def test_preview_empty_state_keeps_controls_available(remote_page: Page) -> None
     page.get_by_role("tab", name="Preview", exact=True).click()
     page.get_by_text("No scene on the canvas yet.").wait_for()
     assert page.locator("#preview-image").is_hidden()
-    page.get_by_role("tab", name="Control Panel", exact=True).click()
+    page.get_by_role("tab", name="Inputs", exact=True).click()
     assert page.get_by_role("button", name="Next scene", exact=True).is_enabled()
 
 
@@ -139,14 +154,14 @@ def test_preview_is_a_separate_view_with_back_navigation(remote_page: Page, widt
     page.go_back()
     expect(page.locator("#canvas-preview")).to_be_hidden()
     assert page.locator("#command").input_value() == "Keep my direction draft"
-    assert page.locator("#controls-tab").evaluate("button => button === document.activeElement")
+    assert page.locator("#inputs-tab").evaluate("button => button === document.activeElement")
     page.go_forward()
     expect(page.locator("#canvas-preview")).to_be_visible()
     page.reload()
     expect(page.locator("#canvas-preview")).to_be_visible()
-    page.get_by_role("tab", name="Control Panel", exact=True).click()
+    page.get_by_role("tab", name="Inputs", exact=True).click()
     expect(page.locator("#remote-controls")).to_be_visible()
-    assert page.url == "http://remote.test/remote?theater_id=stage#controls"
+    assert page.url == "http://remote.test/remote?theater_id=stage#inputs"
 
 
 def swipe_preview(page: Page, dx: int, dy: int, cancel: bool = False) -> None:
@@ -175,14 +190,16 @@ def test_horizontal_swipes_switch_all_tabs_and_preserve_draft(remote_page: Page)
     page.locator("#command-modal-close").click()
     page.get_by_role('tab', name='Preview', exact=True).click()
     swipe_preview(page, 140, 10)
-    expect(page.get_by_role('tab', name='Control Panel')).to_have_attribute('aria-selected', 'true')
+    expect(page.get_by_role('tab', name='Inputs')).to_have_attribute('aria-selected', 'true')
     swipe_panel(page, 140, 10)
-    expect(page.get_by_role('tab', name='Asset Manager')).to_have_attribute('aria-selected', 'true')
+    expect(page.get_by_role('tab', name='Assets')).to_have_attribute('aria-selected', 'true')
     swipe_panel(page, -140, 10)
-    expect(page.get_by_role('tab', name='Control Panel')).to_have_attribute('aria-selected', 'true')
+    expect(page.get_by_role('tab', name='Inputs')).to_have_attribute('aria-selected', 'true')
     assert page.locator('#command').input_value() == 'Keep my draft'
     swipe_panel(page, -140, 10)
     expect(page.get_by_role('tab', name='Preview', exact=True)).to_have_attribute('aria-selected', 'true')
+    swipe_panel(page, -140, 10)
+    expect(page.get_by_role('tab', name='Baton', exact=True)).to_have_attribute('aria-selected', 'true')
 
 
 def swipe_panel(page: Page, dx: int, dy: int, selector: str = '#remote-views') -> None:
@@ -229,7 +246,7 @@ def test_preview_retries_failed_image_without_disabling_controls(remote_page: Pa
     page.reload()
     page.get_by_role("tab", name="Preview", exact=True).click()
     page.get_by_text("Scene could not load. Retrying…").wait_for()
-    page.get_by_role("tab", name="Control Panel", exact=True).click()
+    page.get_by_role("tab", name="Inputs", exact=True).click()
     assert page.get_by_role("button", name="Next scene", exact=True).is_enabled()
     failed = False
     page.get_by_role("button", name="Next scene", exact=True).click()
@@ -372,14 +389,23 @@ def test_remote_bars_fit_on_one_line(remote_page: Page, width: int) -> None:
     })""")
     assert page.locator("#controls").bounding_box()["height"] < 400
     assert page.locator("#canvas-preview").is_hidden()
-    assert page.locator("#controls-tab").get_attribute("aria-selected") == "true"
+    assert page.locator("#inputs-tab").get_attribute("aria-selected") == "true"
     assert page.locator(".remote-tabs").bounding_box()["width"] <= width
     assert page.locator(".desk-heading").count() == 0
     assert page.locator('[aria-labelledby="agent-title"] #connection-status').count() == 1
     assert page.locator("header #theater-id").inner_text() == "stage"
-    for power in page.locator(".power-button").all():
-        assert power.bounding_box()["width"] >= 60
-        assert power.bounding_box()["height"] >= 52
+    for power in page.locator(".power-button:visible").all():
+        box = power.bounding_box()
+        assert box is not None
+        assert box["width"] >= 60
+        assert box["height"] >= 52
+    collab_power = page.locator("#collaboration")
+    expect(collab_power).to_be_visible()
+    collab_box = collab_power.bounding_box()
+    assert collab_box is not None
+    assert collab_box["width"] >= 60
+    assert collab_box["height"] >= 52
+    expect(page.locator("#controls")).to_be_visible()
     for media, pin, new_action in [("scene", "scene-pin", "new_image"), ("music", "music-pin", "new_music")]:
         buttons = page.locator(f'[aria-labelledby="{media}-title"] button')
         assert buttons.nth(1).get_attribute("id") == pin
@@ -464,7 +490,7 @@ def test_asset_carousels_load_and_push_scenes_and_music(remote_page: Page) -> No
             {'id': 'track:storm', 'name': 'Storm', 'url': '/storm.mp3'},
         ]},
     ]))
-    page.get_by_role('tab', name='Asset Manager').click()
+    page.get_by_role('tab', name='Assets').click()
     expect(page.get_by_role('heading', name='Forest')).to_be_visible()
     expect(page.get_by_role('heading', name='Rain')).to_be_visible()
     expect(page.get_by_role('heading', name='Storm')).to_be_visible()
@@ -482,13 +508,13 @@ def test_asset_carousels_load_and_push_scenes_and_music(remote_page: Page) -> No
     page.wait_for_function("!document.getElementById('controls').disabled")
     assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
     swipe_panel(page, -150, 0, '#scenes-carousel')
-    expect(page.get_by_role('tab', name='Asset Manager')).to_have_attribute('aria-selected', 'true')
+    expect(page.get_by_role('tab', name='Assets')).to_have_attribute('aria-selected', 'true')
 
 
 def test_asset_loading_failure_can_be_retried(remote_page: Page) -> None:
     page = remote_page
     page.route('**/api/theaters/stage/scenes', lambda route: route.fulfill(status=503, json={'detail': 'Try again later.'}))
-    page.get_by_role('tab', name='Asset Manager').click()
+    page.get_by_role('tab', name='Assets').click()
     expect(page.locator('#asset-status')).to_have_text('Try again later.')
     page.route('**/api/theaters/stage/scenes', lambda route: route.fulfill(json=[]))
     page.get_by_role('button', name='Retry loading assets').click()
@@ -497,13 +523,13 @@ def test_asset_loading_failure_can_be_retried(remote_page: Page) -> None:
 
 def test_tabs_support_keyboard_navigation(remote_page: Page) -> None:
     page = remote_page
-    expect(page.get_by_role('tab', name='Control Panel')).to_have_attribute('aria-selected', 'true')
+    expect(page.get_by_role('tab', name='Inputs')).to_have_attribute('aria-selected', 'true')
     assert page.locator('#open-preview').count() == 0
-    page.get_by_role('tab', name='Control Panel').focus()
+    page.get_by_role('tab', name='Inputs').focus()
     page.keyboard.press('ArrowLeft')
-    expect(page.get_by_role('tab', name='Asset Manager')).to_be_focused()
+    expect(page.get_by_role('tab', name='Assets')).to_be_focused()
     page.keyboard.press('End')
-    expect(page.get_by_role('tab', name='Preview', exact=True)).to_be_focused()
+    expect(page.get_by_role('tab', name='Baton', exact=True)).to_be_focused()
 
 
 def test_action_error_surfaces_as_dismissable_toast(remote_page: Page) -> None:
@@ -544,7 +570,7 @@ def test_asset_loading_error_surfaces_as_toast(remote_page: Page) -> None:
     page = remote_page
     page.route("**/api/theaters/stage/scenes", lambda route: route.fulfill(status=500, json={"detail": "Scenes failed to load."}))
     expect(page.locator("#toast")).to_be_hidden()
-    page.get_by_role("tab", name="Asset Manager").click()
+    page.get_by_role("tab", name="Assets").click()
 
     toast = page.locator("#toast")
     expect(toast).to_be_visible()
@@ -671,5 +697,294 @@ def test_microphone_button_streams_audio_and_stops_on_release(remote_page: Page)
     types = [p.get("type") for p in parsed]
     assert "activity_start" in types
     assert "activity_end" in types
+
+
+def test_baton_tab_renders_baton_and_contributors(remote_page: Page) -> None:
+    page = remote_page
+    page.route("**/api/theaters/stage/baton", lambda route: route.fulfill(json={
+        "owner": {"id": 1, "username": "alice"},
+        "active_orator": {"id": 1, "username": "alice"},
+        "contributors": [{"id": 2, "username": "bob"}],
+        "active_viewers": [{"id": 3, "username": "charlie"}],
+        "baton_request": None,
+    }))
+    page.get_by_role("tab", name="Baton", exact=True).click()
+    expect(page.locator("#remote-baton")).to_be_visible()
+    expect(page.locator("#baton-holder-display")).to_have_text("👑 Orator: @alice")
+    expect(page.locator("#menu-take-back-baton-btn")).to_be_hidden()
+    expect(page.locator("#active-viewers-list")).to_contain_text("@charlie")
+    expect(page.locator("#contributors-list")).to_contain_text("@bob")
+    expect(page.get_by_role("button", name="+ Contributor")).to_be_visible()
+    expect(page.get_by_role("button", name="Pass Baton 🎙️")).to_be_visible()
+
+
+def test_baton_tab_take_back_baton_visible_when_owner_not_orator(remote_page: Page) -> None:
+    page = remote_page
+    page.route("**/api/auth/me", lambda route: route.fulfill(json={
+        "authenticated": True, "user": {"id": 1, "username": "alice"}
+    }))
+    page.route("**/api/theaters/stage/baton", lambda route: route.fulfill(json={
+        "owner": {"id": 1, "username": "alice"},
+        "active_orator": {"id": 2, "username": "bob"},
+        "contributors": [{"id": 2, "username": "bob"}],
+        "active_viewers": [],
+        "baton_request": None,
+    }))
+    page.get_by_role("tab", name="Baton", exact=True).click()
+    take_back_btn = page.locator("#menu-take-back-baton-btn")
+    expect(take_back_btn).to_be_visible()
+    expect(take_back_btn).to_have_text("Take back baton")
+
+    with page.expect_request("**/api/theaters/stage/baton/takeback") as req:
+        take_back_btn.click()
+    assert req.value.method == "POST"
+
+
+def test_baton_tab_add_contributor_and_pass_baton(remote_page: Page) -> None:
+    page = remote_page
+    page.route("**/api/auth/me", lambda route: route.fulfill(json={
+        "authenticated": True, "user": {"id": 1, "username": "alice"}
+    }))
+    page.route("**/api/theaters/stage/baton", lambda route: route.fulfill(json={
+        "owner": {"id": 1, "username": "alice"},
+        "active_orator": {"id": 1, "username": "alice"},
+        "contributors": [{"id": 2, "username": "bob"}],
+        "active_viewers": [{"id": 3, "username": "charlie"}],
+        "baton_request": None,
+    }))
+    page.get_by_role("tab", name="Baton", exact=True).click()
+
+    with page.expect_request("**/api/theaters/stage/baton/contributors") as add_req:
+        page.get_by_role("button", name="+ Contributor").click()
+    assert add_req.value.method == "POST"
+    assert add_req.value.post_data_json == {"target_user_id": 3}
+
+    with page.expect_request("**/api/theaters/stage/baton/request") as pass_req:
+        page.get_by_role("button", name="Pass Baton 🎙️").click()
+    assert pass_req.value.method == "POST"
+    assert pass_req.value.post_data_json == {"target_user_id": 2, "timeout_seconds": 30}
+
+
+def test_baton_pass_modal_appears_and_can_be_accepted_on_phone(remote_page: Page) -> None:
+    page = remote_page
+    page.route("**/api/auth/me", lambda route: route.fulfill(json={
+        "authenticated": True, "user": {"id": 2, "username": "bob"}
+    }))
+    state = {
+        "owner": {"id": 1, "username": "alice"},
+        "active_orator": {"id": 1, "username": "alice"},
+        "contributors": [{"id": 2, "username": "bob"}],
+        "active_viewers": [],
+        "baton_request": {
+            "target_user_id": 2,
+            "target_username": "bob",
+            "timeout_seconds": 30,
+        },
+    }
+
+    def baton_route(route: Route) -> None:
+        route.fulfill(json=state)
+
+    def accept_route(route: Route) -> None:
+        state["active_orator"] = {"id": 2, "username": "bob"}
+        state["baton_request"] = None
+        route.fulfill(json=state)
+
+    page.route("**/api/theaters/stage/baton", baton_route)
+    page.route("**/api/theaters/stage/baton/accept", accept_route)
+    page.reload()
+
+    modal = page.locator("#baton-request-modal")
+    expect(modal).to_be_visible()
+    expect(page.locator("#baton-request-modal-title")).to_have_text("Baton Pass Request!")
+    expect(page.locator("#baton-timer-bar")).to_be_visible()
+
+    with page.expect_request("**/api/theaters/stage/baton/accept") as accept_req:
+        page.locator("#accept-baton-btn").click()
+    assert accept_req.value.method == "POST"
+    expect(modal).to_be_hidden()
+
+
+def test_baton_pass_modal_can_be_declined_on_phone(remote_page: Page) -> None:
+    page = remote_page
+    page.route("**/api/auth/me", lambda route: route.fulfill(json={
+        "authenticated": True, "user": {"id": 2, "username": "bob"}
+    }))
+    state = {
+        "owner": {"id": 1, "username": "alice"},
+        "active_orator": {"id": 1, "username": "alice"},
+        "contributors": [{"id": 2, "username": "bob"}],
+        "active_viewers": [],
+        "baton_request": {
+            "target_user_id": 2,
+            "target_username": "bob",
+            "timeout_seconds": 30,
+        },
+    }
+
+    def baton_route(route: Route) -> None:
+        route.fulfill(json=state)
+
+    def decline_route(route: Route) -> None:
+        state["baton_request"] = None
+        route.fulfill(json=state)
+
+    page.route("**/api/theaters/stage/baton", baton_route)
+    page.route("**/api/theaters/stage/baton/decline", decline_route)
+    page.reload()
+
+    modal = page.locator("#baton-request-modal")
+    expect(modal).to_be_visible()
+
+    with page.expect_request("**/api/theaters/stage/baton/decline") as decline_req:
+        page.locator("#decline-baton-btn").click()
+    assert decline_req.value.method == "POST"
+    expect(modal).to_be_hidden()
+
+
+def test_pure_viewer_only_sees_preview_tab(remote_page: Page) -> None:
+    page = remote_page
+    page.route("**/api/auth/me", lambda route: route.fulfill(json={
+        "authenticated": True, "user": {"id": 5, "username": "viewer5"}
+    }))
+    page.route("**/api/theaters/stage/remote", lambda route: route.fulfill(json={
+        "theater_id": "stage",
+        "agent_running": True,
+        "pinned": False,
+        "music_pinned": False,
+        "viewer_collab_enabled": False,
+        "preview_url": "/theaters/stage/output/scene.webp",
+        "is_contributor": False,
+    }))
+    page.route("**/api/theaters/stage/baton", lambda route: route.fulfill(json={
+        "owner": {"id": 1, "username": "alice"},
+        "active_orator": {"id": 1, "username": "alice"},
+        "contributors": [{"id": 2, "username": "bob"}],
+        "active_viewers": [{"id": 5, "username": "viewer5"}],
+        "baton_request": None,
+    }))
+    page.reload()
+
+    # The preview panel should be visible
+    expect(page.locator("#canvas-preview")).to_be_visible()
+    expect(page.locator("#preview-tab")).to_be_visible()
+    expect(page.locator("#preview-tab")).to_have_attribute("aria-selected", "true")
+
+    # All other tabs and panels must be hidden
+    expect(page.locator("#assets-tab")).to_be_hidden()
+    expect(page.locator("#inputs-tab")).to_be_hidden()
+    expect(page.locator("#baton-tab")).to_be_hidden()
+    expect(page.locator("#asset-manager")).to_be_hidden()
+    expect(page.locator("#remote-controls")).to_be_hidden()
+    expect(page.locator("#remote-baton")).to_be_hidden()
+
+    # Hash navigation attempt to #inputs must not escape preview
+    page.evaluate("location.hash = 'inputs'")
+    expect(page.locator("#canvas-preview")).to_be_visible()
+    expect(page.locator("#inputs-tab")).to_be_hidden()
+    expect(page.locator("#remote-controls")).to_be_hidden()
+
+
+def test_contributor_without_baton_only_sees_preview_tab_and_with_baton_sees_controls(remote_page: Page) -> None:
+    page = remote_page
+    status_state = {
+        "theater_id": "stage",
+        "agent_running": True,
+        "pinned": False,
+        "music_pinned": False,
+        "viewer_collab_enabled": False,
+        "preview_url": "/theaters/stage/output/scene.webp",
+        "is_contributor": False,
+        "is_owner": False,
+        "is_orator": False,
+    }
+    baton_state = {
+        "owner": {"id": 1, "username": "alice"},
+        "active_orator": {"id": 1, "username": "alice"},
+        "contributors": [],
+        "active_viewers": [{"id": 5, "username": "viewer5"}],
+        "baton_request": None,
+    }
+
+    page.route("**/api/auth/me", lambda route: route.fulfill(json={
+        "authenticated": True, "user": {"id": 5, "username": "viewer5"}
+    }))
+    page.route("**/api/theaters/stage/remote", lambda route: route.fulfill(json=status_state))
+    page.route("**/api/theaters/stage/baton", lambda route: route.fulfill(json=baton_state))
+    page.reload()
+
+    # Initially pure viewer only sees preview
+    expect(page.locator("#preview-tab")).to_be_visible()
+    expect(page.locator("#assets-tab")).to_be_hidden()
+    expect(page.locator("#inputs-tab")).to_be_hidden()
+    expect(page.locator("#baton-tab")).to_be_hidden()
+
+    # Grant contributor permission, but alice is still the orator
+    status_state["is_contributor"] = True
+    baton_state["contributors"] = [{"id": 5, "username": "viewer5"}]
+    page.reload()
+
+    # Contributor who is not orator still ONLY sees preview tab
+    expect(page.locator("#preview-tab")).to_be_visible()
+    expect(page.locator("#assets-tab")).to_be_hidden()
+    expect(page.locator("#inputs-tab")).to_be_hidden()
+    expect(page.locator("#baton-tab")).to_be_hidden()
+
+    # Pass baton to contributor (viewer5 is now active orator)
+    status_state["is_orator"] = True
+    baton_state["active_orator"] = {"id": 5, "username": "viewer5"}
+    page.reload()
+
+    # Now contributor holds the baton: assets, inputs, preview are visible
+    expect(page.locator("#assets-tab")).to_be_visible()
+    expect(page.locator("#inputs-tab")).to_be_visible()
+    expect(page.locator("#preview-tab")).to_be_visible()
+    # But Baton tab remains hidden for non-owner contributor
+    expect(page.locator("#baton-tab")).to_be_hidden()
+
+
+def test_owner_always_sees_baton_tab(remote_page: Page) -> None:
+    page = remote_page
+    status_state = {
+        "theater_id": "stage",
+        "agent_running": True,
+        "pinned": False,
+        "music_pinned": False,
+        "viewer_collab_enabled": False,
+        "preview_url": "/theaters/stage/output/scene.webp",
+        "is_contributor": True,
+        "is_owner": True,
+        "is_orator": False,  # owner passed baton to someone else
+    }
+    baton_state = {
+        "owner": {"id": 1, "username": "alice"},
+        "active_orator": {"id": 2, "username": "bob"},
+        "contributors": [{"id": 2, "username": "bob"}],
+        "active_viewers": [],
+        "baton_request": None,
+    }
+    page.route("**/api/auth/me", lambda route: route.fulfill(json={
+        "authenticated": True, "user": {"id": 1, "username": "alice"}
+    }))
+    page.route("**/api/theaters/stage/remote", lambda route: route.fulfill(json=status_state))
+    page.route("**/api/theaters/stage/baton", lambda route: route.fulfill(json=baton_state))
+    page.reload()
+
+    # Owner when idle sees Baton and Preview tabs, but not Assets/Inputs
+    expect(page.locator("#baton-tab")).to_be_visible()
+    expect(page.locator("#preview-tab")).to_be_visible()
+    expect(page.locator("#assets-tab")).to_be_hidden()
+    expect(page.locator("#inputs-tab")).to_be_hidden()
+    expect(page.locator("#menu-take-back-baton-btn")).to_be_visible()
+
+
+def test_collab_button_in_inputs_controls(remote_page: Page) -> None:
+    page = remote_page
+    expect(page.locator("#remote-controls #collaboration")).to_be_visible()
+    with page.expect_request("**/collab") as req:
+        page.locator("#remote-controls #collaboration").click()
+    assert req.value.method == "POST"
+
+
 
 
