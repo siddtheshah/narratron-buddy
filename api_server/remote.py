@@ -1,6 +1,6 @@
 """Lightweight remote for controlling an existing theater from another device."""
 
-from fastapi import HTTPException, Request, Response
+from fastapi import HTTPException, Query, Request, Response
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
@@ -25,11 +25,23 @@ class RemoteStatus(BaseModel):
 
 
 @app.get("/remote", response_class=HTMLResponse)
-def read_remote() -> HTMLResponse:
-    """Serve a public shell; all theater reads and commands require authorization."""
+def read_remote(
+    request: Request, theater_id: str = Query(..., min_length=1, pattern=r"^[a-zA-Z0-9_-]+$"),
+) -> HTMLResponse:
+    """Require a theater and login before serving the active orator's controls."""
+    headers = {"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"}
+    user = get_current_user(request)
+    if not user:
+        return HTMLResponse(
+            (PROJECT_ROOT / "templates" / "remote_login.html").read_text(encoding="utf-8"),
+            status_code=401, headers=headers,
+        )
+    deployment = _require_canvas_access(request, theater_id)
+    if not can_control_agent_websocket(deployment, current_user=user):
+        raise HTTPException(status_code=403, detail="Only the active orator can use this remote.")
     return HTMLResponse(
         (PROJECT_ROOT / "templates" / "remote.html").read_text(encoding="utf-8"),
-        headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"},
+        headers=headers,
     )
 
 

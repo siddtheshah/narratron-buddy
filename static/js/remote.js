@@ -1,13 +1,11 @@
 (() => {
     'use strict';
-    const connectForm = document.getElementById('connect-form');
-    const theaterInput = document.getElementById('theater');
     const controls = document.getElementById('controls');
     const status = document.getElementById('connection-status');
     const feedback = document.getElementById('feedback');
     const command = document.getElementById('command');
     const canvasLink = document.getElementById('canvas-link');
-    let theaterId = '';
+    const theaterId = new URLSearchParams(location.search).get('theater_id');
     let state = null;
     let busy = false;
     let generation = 0;
@@ -35,7 +33,15 @@
         }
         const collaboration = document.getElementById('collaboration');
         collaboration.setAttribute('aria-pressed', String(Boolean(state?.viewer_collab_enabled)));
-        collaboration.textContent = `Audience collaboration ${state?.viewer_collab_enabled ? 'on' : 'off'}`;
+        const collaborationLabel = `Turn collaboration ${state?.viewer_collab_enabled ? 'off' : 'on'}`;
+        collaboration.setAttribute('aria-label', collaborationLabel);
+        collaboration.title = collaborationLabel;
+        document.getElementById('collaboration-status').textContent = `Collaboration ${state?.viewer_collab_enabled ? 'on' : 'off'}`;
+        const agentToggle = document.getElementById('agent-toggle');
+        agentToggle.setAttribute('aria-pressed', String(Boolean(state?.agent_running)));
+        const agentLabel = state?.agent_running ? 'Turn agent off' : 'Turn agent on';
+        agentToggle.setAttribute('aria-label', agentLabel);
+        agentToggle.title = agentLabel;
     }
 
     async function request(path, body) {
@@ -66,7 +72,7 @@
             if (version !== generation || sequence !== refreshSequence) return;
             state = next;
             status.dataset.connected = 'true';
-            status.textContent = next.agent_running ? 'Connected · Narratron ready' : 'Connected · Start Narratron on the main canvas';
+            status.textContent = next.agent_running ? 'Connected · Agent on' : 'Connected · Agent off';
         } catch (error) {
             if (version !== generation || sequence !== refreshSequence) return;
             state = null;
@@ -81,77 +87,59 @@
         }
     }
 
-    function connect(value) {
-        let id = value.trim();
-        if (id.includes('://') || id.startsWith('/')) {
-            try { id = new URL(id, location.origin).searchParams.get('theater_id') || ''; }
-            catch { id = ''; }
-        }
-        if (!/^[a-zA-Z0-9_-]+$/.test(id)) {
-            message('Enter a theater ID or a canvas link containing theater_id.', true);
-            return;
-        }
-        generation += 1;
-        clearTimeout(pollTimer);
-        theaterId = id;
-        theaterInput.value = id;
-        state = null;
-        busy = false;
-        render();
-        message('');
-        status.textContent = 'Connecting…';
-        status.dataset.connected = 'false';
-        const url = new URL('/remote', location.origin);
-        url.searchParams.set('theater_id', id);
-        history.replaceState(null, '', url);
-        canvasLink.href = `/canvas?${new URLSearchParams({theater_id: id})}`;
-        canvasLink.hidden = false;
-        void refresh(generation);
-    }
-
-    async function send(path, payload, success, onSuccess = () => {}) {
+    async function send(button, path, payload, onSuccess = () => {}) {
         if (!state || busy) return;
         const version = generation;
         busy = true;
         refreshSequence += 1;
         clearTimeout(pollTimer);
+        controls.querySelectorAll('[data-error]').forEach(control => {
+            delete control.dataset.error;
+            control.removeAttribute('aria-describedby');
+        });
+        button.setAttribute('aria-busy', 'true');
         render();
         message('Sending…');
         try {
             await request(path, payload);
             if (version !== generation) return;
             onSuccess();
-            message(success);
+            message('Accepted.');
         } catch (error) {
             if (version !== generation) return;
-            message(error.name === 'TypeError' || error.name === 'TimeoutError'
-                ? 'Delivery could not be confirmed. Check the canvas before trying again.' : error.message, true);
+            const detail = error.name === 'TypeError' || error.name === 'TimeoutError'
+                ? 'Delivery could not be confirmed. Check the canvas before trying again.' : error.message;
+            button.dataset.error = detail;
+            button.closest('.bar').dataset.error = detail;
+            button.setAttribute('aria-describedby', 'feedback');
+            message(detail, true);
         } finally {
             if (version === generation) {
                 await refresh(version);
                 busy = false;
+                button.removeAttribute('aria-busy');
                 render();
             }
         }
     }
 
-    connectForm.addEventListener('submit', event => {
-        event.preventDefault();
-        connect(theaterInput.value);
+    document.getElementById('agent-toggle').addEventListener('click', event => {
+        const action = state?.agent_running ? 'stop' : 'start';
+        void send(event.currentTarget, `${basePath()}/agent/${action}`, {});
     });
     controls.querySelectorAll('[data-action]').forEach(button => {
         button.addEventListener('click', () => {
-            void send(`${basePath()}/orator-action`, {action: button.dataset.action}, `${button.textContent.trim()} — accepted.`);
+            void send(button, `${basePath()}/orator-action`, {action: button.dataset.action});
         });
     });
-    document.getElementById('collaboration').addEventListener('click', () => {
-        void send(`${basePath()}/collab`, {enabled: !state?.viewer_collab_enabled}, 'Collaboration updated.');
+    document.getElementById('collaboration').addEventListener('click', event => {
+        void send(event.currentTarget, `${basePath()}/collab`, {enabled: !state?.viewer_collab_enabled});
     });
     document.getElementById('command-form').addEventListener('submit', event => {
         event.preventDefault();
         const text = command.value.trim();
         if (!text) { message('Enter an instruction first.', true); return; }
-        void send(`/api/orator/command?${new URLSearchParams({theater_id: theaterId})}`, {text}, 'Instruction accepted.', () => {
+        void send(event.currentTarget.querySelector('button[type="submit"]'), `/api/orator/command?${new URLSearchParams({theater_id: theaterId})}`, {text}, () => {
             if (command.value.trim() === text) command.value = '';
         });
     });
@@ -159,7 +147,14 @@
         clearTimeout(pollTimer);
         if (!document.hidden && theaterId && !busy) void refresh(generation);
     });
-    const initial = new URLSearchParams(location.search).get('theater_id');
     render();
-    if (initial) connect(initial);
+    if (theaterId && /^[a-zA-Z0-9_-]+$/.test(theaterId)) {
+        document.getElementById('theater-id').textContent = theaterId;
+        document.getElementById('theater-id').title = theaterId;
+        canvasLink.href = `/canvas?${new URLSearchParams({theater_id: theaterId})}`;
+        canvasLink.hidden = false;
+        void refresh(generation);
+    } else {
+        status.textContent = 'Open the remote from your theater.';
+    }
 })();

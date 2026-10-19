@@ -26,12 +26,42 @@ def remote_services() -> Iterator[tuple[TestClient, MagicMock, MagicMock]]:
         yield TestClient(remote.app), current_user, manager
 
 
-def test_remote_shell_contains_no_private_state() -> None:
-    response = TestClient(remote.app).get("/remote")
+def test_remote_shell_requires_authorized_theater(
+    remote_services: tuple[TestClient, MagicMock, MagicMock],
+) -> None:
+    client, _, _ = remote_services
+    response = client.get("/remote?theater_id=stage")
     assert response.status_code == 200
     assert response.headers["cache-control"] == "no-store"
     assert 'id="controls" disabled' in response.text
     assert 'name="robots" content="noindex, nofollow"' in response.text
+    assert 'id="theater"' not in response.text
+
+
+@pytest.mark.parametrize("query", ["", "?theater_id=", "?theater_id=bad/path"])
+def test_remote_page_requires_theater_parameter(query: str) -> None:
+    assert TestClient(remote.app).get(f"/remote{query}").status_code == 422
+
+
+def test_remote_page_requires_login_before_serving_controls(
+    remote_services: tuple[TestClient, MagicMock, MagicMock],
+) -> None:
+    client, current_user, _ = remote_services
+    current_user.return_value = None
+    response = client.get("/remote?theater_id=stage")
+    assert response.status_code == 401
+    assert "Sign in to use the remote" in response.text
+    assert 'id="controls"' not in response.text
+    assert 'id="theater"' not in response.text
+    assert response.headers["cache-control"] == "no-store"
+
+
+def test_remote_page_rejects_non_orator(
+    remote_services: tuple[TestClient, MagicMock, MagicMock],
+) -> None:
+    client, current_user, _ = remote_services
+    current_user.return_value = {"id": 3}
+    assert client.get("/remote?theater_id=stage").status_code == 403
 
 
 def test_remote_returns_state_for_active_orator(

@@ -213,6 +213,21 @@ def test_previous_music_action_success_and_failure(action_services: tuple[MagicM
 
 
 
+def test_next_music_action_success_and_failure(action_services: tuple[MagicMock, MagicMock]) -> None:
+    state, session = action_services
+    state.audio.next_music.return_value = True
+    response = canvas.post_orator_action("stage", canvas.OratorAction(action="next_music"), Request({"type": "http"}))
+    assert response["status"] == "accepted"
+    state.audio.next_music.assert_called_once()
+    session.send_content.assert_called_once()
+    state.persist.assert_called_once()
+
+    state.audio.next_music.return_value = False
+    with pytest.raises(HTTPException) as error:
+        canvas.post_orator_action("stage", canvas.OratorAction(action="next_music"), Request({"type": "http"}))
+    assert error.value.status_code == 400
+
+
 def test_orator_action_endpoint_response_validation_with_integer_cursor(
     action_services: tuple[MagicMock, MagicMock]
 ) -> None:

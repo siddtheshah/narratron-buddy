@@ -196,6 +196,27 @@ def test_audio_state_previous_music_navigation() -> None:
 
 
 
+def test_audio_state_next_music_restores_history_without_appending() -> None:
+    events: list[str] = []
+    state = AudioState(events.append)
+    assert state.next_music() is False
+    state.update_music("first", ["first.mp3"])
+    state.update_music("second", ["second.mp3"])
+    assert state.next_music() is False
+    assert state.previous_music() is True
+    state.set_pinned(True)
+    state.pause()
+    events.clear()
+    assert state.next_music() is True
+    assert state.current_music_id == "second"
+    assert state.current_playlist_tracks == ["second.mp3"]
+    assert state.orator_cursor == 1
+    assert state.music_paused is False
+    assert len(state.music_history) == 2
+    assert events == ["latest"]
+    assert state.next_music() is False
+
+
 def test_audio_state_orator_cursor_load_and_clamping() -> None:
     state = AudioState(lambda *_: None)
     state.load({

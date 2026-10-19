@@ -65,6 +65,11 @@ class AudioState:
             return False
         return self._apply_history_item(curr_idx - 1)
 
+    def next_music(self) -> bool:
+        """Advance playback to the next music entry in history."""
+        curr_idx = len(self.music_history) - 1 if self.orator_cursor is None else self.orator_cursor
+        return self._apply_history_item(curr_idx + 1)
+
     def pause(self) -> None:
         if self.pinned:
             return
