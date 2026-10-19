@@ -26,6 +26,10 @@ def remote_page() -> Iterator[Page]:
             if path in files:
                 filename, content_type = files[path]
                 route.fulfill(body=Path(filename).read_text(encoding="utf-8"), content_type=content_type)
+            elif path == "/static/narratron-avatar.png":
+                route.fulfill(body=Path("static/narratron-avatar.png").read_bytes(), content_type="image/png")
+            elif path == "/favicon.png":
+                route.fulfill(body=Path("templates/narratron favicon.png").read_bytes(), content_type="image/png")
             elif path.endswith("/scenes") or path.endswith("/playlists"):
                 route.fulfill(json=[])
             elif path.endswith("/remote"):
@@ -199,7 +203,7 @@ def test_horizontal_swipes_switch_all_tabs_and_preserve_draft(remote_page: Page)
     swipe_panel(page, -140, 10)
     expect(page.get_by_role('tab', name='Preview', exact=True)).to_have_attribute('aria-selected', 'true')
     swipe_panel(page, -140, 10)
-    expect(page.get_by_role('tab', name='Baton', exact=True)).to_have_attribute('aria-selected', 'true')
+    expect(page.get_by_role('tab', name='Party', exact=True)).to_have_attribute('aria-selected', 'true')
 
 
 def swipe_panel(page: Page, dx: int, dy: int, selector: str = '#remote-views') -> None:
@@ -322,6 +326,34 @@ def test_canvas_link_does_not_retain_join_key(remote_page: Page) -> None:
     assert page.locator("#canvas-link").get_attribute("href") == "/canvas?theater_id=other"
     assert page.locator("#theater").count() == 0
     assert page.locator("header #theater-id").inner_text() == "other"
+    assert page.locator("header #theater-key").inner_text() == "secret"
+    assert page.locator("header #theater-key").is_visible()
+
+
+def test_remote_header_branding_and_key(remote_page: Page) -> None:
+    page = remote_page
+    page.goto("http://remote.test/remote?theater_id=stage&join_key=mykey123")
+    brand = page.locator("header a[aria-label='Narratron home']")
+    assert "Narratron Remote" in brand.inner_text()
+    avatar_el = page.locator("header a img.brand-avatar")
+    assert avatar_el.is_visible()
+    brand_text_el = page.locator("header a .brand-text")
+    assert brand_text_el.inner_text() == "Narratron Remote"
+    gradient = brand_text_el.evaluate("el => getComputedStyle(el).backgroundImage")
+    assert "linear-gradient" in gradient
+    assert page.locator("header .badge").count() == 0
+    theater_id_el = page.locator("header #theater-id")
+    theater_key_el = page.locator("header #theater-key")
+    assert theater_id_el.inner_text() == "stage"
+    assert theater_key_el.inner_text() == "mykey123"
+    assert theater_key_el.is_visible()
+    id_box = theater_id_el.bounding_box()
+    key_box = theater_key_el.bounding_box()
+    assert id_box is not None and key_box is not None
+    assert key_box["y"] >= id_box["y"]
+    id_font_size = float(theater_id_el.evaluate("el => parseFloat(getComputedStyle(el).fontSize)"))
+    key_font_size = float(theater_key_el.evaluate("el => parseFloat(getComputedStyle(el).fontSize)"))
+    assert key_font_size < id_font_size
 
 
 def test_stopped_agent_preserves_history_and_pin_controls(remote_page: Page) -> None:
@@ -529,7 +561,7 @@ def test_tabs_support_keyboard_navigation(remote_page: Page) -> None:
     page.keyboard.press('ArrowLeft')
     expect(page.get_by_role('tab', name='Assets')).to_be_focused()
     page.keyboard.press('End')
-    expect(page.get_by_role('tab', name='Baton', exact=True)).to_be_focused()
+    expect(page.get_by_role('tab', name='Party', exact=True)).to_be_focused()
 
 
 def test_action_error_surfaces_as_dismissable_toast(remote_page: Page) -> None:
@@ -699,7 +731,7 @@ def test_microphone_button_streams_audio_and_stops_on_release(remote_page: Page)
     assert "activity_end" in types
 
 
-def test_baton_tab_renders_baton_and_contributors(remote_page: Page) -> None:
+def test_party_tab_renders_baton_and_contributors(remote_page: Page) -> None:
     page = remote_page
     page.route("**/api/theaters/stage/baton", lambda route: route.fulfill(json={
         "owner": {"id": 1, "username": "alice"},
@@ -708,7 +740,7 @@ def test_baton_tab_renders_baton_and_contributors(remote_page: Page) -> None:
         "active_viewers": [{"id": 3, "username": "charlie"}],
         "baton_request": None,
     }))
-    page.get_by_role("tab", name="Baton", exact=True).click()
+    page.get_by_role("tab", name="Party", exact=True).click()
     expect(page.locator("#remote-baton")).to_be_visible()
     expect(page.locator("#baton-holder-display")).to_have_text("👑 Orator: @alice")
     expect(page.locator("#menu-take-back-baton-btn")).to_be_hidden()
@@ -718,7 +750,7 @@ def test_baton_tab_renders_baton_and_contributors(remote_page: Page) -> None:
     expect(page.get_by_role("button", name="Pass Baton 🎙️")).to_be_visible()
 
 
-def test_baton_tab_take_back_baton_visible_when_owner_not_orator(remote_page: Page) -> None:
+def test_party_tab_take_back_baton_visible_when_owner_not_orator(remote_page: Page) -> None:
     page = remote_page
     page.route("**/api/auth/me", lambda route: route.fulfill(json={
         "authenticated": True, "user": {"id": 1, "username": "alice"}
@@ -730,7 +762,7 @@ def test_baton_tab_take_back_baton_visible_when_owner_not_orator(remote_page: Pa
         "active_viewers": [],
         "baton_request": None,
     }))
-    page.get_by_role("tab", name="Baton", exact=True).click()
+    page.get_by_role("tab", name="Party", exact=True).click()
     take_back_btn = page.locator("#menu-take-back-baton-btn")
     expect(take_back_btn).to_be_visible()
     expect(take_back_btn).to_have_text("Take back baton")
@@ -740,7 +772,7 @@ def test_baton_tab_take_back_baton_visible_when_owner_not_orator(remote_page: Pa
     assert req.value.method == "POST"
 
 
-def test_baton_tab_add_contributor_and_pass_baton(remote_page: Page) -> None:
+def test_party_tab_add_contributor_and_pass_baton(remote_page: Page) -> None:
     page = remote_page
     page.route("**/api/auth/me", lambda route: route.fulfill(json={
         "authenticated": True, "user": {"id": 1, "username": "alice"}
@@ -752,7 +784,7 @@ def test_baton_tab_add_contributor_and_pass_baton(remote_page: Page) -> None:
         "active_viewers": [{"id": 3, "username": "charlie"}],
         "baton_request": None,
     }))
-    page.get_by_role("tab", name="Baton", exact=True).click()
+    page.get_by_role("tab", name="Party", exact=True).click()
 
     with page.expect_request("**/api/theaters/stage/baton/contributors") as add_req:
         page.get_by_role("button", name="+ Contributor").click()
@@ -873,7 +905,7 @@ def test_pure_viewer_only_sees_preview_tab(remote_page: Page) -> None:
     # All other tabs and panels must be hidden
     expect(page.locator("#assets-tab")).to_be_hidden()
     expect(page.locator("#inputs-tab")).to_be_hidden()
-    expect(page.locator("#baton-tab")).to_be_hidden()
+    expect(page.locator("#party-tab")).to_be_hidden()
     expect(page.locator("#asset-manager")).to_be_hidden()
     expect(page.locator("#remote-controls")).to_be_hidden()
     expect(page.locator("#remote-baton")).to_be_hidden()
@@ -917,7 +949,7 @@ def test_contributor_without_baton_only_sees_preview_tab_and_with_baton_sees_con
     expect(page.locator("#preview-tab")).to_be_visible()
     expect(page.locator("#assets-tab")).to_be_hidden()
     expect(page.locator("#inputs-tab")).to_be_hidden()
-    expect(page.locator("#baton-tab")).to_be_hidden()
+    expect(page.locator("#party-tab")).to_be_hidden()
 
     # Grant contributor permission, but alice is still the orator
     status_state["is_contributor"] = True
@@ -928,7 +960,7 @@ def test_contributor_without_baton_only_sees_preview_tab_and_with_baton_sees_con
     expect(page.locator("#preview-tab")).to_be_visible()
     expect(page.locator("#assets-tab")).to_be_hidden()
     expect(page.locator("#inputs-tab")).to_be_hidden()
-    expect(page.locator("#baton-tab")).to_be_hidden()
+    expect(page.locator("#party-tab")).to_be_hidden()
 
     # Pass baton to contributor (viewer5 is now active orator)
     status_state["is_orator"] = True
@@ -939,11 +971,11 @@ def test_contributor_without_baton_only_sees_preview_tab_and_with_baton_sees_con
     expect(page.locator("#assets-tab")).to_be_visible()
     expect(page.locator("#inputs-tab")).to_be_visible()
     expect(page.locator("#preview-tab")).to_be_visible()
-    # But Baton tab remains hidden for non-owner contributor
-    expect(page.locator("#baton-tab")).to_be_hidden()
+    # But Party tab remains hidden for non-owner contributor
+    expect(page.locator("#party-tab")).to_be_hidden()
 
 
-def test_owner_always_sees_baton_tab(remote_page: Page) -> None:
+def test_owner_always_sees_party_tab(remote_page: Page) -> None:
     page = remote_page
     status_state = {
         "theater_id": "stage",
@@ -970,8 +1002,9 @@ def test_owner_always_sees_baton_tab(remote_page: Page) -> None:
     page.route("**/api/theaters/stage/baton", lambda route: route.fulfill(json=baton_state))
     page.reload()
 
-    # Owner when idle sees Baton and Preview tabs, but not Assets/Inputs
-    expect(page.locator("#baton-tab")).to_be_visible()
+    # Owner when idle sees Party and Preview tabs, but not Assets/Inputs
+    expect(page.locator("#party-tab")).to_be_visible()
+    expect(page.locator("#party-tab")).to_have_text("Party")
     expect(page.locator("#preview-tab")).to_be_visible()
     expect(page.locator("#assets-tab")).to_be_hidden()
     expect(page.locator("#inputs-tab")).to_be_hidden()
@@ -984,6 +1017,21 @@ def test_collab_button_in_inputs_controls(remote_page: Page) -> None:
     with page.expect_request("**/collab") as req:
         page.locator("#remote-controls #collaboration").click()
     assert req.value.method == "POST"
+
+
+def test_party_tab_has_copy_theater_key_button(remote_page: Page) -> None:
+    page = remote_page
+    page.goto("http://remote.test/remote?theater_id=stage&join_key=baton_secret_key")
+    page.locator("#party-tab").click()
+    expect(page.locator("#remote-baton")).to_be_visible()
+    key_display = page.locator("#baton-theater-key")
+    expect(key_display).to_have_text("baton_secret_key")
+    copy_btn = page.locator("#copy-theater-key-btn")
+    expect(copy_btn).to_be_visible()
+    copy_btn.click()
+    expect(copy_btn).to_contain_text("Copied!")
+    expect(page.locator("#toast-message")).to_have_text("Theater key copied to clipboard!")
+
 
 
 

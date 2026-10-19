@@ -62,11 +62,15 @@ def read_remote(
     elif is_owner and not is_orator:
         body_attrs.append('data-owner-idle="true"')
 
+    candidate_key = _extract_candidate_join_key(request, theater_id, join_key=join_key)
+    resolved_key = candidate_key or (deployment.get("join_key") if deployment else None)
+    if resolved_key:
+        body_attrs.append(f'data-join-key="{resolved_key}"')
+
     if body_attrs:
         content = content.replace("<body", f"<body {' '.join(body_attrs)}")
 
     response = HTMLResponse(content, headers=headers)
-    candidate_key = _extract_candidate_join_key(request, theater_id, join_key=join_key)
     if candidate_key and _valid_join_key(deployment.get("join_key", ""), candidate_key):
         _grant_canvas_access(response, request, theater_id, candidate_key)
     return response

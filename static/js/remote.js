@@ -31,6 +31,31 @@
     let assetSequence = 0;
     let assetsLoading = false;
     const theaterId = new URLSearchParams(location.search).get('theater_id');
+    let theaterKey = new URLSearchParams(location.search).get('join_key') ||
+                     new URLSearchParams(location.search).get('key') ||
+                     (document.body && document.body.dataset ? document.body.dataset.joinKey : '') ||
+                     '';
+
+    function setTheaterKey(key) {
+        if (key) {
+            theaterKey = key;
+        }
+        const keyEl = document.getElementById('theater-key');
+        if (keyEl) {
+            if (theaterKey) {
+                keyEl.textContent = theaterKey;
+                keyEl.title = `Key: ${theaterKey}`;
+                keyEl.hidden = false;
+            } else {
+                keyEl.textContent = '';
+                keyEl.hidden = true;
+            }
+        }
+        const batonKeyEl = document.getElementById('baton-theater-key');
+        if (batonKeyEl) {
+            batonKeyEl.textContent = theaterKey || '';
+        }
+    }
     let state = null;
     let busy = false;
     let generation = 0;
@@ -51,7 +76,9 @@
         }
         clearTimeout(doodleReconnectTimer);
         const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const joinKey = new URLSearchParams(location.search).get('join_key');
+        const joinKey = new URLSearchParams(location.search).get('join_key') ||
+                        new URLSearchParams(location.search).get('key') ||
+                        theaterKey;
         let wsUrl = `${wsProtocol}//${location.host}/ws/doodle?theater_id=${encodeURIComponent(theaterId)}`;
         if (joinKey) {
             wsUrl += `&join_key=${encodeURIComponent(joinKey)}`;
@@ -86,12 +113,53 @@
 
     const batonHolderDisplay = document.getElementById('baton-holder-display');
     const menuTakeBackBatonBtn = document.getElementById('menu-take-back-baton-btn');
+    const copyTheaterKeyBtn = document.getElementById('copy-theater-key-btn');
+    const batonTheaterKey = document.getElementById('baton-theater-key');
     const activeViewersList = document.getElementById('active-viewers-list');
     const contributorsList = document.getElementById('contributors-list');
     const batonRequestModal = document.getElementById('baton-request-modal');
     const batonTimerBar = document.getElementById('baton-timer-bar');
     const acceptBatonBtn = document.getElementById('accept-baton-btn');
     const declineBatonBtn = document.getElementById('decline-baton-btn');
+
+    copyTheaterKeyBtn?.addEventListener('click', async () => {
+        if (!theaterKey) {
+            showToast('No theater key available to copy.', 'error');
+            return;
+        }
+        let copied = false;
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            try {
+                await navigator.clipboard.writeText(theaterKey);
+                copied = true;
+            } catch (_) {}
+        }
+        if (!copied) {
+            try {
+                const textarea = document.createElement('textarea');
+                textarea.value = theaterKey;
+                textarea.style.position = 'fixed';
+                textarea.style.opacity = '0';
+                document.body.appendChild(textarea);
+                textarea.select();
+                copied = document.execCommand('copy');
+                document.body.removeChild(textarea);
+            } catch (_) {}
+        }
+        if (copied) {
+            const textEl = copyTheaterKeyBtn.querySelector('.copy-btn-text');
+            const orig = textEl ? textEl.textContent : 'Copy Key';
+            if (textEl) textEl.textContent = 'Copied!';
+            copyTheaterKeyBtn.classList.add('copied');
+            showToast('Theater key copied to clipboard!', 'info');
+            setTimeout(() => {
+                if (textEl) textEl.textContent = orig;
+                copyTheaterKeyBtn.classList.remove('copied');
+            }, 2000);
+        } else {
+            showToast('Failed to copy key to clipboard.', 'error');
+        }
+    });
 
     function isOwnerUser() {
         if (state && typeof state.is_owner === 'boolean') {
@@ -135,12 +203,12 @@
 
         const assetsTab = document.getElementById('assets-tab');
         const inputsTab = document.getElementById('inputs-tab');
-        const batonTab = document.getElementById('baton-tab') || document.getElementById('collab-tab');
+        const partyTab = document.getElementById('party-tab') || document.getElementById('baton-tab') || document.getElementById('collab-tab');
         const previewTab = document.getElementById('preview-tab');
 
         if (assetsTab) assetsTab.hidden = !isOrator;
         if (inputsTab) inputsTab.hidden = !isOrator;
-        if (batonTab) batonTab.hidden = !isOwner;
+        if (partyTab) partyTab.hidden = !isOwner;
         if (previewTab) previewTab.hidden = false;
     }
 
@@ -159,11 +227,15 @@
             const targetView = tabs[index].dataset.view;
             if ((targetView === 'assets' || targetView === 'inputs') && !isOrator) {
                 // Cannot view assets/inputs if not orator
-            } else if ((targetView === 'baton' || targetView === 'collab') && !isOwner) {
-                // Cannot view baton if not owner
+            } else if ((targetView === 'party' || targetView === 'baton' || targetView === 'collab') && !isOwner) {
+                // Cannot view party/baton if not owner
             } else {
                 return index;
             }
+        }
+        if (hash === '#baton' && isOwner) {
+            const partyIdx = tabs.findIndex(tab => tab.dataset.view === 'party');
+            if (partyIdx >= 0) return partyIdx;
         }
         if (hash === '#controls' && isOrator) {
             const inputsIdx = tabs.findIndex(tab => tab.dataset.view === 'inputs' || tab.dataset.view === 'controls');
@@ -175,8 +247,8 @@
             return inputsIdx >= 0 ? inputsIdx : 1;
         }
         if (isOwner) {
-            const batonIdx = tabs.findIndex(tab => tab.dataset.view === 'baton' || tab.dataset.view === 'collab');
-            return batonIdx >= 0 ? batonIdx : (previewIdx >= 0 ? previewIdx : 2);
+            const partyIdx = tabs.findIndex(tab => tab.dataset.view === 'party' || tab.dataset.view === 'baton' || tab.dataset.view === 'collab');
+            return partyIdx >= 0 ? partyIdx : (previewIdx >= 0 ? previewIdx : 2);
         }
         return previewIdx >= 0 ? previewIdx : 2;
     }
@@ -206,8 +278,8 @@
         const isOwner = isOwnerUser();
         const isOrator = isOratorUser();
         if ((targetView === 'assets' || targetView === 'inputs') && !isOrator) return;
-        if ((targetView === 'baton' || targetView === 'collab') && !isOwner) return;
-        if (targetView === 'baton' || targetView === 'collab') void checkBatonState();
+        if ((targetView === 'party' || targetView === 'baton' || targetView === 'collab') && !isOwner) return;
+        if (targetView === 'party' || targetView === 'baton' || targetView === 'collab') void checkBatonState();
         if (index === activeIndex()) return;
         location.hash = tabs[index].dataset.view;
     }
@@ -580,6 +652,9 @@
             if (version !== generation || sequence !== refreshSequence) return;
             state = next;
             lastRefreshError = null;
+            if (next && next.join_key) {
+                setTheaterKey(next.join_key);
+            }
             updatePreview();
             status.dataset.connected = 'true';
             status.textContent = next.agent_running ? 'Connected · Agent on' : 'Connected · Agent off';
@@ -1419,6 +1494,7 @@
     if (theaterId && /^[a-zA-Z0-9_-]+$/.test(theaterId)) {
         document.getElementById('theater-id').textContent = theaterId;
         document.getElementById('theater-id').title = theaterId;
+        setTheaterKey(theaterKey);
         canvasLink.href = `/canvas?${new URLSearchParams({theater_id: theaterId})}`;
         canvasLink.hidden = false;
         void refresh(generation);

@@ -8,18 +8,18 @@
     <meta name="referrer" content="no-referrer">
     <title>Narratron Remote</title>
     <script src="/static/js/device-navigation.js"></script>
-    <link rel="icon" href="data:,">
+    <link rel="icon" type="image/png" href="/favicon.png">
     <link rel="stylesheet" href="/static/css/remote.css">
     <script src="/static/js/remote.js" defer></script>
 </head>
 <body>
 <main>
-    <header><a href="/" aria-label="Narratron home"><span class="brand-mark" aria-hidden="true">N</span>NARRATRON</a><span id="theater-id" aria-label="Theater ID"></span><a id="canvas-link" hidden>Open canvas ↗</a><span class="badge">REMOTE</span></header>
+    <header><a href="/" class="brand-link" aria-label="Narratron home"><img src="/static/narratron-avatar.png" alt="" class="brand-avatar brand-mark" aria-hidden="true"><span class="brand-text">Narratron Remote</span></a><div class="theater-meta"><span id="theater-id" aria-label="Theater ID"></span><span id="theater-key" aria-label="Theater Key" hidden></span></div><a id="canvas-link" hidden>Open canvas ↗</a></header>
     <nav class="remote-tabs" role="tablist" aria-label="Remote screens">
         <button id="assets-tab" role="tab" aria-controls="asset-manager" aria-selected="false" tabindex="-1" data-view="assets">Assets</button>
         <button id="inputs-tab" role="tab" aria-controls="remote-controls" aria-selected="true" data-view="inputs">Inputs</button>
         <button id="preview-tab" role="tab" aria-controls="canvas-preview" aria-selected="false" tabindex="-1" data-view="preview">Preview</button>
-        <button id="baton-tab" role="tab" aria-controls="remote-baton" aria-selected="false" tabindex="-1" data-view="baton">Baton</button>
+        <button id="party-tab" role="tab" aria-controls="remote-baton" aria-selected="false" tabindex="-1" data-view="party">Party</button>
     </nav>
     <div id="remote-views">
     <section id="asset-manager" role="tabpanel" aria-labelledby="assets-tab" tabindex="0" hidden>
@@ -104,8 +104,21 @@
             <p id="preview-placeholder">Waiting for the canvas…</p>
         </div>
     </section>
-    <section id="remote-baton" role="tabpanel" aria-labelledby="baton-tab" tabindex="0" hidden>
+    <section id="remote-baton" role="tabpanel" aria-labelledby="party-tab" tabindex="0" hidden>
         <div class="collab-panel">
+            <div class="collab-key-bar">
+                <div class="collab-key-info">
+                    <span class="collab-key-icon" aria-hidden="true">🔑</span>
+                    <div class="collab-key-details">
+                        <span class="collab-key-title">Theater Key</span>
+                        <code id="baton-theater-key" class="baton-key-display"></code>
+                    </div>
+                </div>
+                <button type="button" id="copy-theater-key-btn" class="copy-key-btn" aria-label="Copy theater key" title="Copy theater key">
+                    <svg viewBox="0 0 24 24" class="copy-icon" aria-hidden="true"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+                    <span class="copy-btn-text">Copy Key</span>
+                </button>
+            </div>
             <div class="collab-baton-header">
                 <div class="baton-status-info">
                     <span class="baton-badge-icon" aria-hidden="true">👑</span>
