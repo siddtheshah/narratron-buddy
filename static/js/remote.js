@@ -30,6 +30,7 @@
     let lastRefreshError = null;
     let assetSequence = 0;
     let assetsLoading = false;
+    let lastAssetsSignature = null;
     const theaterId = new URLSearchParams(location.search).get('theater_id');
     let theaterKey = new URLSearchParams(location.search).get('join_key') ||
                      new URLSearchParams(location.search).get('key') ||
@@ -428,20 +429,33 @@
         return card;
     }
 
-    async function loadAssets() {
+    async function loadAssets(force = false) {
+        if (assetsLoading && !force) return;
         const sequence = ++assetSequence;
-        scenesCarousel.replaceChildren();
-        musicCarousel.replaceChildren();
-        retryAssets.hidden = true;
+        const hasRenderedAssets = scenesCarousel.children.length > 0 || musicCarousel.children.length > 0;
+        if (!hasRenderedAssets || force) {
+            scenesCarousel.replaceChildren();
+            musicCarousel.replaceChildren();
+            retryAssets.hidden = true;
+            assetStatus.textContent = state ? 'Loading assets…' : 'Reconnect to browse assets.';
+        }
+        if (!state) {
+            assetsLoading = false;
+            return;
+        }
         assetsLoading = true;
-        assetStatus.textContent = state ? 'Loading assets…' : 'Reconnect to browse assets.';
-        if (!state) { assetsLoading = false; return; }
         try {
             const [scenes, playlists] = await Promise.all([
                 request(`${basePath()}/scenes`),
                 request(`${basePath()}/playlists`),
             ]);
             if (sequence !== assetSequence || !state) return;
+
+            const signature = JSON.stringify({scenes, playlists});
+            if (!force && hasRenderedAssets && signature === lastAssetsSignature) {
+                return;
+            }
+            lastAssetsSignature = signature;
 
             const musicEntries = (playlists || []).flatMap(group => [
                 {...group, isGroup: true},
@@ -456,38 +470,45 @@
                 assetStatus.textContent = '';
             }
 
+            const sceneNodes = [];
             if (scenes.length) {
                 for (const scene of scenes) {
-                    scenesCarousel.append(createAssetCard(scene, 'scene'));
+                    sceneNodes.push(createAssetCard(scene, 'scene'));
                 }
             } else {
                 const empty = document.createElement('div');
                 empty.className = 'asset-empty';
                 empty.textContent = 'No scenes available.';
-                scenesCarousel.append(empty);
+                sceneNodes.push(empty);
             }
 
+            const musicNodes = [];
             if (musicEntries.length) {
                 for (const music of musicEntries) {
-                    musicCarousel.append(createAssetCard(music, 'music'));
+                    musicNodes.push(createAssetCard(music, 'music'));
                 }
             } else {
                 const empty = document.createElement('div');
                 empty.className = 'asset-empty';
                 empty.textContent = 'No music available.';
-                musicCarousel.append(empty);
+                musicNodes.push(empty);
             }
+
+            scenesCarousel.replaceChildren(...sceneNodes);
+            musicCarousel.replaceChildren(...musicNodes);
         } catch (error) {
             if (sequence !== assetSequence) return;
-            assetStatus.textContent = error.message;
-            retryAssets.hidden = false;
+            if (!hasRenderedAssets || force) {
+                assetStatus.textContent = error.message;
+                retryAssets.hidden = false;
+            }
             showToast(error.message, 'error');
         } finally {
             if (sequence === assetSequence) assetsLoading = false;
         }
     }
 
-    retryAssets.addEventListener('click', () => { void loadAssets(); });
+    retryAssets.addEventListener('click', () => { void loadAssets(true); });
 
     function renderPreview() {
         previewImage.hidden = !state || !previewLoaded;
@@ -584,6 +605,7 @@
         if (!state) {
             assetSequence += 1;
             assetsLoading = false;
+            lastAssetsSignature = null;
             scenesCarousel.replaceChildren();
             musicCarousel.replaceChildren();
             assetStatus.textContent = 'Reconnect to browse assets.';

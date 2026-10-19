@@ -543,6 +543,31 @@ def test_asset_carousels_load_and_push_scenes_and_music(remote_page: Page) -> No
     expect(page.get_by_role('tab', name='Assets')).to_have_attribute('aria-selected', 'true')
 
 
+def test_asset_carousels_do_not_flicker_during_polling(remote_page: Page) -> None:
+    page = remote_page
+    page.route('**/api/theaters/stage/scenes', lambda route: route.fulfill(json=[
+        {'id': 'forest', 'name': 'Forest', 'description': 'A misty wood', 'url': '/forest.svg'},
+    ]))
+    page.route('**/forest.svg', lambda route: route.fulfill(
+        body='<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360"/>', content_type='image/svg+xml'))
+    page.route('**/api/theaters/stage/playlists', lambda route: route.fulfill(json=[
+        {'id': 'playlist:rain', 'name': 'Rain', 'tracks': []},
+    ]))
+    page.get_by_role('tab', name='Assets').click()
+    forest_card = page.locator('.asset-card').filter(has=page.get_by_role('heading', name='Forest', exact=True))
+    expect(forest_card).to_be_visible()
+
+    # Mark the DOM node to verify it is preserved across polling intervals without being destroyed
+    page.evaluate("() => { document.querySelector('.asset-card').setAttribute('data-preserved-marker', 'active'); }")
+
+    # Wait for the 2-second background status and asset poll to cycle
+    page.wait_for_timeout(2500)
+
+    # Ensure the same DOM card is retained without flickering or recreating
+    expect(page.locator('.asset-card[data-preserved-marker="active"]')).to_be_visible()
+    expect(page.locator('#asset-status')).not_to_have_text('Loading assets…')
+
+
 def test_asset_loading_failure_can_be_retried(remote_page: Page) -> None:
     page = remote_page
     page.route('**/api/theaters/stage/scenes', lambda route: route.fulfill(status=503, json={'detail': 'Try again later.'}))
