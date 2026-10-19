@@ -5,7 +5,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 import pytest
-from playwright.sync_api import Page, Route, sync_playwright
+from playwright.sync_api import Page, Route, expect, sync_playwright
 
 
 @pytest.fixture
@@ -62,6 +62,167 @@ def test_remote_disables_controls_when_access_is_revoked(remote_page: Page) -> N
     page.reload()
     page.get_by_text("Only the active orator can use this remote.").wait_for()
     assert page.get_by_role("button", name="New image").is_disabled()
+
+
+def test_preview_tracks_scene_changes_without_reloading_unchanged_images(remote_page: Page) -> None:
+    page = remote_page
+    scene = "first"
+    images: list[str] = []
+
+    def status(route: Route) -> None:
+        route.fulfill(json={"agent_running": True, "pinned": False, "music_pinned": False,
+                            "viewer_collab_enabled": False, "preview_url": f"/scenes/{scene}.svg"})
+
+    def image(route: Route) -> None:
+        images.append(route.request.url)
+        route.fulfill(body='<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360"><rect width="640" height="360" fill="navy"/></svg>',
+                      content_type="image/svg+xml")
+
+    page.route("**/api/theaters/stage/remote", status)
+    page.route("**/scenes/*", image)
+    page.reload()
+    assert images == []
+    page.get_by_role("button", name="Preview canvas", exact=True).click()
+    page.get_by_text("Current scene", exact=True).wait_for()
+    assert page.locator("#preview-image").is_visible()
+    page.get_by_role("button", name="Back to controls", exact=True).click()
+    page.get_by_role("button", name="Pin scene", exact=True).click()
+    page.wait_for_function("!document.getElementById('controls').disabled")
+    assert len(images) == 1
+    scene = "second"
+    page.get_by_role("button", name="Next scene", exact=True).click()
+    page.wait_for_function("!document.getElementById('controls').disabled")
+    page.get_by_role("button", name="Preview canvas", exact=True).click()
+    page.wait_for_function("document.getElementById('preview-image').getAttribute('src') === '/scenes/second.svg' && !document.getElementById('preview-image').hidden")
+    assert len(images) == 2
+    assert page.locator("#preview-image").evaluate("image => getComputedStyle(image).objectFit") == "contain"
+
+    def revoked(route: Route) -> None:
+        route.fulfill(status=403, json={"detail": "Only the active orator can use this remote."})
+
+    page.route("**/api/theaters/stage/remote", revoked)
+    page.get_by_role("button", name="Back to controls", exact=True).click()
+    page.get_by_role("button", name="Next scene", exact=True).click()
+    page.wait_for_function("document.getElementById('controls').disabled && document.getElementById('connection-status').dataset.connected === 'false'")
+    page.get_by_role("button", name="Preview canvas", exact=True).click()
+    page.get_by_text("Reconnect to see the canvas.").wait_for()
+    assert page.locator("#preview-image").is_hidden()
+    assert page.locator("#preview-image").get_attribute("src") is None
+
+
+def test_preview_empty_state_keeps_controls_available(remote_page: Page) -> None:
+    page = remote_page
+    page.get_by_role("button", name="Preview canvas", exact=True).click()
+    page.get_by_text("No scene on the canvas yet.").wait_for()
+    assert page.locator("#preview-image").is_hidden()
+    page.get_by_role("button", name="Back to controls", exact=True).click()
+    assert page.get_by_role("button", name="Next scene", exact=True).is_enabled()
+
+
+@pytest.mark.parametrize("width", [320, 390, 700])
+def test_preview_is_a_separate_view_with_back_navigation(remote_page: Page, width: int) -> None:
+    page = remote_page
+    page.set_viewport_size({"width": width, "height": 568})
+    page.locator("#command").fill("Keep my direction draft")
+    page.get_by_role("button", name="Preview canvas", exact=True).click()
+    page.wait_for_url("**#preview")
+    expect(page.locator("#remote-controls")).to_be_hidden()
+    expect(page.locator("#canvas-preview")).to_be_visible()
+    assert page.locator("#close-preview").evaluate("button => button === document.activeElement")
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+    page.go_back()
+    expect(page.locator("#canvas-preview")).to_be_hidden()
+    assert page.locator("#command").input_value() == "Keep my direction draft"
+    assert page.locator("#open-preview").evaluate("button => button === document.activeElement")
+    page.go_forward()
+    expect(page.locator("#canvas-preview")).to_be_visible()
+    page.reload()
+    expect(page.locator("#canvas-preview")).to_be_visible()
+    page.get_by_role("button", name="Back to controls", exact=True).click()
+    expect(page.locator("#remote-controls")).to_be_visible()
+    assert page.url == "http://remote.test/remote?theater_id=stage"
+
+
+def swipe_preview(page: Page, dx: int, dy: int, cancel: bool = False) -> None:
+    frame = page.locator('.preview-frame').bounding_box()
+    assert frame is not None
+    x = frame['x'] + frame['width'] / 2
+    y = frame['y'] + frame['height'] / 2
+    session = page.context.new_cdp_session(page)
+    session.send('Input.dispatchTouchEvent', {
+        'type': 'touchStart', 'touchPoints': [{'x': x, 'y': y}],
+    })
+    session.send('Input.dispatchTouchEvent', {
+        'type': 'touchMove', 'touchPoints': [{'x': x + dx, 'y': y + dy}],
+    })
+    session.send('Input.dispatchTouchEvent', {
+        'type': 'touchCancel' if cancel else 'touchEnd', 'touchPoints': [],
+    })
+    session.detach()
+
+
+@pytest.mark.parametrize('direct_link', [False, True])
+def test_swipe_down_dismisses_preview(remote_page: Page, direct_link: bool) -> None:
+    page = remote_page
+    if direct_link:
+        page.goto('http://remote.test/remote?theater_id=stage#preview')
+    else:
+        page.locator('#command').fill('Keep my draft')
+        page.get_by_role('button', name='Preview canvas', exact=True).click()
+    expect(page.locator('#canvas-preview')).to_be_visible()
+    swipe_preview(page, dx=10, dy=140)
+    expect(page.locator('#canvas-preview')).to_be_hidden()
+    expect(page.locator('#remote-controls')).to_be_visible()
+    assert page.url == 'http://remote.test/remote?theater_id=stage'
+    assert page.locator('#open-preview').evaluate('button => button === document.activeElement')
+    if not direct_link:
+        assert page.locator('#command').input_value() == 'Keep my draft'
+
+
+@pytest.mark.parametrize('dx,dy,cancel', [
+    (0, 30, False), (0, -140, False), (140, 10, False), (100, 100, False), (0, 140, True),
+])
+def test_preview_ignores_other_or_cancelled_gestures(
+    remote_page: Page, dx: int, dy: int, cancel: bool,
+) -> None:
+    page = remote_page
+    page.get_by_role('button', name='Preview canvas', exact=True).click()
+    expect(page.locator('#canvas-preview')).to_be_visible()
+    swipe_preview(page, dx, dy, cancel)
+    assert page.url.endswith('#preview')
+    expect(page.locator('#canvas-preview')).to_be_visible()
+    swipe_preview(page, 0, 140)
+    expect(page.locator('#canvas-preview')).to_be_hidden()
+
+
+def test_preview_retries_failed_image_without_disabling_controls(remote_page: Page) -> None:
+    page = remote_page
+    failed = True
+
+    def status(route: Route) -> None:
+        route.fulfill(json={"agent_running": True, "pinned": False, "music_pinned": False,
+                            "viewer_collab_enabled": False, "preview_url": "/scene.svg"})
+
+    def image(route: Route) -> None:
+        if failed:
+            route.fulfill(status=404, body="Missing")
+        else:
+            route.fulfill(body='<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360"/>',
+                          content_type="image/svg+xml")
+
+    page.route("**/api/theaters/stage/remote", status)
+    page.route("**/scene.svg", image)
+    page.reload()
+    page.get_by_role("button", name="Preview canvas", exact=True).click()
+    page.get_by_text("Scene could not load. Retrying…").wait_for()
+    page.get_by_role("button", name="Back to controls", exact=True).click()
+    assert page.get_by_role("button", name="Next scene", exact=True).is_enabled()
+    failed = False
+    page.get_by_role("button", name="Next scene", exact=True).click()
+    page.wait_for_function("!document.getElementById('controls').disabled")
+    page.get_by_role("button", name="Preview canvas", exact=True).click()
+    page.get_by_text("Current scene", exact=True).wait_for()
+    assert page.locator("#preview-image").is_visible()
 
 
 def test_failed_instruction_preserves_draft(remote_page: Page) -> None:
@@ -193,6 +354,8 @@ def test_remote_bars_fit_on_one_line(remote_page: Page, width: int) -> None:
             bounds[0].top - bounds[0].height / 2) < 1) && bar.scrollWidth <= bar.clientWidth;
     })""")
     assert page.locator("#controls").bounding_box()["height"] < 400
+    assert page.locator("#canvas-preview").is_hidden()
+    assert page.locator("#open-preview").bounding_box()["y"] >= page.locator("#controls").bounding_box()["y"] + page.locator("#controls").bounding_box()["height"]
     assert page.locator("main").bounding_box()["height"] < 568
     assert page.locator(".desk-heading").count() == 0
     assert page.locator('[aria-labelledby="agent-title"] #connection-status').count() == 1

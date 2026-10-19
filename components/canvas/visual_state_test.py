@@ -781,6 +781,19 @@ def test_serialize_and_load_roundtrip() -> None:
 # 7. payload Generation
 # ---------------------------------------------------------------------------
 
+
+def test_preview_matches_canvas_image_with_fallback_and_explicit_scene(tmp_path: Path) -> None:
+    theater = TheaterManager(tmp_path).theater("preview")
+    state = VisualState(theater)
+    assert state.preview_image_url() is None
+    reference = theater.references_dir() / "harbor.webp"
+    reference.parent.mkdir(parents=True, exist_ok=True)
+    Image.new("RGB", (32, 24), "blue").save(reference)
+    assert state.preview_image_url() == state.payload()["latest"]
+    assert state.preview_image_url() == theater.get_url_for_path(str(reference))
+    state.shown_image_path = "https://example.test/storm.webp"
+    assert state.preview_image_url() == "https://example.test/storm.webp"
+
 def test_payload_empty_state() -> None:
     theater = Mock(spec=Theater)
     theater.theater_id = "th_1"

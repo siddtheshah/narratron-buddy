@@ -15,6 +15,7 @@
 <body>
 <main>
     <header><a href="/" aria-label="Narratron home"><span class="brand-mark" aria-hidden="true">N</span>NARRATRON</a><span id="theater-id" aria-label="Theater ID"></span><a id="canvas-link" hidden>Open canvas ↗</a><span class="badge">REMOTE</span></header>
+    <div id="remote-controls">
     <fieldset id="controls" disabled>
         <legend class="sr-only">Theater controls</legend>
         <section class="bar" aria-labelledby="agent-title">
@@ -51,6 +52,15 @@
             <button class="primary" type="submit" data-live aria-label="Send instruction">Send</button>
         </form>
     </fieldset>
+    <button id="open-preview" type="button" aria-controls="canvas-preview">Preview canvas</button>
+    </div>
+    <section id="canvas-preview" aria-labelledby="preview-title" hidden>
+        <div class="preview-heading"><button id="close-preview" type="button" aria-label="Back to controls">←</button><h2 id="preview-title">Canvas preview</h2><span id="preview-status" role="status">Connecting…</span></div>
+        <div class="preview-frame">
+            <img id="preview-image" alt="Current canvas scene" hidden decoding="async" referrerpolicy="no-referrer">
+            <p id="preview-placeholder">Waiting for the canvas…</p>
+        </div>
+    </section>
     <p id="feedback" class="sr-only" role="status" aria-live="polite"></p>
 </main>
 </body>

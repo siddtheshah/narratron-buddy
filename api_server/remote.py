@@ -22,6 +22,7 @@ class RemoteStatus(BaseModel):
     pinned: bool
     music_pinned: bool
     viewer_collab_enabled: bool
+    preview_url: str | None = None
 
 
 @app.get("/remote", response_class=HTMLResponse)
@@ -64,4 +65,5 @@ def get_remote_status(theater_id: str, request: Request, response: Response) -> 
         pinned=state.visual.pinned,
         music_pinned=state.audio.pinned,
         viewer_collab_enabled=state.ui.viewer_collab_enabled,
+        preview_url=state.visual.preview_image_url(),
     )

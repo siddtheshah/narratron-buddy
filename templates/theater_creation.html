@@ -455,9 +455,21 @@
         }
 
         .theater-action-icon.remote-launch, .mobile-canvas-note { display: none; }
-        html.mobile-device .canvas-launch { display: none; }
+        html.mobile-device .canvas-launch,
+        html.mobile-device .export-theater-btn,
+        html.mobile-device .builder-launch,
+        html.mobile-device .destroy-theater-btn { display: none; }
         html.mobile-device .remote-launch { display: inline-flex; }
         html.mobile-device .mobile-canvas-note { display: block; }
+
+        @media (max-width: 700px) {
+            .canvas-launch,
+            .export-theater-btn,
+            .builder-launch,
+            .destroy-theater-btn {
+                display: none !important;
+            }
+        }
 
         /* Theater Creation Path Cards */
         .creation-paths-container {
@@ -2205,10 +2217,10 @@
 
                     let actionsHtml = `<button class="btn-sm btn-success theater-action-icon canvas-launch" title="Launch Canvas" aria-label="Launch Canvas" onclick="openCanvas('${s.theater_id}', ${s.is_owner ? 'true' : 'false'}, '${s.join_key || ''}')"><span aria-hidden="true">▶</span></button>`;
                     actionsHtml += ` <a href="/remote?theater_id=${encodeURIComponent(s.theater_id)}" class="btn-sm btn-success theater-action-icon remote-launch" title="Open remote" aria-label="Open remote"><span aria-hidden="true">📱</span><span>Open remote</span></a>`;
-                    actionsHtml += ` <a href="/api/theaters/${s.theater_id}/export-assets" class="btn-sm btn-secondary theater-action-icon" title="Export Assets" aria-label="Export Assets" download><span aria-hidden="true">📦</span></a>`;
+                    actionsHtml += ` <a href="/api/theaters/${s.theater_id}/export-assets" class="btn-sm btn-secondary theater-action-icon export-theater-btn" title="Export Assets" aria-label="Export Assets" download><span aria-hidden="true">📦</span></a>`;
                     if (s.is_owner) {
-                        actionsHtml += ` <a href="/theater-editor?theater_id=${encodeURIComponent(s.theater_id)}" class="btn-sm btn-secondary theater-action-icon" title="Edit in Builder" aria-label="Edit in Builder"><span aria-hidden="true">✦</span></a>`;
-                        actionsHtml += ` <button class="btn-sm btn-danger" onclick="destroyTheater('${s.theater_id}')">Destroy</button>`;
+                        actionsHtml += ` <a href="/theater-editor?theater_id=${encodeURIComponent(s.theater_id)}" class="btn-sm btn-secondary theater-action-icon builder-launch" title="Edit in Builder" aria-label="Edit in Builder"><span aria-hidden="true">✦</span></a>`;
+                        actionsHtml += ` <button class="btn-sm btn-danger destroy-theater-btn" onclick="destroyTheater('${s.theater_id}')">Destroy</button>`;
                     }
 
                     const safeName = escapeHtml(s.name);

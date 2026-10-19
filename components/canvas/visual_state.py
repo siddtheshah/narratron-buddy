@@ -1079,6 +1079,11 @@ class VisualState:
                 "shown_video_animation": self.shown_video_animation, "pinned": self.pinned,
                 "orator_cursor": self.orator_cursor}
 
+    def preview_image_url(self) -> str | None:
+        """Resolve the canvas still image without serializing its full history."""
+        image_url, _, _, _ = self._resolve_active_image()
+        return image_url
+
     def payload(self) -> dict[str, object]:
         th = self.theater
         image_url, selected_file, selected_time, prompt_text = self._resolve_active_image(th)

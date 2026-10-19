@@ -16,6 +16,7 @@ def remote_services() -> Iterator[tuple[TestClient, MagicMock, MagicMock]]:
     state.visual.pinned = True
     state.audio.pinned = False
     state.ui.viewer_collab_enabled = True
+    state.visual.preview_image_url.return_value = "/theaters/stage/output/scene.webp"
     manager = MagicMock()
     manager.get_session.return_value = None
     with patch.object(remote, "_require_canvas_access", return_value=deployment), \
@@ -74,6 +75,7 @@ def test_remote_returns_state_for_active_orator(
     assert response.json() == {
         "theater_id": "stage", "agent_running": False, "pinned": True,
         "music_pinned": False, "viewer_collab_enabled": True,
+        "preview_url": "/theaters/stage/output/scene.webp",
     }
     manager.get_session.return_value = MagicMock(is_alive=True)
     assert client.get("/api/theaters/stage/remote").json()["agent_running"] is True
@@ -96,3 +98,13 @@ def test_remote_requires_login(
     current_user.return_value = None
     assert client.get("/api/theaters/stage/remote").status_code == 401
     manager.get_session.assert_not_called()
+
+
+def test_remote_returns_empty_preview_when_canvas_has_no_scene(
+    remote_services: tuple[TestClient, MagicMock, MagicMock],
+) -> None:
+    client, _, _ = remote_services
+    with patch.object(remote.canvas_states.get("stage").visual, "preview_image_url", return_value=None):
+        response = client.get("/api/theaters/stage/remote")
+    assert response.status_code == 200
+    assert response.json()["preview_url"] is None
