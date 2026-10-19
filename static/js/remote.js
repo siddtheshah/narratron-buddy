@@ -119,7 +119,9 @@
         ]) {
             const button = document.getElementById(id);
             button.setAttribute('aria-pressed', String(Boolean(pinned)));
-            button.textContent = `${pinned ? 'Unpin' : 'Pin'} ${label}`;
+            const pinLabel = `${pinned ? 'Unpin' : 'Pin'} ${label}`;
+            button.setAttribute('aria-label', pinLabel);
+            button.title = pinLabel;
         }
         const collaboration = document.getElementById('collaboration');
         collaboration.setAttribute('aria-pressed', String(Boolean(state?.viewer_collab_enabled)));

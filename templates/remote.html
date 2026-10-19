@@ -20,31 +20,31 @@
         <legend class="sr-only">Theater controls</legend>
         <section class="bar" aria-labelledby="agent-title">
             <h2 id="agent-title">Agent</h2>
-            <span id="connection-status" class="bar-status" role="status">Connecting…</span>
+            <span id="connection-status" class="sr-only" role="status">Connecting…</span>
             <button id="agent-toggle" class="power-button" aria-pressed="false" aria-label="Turn agent on" title="Turn agent on"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v9M6.3 5.8a9 9 0 1 0 11.4 0"/></svg></button>
+        </section>
+        <section class="bar" aria-labelledby="audience-title">
+            <h2 id="audience-title">Collab</h2>
+            <span id="collaboration-status" class="sr-only" role="status">Collaboration off</span>
+            <button id="collaboration" class="power-button" aria-pressed="false" aria-label="Turn collaboration on" title="Turn collaboration on"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v9M6.3 5.8a9 9 0 1 0 11.4 0"/></svg></button>
         </section>
         <section class="bar" aria-labelledby="scene-title">
             <h2 id="scene-title">Scene</h2>
             <button data-action="previous_image" aria-label="Previous scene">←</button>
-            <button data-action="toggle_canvas_pin" aria-pressed="false" id="scene-pin">Pin scene</button>
+            <button data-action="toggle_canvas_pin" class="pin-button" aria-pressed="false" aria-label="Pin scene" title="Pin scene" id="scene-pin"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3h6l-1 6 4 4v2H6v-2l4-4-1-6ZM12 15v6"/></svg></button>
             <button data-action="next_image" aria-label="Next scene">→</button>
-            <button class="primary" data-action="new_image" data-live>New image</button>
+            <button class="primary generate-button" data-action="new_image" data-live aria-label="New image" title="New image"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m13 3 2.5 6.5L22 12l-6.5 2.5L13 21l-2.5-6.5L4 12l6.5-2.5L13 3ZM4 2v5M1.5 4.5h5M4 18v4M2 20h4"/></svg></button>
         </section>
         <section class="bar" aria-labelledby="music-title">
             <h2 id="music-title">Music</h2>
             <button data-action="previous_music" aria-label="Previous track">←</button>
-            <button data-action="toggle_music_pin" aria-pressed="false" id="music-pin">Pin music</button>
+            <button data-action="toggle_music_pin" class="pin-button" aria-pressed="false" aria-label="Pin music" title="Pin music" id="music-pin"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3h6l-1 6 4 4v2H6v-2l4-4-1-6ZM12 15v6"/></svg></button>
             <button data-action="next_music" aria-label="Next track">→</button>
-            <button class="primary" data-action="new_music" data-live>New music</button>
+            <button class="primary generate-button" data-action="new_music" data-live aria-label="New music" title="New music"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m13 3 2.5 6.5L22 12l-6.5 2.5L13 21l-2.5-6.5L4 12l6.5-2.5L13 3ZM4 2v5M1.5 4.5h5M4 18v4M2 20h4"/></svg></button>
         </section>
         <section class="bar" aria-labelledby="direction-title">
             <h2 id="direction-title">Direction</h2>
             <button data-action="update_story" data-live>Update story</button>
-        </section>
-        <section class="bar" aria-labelledby="audience-title">
-            <h2 id="audience-title">Audience</h2>
-            <span id="collaboration-status" class="bar-status" role="status">Collaboration off</span>
-            <button id="collaboration" class="power-button" aria-pressed="false" aria-label="Turn collaboration on" title="Turn collaboration on"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v9M6.3 5.8a9 9 0 1 0 11.4 0"/></svg></button>
         </section>
         <form id="command-form" class="bar">
             <label for="command" class="sr-only">Tell Narratron what happens next</label>

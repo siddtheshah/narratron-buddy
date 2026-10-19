@@ -31,11 +31,11 @@ fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
 .bar[aria-labelledby="music-title"] { --bar-accent: #8ebdcb; }
 .bar[aria-labelledby="direction-title"] { --bar-accent: #edc68c; }
 .bar[aria-labelledby="audience-title"] { --bar-accent: #93c9b0; }
-h2 { flex: 0 0 58px; margin: 0; padding-left: 3px; color: var(--bar-accent); font-size: 11px; font-weight: 600; letter-spacing: -.02em; }
+h2 { flex: 0 0 76px; margin: 0; padding-left: 3px; color: var(--bar-accent); font-size: 14px; font-weight: 600; letter-spacing: -.02em; }
 input, button { font: inherit; border-radius: 6px; border: 1px solid #ffffff10; }
-input { background: #10151f; color: #e9edf5; padding: 8px 10px; width: 100%; min-width: 0; font-size: 13px; box-shadow: inset 0 1px 3px #00000020; }
+input { background: #10151f; color: #e9edf5; padding: 8px 10px; width: 100%; min-width: 0; font-size: 16px; box-shadow: inset 0 1px 3px #00000020; }
 input::placeholder { color: #818da1; }
-button { position: relative; flex: 1; white-space: nowrap; background: linear-gradient(#ffffff06, #ffffff02); color: #c8d1e0; padding: 8px 6px; min-height: 36px; cursor: pointer; touch-action: manipulation; font-size: 12px; font-weight: 600; box-shadow: 0 1px 2px #00000018; transition: background .16s, border-color .16s, color .16s, box-shadow .16s; }
+button { position: relative; flex: 1; white-space: nowrap; background: linear-gradient(#ffffff06, #ffffff02); color: #c8d1e0; padding: 8px 6px; min-height: 36px; cursor: pointer; touch-action: manipulation; font-size: 14px; font-weight: 600; box-shadow: 0 1px 2px #00000018; transition: background .16s, border-color .16s, color .16s, box-shadow .16s; }
 button:hover:enabled { background: #ffffff0c; border-color: #ffffff30; color: #fff; }
 button:active:enabled { background: #ffffff15; box-shadow: inset 0 1px 3px #00000030; }
 button:disabled { opacity: .38; cursor: default; box-shadow: none; }
@@ -44,12 +44,17 @@ button.primary { background: #edc68c12; border-color: #edc68c30; color: #edc68c;
 .bar[aria-labelledby="music-title"] .primary { color: #a8d0db; background: #8ebdcb12; border-color: #8ebdcb30; }
 button.primary:hover:enabled { background: #edc68c22; border-color: #edc68c66; color: #ffe0b4; }
 button[aria-pressed="true"] { border-color: #93c9b045; color: #aedcc6; background: #93c9b012; }
-.power-button { flex: 0 0 60px; height: 52px; display: grid; place-items: center; padding: 10px; color: #aedcc6; border-color: #93c9b045; background: #93c9b012; }
+.power-button { flex: 1; height: 52px; display: grid; place-items: center; padding: 10px; color: #aedcc6; border-color: #93c9b045; background: #93c9b012; }
 .power-button svg { width: 30px; height: 30px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; }
 .power-button[aria-pressed="true"] { color: #efb0a6; border-color: #e58e7d55; background: #e58e7d14; }
 .power-button:hover:enabled { color: #d0f6e3; border-color: #93c9b080; background: #93c9b024; }
 .power-button[aria-pressed="true"]:hover:enabled { color: #ffd1c9; border-color: #e58e7d90; background: #e58e7d28; }
-button[data-action="previous_image"], button[data-action="next_image"], button[data-action="previous_music"], button[data-action="next_music"] { flex: 0 0 28px; color: #93a1b6; font-size: 15px; }
+button[data-action="previous_image"], button[data-action="next_image"], button[data-action="previous_music"], button[data-action="next_music"] { flex: 0 0 48px; min-height: 40px; color: #93a1b6; font-size: 18px; }
+.pin-button { flex: 0 0 40px; min-height: 40px; display: grid; place-items: center; }
+.pin-button svg { width: 20px; height: 20px; fill: none; color: #ef8e86; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; transform: rotate(35deg); }
+.pin-button[aria-pressed="true"] svg { transform: none; }
+.generate-button { display: grid; place-items: center; }
+.generate-button svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 #command-form { margin-top: 12px; background: #10151f80; border-color: #edc68c24; }
 #command-form input { border-color: transparent; background: transparent; box-shadow: none; }
@@ -75,5 +80,5 @@ button[data-error] { border-color: #edb0a8; }
 #preview-image[hidden], #preview-placeholder[hidden] { display: none; }
 html.mobile-device #canvas-link { display: none; }
 @media (min-width: 600px) { main { padding-top: 40px; } h2 { flex-basis: 84px; padding-left: 7px; } .bar { gap: 8px; } }
-@media (max-width: 360px) { main { padding-inline: 6px; } .bar { gap: 4px; padding: 4px; } h2 { flex-basis: 52px; font-size: 11px; } button { font-size: 11px; padding-inline: 4px; } }
+@media (max-width: 360px) { main { padding-inline: 6px; } .bar { gap: 4px; padding: 4px; } h2 { flex-basis: 64px; font-size: 13px; } button { font-size: 13px; padding-inline: 4px; } }
 @media (prefers-reduced-motion: reduce) { button { transition: none; } button[aria-busy="true"]::before { animation: none; background: var(--bar-accent, #edc68c); } }
