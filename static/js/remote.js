@@ -593,7 +593,7 @@
             });
         }
         const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const wsUrl = `${wsProtocol}//${location.host}/ws/remote/${encodeURIComponent(theaterId)}`;
+        const wsUrl = `${wsProtocol}//${location.host}/ws/${encodeURIComponent(theaterId)}/agent`;
         const socket = new WebSocket(wsUrl);
         agentWs = socket;
         window.agentWs = socket;

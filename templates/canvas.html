@@ -8750,7 +8750,7 @@
             }
 
             const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            const agentWsUrl = `${wsProtocol}//${window.location.host}/ws/${myUserId}/${theaterId}`;
+            const agentWsUrl = `${wsProtocol}//${window.location.host}/ws/${encodeURIComponent(theaterId)}/agent`;
 
             agentWs = new WebSocket(agentWsUrl);
             window.agentWs = agentWs; // Expose globally for testing/automation

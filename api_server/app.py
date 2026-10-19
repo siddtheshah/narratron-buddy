@@ -1,6 +1,5 @@
 """FastAPI application combining Narratron Web Viewer and Bidi Agent WebSocket."""
 
-from typing import Optional
 import logging
 from pathlib import Path
 import sys
@@ -267,21 +266,13 @@ async def generic_websocket_fallback(websocket: WebSocket) -> None:
 
 
 @app.websocket("/ws/{theater_id}/agent")
-@app.websocket("/ws/{user_id}/{theater_id}")
 async def agent_websocket_endpoint(
     websocket: WebSocket,
     theater_id: str,
-    user_id: Optional[str] = None,
 ) -> None:
     """WebSocket endpoint for bidirectional streaming with ADK.
     Retrieves or creates the in-memory LiveAgentSession instance for stream handling.
     """
-    # ``user_id`` remains in the legacy URL for client compatibility, but it
-    # must never establish identity.  Agent control follows the authenticated
-    # holder of the theater baton.
-    if theater_id == "agent" and user_id:
-        theater_id = user_id
-
     current_user = await get_current_user_async(websocket)
 
     deployment = db.get_deployment(theater_id)
