@@ -4,6 +4,13 @@
     const status = document.getElementById('connection-status');
     const feedback = document.getElementById('feedback');
     const command = document.getElementById('command');
+    const commandForm = document.getElementById('command-form');
+    const micBtn = document.getElementById('mic-btn');
+    const keyboardBtn = document.getElementById('keyboard-btn');
+    const commandModal = document.getElementById('command-modal');
+    const commandModalClose = document.getElementById('command-modal-close');
+    const commandCancelBtn = document.getElementById('command-cancel-btn');
+    const commandModalBackdrop = document.getElementById('command-modal-backdrop');
     const canvasLink = document.getElementById('canvas-link');
     const previewImage = document.getElementById('preview-image');
     const previewStatus = document.getElementById('preview-status');
@@ -324,8 +331,14 @@
     }
 
     document.addEventListener('keydown', event => {
-        if (event.key === 'Escape' && toast && !toast.hidden && toast.classList.contains('show')) {
-            dismissToast();
+        if (event.key === 'Escape') {
+            if (toast && !toast.hidden && toast.classList.contains('show')) {
+                dismissToast();
+                return;
+            }
+            if (commandModal && !commandModal.hidden) {
+                closeCommandModal();
+            }
         }
     });
 
@@ -350,6 +363,10 @@
             button.disabled = !state?.agent_running;
         });
         command.disabled = !state?.agent_running;
+        if (!state?.agent_running) {
+            if (micTransmitting) void stopMicrophone('agent_stopped');
+            if (commandModal && !commandModal.hidden) closeCommandModal();
+        }
         for (const [id, pinned, label] of [
             ['scene-pin', state?.pinned, 'scene'],
             ['music-pin', state?.music_pinned, 'music'],
@@ -448,7 +465,8 @@
             const detail = error.name === 'TypeError' || error.name === 'TimeoutError'
                 ? 'Delivery could not be confirmed. Check the canvas before trying again.' : error.message;
             button.dataset.error = detail;
-            button.closest('.bar, .asset-card').dataset.error = detail;
+            const parent = button.closest('.bar, .asset-card, .command-modal-dialog');
+            if (parent) parent.dataset.error = detail;
             button.setAttribute('aria-describedby', 'feedback');
             message('', true);
             if (button.closest('.asset-card')) assetStatus.textContent = detail;
@@ -475,6 +493,29 @@
     document.getElementById('collaboration').addEventListener('click', event => {
         void send(event.currentTarget, `${basePath()}/collab`, {enabled: !state?.viewer_collab_enabled});
     });
+    function openCommandModal() {
+        if (!state?.agent_running) {
+            showToast('Turn the agent on first.', 'error');
+            return;
+        }
+        if (!commandModal) return;
+        commandModal.hidden = false;
+        keyboardBtn?.setAttribute('aria-expanded', 'true');
+        command?.focus();
+    }
+
+    function closeCommandModal() {
+        if (!commandModal || commandModal.hidden) return;
+        commandModal.hidden = true;
+        keyboardBtn?.setAttribute('aria-expanded', 'false');
+        keyboardBtn?.focus();
+    }
+
+    keyboardBtn?.addEventListener('click', openCommandModal);
+    commandModalClose?.addEventListener('click', closeCommandModal);
+    commandCancelBtn?.addEventListener('click', closeCommandModal);
+    commandModalBackdrop?.addEventListener('click', closeCommandModal);
+
     document.getElementById('command-form').addEventListener('submit', event => {
         event.preventDefault();
         const text = command.value.trim();
@@ -485,11 +526,385 @@
         }
         void send(event.currentTarget.querySelector('button[type="submit"]'), `/api/orator/command?${new URLSearchParams({theater_id: theaterId})}`, {text}, () => {
             if (command.value.trim() === text) command.value = '';
+            closeCommandModal();
         });
     });
+
+    let micTransmitting = false;
+    let micStarting = false;
+    let micPointerDownTime = 0;
+    let micHolding = false;
+    let agentWs = null;
+    let micStream = null;
+    let micAudioContext = null;
+    let micWorkletNode = null;
+    let micEncoder = null;
+    let micTimestampUs = 0;
+    let agentPingTimer = null;
+
+    function updateMicUI() {
+        if (!micBtn) return;
+        const active = micTransmitting;
+        micBtn.setAttribute('aria-pressed', String(active));
+        micBtn.classList.toggle('transmitting', active);
+        const textSpan = micBtn.querySelector('.btn-text');
+        if (textSpan) {
+            textSpan.textContent = active ? 'Listening…' : 'Microphone';
+        }
+        const label = active ? 'Stop microphone' : 'Microphone';
+        micBtn.setAttribute('aria-label', label);
+        micBtn.title = active ? 'Stop transmitting audio' : 'Transmit audio to Narratron';
+    }
+
+    function startAgentPing() {
+        stopAgentPing();
+        agentPingTimer = setInterval(() => {
+            if (agentWs && agentWs.readyState === WebSocket.OPEN) {
+                try {
+                    agentWs.send(JSON.stringify({ type: 'ping', ts: Date.now() }));
+                } catch (_) {}
+            }
+        }, 5000);
+    }
+
+    function stopAgentPing() {
+        if (agentPingTimer) {
+            clearInterval(agentPingTimer);
+            agentPingTimer = null;
+        }
+    }
+
+    function connectAgentWs() {
+        if (agentWs && agentWs.readyState === WebSocket.OPEN) {
+            return Promise.resolve(agentWs);
+        }
+        if (agentWs && agentWs.readyState === WebSocket.CONNECTING) {
+            return new Promise((resolve, reject) => {
+                const pendingOpen = agentWs.onopen;
+                const pendingError = agentWs.onerror;
+                agentWs.onopen = (e) => {
+                    if (typeof pendingOpen === 'function') pendingOpen(e);
+                    resolve(agentWs);
+                };
+                agentWs.onerror = (e) => {
+                    if (typeof pendingError === 'function') pendingError(e);
+                    reject(new Error('Agent connection failed.'));
+                };
+            });
+        }
+        const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = `${wsProtocol}//${location.host}/ws/remote/${encodeURIComponent(theaterId)}`;
+        const socket = new WebSocket(wsUrl);
+        agentWs = socket;
+        window.agentWs = socket;
+
+        return new Promise((resolve, reject) => {
+            socket.onopen = () => {
+                resolve(socket);
+            };
+            socket.onerror = () => {
+                if (agentWs === socket) {
+                    agentWs = null;
+                    window.agentWs = null;
+                }
+                reject(new Error('Could not connect to Narratron live agent.'));
+            };
+            socket.onclose = () => {
+                if (agentWs === socket) {
+                    agentWs = null;
+                    window.agentWs = null;
+                    stopAgentPing();
+                    if (micTransmitting) {
+                        void stopMicrophone('connection_closed');
+                    }
+                }
+            };
+            socket.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    if (data.type === 'insufficient_credits') {
+                        void stopMicrophone('insufficient_credits');
+                        showToast(data.detail || 'Insufficient credits.', 'error');
+                    } else if (data.type === 'agent_failed') {
+                        void stopMicrophone('agent_failed');
+                        showToast('Agent session failed.', 'error');
+                    }
+                } catch (_) {}
+            };
+        });
+    }
+
+    function cleanupMicCapture() {
+        if (micWorkletNode) {
+            try { micWorkletNode.disconnect(); } catch (_) {}
+            micWorkletNode = null;
+        }
+        if (micAudioContext && micAudioContext.state !== 'closed') {
+            try { micAudioContext.close(); } catch (_) {}
+            micAudioContext = null;
+        }
+        if (micStream) {
+            try {
+                micStream.getTracks().forEach(track => track.stop());
+            } catch (_) {}
+            micStream = null;
+        }
+        if (micEncoder && micEncoder.state !== 'closed') {
+            try { micEncoder.close(); } catch (_) {}
+            micEncoder = null;
+        }
+    }
+
+    async function startMicrophone() {
+        if (micTransmitting || micStarting) return;
+        if (!state?.agent_running) {
+            showToast('Turn the agent on first.', 'error');
+            return;
+        }
+        micStarting = true;
+        micBtn?.setAttribute('aria-busy', 'true');
+        try {
+            if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== 'function') {
+                throw new Error('Microphone access is not supported in this browser.');
+            }
+
+            const socket = await connectAgentWs();
+            if (!socket || socket.readyState !== WebSocket.OPEN) {
+                throw new Error('Agent connection is not ready.');
+            }
+            startAgentPing();
+
+            if (typeof window.AudioEncoder !== 'function') {
+                throw new Error('Your browser does not support AudioEncoder for live audio.');
+            }
+
+            micStream = await navigator.mediaDevices.getUserMedia({
+                audio: {
+                    channelCount: 1,
+                    sampleRate: { ideal: 16000 },
+                    echoCancellation: true,
+                    noiseSuppression: true,
+                }
+            });
+
+            const AudioCtx = window.AudioContext || window.webkitAudioContext;
+            const audioContext = new AudioCtx({ sampleRate: 16000 });
+            micAudioContext = audioContext;
+
+            micTimestampUs = 0;
+            const encoder = new window.AudioEncoder({
+                output: (chunk) => {
+                    if (!agentWs || agentWs.readyState !== WebSocket.OPEN) return;
+                    const buffer = new Uint8Array(chunk.byteLength);
+                    chunk.copyTo(buffer);
+                    agentWs.send(buffer.buffer);
+                },
+                error: (err) => {
+                    console.error('[RemoteMic] Opus encoder error:', err);
+                    showToast('Audio encoding error.', 'error');
+                    void stopMicrophone('encoder_error');
+                }
+            });
+            encoder.configure({
+                codec: 'opus',
+                sampleRate: 16000,
+                numberOfChannels: 1,
+                bitrate: 24000,
+            });
+            micEncoder = encoder;
+
+            socket.send(JSON.stringify({
+                type: 'activity_start',
+                reason: 'remote_mic',
+                ts: new Date().toISOString(),
+            }));
+
+            const processorCode = `class P extends AudioWorkletProcessor {
+                constructor() {
+                    super();
+                    this.b = new Float32Array(480);
+                    this.i = 0;
+                    this.step = sampleRate / 16000;
+                    this.phase = 0;
+                    this.last = 0;
+                }
+                process(inputs) {
+                    const input = inputs[0]?.[0];
+                    if (!input) return true;
+                    if (sampleRate === 16000) {
+                        for (let n = 0; n < input.length; n++) {
+                            this.b[this.i++] = input[n];
+                            if (this.i === this.b.length) {
+                                this.port.postMessage(this.b.slice());
+                                this.i = 0;
+                            }
+                        }
+                        return true;
+                    }
+                    for (let n = 0; n < input.length; n++) {
+                        const current = input[n];
+                        while (this.phase <= n) {
+                            const previous = n ? input[n - 1] : this.last;
+                            const t = this.phase - (n - 1);
+                            this.b[this.i++] = previous + (current - previous) * t;
+                            if (this.i === this.b.length) {
+                                this.port.postMessage(this.b.slice());
+                                this.i = 0;
+                            }
+                            this.phase += this.step;
+                        }
+                        this.last = current;
+                    }
+                    this.phase -= input.length;
+                    return true;
+                }
+            }
+            registerProcessor('remote-pcm-processor', P);`;
+
+            const blob = new Blob([processorCode], { type: 'application/javascript' });
+            const blobUrl = URL.createObjectURL(blob);
+            try {
+                await audioContext.audioWorklet.addModule(blobUrl);
+            } finally {
+                URL.revokeObjectURL(blobUrl);
+            }
+
+            const source = audioContext.createMediaStreamSource(micStream);
+            const worklet = new AudioWorkletNode(audioContext, 'remote-pcm-processor');
+            micWorkletNode = worklet;
+
+            worklet.port.onmessage = (event) => {
+                if (!micTransmitting || !micEncoder || micEncoder.state !== 'configured') return;
+                const float32 = event.data;
+                if (!float32) return;
+                try {
+                    const audioData = new window.AudioData({
+                        format: 'f32-planar',
+                        sampleRate: 16000,
+                        numberOfFrames: float32.length,
+                        numberOfChannels: 1,
+                        timestamp: micTimestampUs,
+                        data: float32,
+                    });
+                    micTimestampUs += Math.round((float32.length / 16000) * 1000000);
+                    micEncoder.encode(audioData);
+                    audioData.close();
+                } catch (encodeErr) {
+                    console.error('[RemoteMic] Frame encode failed:', encodeErr);
+                }
+            };
+
+            source.connect(worklet);
+            worklet.connect(audioContext.destination);
+
+            micTransmitting = true;
+            micStarting = false;
+            micBtn?.removeAttribute('aria-busy');
+            updateMicUI();
+            message('Transmitting audio…');
+        } catch (err) {
+            micStarting = false;
+            micTransmitting = false;
+            micBtn?.removeAttribute('aria-busy');
+            cleanupMicCapture();
+            updateMicUI();
+            const msg = err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError'
+                ? 'Microphone permission denied.'
+                : (err.message || 'Could not access microphone.');
+            showToast(msg, 'error');
+        }
+    }
+
+    async function stopMicrophone(reason = 'user_stop') {
+        if (!micTransmitting && !micStarting) return;
+        micTransmitting = false;
+        micStarting = false;
+        micBtn?.removeAttribute('aria-busy');
+        updateMicUI();
+        message('');
+
+        if (micEncoder && micEncoder.state === 'configured') {
+            try {
+                await micEncoder.flush();
+            } catch (_) {}
+        }
+
+        if (agentWs && agentWs.readyState === WebSocket.OPEN) {
+            try {
+                agentWs.send(JSON.stringify({
+                    type: 'activity_end',
+                    reason,
+                    ts: new Date().toISOString(),
+                }));
+            } catch (_) {}
+        }
+
+        cleanupMicCapture();
+    }
+
+    micBtn?.addEventListener('pointerdown', event => {
+        if (event.button !== 0) return;
+        if (!state?.agent_running) {
+            showToast('Turn the agent on first.', 'error');
+            return;
+        }
+        micPointerDownTime = Date.now();
+        micHolding = true;
+        if (!micTransmitting) {
+            void startMicrophone();
+        } else {
+            void stopMicrophone('user_toggle');
+            micHolding = false;
+        }
+    });
+
+    micBtn?.addEventListener('pointerup', () => {
+        if (!micHolding) return;
+        micHolding = false;
+        const duration = Date.now() - micPointerDownTime;
+        if (duration > 400 && micTransmitting) {
+            void stopMicrophone('user_release');
+        }
+    });
+
+    micBtn?.addEventListener('pointercancel', () => {
+        if (micHolding) {
+            micHolding = false;
+            if (micTransmitting) void stopMicrophone('pointer_cancel');
+        }
+    });
+
+    micBtn?.addEventListener('keydown', event => {
+        if (event.key === ' ' && !event.repeat) {
+            event.preventDefault();
+            if (!micTransmitting) void startMicrophone();
+        }
+    });
+
+    micBtn?.addEventListener('keyup', event => {
+        if (event.key === ' ') {
+            event.preventDefault();
+            if (micTransmitting) void stopMicrophone('space_release');
+        }
+    });
+
+    micBtn?.addEventListener('click', () => {
+        if (Date.now() - micPointerDownTime < 350) return;
+        if (!micTransmitting) void startMicrophone();
+        else void stopMicrophone('user_click');
+    });
+
+    window.addEventListener('pagehide', () => {
+        if (micTransmitting) void stopMicrophone('page_hide');
+    });
+
     document.addEventListener('visibilitychange', () => {
         clearTimeout(pollTimer);
-        if (!document.hidden && theaterId && !busy) void refresh(generation);
+        if (document.hidden) {
+            if (micTransmitting) void stopMicrophone('page_hidden');
+        } else if (theaterId && !busy) {
+            void refresh(generation);
+        }
     });
     render();
     renderView();

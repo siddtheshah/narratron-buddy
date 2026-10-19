@@ -4,8 +4,9 @@ from collections.abc import Iterator
 from pathlib import Path
 from urllib.parse import urlsplit
 
+import json
 import pytest
-from playwright.sync_api import Page, Route, expect, sync_playwright
+from playwright.sync_api import Page, Route, WebSocketRoute, expect, sync_playwright
 
 
 @pytest.fixture
@@ -46,6 +47,7 @@ def test_phone_remote_sends_actions_and_instructions(remote_page: Page) -> None:
         page.get_by_role("button", name="New image").click()
     assert action.value.post_data_json == {"action": "new_image"}
     page.wait_for_function("!document.getElementById('controls').disabled")
+    page.get_by_role("button", name="Keyboard").click()
     page.locator("#command").fill("A storm rolls in.")
     with page.expect_request("**/api/orator/command?*") as instruction:
         page.get_by_role("button", name="Send instruction").click()
@@ -125,7 +127,9 @@ def test_preview_empty_state_keeps_controls_available(remote_page: Page) -> None
 def test_preview_is_a_separate_view_with_back_navigation(remote_page: Page, width: int) -> None:
     page = remote_page
     page.set_viewport_size({"width": width, "height": 568})
+    page.get_by_role("button", name="Keyboard").click()
     page.locator("#command").fill("Keep my direction draft")
+    page.locator("#command-modal-close").click()
     page.get_by_role("tab", name="Preview", exact=True).click()
     page.wait_for_url("**#preview")
     expect(page.locator("#remote-controls")).to_be_hidden()
@@ -166,7 +170,9 @@ def swipe_preview(page: Page, dx: int, dy: int, cancel: bool = False) -> None:
 
 def test_horizontal_swipes_switch_all_tabs_and_preserve_draft(remote_page: Page) -> None:
     page = remote_page
+    page.get_by_role("button", name="Keyboard").click()
     page.locator('#command').fill('Keep my draft')
+    page.locator("#command-modal-close").click()
     page.get_by_role('tab', name='Preview', exact=True).click()
     swipe_preview(page, 140, 10)
     expect(page.get_by_role('tab', name='Control Panel')).to_have_attribute('aria-selected', 'true')
@@ -240,6 +246,7 @@ def test_failed_instruction_preserves_draft(remote_page: Page) -> None:
         route.fulfill(status=409, json={"detail": "The live agent is not connected."})
 
     page.route("**/api/orator/command?*", reject)
+    page.get_by_role("button", name="Keyboard").click()
     page.locator("#command").fill("Keep this draft")
     page.get_by_role("button", name="Send instruction").click()
     page.get_by_text("The live agent is not connected.", exact=True).wait_for()
@@ -262,6 +269,7 @@ def test_remote_traces_only_pending_button(remote_page: Page, selector: str, pat
 
     page.route(path, hold)
     if selector == '#command-form button':
+        page.get_by_role("button", name="Keyboard").click()
         page.locator("#command").fill("A quiet moment.")
     button = page.locator(selector)
     button.click()
@@ -310,7 +318,8 @@ def test_stopped_agent_preserves_history_and_pin_controls(remote_page: Page) -> 
     page.reload()
     page.get_by_text("Connected · Agent off").wait_for()
     assert page.get_by_role("button", name="New image").is_disabled()
-    assert page.get_by_role("button", name="Send instruction").is_disabled()
+    assert page.get_by_role("button", name="Keyboard").is_disabled()
+    assert page.get_by_role("button", name="Microphone").is_disabled()
     assert page.get_by_role("button", name="Previous scene", exact=True).is_enabled()
     assert page.get_by_role("button", name="Unpin scene").get_attribute("aria-pressed") == "true"
     assert page.get_by_role("button", name="Unpin music").is_enabled()
@@ -519,6 +528,7 @@ def test_action_error_surfaces_as_dismissable_toast(remote_page: Page) -> None:
 def test_empty_command_surfaces_as_toast_dismissable_with_escape(remote_page: Page) -> None:
     page = remote_page
     expect(page.locator("#toast")).to_be_hidden()
+    page.get_by_role("button", name="Keyboard").click()
     page.locator("#command").fill("")
     page.get_by_role("button", name="Send instruction").click()
 
@@ -542,4 +552,124 @@ def test_asset_loading_error_surfaces_as_toast(remote_page: Page) -> None:
 
     page.get_by_role("button", name="Dismiss error").click()
     expect(toast).to_be_hidden()
+
+
+def test_keyboard_button_pops_up_modal_and_closes(remote_page: Page) -> None:
+    page = remote_page
+    modal = page.locator("#command-modal")
+    expect(modal).to_be_hidden()
+
+    keyboard_btn = page.get_by_role("button", name="Keyboard")
+    keyboard_btn.click()
+    expect(modal).to_be_visible()
+    expect(keyboard_btn).to_have_attribute("aria-expanded", "true")
+    expect(page.locator("#command")).to_be_focused()
+
+    page.locator("#command-cancel-btn").click()
+    expect(modal).to_be_hidden()
+    expect(keyboard_btn).to_have_attribute("aria-expanded", "false")
+
+    keyboard_btn.click()
+    expect(modal).to_be_visible()
+    page.keyboard.press("Escape")
+    expect(modal).to_be_hidden()
+
+
+def test_microphone_denied_permission_shows_toast(remote_page: Page) -> None:
+    page = remote_page
+    # Deny microphone permission
+    page.context.clear_permissions()
+    mic_btn = page.get_by_role("button", name="Microphone")
+    expect(mic_btn).to_be_visible()
+    mic_btn.click()
+    page.locator("#toast").wait_for(state="visible")
+    assert mic_btn.get_attribute("aria-pressed") == "false"
+
+
+def test_microphone_button_streams_audio_and_stops_on_release(remote_page: Page) -> None:
+    page = remote_page
+    messages: list[str] = []
+
+    def mock_agent_socket(ws: WebSocketRoute) -> None:
+        def on_msg(msg: str | bytes) -> None:
+            if type(msg) is str:
+                messages.append(msg)
+            elif type(msg) is bytes:
+                messages.append(msg.decode("utf-8", errors="ignore"))
+
+        ws.on_message(on_msg)
+        ws.send(json.dumps({"setupComplete": True}))
+
+    page.route_web_socket("**/ws/**", mock_agent_socket)
+
+    page.evaluate("""() => {
+        class MockEncoder {
+            constructor(init) {
+                this.init = init;
+                this.state = 'configured';
+            }
+            configure() {}
+            encode() {
+                this.init.output({
+                    byteLength: 4,
+                    copyTo: (arr) => arr.set([1, 2, 3, 4])
+                });
+            }
+            flush() { return Promise.resolve(); }
+            close() { this.state = 'closed'; }
+        }
+        window.AudioEncoder = MockEncoder;
+        window.AudioData = class {
+            constructor() {}
+            close() {}
+        };
+        Object.defineProperty(navigator, 'mediaDevices', {
+            value: {
+                getUserMedia: () => Promise.resolve({
+                    getTracks: () => [{ stop() {} }]
+                })
+            },
+            configurable: true,
+        });
+        window.AudioContext = class {
+            constructor() {
+                this.state = 'running';
+                this.destination = {};
+                this.audioWorklet = {
+                    addModule: () => Promise.resolve()
+                };
+            }
+            createMediaStreamSource() {
+                return { connect() {} };
+            }
+            close() { this.state = 'closed'; return Promise.resolve(); }
+        };
+        window.AudioWorkletNode = class {
+            constructor() {
+                this.port = {
+                    onmessage: null,
+                    postMessage() {}
+                };
+            }
+            connect() {}
+            disconnect() {}
+        };
+    }""")
+
+    mic_btn = page.get_by_role("button", name="Microphone")
+    expect(mic_btn).to_be_visible()
+
+    mic_btn.click()
+    page.wait_for_function("document.getElementById('mic-btn').getAttribute('aria-pressed') === 'true'")
+    expect(mic_btn).to_have_text("Listening…")
+
+    mic_btn.click()
+    page.wait_for_function("document.getElementById('mic-btn').getAttribute('aria-pressed') === 'false'")
+    expect(mic_btn).to_have_text("Microphone")
+
+    parsed = [json.loads(m) for m in messages if m.startswith("{")]
+    types = [p.get("type") for p in parsed]
+    assert "activity_start" in types
+    assert "activity_end" in types
+
 

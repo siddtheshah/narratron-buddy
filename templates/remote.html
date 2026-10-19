@@ -64,12 +64,37 @@
             <h2 id="direction-title">Direction</h2>
             <button data-action="update_story" data-live>Update story</button>
         </section>
-        <form id="command-form" class="bar" novalidate>
-            <label for="command" class="sr-only">Tell Narratron what happens next</label>
-            <input id="command" maxlength="2000" placeholder="Direct the story…" required>
-            <button class="primary" type="submit" data-live aria-label="Send instruction">Send</button>
-        </form>
+        <section class="bar input-actions-bar" aria-label="Input controls">
+            <button type="button" id="mic-btn" class="input-action-btn mic-btn" data-live aria-pressed="false" aria-label="Microphone" title="Transmit audio to Narratron">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/><line x1="8" y1="22" x2="16" y2="22"/></svg>
+                <span class="btn-text">Microphone</span>
+                <span class="mic-pulse-ring" aria-hidden="true"></span>
+            </button>
+            <button type="button" id="keyboard-btn" class="input-action-btn keyboard-btn" data-live aria-expanded="false" aria-controls="command-modal" aria-label="Keyboard" title="Type instruction">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><rect width="20" height="14" x="2" y="5" rx="2"/><line x1="6" y1="9" x2="6.01" y2="9"/><line x1="10" y1="9" x2="10.01" y2="9"/><line x1="14" y1="9" x2="14.01" y2="9"/><line x1="18" y1="9" x2="18.01" y2="9"/><line x1="6" y1="13" x2="6.01" y2="13"/><line x1="18" y1="13" x2="18.01" y2="13"/><line x1="9" y1="13" x2="15" y2="13"/></svg>
+                <span class="btn-text">Keyboard</span>
+            </button>
+        </section>
     </fieldset>
+    <div id="command-modal" class="command-modal" role="dialog" aria-modal="true" aria-labelledby="command-modal-title" hidden>
+        <div class="command-modal-backdrop" id="command-modal-backdrop"></div>
+        <div class="command-modal-dialog">
+            <div class="command-modal-header">
+                <h3 id="command-modal-title">Direct Narratron</h3>
+                <button type="button" id="command-modal-close" class="modal-close-btn" aria-label="Close dialog" title="Close dialog">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+                </button>
+            </div>
+            <form id="command-form" novalidate>
+                <label for="command" class="sr-only">Tell Narratron what happens next</label>
+                <input id="command" maxlength="2000" placeholder="Direct the story…" required autocomplete="off">
+                <button class="primary" type="submit" data-live aria-label="Send instruction">Send</button>
+            </form>
+            <div class="command-modal-footer">
+                <button type="button" id="command-cancel-btn" class="command-cancel-btn">Cancel</button>
+            </div>
+        </div>
+    </div>
     </div>
     <section id="canvas-preview" role="tabpanel" aria-labelledby="preview-tab" tabindex="0" hidden>
         <div class="preview-heading"><h2 id="preview-title">Canvas preview</h2><span id="preview-status" role="status">Connecting…</span></div>

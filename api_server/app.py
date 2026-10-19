@@ -279,6 +279,9 @@ async def agent_websocket_endpoint(
     # ``user_id`` remains in the legacy URL for client compatibility, but it
     # must never establish identity.  Agent control follows the authenticated
     # holder of the theater baton.
+    if theater_id == "agent" and user_id:
+        theater_id = user_id
+
     current_user = await get_current_user_async(websocket)
 
     deployment = db.get_deployment(theater_id)
