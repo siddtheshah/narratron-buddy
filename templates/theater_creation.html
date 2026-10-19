@@ -659,6 +659,42 @@
             overflow-x: auto;
         }
 
+        html.mobile-device #activeTheatersPanel table,
+        html.mobile-device #theatersTableBody,
+        html.mobile-device #theatersTableBody tr,
+        html.mobile-device #theatersTableBody td {
+            display: block;
+            width: 100%;
+        }
+        html.mobile-device #activeTheatersPanel thead { display: none; }
+        html.mobile-device #theatersTableBody tr {
+            padding: 16px 0;
+            border-bottom: 1px solid var(--card-border);
+        }
+        html.mobile-device #theatersTableBody td {
+            padding: 8px 0;
+            border: none;
+            white-space: normal;
+            overflow-wrap: anywhere;
+        }
+        html.mobile-device #theatersTableBody [id^="nameCell-"] { flex-wrap: wrap; }
+        html.mobile-device #theatersTableBody td:last-child {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 8px;
+        }
+        html.mobile-device #activeTheatersPanel .theater-action-icon {
+            width: 44px;
+            height: 44px;
+        }
+        html.mobile-device #activeTheatersPanel .remote-launch {
+            width: auto;
+            padding: 0 12px;
+            gap: 8px;
+            font-size: 0.9rem;
+        }
+
         table {
             width: 100%;
             border-collapse: collapse;
@@ -2168,7 +2204,7 @@
                     }
 
                     let actionsHtml = `<button class="btn-sm btn-success theater-action-icon canvas-launch" title="Launch Canvas" aria-label="Launch Canvas" onclick="openCanvas('${s.theater_id}', ${s.is_owner ? 'true' : 'false'}, '${s.join_key || ''}')"><span aria-hidden="true">▶</span></button>`;
-                    actionsHtml += ` <a href="/remote?theater_id=${encodeURIComponent(s.theater_id)}" class="btn-sm btn-success theater-action-icon remote-launch" title="Open remote" aria-label="Open remote"><span aria-hidden="true">📱</span></a>`;
+                    actionsHtml += ` <a href="/remote?theater_id=${encodeURIComponent(s.theater_id)}" class="btn-sm btn-success theater-action-icon remote-launch" title="Open remote" aria-label="Open remote"><span aria-hidden="true">📱</span><span>Open remote</span></a>`;
                     actionsHtml += ` <a href="/api/theaters/${s.theater_id}/export-assets" class="btn-sm btn-secondary theater-action-icon" title="Export Assets" aria-label="Export Assets" download><span aria-hidden="true">📦</span></a>`;
                     if (s.is_owner) {
                         actionsHtml += ` <a href="/theater-editor?theater_id=${encodeURIComponent(s.theater_id)}" class="btn-sm btn-secondary theater-action-icon" title="Edit in Builder" aria-label="Edit in Builder"><span aria-hidden="true">✦</span></a>`;

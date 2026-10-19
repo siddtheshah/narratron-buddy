@@ -79,6 +79,11 @@ def test_mobile_theater_actions_open_remote_instead_of_canvas(deploy_page: Page)
     page.set_viewport_size({"width": 390, "height": 844})
     expect(canvas).not_to_be_visible()
     expect(remote).to_be_visible()
+    remote.scroll_into_view_if_needed()
+    expect(remote).to_be_in_viewport()
+    assert page.locator('#activeTheatersPanel .table-responsive').evaluate(
+        'element => element.scrollWidth <= element.clientWidth'
+    )
     expect(page.locator('.mobile-canvas-note')).to_be_visible()
     remote.click()
     expect(page).to_have_url("http://narratron.test/remote?theater_id=stage")
