@@ -38,7 +38,9 @@ Evidence labels:
 
 **Regression check:** encoded dot segments, Windows separators/drives, missing deployment records, symlink escapes, and another owner's theater must never reach deletion. Verified with automated regression tests.
 
-### S02 — [P1] Playlist uploads can host active HTML on the application origin
+### S02 — [RESOLVED] [P1] Playlist uploads can host active HTML on the application origin
+
+**Status: Resolved.**
 
 **Evidence: Reproduced.** A signed-in, zero-credit account can upload `active.html` through the `playlist_audit` multipart field of `/api/theaters/create-and-deploy`. An anonymous request with the resulting join key receives the exact file as inline `text/html`, without an attachment disposition or sandbox CSP.
 
@@ -48,9 +50,17 @@ Evidence labels:
 
 **Patch scope:** validate supported audio at every ingestion boundary and serve only approved media types. Quarantine legacy unsupported files as sandboxed downloads or serve untrusted content from a separate origin.
 
-**Regression check:** HTML/SVG and disguised documents submitted through direct, folder, and ZIP paths must never become executable same-origin documents.
+**Resolution:**
+- Implemented `playlist_audio_type` and `PLAYLIST_AUDIO_FORMATS` in `components/playlist_audio.py` to validate supported audio extensions (`.mp3`, `.wav`, `.ogg`, `.flac`, `.m4a`, `.aac`), binary container headers/magic bytes, and reject disguised active markup (`<!doctype`, `<html`, `<script`, `<svg`, `<?xml`, etc.).
+- Enforced audio validation at every playlist ingestion boundary in `TheaterManager.create_theater`, `TheaterManager.extract_asset_package`, and `create_and_deploy_theater` in `api_server/theaters.py`, rejecting unsupported or disguised files before writing to disk.
+- Hardened `serve_theater_playlist_track` in `api_server/theaters.py` to validate media extensions and content before serving inline audio with `X-Content-Type-Options: nosniff` and `Content-Security-Policy: sandbox; default-src 'none'; media-src 'self'`, while quarantining legacy or invalid files on disk as sandboxed `application/octet-stream` downloads (`Content-Disposition: attachment`).
+- Added comprehensive regression tests in `components/theater_manager_test.py` and `api_server/theaters_test.py` covering HTML, SVG, and disguised documents across direct, folder, and ZIP upload paths as well as legacy file quarantine on the serving route.
 
-### S03 — [P1] Dice-roll HTML executes in every viewer's chat
+**Regression check:** HTML/SVG and disguised documents submitted through direct, folder, and ZIP paths must never become executable same-origin documents. Verified with automated regression tests.
+
+### S03 — [RESOLVED] [P1] Dice-roll HTML executes in every viewer's chat
+
+**Status: Resolved.**
 
 **Evidence: Reproduced, including browser execution.** A contributor can post `roll_data.html` containing `<img src="/missing" onerror="window.auditRoll=1">`. The API retains it unchanged, and the production chat renderer executes the handler. The popout has the same sink.
 
@@ -60,9 +70,17 @@ Evidence labels:
 
 **Patch scope:** accept a bounded, typed roll schema and render its values through DOM/text APIs. If imported markup must remain supported, apply a maintained, strict sanitizer at the trust boundary and cover both renderers.
 
-**Regression check:** event handlers, SVG, dangerous URL schemes, and malformed markup remain inert in canvas and popout, while normal Beyond20 results still display.
+**Resolution:**
+- Replaced untyped `roll_data` on `ChatMessage` in `api_server/canvas.py` with a bounded, strictly typed `RollDataPayload` Pydantic schema (`extra="forbid"`, bounded string/list lengths) and `sanitize_roll_html()` validator using `_RollHtmlSanitizer`.
+- Stripped dangerous elements/subtrees (`<script>`, `<style>`, `<svg>`, `<math>`, `<iframe>`, `<object>`, `<embed>`, `<form>`, `<img>`, `<a>`, etc.), all `on*` event attributes, and unsafe URL schemes at the API trust boundary.
+- Implemented `sanitizeRollHtmlToFragment` using `DOMParser` and explicit DOM node construction (`createElement` / `createTextNode`) with a strict tag and attribute allowlist in both `static/js/chat-controller.js` and `templates/popout.html`.
+- Added API and Playwright browser regression tests in `testing/ui/chat_prefix_test.py` and `testing/ui/beyond20_listener_test.py` verifying that event handlers, SVG, scripts, dangerous URL schemes, and oversized payloads are neutralized while legitimate Beyond20 rolls still display.
 
-### S04 — [P1] The remote page reflects an unchecked join key into an HTML attribute
+**Regression check:** event handlers, SVG, dangerous URL schemes, and malformed markup remain inert in canvas and popout, while normal Beyond20 results still display. Verified with automated regression tests.
+
+### S04 — [RESOLVED] [P1] The remote page reflects an unchecked join key into an HTML attribute
+
+**Status: Resolved.**
 
 **Evidence: Reproduced, including browser execution.** For a theater owner, a join-key value of `" onload="window.auditRemote=1" data-unused="` becomes an executable attribute on `<body>`.
 
@@ -72,7 +90,13 @@ Evidence labels:
 
 **Patch scope:** render only the authoritative validated key and escape all HTML attributes, preferably through an autoescaping template. Do not interpolate query strings into markup manually.
 
-**Regression check:** an owner opening a remote URL with quotes or markup in `join_key` receives no injected elements or event attributes; legitimate access remains usable.
+**Resolution:**
+- Updated `read_remote` in `api_server/remote.py` to never reflect unvalidated `join_key` query parameters; only the deployment's authoritative `join_key` is rendered when present and authorized, and `_grant_canvas_access` stores only the validated authoritative key.
+- Replaced manual string interpolation of `<body>` attributes in `api_server/remote.py` with an autoescaping Jinja2 template (`_REMOTE_BODY_TEMPLATE = jinja2.Environment(autoescape=True).from_string(...)`).
+- Updated `static/js/remote.js` to prefer the server-rendered `document.body.dataset.joinKey` attribute.
+- Added regression tests in `api_server/remote_test.py` verifying that owners and active orators opening `/remote` with quotes or markup in `join_key` receive no injected attributes or elements while legitimate access remains usable.
+
+**Regression check:** an owner opening a remote URL with quotes or markup in `join_key` receives no injected elements or event attributes; legitimate access remains usable. Verified with automated regression tests.
 
 ### S05 — [P1] Model-controlled image references can read another theater's files
 

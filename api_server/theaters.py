@@ -528,7 +528,7 @@ async def serve_theater_playlist_track(
     playlist_name: str,
     filename: str,
     join_key: Optional[str] = None,
-):
+) -> Response:
     await _require_canvas_access_async(request, theater_id, join_key=join_key)
     _safe_path_param(theater_id, "theater_id")
     playlists_root = theater_manager.theater(theater_id).playlists_dir().resolve()
@@ -538,7 +538,36 @@ async def serve_theater_playlist_track(
         raise HTTPException(status_code=400, detail="Invalid playlist path")
     if not file_path.is_file():
         raise HTTPException(status_code=404, detail="Theater playlist track not found")
-    return FileResponse(file_path)
+    from components.playlist_audio import playlist_audio_type
+
+    headers = {
+        "X-Content-Type-Options": "nosniff",
+        "Content-Security-Policy": "sandbox; default-src 'none'; media-src 'self'",
+        "Cache-Control": "private, max-age=3600",
+        "Vary": "Cookie",
+    }
+    stat_result = file_path.stat()
+    try:
+        media_type = await asyncio.to_thread(playlist_audio_type, file_path.name, file_path.read_bytes())
+    except ValueError:
+        quarantine_headers = {
+            **headers,
+            "Content-Security-Policy": "sandbox; default-src 'none'",
+        }
+        fallback_resp = FileResponse(
+            file_path,
+            media_type="application/octet-stream",
+            filename=file_path.name,
+            headers=quarantine_headers,
+            stat_result=stat_result,
+        )
+        if StaticFiles().is_not_modified(fallback_resp.headers, request.headers):
+            return NotModifiedResponse(fallback_resp.headers)
+        return fallback_resp
+    response = FileResponse(file_path, media_type=media_type, headers=headers, stat_result=stat_result)
+    if StaticFiles().is_not_modified(response.headers, request.headers):
+        return NotModifiedResponse(response.headers)
+    return response
 
 @app.get("/theaters/{theater_id}/output/{filename:path}")
 async def serve_theater_output(
@@ -1054,13 +1083,17 @@ async def create_and_deploy_theater(request: Request):
                         and "playlists" not in parts
                     ):
                         reference_files.append((rel_path, content))
-                    elif "playlists" in parts:
-                        idx = parts.index("playlists")
-                        pl_name = parts[idx + 1] if idx + 1 < len(parts) - 1 else "default"
-                        if clean_name.lower().endswith((".mp3", ".wav", ".ogg", ".flac", ".m4a", ".aac")):
-                            if pl_name not in playlists_data:
-                                playlists_data[pl_name] = []
-                            playlists_data[pl_name].append((clean_name, content))
+                    elif "playlists" in parts or clean_name.lower().endswith(
+                        (".mp3", ".wav", ".ogg", ".flac", ".m4a", ".aac")
+                    ):
+                        if "playlists" in parts:
+                            idx = parts.index("playlists")
+                            pl_name = parts[idx + 1] if idx + 1 < len(parts) - 1 else "default"
+                        else:
+                            pl_name = "default"
+                        if pl_name not in playlists_data:
+                            playlists_data[pl_name] = []
+                        playlists_data[pl_name].append((clean_name, content))
                     elif "lore" in parts:
                         if not clean_name.lower().endswith(".txt"):
                             raise HTTPException(status_code=400, detail="Lore documents must be .txt files.")

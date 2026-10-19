@@ -229,3 +229,72 @@ class TestChatPrefixes(UITestCase):
             self.assertEqual(res3.status_code, 200)
             mock_session.send_user_content.assert_not_called()
 
+    def test_roll_data_html_sanitizes_xss_vectors_at_trust_boundary(self) -> None:
+        malicious_html = (
+            '<div class="beyond20-message beyond20-card dnd5e" onload="window.auditRoll=1">'
+            '<img src="/missing" onerror="window.auditRoll=1">'
+            '<svg onload="window.auditRoll=2"><script>window.auditRoll=3</script></svg>'
+            '<script>window.auditRoll=4</script>'
+            '<iframe src="javascript:alert(1)"></iframe>'
+            '<a href="javascript:window.auditRoll=5" onclick="window.auditRoll=6">Click</a>'
+            '<strong class="beyond20-roll-result" title="1d20 + 5">23</strong>'
+            '<span class="beyond20-total-damage">8 Slashing</span>'
+            '</div>'
+        )
+        post_res = self.client.post(
+            f"/api/chat?theater_id={self.theater_id}",
+            json={
+                "author": "Ada",
+                "text": "🎲 Ada rolled Longsword",
+                "roll_data": {
+                    "title": "Longsword",
+                    "html": malicious_html,
+                },
+            },
+        )
+        self.assertEqual(post_res.status_code, 200)
+
+        messages = self.client.get(f"/api/chat?theater_id={self.theater_id}").json()
+        self.assertEqual(len(messages), 1)
+        stored_html = messages[0]["roll_data"]["html"]
+        self.assertNotIn("onerror", stored_html.lower())
+        self.assertNotIn("onload", stored_html.lower())
+        self.assertNotIn("onclick", stored_html.lower())
+        self.assertNotIn("<img", stored_html.lower())
+        self.assertNotIn("<svg", stored_html.lower())
+        self.assertNotIn("<script", stored_html.lower())
+        self.assertNotIn("<iframe", stored_html.lower())
+        self.assertNotIn("javascript:", stored_html.lower())
+        self.assertNotIn("auditRoll", stored_html)
+        self.assertIn('<div class="beyond20-message beyond20-card dnd5e">', stored_html)
+        self.assertIn('<strong class="beyond20-roll-result" title="1d20 + 5">23</strong>', stored_html)
+        self.assertIn('<span class="beyond20-total-damage">8 Slashing</span>', stored_html)
+
+    def test_roll_data_rejects_unknown_fields_and_oversized_payloads(self) -> None:
+        unknown_field_res = self.client.post(
+            f"/api/chat?theater_id={self.theater_id}",
+            json={
+                "author": "Ada",
+                "text": "🎲 Ada rolled Stealth",
+                "roll_data": {
+                    "title": "Stealth",
+                    "unexpected_key": "rejected",
+                },
+            },
+        )
+        self.assertEqual(unknown_field_res.status_code, 422)
+
+        oversized_html_res = self.client.post(
+            f"/api/chat?theater_id={self.theater_id}",
+            json={
+                "author": "Ada",
+                "text": "🎲 Ada rolled Stealth",
+                "roll_data": {
+                    "title": "Stealth",
+                    "html": "<div>" + ("x" * 16500) + "</div>",
+                },
+            },
+        )
+        self.assertEqual(oversized_html_res.status_code, 422)
+
+

@@ -138,3 +138,86 @@ def test_remote_returns_empty_preview_when_canvas_has_no_scene(
         response = client.get("/api/theaters/stage/remote")
     assert response.status_code == 200
     assert response.json()["preview_url"] is None
+
+
+@pytest.mark.parametrize(
+    "malicious_join_key",
+    [
+        '" onload="window.auditRemote=1" data-unused="',
+        "<script>window.auditRemote=1</script>",
+        "' onmouseover='window.auditRemote=1'",
+    ],
+)
+@pytest.mark.parametrize("user_id", [1, 2])
+def test_remote_never_reflects_unvalidated_join_key_for_owner_or_orator(
+    remote_services: tuple[TestClient, MagicMock, MagicMock],
+    malicious_join_key: str,
+    user_id: int,
+) -> None:
+    client, current_user, _ = remote_services
+    current_user.return_value = {"id": user_id}
+    deployment_with_key = {"user_id": 1, "active_orator_id": 2, "join_key": "STAGE-SECRET"}
+    with patch.object(remote, "_require_canvas_access", return_value=deployment_with_key):
+        response = client.get(
+            "/remote",
+            params={"theater_id": "stage", "join_key": malicious_join_key},
+        )
+    assert response.status_code == 200
+    assert "window.auditRemote" not in response.text
+    assert 'onload="' not in response.text
+    assert "data-unused=" not in response.text
+    assert "<script>window.auditRemote" not in response.text
+    assert 'data-join-key="STAGE-SECRET"' in response.text
+    assert "canvas_access" not in response.cookies
+
+
+def test_remote_omits_join_key_attribute_when_deployment_has_no_authoritative_key(
+    remote_services: tuple[TestClient, MagicMock, MagicMock],
+) -> None:
+    client, current_user, _ = remote_services
+    current_user.return_value = {"id": 1}
+    response = client.get(
+        "/remote",
+        params={"theater_id": "stage", "join_key": '" onload="window.auditRemote=1" data-unused="'},
+    )
+    assert response.status_code == 200
+    assert "window.auditRemote" not in response.text
+    assert "data-join-key=" not in response.text
+    assert 'data-is-owner="true"' in response.text
+    assert 'data-owner-idle="true"' in response.text
+
+
+def test_remote_renders_authoritative_join_key_and_grants_cookie_when_valid(
+    remote_services: tuple[TestClient, MagicMock, MagicMock],
+) -> None:
+    client, current_user, _ = remote_services
+    current_user.return_value = {"id": 3}
+    deployment_with_key = {"user_id": 1, "active_orator_id": 2, "join_key": "STAGE-SECRET"}
+    with patch.object(remote, "_require_canvas_access", return_value=deployment_with_key):
+        response = client.get(
+            "/remote",
+            params={"theater_id": "stage", "join_key": "stage-secret"},
+        )
+    assert response.status_code == 200
+    assert 'data-pure-viewer="true"' in response.text
+    assert 'data-join-key="STAGE-SECRET"' in response.text
+    assert 'data-join-key="stage-secret"' not in response.text
+    assert "canvas_access" in response.cookies
+
+
+def test_remote_escapes_html_characters_in_authoritative_join_key(
+    remote_services: tuple[TestClient, MagicMock, MagicMock],
+) -> None:
+    client, current_user, _ = remote_services
+    current_user.return_value = {"id": 1}
+    deployment_with_quotes = {
+        "user_id": 1,
+        "active_orator_id": 1,
+        "join_key": 'KEY" onload="window.auditRemote=1',
+    }
+    with patch.object(remote, "_require_canvas_access", return_value=deployment_with_quotes):
+        response = client.get("/remote", params={"theater_id": "stage"})
+    assert response.status_code == 200
+    assert 'onload="window.auditRemote=1"' not in response.text
+    assert 'data-join-key="KEY&#34; onload=&#34;window.auditRemote=1"' in response.text
+

@@ -32,9 +32,9 @@
     let assetsLoading = false;
     let lastAssetsSignature = null;
     const theaterId = new URLSearchParams(location.search).get('theater_id');
-    let theaterKey = new URLSearchParams(location.search).get('join_key') ||
+    let theaterKey = (document.body && document.body.dataset ? document.body.dataset.joinKey : '') ||
+                     new URLSearchParams(location.search).get('join_key') ||
                      new URLSearchParams(location.search).get('key') ||
-                     (document.body && document.body.dataset ? document.body.dataset.joinKey : '') ||
                      '';
 
     function setTheaterKey(key) {
@@ -77,9 +77,9 @@
         }
         clearTimeout(doodleReconnectTimer);
         const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const joinKey = new URLSearchParams(location.search).get('join_key') ||
-                        new URLSearchParams(location.search).get('key') ||
-                        theaterKey;
+        const joinKey = theaterKey ||
+                        new URLSearchParams(location.search).get('join_key') ||
+                        new URLSearchParams(location.search).get('key');
         let wsUrl = `${wsProtocol}//${location.host}/ws/doodle?theater_id=${encodeURIComponent(theaterId)}`;
         if (joinKey) {
             wsUrl += `&join_key=${encodeURIComponent(joinKey)}`;

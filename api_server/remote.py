@@ -2,6 +2,7 @@
 
 from fastapi import HTTPException, Query, Request, Response
 from fastapi.responses import HTMLResponse
+import jinja2
 from pydantic import BaseModel
 
 from api_server.dependencies import live_agent_manager
@@ -16,6 +17,14 @@ from api_server.shared import (
     _grant_canvas_access,
     _require_canvas_access,
     _valid_join_key,
+)
+
+_REMOTE_BODY_TEMPLATE = jinja2.Environment(autoescape=True).from_string(
+    "<body"
+    '{% if is_owner %} data-is-owner="true"{% endif %}'
+    '{% if pure_viewer %} data-pure-viewer="true"{% elif owner_idle %} data-owner-idle="true"{% endif %}'
+    '{% if join_key %} data-join-key="{{ join_key }}"{% endif %}'
+    ">"
 )
 
 
@@ -54,25 +63,29 @@ def read_remote(
         active_orator_id = deployment.get("user_id")
     is_orator = bool(user_id and user_id == active_orator_id)
 
-    body_attrs: list[str] = []
-    if is_owner:
-        body_attrs.append('data-is-owner="true"')
-    if not is_owner and not is_orator:
-        body_attrs.append('data-pure-viewer="true"')
-    elif is_owner and not is_orator:
-        body_attrs.append('data-owner-idle="true"')
-
+    raw_authoritative_key = deployment.get("join_key") if deployment else None
+    authoritative_key = raw_authoritative_key.strip() if raw_authoritative_key else ""
     candidate_key = _extract_candidate_join_key(request, theater_id, join_key=join_key)
-    resolved_key = candidate_key or (deployment.get("join_key") if deployment else None)
-    if resolved_key:
-        body_attrs.append(f'data-join-key="{resolved_key}"')
+    has_valid_join_key = bool(
+        authoritative_key and candidate_key and _valid_join_key(authoritative_key, candidate_key)
+    )
+    resolved_key = (
+        authoritative_key
+        if authoritative_key and (is_owner or is_orator or has_valid_join_key)
+        else ""
+    )
 
-    if body_attrs:
-        content = content.replace("<body", f"<body {' '.join(body_attrs)}")
+    body_tag = _REMOTE_BODY_TEMPLATE.render(
+        is_owner=is_owner,
+        pure_viewer=(not is_owner and not is_orator),
+        owner_idle=(is_owner and not is_orator),
+        join_key=resolved_key,
+    )
+    content = content.replace("<body>", body_tag, 1)
 
     response = HTMLResponse(content, headers=headers)
-    if candidate_key and _valid_join_key(deployment.get("join_key", ""), candidate_key):
-        _grant_canvas_access(response, request, theater_id, candidate_key)
+    if has_valid_join_key:
+        _grant_canvas_access(response, request, theater_id, authoritative_key)
     return response
 
 

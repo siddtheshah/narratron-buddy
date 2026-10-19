@@ -16,6 +16,7 @@ import zipfile
 from pydantic import BaseModel, Field
 
 from absl import flags
+from components.playlist_audio import playlist_audio_type
 from components.reference_images import reference_image_type
 
 logger = logging.getLogger(__name__)
@@ -515,9 +516,12 @@ def extract_asset_package(
                     reference_files.append(("planning.yaml", content))
                 elif "references" in parts or (filename.lower().endswith((".png", ".jpg", ".jpeg", ".webp", ".gif")) and "playlists" not in parts):
                     reference_files.append((info.filename, content))
-                elif "playlists" in parts and filename.lower().endswith((".mp3", ".wav", ".ogg", ".flac", ".m4a", ".aac")):
-                    index = parts.index("playlists")
-                    playlist = parts[index + 1] if index + 1 < len(parts) - 1 else "default"
+                elif "playlists" in parts or filename.lower().endswith((".mp3", ".wav", ".ogg", ".flac", ".m4a", ".aac")):
+                    if "playlists" in parts:
+                        index = parts.index("playlists")
+                        playlist = parts[index + 1] if index + 1 < len(parts) - 1 else "default"
+                    else:
+                        playlist = "default"
                     playlists_data.setdefault(playlist, []).append((filename, content))
                 elif "lore" in parts and filename.lower().endswith(LORE_TEXT_EXTENSION):
                     if len(content) > MAX_LORE_DOCUMENT_BYTES:
@@ -724,9 +728,10 @@ class TheaterManager:
             if len(validate_asset_path(playlist_name)) != 1:
                 raise ValueError("Playlist names must be a single path component.")
             playlist_dir = asset_destination(playlists_dir, playlist_name)
-            for filename, _ in files:
+            for filename, content in files:
                 parts = validate_asset_path(filename)
                 asset_destination(playlist_dir, parts[-1])
+                playlist_audio_type(parts[-1], content)
         for filename, content in lore_files or []:
             parts = validate_asset_path(filename)
             relative_name = "/".join(parts[parts.index("lore") + 1:]) if "lore" in parts else parts[-1]

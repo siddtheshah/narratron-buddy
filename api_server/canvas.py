@@ -3,11 +3,14 @@
 import asyncio
 import logging
 import math
+from html import escape
+from html.parser import HTMLParser
+import re
 from uuid import uuid4
-from typing import Any, Optional, Literal
+from typing import Any, Optional, Literal, TypeAlias
 
 from fastapi import Request, WebSocket, WebSocketDisconnect, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from google.genai import types
 
 from api_server.shared import (
@@ -31,11 +34,241 @@ from pydantic import JsonValue
 
 logger = logging.getLogger(__name__)
 
+_ROLL_HTML_MAX_CHARS = 16000
+_ROLL_CLASS_TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+_ROLL_VOID_TAGS: frozenset[str] = frozenset({"br", "hr"})
+_ROLL_ALLOWED_TAGS: frozenset[str] = frozenset({
+    "div", "span", "b", "strong", "i", "em", "u", "s", "small", "sub", "sup",
+    "br", "hr", "p", "table", "thead", "tbody", "tfoot", "tr", "th", "td",
+    "ul", "ol", "li", "code", "pre", "details", "summary", "h3", "h4", "h5", "h6",
+    "blockquote", "dl", "dt", "dd",
+})
+_ROLL_STRIP_CONTENT_TAGS: frozenset[str] = frozenset({
+    "script", "style", "svg", "math", "iframe", "frame", "frameset", "object",
+    "embed", "applet", "template", "noscript", "noembed", "textarea", "title",
+    "xmp", "head", "audio", "video", "canvas", "form", "button", "select", "option",
+})
+
+
+class _RollHtmlSanitizer(HTMLParser):
+    """Strict allowlist HTML sanitizer for Beyond20 / dice roll markup."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self._pieces: list[str] = []
+        self._open_tags: list[str] = []
+        self._strip_stack: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        lower_tag = tag.lower()
+        if self._strip_stack:
+            if lower_tag in _ROLL_STRIP_CONTENT_TAGS:
+                self._strip_stack.append(lower_tag)
+            return
+        if lower_tag in _ROLL_STRIP_CONTENT_TAGS:
+            self._strip_stack.append(lower_tag)
+            return
+        if lower_tag not in _ROLL_ALLOWED_TAGS:
+            return
+
+        attr_str = self._sanitize_attrs(lower_tag, attrs)
+        if lower_tag in _ROLL_VOID_TAGS:
+            self._pieces.append(f"<{lower_tag}{attr_str}>")
+            return
+        self._open_tags.append(lower_tag)
+        self._pieces.append(f"<{lower_tag}{attr_str}>")
+
+    def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        lower_tag = tag.lower()
+        if self._strip_stack or lower_tag in _ROLL_STRIP_CONTENT_TAGS:
+            return
+        if lower_tag not in _ROLL_ALLOWED_TAGS:
+            return
+        attr_str = self._sanitize_attrs(lower_tag, attrs)
+        if lower_tag in _ROLL_VOID_TAGS:
+            self._pieces.append(f"<{lower_tag}{attr_str}>")
+        else:
+            self._pieces.append(f"<{lower_tag}{attr_str}></{lower_tag}>")
+
+    def handle_endtag(self, tag: str) -> None:
+        lower_tag = tag.lower()
+        if self._strip_stack:
+            if lower_tag in self._strip_stack:
+                while self._strip_stack:
+                    popped = self._strip_stack.pop()
+                    if popped == lower_tag:
+                        break
+            return
+        if lower_tag in _ROLL_VOID_TAGS or lower_tag not in _ROLL_ALLOWED_TAGS:
+            return
+        if lower_tag in self._open_tags:
+            while self._open_tags:
+                popped = self._open_tags.pop()
+                self._pieces.append(f"</{popped}>")
+                if popped == lower_tag:
+                    break
+
+    def handle_data(self, data: str) -> None:
+        if self._strip_stack or not data:
+            return
+        self._pieces.append(escape(data, quote=False))
+
+    def get_html(self) -> str:
+        while self._open_tags:
+            popped = self._open_tags.pop()
+            self._pieces.append(f"</{popped}>")
+        return "".join(self._pieces).strip()
+
+    @staticmethod
+    def _sanitize_attrs(tag: str, attrs: list[tuple[str, str | None]]) -> str:
+        cleaned: list[str] = []
+        seen: set[str] = set()
+        for raw_name, raw_val in attrs:
+            name = raw_name.lower().strip()
+            if not name or name in seen or name.startswith("on"):
+                continue
+            if name == "class" and raw_val:
+                tokens = [
+                    tok for tok in raw_val.split()
+                    if _ROLL_CLASS_TOKEN_RE.match(tok)
+                ][:16]
+                if tokens:
+                    seen.add("class")
+                    cleaned.append(f' class="{escape(" ".join(tokens), quote=True)}"')
+            elif name == "title" and raw_val:
+                title_val = raw_val.strip()[:300]
+                if title_val:
+                    seen.add("title")
+                    cleaned.append(f' title="{escape(title_val, quote=True)}"')
+            elif name in ("colspan", "rowspan") and tag in ("th", "td") and raw_val:
+                val_str = raw_val.strip()
+                if val_str.isdigit():
+                    span_num = int(val_str)
+                    if 1 <= span_num <= 20:
+                        seen.add(name)
+                        cleaned.append(f' {name}="{span_num}"')
+            elif name == "open" and tag == "details":
+                seen.add("open")
+                cleaned.append(" open")
+        return "".join(cleaned)
+
+
+def sanitize_roll_html(raw_html: str) -> Optional[str]:
+    """Sanitize untrusted roll card HTML using a strict tag/attribute allowlist."""
+    if len(raw_html) > _ROLL_HTML_MAX_CHARS:
+        raise ValueError(f"Roll HTML exceeds maximum length of {_ROLL_HTML_MAX_CHARS} characters.")
+    parser = _RollHtmlSanitizer()
+    parser.feed(raw_html)
+    parser.close()
+    sanitized = parser.get_html()
+    return sanitized if sanitized else None
+
+
+class DieRollGroup(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    rolls: list[int | float] = Field(default_factory=list, max_length=50)
+    faces: Optional[int] = Field(default=None, ge=1, le=1000)
+    formula: Optional[str] = Field(default=None, max_length=200)
+
+
+class RollEntry(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    total: Optional[int | float | str] = Field(default=None)
+    result: Optional[int | float | str] = Field(default=None)
+    formula: Optional[str] = Field(default=None, max_length=200)
+    is_crit: Optional[bool] = None
+    is_fail: Optional[bool] = None
+    rolls: Optional[list[DieRollGroup]] = Field(default=None, max_length=20)
+    type: Optional[str] = Field(default=None, max_length=100)
+
+    @field_validator("total", "result")
+    @classmethod
+    def _validate_scalar_bound(cls, val: Optional[int | float | str]) -> Optional[int | float | str]:
+        if val is not None and len(str(val)) > 100:
+            raise ValueError("Roll value exceeds maximum length.")
+        return val
+
+
+DamageRollTuple2: TypeAlias = tuple[Optional[str], Optional[RollEntry]]
+DamageRollTuple3: TypeAlias = tuple[Optional[str], Optional[RollEntry], Optional[str]]
+
+
+class TotalDamageObject(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    total: int | float | str
+
+    @field_validator("total")
+    @classmethod
+    def _validate_total_bound(cls, val: int | float | str) -> int | float | str:
+        if len(str(val)) > 100:
+            raise ValueError("Total damage value exceeds maximum length.")
+        return val
+
+
+class RollDataPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    title: Optional[str] = Field(default=None, max_length=300)
+    character: Optional[str] = Field(default=None, max_length=200)
+    attack_rolls: list[RollEntry] = Field(default_factory=list, max_length=25)
+    damage_rolls: list[DamageRollTuple2 | DamageRollTuple3] = Field(default_factory=list, max_length=25)
+    total_damages: dict[str, int | float | str | TotalDamageObject] = Field(default_factory=dict)
+    html: Optional[str] = Field(default=None, max_length=_ROLL_HTML_MAX_CHARS)
+    description: Optional[str] = Field(default=None, max_length=2000)
+    whisper: Optional[int | str | bool] = None
+    forwarded_to_agent: Optional[bool] = None
+
+    @field_validator("damage_rolls")
+    @classmethod
+    def _validate_damage_labels(
+        cls,
+        value: list[DamageRollTuple2 | DamageRollTuple3],
+    ) -> list[DamageRollTuple2 | DamageRollTuple3]:
+        for item in value:
+            label = item[0]
+            if label is not None and len(label) > 100:
+                raise ValueError("Damage type label exceeds maximum length.")
+            if len(item) == 3 and item[2] is not None and len(item[2]) > 200:
+                raise ValueError("Damage formula exceeds maximum length.")
+        return value
+
+    @field_validator("total_damages")
+    @classmethod
+    def _validate_total_damages(
+        cls,
+        value: dict[str, int | float | str | TotalDamageObject],
+    ) -> dict[str, int | float | str | TotalDamageObject]:
+        if len(value) > 25:
+            raise ValueError("total_damages cannot contain more than 25 entries.")
+        for key, entry in value.items():
+            if len(key) > 100:
+                raise ValueError("total_damages key exceeds maximum length.")
+            if len(str(entry)) > 200:
+                raise ValueError("total_damages value exceeds maximum length.")
+        return value
+
+    @field_validator("whisper")
+    @classmethod
+    def _validate_whisper(cls, value: Optional[int | str | bool]) -> Optional[int | str | bool]:
+        if value is not None and len(str(value)) > 100:
+            raise ValueError("whisper field exceeds maximum length.")
+        return value
+
+    @field_validator("html")
+    @classmethod
+    def _sanitize_html_field(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        return sanitize_roll_html(value)
+
 
 class ChatMessage(BaseModel):
-    author: str
-    text: str
-    roll_data: Optional[dict[str, Any]] = None
+    author: str = Field(max_length=200)
+    text: str = Field(max_length=4000)
+    roll_data: Optional[RollDataPayload] = None
 
 
 class OratorCommand(BaseModel):
@@ -793,7 +1026,7 @@ def delete_a2ui_surface(surface_id: str, request: Request, theater_id: str):
     return {"status": "deleted", "surface_id": surface_id}
 
 @app.post("/api/chat")
-def post_chat(msg: ChatMessage, request: Request, theater_id: str):
+def post_chat(msg: ChatMessage, request: Request, theater_id: str) -> dict[str, JsonValue]:
     if not theater_id or not theater_id.strip():
         raise HTTPException(status_code=400, detail="theater_id is required.")
     theater_id = theater_id.strip()
@@ -809,7 +1042,7 @@ def post_chat(msg: ChatMessage, request: Request, theater_id: str):
         if not suggestion_text:
             raise HTTPException(status_code=400, detail="A suggestion must include text after /suggest.")
         try:
-            suggestion_kwargs = {}
+            suggestion_kwargs: dict[str, str] = {}
             if profile_username:
                 suggestion_kwargs["profile_username"] = profile_username
                 if profile_color:
@@ -821,25 +1054,25 @@ def post_chat(msg: ChatMessage, request: Request, theater_id: str):
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return {"status": "ok", "type": "suggestion", "suggestion": suggestion}
 
-    chat_kwargs = {"author": author}
+    chat_kwargs: dict[str, JsonValue] = {"author": author}
     if profile_username:
         chat_kwargs["profile_username"] = profile_username
         if profile_color:
             chat_kwargs["profile_color"] = profile_color
-    if msg.roll_data:
+    if msg.roll_data is not None:
         deployment = db.get_deployment(theater_id)
         if deployment and not is_contributor(deployment, current_user=user):
             raise HTTPException(
                 status_code=403,
                 detail="Only users with contributors permission can submit dice rolls.",
             )
-        chat_kwargs["roll_data"] = msg.roll_data
+        chat_kwargs["roll_data"] = msg.roll_data.model_dump(exclude_unset=True)
     state = _state(theater_id)
     state.chat.add_message({"text": msg.text, **chat_kwargs})
     state.notify_changed("chat")
 
-    if msg.roll_data and state.ui.viewer_collab_enabled:
-        if not msg.roll_data.get("forwarded_to_agent"):
+    if msg.roll_data is not None and state.ui.viewer_collab_enabled:
+        if not msg.roll_data.forwarded_to_agent:
             session = live_agent_manager.get_session(theater_id)
             if session and session.is_alive:
                 session.send_user_content(

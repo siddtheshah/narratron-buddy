@@ -8,7 +8,7 @@ import zipfile
 from unittest.mock import patch
 
 import pytest
-from testing.reference_images import png_bytes
+from testing.reference_images import mp3_bytes, png_bytes, wav_bytes
 
 from absl.testing import flagsaver
 
@@ -83,16 +83,17 @@ def test_lore_upload_paths_are_rejected_before_any_writes(tmp_path: Path, filena
 
 @pytest.mark.parametrize("playlist", ["../outside", "/outside", "C:\\outside", "C:outside", "..", "nested/name", "nested\\name"])
 def test_playlist_names_are_rejected_before_any_writes(tmp_path: Path, playlist: str) -> None:
+    audio = mp3_bytes()
     with pytest.raises(ValueError):
         TheaterManager(tmp_path).create_theater("Attack", "attack",
-            playlists_data={"safe": [("safe.mp3", b"audio")], playlist: [("song.mp3", b"audio")]})
+            playlists_data={"safe": [("safe.mp3", audio)], playlist: [("song.mp3", audio)]})
     assert list(tmp_path.iterdir()) == []
 
 
 @pytest.mark.parametrize("filename", ["../song.mp3", "/song.mp3", "C:track.mp3", "folder\\..\\song.mp3"])
 def test_playlist_track_paths_are_validated_before_flattening(tmp_path: Path, filename: str) -> None:
     with pytest.raises(ValueError):
-        TheaterManager(tmp_path).create_theater("Attack", "attack", playlists_data={"ambient": [(filename, b"audio")]})
+        TheaterManager(tmp_path).create_theater("Attack", "attack", playlists_data={"ambient": [(filename, mp3_bytes())]})
     assert list(tmp_path.iterdir()) == []
 
 
@@ -139,15 +140,16 @@ def test_resolved_asset_destination_cannot_escape_through_link(tmp_path: Path) -
 
 def test_valid_package_preserves_nested_assets_and_windows_separators(tmp_path: Path) -> None:
     image = png_bytes()
+    audio = mp3_bytes()
     manager = TheaterManager(tmp_path)
     metadata = manager.create_theater("Safe", "safe",
         reference_files=[("adventure\\references\\maps\\hero.png", image), ("planning.yaml", b"scenes: []")],
         lore_files=[("adventure/lore/world/history.txt", b"History")],
-        playlists_data={"ambient": [("folder\\rain.mp3", b"audio")]})
+        playlists_data={"ambient": [("folder\\rain.mp3", audio)]})
     assert metadata.mounted_references.count("maps/hero.png") == 1
     assert (tmp_path / "safe/references/maps/hero.png").read_bytes() == image
     assert (tmp_path / "safe/lore/world/history.txt").read_bytes() == b"History"
-    assert (tmp_path / "safe/playlists/ambient/rain.mp3").read_bytes() == b"audio"
+    assert (tmp_path / "safe/playlists/ambient/rain.mp3").read_bytes() == audio
     assert (tmp_path / "safe/planning.yaml").read_bytes() == b"scenes: []"
 
 
@@ -214,7 +216,7 @@ class TestTheaterManager(unittest.TestCase):
             name="Fantasy Quest",
             theater_id="quest",
             reference_files=[("references/maps/hero.png", png_bytes())],
-            playlists_data={"ambient": [("rain.mp3", b"audio")]},
+            playlists_data={"ambient": [("rain.mp3", mp3_bytes())]},
             theater_config={"live_agent": {"special_instructions": "painted fantasy"}},
         )
 
@@ -447,5 +449,72 @@ def test_theater_manager_destroy_theater_rejects_traversal_and_escapes(tmp_path:
         with pytest.raises(ValueError):
             manager.destroy_theater("C:outside")
         mock_rmtree.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("filename", "payload"),
+    [
+        ("attack.html", b"<script>alert(document.domain)</script>"),
+        ("attack.svg", b'<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>'),
+        ("disguised.mp3", b"<html><body><script>alert(1)</script></body></html>"),
+        ("polyglot.mp3", b"ID3\x04\x00\x00\x00\x00\x00\x00<script>alert(1)</script>"),
+        ("wrong_container.wav", mp3_bytes()),
+        ("not_audio.ogg", b"not an ogg container"),
+    ],
+)
+def test_playlist_tracks_reject_html_svg_and_disguised_payloads_before_any_writes(
+    tmp_path: Path, filename: str, payload: bytes
+) -> None:
+    manager = TheaterManager(tmp_path)
+    with pytest.raises(ValueError):
+        manager.create_theater(
+            "Attack",
+            "attack",
+            playlists_data={"ambient": [("safe.mp3", mp3_bytes()), (filename, payload)]},
+        )
+    assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.parametrize(
+    ("zip_member", "payload"),
+    [
+        ("playlists/ambient/attack.html", b"<script>alert(1)</script>"),
+        ("playlists/ambient/attack.svg", b"<svg onload=alert(1)></svg>"),
+        ("playlists/ambient/disguised.mp3", b"<!doctype html><script>alert(1)</script>"),
+    ],
+)
+def test_zip_package_with_non_audio_playlist_entry_is_rejected_before_any_writes(
+    tmp_path: Path, zip_member: str, payload: bytes
+) -> None:
+    archive = io.BytesIO()
+    with zipfile.ZipFile(archive, "w") as package:
+        package.writestr("playlists/ambient/safe.mp3", mp3_bytes())
+        package.writestr(zip_member, payload)
+    references, playlists, lore, _ = extract_asset_package(archive.getvalue())
+    with pytest.raises(ValueError):
+        TheaterManager(tmp_path).create_theater(
+            "Attack",
+            "attack",
+            reference_files=references,
+            playlists_data=playlists,
+            lore_files=lore,
+        )
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_create_theater_accepts_and_lists_supported_audio_formats(tmp_path: Path) -> None:
+    manager = TheaterManager(tmp_path)
+    tracks = [
+        ("track1.mp3", mp3_bytes()),
+        ("track2.wav", wav_bytes()),
+        ("track3.ogg", b"OggS\x00\x02\x00\x00"),
+        ("track4.flac", b"fLaC\x00\x00\x00\x22"),
+        ("track5.m4a", b"\x00\x00\x00\x18ftypM4A \x00\x00\x00\x00"),
+        ("track6.aac", b"\xff\xf1\x50\x80\x02\x1f\xfc"),
+    ]
+    manager.create_theater("Audio Stage", "audio-stage", playlists_data={"battle": tracks})
+    listed = manager.get_theater_playlists("audio-stage")
+    assert [item["filename"] for item in listed["battle"]] == [name for name, _ in tracks]
+
 
 

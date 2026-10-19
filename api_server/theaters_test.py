@@ -18,7 +18,7 @@ from testing.base import BaseTestCase
 from api_server.app import app, theater_manager, db, FLAGS, canvas_states
 import object_registry
 import api_server.theaters as theaters
-from testing.reference_images import png_bytes
+from testing.reference_images import mp3_bytes, png_bytes, wav_bytes
 from utils.config_loader import get_theater_default_config
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -441,7 +441,7 @@ class TestTheaterAPI(BaseTestCase):
         self.assertEqual(reg_res.status_code, 200)
 
         ref_file = ("hero.png", io.BytesIO(png_bytes()), "image/png")
-        track_file = ("ambient_01.mp3", io.BytesIO(b"fake_mp3_bytes"), "audio/mpeg")
+        track_file = ("ambient_01.mp3", io.BytesIO(mp3_bytes()), "audio/mpeg")
 
         response = self.client.post(
             "/api/theaters/create-and-deploy",
@@ -1731,6 +1731,91 @@ async def test_theater_push_subsequent_scenes_with_shared_stem_succeeds(tmp_path
             assert time2 > time1
             assert payload1["latest"] != payload2["latest"]
             assert state.visual.shown_image_prompt == "Sparkling crystal chandeliers."
+
+
+@pytest.mark.parametrize(
+    ("field", "filename", "payload"),
+    [
+        ("playlist_ambient", "attack.html", b"<script>alert(document.domain)</script>"),
+        ("playlist_ambient", "attack.svg", b'<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>'),
+        ("playlist_ambient", "disguised.mp3", b"<html><body><script>alert(1)</script></body></html>"),
+        ("asset_folder_files", "playlists/ambient/attack.html", b"<script>alert(1)</script>"),
+        ("asset_folder_files", "playlists/ambient/attack.svg", b"<svg onload=alert(1)></svg>"),
+        ("asset_folder_files", "playlists/ambient/disguised.mp3", b"<html><script>alert(1)</script></html>"),
+        ("asset_zip", "playlists/ambient/attack.html", b"<script>alert(1)</script>"),
+        ("asset_zip", "playlists/ambient/attack.svg", b"<svg onload=alert(1)></svg>"),
+        ("asset_zip", "playlists/ambient/disguised.mp3", b"<!doctype html><script>alert(1)</script>"),
+    ],
+)
+def test_playlist_upload_rejects_active_or_disguised_documents_across_all_paths(
+    tmp_path: Path, field: str, filename: str, payload: bytes
+) -> None:
+    from components.theater_manager import TheaterManager
+
+    upload_filename = filename
+    upload_bytes = payload
+    if field == "asset_zip":
+        archive = io.BytesIO()
+        with zipfile.ZipFile(archive, "w") as package:
+            package.writestr(filename, payload)
+        upload_filename = "attack.zip"
+        upload_bytes = archive.getvalue()
+
+    manager = TheaterManager(tmp_path)
+    with patch.object(theaters, "theater_manager", manager), \
+         patch.object(theaters, "get_current_user_async", AsyncMock(return_value={"id": 1})), \
+         TestClient(app) as client:
+        response = client.post(
+            "/api/theaters/create-and-deploy",
+            files={field: (upload_filename, upload_bytes)},
+        )
+    assert response.status_code == 400
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_playlist_serving_route_serves_valid_audio_and_quarantines_legacy_or_disguised_files(
+    tmp_path: Path,
+) -> None:
+    from components.theater_manager import TheaterManager
+
+    manager = TheaterManager(tmp_path)
+    mp3_track = mp3_bytes()
+    wav_track = wav_bytes()
+    manager.create_theater(
+        "Stage",
+        "stage",
+        playlists_data={"ambient": [("theme.mp3", mp3_track), ("chime.wav", wav_track)]},
+    )
+    playlist_dir = manager.theater("stage").playlists_dir() / "ambient"
+    (playlist_dir / "attack.html").write_bytes(b"<script>alert(1)</script>")
+    (playlist_dir / "attack.svg").write_bytes(b"<svg onload=alert(1)></svg>")
+    (playlist_dir / "disguised.mp3").write_bytes(b"<html><script>alert(1)</script></html>")
+
+    with patch.object(theaters, "theater_manager", manager), \
+         patch.object(theaters, "_require_canvas_access_async", AsyncMock()), \
+         TestClient(app) as client:
+        for bad_name in ("attack.html", "attack.svg", "disguised.mp3"):
+            quarantined = client.get(f"/theaters/stage/playlists/ambient/{bad_name}")
+            assert quarantined.status_code == 200
+            assert quarantined.headers["content-type"] == "application/octet-stream"
+            assert quarantined.headers["content-disposition"].startswith("attachment;")
+            assert quarantined.headers["x-content-type-options"] == "nosniff"
+            assert quarantined.headers["content-security-policy"] == "sandbox; default-src 'none'"
+
+        mp3_res = client.get("/theaters/stage/playlists/ambient/theme.mp3")
+        assert mp3_res.status_code == 200
+        assert mp3_res.headers["content-type"] == "audio/mpeg"
+        assert mp3_res.headers["x-content-type-options"] == "nosniff"
+        assert "sandbox" in mp3_res.headers["content-security-policy"]
+        assert "content-disposition" not in mp3_res.headers
+        assert mp3_res.content == mp3_track
+
+        wav_res = client.get("/theaters/stage/playlists/ambient/chime.wav")
+        assert wav_res.status_code == 200
+        assert wav_res.headers["content-type"] == "audio/wav"
+        assert wav_res.headers["x-content-type-options"] == "nosniff"
+        assert wav_res.content == wav_track
+
 
 
 

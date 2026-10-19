@@ -372,6 +372,93 @@
             return `hsl(${hue}, 85%, 68%)`;
         }
 
+        const ROLL_ALLOWED_TAGS = new Set([
+            'div', 'span', 'b', 'strong', 'i', 'em', 'u', 's', 'small', 'sub', 'sup',
+            'br', 'hr', 'p', 'table', 'thead', 'tbody', 'tfoot', 'tr', 'th', 'td',
+            'ul', 'ol', 'li', 'code', 'pre', 'details', 'summary', 'h3', 'h4', 'h5', 'h6',
+            'blockquote', 'dl', 'dt', 'dd',
+        ]);
+
+        const ROLL_STRIP_CONTENT_TAGS = new Set([
+            'script', 'style', 'svg', 'math', 'iframe', 'frame', 'frameset', 'object',
+            'embed', 'applet', 'template', 'noscript', 'noembed', 'textarea', 'title',
+            'xmp', 'head', 'audio', 'video', 'canvas', 'form', 'button', 'select', 'option',
+        ]);
+
+        const ROLL_CLASS_TOKEN_RE = /^[A-Za-z0-9_-]{1,64}$/;
+
+        function sanitizeRollHtmlToFragment(rawHtml) {
+            const fragment = document.createDocumentFragment();
+            if (typeof rawHtml !== 'string' || !rawHtml.trim()) {
+                return fragment;
+            }
+            const parsed = new DOMParser().parseFromString(rawHtml.slice(0, 16000), 'text/html');
+
+            function cloneSafeNode(node, depth) {
+                if (depth > 32) return null;
+                if (node.nodeType === Node.TEXT_NODE) {
+                    return document.createTextNode(node.nodeValue || '');
+                }
+                if (node.nodeType !== Node.ELEMENT_NODE) {
+                    return null;
+                }
+                const tag = (node.tagName || '').toLowerCase();
+                if (ROLL_STRIP_CONTENT_TAGS.has(tag)) {
+                    return null;
+                }
+                if (!ROLL_ALLOWED_TAGS.has(tag)) {
+                    const passthrough = document.createDocumentFragment();
+                    for (const child of node.childNodes) {
+                        const safeChild = cloneSafeNode(child, depth + 1);
+                        if (safeChild) passthrough.appendChild(safeChild);
+                    }
+                    return passthrough;
+                }
+                const el = document.createElement(tag);
+                const classAttr = node.getAttribute('class');
+                if (classAttr) {
+                    const safeClasses = classAttr
+                        .split(/\s+/)
+                        .filter(tok => ROLL_CLASS_TOKEN_RE.test(tok))
+                        .slice(0, 16);
+                    if (safeClasses.length > 0) {
+                        el.setAttribute('class', safeClasses.join(' '));
+                    }
+                }
+                const titleAttr = node.getAttribute('title');
+                if (titleAttr && titleAttr.trim()) {
+                    el.setAttribute('title', titleAttr.trim().slice(0, 300));
+                }
+                if (tag === 'th' || tag === 'td') {
+                    for (const spanAttr of ['colspan', 'rowspan']) {
+                        const rawSpan = node.getAttribute(spanAttr);
+                        if (rawSpan && /^\d+$/.test(rawSpan.trim())) {
+                            const num = parseInt(rawSpan.trim(), 10);
+                            if (num >= 1 && num <= 20) {
+                                el.setAttribute(spanAttr, String(num));
+                            }
+                        }
+                    }
+                }
+                if (tag === 'details' && node.hasAttribute('open')) {
+                    el.setAttribute('open', '');
+                }
+                for (const child of node.childNodes) {
+                    const safeChild = cloneSafeNode(child, depth + 1);
+                    if (safeChild) el.appendChild(safeChild);
+                }
+                return el;
+            }
+
+            if (parsed.body) {
+                for (const child of parsed.body.childNodes) {
+                    const safeChild = cloneSafeNode(child, 0);
+                    if (safeChild) fragment.appendChild(safeChild);
+                }
+            }
+            return fragment;
+        }
+
         function renderChatMessage(msg) {
             const div = document.createElement('div');
             div.className = 'chat-message';
@@ -400,9 +487,12 @@
                 card.className = 'chat-roll-card';
 
                 if (msg.roll_data.html) {
-                    // Render only the card directly (no extra wrapper headers)
-                    card.innerHTML = msg.roll_data.html;
-                } else {
+                    const safeFragment = sanitizeRollHtmlToFragment(msg.roll_data.html);
+                    if (safeFragment.childNodes.length > 0) {
+                        card.appendChild(safeFragment);
+                    }
+                }
+                if (card.childNodes.length === 0) {
                     // Fallback for roll_data without pre-rendered HTML: render results without header
                     const resultsRow = document.createElement('div');
                     resultsRow.className = 'chat-roll-results';
