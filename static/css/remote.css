@@ -27,8 +27,8 @@ header a { display: inline-flex; align-items: center; gap: 9px; color: #e9edf5; 
 a { color: #bac5d7; font-size: 10px; text-underline-offset: 3px; }
 fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
 .bar { --bar-accent: #edc68c; position: relative; padding: 6px; border: 1px solid var(--line); background: linear-gradient(110deg, #222a36b0, #1a202ce0); border-radius: 10px; margin: 0 0 6px; box-shadow: 0 2px 5px #00000012, inset 0 1px 0 #ffffff03; }
-.bar[aria-labelledby="scene-title"] { --bar-accent: #b6a7e2; }
-.bar[aria-labelledby="music-title"] { --bar-accent: #8ebdcb; }
+.bar[aria-labelledby="scene-title"] { --bar-accent: #cd9aff; }
+.bar[aria-labelledby="music-title"] { --bar-accent: #45e0ff; }
 .bar[aria-labelledby="direction-title"] { --bar-accent: #edc68c; }
 .bar[aria-labelledby="audience-title"] { --bar-accent: #93c9b0; }
 h2 { flex: 0 0 76px; margin: 0; padding-left: 3px; color: var(--bar-accent); font-size: 14px; font-weight: 600; letter-spacing: -.02em; }
@@ -40,8 +40,6 @@ button:hover:enabled { background: #ffffff0c; border-color: #ffffff30; color: #f
 button:active:enabled { background: #ffffff15; box-shadow: inset 0 1px 3px #00000030; }
 button:disabled { opacity: .38; cursor: default; box-shadow: none; }
 button.primary { background: #edc68c12; border-color: #edc68c30; color: #edc68c; }
-.bar[aria-labelledby="scene-title"] .primary { color: #c9bbed; background: #b6a7e212; border-color: #b6a7e230; }
-.bar[aria-labelledby="music-title"] .primary { color: #a8d0db; background: #8ebdcb12; border-color: #8ebdcb30; }
 button.primary:hover:enabled { background: #edc68c22; border-color: #edc68c66; color: #ffe0b4; }
 button[aria-pressed="true"] { border-color: #93c9b045; color: #aedcc6; background: #93c9b012; }
 .power-button { flex: 1; height: 52px; display: grid; place-items: center; padding: 10px; color: #aedcc6; border-color: #93c9b045; background: #93c9b012; }
@@ -49,12 +47,16 @@ button[aria-pressed="true"] { border-color: #93c9b045; color: #aedcc6; backgroun
 .power-button[aria-pressed="true"] { color: #efb0a6; border-color: #e58e7d55; background: #e58e7d14; }
 .power-button:hover:enabled { color: #d0f6e3; border-color: #93c9b080; background: #93c9b024; }
 .power-button[aria-pressed="true"]:hover:enabled { color: #ffd1c9; border-color: #e58e7d90; background: #e58e7d28; }
-button[data-action="previous_image"], button[data-action="next_image"], button[data-action="previous_music"], button[data-action="next_music"] { flex: 0 0 48px; min-height: 40px; color: #93a1b6; font-size: 18px; }
+.media-arrow { flex: 0 0 48px; min-height: 40px; display: grid; place-items: center; }
+.media-arrow svg { width: 26px; height: 26px; fill: none; stroke: currentColor; stroke-width: 3.5; stroke-linecap: round; stroke-linejoin: round; filter: drop-shadow(0 0 5px currentColor); }
 .pin-button { flex: 0 0 40px; min-height: 40px; display: grid; place-items: center; }
-.pin-button svg { width: 20px; height: 20px; fill: none; color: #ef8e86; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; transform: rotate(35deg); }
+.pin-button svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; transform: rotate(35deg); }
 .pin-button[aria-pressed="true"] svg { transform: none; }
 .generate-button { display: grid; place-items: center; }
 .generate-button svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.bar :is(.media-arrow, .pin-button, .generate-button) { color: var(--bar-accent); border-color: color-mix(in srgb, var(--bar-accent) 40%, transparent); background: color-mix(in srgb, var(--bar-accent) 14%, transparent); }
+.bar :is(.media-arrow, .pin-button, .generate-button):hover:enabled { color: var(--bar-accent); border-color: var(--bar-accent); background: color-mix(in srgb, var(--bar-accent) 24%, transparent); }
+.bar .pin-button[aria-pressed="true"] { color: var(--bar-accent); border-color: var(--bar-accent); background: color-mix(in srgb, var(--bar-accent) 28%, transparent); }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 #command-form { margin-top: 12px; background: #10151f80; border-color: #edc68c24; }
 #command-form input { border-color: transparent; background: transparent; box-shadow: none; }
