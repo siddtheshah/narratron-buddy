@@ -1075,7 +1075,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
             self.assertEqual(content.parts[-1].inline_data.mime_type, "image/jpeg")
 
             image_path.write_bytes(b"changed-scene")
-            with patch("components.reference_manager.Path.mkdir", side_effect=OSError("disk full")):
+            with patch("components.reference_manager.Path.write_bytes", side_effect=OSError("disk full")):
                 self.assertTrue(session.send_agent_requested_observability())
             content = session.live_request_queue.send_content.call_args.args[0]
             self.assertNotIn("[Canvas Capture]", content.parts[0].text)

@@ -926,6 +926,19 @@ class ReferenceManager:
                 })
         return entries
 
+    def recent_reference_tags(self, limit: int = 10) -> list[str]:
+        """Return path-free tool catalog tags, newest image modification first."""
+        dated_tags: list[tuple[int, str]] = []
+        for entry in self.list_references():
+            try:
+                modified = Path(entry["path"]).stat().st_mtime_ns
+            except OSError:
+                # A reference can disappear while the canvas update is assembled.
+                continue
+            dated_tags.append((modified, entry["alias"]))
+        dated_tags.sort(key=lambda item: item[0], reverse=True)
+        return [tag for _, tag in dated_tags[:max(0, limit)]]
+
     def find_image_names(self, query: str = "", include_characters: bool = True) -> list[dict[str, str]]:
         """Search only reference names, tags, and metadata."""
         entries = self.list_references(include_characters=include_characters)

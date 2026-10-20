@@ -52,30 +52,13 @@ def format_canvas_state(
             parts.append(f"[Sticky Notes]: {rendered_elements}")
 
     if reference_manager is not None:
-        available_images = reference_manager.available_character_images()
-        player = reference_manager.get_player_character()
-        player_name = (player.name or "Player") if player is not None else ""
-        player_key = " ".join(player_name.replace("_", " ").casefold().split())
-        npc_tags: list[str] = []
-        for name in available_images:
-            name_key = " ".join(name.replace("_", " ").casefold().split())
-            if player_key and name_key == player_key:
-                parts.append(f"[Player Character Reference]: <{name}>")
-            else:
-                npc_tags.append(f"<{name}>")
-        if npc_tags:
-            names = ", ".join(npc_tags)
+        tags = reference_manager.recent_reference_tags(limit=10)
+        if tags:
             parts.append(
-                f"[Available Character Visuals]: {names}. Use these exact tags in visual prompts "
-                "to attach the latest character portraits automatically."
-            )
-
-        scene_images = reference_manager.available_scene_images()
-        if scene_images:
-            scenes = ", ".join(f"<{name}>" for name in scene_images)
-            parts.append(
-                f"[Available Scene Visuals]: {scenes}. Use these exact tags in visual prompts "
-                "to attach the latest scene visuals automatically."
+                f"[Available References]: {', '.join(tags)}. "
+                "Use these exact reference tags in image and animation prompts. "
+                "Showing up to 10 most recently updated references; use list_references "
+                "or search_references to find others."
             )
 
     return "\n".join(parts)
