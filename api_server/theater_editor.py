@@ -38,6 +38,7 @@ from services.theater_builder import (
     MAX_DRAFT_BYTES, MAX_FILE_BYTES, MAX_FILES, TheaterBuilderStore,
     asset_mime, encode_text_writes, safe_asset_path, upload_path, validate_text,
 )
+from storage.storage_limits import check_user_theaters_storage_allowance
 from utils.auth_cache import auth_session_cache
 from utils.config_loader import get_theater_default_config
 
@@ -236,7 +237,7 @@ async def upload_assets(theater_id: str, request: Request, files: list[UploadFil
                     raise ValueError(f"{relative} already exists. Rename the asset before uploading.")
                 content = await upload.read(MAX_FILE_BYTES + 1)
                 if len(content) > MAX_FILE_BYTES:
-                    raise ValueError("Each asset must be at most 20MB.")
+                    raise ValueError("Each asset must be at most 5MB.")
                 total += len(content)
                 if total > MAX_DRAFT_BYTES:
                     raise ValueError("Upload must be at most 100MB.")
@@ -513,6 +514,8 @@ def publish_draft(info: DraftInfo) -> str:
             raise ValueError("starting_image must point to an existing reference image.")
     target = theater_manager.theater(info.theater_id).directory()
     if info.source_id is None and not target.exists():
+        draft_size = sum(item.size for item in builder.files(info.theater_id))
+        check_user_theaters_storage_allowance(info.owner_id, draft_size)
         theater_manager.create_theater(name=info.name, theater_id=info.theater_id, theater_config=theater_config)
     live_agent_manager.stop_session(info.theater_id)
     builder.copy_to(info, target)

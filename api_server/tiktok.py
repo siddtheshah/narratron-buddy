@@ -7,6 +7,7 @@ import secrets
 import shutil
 import subprocess
 import tempfile
+import threading
 import time
 from typing import Dict
 from urllib.parse import urlencode, urlsplit
@@ -18,6 +19,9 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel, Field
 
 from api_server.shared import app, get_current_user
+from storage.storage_limits import MAX_FILE_UPLOAD_BYTES
+
+_TRANSCODE_SEMAPHORE = threading.Semaphore(2)
 
 
 _PENDING: Dict[str, tuple[int, float]] = {}
@@ -129,9 +133,18 @@ def upload_transcoded_draft(request: Request, clip: UploadFile = File(...)):
     with tempfile.TemporaryDirectory(prefix="narratron-tiktok-") as working_dir:
         source = os.path.join(working_dir, "clip.webm")
         converted = os.path.join(working_dir, "clip.mp4")
+        total_read = 0
         with open(source, "wb") as target:
             while chunk := clip.file.read(1024 * 1024):
+                total_read += len(chunk)
+                if total_read > MAX_FILE_UPLOAD_BYTES:
+                    raise HTTPException(status_code=400, detail="Clip exceeds maximum allowed size of 5MB.")
                 target.write(chunk)
+        if total_read == 0:
+            raise HTTPException(status_code=400, detail="Uploaded clip is empty.")
+
+        if not _TRANSCODE_SEMAPHORE.acquire(blocking=False):
+            raise HTTPException(status_code=429, detail="Too many concurrent video conversions. Please try again shortly.")
         try:
             subprocess.run([ffmpeg, "-y", "-i", source, "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2", "-map", "0:v:0", "-map", "0:a?", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-r", "30", "-c:a", "aac", "-movflags", "+faststart", converted], check=True, capture_output=True, timeout=120)
         except subprocess.CalledProcessError as exc:
@@ -143,7 +156,12 @@ def upload_transcoded_draft(request: Request, clip: UploadFile = File(...)):
         except subprocess.TimeoutExpired as exc:
             logger.warning("TikTok MP4 conversion timed out.")
             raise HTTPException(status_code=422, detail="MP4 conversion timed out.") from exc
+        finally:
+            _TRANSCODE_SEMAPHORE.release()
+
         size = os.path.getsize(converted)
+        if size > MAX_FILE_UPLOAD_BYTES:
+            raise HTTPException(status_code=400, detail="Converted video exceeds maximum allowed size of 5MB.")
         body = json.dumps({"source_info": {"source": "FILE_UPLOAD", "video_size": size, "chunk_size": size, "total_chunk_count": 1}}).encode("utf-8")
         upstream = UrlRequest(_UPLOAD_INIT_URL, data=body, headers={"Authorization": f"Bearer {token['access_token']}", "Content-Type": "application/json"})
         try:

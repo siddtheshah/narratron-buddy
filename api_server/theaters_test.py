@@ -1817,6 +1817,39 @@ def test_playlist_serving_route_serves_valid_audio_and_quarantines_legacy_or_dis
         assert wav_res.content == wav_track
 
 
+def test_create_and_deploy_theater_rejects_file_over_5mb(tmp_path: Path) -> None:
+    from components.theater_manager import TheaterManager
+
+    manager = TheaterManager(tmp_path)
+    oversized_bytes = b"X" * (5 * 1024 * 1024 + 10)
+    with patch.object(theaters, "theater_manager", manager), \
+         patch.object(theaters, "get_current_user_async", AsyncMock(return_value={"id": 1})), \
+         TestClient(app) as client:
+        response = client.post(
+            "/api/theaters/create-and-deploy",
+            files={"reference_files": ("oversized.png", oversized_bytes)},
+        )
+    assert response.status_code == 400
+    assert "exceeds maximum allowed size of 5MB" in response.json()["detail"]
+
+
+def test_create_and_deploy_theater_rejects_when_user_storage_cap_exceeded(tmp_path: Path) -> None:
+    from components.theater_manager import TheaterManager
+
+    manager = TheaterManager(tmp_path)
+    small_bytes = b"X" * 1024
+    with patch.object(theaters, "theater_manager", manager), \
+         patch.object(theaters, "get_current_user_async", AsyncMock(return_value={"id": 1})), \
+         patch("api_server.theaters.check_user_theaters_storage_allowance", side_effect=ValueError("User theater storage limit of 500MB exceeded")), \
+         TestClient(app) as client:
+        response = client.post(
+            "/api/theaters/create-and-deploy",
+            files={"reference_files": ("small.png", small_bytes)},
+        )
+    assert response.status_code == 400
+    assert "500MB exceeded" in response.json()["detail"]
+
+
 
 
 

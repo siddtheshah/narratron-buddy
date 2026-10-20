@@ -1615,6 +1615,14 @@ class _DatabaseManagerBase:
             records.append({"theater_id": theater_id, "metadata": metadata, "last_used_at": last_used_at})
         return records
 
+    def get_user_theater_ids(self, user_id: int) -> list[str]:
+        """Return all theater IDs owned by the specified user."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT theater_id FROM theaters WHERE user_id = ?", (user_id,))
+            rows = cursor.fetchall()
+            return [str(row["theater_id"]) for row in rows]
+
 
     def update_theater_name(self, theater_id: str, new_name: str, user_id: Optional[int] = None) -> bool:
         """Update the display name of a theater in theaters table."""

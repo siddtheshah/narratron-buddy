@@ -102,3 +102,43 @@ def test_upload_transcoded_draft_handles_timeout():
             tiktok.upload_transcoded_draft(_request(), clip)
         assert exc.value.status_code == 422
         assert "timed out" in exc.value.detail
+
+
+def test_upload_transcoded_draft_rejects_oversized_clip():
+    with patch.object(tiktok, "get_current_user", return_value={"id": 42}), \
+         patch.dict(tiktok._TOKENS, {42: {"access_token": "tok_123", "expires_at": time.time() + 3600}}), \
+         patch("shutil.which", return_value="/usr/bin/ffmpeg"):
+        clip = UploadFile(io.BytesIO(b"X" * (5 * 1024 * 1024 + 10)), filename="clip.webm")
+        with pytest.raises(HTTPException) as exc:
+            tiktok.upload_transcoded_draft(_request(), clip)
+        assert exc.value.status_code == 400
+        assert "exceeds maximum allowed size of 5MB" in exc.value.detail
+
+
+def test_upload_transcoded_draft_rejects_empty_clip():
+    with patch.object(tiktok, "get_current_user", return_value={"id": 42}), \
+         patch.dict(tiktok._TOKENS, {42: {"access_token": "tok_123", "expires_at": time.time() + 3600}}), \
+         patch("shutil.which", return_value="/usr/bin/ffmpeg"):
+        clip = UploadFile(io.BytesIO(b""), filename="clip.webm")
+        with pytest.raises(HTTPException) as exc:
+            tiktok.upload_transcoded_draft(_request(), clip)
+        assert exc.value.status_code == 400
+        assert "Uploaded clip is empty" in exc.value.detail
+
+
+def test_upload_transcoded_draft_enforces_transcode_concurrency():
+    with patch.object(tiktok, "get_current_user", return_value={"id": 42}), \
+         patch.dict(tiktok._TOKENS, {42: {"access_token": "tok_123", "expires_at": time.time() + 3600}}), \
+         patch("shutil.which", return_value="/usr/bin/ffmpeg"):
+        # Drain the semaphore
+        tiktok._TRANSCODE_SEMAPHORE.acquire()
+        tiktok._TRANSCODE_SEMAPHORE.acquire()
+        try:
+            clip = UploadFile(io.BytesIO(b"input_webm_bytes"), filename="clip.webm")
+            with pytest.raises(HTTPException) as exc:
+                tiktok.upload_transcoded_draft(_request(), clip)
+            assert exc.value.status_code == 429
+            assert "Too many concurrent video conversions" in exc.value.detail
+        finally:
+            tiktok._TRANSCODE_SEMAPHORE.release()
+            tiktok._TRANSCODE_SEMAPHORE.release()

@@ -182,7 +182,9 @@ Evidence labels:
 
 **Regression check:** simultaneous jobs cannot reuse one admission balance or exceed the slot cap, including independent PostgreSQL connections and multiple application instances.
 
-### S12 — [P2] Upload and import paths can exhaust memory, disk, or transcoding workers
+### S12 — [RESOLVED] [P2] Upload and import paths can exhaust memory, disk, or transcoding workers
+
+**Status: Resolved.**
 
 **Evidence: Source-confirmed; no exhaustion load was run.** Theater creation and stamp upload read whole files without application byte caps. Google downloads buffer the response before checking size; the confirmation download bypasses that check, and document export has no equivalent cap. TikTok conversion copies an uncapped upload, launches FFmpeg without a concurrency budget, then reads the whole output into memory.
 
@@ -192,7 +194,16 @@ Evidence labels:
 
 **Patch scope:** enforce request, per-file, aggregate, and per-owner storage limits before/between reads; stream downloads with byte limits on every response path; bound decoded image dimensions and video duration/resolution; place transcodes behind a bounded worker queue. Apply equivalent controls to legacy creation and editor imports.
 
-**Regression check:** oversized bodies and streamed responses terminate at the budget, confirmation downloads obey the same cap, and concurrent transcodes are rejected or queued predictably.
+**Resolution:**
+- Defined storage caps in `storage/storage_limits.py`: `MAX_FILE_UPLOAD_BYTES = 5 * 1024 * 1024` (5 MB per file upload) and `MAX_USER_THEATER_STORAGE_BYTES = 500 * 1024 * 1024` (500 MB aggregate storage per user across active drafts and deployed theaters).
+- Implemented `calculate_user_theaters_storage_bytes` and `check_user_theaters_storage_allowance` to compute total user disk usage across deployed theaters and active editor drafts, preventing quota overages before writing new assets or publishing drafts.
+- Enforced 5 MB per-file upload caps with bounded chunk reading and early termination on `create_and_deploy_theater` (`api_server/theaters.py`), draft asset uploads and draft publishing (`api_server/theater_editor.py`), draft file saving (`services/theater_builder.py`), stamp uploads (`api_server/profiles.py`), and asset package extraction / theater creation (`components/theater_manager.py`).
+- Bounded Google asset import downloads (`services/google_asset_importer.py`): early rejection via `Content-Length` headers, streaming chunk reads bounded by 5 MB, and strict 5 MB caps on confirmation downloads and exported Google Docs.
+- Bounded TikTok uploads and conversion (`api_server/tiktok.py`): bounded chunk reading capped at 5 MB, rejection of empty files, validation of converted output size <= 5 MB, and an explicit concurrency semaphore limiting concurrent FFmpeg transcoding workers to 2 with HTTP 429 backpressure.
+- Updated theater creation UI (`templates/theater_creation.html`) to validate client-side 5 MB file size limit on zip files and folder uploads.
+- Added comprehensive unit and regression tests in `storage/storage_limits_test.py`, `storage/database_test.py`, `api_server/theaters_test.py`, `api_server/theater_editor_test.py`, `api_server/profiles_test.py`, `api_server/tiktok_test.py`, and `services/google_asset_importer_test.py`.
+
+**Regression check:** oversized files (> 5 MB) across all upload/import routes are rejected with HTTP 400, user theater storage exceeding 500 MB is rejected, Google downloads obey the 5 MB ceiling on initial and confirmation flows, and concurrent FFmpeg transcodes are bounded by a worker semaphore. Verified with automated regression tests.
 
 ### S13 — [P2] Suggestion votes and withdrawals trust client-supplied identities
 

@@ -19,8 +19,13 @@ from PIL import Image, UnidentifiedImageError
 import yaml
 
 from components.theater_manager import MAX_LORE_DOCUMENT_BYTES
+from storage.storage_limits import (
+    MAX_FILE_UPLOAD_BYTES,
+    MAX_USER_THEATER_STORAGE_BYTES,
+    check_user_theaters_storage_allowance,
+)
 
-MAX_FILE_BYTES = 20 * 1024 * 1024
+MAX_FILE_BYTES = 5 * 1024 * 1024
 MAX_DRAFT_BYTES = 100 * 1024 * 1024
 MAX_FILES = 500
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
@@ -389,12 +394,16 @@ class TheaterBuilderStore:
                 current[move.destination] = size
         for name, content in files.items():
             if len(content) > MAX_FILE_BYTES:
-                raise ValueError("Each asset must be at most 20MB.")
+                raise ValueError("Each asset must be at most 5MB.")
             if targets[name].suffix.lower() in TEXT_EXTENSIONS:
                 validate_text(name, content.decode("utf-8"))
             current[name] = len(content)
         if len(current) > MAX_FILES or sum(current.values()) > MAX_DRAFT_BYTES:
             raise ValueError("A theater draft supports up to 500 files and 100MB.")
+        existing_draft_size = sum(item.size for item in self.files(info.theater_id))
+        net_increase = sum(current.values()) - existing_draft_size
+        if net_increase > 0:
+            check_user_theaters_storage_allowance(info.owner_id, net_increase)
         for path in removal_paths:
             del_target = safe_asset_path(root, path)
             del_target.unlink()

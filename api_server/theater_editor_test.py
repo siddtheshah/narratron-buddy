@@ -140,6 +140,32 @@ def test_flat_dump_upload_is_organized_and_invalid_batch_is_rejected(builder: Bu
     assert duplicate.status_code == 400
 
 
+def test_upload_assets_rejects_file_over_5mb(builder: BuilderHarness) -> None:
+    data = builder.create()
+    base = f"/api/theater-editor/{data['draft']['theater_id']}"
+    oversized = b"X" * (5 * 1024 * 1024 + 10)
+    result = builder.client.post(
+        f"{base}/upload",
+        data={"revision": data["draft"]["revision"]},
+        files={"files": ("large.png", oversized)},
+    )
+    assert result.status_code == 400
+    assert "at most 5MB" in result.text
+
+
+def test_upload_assets_rejects_when_user_storage_cap_exceeded(builder: BuilderHarness) -> None:
+    data = builder.create()
+    base = f"/api/theater-editor/{data['draft']['theater_id']}"
+    with patch("services.theater_builder.check_user_theaters_storage_allowance", side_effect=ValueError("User theater storage limit of 500MB exceeded")):
+        result = builder.client.post(
+            f"{base}/upload",
+            data={"revision": data["draft"]["revision"]},
+            files={"files": ("asset.png", b"content")},
+        )
+    assert result.status_code == 400
+    assert "500MB exceeded" in result.text
+
+
 def test_stale_revision_cannot_overwrite_saved_changes(builder: BuilderHarness) -> None:
     data = builder.create()
     base = f"/api/theater-editor/{data['draft']['theater_id']}"

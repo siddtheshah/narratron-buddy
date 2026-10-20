@@ -113,8 +113,8 @@ class DummyUploadFile:
         self.filename = filename
         self._content = content
 
-    async def read(self) -> bytes:
-        return self._content
+    async def read(self, size: int = -1) -> bytes:
+        return self._content[:size] if size >= 0 else self._content
 
 
 def _png_bytes() -> bytes:
@@ -193,6 +193,19 @@ async def test_upload_stamp_rejects_empty_file() -> None:
          pytest.raises(HTTPException) as err:
         await profiles.upload_stamp(request(), dummy_file, "Empty")
     assert err.value.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_upload_stamp_rejects_oversized_file() -> None:
+    dummy_file = DummyUploadFile("huge.png", b"x" * (5 * 1024 * 1024 + 10))
+    registry_db = MagicMock()
+    registry_db.count_user_stamps.return_value = 2
+    with patch.object(object_registry, "db", registry_db), \
+         patch.object(profiles, "get_current_user", return_value={"id": 8}), \
+         pytest.raises(HTTPException) as err:
+        await profiles.upload_stamp(request(), dummy_file, "Huge")
+    assert err.value.status_code == 400
+    assert "exceeds 5MB" in str(err.value.detail)
 
 
 @pytest.mark.asyncio

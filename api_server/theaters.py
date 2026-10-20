@@ -53,6 +53,10 @@ from components.theater_manager import (
     validate_asset_path,
     validate_theater_id,
 )
+from storage.storage_limits import (
+    MAX_FILE_UPLOAD_BYTES,
+    check_user_theaters_storage_allowance,
+)
 from utils.config_loader import get_theater_config, get_theater_default_config
 
 logger = logging.getLogger(__name__)
@@ -1043,10 +1047,18 @@ async def create_and_deploy_theater(request: Request):
             playlists_data["default"] = [("new_story.mp3", quick_deploy_track.read_bytes())]
 
     for key, value in form.multi_items():
-        filename = getattr(value, "filename", None)
-        if filename:
-            content = await value.read()
-            if content:
+        if type(value) is not str:
+            upload_file: UploadFile = value
+            filename = upload_file.filename or ""
+            if filename:
+                content = await upload_file.read(MAX_FILE_UPLOAD_BYTES + 1)
+                if len(content) > MAX_FILE_UPLOAD_BYTES:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"File '{filename}' exceeds maximum allowed size of 5MB.",
+                    )
+                if not content:
+                    continue
                 # Check for uploaded ZIP package
                 if key in ("asset_zip", "asset_package") or filename.lower().endswith(".zip"):
                     try:
@@ -1140,6 +1152,16 @@ async def create_and_deploy_theater(request: Request):
             enable_adventure_mode=enable_adventure_mode,
             story_planning_style=story_planning_style,
         )
+
+    total_new_bytes = sum(len(c) for _, c in reference_files)
+    total_new_bytes += sum(len(c) for tracks in playlists_data.values() for _, c in tracks)
+    total_new_bytes += sum(len(c) for _, c in lore_files)
+    if adventure_metadata:
+        total_new_bytes += len(json.dumps(adventure_metadata))
+    try:
+        check_user_theaters_storage_allowance(user["id"], total_new_bytes)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
 
     theater_id = f"theater_{uuid.uuid4().hex[:8]}"
     try:

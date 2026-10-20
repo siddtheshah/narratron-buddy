@@ -1250,6 +1250,15 @@ class TestPostgresSchemaAndTables(BaseTestCase):
 
         asyncio.run(_run())
 
+    def test_get_user_theater_ids(self) -> None:
+        user = self.db.register_user("theaterowner", "theaterowner@example.com", "pass123")
+        uid = int(user["id"])
+        self.assertEqual(self.db.get_user_theater_ids(uid), [])
+
+        self.db.record_deployment("theater_alpha", uid, "KEY-1", cost=0.0, name="Alpha")
+        self.db.record_deployment("theater_beta", uid, "KEY-2", cost=0.0, name="Beta")
+        self.assertEqual(sorted(self.db.get_user_theater_ids(uid)), ["theater_alpha", "theater_beta"])
+
 
 if __name__ == "__main__":
     unittest.main()

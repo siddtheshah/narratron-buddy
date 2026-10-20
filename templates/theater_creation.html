@@ -1792,9 +1792,9 @@
         }
 
         function handleZipUploadFile(file) {
-            const MAX_SIZE = 10 * 1024 * 1024; // 10MB limit
+            const MAX_SIZE = 5 * 1024 * 1024; // 5MB limit
             if (file.size > MAX_SIZE) {
-                alert(`Error: ZIP archive "${file.name}" exceeds the maximum allowed 10MB size limit (File size: ${(file.size / (1024 * 1024)).toFixed(2)} MB). Please select a smaller package.`);
+                alert(`Error: ZIP archive "${file.name}" exceeds the maximum allowed 5MB size limit (File size: ${(file.size / (1024 * 1024)).toFixed(2)} MB). Please select a smaller package.`);
                 clearFolderUpload();
                 return;
             }
@@ -1808,11 +1808,18 @@
             const manifestCard = document.getElementById('folderUploadManifest');
 
             if (summarySpan) summarySpan.innerText = `ZIP Package (${file.name})`;
-            if (detailsDiv) detailsDiv.innerHTML = `File size: ${(file.size / (1024 * 1024)).toFixed(2)} MB. Contents will be unpacked on canvas deployment (max 10MB limit enforced).`;
+            if (detailsDiv) detailsDiv.innerHTML = `File size: ${(file.size / (1024 * 1024)).toFixed(2)} MB. Contents will be unpacked on canvas deployment (max 5MB limit enforced).`;
             if (manifestCard) manifestCard.style.display = 'block';
         }
 
         function handleFolderUploadFiles(files) {
+            for (const f of files) {
+                if (f.size > 5 * 1024 * 1024) {
+                    alert(`Error: File "${f.name}" exceeds the maximum allowed 5MB size limit (File size: ${(f.size / (1024 * 1024)).toFixed(2)} MB). Please select smaller files.`);
+                    clearFolderUpload();
+                    return;
+                }
+            }
             mountedZipFile = null;
             mountedFolderFiles = files;
             folderTheaterConfigYaml = '';

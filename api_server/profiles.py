@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 
 from api_server.shared import app, db, get_current_user, stamp_storage
 from storage.stamp_storage import process_stamp_image
+from storage.storage_limits import MAX_FILE_UPLOAD_BYTES
 from utils.auth_cache import auth_session_cache
 
 
@@ -173,9 +174,11 @@ async def upload_stamp(
             detail="Maximum limit of 10 stamps reached. Please delete an existing stamp before uploading a new one.",
         )
 
-    file_bytes = await file.read()
+    file_bytes = await file.read(MAX_FILE_UPLOAD_BYTES + 1)
     if not file_bytes:
         raise HTTPException(status_code=400, detail="Uploaded image file is empty.")
+    if len(file_bytes) > MAX_FILE_UPLOAD_BYTES:
+        raise HTTPException(status_code=400, detail="Uploaded file exceeds 5MB limit.")
 
     try:
         processed_bytes, content_type = process_stamp_image(file_bytes)

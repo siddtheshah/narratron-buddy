@@ -88,9 +88,19 @@ def sanitize_filename_stem(raw: str, fallback: str) -> str:
 async def _fetch_url(url: str, client: httpx.AsyncClient | None) -> httpx.Response:
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Narratron/1.0"}
     if client is not None:
-        return await client.get(url, headers=headers, follow_redirects=True, timeout=30.0)
-    async with httpx.AsyncClient(headers=headers, follow_redirects=True, timeout=30.0) as http_client:
-        return await http_client.get(url)
+        response = await client.get(url, headers=headers, follow_redirects=True, timeout=30.0)
+    else:
+        async with httpx.AsyncClient(headers=headers, follow_redirects=True, timeout=30.0) as http_client:
+            response = await http_client.get(url)
+    content_length = response.headers.get("content-length")
+    if content_length:
+        try:
+            if int(content_length) > MAX_FILE_BYTES:
+                raise ValueError(f"Downloaded file exceeds maximum allowed size ({MAX_FILE_BYTES // (1024 * 1024)}MB).")
+        except ValueError as err:
+            if "maximum allowed size" in str(err):
+                raise
+    return response
 
 
 async def download_google_drive_file(file_id: str, client: httpx.AsyncClient | None = None) -> tuple[str, bytes, str]:
@@ -127,6 +137,8 @@ async def download_google_drive_file(file_id: str, client: httpx.AsyncClient | N
                 confirm_url = f"https://drive.usercontent.google.com/download?id={file_id}&export=download&confirm={confirm_match.group(1)}"
                 confirmed_resp = await _fetch_url(confirm_url, client)
                 if confirmed_resp.status_code == 200 and not confirmed_resp.content.startswith(b"<!DOCTYPE"):
+                    if len(confirmed_resp.content) > MAX_FILE_BYTES:
+                        raise ValueError(f"Downloaded file exceeds maximum allowed size ({MAX_FILE_BYTES // (1024 * 1024)}MB).")
                     data = confirmed_resp.content
                     response = confirmed_resp
                 else:
@@ -180,6 +192,8 @@ async def download_google_doc_text(doc_id: str, client: httpx.AsyncClient | None
         raise ValueError(f"Could not export Google Doc (HTTP {response.status_code}).")
 
     data = response.content
+    if len(data) > MAX_FILE_BYTES:
+        raise ValueError(f"Exported Google Doc exceeds maximum allowed size ({MAX_FILE_BYTES // (1024 * 1024)}MB).")
     if data.startswith(b"<!DOCTYPE") or data.startswith(b"<html") or b"<title>Google Accounts</title>" in data:
         raise ValueError("Could not export Google Doc. Ensure document sharing is set to 'Anyone with the link can view'.")
 

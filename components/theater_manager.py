@@ -21,7 +21,8 @@ from components.reference_images import reference_image_type
 
 logger = logging.getLogger(__name__)
 
-MAX_ZIP_BYTES = 10 * 1024 * 1024
+MAX_ZIP_BYTES = 5 * 1024 * 1024
+MAX_FILE_BYTES = 5 * 1024 * 1024
 LORE_TEXT_EXTENSION = ".txt"
 MAX_LORE_DOCUMENT_BYTES = 256 * 1024
 WINDOWS_RESERVED_NAMES = {"CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$"} | {
@@ -509,7 +510,11 @@ def extract_asset_package(
                 parts = [part for part in parts if part != "__MACOSX"]
                 if not parts or parts[-1].startswith("."):
                     continue
+                if info.file_size > MAX_FILE_BYTES:
+                    raise ValueError(f"File '{info.filename}' exceeds maximum allowed size of 5MB.")
                 filename, content = parts[-1], archive.read(info.filename)
+                if len(content) > MAX_FILE_BYTES:
+                    raise ValueError(f"File '{filename}' exceeds maximum allowed size of 5MB.")
                 if parts[-2:] == ["game", "game.json"]:
                     reference_files.append(("game/game.json", content))
                 elif filename.lower() in ("planning.yaml", "planning.yml"):
@@ -696,6 +701,8 @@ class TheaterManager:
         lore_dir = theater_dir / "lore"
         characters_dir = theater_dir / "references" / "characters"
         for filename, content in reference_files or []:
+            if len(content) > MAX_FILE_BYTES:
+                raise ValueError(f"File '{filename}' exceeds maximum allowed size of 5MB.")
             parts = validate_asset_path(filename)
             if parts[-2:] == ["game", "game.json"]:
                 from components.canvas.game_runtime import validate_game_package, MAX_GAME_BYTES
@@ -729,6 +736,8 @@ class TheaterManager:
                 raise ValueError("Playlist names must be a single path component.")
             playlist_dir = asset_destination(playlists_dir, playlist_name)
             for filename, content in files:
+                if len(content) > MAX_FILE_BYTES:
+                    raise ValueError(f"File '{filename}' exceeds maximum allowed size of 5MB.")
                 parts = validate_asset_path(filename)
                 asset_destination(playlist_dir, parts[-1])
                 playlist_audio_type(parts[-1], content)
