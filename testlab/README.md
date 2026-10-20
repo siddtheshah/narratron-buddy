@@ -38,6 +38,26 @@ Add `--image testlab/images/trace-knight-sword.png` to include a canvas image in
 The same configurable test is available in the Test Lab server at `/a2ui-canvas`. It accepts a model,
 canvas request, optional workspace-local image, expected surface count, and an optional persistence
 expectation. The browser default is a general canvas prompt; the health-bar scenario is reserved for the CLI smoke test.
+# Adventure Runner and Game Actions
+
+Open `/adventure-runner`, start an adventure session, and choose the **Game** tab
+to play its `game/game.json` panel. The runner copies the package into its isolated
+theater and shares the real game state with the story responder and planner.
+Player moves use the same validation, revision checks, and planner callbacks as
+the main canvas. Moves and any resulting narration appear in the session history.
+Reset reloads the package and starts a fresh game.
+
+The CLI autoplayer can choose either in-character text or a game control:
+
+```powershell
+uv run python testlab/adventure_runner.py --adventure example_adventure --autoplay --turns 10
+```
+
+Each decision receives the current visible game panel, including enabled buttons,
+their exact arguments, and the current revision. Game moves run as the player;
+the story planner retains control of Narratron actions. The runner waits for
+queued planning before the next decision and does not retry committed game moves.
+
 # Game Testing Lab
 
 Open `/game-lab` in the Test Lab server (`uv run python -m testlab`) to choose a

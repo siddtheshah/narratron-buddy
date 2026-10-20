@@ -3,6 +3,10 @@
 import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
+from pydantic import JsonValue
+from components.canvas.game_runtime import GameAction
+from components.reference_manager import Character
+from testing.game_fixtures import exchange_definition
 from fastapi.testclient import TestClient
 import pytest
 
@@ -13,6 +17,7 @@ from testlab.adventure_runner import (
     MockCanvasState,
     MockToolBundle,
     PlayerTurnDecision,
+    PlayerControlDecision,
     format_repl_turn,
     load_adventure_config,
     main,
@@ -21,6 +26,165 @@ from testlab.adventure_runner import (
 from testlab.server import app
 
 pytestmark = pytest.mark.usefixtures("offline_lab_text_providers")
+
+
+def test_adventure_game_moves_use_real_callback_and_reset(sample_adventure: Path) -> None:
+    game_dir = sample_adventure / "game"
+    game_dir.mkdir()
+    (game_dir / "game.json").write_text(exchange_definition().model_dump_json(), encoding="utf-8")
+    session = AdventureSession("synthetic-test-adventure")
+    try:
+        assert session.game is session.story_tool.planning_module.game_state
+        assert session.game is session.story_tool.response_module.game_state
+        assert session.get_state()["game"]["revision"] == 0
+        move = GameAction(name="player_place", arguments={"item": "red"}, revision=0)
+        with (
+            patch.object(session.story_tool.planning_module, "queue_deep_planning") as queue,
+            patch.object(session.story_tool.planning_module, "wait_for_pending_events", return_value=True) as wait,
+        ):
+            result = session.take_game_action(move)
+            assert result["revision"] == 1
+            assert queue.call_args.args[2]["source"] == "game"
+            assert queue.call_args.args[2]["game_state"]["revision"] == 1
+            wait.assert_called_once()
+        assert session.history[-1]["game_action"] == move.model_dump(mode="json")
+        assert session.history[-1]["narration"] == ""
+        session.reset()
+        assert session.game.revision == 0
+        assert session.game.state["player_offer"] == []
+        assert session.mock_tools.canvas_state is session.mock_canvas
+        assert session.history == []
+        (game_dir / "game.json").unlink()
+        session.reset()
+        assert session.get_state()["game"] is None
+    finally:
+        session.cleanup()
+
+
+def test_adventure_game_http_validation_and_autoplay(sample_adventure: Path, tmp_path: Path) -> None:
+    from testlab import server
+
+    game_dir = sample_adventure / "game"
+    game_dir.mkdir()
+    (game_dir / "game.json").write_text(exchange_definition().model_dump_json(), encoding="utf-8")
+    session = AdventureSession("synthetic-test-adventure")
+    try:
+        server._adventure_runner_sessions[session.session_id] = session
+        url = f"/api/adventure-runner/sessions/{session.session_id}/game/action"
+        move = GameAction(name="player_place", arguments={"item": "red"}, revision=0)
+        with TestClient(app) as client:
+            assert client.post(url, json=move.model_dump()).status_code == 200
+            assert client.post(url, json=move.model_dump()).status_code == 409
+            denied = GameAction(name="narratron_place", arguments={"item": "green"}, revision=1)
+            assert client.post(url, json=denied.model_dump()).status_code == 400
+            illegal = GameAction(name="player_place", arguments={"item": "missing"}, revision=1)
+            assert client.post(url, json=illegal.model_dump()).status_code == 400
+        provider = MagicMock()
+        provider.generate.return_value.parsed = PlayerTurnDecision(
+            thought="Offer the other item.",
+            game_action=GameAction(name="player_place", arguments={"item": "blue"}, revision=1),
+        )
+        player = AutoPlayer(text_provider=provider)
+        with patch.object(session, "send_message") as send:
+            summary = run_autoplay(session, max_turns=1, player=player, log_path=tmp_path / "moves.json")
+            send.assert_not_called()
+        assert summary["turns_completed"] == 1
+        assert session.game.state["player_offer"] == ["red", "blue"]
+        assert session.history[-1]["game_action"]["revision"] == 1
+        prompt = provider.generate.call_args.args[0].prompt
+        assert '"revision": 1' in prompt
+        assert "Visible Game Panel" in prompt
+        assert '"narratron_place"' not in prompt
+    finally:
+        server._adventure_runner_sessions.pop(session.session_id, None)
+        session.cleanup()
+
+
+def test_autoplayer_raw_game_decision_and_clears_previous_move() -> None:
+    provider = MagicMock()
+    player = AutoPlayer(text_provider=provider)
+    provider.generate.return_value.parsed = None
+    provider.generate.return_value.text = '```json\n{"game_action":{"name":"select","arguments":{"square":12},"revision":2}}\n```'
+    player.decide_action({}, [], 1)
+    assert player.game_action.name == "select"
+    provider.generate.return_value.text = 'Thought: wait\nAction: I ask about the rules.'
+    assert player.decide_action({}, [], 2)[1] == "I ask about the rules."
+    assert player.game_action is None
+
+
+def test_game_turn_waits_for_narratron_response(sample_adventure: Path) -> None:
+    game_dir = sample_adventure / "game"
+    game_dir.mkdir()
+    (game_dir / "game.json").write_text(exchange_definition().model_dump_json(), encoding="utf-8")
+    session = AdventureSession("synthetic-test-adventure")
+    planner = session.story_tool.planning_module
+    planner.deep_planning_enabled = True
+    planner.deep_heartbeat_seconds = 0.001
+    planner.deep_idle_refinement_turns = 0
+
+    def respond(batch: list[tuple[int, str, dict[str, JsonValue]]]) -> dict[str, JsonValue]:
+        assert batch[0][2]["source"] == "game"
+        session.game.act(GameAction(name="narratron_place", arguments={"item": "green"}, revision=1), actor="narratron")
+        return {"tool_updates": True}
+
+    try:
+        with (
+            patch.object(planner, "_run_deep_planner_agent", side_effect=respond),
+            patch.object(planner, "_commit_deep_plan_update", return_value=True),
+        ):
+            result = session.take_game_action(GameAction(name="player_place", arguments={"item": "red"}, revision=0))
+        assert result["revision"] == 2
+        assert session.game.state["narratron_offer"] == ["green"]
+        assert session.history[-1]["planning_completed"] is True
+        assert planner.wait_for_pending_events(timeout=0)
+    finally:
+        session.cleanup()
+
+
+def test_autoplayer_copies_enabled_control_arguments() -> None:
+    provider = MagicMock()
+    provider.generate.return_value.parsed = PlayerControlDecision(thought="Select the piece.", game_control=0)
+    player = AutoPlayer(text_provider=provider)
+    state = {"game": {"revision": 7, "view": [{
+        "kind": "column", "props": {}, "children": [
+            {"kind": "button", "props": {"label": "Disabled", "disabled": True},
+             "action": {"name": "select", "arguments": {"index": 0}}},
+            {"kind": "button", "props": {"label": "c3 Red piece"},
+             "action": {"name": "select", "arguments": {"index": 42}}},
+        ],
+    }]}}
+    thought, action = player.decide_action(state, [], 1)
+    assert thought == "Select the piece."
+    assert player.game_action == GameAction(name="select", arguments={"index": 42}, revision=7)
+    assert '"index":42' in action
+    request = provider.generate.call_args.args[0]
+    assert request.response_schema is PlayerControlDecision
+    assert "Enabled Game Controls" in request.prompt
+    assert "0: {\"label\": \"c3 Red piece\"}" in request.prompt
+    provider.generate.return_value.parsed = None
+    provider.generate.return_value.text = '```json\n{"thought":"Click it.","action":null,"game_control":0}\n```'
+    assert player.decide_action(state, [], 2)[0] == "Click it."
+    assert player.game_action == GameAction(name="select", arguments={"index": 42}, revision=7)
+
+
+def test_game_narration_finishes_before_return_and_state_serializes(sample_adventure: Path) -> None:
+    session = AdventureSession("synthetic-test-adventure")
+    reaction = {"turn_id": 1, "user_action": "Red moves.", "narration": "Ivory replies.", "dialogue": []}
+    character = Character(name="The Caretaker", gender="nonbinary")
+    try:
+        with (
+            patch.object(session.story_tool.response_module, "_resolve_user_action", return_value=reaction) as resolve,
+            patch.object(session.story_tool, "_handle_scene_reaction") as handle,
+        ):
+            result = session.story_tool.planning_module.on_trigger_story_response("Red moves.", "Checkers")
+            resolve.assert_called_once_with("Red moves.", nudge="Checkers")
+            handle.assert_called_once_with(reaction)
+            assert json.loads(result)["narration"] == "Ivory replies."
+        with patch.object(session.story_tool, "get_present_characters", return_value=[character]):
+            state = json.loads(json.dumps(session.get_state()))
+            assert state["characters"][0]["name"] == "The Caretaker"
+    finally:
+        session.cleanup()
 
 
 def test_synchronous_action_queues_planning_before_wait(sample_adventure: Path) -> None:
@@ -679,6 +843,7 @@ def test_run_autoplay_execution(sample_adventure, tmp_path):
         # Mock player decision
         mock_player = MagicMock(spec=AutoPlayer)
         mock_player.instructions = "Be zany and try to break the game"
+        mock_player.game_action = None
         mock_player.decide_action.return_value = (
             "Trying to make the widget oscillate",
             "I investigate the synthetic widget.",

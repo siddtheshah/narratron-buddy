@@ -25,6 +25,7 @@ import json
 import logging
 import os
 from pathlib import Path
+from threading import RLock
 import re
 import shutil
 import sys
@@ -59,7 +60,8 @@ from google.adk.apps.app import App
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
 from google.genai import types
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, JsonValue
+from components.canvas.game_runtime import GameAction, RenderedNode
 
 from components.canvas.canvas_state_service import CanvasStateService
 from components.image_library import ImageLibrary
@@ -74,7 +76,7 @@ from tools.story import StoryTool, VertexGemini
 from tools.notepad_tool import NotepadTool
 from tools.tool_bundle import ToolBundle
 from providers import get_text_response_provider
-from providers.text_response_provider import TextResponseRequest
+from providers.text_response_provider import TextResponseProvider, TextResponseRequest
 from utils.config_loader import (
     apply_app_config,
     deep_merge,
@@ -459,6 +461,7 @@ class AdventureSession:
         self.nodes_ahead_override = nodes_ahead
         self.session_id = session_id or f"adv_runner_{Path(adventure_id_or_path).name}_{uuid.uuid4().hex[:8]}"
         self.created_at = time.time()
+        self.lock = RLock()
 
         self.mock_canvas = MockCanvasState()
         self.history: List[Dict[str, Any]] = []
@@ -497,6 +500,7 @@ class AdventureSession:
         )
         theater = self.theater_manager.theater(self.session_id)
         canvas_manager = self.canvas_state_service.get(self.session_id)
+        self.game = canvas_manager.game
         self.story_tool = (
             StoryTool(
                 theater,
@@ -506,6 +510,8 @@ class AdventureSession:
             if bool(sp_config.get("adventure_mode", False))
             else NotepadTool(theater, canvas_manager=canvas_manager)
         )
+        if bool(sp_config.get("adventure_mode", False)):
+            self.story_tool.planning_module.on_trigger_story_response = self._trigger_game_story_response
 
         # Build mock peripheral tool bundle
         references = self.theater_manager.get_theater_references(self.session_id)
@@ -560,6 +566,13 @@ class AdventureSession:
         adv_playlists = self.adventure_path / "playlists"
         if adv_playlists.is_dir():
             shutil.copytree(adv_playlists, playlists_target, dirs_exist_ok=True)
+
+        game_target = theater.directory() / "game"
+        game_target.mkdir(exist_ok=True)
+        (game_target / "game.json").unlink(missing_ok=True)
+        adventure_game = self.adventure_path / "game" / "game.json"
+        if adventure_game.is_file():
+            shutil.copy2(adventure_game, game_target / "game.json")
 
         for name in ("planning.yaml", "planning.yml"):
             adv_planning = self.adventure_path / name
@@ -790,7 +803,54 @@ class AdventureSession:
             tools=self.tools,
         )
 
-    def send_message(self, user_message: str) -> Dict[str, Any]:
+    def _trigger_game_story_response(self, user_action: str = "", nudge: str = "") -> str:
+        """Complete game narration before the planning worker reports the move finished."""
+        clean_action = user_action.strip() or "Player took a game action."
+        self.story_tool.append_story_log_entry({"type": "user_action", "action": clean_action})
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            result = executor.submit(self.story_tool._resolve_user_action, clean_action, nudge=nudge).result()
+        self.story_tool._handle_scene_reaction(result)
+        self.mock_canvas.log_call("game_story_response", {"user_action": clean_action, "nudge": nudge}, result)
+        return json.dumps(result, ensure_ascii=False)
+
+    def take_game_action(self, action: GameAction) -> dict[str, JsonValue]:
+        """Commit a player move and drain the same planning callback used by the canvas."""
+        with self.lock:
+            if self.game is None or self.game.program is None:
+                raise ValueError("This adventure has no game.")
+            started = time.time()
+            log_start = len(self.mock_canvas.tool_logs)
+            adventure_mode = bool(self.config.get("story_planning", {}).get("adventure_mode", False))
+            previous_reaction = self.story_tool._last_scene_reaction if adventure_mode else {}
+            self.game.act(action, actor="player")
+            drained = not adventure_mode or self.story_tool.wait_for_pending_events(
+                timeout=float(self.story_tool.deep_planner_timeout_seconds)
+                * (self.story_tool.deep_heartbeat_failure_retries + 1) + 5.0,
+            )
+            reaction = self.story_tool._last_scene_reaction if adventure_mode else {}
+            if reaction is previous_reaction:
+                reaction = {}
+            self.mock_canvas.log_call("player_game_action", action.model_dump(mode="json"), self.game.payload())
+            self.history.append({
+                "turn_index": len(self.history) + 1,
+                "timestamp": started,
+                "user_message": f"Game action: {action.name} {json.dumps(action.arguments)}",
+                "game_action": action.model_dump(mode="json"),
+                "agent_response": reaction.get("narration", ""),
+                "narration": reaction.get("narration", ""),
+                "dialogue": reaction.get("dialogue", []),
+                "tool_calls": self.mock_canvas.tool_logs[log_start:],
+                "planning_completed": drained,
+            })
+            if not drained:
+                self.game.report_error("Move committed, but the planner did not finish before the timeout.")
+            return self.game.payload() or {}
+
+    def send_message(self, user_message: str) -> dict[str, JsonValue]:
+        with self.lock:
+            return self._send_message(user_message)
+
+    def _send_message(self, user_message: str) -> dict[str, JsonValue]:
         """Send a user text message to advance the story and collect agent thoughts, tool calls, and narration."""
         clean_input = str(user_message or "").strip()
         if not clean_input:
@@ -886,19 +946,29 @@ class AdventureSession:
             "adventure_id": self.adventure_id,
             "created_at": self.created_at,
             "sticky_notes": self.story_tool.get_present_sticky_notes(),
-            "characters": self.story_tool.get_present_characters(),
+            "characters": [character.model_dump(mode="json") for character in self.story_tool.get_present_characters()],
             "deep_plan": self.story_tool.get_deep_plan(),
             "last_scene_reaction": dict(getattr(self.story_tool, "_last_scene_reaction", {})),
             "lore_documents": self.theater_manager.get_lore_documents(self.session_id),
             "mock_canvas": self.mock_canvas.as_dict(),
             "turns_count": len(self.history),
+            "game": self.game.payload() if self.game is not None else None,
         }
 
     def reset(self) -> None:
         """Reset session state, re-read configs/lore/references from disk, and re-initialize story planner and agent."""
-        self._init_components()
-        self.mock_canvas = MockCanvasState()
-        self.history.clear()
+        with self.lock:
+            if bool(self.config.get("story_planning", {}).get("adventure_mode", False)):
+                if not self.story_tool.wait_for_pending_events(timeout=float(self.story_tool.deep_planner_timeout_seconds) + 5.0):
+                    raise ValueError("The planner is still running. Wait before resetting the adventure.")
+            state_file = self.theater_manager.theater(self.session_id).directory() / "theater.json"
+            if state_file.is_file():
+                document = json.loads(state_file.read_text(encoding="utf-8"))
+                document["canvas_state"] = {}
+                state_file.write_text(json.dumps(document), encoding="utf-8")
+            self.mock_canvas = MockCanvasState()
+            self._init_components()
+            self.history.clear()
 
     def cleanup(self) -> None:
         """Remove temporary session theater files."""
@@ -934,6 +1004,9 @@ def format_repl_turn(turn: Dict[str, Any]) -> str:
         lines.append("")
         lines.append("  [Peripherals Staged]:")
         for tc in peripherals:
+            if tc.get("tool") == "player_game_action":
+                lines.append(f"    * player_game_action: {tc['args']['name']} (revision {tc['result']['revision']})")
+                continue
             lines.append(f"    * {tc.get('tool')}: {tc.get('result')}")
 
     return "\n".join(lines)
@@ -943,16 +1016,29 @@ def format_repl_turn(turn: Dict[str, Any]) -> str:
 # Autonomous Player (Autoplay) Components
 # ==============================================================================
 
-class PlayerTurnDecision(BaseModel):
+class PlayerControlDecision(BaseModel):
     """Structured decision made by an autonomous player agent."""
 
     thought: str = Field(
         default="",
         description="Internal strategic reasoning, tactical thought, or reflection based on player directives.",
     )
-    action: str = Field(
-        ...,
+    action: str | None = Field(
+        default=None,
         description="The exact in-character action, statement, or dialogue the player performs (1-3 sentences).",
+    )
+    game_control: int | None = Field(
+        default=None,
+        description="Number of an enabled game control from the prompt. Use instead of a text action to click that control.",
+    )
+
+
+class PlayerTurnDecision(PlayerControlDecision):
+    """Also accept explicit game actions from older player integrations."""
+
+    game_action: GameAction | None = Field(
+        default=None,
+        description="A player game button action copied from the current visible game view, with its current revision. Use instead of text action when clicking a game control.",
     )
 
 
@@ -971,7 +1057,7 @@ class AutoPlayer:
         instructions: str = "",
         model: str = "gemini-3.7-flash",
         provider_id: str = "gemini-3",
-        text_provider: Optional[Any] = None,
+        text_provider: TextResponseProvider | None = None,
         include_stickies: bool = False,
     ) -> None:
         self.adventure_title = adventure_title or "Interactive Adventure"
@@ -982,6 +1068,8 @@ class AutoPlayer:
         self.model = model
         self.provider_id = provider_id
         self.include_stickies = include_stickies
+        self.game_action: GameAction | None = None
+        self.game_controls: list[GameAction] = []
         self.text_provider = text_provider or get_text_response_provider(
             self.provider_id,
             options={"model": self.model},
@@ -1004,6 +1092,10 @@ class AutoPlayer:
             f"The Narratron game master will determine what happens.\n"
             f"6. Do NOT prefix your action with 'Player:' or 'Action:'. Provide only the direct in-character action/speech.\n"
             f"7. If your character experiences death, disintegration, execution, or a definitive fatal loss, and play continues, acknowledge your demise and restart the adventure as a new character/candidate from the beginning (e.g. Assistant #16 or a new adventurer)."
+            "\n8. The visible game panel is available each turn. To click an enabled control, return game_control "
+            "with its number from Enabled Game Controls; leave action empty. "
+            "Disabled controls cannot be clicked. Never invent moves or take Narratron actions. "
+            "For speech or story actions, return action and leave game_control null."
         )
 
     def _build_prompt(
@@ -1016,6 +1108,25 @@ class AutoPlayer:
         sticky_summary = "\n".join(
             f"- {s.get('topic')}: {s.get('info')}" for s in sticky_notes[:8]
         ) or "None recorded yet."
+        game_context = "\n\nVisible Game Panel:\n" + json.dumps(session_state.get("game"), ensure_ascii=False)
+        self.game_controls = []
+        game = session_state.get("game")
+        if game and "view" in game:
+            controls: list[str] = []
+
+            def collect(node: RenderedNode) -> None:
+                if node.kind == "button" and node.action is not None and not node.props.get("disabled"):
+                    number = len(self.game_controls)
+                    self.game_controls.append(GameAction(
+                        name=node.action.name, arguments=node.action.arguments, revision=game["revision"],
+                    ))
+                    controls.append(f"{number}: {json.dumps(node.props, ensure_ascii=False)} -> {node.action.model_dump_json()}")
+                for child in node.children:
+                    collect(child)
+
+            for value in game["view"]:
+                collect(RenderedNode.model_validate(value))
+            game_context += "\n\nEnabled Game Controls (choose game_control number):\n" + "\n".join(controls)
 
         if not history:
             initial_clues = (
@@ -1024,7 +1135,7 @@ class AutoPlayer:
                 else ""
             )
             return (
-                f"The adventure is just beginning!{initial_clues}\n\n"
+                f"The adventure is just beginning!{initial_clues}{game_context}\n\n"
                 f"This is Turn {turn_index}. Based on your playstyle directives, decide on your very first action "
                 f"or dialogue to kick off the adventure."
             )
@@ -1062,7 +1173,7 @@ class AutoPlayer:
 
         return (
             f"Recent Story Chronicle:\n"
-            f"{history_str}{clues_block}\n\n"
+            f"{history_str}{clues_block}{game_context}\n\n"
             f"This is Turn {turn_index}. Based on the latest narrative and your playstyle directives, "
             f"what do you do or say next?"
         )
@@ -1072,8 +1183,9 @@ class AutoPlayer:
         session_state: Dict[str, Any],
         history: List[Dict[str, Any]],
         turn_index: int,
-    ) -> Tuple[str, str]:
+    ) -> tuple[str, str]:
         """Query the LLM to decide the player's internal thought and action."""
+        self.game_action = None
         system_instruction = self._build_system_instruction()
         prompt = self._build_prompt(session_state, history, turn_index)
 
@@ -1083,39 +1195,59 @@ class AutoPlayer:
                 prompt=prompt,
                 system_instruction=system_instruction,
                 temperature=0.85,
-                response_schema=PlayerTurnDecision,
+                response_schema=PlayerControlDecision,
             )
             result = self.text_provider.generate(req)
-            if hasattr(result, "parsed") and isinstance(result.parsed, PlayerTurnDecision):
-                thought = result.parsed.thought.strip()
-                action = result.parsed.action.strip()
-                action = self._clean_action(action)
+            if result.parsed is not None:
+                decision = PlayerTurnDecision.model_validate(result.parsed, from_attributes=True)
+                if decision.game_control is not None:
+                    return self._choose_control(decision)
+                if decision.game_action is not None:
+                    self.game_action = decision.game_action
+                    return decision.thought.strip(), f"Game action: {decision.game_action.model_dump_json()}"
+                action = self._clean_action(decision.action or "")
                 if action:
-                    return thought, action
-            if hasattr(result, "parsed") and isinstance(result.parsed, dict):
-                thought = str(result.parsed.get("thought", "")).strip()
-                action = str(result.parsed.get("action", "")).strip()
-                action = self._clean_action(action)
-                if action:
-                    return thought, action
-            raw_text = getattr(result, "text", "") or ""
-            return self._parse_fallback(raw_text)
+                    return decision.thought.strip(), action
+            raw_text = result.text or ""
+            return self._parse_response(raw_text)
         except Exception as e:
             logger.warning("[AutoPlayer] Structured generation failed, trying raw text: %s", e)
 
         # Fallback to plain text generation without schema
         try:
             req = TextResponseRequest(
-                prompt=prompt + "\n\nProvide your answer formatted as:\nThought: <internal thought>\nAction: <in-character action>",
+                prompt=prompt + '\n\nReturn JSON with thought and either action (in-character text) or game_control '
+                '(the number of an enabled game control).',
                 system_instruction=system_instruction,
                 temperature=0.85,
             )
             result = self.text_provider.generate(req)
-            raw_text = getattr(result, "text", "") or ""
-            return self._parse_fallback(raw_text)
+            raw_text = result.text or ""
+            return self._parse_response(raw_text)
         except Exception as e:
             logger.error("[AutoPlayer] Action generation failed: %s", e)
             return "Experiencing a moment of confusion.", "I take a cautious step forward and look around carefully."
+
+    def _choose_control(self, decision: PlayerControlDecision) -> tuple[str, str]:
+        number = decision.game_control
+        if number is None or number < 0 or number >= len(self.game_controls):
+            raise ValueError("Choose a numbered enabled game control from the current panel.")
+        self.game_action = self.game_controls[number]
+        return decision.thought.strip(), f"Game action: {self.game_action.model_dump_json()}"
+
+    def _parse_response(self, text: str) -> tuple[str, str]:
+        clean = text.strip()
+        match = re.search(r"```(?:json)?\s*(\{.*\})\s*```", clean, re.DOTALL)
+        try:
+            decision = PlayerTurnDecision.model_validate_json(match.group(1) if match else clean)
+            if decision.game_control is not None:
+                return self._choose_control(decision)
+            if decision.game_action is not None:
+                self.game_action = decision.game_action
+                return decision.thought.strip(), f"Game action: {decision.game_action.model_dump_json()}"
+        except ValueError:
+            pass
+        return self._parse_fallback(text)
 
     @staticmethod
     def _clean_action(action: str) -> str:
@@ -1125,14 +1257,15 @@ class AutoPlayer:
         return clean
 
     @classmethod
-    def _parse_fallback(cls, text: str) -> Tuple[str, str]:
+    def _parse_fallback(cls, text: str) -> tuple[str, str]:
         clean = text.strip()
         json_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", clean, re.DOTALL)
         candidate = json_match.group(1).strip() if json_match else clean
         try:
             data = json.loads(candidate)
-            if isinstance(data, dict) and "action" in data:
-                return str(data.get("thought", "")).strip(), cls._clean_action(str(data["action"]))
+            decision = PlayerTurnDecision.model_validate(data)
+            if decision.action:
+                return decision.thought.strip(), cls._clean_action(decision.action)
         except Exception:
             pass
 
@@ -1242,6 +1375,7 @@ class AutoplayLogger:
             "thought": thought,
             "action": action,
             "turn": turn_result,
+            "game": state_after.get("game"),
         }
         self.turns_data.append(turn_record)
 
@@ -1424,6 +1558,7 @@ def run_autoplay(
             if turn_idx == 1 and initial_action:
                 thought = "Using initial action supplied via command line."
                 action = initial_action
+                player.game_action = None
             else:
                 print(f"[Turn {turn_idx}/{max_turns}] AutoPlayer is deciding next action...")
                 thought, action = player.decide_action(
@@ -1442,6 +1577,14 @@ def run_autoplay(
             max_turn_retries = 3
             res: Dict[str, Any] = {}
             for attempt in range(1, max_turn_retries + 1):
+                if player.game_action is not None:
+                    try:
+                        session.take_game_action(player.game_action)
+                        res = {"turn": session.history[-1], "state": session.get_state()}
+                    except ValueError as exc:
+                        res = {"error": str(exc)}
+                    # A move may already be committed; never replay it on a retry.
+                    break
                 res = session.send_message(action)
                 if "error" not in res:
                     break
@@ -1468,6 +1611,10 @@ def run_autoplay(
                 turn_result=turn,
                 state_after=state_after,
             )
+
+            if turn.get("planning_completed") is False:
+                print("\nMove committed; stopping autoplay because planning has not completed.")
+                break
 
             if delay > 0 and turn_idx < max_turns:
                 time.sleep(delay)

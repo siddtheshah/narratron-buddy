@@ -1015,11 +1015,17 @@
       <div class="tab-bar">
         <button class="tab-btn active" onclick="switchTab('tab-narrative', this)">Narrative State</button>
         <button class="tab-btn" onclick="switchTab('tab-canvas', this)">Mock Canvas</button>
+        <button class="tab-btn" onclick="switchTab('tab-game', this)">Game</button>
         <button class="tab-btn" onclick="switchTab('tab-lore', this)">Lore Docs (<span id="lore-count">0</span>)</button>
         <button class="tab-btn" onclick="switchTab('tab-logs', this)">Tool Activity (<span id="log-count">0</span>)</button>
       </div>
 
       <!-- Tab: Narrative State -->
+      <div id="tab-game" class="tab-content">
+        <button id="game-toggle" hidden>Toggle game panel</button>
+        <div id="game-preview"></div>
+        <p id="game-empty">This adventure has no game panel.</p>
+      </div>
       <div id="tab-narrative" class="tab-content active">
         <div class="section-card">
           <div class="section-header">
@@ -1123,12 +1129,49 @@
     </div>
   </div>
 
+  <style>
+    #game-preview .game-panel { position: relative; transform: none; left: auto !important;
+      top: auto !important; width: 100%; max-height: none; margin-top: 16px; }
+    #game-preview .game-panel-controls { display: none; }
+  </style>
   <script>
     let currentSessionId = null;
     let adventures = [];
     let lastKnownState = null;
     const sessionBrowsedLoreDocs = new Set();
     const $ = id => document.getElementById(id);
+    let gameRenderer = null;
+    let gamePending = false;
+    let gameHistoryCount = 0;
+    import('/game-lab-assets/js/game-renderer.js').then(({ createGameRenderer }) => {
+      gameRenderer = createGameRenderer({
+        container: $('game-preview'), toggleButton: $('game-toggle'),
+        actionUrl: () => `/api/adventure-runner/sessions/${currentSessionId}/game/action`,
+        canEdit: () => Boolean(currentSessionId) && !$('user-input').disabled,
+        stylesheetUrl: '/game-lab-assets/css/game-renderer.css', initiallyOpen: true,
+        onPendingChange: pending => {
+          gamePending = pending;
+          $('btn-send').disabled = pending;
+          $('btn-reset').disabled = pending;
+          $('btn-start').disabled = pending;
+        },
+        refresh: async () => {
+          const sessionId = currentSessionId;
+          try {
+            const res = await fetch(`/api/adventure-runner/sessions/${sessionId}`);
+            if (!res.ok) throw new Error('Could not refresh game state.');
+            const data = await res.json();
+            if (currentSessionId !== sessionId) return;
+            for (const turn of (data.history || []).slice(gameHistoryCount)) {
+              appendUserMessage(turn.user_message);
+              appendAgentTurn(turn);
+            }
+            renderSession(data);
+          } catch (err) { appendErrorMessage(err.message); }
+        },
+      });
+      if (lastKnownState) gameRenderer.render(lastKnownState.game);
+    }).catch(err => appendErrorMessage(err.message));
 
     function switchTab(tabId, btn) {
       document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
@@ -1212,7 +1255,7 @@
         $('quick-actions').style.display = 'flex';
         setStatus(`Session Active (${advId})`, 'success');
 
-        renderSession(data);
+        renderSession(data, true);
 
         // Initial welcome message in chat
         const stream = $('chat-stream');
@@ -1244,7 +1287,7 @@
         const res = await fetch(`/api/adventure-runner/sessions/${currentSessionId}/reset`, { method: 'POST' });
         if (!res.ok) throw new Error('Reset failed.');
         const data = await res.json();
-        renderSession(data);
+        renderSession(data, true);
         $('chat-stream').innerHTML = `
           <div class="message-card agent">
             <div class="message-header">🤖 Narratron Agent · Reset</div>
@@ -1259,12 +1302,13 @@
 
     $('btn-send').onclick = async () => {
       const text = $('user-input').value.trim();
-      if (!text || !currentSessionId) return;
+      if (!text || !currentSessionId || gamePending) return;
 
       appendUserMessage(text);
       $('user-input').value = '';
       $('user-input').disabled = true;
       $('btn-send').disabled = true;
+      gameRenderer?.render(lastKnownState?.game);
       setStatus('Agent & Story Planner thinking…', 'busy');
 
       try {
@@ -1289,6 +1333,7 @@
       } finally {
         $('user-input').disabled = false;
         $('btn-send').disabled = false;
+        gameRenderer?.render(lastKnownState?.game);
         $('user-input').focus();
       }
     };
@@ -1747,14 +1792,19 @@
       stream.scrollTop = stream.scrollHeight;
     }
 
-    function renderSession(sessionData) {
+    function renderSession(sessionData, freshGame = false) {
       const state = sessionData.state || {};
       const canvas = sessionData.mock_canvas || {};
+      if (freshGame) gameRenderer?.render(null);
       renderState(state, canvas);
+      if (freshGame && state.game && $('game-preview').hidden) $('game-toggle').click();
     }
 
     function renderState(state, canvas = {}) {
       lastKnownState = state;
+      gameHistoryCount = state.turns_count || 0;
+      gameRenderer?.render(state.game);
+      $('game-empty').hidden = Boolean(state.game);
 
       // 1. Sticky Notes
       const stickies = state.sticky_notes || [];

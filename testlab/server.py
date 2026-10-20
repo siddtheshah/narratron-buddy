@@ -9,6 +9,9 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from io import BytesIO
 from typing import Any
+from pydantic import JsonValue
+from components.canvas.game_runtime import GameAction
+from components.canvas.game_state import StaleGameAction
 
 from PIL import Image
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
@@ -571,6 +574,21 @@ def api_send_adventure_message(session_id: str, body: dict[str, Any]):
     if "error" in res:
         raise HTTPException(status_code=500, detail=res["error"])
     return res
+
+
+@app.post("/api/adventure-runner/sessions/{session_id}/game/action")
+def api_adventure_game_action(session_id: str, action: GameAction) -> dict[str, JsonValue]:
+    """Apply a player move through the adventure's real game and planner."""
+    with _runs_lock:
+        session = _adventure_runner_sessions.get(session_id)
+    if session is None:
+        raise HTTPException(404, "Adventure session not found.")
+    try:
+        return session.take_game_action(action)
+    except StaleGameAction as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
 
 
 @app.post("/api/adventure-runner/sessions/{session_id}/reset")

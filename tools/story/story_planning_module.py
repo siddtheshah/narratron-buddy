@@ -693,6 +693,17 @@ class StoryPlanningModule:
                 return False
             time.sleep(min(0.05, max(0.0, deadline - time.monotonic())))
 
+    def wait_for_pending_events(self, timeout: float = 5.0) -> bool:
+        """Drain queued events, including game events that have no story turn ID."""
+        with self._deep_planning_queue_lock:
+            worker = self._deep_planning_worker
+        if worker is not None:
+            worker.join(timeout=max(0.0, timeout))
+            if worker.is_alive():
+                return False
+        with self._deep_planning_queue_lock:
+            return not self._deep_planning_queue
+
     def _record_state_snapshot(self) -> None:
         current_stickies = {
             note["topic"]: note["info"]
