@@ -13,6 +13,7 @@ from tools.story.story_snapshot import (
     create_snapshot,
     diff,
 )
+from components.reference_manager import ReferenceManager
 from tools.story.story_tool import StoryTool
 
 
@@ -122,7 +123,13 @@ def test_story_tool_creates_snapshot_and_diff(tmp_path: Path) -> None:
     notepad = Notepad(theater, canvas_manager=canvas_manager)
     canvas_manager.notepad = notepad
 
-    tool = StoryTool(theater, canvas_manager=canvas_manager, text_response_provider=MagicMock())
+    ref_mgr = ReferenceManager(theater=theater, canvas_manager=canvas_manager, story_state=story)
+    tool = StoryTool(
+        theater,
+        canvas_manager=canvas_manager,
+        text_response_provider=MagicMock(),
+        reference_manager=ref_mgr,
+    )
 
     snap1 = tool.create_snapshot(
         player_character=PlayerCharacterState(name="Lyra", image_description="Mage"),

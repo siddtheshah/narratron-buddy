@@ -494,11 +494,17 @@ class AdventureSession:
         theater = self.theater_manager.theater(self.session_id)
         canvas_manager = self.canvas_state_service.get(self.session_id)
         self.game = canvas_manager.game
+        reference_manager = ReferenceManager(
+            theater=theater,
+            canvas_manager=canvas_manager,
+            story_state=canvas_manager.story,
+        )
         self.story_tool = (
             StoryTool(
                 theater,
                 canvas_manager=canvas_manager,
                 text_response_provider=story_planning_text_provider,
+                reference_manager=reference_manager,
             )
             if bool(sp_config.get("adventure_mode", False))
             else NotepadTool(theater, canvas_manager=canvas_manager)
@@ -506,10 +512,6 @@ class AdventureSession:
         if bool(sp_config.get("adventure_mode", False)):
             self.story_tool.planning_module.on_trigger_story_response = self._trigger_game_story_response
 
-        reference_manager = (
-            self.story_tool.reference_manager if bool(sp_config.get("adventure_mode", False))
-            else ReferenceManager(theater)
-        )
         self.reference_tools = ReferenceTool(theater, reference_manager, canvas_manager)
 
         # Build mock peripheral tool bundle

@@ -37,6 +37,8 @@ from components.reference_manager import (
     normalize_voice_tags,
 )
 from components.lore_library import LoreLibrary
+from components.notepad import NoteSnapshot
+from tools.story.story_handoffs import PlanningRequest, ProposedFactChange
 from tools.story.story_models import (
     VertexGemini,
     DEFAULT_COMPACTION_TRIGGER_TOKENS,
@@ -112,6 +114,7 @@ You are the fast, authoritative turn responder for an interactive story.
 Resolve only the immediate consequences of the player's submitted action and decide when NPCs should manifest or materially change.
 A separate deep-planning agent owns long-term continuity and is the sole agent that directly modifies sticky notes. Treat active notes as authoritative planning guidance, but never modify them directly or create a competing long-term plan during this turn.
 Crucially, you are the front-line observer of all immediate turn fallout. While your other half commits sticky note updates, you MUST explicitly communicate to the planner via `planning_signals` with direct instructions directed only to it. You are responsible for ensuring high recall of sticky note updates by explicitly flagging any active sticky notes that require updating based on this turn's resolution so the planner does not miss them.
+Also return `proposed_factual_changes` for established outcomes that affect factual sticky notes. Each proposal names its topic, the proposed complete value in `info`, and supporting `evidence`. These are claims for reconciliation, not committed facts: never turn player intentions or conditional plans into established outcomes, and never override validated game state. Return an optional `planning_request` with a concrete `reason` when future guidance needs revision. Routine bookkeeping alone does not require creative planning.
 The planner starts independently as soon as a player action arrives, then receives your completed response as a separate event. Use `trigger_story_planning(reason)` to flag a major revelation, changed goal, continuity conflict, or sticky notes needing revision in that response event. Continue resolving the immediate turn; do not wait for planning or invent its outcome. Follow your pinned RESPONDER.md for adventure-specific priorities; the planner has its own separate instructions.
 Respond ONLY with valid JSON conforming to the scene reaction schema.
 
@@ -225,6 +228,8 @@ class SceneReaction(BaseModel):
     dialogue: List[ResponseDialogue] = Field(default_factory=list, description="At most three NPC lines; never for the player.")
     manifested_characters: List[str] = Field(default_factory=list, description="Names of NPCs that entered or became prominent.")
     planning_signals: List[str] = Field(default_factory=list, description="Direct internal communication to deep planner, including sticky note update cues.")
+    proposed_factual_changes: list[ProposedFactChange] = Field(default_factory=list)
+    planning_request: PlanningRequest | None = None
     scene_reference: Optional[str] = Field(
         default=None,
         description="Reference scene identifier",
@@ -356,6 +361,7 @@ class StoryResponseModule:
         self._last_scene_reaction: Dict[str, Any] = {}
         self._last_action_response_word_count: int = 0
         self._planning_request_reason: str | None = None
+        self._turn_note_snapshot: NoteSnapshot | None = None
 
         # User input gate
         self.require_user_input: bool = bool(self.config.get("require_user_input", False))
@@ -903,10 +909,10 @@ class StoryResponseModule:
         )
 
     def _build_responder_turn_prompt(self, user_action: str, nudge: str = "") -> str:
-        changed_topics = self.notepad.get_recently_changed_topics()
-        self.notepad.mark_stickies_read()
+        snapshot, changed_topics = self.notepad.consume_responder_snapshot()
+        self._turn_note_snapshot = snapshot
         story_state = build_story_context_prompt(
-            elements=self.notepad.get_present_elements(),
+            elements=snapshot.present_notes(self.notepad.max_sticky_notes),
             characters=self.get_present_characters(),
             total_characters=self.reference_manager.count(),
             changed_topics=changed_topics,
@@ -1225,16 +1231,29 @@ class StoryResponseModule:
             return {"error": "Adventure Mode is not enabled for this theater."}
 
         self._planning_request_reason = None
-        notepad_revision_used = self.notepad.revision
+        self._turn_note_snapshot = self.notepad.snapshot()
         try:
             parsed = self._run_responder_agent(action, nudge=nudge)
             planning_request = self._planning_request_reason
+            snapshot_used = self._turn_note_snapshot
         finally:
             self._planning_request_reason = None
+            self._turn_note_snapshot = None
+        notepad_revision_used = (
+            snapshot_used.revision if snapshot_used is not None else self.notepad.revision
+        )
         if not isinstance(parsed, dict):
             raise ValueError("Story responder must return a JSON object.")
         if "error" in parsed:
             return parsed
+        factual_changes = [
+            ProposedFactChange.model_validate(change).model_dump(mode="json")
+            for change in (parsed.get("proposed_factual_changes") or [])
+        ]
+        if parsed.get("planning_request") is not None:
+            structured_request = PlanningRequest.model_validate(parsed["planning_request"])
+            if planning_request is None:
+                planning_request = structured_request.reason
 
         manifested_characters = [
             str(name).strip()
@@ -1265,6 +1284,7 @@ class StoryResponseModule:
             "dialogue": dialogue,
             "manifested_characters": manifested_characters,
             "planning_signals": planning_signals,
+            "proposed_factual_changes": factual_changes,
             "scene_reference": scene_reference,
             "lore_activity": self.get_lore_activity_this_turn(),
             "lore_docs_browsed": self.get_lore_docs_browsed_this_turn(),

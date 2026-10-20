@@ -345,6 +345,56 @@ class TestStoryResponseModuleBehavior(unittest.TestCase):
         self.assertGreater(self.module.notepad.revision, starting_revision)
         self.assertNotIn("deep_plan_revision_used", result)
 
+    def test_prompt_snapshot_revision_is_recorded_when_notes_change_before_prompt_build(
+        self,
+    ) -> None:
+        self.module.notepad.update_sticky_note("Quest", "Find the gate")
+        observed_prompt = ""
+
+        def resolve(action: str, nudge: str = "") -> dict[str, str]:
+            nonlocal observed_prompt
+            self.module.notepad.update_sticky_note("Quest", "Open the gate")
+            prompt_revision = self.module.notepad.revision
+            observed_prompt = self.module._build_responder_turn_prompt(action, nudge=nudge)
+            self.module.notepad.update_sticky_note("Quest", "Pass through the gate")
+            self.assertGreater(self.module.notepad.revision, prompt_revision)
+            return {"narration": "You step toward the gate."}
+
+        with patch.object(self.module, "_run_responder_agent", side_effect=resolve):
+            result = self.module._resolve_user_action("I approach the gate.")
+        self.assertIn("Open the gate", observed_prompt)
+        self.assertEqual(result["notepad_revision_used"], 2)
+        self.assertEqual(self.module.notepad.revision, 3)
+
+    def test_structured_proposals_are_returned_without_changing_notes(self) -> None:
+        proposal = {
+            "topic": "Inventory",
+            "info": "Broken key",
+            "evidence": "The key snapped during the resolved attempt.",
+        }
+        before = self.module.notepad.export_state()
+        with patch.object(self.module, "_run_responder_agent", return_value={
+            "narration": "The key breaks.",
+            "proposed_factual_changes": [proposal],
+            "planning_request": {"reason": "Find another route"},
+        }):
+            result = self.module._resolve_user_action("I turn the key.")
+        self.assertEqual(result["proposed_factual_changes"], [proposal])
+        self.assertEqual(result["planning_request"], "Find another route")
+        self.assertEqual(self.module.notepad.export_state(), before)
+
+    def test_invalid_proposal_is_rejected_before_scene_delivery(self) -> None:
+        with (
+            patch.object(self.module, "_run_responder_agent", return_value={
+                "narration": "The key breaks.",
+                "proposed_factual_changes": [{"topic": "Inventory", "info": "Broken key"}],
+            }),
+            patch.object(self.module, "_publish_scene") as publish,
+        ):
+            with self.assertRaises(ValueError):
+                self.module._resolve_user_action("I turn the key.")
+        publish.assert_not_called()
+
     def test_failed_turn_discards_planning_request(self) -> None:
         def fail(action: str, nudge: str = "") -> dict[str, str]:
             self.module.trigger_story_planning("Revise the quest")
@@ -724,7 +774,10 @@ class TestBuildSceneReactionPrompt(unittest.TestCase):
         fields = set(SceneReaction.model_fields.keys())
         self.assertEqual(
             fields,
-            {"narration", "dialogue", "manifested_characters", "planning_signals", "scene_reference"},
+            {
+                "narration", "dialogue", "manifested_characters", "planning_signals",
+                "scene_reference", "proposed_factual_changes", "planning_request",
+            },
         )
         self.assertNotIn("character_updates", fields)
         self.assertNotIn("player_character_update", fields)

@@ -284,5 +284,69 @@ keys across interleaved runs and restarts.
   but requires explicit synchronization and separate traces. Retain as a fallback
   if shared-session projections cannot reliably preserve visibility and recovery.
 
-This ADR records a proposal only. It does not change runtime behavior or claim
-that adding a third role will improve performance without measurement.
+## Implementation progress
+
+The first foundation is implemented in `components/notepad.py`:
+
+- The schema parser preserves ownership and rejects explicit values other than
+  `recorder` or `planner`. Legacy schemas remain readable without an inferred
+  owner, but `Notepad.for_role(...)` requires every configured topic to have an
+  explicit owner.
+- Bound role tools expose `check_schema(topic)` and
+  `update_sticky_note(topic, info)`. Authorization uses the current schema on
+  every call. Scoped writes enforce field validation even when ordinary narration
+  accepts unstructured notes, and hold the notepad lock through authorization
+  and mutation.
+- The example adventure's existing factual topics explicitly belong to the
+  recorder. No creative planning topics were inferred from those facts.
+- Ownership tests cover denied writes, legacy migration, field validation,
+  schema replacement, reassignment, and revision preservation on rejected writes.
+
+The current two-role runtime still uses unrestricted notepad methods. These are
+retained for compatibility and application persistence; the future three-role
+agents must receive only their bound tools. Role binding is not yet wired into
+`StoryTool`, because removing factual writes from its existing planner before
+introducing the recorder would leave committed outcomes unrecorded.
+
+Next: extract the recorder and game controller, then complete the handoff,
+shared-session, and durable recording prerequisites before enabling the new
+scheduling. This foundation does not claim a performance improvement.
+
+Additional prerequisites are now implemented:
+
+- `story_handoffs.py` defines validated factual proposals with supporting evidence
+  and a structured planning request. The responder schema accepts both, validates
+  them before delivering the scene, and returns them to the orchestrator without
+  applying proposed changes. The existing planning-request tool remains supported.
+  `StoryTool` retains these fields in its response log.
+- `Notepad.snapshot()` and `Notepad.consume_responder_snapshot()` capture note
+  values, ownership schema, changed-topic markers, and content revision under one
+  lock. `StoryResponseModule` builds its turn prompt from that snapshot and
+  records the snapshot's revision as `notepad_revision_used`.
+- `publish_role_updates()` validates an entire batch before mutation, rejects
+  stale snapshots (including ownership-only changes), runs an optional durable
+  persistence hook before mutating live state, and publishes changed notes under
+  one revision with one notification.
+- `story_recording_journal.py` and `story_recorder_module.py` provide durable
+  SQLite queueing (`StoryRecordingJournal`) and the two-phase `StoryRecorderModule`:
+  - `record(event)` commits the oldest pending event's factual note updates and
+    recording progress in one SQLite transaction, restores committed snapshots on
+    restart, blocks successor events when an earlier event fails, and has no
+    game-action or narration capability.
+  - `control_game(event)` accepts only root player `committed_game_action` events
+    (rejecting completed responses and Narratron receipts to prevent loops),
+    persists each committed Narratron game receipt and its recording event
+    immediately after `GameState.act()`, deduplicates committed game actions and
+    controller decisions across projection or narration retries, and triggers
+    narration at most once per player game event.
+  - `StoryRecorderModule` defines module-level instruction and turn-prompt
+    templates (`_RECORDER_INSTRUCTION_TEMPLATE` and `_RECORDER_TURN_PROMPT_TEMPLATE`)
+    alongside bounded lore tools (`read_lore`, `search_lore`) and `LoreLibrary`
+    support for a pinned `RECORDER.md` guide isolated from `RESPONDER.md` and
+    `PLANNER.md`.
+
+Remaining gates include shared ADK session projections, wiring the model-backed
+recorder/game-controller into `StoryTool` with mandatory recording and selective
+planning scheduling, migrating the remaining adventure `planning.yaml` schemas,
+canonical character/scene mutation contracts, and production-mode harness
+validation. The current `StoryTool` runtime must not be described as three-role yet.

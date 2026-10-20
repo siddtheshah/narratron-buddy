@@ -64,7 +64,7 @@ from components.canvas.canvas_state_service import CanvasStateService
 from components.theater_manager import TheaterManager
 from services.text_beautifier import TextBeautifier
 
-from tools.story import StoryTool
+from tools.story import ReferenceManager, StoryTool
 from testlab.game_lab import router as game_lab_router
 
 ROOT = Path(__file__).resolve().parent
@@ -453,10 +453,17 @@ def create_story_planner_session(body: dict[str, Any]):
     canvas_state_service = CanvasStateService(theater_manager)
     canvas_manager = canvas_state_service.get(f"testlab_{run_id}")
     canvas_manager.story.text_beautifier = False
+    theater = theater_manager.theater(f"testlab_{run_id}")
+    reference_manager = ReferenceManager(
+        theater=theater,
+        canvas_manager=canvas_manager,
+        story_state=canvas_manager.story,
+    )
     tools = StoryTool(
-        theater_manager.theater(f"testlab_{run_id}"),
+        theater,
         canvas_manager=canvas_manager,
         text_response_provider=get_text_response_provider("gemini-3", options={"model": model}),
+        reference_manager=reference_manager,
     )
     tools.response_module.adventure_mode = True
     tools.on_scene_reaction = on_scene_reaction

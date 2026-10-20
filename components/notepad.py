@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 from collections import OrderedDict
+from dataclasses import dataclass
 import json
 import logging
 from pathlib import Path
 import re
 from threading import RLock
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, Literal, Optional
 
 from jinja2 import Template
 from pydantic import BaseModel, Field, JsonValue, TypeAdapter, create_model
@@ -25,6 +26,32 @@ DEFAULT_MAX_STICKY_NOTES = 5
 MAX_STICKY_NOTE_TOPIC_CHARS = 100
 MAX_STICKY_NOTE_INFO_CHARS = 500
 MAX_STICKY_NOTES = 10
+StickyOwner = Literal["recorder", "planner"]
+
+
+@dataclass(frozen=True)
+class NoteSnapshot:
+    """Values and revision captured under the same lock for a role invocation."""
+
+    revision: int
+    schema_token: str
+    notes: dict[str, str]
+    structured_notes: dict[str, str | dict[str, str]]
+
+    def present_notes(self, max_notes: int | None = None) -> list[dict[str, str]]:
+        notes = [
+            {"topic": topic, "info": info, "name": topic, "content": info}
+            for topic, info in self.notes.items()
+        ]
+        if max_notes is None:
+            return notes
+        if json.loads(self.schema_token):
+            return notes[:max_notes]
+        return notes[-max_notes:]
+
+
+class StaleNoteSnapshot(ValueError):
+    """Facts or ownership changed after a role started its work."""
 
 
 class StickyNoteItem(BaseModel):
@@ -91,6 +118,11 @@ def parse_planning_schema(schema: Dict[str, Any]) -> OrderedDict[str, Dict[str, 
         if not topic:
             continue
         entry = raw_entry if isinstance(raw_entry, dict) else {"description": str(raw_entry)}
+        owner = entry.get("owner")
+        if "owner" in entry and owner not in ("recorder", "planner"):
+            raise ValueError(
+                f"Sticky note '{topic}' owner must be 'recorder' or 'planner'."
+            )
         raw_fields = entry.get("fields")
         fields: Optional[Dict[str, str]] = None
         if isinstance(raw_fields, dict) and raw_fields:
@@ -113,6 +145,7 @@ def parse_planning_schema(schema: Dict[str, Any]) -> OrderedDict[str, Dict[str, 
             "render": str(entry.get("render", entry.get("display_template", entry.get("template", "")))).strip(),
             "fields": fields,
             "initial": initial,
+            "owner": owner,
         }
     return parsed
 
@@ -364,6 +397,151 @@ class Notepad:
         return self.max_sticky_notes
 
     def update_sticky_note(self, topic: str, info: str) -> str:
+        return self._update_sticky_note(topic, info)
+
+    def update_sticky_note_for_role(
+        self, owner: StickyOwner, topic: str, info: str
+    ) -> str:
+        """Authorize and validate a role write against the current schema atomically."""
+        with self._sticky_notes_lock:
+            error = self._check_sticky_owner(owner, topic)
+            if error:
+                return error
+            return self._update_sticky_note(topic, info, require_schema=True)
+
+    def _check_sticky_owner(self, owner: StickyOwner, topic: str) -> str | None:
+        definition = self._sticky_definitions.get(topic.strip())
+        if owner not in ("recorder", "planner"):
+            return "Error: Unknown sticky writer role."
+        if definition is None or definition.get("owner") != owner:
+            return f"Error: Role '{owner}' cannot write sticky note '{topic.strip()}'."
+        return None
+
+    def check_schema_for_role(self, owner: StickyOwner, topic: str) -> str:
+        """Expose update contracts only for topics assigned to this writer."""
+        with self._sticky_notes_lock:
+            error = self._check_sticky_owner(owner, topic)
+            return error if error else self.check_schema(topic)
+
+    def for_role(self, owner: StickyOwner) -> RoleScopedNotepad:
+        """Bind model tools to one writer, requiring explicit schema migration."""
+        with self._sticky_notes_lock:
+            if owner not in ("recorder", "planner"):
+                raise ValueError("Unknown sticky writer role.")
+            for topic, definition in self._sticky_definitions.items():
+                if definition.get("owner") not in ("recorder", "planner"):
+                    raise ValueError(f"Sticky note '{topic}' requires an explicit owner.")
+            return RoleScopedNotepad(self, owner)
+
+    def snapshot(self) -> NoteSnapshot:
+        """Capture the revision with the actual state consumed by a role."""
+        with self._sticky_notes_lock:
+            return NoteSnapshot(
+                revision=self._revision,
+                schema_token=json.dumps(self._sticky_definitions, sort_keys=True),
+                notes=dict(self._sticky_notes),
+                structured_notes=TypeAdapter(
+                    dict[str, str | dict[str, str]]
+                ).validate_python(self._structured_sticky_notes),
+            )
+
+    def consume_responder_snapshot(self) -> tuple[NoteSnapshot, frozenset[str]]:
+        """Capture the responder's note snapshot and changed topics under one lock."""
+        with self._sticky_notes_lock:
+            changed = frozenset(self._recently_changed)
+            self._recently_changed.clear()
+            return self.snapshot(), changed
+
+    def publish_role_updates(
+        self,
+        owner: StickyOwner,
+        updates: dict[str, str],
+        *,
+        source: NoteSnapshot,
+        persist: Callable[[NoteSnapshot], None] | None = None,
+    ) -> int:
+        """Validate and publish a complete role result, or leave all notes untouched.
+
+        When supplied, persist commits the candidate snapshot and recording
+        progress before live state changes. A failed commit leaves notes intact.
+        """
+        with self._sticky_notes_lock:
+            if owner not in ("recorder", "planner"):
+                raise ValueError("Unknown sticky writer role.")
+            if (
+                self._revision != source.revision
+                or json.dumps(self._sticky_definitions, sort_keys=True) != source.schema_token
+            ):
+                raise StaleNoteSnapshot("Notes or ownership changed; reconcile against a fresh snapshot.")
+            staged: dict[str, tuple[str, str | dict[str, str]]] = {}
+            for topic, info in updates.items():
+                clean_topic, clean_info = topic.strip(), info.strip()
+                error = self._check_sticky_owner(owner, clean_topic)
+                if error:
+                    raise ValueError(error)
+                if not clean_info or len(clean_info) > MAX_STICKY_NOTE_INFO_CHARS:
+                    raise ValueError(f"Invalid sticky value length for '{clean_topic}'.")
+                if clean_topic in staged:
+                    raise ValueError(f"Duplicate sticky topic '{clean_topic}'.")
+                error, value = self._validate_structured_update(clean_topic, clean_info)
+                if error:
+                    raise ValueError(error)
+                validated = TypeAdapter(str | dict[str, str]).validate_python(value)
+                rendered = self._render(clean_topic, validated)
+                existing = self._sticky_notes.get(clean_topic, "")
+                if rendered.count("|") != existing.count("|"):
+                    raise ValueError(f"Sticky note divider count mismatch for '{clean_topic}'.")
+                staged[clean_topic] = (rendered, validated)
+            changed = {
+                topic for topic, (rendered, value) in staged.items()
+                if self._sticky_notes.get(topic) != rendered
+                or self._structured_sticky_notes.get(topic) != value
+            }
+            next_notes = dict(self._sticky_notes)
+            next_structured = dict(source.structured_notes)
+            for topic in changed:
+                rendered, value = staged[topic]
+                next_notes[topic] = rendered
+                next_structured[topic] = value
+            revision = self._revision + bool(changed)
+            candidate = NoteSnapshot(
+                revision=revision,
+                schema_token=source.schema_token,
+                notes=next_notes,
+                structured_notes=next_structured,
+            )
+            if persist is not None:
+                persist(candidate)
+            self._sticky_notes = OrderedDict(next_notes)
+            self._structured_sticky_notes = OrderedDict(next_structured)
+            if changed:
+                self._recently_changed.update(changed)
+            self._revision = revision
+        if changed:
+            self._changed()
+        return revision
+
+    def restore_recorded_snapshot(self, snapshot: NoteSnapshot) -> None:
+        """Restore the durable journal projection before admitting new work."""
+        with self._sticky_notes_lock:
+            if json.dumps(self._sticky_definitions, sort_keys=True) != snapshot.schema_token:
+                raise ValueError("Recorded note schema differs; explicit save migration is required.")
+            if set(snapshot.notes) != set(self._sticky_definitions):
+                raise ValueError("Recorded snapshot does not contain the configured topics.")
+            if set(snapshot.structured_notes) != set(self._sticky_definitions):
+                raise ValueError("Recorded snapshot lacks structured topic values.")
+            self._sticky_notes = OrderedDict(
+                (topic, snapshot.notes[topic]) for topic in self._sticky_definitions
+            )
+            self._structured_sticky_notes = OrderedDict(
+                (topic, snapshot.structured_notes[topic]) for topic in self._sticky_definitions
+            )
+            self._revision = snapshot.revision
+            self._recently_changed.update(self._sticky_definitions)
+
+    def _update_sticky_note(
+        self, topic: str, info: str, *, require_schema: bool = False
+    ) -> str:
         clean_topic, clean_info = str(topic or "").strip(), str(info or "").strip()
         if not clean_topic:
             return "Error: Sticky note topic cannot be empty."
@@ -374,7 +552,7 @@ class Notepad:
         if len(clean_info) > MAX_STICKY_NOTE_INFO_CHARS:
             return f"Error: Sticky note info must be {MAX_STICKY_NOTE_INFO_CHARS} characters or fewer."
         structured_value: Any = None
-        if self.enforce_structured and self._sticky_definitions:
+        if require_schema or (self.enforce_structured and self._sticky_definitions):
             validation_error, structured_value = self._validate_structured_update(
                 clean_topic, clean_info
             )
@@ -477,6 +655,8 @@ class Notepad:
             "description": definition.get("description", ""),
             "type": "object" if fields else "string",
         }
+        if definition.get("owner") is not None:
+            contract["owner"] = definition["owner"]
         if fields:
             contract["required"] = list(fields)
             contract["properties"] = {
@@ -607,3 +787,24 @@ class Notepad:
     def _changed(self) -> None:
         if self.on_change:
             self.on_change()
+
+
+class RoleScopedNotepad:
+    """Model-facing write tools bound by application code to a single role.
+
+    Read visibility is independent of write ownership. The orchestrator retains
+    the shared Notepad for snapshots and persistence; agents receive only these
+    bound methods, never the unrestricted mutation methods.
+    """
+
+    def __init__(self, notepad: Notepad, owner: StickyOwner) -> None:
+        self._notepad = notepad
+        self._owner = owner
+
+    def check_schema(self, topic: str) -> str:
+        """Return the update contract for a sticky assigned to this role."""
+        return self._notepad.check_schema_for_role(self._owner, topic)
+
+    def update_sticky_note(self, topic: str, info: str) -> str:
+        """Update one owned sticky, validating its complete field contract."""
+        return self._notepad.update_sticky_note_for_role(self._owner, topic, info)

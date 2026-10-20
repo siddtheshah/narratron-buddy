@@ -14,6 +14,7 @@ class TestLoreLibrary(unittest.TestCase):
         self.documents = [
             "RESPONDER.md",
             "PLANNER.md",
+            "RECORDER.md",
             "read_premise.txt",
             "history/first_age.txt",
             "history/second_age.txt",
@@ -22,6 +23,7 @@ class TestLoreLibrary(unittest.TestCase):
         self.contents = {
             "RESPONDER.md": "Resolve the eclipse scene immediately.",
             "PLANNER.md": "Secret faction priorities and hidden clocks.",
+            "RECORDER.md": "Track inventory, location, and committed game state.",
             "read_premise.txt": "An eclipse hangs over Eldoria.",
             "history/first_age.txt": "The starblade was forged by the first king.",
             "history/second_age.txt": "A century of peace followed.",
@@ -45,10 +47,11 @@ class TestLoreLibrary(unittest.TestCase):
         result = self.library.read_lore()
 
         self.assertIn("Available lore documents:", result)
-        for document in self.documents[2:]:
+        for document in self.documents[3:]:
             self.assertIn(f"- {document}", result)
         self.assertNotIn("RESPONDER.md", result)
         self.assertNotIn("PLANNER.md", result)
+        self.assertNotIn("RECORDER.md", result)
 
     def test_limits_document_listing_without_limiting_calls(self) -> None:
         self.theater.lore_documents.return_value = [f"doc-{index}.txt" for index in range(5)]
@@ -149,20 +152,23 @@ class TestLoreLibrary(unittest.TestCase):
         self.assertNotIn("history/first_age.txt", result)
 
     def test_role_guides_are_isolated_in_reads_listings_and_searches(self) -> None:
-        for role, own, other in (
-            ("responder", "RESPONDER.md", "PLANNER.md"),
-            ("planner", "PLANNER.md", "RESPONDER.md"),
+        for role, own, others in (
+            ("responder", "RESPONDER.md", ("PLANNER.md", "RECORDER.md")),
+            ("planner", "PLANNER.md", ("RESPONDER.md", "RECORDER.md")),
+            ("recorder", "RECORDER.md", ("RESPONDER.md", "PLANNER.md")),
         ):
             with self.subTest(role=role):
                 self.assertIn(self.contents[own], self.library.get_lore_context(role=role))
-                self.assertNotIn(other, self.library.get_lore_context(role=role))
                 self.assertIn(own, self.library.read_lore(role=role))
-                self.assertNotIn(other, self.library.read_lore(role=role))
                 self.assertIn(self.contents[own], self.library.read_lore(own, role=role))
-                for path in (other, other.lower(), f"history/../{other}", f"history\\..\\{other}"):
-                    self.assertIn("private", self.library.read_lore(path, role=role))
+                for other in others:
+                    self.assertNotIn(other, self.library.get_lore_context(role=role))
+                    self.assertNotIn(other, self.library.read_lore(role=role))
+                    for path in (other, other.lower(), f"history/../{other}", f"history\\..\\{other}"):
+                        self.assertIn("private", self.library.read_lore(path, role=role))
         self.assertNotIn("PLANNER.md", self.library.search_lore("Secret faction priorities"))
         self.assertNotIn("RESPONDER.md", self.library.search_lore("Resolve eclipse"))
+        self.assertNotIn("RECORDER.md", self.library.search_lore("committed game state"))
 
     def test_pinned_guide_is_complete_even_with_large_catalog(self) -> None:
         self.contents["PLANNER.md"] = "complete guide " * 100

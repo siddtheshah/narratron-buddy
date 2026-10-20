@@ -15,8 +15,12 @@ logger = logging.getLogger(__name__)
 
 MAX_LORE_DOCUMENT_CONTEXT_CHARS = 12_000
 MAX_LORE_DOCUMENTS_LISTED = 100
-StoryRole = Literal["responder", "planner"]
-ROLE_DOCUMENTS = {"responder": "RESPONDER.md", "planner": "PLANNER.md"}
+StoryRole = Literal["responder", "planner", "recorder"]
+ROLE_DOCUMENTS: dict[StoryRole, str] = {
+    "responder": "RESPONDER.md",
+    "planner": "PLANNER.md",
+    "recorder": "RECORDER.md",
+}
 ROLE_FILENAMES = {name.casefold() for name in ROLE_DOCUMENTS.values()}
 
 

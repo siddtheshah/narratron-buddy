@@ -245,6 +245,7 @@ def test_format_canvas_state_includes_sticky_notes(tmp_path: Path, reference_man
         theater,
         canvas_manager=CanvasFixture(),
         text_response_provider=MagicMock(),
+        reference_manager=reference_manager,
     )
     elements.update_sticky_note("hero", "Mara, a cartographer")
     elements.update_sticky_note("tone", "Hopeful and tense")
@@ -307,10 +308,13 @@ def test_format_canvas_state_uses_notepad(
 def test_format_canvas_state_omits_active_character_details(tmp_path: Path) -> None:
     theater = MagicMock(wraps=TheaterManager(tmp_path).theater("stage_chars"))
     theater.config = MagicMock(return_value={"adventure_mode": True})
+    canvas = CanvasFixture()
+    ref_mgr = ReferenceManager(theater=theater, canvas_manager=canvas, story_state=canvas.story)
     elements = StoryTool(
         theater,
-        canvas_manager=CanvasFixture(),
+        canvas_manager=canvas,
         text_response_provider=MagicMock(),
+        reference_manager=ref_mgr,
     )
     elements.create_or_update_character(name="Vaelen", personality="Brave", motivation="Find the talisman", quirk="Flips a coin on choices")
 
@@ -365,10 +369,12 @@ def test_format_canvas_state_omits_character_image_handles_for_npcs(tmp_path: Pa
     canvas = CanvasFixture(story=StoryState())
     theater = MagicMock(wraps=TheaterManager(tmp_path).theater("stage_char_refs"))
     theater.config = MagicMock(return_value={"adventure_mode": True})
+    ref_mgr = ReferenceManager(theater=theater, canvas_manager=canvas, story_state=canvas.story)
     elements = StoryTool(
         theater,
         canvas_manager=canvas,
         text_response_provider=MagicMock(),
+        reference_manager=ref_mgr,
     )
     elements.reference_manager.create_or_update_character(
         name="Lyra",
@@ -392,10 +398,12 @@ def test_format_canvas_state_omits_character_image_handles_for_player(tmp_path: 
     canvas = CanvasFixture(story=StoryState())
     theater = MagicMock(wraps=TheaterManager(tmp_path).theater("stage_player_refs"))
     theater.config = MagicMock(return_value={"adventure_mode": True})
+    ref_mgr = ReferenceManager(theater=theater, canvas_manager=canvas, story_state=canvas.story)
     elements = StoryTool(
         theater,
         canvas_manager=canvas,
         text_response_provider=MagicMock(),
+        reference_manager=ref_mgr,
     )
     elements.reference_manager.set_player_character(
         PlayerCharacter(

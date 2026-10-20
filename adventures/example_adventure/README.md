@@ -15,8 +15,9 @@ example_adventure/
 ├── theater.yaml            # Story planner settings, agent persona, and runtime config
 ├── planning.yaml           # Deep planner schemas, sticky definitions, and initial notes
 ├── README.md               # This reference file
-├── lore/                   # Contextual lore injected into the story planner
+├── lore/                   # Contextual lore injected into the story modules
 │   ├── RESPONDER.md         # Pinned immediate-response instructions
+│   ├── RECORDER.md          # Pinned factual-recording and game-control instructions
 │   ├── PLANNER.md           # Pinned background-planning instructions
 │   ├── characters/         # NPC dossiers
 │   │   └── the_caretaker.txt

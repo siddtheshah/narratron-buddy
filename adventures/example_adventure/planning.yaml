@@ -2,6 +2,7 @@
 # All fields and sticky values are strictly strings. No arrays, numbers, or complex JSON Schema objects.
 
 "Player Character":
+  owner: recorder
   description: "Established player identity, objective, and physical condition."
   render: "Name: {name} | Goal: {goal} | Status: {status}"
   fields:
@@ -14,6 +15,7 @@
     status: "Intrigued"
 
 "Library Exploration":
+  owner: recorder
   description: "Current wing and anomalous narrative phenomenon observed."
   render: "Chamber: {chamber} | Discovery: {discovery}"
   fields:
@@ -24,5 +26,6 @@
     discovery: "Whispering inkwells and drifting blank manuscripts"
 
 "Discarded Notes & Echoes":
+  owner: recorder
   description: "Fragments of forgotten plots, erased characters, and incomplete endings found by the player."
   initial: "Found: A compass with a missing protagonist's name; fragments of an unwritten finale."

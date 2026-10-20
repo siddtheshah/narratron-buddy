@@ -21,7 +21,7 @@ from tools.story.story_snapshot import (
 )
 from components.canvas_state import CanvasStateManager
 from components.theater_manager import Theater
-from providers import ImageProvider, ImageProviderError, SpeechProvider, TextResponseProvider, get_image_provider
+from providers import SpeechProvider, TextResponseProvider
 from tools.base_tool import BaseTools, with_cycle_cooldown
 from tools.tool_metadata import terminal
 from components.reference_manager import ReferenceManager
@@ -29,6 +29,7 @@ from components.lore_library import LoreLibrary
 from components.notepad import Notepad
 from tools.story.story_planning_module import StoryPlanningModule
 from tools.story.story_response_module import StoryResponseModule
+from tools.story.story_handoffs import ProposedFactChange
 
 
 logger = logging.getLogger(__name__)
@@ -40,6 +41,8 @@ class StoryResponseOutput(BaseModel):
     dialogue: list[Dict[str, Any]] = Field(default_factory=list)
     die_rolls: list[Dict[str, Any]] = Field(default_factory=list)
     scene_reference: Optional[str] = None
+    proposed_factual_changes: list[ProposedFactChange] = Field(default_factory=list)
+    planning_request: str | None = None
 
 
 class StoryLogEntry(BaseModel):
@@ -63,13 +66,14 @@ class StoryTool(BaseTools):
         theater: Theater,
         canvas_manager: CanvasStateManager,
         text_response_provider: TextResponseProvider,
-        image_provider: ImageProvider | None = None,
+        reference_manager: ReferenceManager,
         speech_provider: SpeechProvider | None = None,
-        reference_manager: Optional[ReferenceManager] = None,
         lore_library: Optional[LoreLibrary] = None,
     ) -> None:
         if text_response_provider is None:
             raise ValueError("text_response_provider is required.")
+        if reference_manager is None:
+            raise ValueError("reference_manager is required.")
 
         self.theater = theater
         super().__init__(theater, canvas_manager)
@@ -108,34 +112,9 @@ class StoryTool(BaseTools):
         self._load_story_log()
 
         self.lore_library = lore_library if lore_library is not None else LoreLibrary(theater=theater)
-        if reference_manager is not None:
-            self.reference_manager = reference_manager
-        else:
-            visuals_config = raw_config.get("visuals", {})
-            visuals_config = visuals_config if type(visuals_config) is dict else {}
-            character_image_provider = image_provider
-            if character_image_provider is None:
-                character_image_model = str(visuals_config.get("model") or "").strip()
-                character_image_options = visuals_config.get("model_options") or {}
-                if character_image_model and type(character_image_options) is dict:
-                    try:
-                        character_image_provider = get_image_provider(
-                            character_image_model, character_image_options
-                        )
-                    except (ImageProviderError, ValueError) as exc:
-                        logger.warning("[StoryTool] Character image provider unavailable: %s", exc)
-            if speech_provider is None and canvas_manager.story is not None:
-                speech_provider = canvas_manager.story.speech_provider
-            story_state = canvas_manager.story if canvas_manager.story is not None else StoryState()
-            self.reference_manager = ReferenceManager(
-                theater=theater,
-                text_response_provider=text_response_provider,
-                canvas_manager=canvas_manager,
-                story_state=story_state,
-                image_provider=character_image_provider,
-                speech_provider=speech_provider,
-                character_image_style=str(visuals_config.get("style") or "").strip(),
-            )
+        self.reference_manager = reference_manager
+        if speech_provider is not None and self.reference_manager.speech_provider is None:
+            self.reference_manager.speech_provider = speech_provider
         configured_session_id = str(self.config.get("session_id") or "").strip()
         theater_id = theater.theater_id or ""
         self.planning_session_service = InMemorySessionService()
@@ -277,6 +256,8 @@ class StoryTool(BaseTools):
                 "narration": str(result.get("narration") or "").strip(),
                 "dialogue": result.get("dialogue") if type(result.get("dialogue")) is list else [],
                 "die_rolls": result.get("die_rolls") if type(result.get("die_rolls")) is list else [],
+                "proposed_factual_changes": result.get("proposed_factual_changes") or [],
+                "planning_request": result.get("planning_request"),
                 **({"scene_reference": clean_scene_ref} if clean_scene_ref else {}),
             }
         else:
