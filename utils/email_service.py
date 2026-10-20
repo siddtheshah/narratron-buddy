@@ -15,11 +15,12 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 # Define abseil flag for controlling actual email dispatch
-flags.DEFINE_boolean(
-    "send_emails",
-    True,
-    "Whether to actually send emails via SMTP.",
-)
+if "send_emails" not in flags.FLAGS:
+    flags.DEFINE_boolean(
+        "send_emails",
+        True,
+        "Whether to actually send emails via SMTP.",
+    )
 
 FLAGS = flags.FLAGS
 

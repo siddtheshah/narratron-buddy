@@ -7,8 +7,12 @@ class BaseTestCase(unittest.TestCase):
     def setUp(self):
         super().setUp()
         self.addCleanup(self.cleanup_theater_directories)
+        from absl import flags
         from utils.email_service import FLAGS
-        FLAGS.send_emails = False
+        if "send_emails" not in flags.FLAGS:
+            flags.DEFINE_boolean("send_emails", False, "Whether to actually send emails via SMTP.")
+        else:
+            FLAGS.send_emails = False
         from api_server.app import FLAGS as WEB_FLAGS
         WEB_FLAGS.allow_mock_payments = False
 

@@ -59,7 +59,9 @@ class TestChatTools(BaseTestCase):
         res2 = self.chat_tools.send_chat_message("Second thought")
         self.assertEqual(res2, "Tool 'send_chat_message' scheduled for next cycle when cooldown expires.")
 
-        time.sleep(0.15)
+        deadline = time.time() + 2.0
+        while time.time() < deadline and self.chat_tools.canvas_manager.tool_response.set_agent_thought.call_count < 2:
+            time.sleep(0.01)
         self.assertEqual(self.chat_tools.canvas_manager.tool_response.set_agent_thought.call_count, 2)
         self.chat_tools.canvas_manager.tool_response.set_agent_thought.assert_called_with("Second thought")
 

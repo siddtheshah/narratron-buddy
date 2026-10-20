@@ -45,5 +45,6 @@ def initialize_test_registry() -> None:
         patch("storage.stamp_storage.StampStorage._init_gcs_client", return_value=None),
     ):
         import object_registry
+        import utils.email_service  # noqa: F401
 
         object_registry.db.db_path = str(root / "deployer.db")

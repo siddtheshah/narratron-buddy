@@ -29,7 +29,13 @@ from google.genai import types
 from components.canvas_state import CanvasStateManager
 from components.canvas.game_state import GameState
 from components.theater_manager import Theater
-from components.reference_manager import Character, CharacterLookupResult, ReferenceManager, PlayerCharacter
+from components.reference_manager import (
+    Character,
+    CharacterLookupResult,
+    ReferenceManager,
+    PlayerCharacter,
+    normalize_voice_tags,
+)
 from components.lore_library import LoreLibrary
 from tools.story.story_models import (
     VertexGemini,
@@ -749,6 +755,19 @@ class StoryResponseModule:
         if not clean_name:
             return "Character name cannot be empty."
         tags = list(voice_tags) if voice_tags is not None else None
+
+        initial_tags: list[str] = []
+        if tags is not None:
+            initial_tags = list(tags)
+        elif gender is not None:
+            norm_g = normalize_voice_tags(gender)
+            if norm_g:
+                initial_tags = [norm_g[0]]
+            else:
+                initial_tags = [gender.strip().lower()]
+        story = self.canvas_manager.story if self.canvas_manager is not None else self.reference_manager.story_state
+        if initial_tags and story is not None:
+            story.update_character_voice_tags({clean_name: initial_tags})
 
         def update() -> None:
             profile = self._create_or_update_character(
