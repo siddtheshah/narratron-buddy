@@ -64,7 +64,7 @@ def main() -> int:
     output = {
         "result": result,
         "characters": session["state"].get("characters", []),
-        "deep_plan": session["state"].get("deep_plan", {}),
+        "notepad": session["state"].get("notepad", {}),
     }
     print(json.dumps(output, indent=2))
     if result.get("error"):

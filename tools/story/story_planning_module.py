@@ -20,7 +20,7 @@ from google.adk.plugins.base_plugin import BasePlugin
 from google.adk.runners import RunConfig, Runner
 from google.adk.sessions import InMemorySessionService
 from google.genai import types
-from pydantic import JsonValue
+from pydantic import JsonValue, TypeAdapter
 
 from components.canvas.story_state import (
     CharacterState,
@@ -95,7 +95,7 @@ After tool calls, respond with a brief confirmation. Do not include a sticky-not
 
 # Typical Planning Procedure
 
-1. Search lore library for relevant context using `search_lore`
+1. Search lore library for relevant story info {% if has_game %} or game rules {% endif %} using `search_lore`
 2. Read relevant lore documents using `read_lore`
 3. Update sticky notes using any explicit rules from lore. {% if has_game %}Take game actions to respond to player game actions, and choose whether to call `trigger_story_response` to narrate significant game moves. {% endif %}
 4. Come up with some interesting possible developments given current state.
@@ -128,9 +128,9 @@ This is one shallow, bounded planning heartbeat. Assimilate only the supplied qu
 {{ game_state_json }}
 {% endif -%}
 {% if reference_images -%}
-## Available Reference Images
+## Available References
 {% for img in reference_images -%}
-- Alias: `{{ img.alias }}` | Name: `{{ img.name }}` | Description: {{ img.description }}
+- Name: `{{ img.name }}` | Description: {{ img.description }}
 {% endfor -%}
 {% endif -%}
 {% if turn_events -%}
@@ -199,23 +199,22 @@ No new responder events are queued. Use this heartbeat for one conservative refi
 ## Newly Available References
 The following reference images became available since the last heartbeat:
 {% for img in new_images -%}
-- Alias: `{{ img.alias }}` | Name: `{{ img.name }}`{% if img.title %} | Title: "{{ img.title }}"{% endif %}{% if img.description and img.description != ('Image ' ~ img.name) and img.description != ('Image ' ~ img.name ~ '.jpg') and img.description != ('Image ' ~ img.name ~ '.png') and img.description != ('Image ' ~ img.name ~ '.webp') %} | Description: {{ img.description }}{% endif %}
+- Name: `{{ img.name }}`{% if img.title %} | Title: "{{ img.title }}"{% endif %}{% if img.description and img.description != ('Image ' ~ img.name) and img.description != ('Image ' ~ img.name ~ '.jpg') and img.description != ('Image ' ~ img.name ~ '.png') and img.description != ('Image ' ~ img.name ~ '.webp') %} | Description: {{ img.description }}{% endif %}
 {% endfor -%}
 
 {% endif -%}
-{% if deep_plan_diff -%}
-## Deep Plan Update
-- {{ deep_plan_diff }}
+{% if notepad_diff -%}
+## Notepad Update
+- {{ notepad_diff }}
 {% endif -%}
 {% else -%}
-# Current Adventure State
-{% if current_notes -%}
+
 # Current Sticky Notes
+{% if current_notes -%}
 {% for note in current_notes -%}
 - {{ note.topic }}: {{ note.info }}
 {% endfor -%}
 {% else -%}
-# Current Sticky Notes
 (No active sticky notes)
 {% endif -%}
 
@@ -232,10 +231,6 @@ The following reference images became available since the last heartbeat:
 
 {% endif -%}
 
-{% if deep_plan_json -%}
-# Current Deep Plan
-{{ deep_plan_json }}
-{% endif -%}
 {% endif -%}
 """
 )
@@ -291,11 +286,9 @@ class StoryPlanningModule:
         configured_style = self.config.get("style", DEFAULT_STORY_PLANNING_STYLE)
         self.style: str = str(configured_style).strip() or DEFAULT_STORY_PLANNING_STYLE
 
-        # Deep plan state
-        self._deep_plan: dict[str, object] = {}
-        self._deep_plan_revision: int = 0
-        self._deep_plan_through_turn_id: int = 0
-        self._deep_plan_lock = Lock()
+        # Processing progress is independent of notepad content revisions.
+        self._planned_through_turn_id: int = 0
+        self._planning_progress_lock = Lock()
         self._deep_planning_queue: deque[tuple[int, str, dict[str, object]]] = deque()
         self._deep_planning_queue_lock = Lock()
         self._deep_planning_worker: Optional[threading.Thread] = None
@@ -636,22 +629,17 @@ class StoryPlanningModule:
             self.restart_deep_planner_agent()
         return self._deep_planner_runner
 
-    def get_deep_plan(self) -> dict[str, object]:
-        with self._deep_plan_lock:
-            return dict(self._deep_plan)
-
     def wait_for_deep_planning(
         self, timeout: float = 5.0, target_turn_id: Optional[int] = None
     ) -> bool:
         if not self.deep_planning_enabled:
             return True
         if target_turn_id is None:
-            with self._deep_plan_lock:
-                target_turn_id = self._deep_plan_through_turn_id
+            return self.wait_for_pending_events(timeout)
         deadline = time.monotonic() + max(0.0, timeout)
         while True:
-            with self._deep_plan_lock:
-                if self._deep_plan_through_turn_id >= target_turn_id:
+            with self._planning_progress_lock:
+                if self._planned_through_turn_id >= target_turn_id:
                     return True
             if time.monotonic() >= deadline:
                 return False
@@ -709,54 +697,22 @@ class StoryPlanningModule:
             player_character=current_pc,
             characters=current_chars,
             known_image_names=all_known_images,
-            deep_plan_revision=self._deep_plan_revision,
+            notepad_revision=self.notepad.revision,
         )
 
-    def _commit_deep_plan_update(
-        self, turn_id: int, raw_update: dict[str, object]
+    def _complete_planning_heartbeat(
+        self, turn_id: int, result: dict[str, JsonValue]
     ) -> bool:
-        if not raw_update or raw_update.get("error"):
+        if not result.get("tool_updates") or result.get("error"):
             return False
-        # Tool-driven planning has already applied each accepted update. Keep
-        # the replacement path for importing older persisted plans and direct
-        # callers during the transition.
-        if not raw_update.get("tool_updates"):
-            update = self.notepad.deep_plan_update_model.model_validate(raw_update)
-            self.notepad.replace_from_deep_update(update)
 
-        with self._deep_plan_lock:
-            self._deep_plan_revision += 1
-            self._deep_plan_through_turn_id = max(
-                self._deep_plan_through_turn_id, turn_id
-            )
-            if raw_update.get("tool_updates"):
-                plan: dict[str, object] = {
-                    "sticky_notes": (
-                        self.notepad.get_present_structured_sticky_notes()
-                        if self.notepad.sticky_definitions
-                        else [
-                            {"topic": note["topic"], "info": note["info"]}
-                            for note in self.notepad.get_present_sticky_notes()
-                        ]
-                    )
-                }
-            else:
-                plan = update.model_dump(mode="json", by_alias=True)
-            plan["revision"] = self._deep_plan_revision
-            plan["through_turn_id"] = self._deep_plan_through_turn_id
-            if not self.notepad.sticky_definitions:
-                plan["sticky_notes"] = [
-                    {"topic": note["topic"], "info": note["info"]}
-                    for note in self.notepad.get_present_sticky_notes()
-                ]
-            self._deep_plan = plan
-
-        self._record_state_snapshot()
+        with self._planning_progress_lock:
+            self._planned_through_turn_id = max(self._planned_through_turn_id, turn_id)
 
         logger.info(
-            "[StoryPlanningModule] Deep plan revision=%d committed through turn=%d",
-            self._deep_plan_revision,
+            "[StoryPlanningModule] Planning completed through turn=%d at notepad revision=%d",
             turn_id,
+            self.notepad.revision,
         )
         return True
 
@@ -783,9 +739,9 @@ class StoryPlanningModule:
 
                     if batch:
                         update = self._run_deep_planner_agent(batch)
-                        highest_turn_id = batch[-1][0]
+                        highest_turn_id = max(turn_id for turn_id, _, _ in batch)
                         try:
-                            committed = self._commit_deep_plan_update(highest_turn_id, update)
+                            committed = self._complete_planning_heartbeat(highest_turn_id, update)
                         except Exception:
                             committed = False
                             logger.exception(
@@ -811,14 +767,14 @@ class StoryPlanningModule:
                         continue
 
                     if idle_refinements_remaining > 0:
-                        with self._deep_plan_lock:
-                            through_turn_id = self._deep_plan_through_turn_id
+                        with self._planning_progress_lock:
+                            through_turn_id = self._planned_through_turn_id
                         update = self._run_deep_planner_agent([])
                         try:
-                            self._commit_deep_plan_update(through_turn_id, update)
+                            self._complete_planning_heartbeat(through_turn_id, update)
                         except Exception:
                             logger.exception(
-                                "[StoryPlanningModule] Failed to commit idle deep-plan refinement"
+                                "[StoryPlanningModule] Failed to complete idle planning refinement"
                             )
                         idle_refinements_remaining -= 1
                         continue
@@ -844,7 +800,7 @@ class StoryPlanningModule:
         current_pc: Optional[PlayerCharacterState],
         current_chars: dict[str, CharacterState],
         recent_images: list[dict[str, object]],
-        current_deep_plan_revision: int,
+        current_notepad_revision: int,
         current_through_turn: int,
     ) -> StoryStateDiff:
         story = self.canvas_manager.story if self.canvas_manager is not None else None
@@ -856,14 +812,14 @@ class StoryPlanningModule:
             current_pc=current_pc,
             current_chars=current_chars,
             recent_images=recent_images,
-            current_deep_plan_revision=current_deep_plan_revision,
+            current_notepad_revision=current_notepad_revision,
             current_through_turn=current_through_turn,
         )
 
     def _run_deep_planner_agent(
         self,
         turn_events: list[tuple[int, str, dict[str, object]]],
-    ) -> dict[str, object]:
+    ) -> dict[str, JsonValue]:
         self.reset_deep_lore_call_counts()
         has_game_action: bool = False
         latest_game_action: Optional[dict[str, JsonValue]] = None
@@ -879,10 +835,9 @@ class StoryPlanningModule:
         self._running_heartbeat = True
         try:
             runner = self._get_or_create_deep_planner_runner()
-            with self._deep_plan_lock:
-                deep_plan_json = json.dumps(self._deep_plan, ensure_ascii=False, indent=2)
-                current_through_turn = self._deep_plan_through_turn_id
-                current_deep_plan_revision = self._deep_plan_revision
+            with self._planning_progress_lock:
+                current_through_turn = self._planned_through_turn_id
+            current_notepad_revision = self.notepad.revision
             event_payloads = [
                 {
                     "source": str(scene_reaction.get("source") or "story"),
@@ -899,7 +854,7 @@ class StoryPlanningModule:
                 for turn_id, user_action, scene_reaction in turn_events
             ]
             heartbeat_through_turn = (
-                turn_events[-1][0] if turn_events else current_through_turn
+                max(turn_id for turn_id, _, _ in turn_events) if turn_events else current_through_turn
             )
 
             current_stickies = {
@@ -937,7 +892,6 @@ class StoryPlanningModule:
                     player_character=current_pc_obj,
                     characters=current_chars_list,
                     reference_images=reference_images,
-                    deep_plan_json=deep_plan_json if deep_plan_json != "{}" else "",
                 ).strip()
             else:
                 prev = self._last_state_snapshot
@@ -948,7 +902,7 @@ class StoryPlanningModule:
                     current_pc=current_pc,
                     current_chars=current_chars,
                     recent_images=reference_images,
-                    current_deep_plan_revision=current_deep_plan_revision,
+                    current_notepad_revision=current_notepad_revision,
                     current_through_turn=heartbeat_through_turn,
                 )
                 prompt_input = _DEEP_PLANNING_TURN_PROMPT_TEMPLATE.render(
@@ -960,10 +914,10 @@ class StoryPlanningModule:
                     character_diffs=story_diff.character_diffs,
                     reference_images=reference_images,
                     new_images=story_diff.new_images,
-                    deep_plan_diff=story_diff.deep_plan_diff,
+                    notepad_diff=story_diff.notepad_diff,
                 ).strip()
 
-            async def run_turn() -> dict[str, object]:
+            async def run_turn() -> dict[str, JsonValue]:
                 run_config = (
                     RunConfig(context_window_compression=self._run_compression_config)
                     if self._run_compression_config
@@ -993,7 +947,7 @@ class StoryPlanningModule:
                     heartbeat_through_turn,
                 )
                 self.restart_deep_planner_agent()
-                return {"error": "Deep planner timed out; the previous plan was preserved."}
+                return {"error": "Deep planner timed out; accepted tool updates remain applied."}
             except Exception as exc:
                 logger.exception(
                     "[StoryPlanningModule] Deep planner heartbeat failed through turn=%d",
@@ -1006,42 +960,28 @@ class StoryPlanningModule:
             self._current_game_action = None
             self._story_response_triggered_this_heartbeat = False
 
-    def export_planning_state(self) -> dict[str, object]:
-        with self._deep_plan_lock:
-            deep_plan = dict(self._deep_plan)
-            deep_plan_revision = self._deep_plan_revision
-            deep_plan_through_turn_id = self._deep_plan_through_turn_id
-
+    def export_planning_state(self) -> dict[str, JsonValue]:
+        with self._planning_progress_lock:
+            through_turn_id = self._planned_through_turn_id
         return {
             **self.notepad.export_state(),
-            "deep_plan": deep_plan,
-            "deep_plan_revision": deep_plan_revision,
-            "deep_plan_through_turn_id": deep_plan_through_turn_id,
+            "planned_through_turn_id": through_turn_id,
         }
 
-    def import_planning_state(self, state: dict[str, object]) -> None:
+    def import_planning_state(self, state: dict[str, JsonValue]) -> None:
         if not state:
             return
 
         self._last_state_snapshot = None
         self.notepad.import_state(state)
-
-        with self._deep_plan_lock:
-            raw_imported_plan = state.get("deep_plan") or {}
-            self._deep_plan = dict(raw_imported_plan)
+        try:
+            legacy_plan = TypeAdapter(dict[str, JsonValue]).validate_python(state.get("deep_plan") or {})
+        except ValueError:
+            legacy_plan = {}
+        with self._planning_progress_lock:
             try:
-                self._deep_plan_revision = max(0, int(state.get("deep_plan_revision", 0)))
-            except (TypeError, ValueError):
-                self._deep_plan_revision = 0
-            try:
-                self._deep_plan_through_turn_id = max(
-                    0,
-                    int(
-                        state.get(
-                            "deep_plan_through_turn_id",
-                            self._deep_plan.get("through_turn_id", 0),
-                        )
-                    ),
-                )
-            except (TypeError, ValueError):
-                self._deep_plan_through_turn_id = 0
+                self._planned_through_turn_id = max(0, TypeAdapter(int).validate_python(
+                    state.get("planned_through_turn_id", state.get("deep_plan_through_turn_id", legacy_plan.get("through_turn_id", 0)))
+                ))
+            except ValueError:
+                self._planned_through_turn_id = 0

@@ -1,6 +1,5 @@
 from unittest.mock import MagicMock
 from pathlib import Path
-import pytest
 
 from components.canvas.story_state import (
     CharacterState,
@@ -11,10 +10,6 @@ from components.canvas_state import CanvasStateManager
 from components.notepad import Notepad
 from components.theater_manager import Theater
 from tools.story.story_snapshot import (
-    StorySnapshot,
-    StorySnapshotDiff,
-    StoryStateDiff,
-    StoryStateSnapshot,
     create_snapshot,
     diff,
 )
@@ -47,7 +42,7 @@ def test_story_snapshot_and_diff_built_from_story_state_and_notepad_together(tmp
         player_character=PlayerCharacterState(name="Hero", image_description="A warrior"),
         characters={"Guide": CharacterState(name="Guide", personality="Helpful", motivation="Save realm", quirk="Hums")},
         known_image_names={"castle_gate"},
-        deep_plan_revision=1,
+        notepad_revision=1,
     )
 
     assert prev_snapshot.stickies["HUD"] == "HP: 100"
@@ -78,7 +73,7 @@ def test_story_snapshot_and_diff_built_from_story_state_and_notepad_together(tmp
             {"name": "castle_gate", "alias": "gate"},
             {"name": "dungeon_cell", "alias": "cell", "title": "Cell"},
         ],
-        current_deep_plan_revision=2,
+        current_notepad_revision=2,
         current_through_turn=3,
     )
 
@@ -100,7 +95,7 @@ def test_story_snapshot_and_diff_built_from_story_state_and_notepad_together(tmp
     assert diff_result.new_images[0]["name"] == "dungeon_cell"
 
     # Check deep plan diff
-    assert "revision advanced from 1 to 2" in diff_result.deep_plan_diff
+    assert "revision advanced from 1 to 2" in diff_result.notepad_diff
 
     # Test tuple unpacking support
     sticky_diffs, pc_diff, char_diffs, new_images, dp_diff = diff_result
@@ -132,7 +127,7 @@ def test_story_tool_creates_snapshot_and_diff(tmp_path: Path) -> None:
     snap1 = tool.create_snapshot(
         player_character=PlayerCharacterState(name="Lyra", image_description="Mage"),
         characters={"Boran": CharacterState(name="Boran", personality="Bold")},
-        deep_plan_revision=1,
+        notepad_revision=1,
     )
     assert snap1.stickies["Quest"] == "Defeat dragon"
 
@@ -141,7 +136,14 @@ def test_story_tool_creates_snapshot_and_diff(tmp_path: Path) -> None:
     diff_res = tool.diff(
         previous=snap1,
         current_pc=PlayerCharacterState(name="Lyra", image_description="Archmage"),
-        current_deep_plan_revision=2,
+        current_notepad_revision=2,
     )
     assert '~ Updated [Quest]: was "Defeat dragon" -> now "Dragon befriended"' in diff_res.sticky_diffs
     assert "Archmage" in diff_res.player_character_diff
+
+    # Revision defaults come from the shared notepad without planner metadata.
+    snap2 = tool.create_snapshot()
+    assert snap2.notepad_revision == tool.notepad.revision
+    tool.update_sticky_note("Quest", "Travel with the dragon")
+    diff_res = tool.diff(previous=snap2)
+    assert f"to {tool.notepad.revision}" in diff_res.notepad_diff

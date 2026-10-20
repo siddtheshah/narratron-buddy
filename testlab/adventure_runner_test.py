@@ -130,7 +130,7 @@ def test_game_turn_waits_for_narratron_response(sample_adventure: Path) -> None:
     try:
         with (
             patch.object(planner, "_run_deep_planner_agent", side_effect=respond),
-            patch.object(planner, "_commit_deep_plan_update", return_value=True),
+            patch.object(planner, "_complete_planning_heartbeat", return_value=True),
         ):
             result = session.take_game_action(GameAction(name="player_place", arguments={"item": "red"}, revision=0))
         assert result["revision"] == 2

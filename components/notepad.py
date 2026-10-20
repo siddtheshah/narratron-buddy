@@ -11,7 +11,7 @@ from threading import RLock
 from typing import Any, Callable, Dict, Optional
 
 from jinja2 import Template
-from pydantic import BaseModel, Field, create_model
+from pydantic import BaseModel, Field, JsonValue, TypeAdapter, create_model
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
@@ -185,9 +185,18 @@ class Notepad:
         self._required_stickies: OrderedDict[str, str] = OrderedDict()
         self._sticky_notes_lock = RLock()
         self._recently_changed: set[str] = set()
+        self._revision: int = 0
 
         self.max_sticky_notes = DEFAULT_MAX_STICKY_NOTES
         self.configure_schema(self._read_planning_schema())
+        # Initial contents are the baseline; later schema resets are mutations.
+        self._revision = 0
+
+    @property
+    def revision(self) -> int:
+        """Version of the note contents, advanced with each accepted change."""
+        with self._sticky_notes_lock:
+            return self._revision
 
     @property
     def sticky_definitions(self) -> OrderedDict[str, Dict[str, Any]]:
@@ -232,6 +241,8 @@ class Notepad:
     def configure_schema(self, schema: Any) -> None:
         """Apply the Theater's planning schema before either story module uses the pad."""
         with self._sticky_notes_lock:
+            previous_notes = dict(self._sticky_notes)
+            previous_structured = dict(self._structured_sticky_notes)
             self._sticky_definitions = parse_planning_schema(schema)
             self._deep_plan_update_model = build_deep_plan_update_model(self._sticky_definitions)
             self._sticky_notes.clear()
@@ -250,6 +261,8 @@ class Notepad:
                 ),
             )
             self._load_initial_stickies()
+            if previous_notes != self._sticky_notes or previous_structured != self._structured_sticky_notes:
+                self._revision += 1
 
     def _configure_required_stickies(self) -> None:
         if self._sticky_definitions:
@@ -376,6 +389,11 @@ class Notepad:
                 existing = self._sticky_notes[clean_topic]
                 if clean_info.count("|") != existing.count("|"):
                     return f"Error: Sticky note divider count mismatch for '{clean_topic}'. Expected valid update for '{existing}'."
+                if clean_info == existing and (
+                    structured_value is None
+                    or structured_value == self._structured_sticky_notes.get(clean_topic)
+                ):
+                    return f"Unchanged sticky note '{clean_topic}'."
                 self._sticky_notes[clean_topic] = clean_info
                 if clean_topic not in self._sticky_definitions:
                     self._sticky_notes.move_to_end(clean_topic)
@@ -389,6 +407,7 @@ class Notepad:
                 self._structured_sticky_notes[clean_topic] = structured_value
             self._enforce_pinned_order()
             self._recently_changed.add(clean_topic)
+            self._revision += 1
             count = len(self._sticky_notes)
         self._changed()
         action = "Updated" if is_update else "Added"
@@ -492,6 +511,8 @@ class Notepad:
     def replace_from_deep_update(self, update: Any) -> None:
         raw_notes = update.sticky_notes
         with self._sticky_notes_lock:
+            previous_notes = dict(self._sticky_notes)
+            previous_structured = dict(self._structured_sticky_notes)
             if self._sticky_definitions:
                 structured = update.model_dump(mode="json", by_alias=True)["sticky_notes"]
                 previous_rendered = {topic: self._render(topic, value) for topic, value in self._structured_sticky_notes.items()}
@@ -517,11 +538,14 @@ class Notepad:
                         self._recently_changed.add(topic)
                 self._sticky_notes = notes
                 self._restore_required_and_enforce_limit()
+            if previous_notes != self._sticky_notes or previous_structured != self._structured_sticky_notes:
+                self._revision += 1
 
     def export_state(self) -> Dict[str, Any]:
         with self._sticky_notes_lock:
             all_notes = self.get_present_sticky_notes()
             return {
+                "notepad_revision": self._revision,
                 "sticky_notes": [{"topic": note["topic"], "info": note["info"]} for note in all_notes],
                 "all_sticky_notes": [{"topic": note["topic"], "info": note["info"]} for note in all_notes],
                 "structured_sticky_notes": self.get_present_structured_sticky_notes(),
@@ -531,7 +555,18 @@ class Notepad:
     def import_state(self, state: Dict[str, Any]) -> None:
         if not isinstance(state, dict):
             return
+        try:
+            legacy_plan = TypeAdapter(dict[str, JsonValue]).validate_python(state.get("deep_plan") or {})
+        except ValueError:
+            legacy_plan = {}
         with self._sticky_notes_lock:
+            try:
+                self._revision = max(0, TypeAdapter(int).validate_python(
+                    state.get("notepad_revision", state.get("deep_plan_revision", legacy_plan.get("revision", 0)))
+                ))
+            except ValueError:
+                self._revision = 0
+            self._recently_changed.clear()
             self._sticky_notes.clear()
             self._structured_sticky_notes.clear()
             if self._sticky_definitions:
@@ -548,7 +583,7 @@ class Notepad:
                     self._sticky_notes[topic] = self._render(topic, value)
                 self._enforce_pinned_order()
             else:
-                notes = state.get("all_sticky_notes", state.get("sticky_notes", state.get("named_elements", [])))
+                notes = state.get("all_sticky_notes", state.get("sticky_notes", state.get("named_elements", legacy_plan.get("sticky_notes", []))))
                 source = notes.items() if isinstance(notes, dict) else (
                     ((item.get("topic", item.get("name", "")), item.get("info", item.get("content", ""))) for item in notes if isinstance(item, dict))
                     if isinstance(notes, list) else ()

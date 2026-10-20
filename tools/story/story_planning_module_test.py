@@ -324,7 +324,7 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
             player_character=PlayerCharacterState(name="Aiden", image_description="Scarred"),
             characters={"Lyra": CharacterState(name="Lyra", personality="Curious", motivation="Truth", quirk="Hums")},
             known_image_names={"img1"},
-            deep_plan_revision=1,
+            notepad_revision=1,
         )
         current_stickies = {"HUD": "HP: 80", "New": "New note"}
         current_pc = PlayerCharacterState(name="Aiden", image_description="Armored and Scarred")
@@ -377,8 +377,8 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
             assert new_message.parts is not None
             prompt = new_message.parts[0].text
             assert prompt is not None
-            self.assertIn("## Available Reference Images", prompt)
-            self.assertIn("<Harbor>", prompt)
+            self.assertIn("## Available References", prompt)
+            self.assertIn("Name: `Harbor`", prompt)
             self.assertNotIn("Generated Images", prompt)
             if False:
                 yield new_message
@@ -391,7 +391,7 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
         self.assertEqual(result, {"tool_updates": True})
         self.assertIsNotNone(module._last_state_snapshot)
         assert module._last_state_snapshot is not None
-        self.assertEqual(module._last_state_snapshot.deep_plan_revision, 0)
+        self.assertEqual(module._last_state_snapshot.notepad_revision, 0)
         self.assertEqual(module._last_state_snapshot.known_image_names, {"Harbor"})
 
     def test_rejects_missing_injected_dependencies(self) -> None:
@@ -723,16 +723,10 @@ class TestStoryPlanningModuleState(unittest.TestCase):
             {note["topic"] for note in exported["all_sticky_notes"]},
         )
 
-        committed = module._commit_deep_plan_update(
-            1,
-            {
-                "sticky_notes": {
-                    "Clock": {"time": "10:00 AM", "deadline": "3:00 PM"},
-                    "Contraband": "Quill, Poison Phial",
-                    "Secret Plot": "Mole discovered in archives",
-                },
-            },
-        )
+        module.notepad.update_sticky_note("Clock", "Time: 10:00 AM | Deadline: 3:00 PM")
+        module.notepad.update_sticky_note("Contraband", "Quill, Poison Phial")
+        module.notepad.update_sticky_note("Secret Plot", "Mole discovered in archives")
+        committed = module._complete_planning_heartbeat(1, {"tool_updates": True})
         self.assertTrue(committed)
         updated_notes = module.notepad.get_present_sticky_notes()
         clock_note = next(
@@ -750,14 +744,66 @@ class TestStoryPlanningModuleState(unittest.TestCase):
     def test_tool_driven_commit_keeps_unmodified_stickies(self) -> None:
         self.module.notepad.update_sticky_note("Quest", "The relic is now guarded")
 
-        self.assertTrue(self.module._commit_deep_plan_update(1, {"tool_updates": True}))
+        self.assertTrue(self.module._complete_planning_heartbeat(1, {"tool_updates": True}))
         notes = {
             note["topic"]: note["info"]
             for note in self.module.notepad.get_present_sticky_notes()
         }
         self.assertEqual(notes["Quest"], "The relic is now guarded")
         self.assertEqual(notes["HUD"], "HP: 100 | MP: 50")
-        self.assertEqual(self.module.get_deep_plan()["through_turn_id"], 1)
+        self.assertTrue(self.module.wait_for_deep_planning(timeout=0, target_turn_id=1))
+        self.assertEqual(self.module.notepad.revision, 1)
+
+    def test_unchanged_heartbeat_advances_progress_without_advancing_notepad_revision(self) -> None:
+        self.assertTrue(self.module._complete_planning_heartbeat(4, {"tool_updates": True}))
+        self.assertEqual(self.module.notepad.revision, 0)
+        self.assertTrue(self.module.wait_for_deep_planning(timeout=0, target_turn_id=4))
+        self.assertFalse(self.module.wait_for_deep_planning(timeout=0, target_turn_id=5))
+        state = self.module.export_planning_state()
+        self.assertEqual(state["planned_through_turn_id"], 4)
+        self.assertEqual(state["notepad_revision"], 0)
+        self.assertNotIn("deep_plan", state)
+        self.assertNotIn("deep_plan_revision", state)
+
+    def test_timeout_keeps_accepted_notes_versioned_without_completing_turn(self) -> None:
+        async def timed_out_run(
+            *, user_id: str, session_id: str, new_message: types.Content, run_config: RunConfig | None,
+        ) -> AsyncIterator[types.Content]:
+            assert new_message.parts is not None
+            prompt = new_message.parts[0].text or ""
+            self.assertIn("# Current Sticky Notes", prompt)
+            self.assertNotIn("# Current Deep Plan", prompt)
+            self.module.notepad.update_sticky_note("Quest", "The relic is now guarded")
+            yield new_message
+            raise TimeoutError("Planner exceeded its deadline")
+
+        runner = MagicMock()
+        runner.run_async = timed_out_run
+        with (
+            patch.object(self.module, "_get_or_create_deep_planner_runner", return_value=runner),
+            patch.object(self.module, "restart_deep_planner_agent"),
+        ):
+            result = self.module._run_deep_planner_agent([(1, "I approach the relic", {})])
+        self.assertIn("accepted tool updates remain applied", result["error"])
+        self.assertFalse(self.module._complete_planning_heartbeat(1, result))
+        self.assertEqual(self.module.notepad.revision, 1)
+        self.assertFalse(self.module.wait_for_deep_planning(timeout=0, target_turn_id=1))
+        self.assertEqual(self.module.export_planning_state()["notepad_revision"], 1)
+
+    def test_planning_state_restores_progress_and_notepad_without_cached_plan(self) -> None:
+        self.module.import_planning_state({
+            "deep_plan": {"revision": 5, "through_turn_id": 7},
+            "sticky_notes": [{"topic": "Quest", "info": "Gate opened"}],
+        })
+        self.assertEqual(self.module.notepad.revision, 5)
+        self.assertTrue(self.module.wait_for_deep_planning(timeout=0, target_turn_id=7))
+        state = self.module.export_planning_state()
+        self.assertNotIn("deep_plan", state)
+        self.module.import_planning_state(state)
+        self.assertEqual(self.module.notepad.revision, 5)
+        self.assertTrue(self.module.wait_for_deep_planning(timeout=0, target_turn_id=7))
+        self.module.notepad.update_sticky_note("Quest", "Enter gate")
+        self.assertEqual(self.module.notepad.revision, 6)
 
 
 class TestDeepPlanningPromptTemplate(unittest.TestCase):
@@ -817,7 +863,7 @@ class TestDeepPlanningPromptTemplate(unittest.TestCase):
                     "description": "Smoldering cave",
                 }
             ],
-            deep_plan_diff="Deep plan revision advanced from 1 to 2.",
+            notepad_diff="Notepad revision advanced from 1 to 2.",
         )
         self.assertIn("# State Diffs (Changes Since Previous Heartbeat)", rendered)
         self.assertIn("+ Added [Inventory]: Sword, Shield", rendered)
@@ -828,8 +874,8 @@ class TestDeepPlanningPromptTemplate(unittest.TestCase):
         self.assertIn("## Character Updates", rendered)
         self.assertIn("+ Added Merlin: Personality: Wise", rendered)
         self.assertIn("## Newly Available References", rendered)
-        self.assertIn("Alias: `dragon_lair`", rendered)
-        self.assertIn("## Deep Plan Update", rendered)
+        self.assertIn("Name: `dragon_lair_001`", rendered)
+        self.assertIn("## Notepad Update", rendered)
 
     def test_turn_prompt_renders_no_changes_when_diffs_empty(self) -> None:
         rendered = _DEEP_PLANNING_TURN_PROMPT_TEMPLATE.render(
@@ -839,7 +885,7 @@ class TestDeepPlanningPromptTemplate(unittest.TestCase):
             player_character_diff="",
             character_diffs=[],
             new_images=[],
-            deep_plan_diff="",
+            notepad_diff="",
         )
         self.assertIn("(No sticky notes changed since last heartbeat)", rendered)
 
@@ -856,7 +902,7 @@ class TestDeepPlanningPromptTemplate(unittest.TestCase):
             ],
         )
         self.assertIn("## Newly Available References", rendered)
-        self.assertIn("Alias: `dungeon_entrance`", rendered)
+        self.assertIn("Name: `dungeon_entrance`", rendered)
         self.assertIn('Title: "The Iron Gate"', rendered)
         self.assertIn("Description: Ancient runes glowing blue", rendered)
 
@@ -867,7 +913,6 @@ class TestDeepPlanningPromptTemplate(unittest.TestCase):
             reference="aiden_portrait",
         )
         rendered = _DEEP_PLANNING_TURN_PROMPT_TEMPLATE.render(
-            deep_plan_json="",
             current_notes=[],
             structured_sticky_json="",
             sticky_schema_json="",

@@ -22,7 +22,7 @@ class StoryStateSnapshot:
     player_character: Optional[PlayerCharacterState] = None
     characters: dict[str, CharacterState] = field(default_factory=dict)
     known_image_names: set[str] = field(default_factory=set)
-    deep_plan_revision: int = 0
+    notepad_revision: int = 0
 
 
 StorySnapshot = StoryStateSnapshot
@@ -34,14 +34,14 @@ class StoryStateDiff:
     player_character_diff: str = ""
     character_diffs: list[str] = field(default_factory=list)
     new_images: list[ImageRecord] = field(default_factory=list)
-    deep_plan_diff: str = ""
+    notepad_diff: str = ""
 
     def __iter__(self) -> Iterator[list[str] | str | list[ImageRecord]]:
         yield self.sticky_diffs
         yield self.player_character_diff
         yield self.character_diffs
         yield self.new_images
-        yield self.deep_plan_diff
+        yield self.notepad_diff
 
 
 StorySnapshotDiff = StoryStateDiff
@@ -55,7 +55,7 @@ def create_snapshot(
     player_character: Optional[PlayerCharacterState] = None,
     characters: Optional[dict[str, CharacterState]] = None,
     known_image_names: Optional[set[str]] = None,
-    deep_plan_revision: int = 0,
+    notepad_revision: Optional[int] = None,
 ) -> StoryStateSnapshot:
     """Create a point-in-time snapshot of story state and notepad together."""
     if stickies is not None:
@@ -73,7 +73,7 @@ def create_snapshot(
         player_character=current_pc,
         characters=dict(current_chars),
         known_image_names=set(known_image_names or set()),
-        deep_plan_revision=deep_plan_revision,
+        notepad_revision=notepad.revision if notepad_revision is None else notepad_revision,
     )
 
 
@@ -86,7 +86,7 @@ def diff(
     current_pc: Optional[PlayerCharacterState] = None,
     current_chars: Optional[dict[str, CharacterState]] = None,
     recent_images: Optional[list[ImageRecord]] = None,
-    current_deep_plan_revision: int = 0,
+    current_notepad_revision: Optional[int] = None,
     current_through_turn: int = 0,
     current_snapshot: Optional[StoryStateSnapshot] = None,
 ) -> StoryStateDiff:
@@ -95,7 +95,7 @@ def diff(
         stickies = current_snapshot.stickies
         pc = current_snapshot.player_character
         chars = current_snapshot.characters
-        rev = current_snapshot.deep_plan_revision
+        rev = current_snapshot.notepad_revision
     else:
         if current_stickies is not None:
             stickies = current_stickies
@@ -110,7 +110,11 @@ def diff(
 
         pc = current_pc if current_pc is not None else (story_state.player_character if story_state is not None else None)
         chars = current_chars if current_chars is not None else (dict(story_state.characters) if story_state is not None else {})
-        rev = current_deep_plan_revision
+        rev = (
+            current_notepad_revision
+            if current_notepad_revision is not None
+            else notepad.revision if notepad is not None else 0
+        )
 
     sticky_diffs: list[str] = []
     for topic, info in stickies.items():
@@ -158,11 +162,11 @@ def diff(
         if str(img.get("name") or "") not in previous.known_image_names
     ]
 
-    dp_diff = ""
-    if rev != previous.deep_plan_revision:
+    notepad_diff = ""
+    if rev != previous.notepad_revision:
         turn_info = f" (through turn {current_through_turn})" if current_through_turn > 0 else ""
-        dp_diff = (
-            f"Deep plan revision advanced from {previous.deep_plan_revision} "
+        notepad_diff = (
+            f"Notepad revision advanced from {previous.notepad_revision} "
             f"to {rev}{turn_info}."
         )
 
@@ -171,7 +175,7 @@ def diff(
         player_character_diff=pc_diff,
         character_diffs=character_diffs,
         new_images=new_images,
-        deep_plan_diff=dp_diff,
+        notepad_diff=notepad_diff,
     )
 
 

@@ -1226,6 +1226,7 @@ class StoryResponseModule:
             return {"error": "Adventure Mode is not enabled for this theater."}
 
         self._planning_request_reason = None
+        notepad_revision_used = self.notepad.revision
         try:
             parsed = self._run_responder_agent(action, nudge=nudge)
             planning_request = self._planning_request_reason
@@ -1255,12 +1256,11 @@ class StoryResponseModule:
             self._turn_id += 1
             turn_id = self._turn_id
 
-        deep_plan_revision_used = 0
         raw_scene_reference = parsed.get("scene_reference")
         scene_reference = str(raw_scene_reference).strip() if raw_scene_reference else None
         result = {
             "turn_id": turn_id,
-            "deep_plan_revision_used": deep_plan_revision_used,
+            "notepad_revision_used": notepad_revision_used,
             "narration": narration,
             "dialogue": dialogue,
             "manifested_characters": manifested_characters,

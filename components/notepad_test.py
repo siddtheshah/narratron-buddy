@@ -55,6 +55,86 @@ class TestNotepad(unittest.TestCase):
         self.assertEqual([note["topic"] for note in exported["sticky_notes"]], ["HUD", "Secret", "Quest"])
         self.assertEqual([note["topic"] for note in exported["all_sticky_notes"]], ["HUD", "Secret", "Quest"])
 
+    def test_revision_tracks_changed_content_and_eviction_only(self) -> None:
+        changed = Mock()
+        pad = self._make_notepad(
+            {"max_sticky_notes": 1, "initial_sticky_notes": {"HUD": "HP: 10 | MP: 5"}},
+            on_change=changed,
+        )
+        self.assertEqual(pad.revision, 0)
+        self.assertIn("Unchanged", pad.update_sticky_note("HUD", "HP: 10 | MP: 5"))
+        self.assertIn("Error", pad.update_sticky_note("HUD", "HP: 9"))
+        self.assertEqual(pad.revision, 0)
+        self.assertEqual(pad.get_recently_changed_topics(), frozenset())
+        changed.assert_not_called()
+
+        pad.update_sticky_note("HUD", "HP: 9 | MP: 5")
+        self.assertEqual(pad.revision, 1)
+        pad.update_sticky_note("Quest", "Find the gate")
+        self.assertEqual(pad.revision, 2)
+        self.assertEqual(changed.call_count, 2)
+        self.assertEqual(pad.export_state()["notepad_revision"], 2)
+        self.assertEqual([note["topic"] for note in pad.get_present_sticky_notes()], ["Quest"])
+
+    def test_revision_tracks_structured_fields_even_when_rendering_is_unchanged(self) -> None:
+        pad = self._make_notepad(
+            {"enforce_structured": True},
+            {"Stats": {
+                "fields": {"hp": "Hit points", "secret": "Hidden score"},
+                "render": "HP: {hp}",
+                "initial": {"hp": "10", "secret": "0"},
+            }},
+        )
+        pad.update_sticky_note("Stats", '{"hp":"10","secret":"1"}')
+        self.assertEqual(pad.revision, 1)
+        self.assertEqual(pad.get_present_sticky_notes()[0]["info"], "HP: 10")
+        pad.update_sticky_note("Stats", '{"secret":"1","hp":"10"}')
+        self.assertEqual(pad.revision, 1)
+        self.assertIn("Error", pad.update_sticky_note("Stats", '{"hp":"9"}'))
+        self.assertEqual(pad.revision, 1)
+
+    def test_revision_round_trip_and_legacy_migration(self) -> None:
+        pad = self._make_notepad({})
+        pad.import_state({
+            "deep_plan": {"revision": 7, "sticky_notes": [{"topic": "Quest", "info": "Find key"}]},
+        })
+        self.assertEqual(pad.revision, 7)
+        self.assertEqual(pad.get_present_sticky_notes()[0]["info"], "Find key")
+        pad.update_sticky_note("Quest", "Gate opened")
+        exported = pad.export_state()
+        self.assertEqual(exported["notepad_revision"], 8)
+        self.assertNotIn("deep_plan", exported)
+        self.assertNotIn("deep_plan_revision", exported)
+
+        restored = self._make_notepad({})
+        restored.import_state(exported)
+        self.assertEqual(restored.revision, 8)
+        restored.update_sticky_note("Quest", "Enter gate")
+        self.assertEqual(restored.revision, 9)
+
+    def test_import_prefers_current_notes_and_revision_over_stale_legacy_plan(self) -> None:
+        pad = self._make_notepad({})
+        pad.import_state({
+            "notepad_revision": 4,
+            "sticky_notes": [{"topic": "Quest", "info": "Gate opened"}],
+            "deep_plan_revision": 3,
+            "deep_plan": {"revision": 3, "sticky_notes": [{"topic": "Quest", "info": "Find key"}]},
+        })
+        self.assertEqual(pad.revision, 4)
+        self.assertEqual(pad.get_present_sticky_notes()[0]["info"], "Gate opened")
+        for revision in (None, "invalid", -1):
+            with self.subTest(revision=revision):
+                pad.import_state({"notepad_revision": revision})
+                self.assertEqual(pad.revision, 0)
+
+    def test_schema_reset_advances_revision_when_note_contents_change(self) -> None:
+        pad = self._make_notepad({})
+        schema = {"Location": {"initial": "Observatory"}}
+        pad.configure_schema(schema)
+        self.assertEqual(pad.revision, 1)
+        pad.configure_schema(schema)
+        self.assertEqual(pad.revision, 1)
+
     def test_default_reference_stickies_are_retained(self) -> None:
         from utils.config_loader import get_theater_default_config
 

@@ -316,6 +316,20 @@ class TestStoryResponseModuleBehavior(unittest.TestCase):
         self.assertNotIn("planning_request", next_result)
         self.assertEqual(next_result["planning_signals"], [])
 
+    def test_result_records_notepad_revision_from_before_response_execution(self) -> None:
+        self.module.notepad.update_sticky_note("Quest", "Find the gate")
+        starting_revision = self.module.notepad.revision
+
+        def resolve(action: str, nudge: str = "") -> dict[str, str]:
+            self.module.notepad.update_sticky_note("Quest", "The gate is guarded")
+            return {"narration": "A guard steps into view."}
+
+        with patch.object(self.module, "_run_responder_agent", side_effect=resolve):
+            result = self.module._resolve_user_action("I approach the gate.")
+        self.assertEqual(result["notepad_revision_used"], starting_revision)
+        self.assertGreater(self.module.notepad.revision, starting_revision)
+        self.assertNotIn("deep_plan_revision_used", result)
+
     def test_failed_turn_discards_planning_request(self) -> None:
         def fail(action: str, nudge: str = "") -> dict[str, str]:
             self.module.trigger_story_planning("Revise the quest")

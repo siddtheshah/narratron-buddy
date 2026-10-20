@@ -132,7 +132,6 @@ class TestStoryToolComposition(unittest.TestCase):
                 patch("tools.story.story_tool.StoryResponseModule"),
             ):
                 tool = StoryTool(self.theater, self.canvas, self.provider)
-                tool.planning_module.get_deep_plan.return_value = {"revision": 3}
                 if pending_action is not None:
                     tool._pending_actions.append(pending_action)
                 result = {
@@ -141,10 +140,11 @@ class TestStoryToolComposition(unittest.TestCase):
                     "narration": "The key breaks.",
                     "planning_request": "Revise the quest",
                     "planning_signals": ["[PLANNING REQUEST] Revise the quest"],
+                    "notepad_revision_used": 3,
                 }
                 tool._handle_scene_reaction(result)
                 tool.planning_module.queue_deep_planning.assert_called_once_with(7, "I turn the key.", result)
-                self.assertEqual(result["deep_plan_revision_used"], 3)
+                self.assertEqual(result["notepad_revision_used"], 3)
                 self.assertEqual(tool._pending_actions, [])
 
     def test_scene_reaction_without_pending_action_or_request_does_not_queue(self) -> None:

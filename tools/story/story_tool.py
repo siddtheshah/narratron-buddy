@@ -286,7 +286,6 @@ class StoryTool(BaseTools):
         if action is None and result.get("planning_request"):
             action = str(result["user_action"])
         if action is not None and "error" not in result:
-            result["deep_plan_revision_used"] = self.planning_module.get_deep_plan().get("revision", 0)
             self.planning_module.queue_deep_planning(result.get("turn_id", 0), action, result)
         self.sync_character_bindings()
         if self._on_scene_reaction:
@@ -429,7 +428,7 @@ class StoryTool(BaseTools):
         player_character: Optional[PlayerCharacterState] = None,
         characters: Optional[dict[str, CharacterState]] = None,
         known_image_names: Optional[set[str]] = None,
-        deep_plan_revision: int = 0,
+        notepad_revision: Optional[int] = None,
     ) -> StoryStateSnapshot:
         """Create a point-in-time snapshot built from StoryState and Notepad together."""
         story = (
@@ -444,7 +443,7 @@ class StoryTool(BaseTools):
             player_character=player_character,
             characters=characters,
             known_image_names=known_image_names,
-            deep_plan_revision=deep_plan_revision,
+            notepad_revision=notepad_revision,
         )
 
     def diff(
@@ -455,7 +454,7 @@ class StoryTool(BaseTools):
         current_pc: Optional[PlayerCharacterState] = None,
         current_chars: Optional[dict[str, CharacterState]] = None,
         recent_images: Optional[list[ImageRecord]] = None,
-        current_deep_plan_revision: int = 0,
+        current_notepad_revision: Optional[int] = None,
         current_through_turn: int = 0,
         current_snapshot: Optional[StoryStateSnapshot] = None,
     ) -> StoryStateDiff:
@@ -469,7 +468,7 @@ class StoryTool(BaseTools):
             current_pc=current_pc,
             current_chars=current_chars,
             recent_images=recent_images,
-            current_deep_plan_revision=current_deep_plan_revision,
+            current_notepad_revision=current_notepad_revision,
             current_through_turn=current_through_turn,
             current_snapshot=current_snapshot,
         )

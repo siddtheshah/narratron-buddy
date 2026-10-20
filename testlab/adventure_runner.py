@@ -926,7 +926,7 @@ class AdventureSession:
             "created_at": self.created_at,
             "sticky_notes": self.story_tool.get_present_sticky_notes(),
             "characters": [character.model_dump(mode="json") for character in self.story_tool.get_present_characters()],
-            "deep_plan": self.story_tool.get_deep_plan(),
+            "notepad": self.story_tool.notepad.export_state(),
             "last_scene_reaction": dict(getattr(self.story_tool, "_last_scene_reaction", {})),
             "lore_documents": self.theater_manager.get_lore_documents(self.session_id),
             "mock_canvas": self.mock_canvas.as_dict(),
