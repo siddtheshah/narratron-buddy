@@ -573,7 +573,13 @@ class ReferenceManager:
         self._player_character: Optional[PlayerCharacter] = None
         self._player_character_lock = Lock()
         self._initializing_references = True
-        for folders in self._reference_folders(self.theater.characters_dir(), self.characters_dir).values():
+        adventure_mode = bool(theater.config().get("story_planning", {}).get("adventure_mode", False))
+        character_folders = (
+            {} if adventure_mode
+            else self._reference_folders(self.theater.characters_dir(), self.characters_dir)
+        )
+        # Adventure libraries describe possible encounters, not the current cast.
+        for folders in character_folders.values():
             name = folders[0].name.replace("_", " ")
             path = self._latest_library_image(folders)
             profile = self._library_profile(folders, "character.yaml")
@@ -1965,6 +1971,20 @@ class ReferenceManager:
             self._sync_story_state()
             self._save_character_traits(existing)
             return existing
+
+        # Load authored/session traits only when this character is introduced.
+        folders = self._reference_folders(
+            self.theater.characters_dir(), self.characters_dir,
+        ).get(self._slug_key(clean_name), [])
+        profile = self._library_profile(folders, "character.yaml")
+        if profile is not None:
+            traits = self._read_character_traits(profile.parent)
+            description = description or traits.description
+            personality = personality or traits.personality
+            motivation = motivation or traits.motivation
+            quirk = quirk or traits.quirk
+            gender = gender or traits.gender
+            voice_tags = voice_tags or traits.voice_tags
 
         # 2. Character does not exist yet in memory.
         # Check if traits were assigned per the serialized story state.

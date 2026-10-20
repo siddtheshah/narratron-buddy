@@ -1286,6 +1286,62 @@ class TestReferenceManager(unittest.TestCase):
             provider.generate.assert_not_called()
 
 
+    def test_adventure_characters_are_loaded_only_when_introduced(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            theater = Theater(TheaterManager(directory), "stage")
+            authored = theater.characters_dir() / "Arthur Modella"
+            authored.mkdir(parents=True)
+            portrait = authored / "1.png"
+            Image.new("RGB", (8, 8), "blue").save(portrait)
+            profile = authored / "character.yaml"
+            profile.write_text(
+                "description: A wizard\npersonality: Patient\nmotivation: Find truth\n"
+                "quirk: Hums\ngender: male\nvoice_tags: [male]\n", encoding="utf-8",
+            )
+            original = profile.read_bytes()
+            session = theater.updated_characters_dir() / "Unseen Guard"
+            session.mkdir(parents=True)
+            (session / "character.yaml").write_bytes(original)
+            Image.new("RGB", (8, 8), "red").save(session / "1.png")
+            state = StoryState(adventure_mode=True)
+            with patch.object(Theater, "config", return_value={"story_planning": {"adventure_mode": True}}):
+                manager = ReferenceManager(
+                    theater, self.provider, story_state=state,
+                    image_provider=self.image_provider, speech_provider=self.speech_provider,
+                )
+            self.assertEqual(manager.count(), 0)
+            self.assertEqual(manager.lookup_character().characters, [])
+            self.assertEqual(manager.get_present_characters(), [])
+            self.assertEqual(state.get_characters(), {})
+            self.assertEqual(state.get_character_references(), [])
+            self.assertNotIn("characters", state.serialize())
+            self.provider.generate.assert_not_called()
+            self.image_provider.generate.assert_not_called()
+            self.speech_provider.select_voice.assert_not_called()
+            self.assertEqual(set(manager.available_character_images()), {"Arthur Modella", "Unseen Guard"})
+
+            character = manager.create_or_update_character("arthur_modella", motivation="Protect the pass")
+            assert character is not None
+            self.assertEqual(character.description, "A wizard")
+            self.assertEqual(character.personality, "Patient")
+            self.assertEqual(character.motivation, "Protect the pass")
+            self.assertEqual(character.quirk, "Hums")
+            self.assertEqual(character.gender, "male")
+            self.assertEqual(character.voice_tags, ["male"])
+            self.assertEqual(Path(character.image_reference_path).read_bytes(), portrait.read_bytes())
+            self.assertEqual([c.name for c in manager.get_present_characters()], [character.name])
+            self.assertEqual(list(state.get_characters()), [character.name])
+            self.assertEqual(len(state.serialize()["characters"]), 1)
+            self.assertEqual(manager.lookup_character("Unseen Guard").characters, [])
+            self.provider.generate.assert_not_called()
+            self.image_provider.generate.assert_not_called()
+            self.assertEqual(profile.read_bytes(), original)
+
+            guard = manager.create_or_update_character("Unseen Guard")
+            assert guard is not None
+            self.assertEqual(guard.personality, "Patient")
+            self.assertEqual(manager.count(), 2)
+
     def test_authored_characters_are_registered_at_initialization_and_tags_resolve(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             theater = Theater(TheaterManager(directory), "stage")
