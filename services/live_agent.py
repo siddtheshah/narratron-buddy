@@ -91,6 +91,7 @@ For romantic or violent requests that cannot be portrayed directly, immediately 
 State it as the user describes, but prefix with qualifiers that keep the content safe and wholesome. Do not wait for their confirmation, as fast response time is crucial.
 {% if image_generation_enabled or animation_enabled %}
 Use the exact `<Character Name>` tags from [Available Character Visuals] in `create_image` and animation prompts, for example `<Arthur Modella> flashes a wand before stepping back from <Grim Vallos>`. ReferenceManager attaches the latest portraits automatically; character references belong in the prompt. Only use tags for available character visuals. Provide a concise unique image name. Choose visual effects only when they support the scene.
+Use the exact scene tags from [Available Scene Visuals] in visual prompts to attach scene references. Image references use names, aliases, and canvas capture handles.
 {% endif %}
 {% if image_generation_enabled %}
 Canvas observability may supply a `[Canvas Capture]` handle. Use `<handle>` in `create_image`'s prompt when drawing from the current canvas or audience annotations; the capture preserves the observed image for visual collaboration.
@@ -420,16 +421,19 @@ def create_tool_bundle_for_session(
     if observability_config and observability_config.get("enabled", False):
         observability_tools = ObservabilityTools(theater, canvas_manager)
         tools.append(observability_tools.request_canvas_observability)
-    preloaded_references: list[dict[str, str]] = list(image_library.list_references())
-    for name, path in reference_manager.available_character_images().items():
+    preloaded_references: list[dict[str, str]] = [
+        {key: entry[key] for key in ("name", "alias", "description")}
+        for entry in image_library.list_references()
+    ]
+    for name in reference_manager.available_character_images():
         preloaded_references.append({
-            "name": name, "alias": f"<{name}>", "path": path,
+            "name": name, "alias": f"<{name}>",
             "description": "Character portrait; use the exact name tag in image and animation prompts.",
         })
-    for name, path in reference_manager.available_scene_images().items():
+    for name in reference_manager.available_scene_images():
         preloaded_references.append({
-            "name": name, "alias": name, "path": path,
-            "description": "Scene reference.",
+            "name": name, "alias": f"<{name}>",
+            "description": "Scene reference; use the exact name tag in image and animation prompts.",
         })
     return ToolBundle(tools, preloaded_references=preloaded_references)
 
@@ -450,7 +454,7 @@ def get_references_context(tool_bundle: ToolBundle) -> str:
             break
     if references:
         return "\n".join(
-            f"- {item.get('name', '')} (alias: {item.get('alias', '')}): {item.get('description', '')} [path: {item.get('path', '')}]"
+            f"- {item.get('name', '')} (alias: {item.get('alias', '')}): {item.get('description', '')}"
             for item in references
         )
     return "No preloaded reference images found."

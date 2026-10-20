@@ -4,7 +4,6 @@ import base64
 import json
 import logging
 import time
-from pathlib import Path
 from typing import Optional, TYPE_CHECKING
 
 from fastapi import WebSocket, WebSocketDisconnect
@@ -33,10 +32,10 @@ def format_canvas_state(
     audio = canvas_state_manager.audio
 
     image_path = visual.shown_image_path
-    image_name = Path(image_path).name if image_path is not None else "none"
+    image_status = "shown" if image_path is not None else "none"
     image_prompt = visual.shown_image_prompt or "none"
     playlist = audio.current_playlist or "none"
-    parts = [f"[Canvas Image]: {image_name}, {image_prompt}", f"[Canvas music]: {playlist}"]
+    parts = [f"[Canvas Image]: {image_status}, {image_prompt}", f"[Canvas music]: {playlist}"]
     if visual.pinned:
         parts.append(
             "[Canvas Pin]: The orator has pinned the current canvas. Do not request image or "
@@ -73,10 +72,10 @@ def format_canvas_state(
 
         scene_images = reference_manager.available_scene_images()
         if scene_images:
-            scenes = "; ".join(f"{name}: {path}" for name, path in scene_images.items())
+            scenes = ", ".join(f"<{name}>" for name in scene_images)
             parts.append(
-                f"[Available Scene Visuals]: {scenes}. Use these paths in reference_images "
-                "to attach scene visuals to image and animation requests."
+                f"[Available Scene Visuals]: {scenes}. Use these exact tags in visual prompts "
+                "to attach the latest scene visuals automatically."
             )
 
     return "\n".join(parts)

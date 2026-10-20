@@ -311,7 +311,8 @@ class TestReferenceManagerResolution(unittest.TestCase):
         self.assertEqual(refs, [])
         self.assertIsNotNone(err)
         assert err is not None
-        self.assertTrue(err.startswith("Error loading reference image 'ghost':"))
+        self.assertEqual(err, "Error loading reference image 'ghost'.")
+        self.assertNotIn(bad_path, err)
 
     def test_get_reference_label_matches_player_and_characters(self) -> None:
         lookup = CharacterLookupResult(
@@ -492,6 +493,27 @@ class TestReferenceManagerResolution(unittest.TestCase):
         available = self.manager.available_canvas_captures()
         self.assertIn("custom_capture", available)
         self.assertIn("canvas_abc12345", available)
+
+    def test_saved_capture_survives_reload_and_resolves_by_tag(self) -> None:
+        handle = self.manager.save_canvas_capture(b"first snapshot", "image/webp")
+        self.assertIsNotNone(handle)
+        self.assertNotIn("/", handle)
+        self.assertNotIn("\\", handle)
+        self.assertEqual(self.manager.save_canvas_capture(b"first snapshot", "image/webp"), handle)
+        next_handle = self.manager.save_canvas_capture(b"second snapshot", "image/webp")
+        self.assertNotEqual(handle, next_handle)
+        restored = make_reference_manager(self.theater)
+        references, error = restored.resolve_provider_references(prompt=f"Redraw <{handle}>")
+        self.assertIsNone(error)
+        self.assertEqual(references[0].data, b"first snapshot")
+        self.assertEqual(references[0].label, handle)
+        self.assertEqual(restored.get_canvas_capture_path("canvas_capture"), restored.get_canvas_capture_path(next_handle))
+        self.assertEqual(len(list(self.theater.canvas_captures_dir().iterdir())), 2)
+
+    def test_save_capture_rejects_empty_or_unsupported_images(self) -> None:
+        self.assertIsNone(self.manager.save_canvas_capture(b"", "image/png"))
+        self.assertIsNone(self.manager.save_canvas_capture(b"data", "text/plain"))
+        self.assertFalse(self.theater.canvas_captures_dir().exists())
 
     def test_resolve_provider_references_with_tagged_canvas_capture(self) -> None:
         captures_dir = os.path.join(self.temp_dir, "canvas_captures")

@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
 import re
 import shutil
+import uuid
 from concurrent.futures import Future, ThreadPoolExecutor
 from threading import Lock, Thread
 from time import monotonic
@@ -712,6 +714,23 @@ class ReferenceManager:
             self._canvas_captures["canvas_capture"] = resolved
             self._latest_canvas_capture = assigned_handle
         return assigned_handle
+
+    def save_canvas_capture(self, data: bytes, mime_type: str) -> str | None:
+        """Store an immutable canvas snapshot and return its reusable reference tag."""
+        extension = {"image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp"}.get(mime_type)
+        if not data or extension is None:
+            return None
+        directory = self.theater.canvas_captures_dir()
+        directory.mkdir(parents=True, exist_ok=True)
+        path = directory / f"canvas_{hashlib.sha256(data).hexdigest()[:8]}{extension}"
+        if not path.exists():
+            temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+            try:
+                temporary.write_bytes(data)
+                temporary.replace(path)
+            finally:
+                temporary.unlink(missing_ok=True)
+        return self.add_canvas_capture(path, handle=path.stem)
 
     def get_canvas_capture_path(self, handle: str) -> Optional[str]:
         """Resolve a canvas capture handle to its file path."""
@@ -2631,7 +2650,7 @@ class ReferenceManager:
                 data = Path(reference_path).read_bytes()
             except OSError as exc:
                 logger.error(f"[{caller_label}] Error loading reference image {reference_path}: {exc}")
-                return [], f"Error loading reference image '{ref_name}': {exc}"
+                return [], f"Error loading reference image '{ref_name}'."
 
             suffix = Path(reference_path).suffix.lower()
             mime_type = {".png": "image/png", ".webp": "image/webp"}.get(suffix, "image/jpeg")

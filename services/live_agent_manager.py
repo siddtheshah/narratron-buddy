@@ -2,7 +2,6 @@ import asyncio
 from contextlib import aclosing
 from datetime import datetime, timezone
 import json
-import hashlib
 import logging
 import mimetypes
 import threading
@@ -486,33 +485,17 @@ class LiveAgentSession:
 
     def _save_canvas_capture(self, image: types.Part) -> str | None:
         """Persist observed bytes as an immutable capture and register handle with ReferenceManager."""
-        canvas = self.canvas_state_manager
-        if canvas is None or canvas.theater is None or image.inline_data is None:
+        if image.inline_data is None:
             return None
-        data = image.inline_data.data
-        if not data:
-            return None
-        extension = mimetypes.guess_extension(image.inline_data.mime_type or "")
-        if extension is None:
+        ref_mgr = self.reference_manager
+        if ref_mgr is None and self.image_tools is not None:
+            ref_mgr = self.image_tools.reference_manager
+        if ref_mgr is None or not image.inline_data.data:
             return None
         try:
-            directory = canvas.theater.canvas_captures_dir()
-            directory.mkdir(parents=True, exist_ok=True)
-            path = directory / f"canvas_{hashlib.sha256(data).hexdigest()[:8]}{extension}"
-            if not path.exists():
-                temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
-                try:
-                    temporary.write_bytes(data)
-                    temporary.replace(path)
-                finally:
-                    temporary.unlink(missing_ok=True)
-            handle = path.stem
-            ref_mgr = self.reference_manager
-            if ref_mgr is None and self.image_tools is not None:
-                ref_mgr = self.image_tools.reference_manager
-            if ref_mgr is not None:
-                ref_mgr.add_canvas_capture(str(path.resolve()), handle=handle)
-            return handle
+            return ref_mgr.save_canvas_capture(
+                image.inline_data.data, image.inline_data.mime_type or "",
+            )
         except OSError:
             logger.exception("Could not save canvas capture for theater %s", self.theater_id)
             return None

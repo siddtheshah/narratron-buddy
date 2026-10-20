@@ -490,6 +490,7 @@ class TestAnimationTools(BaseTestCase):
         self.assertEqual(len(animations), 1)
         self.assertEqual(animations[0]["type"], "triframe")
         self.assertEqual(animations[0]["scene_prompt"], "A hero running across a bridge.")
+        self.assertEqual(set(animations[0]), {"id", "type", "scene_prompt"})
 
     @patch("tools.image.image_tool.get_image_provider")
     def test_create_animation_cycle_cooldown_replaces_single_flight(self, mock_get_provider):
@@ -869,7 +870,7 @@ class TestAnimationTools(BaseTestCase):
         video_anims = [a for a in animations if a["type"] == "video"]
         self.assertEqual(len(video_anims), 1)
         self.assertEqual(video_anims[0]["scene_prompt"], "A spaceship entering hyperdrive.")
-        self.assertEqual(video_anims[0]["video_url"], "https://fal.media/browse.mp4")
+        self.assertEqual(set(video_anims[0]), {"id", "type", "scene_prompt"})
 
     @patch("tools.image.image_tool.get_image_provider")
     def test_create_animation_forced_technique_video_bypasses_classification(self, mock_get_provider):

@@ -192,7 +192,7 @@ class AnimationTools(BaseTools):
             scene_prompt: Detailed scene prompt. Use <Character Name> tags from Available
                 Character Visuals to attach their latest portraits automatically.
             animation_name: Friendly name used for saved animation files.
-            reference_images: Optional non-character image aliases or paths to use.
+            reference_images: Optional scene names, image aliases, or canvas capture handles to use.
             technique: Optional manual override ('triframe', 'layered', or 'video').
 
         Returns:
@@ -878,11 +878,11 @@ class AnimationTools(BaseTools):
         return []
 
     @logged_tool_call
-    def browse_animations(self) -> list[dict[str, Any]]:
+    def browse_animations(self) -> list[dict[str, str]]:
         """Browse all available saved animations (both triframe and layered).
 
         Returns:
-            A list of animation details (ID, type, scene_prompt, and frame/layer paths).
+            A list of animation IDs, types, and scene prompts for play_animation.
         """
         try:
             results = []
@@ -927,7 +927,10 @@ class AnimationTools(BaseTools):
                     })
 
             self._trigger_after_tool_call("browse_animations")
-            return results
+            return [
+                {key: info[key] for key in ("id", "type", "scene_prompt")}
+                for info in results
+            ]
         except Exception as exc:
             logger.exception("[AnimationTools] Failed to browse animations: %s", exc)
             self._trigger_after_tool_call("browse_animations")

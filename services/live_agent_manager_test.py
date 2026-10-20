@@ -941,6 +941,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
             }]
             session = self.make_observability_session()
             session.canvas_state_manager = canvas
+            session.reference_manager = ReferenceManager(canvas.theater)
             session.live_request_queue = MagicMock()
 
             self.assertTrue(session.send_agent_requested_observability())
@@ -985,6 +986,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
             canvas.doodles.snapshot_webp.return_value = b"annotated-png"
             session = self.make_observability_session()
             session.canvas_state_manager = canvas
+            session.reference_manager = ReferenceManager(canvas.theater)
             session.live_request_queue = MagicMock()
 
             self.assertTrue(session.send_agent_requested_observability(
@@ -1031,6 +1033,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
 
             session = self.make_observability_session()
             session.canvas_state_manager = canvas
+            session.reference_manager = ReferenceManager(canvas.theater)
             session.live_request_queue = MagicMock()
 
             self.assertTrue(session.send_agent_requested_observability())
@@ -1059,6 +1062,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
             canvas.theater = TheaterManager(directory).theater("capture")
             session = self.make_observability_session()
             session.canvas_state_manager = canvas
+            session.reference_manager = ReferenceManager(canvas.theater)
             session.live_request_queue = MagicMock()
             self.assertTrue(session.send_agent_requested_observability())
             content = session.live_request_queue.send_content.call_args.args[0]
@@ -1071,11 +1075,29 @@ class TestLiveAgentSessionManager(unittest.TestCase):
             self.assertEqual(content.parts[-1].inline_data.mime_type, "image/jpeg")
 
             image_path.write_bytes(b"changed-scene")
-            with patch("services.live_agent_manager.Path.mkdir", side_effect=OSError("disk full")):
+            with patch("components.reference_manager.Path.mkdir", side_effect=OSError("disk full")):
                 self.assertTrue(session.send_agent_requested_observability())
             content = session.live_request_queue.send_content.call_args.args[0]
             self.assertNotIn("[Canvas Capture]", content.parts[0].text)
             self.assertEqual(content.parts[-1].inline_data.data, b"changed-scene")
+
+    def test_canvas_capture_requires_reference_manager(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            image_path = Path(directory) / "private-scene.jpg"
+            image_path.write_bytes(b"scene-image")
+            canvas = canvas_observability_fixture(str(image_path))
+            canvas.theater = TheaterManager(directory).theater("capture")
+            session = self.make_observability_session()
+            session.canvas_state_manager = canvas
+            session.reference_manager = None
+            session.image_tools = None
+            session.live_request_queue = MagicMock()
+            self.assertTrue(session.send_agent_requested_observability())
+            content = session.live_request_queue.send_content.call_args.args[0]
+            self.assertNotIn("[Canvas Capture]", content.parts[0].text)
+            self.assertNotIn("private-scene.jpg", content.parts[0].text)
+            self.assertFalse(canvas.theater.canvas_captures_dir().exists())
+            self.assertEqual(content.parts[-1].inline_data.data, b"scene-image")
 
     def test_stopped_session_does_not_cache_observability(self) -> None:
         session = self.make_observability_session()

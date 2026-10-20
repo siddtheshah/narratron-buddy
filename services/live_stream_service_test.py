@@ -156,23 +156,37 @@ def test_format_canvas_state_reads_current_scene_visuals(tmp_path: Path) -> None
     Image.new("RGB", (8, 8), "green").save(forest)
     state = format_canvas_state(canvas, manager)
     assert "[Available Scene Visuals]:" in state
-    assert f"Old Harbor: {authored}" in state
-    assert f"Moonlit Forest: {forest}" in state
-    assert "Use these paths in reference_images" in state
+    assert "<Old Harbor>" in state
+    assert "<Moonlit Forest>" in state
+    assert str(authored) not in state
+    assert str(forest) not in state
+    assert "Use these exact tags in visual prompts" in state
     assert "[Available Character Visuals]" not in state
 
     updated = theater.updated_scenes_dir() / "Old_Harbor" / "2.png"
     updated.parent.mkdir(parents=True)
     Image.new("RGB", (8, 8), "red").save(updated)
     state = format_canvas_state(canvas, manager)
-    assert f"Old Harbor: {updated}" in state
+    assert "<Old Harbor>" in state
+    assert str(updated) not in state
     assert str(authored) not in state
 
     updated.unlink()
-    assert f"Old Harbor: {authored}" in format_canvas_state(canvas, manager)
+    assert "<Old Harbor>" in format_canvas_state(canvas, manager)
     authored.unlink()
     forest.unlink()
     assert "[Available Scene Visuals]" not in format_canvas_state(canvas, manager)
+
+
+@pytest.mark.parametrize("image_path", ["/private/images/secret.png", r"C:\private\images\secret.png"])
+def test_format_canvas_state_hides_current_image_path_and_filename(image_path: str) -> None:
+    canvas = CanvasFixture(visual=CanvasVisualFixture(
+        shown_image_path=image_path, shown_image_prompt="A moonlit harbor",
+    ))
+    state = format_canvas_state(canvas)
+    assert "[Canvas Image]: shown, A moonlit harbor" in state
+    assert image_path not in state
+    assert "secret.png" not in state
 
 
 def test_format_canvas_state_includes_sticky_notes(tmp_path: Path, reference_manager: MagicMock) -> None:
@@ -222,7 +236,8 @@ def test_format_canvas_state_only_includes_raw_notes_outside_adventure_mode(
     assert "[Canvas Image]" in state
     assert "[Canvas music]" in state
     assert "[Available Character Visuals]: <Guide>" in state
-    assert "[Available Scene Visuals]: Harbor: harbor.png" in state
+    assert "[Available Scene Visuals]: <Harbor>" in state
+    assert "harbor.png" not in state
 
 
 def test_format_canvas_state_uses_notepad(

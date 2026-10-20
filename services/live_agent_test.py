@@ -173,7 +173,7 @@ class TestCreateAgent(unittest.TestCase):
         instruction = mock_agent_cls.call_args.kwargs["instruction"]
         self.assertIn("Preloaded References Context", instruction)
         self.assertIn("hero_character", instruction)
-        self.assertIn("/path/to/hero_character.png", instruction)
+        self.assertNotIn("/path/to/hero_character.png", instruction)
         self.assertEqual(mock_agent_cls.call_args.kwargs["model"].model, "gemini-3.8-live")
         self.assertIs(agent_inst, mock_agent_cls.return_value)
 
@@ -701,6 +701,8 @@ class TestCreateAgent(unittest.TestCase):
         self.assertIsNotNone(bundle)
         self.assertEqual([entry["name"] for entry in bundle.preloaded_references], ["Arthur Modella", "Library"])
         self.assertEqual(bundle.preloaded_references[0]["alias"], "<Arthur Modella>")
+        self.assertEqual(bundle.preloaded_references[1]["alias"], "<Library>")
+        self.assertTrue(all("path" not in entry for entry in bundle.preloaded_references))
         mock_char_mgr_cls.return_value.create_or_update_character.assert_not_called()
         mock_canvas_mgr_cls.assert_not_called()
         mock_image_tools_cls.assert_called_once_with(
@@ -711,7 +713,7 @@ class TestCreateAgent(unittest.TestCase):
             image_library=mock_img_lib_cls.return_value,
         )
 
-    def test_get_references_context_with_references(self):
+    def test_get_references_context_with_references(self) -> None:
         from services.live_agent import get_references_context
         mock_tool = MagicMock()
         mock_tool.name = "list_references"
@@ -724,6 +726,8 @@ class TestCreateAgent(unittest.TestCase):
         self.assertIn("hero", res)
         self.assertIn("hero_alias", res)
         self.assertIn("Hero desc", res)
+        self.assertNotIn("/path/hero.png", res)
+        self.assertNotIn("[path:", res)
 
     def test_get_references_context_empty(self):
         from services.live_agent import get_references_context
@@ -742,7 +746,7 @@ class TestCreateAgent(unittest.TestCase):
         }])
         context = get_references_context(bundle)
         self.assertIn("<Arthur Modella>", context)
-        self.assertIn("/session/Arthur/2.png", context)
+        self.assertNotIn("/session/Arthur/2.png", context)
 
     def test_get_playlists_context_empty(self):
         from services.live_agent import get_playlists_context
