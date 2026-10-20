@@ -15,7 +15,6 @@ from components.canvas.story_state import StoryState
 from components.canvas_state import CanvasStateManager
 from components.theater_manager import Theater, TheaterManager
 from providers import ImageProvider, SpeechProvider, TextResponseProvider
-from components.image_library import ImageLibrary
 from components.reference_manager import Character, ReferenceManager, PlayerCharacter
 from components.lore_library import LoreLibrary
 from components.notepad import Notepad
@@ -272,8 +271,6 @@ class TestStoryResponseModuleBehavior(unittest.TestCase):
         self.lore_library = LoreLibrary(theater=self.theater)
         self.notepad = Notepad(self.theater, canvas_manager=self.canvas)
         self.canvas.notepad = self.notepad
-        self.image_library = MagicMock(spec=ImageLibrary)
-        self.image_library.find_image_names.return_value = []
         self.image_provider = MagicMock(spec=ImageProvider)
         self.image_provider.generate.side_effect = RuntimeError("not used")
         self.speech_provider = MagicMock(spec=SpeechProvider)

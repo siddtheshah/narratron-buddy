@@ -614,3 +614,34 @@ def test_non_recent_push_items_revert_properly(scenes_chars_page: Page) -> None:
     anim_btn2.click()
     expect(anim_btn2.locator("small")).to_have_text("Pushed!")
     expect(anim_btn1.locator("small")).to_have_text("Push")
+
+
+def test_asset_manager_tabs_scroll_properly(scenes_chars_page: Page) -> None:
+    page = scenes_chars_page
+    page.evaluate("applyRoleUI(true); setStampManagerOpen(true)")
+
+    # 1. Characters tab: verify overflow and scrolling
+    mock_chars = [
+        {"id": f"c_{i}", "name": f"Character {i}", "description": f"Desc for character {i}"}
+        for i in range(1, 31)
+    ]
+    page.evaluate(f"cachedTheaterCharacters = {mock_chars}; switchStampManagerTab('characters');")
+    can_scroll_chars = page.evaluate(
+        "() => { const b = document.getElementById('stamp-manager-body'); return b.scrollHeight > b.clientHeight; }"
+    )
+    assert can_scroll_chars is True
+    page.evaluate("() => { document.getElementById('stamp-manager-body').scrollTop = 200; }")
+    assert page.evaluate("() => document.getElementById('stamp-manager-body').scrollTop") > 0
+
+    # 2. Scenes tab: switching tab resets scroll position and enables scrolling
+    mock_scenes = [
+        {"id": f"s_{i}", "name": f"Scene {i}", "description": f"Desc for scene {i}"}
+        for i in range(1, 25)
+    ]
+    page.evaluate(f"cachedTheaterScenes = {mock_scenes}; switchStampManagerTab('scenes');")
+    assert page.evaluate("() => document.getElementById('stamp-manager-body').scrollTop") == 0
+    can_scroll_scenes = page.evaluate(
+        "() => { const b = document.getElementById('stamp-manager-body'); return b.scrollHeight > b.clientHeight; }"
+    )
+    assert can_scroll_scenes is True
+

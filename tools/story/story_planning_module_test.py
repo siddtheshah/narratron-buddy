@@ -4,17 +4,17 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 import tempfile
 import unittest
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import MagicMock, patch
 
 from components.canvas import StoryState
-from components.canvas.game_state import GameState
 from components.canvas_state import CanvasStateManager
 from components.theater_manager import Theater
 from google.adk.plugins import ReflectAndRetryToolPlugin
 from google.adk.sessions import InMemorySessionService
+from google.adk.agents.run_config import RunConfig
+from google.genai import types
 from components.reference_manager import Character, CharacterLookupResult, ReferenceManager, PlayerCharacter
 from components.lore_library import LoreLibrary
-from components.image_library import ImageLibrary
 from components.notepad import Notepad
 from testing.game_fixtures import make_game, exchange_definition
 from tools.story.story_planning_module import (
@@ -119,7 +119,6 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
 
     def test_uses_injected_provider_and_lore_library(self) -> None:
         lore_library = MagicMock(spec=LoreLibrary)
-        image_library = MagicMock(spec=ImageLibrary)
         reference_manager = MagicMock(spec=ReferenceManager)
         theater = MagicMock(spec=Theater)
         theater.theater_id = "planning-boundary"
@@ -139,13 +138,11 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
                 canvas_manager=canvas,
                 lore_library=lore_library,
                 reference_manager=reference_manager,
-                image_library=image_library,
                 session_service=session_service,
                 session_id="planning-boundary-session",
             )
 
         self.assertIs(module.lore_library, lore_library)
-        self.assertIs(module.image_library, image_library)
         self.assertIs(module.reference_manager, reference_manager)
         self.assertIs(module.theater, theater)
         self.assertIs(module.canvas_manager, canvas)
@@ -294,10 +291,10 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
         self.assertEqual(module.deep_search_lore("clue"), "search result")
 
     def test_exposes_image_name_lookup_to_deep_planner(self) -> None:
-        library = MagicMock(spec=ImageLibrary)
+        library = MagicMock(spec=ReferenceManager)
         library.find_image_names.return_value = [{"name": "tower", "alias": "tower"}]
         module = self._make_module(MagicMock(spec=LoreLibrary))
-        module.image_library = library
+        module.reference_manager = library
 
         self.assertEqual(module.find_image_names("tower"), [{"name": "tower", "alias": "tower"}])
         library.find_image_names.assert_called_once_with("tower")
@@ -359,13 +356,6 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
         self.assertEqual(new_images[0]["name"], "img2")
         self.assertIn("revision advanced from 1 to 2", dp_diff)
 
-    def test_recent_images_limit_configuration(self) -> None:
-        module = self._make_module(
-            MagicMock(spec=LoreLibrary),
-            config={"deep_planning": {"recent_images_limit": 10}},
-        )
-        self.assertEqual(module.deep_recent_images_limit, 10)
-
     def test_deep_planner_agent_includes_image_name_lookup_tool(self) -> None:
         module = self._make_module(MagicMock(spec=LoreLibrary))
 
@@ -377,10 +367,21 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
     def test_run_deep_planner_agent_records_snapshot_at_end_of_turn(self) -> None:
         module = self._make_module(MagicMock(spec=LoreLibrary))
         self.assertIsNone(module._last_state_snapshot)
+        module.reference_manager.list_references.return_value = [{
+            "name": "Harbor", "alias": "<Harbor>", "description": "A quiet harbor",
+        }]
 
-        async def fake_run_async(*args: object, **kwargs: object) -> AsyncIterator[object]:
+        async def fake_run_async(
+            *, user_id: str, session_id: str, new_message: types.Content, run_config: RunConfig,
+        ) -> AsyncIterator[types.Content]:
+            assert new_message.parts is not None
+            prompt = new_message.parts[0].text
+            assert prompt is not None
+            self.assertIn("## Available Reference Images", prompt)
+            self.assertIn("<Harbor>", prompt)
+            self.assertNotIn("Generated Images", prompt)
             if False:
-                yield None
+                yield new_message
 
         mock_runner = MagicMock()
         mock_runner.run_async = fake_run_async
@@ -391,6 +392,7 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
         self.assertIsNotNone(module._last_state_snapshot)
         assert module._last_state_snapshot is not None
         self.assertEqual(module._last_state_snapshot.deep_plan_revision, 0)
+        self.assertEqual(module._last_state_snapshot.known_image_names, {"Harbor"})
 
     def test_rejects_missing_injected_dependencies(self) -> None:
         lore_library = MagicMock(spec=LoreLibrary)
@@ -825,7 +827,7 @@ class TestDeepPlanningPromptTemplate(unittest.TestCase):
         self.assertIn("Name: Arthur | Visual: Knight in battered armor", rendered)
         self.assertIn("## Character Updates", rendered)
         self.assertIn("+ Added Merlin: Personality: Wise", rendered)
-        self.assertIn("## Newly Generated Images", rendered)
+        self.assertIn("## Newly Available References", rendered)
         self.assertIn("Alias: `dragon_lair`", rendered)
         self.assertIn("## Deep Plan Update", rendered)
 
@@ -841,7 +843,7 @@ class TestDeepPlanningPromptTemplate(unittest.TestCase):
         )
         self.assertIn("(No sticky notes changed since last heartbeat)", rendered)
 
-    def test_renders_recently_generated_images_in_prompt(self) -> None:
+    def test_renders_new_reference_images_in_prompt(self) -> None:
         rendered = _DEEP_PLANNING_TURN_PROMPT_TEMPLATE.render(
             is_initial=False,
             new_images=[
@@ -853,7 +855,7 @@ class TestDeepPlanningPromptTemplate(unittest.TestCase):
                 }
             ],
         )
-        self.assertIn("## Newly Generated Images", rendered)
+        self.assertIn("## Newly Available References", rendered)
         self.assertIn("Alias: `dungeon_entrance`", rendered)
         self.assertIn('Title: "The Iron Gate"', rendered)
         self.assertIn("Description: Ancient runes glowing blue", rendered)

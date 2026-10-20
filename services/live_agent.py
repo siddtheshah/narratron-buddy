@@ -10,7 +10,6 @@ from jinja2 import StrictUndefined, Template
 from components.canvas.canvas_state_manager import CanvasStateManager
 from components.canvas.story_state import StoryState
 from components.reference_manager import ReferenceManager
-from components.image_library import ImageLibrary
 from components.lore_library import LoreLibrary
 from components.notepad import Notepad
 from components.theater_manager import Theater
@@ -260,7 +259,6 @@ def create_tool_bundle_for_session(
     # Create intermediate components from components/ first
     if canvas_manager is None:
         canvas_manager = CanvasStateManager(theater)
-    image_library = ImageLibrary(theater)
     lore_library = LoreLibrary(theater=theater)
     if canvas_manager.notepad is None:
         canvas_manager.notepad = Notepad(
@@ -311,7 +309,6 @@ def create_tool_bundle_for_session(
         canvas_manager=canvas_manager,
         adventure_mode=adventure_mode,
         reference_manager=reference_manager,
-        image_library=image_library,
     )
     tools.append(image_tools.show_image)
 
@@ -350,7 +347,6 @@ def create_tool_bundle_for_session(
             theater,
             canvas_manager=canvas_manager,
             text_response_provider=story_planning_text_provider,
-            image_library=image_library,
             reference_manager=reference_manager,
             lore_library=lore_library,
         )
@@ -423,18 +419,8 @@ def create_tool_bundle_for_session(
         tools.append(observability_tools.request_canvas_observability)
     preloaded_references: list[dict[str, str]] = [
         {key: entry[key] for key in ("name", "alias", "description")}
-        for entry in image_library.list_references()
+        for entry in reference_manager.list_references()
     ]
-    for name in reference_manager.available_character_images():
-        preloaded_references.append({
-            "name": name, "alias": f"<{name}>",
-            "description": "Character portrait; use the exact name tag in image and animation prompts.",
-        })
-    for name in reference_manager.available_scene_images():
-        preloaded_references.append({
-            "name": name, "alias": f"<{name}>",
-            "description": "Scene reference; use the exact name tag in image and animation prompts.",
-        })
     return ToolBundle(tools, preloaded_references=preloaded_references)
 
 

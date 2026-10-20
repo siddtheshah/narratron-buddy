@@ -1255,7 +1255,7 @@ class TestImageTools(BaseTestCase):
         tools = self.make_image_tools(self.config, theater_id="char_vis_test", theater_manager=self.manager)
         theater = self.manager.theater("char_vis_test")
 
-        # 1. Scenery image in output/artifacts/images (should be visible)
+        # Generated outputs are displayable but are not reference catalog entries.
         scene_img = os.path.join(tools.output_dir, "ancient_forest.png")
         Image.new("RGB", (10, 10), color="green").save(scene_img)
 
@@ -1274,18 +1274,23 @@ class TestImageTools(BaseTestCase):
 
         # Character image must not be in browse_images
         browsed = tools.browse_images()
-        self.assertIn(scene_img, browsed)
+        self.assertNotIn(scene_img, browsed)
         self.assertIn(ref_img, browsed)
         self.assertNotIn(char_img, browsed)
 
         # Character image must not be in search_image_by_metadata
         searched = tools.search_image_by_metadata("Soran")
         self.assertNotIn(char_img, searched)
+        self.assertEqual(tools.search_image_by_metadata("ancient_forest"), [])
 
         # Character image must not be in list_references
         ref_manifest_paths = [str(r.get("path") or "") for r in tools.list_references()]
         self.assertIn(ref_img, ref_manifest_paths)
         self.assertNotIn(char_img, ref_manifest_paths)
+        self.assertNotIn(scene_img, ref_manifest_paths)
+
+        # Generated outputs can still be displayed by their registered handles.
+        self.assertIn("Successfully displayed", tools.show_image("ancient_forest"))
 
         # show_image must reject displaying character images
         res_alias = tools.show_image("Soran")

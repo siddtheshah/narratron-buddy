@@ -39,14 +39,13 @@ class ImageTools(BaseTools):
         canvas_manager: CanvasStateManager,
         adventure_mode: bool = False,
         reference_manager: Optional[ReferenceManager] = None,
-        image_library: Optional[ImageLibrary] = None,
-    ):
+    ) -> None:
         super().__init__(
             theater=theater,
             canvas_manager=canvas_manager,
         )
-        self.reference_manager: Optional[ReferenceManager] = (
-            reference_manager if reference_manager is not None else (ReferenceManager(theater=theater) if theater is not None else None)
+        self.reference_manager: ReferenceManager = (
+            reference_manager if reference_manager is not None else ReferenceManager(theater=theater)
         )
 
         image_config = self.config.get("image_generation", {})
@@ -59,9 +58,9 @@ class ImageTools(BaseTools):
         self.adventure_mode = bool(adventure_mode)
 
         self.default_style = str(self.visuals_config.get("style", "")).strip()
-        self.image_library = image_library if image_library is not None else ImageLibrary(theater)
-        self.output_dir = self.image_library.output_dir
-        self.reference_dir = self.image_library.reference_dir
+        self.image_outputs = ImageLibrary(theater)
+        self.output_dir = self.image_outputs.output_dir
+        self.reference_dir = str(theater.references_dir())
         os.makedirs(self.output_dir, exist_ok=True)
         os.makedirs(self.reference_dir, exist_ok=True)
 
@@ -81,12 +80,7 @@ class ImageTools(BaseTools):
         self.is_generating: bool = False
         self._last_generation_thread: Optional[threading.Thread] = None
         
-        self.references_manifest = self.image_library.references_manifest
-        if self.visual:
-            for entry in self.references_manifest.values():
-                path = entry.get("path")
-                if isinstance(path, str):
-                    self.visual.register_image(path, str(entry.get("name", "")), str(entry.get("alias", "")))
+        self._load_references()
         self._currently_displayed_image_path: Optional[str] = None
         self._currently_displayed_image_transition: Optional[str] = None
         self._currently_displayed_image_effect: Optional[str] = None
@@ -162,26 +156,24 @@ class ImageTools(BaseTools):
         if self.canvas_manager is not None and self.canvas_manager.tool_response is not None:
             self.canvas_manager.tool_response.set_activity("image", active=active)
 
-    def _load_references(self):
-        """Scans the references folder once at startup and builds a read-only manifest."""
+    def _load_references(self) -> None:
+        """Register the reference manager's current scene and authored image handles."""
         try:
-            self.image_library._load_references()
-            self.references_manifest = self.image_library.references_manifest
-            for entry in self.references_manifest.values():
+            entries = self.reference_manager.list_references(include_characters=False)
+            for entry in entries:
                 if self.visual:
                     self.visual.register_image(entry["path"], entry["name"], entry["alias"])
-            unique_count = len(self.references_manifest)
-            logger.debug(f"[ImageTools] Loaded {unique_count} reference images into references manifest.")
+            logger.debug("[ImageTools] Registered %s reference images.", len(entries))
         except Exception as e:
             logger.warning(f"[ImageTools] Failed to load references: {e}")
 
-    def list_references(self) -> list[dict]:
-        """List all available pre-loaded reference images in the references directory.
+    def list_references(self) -> list[dict[str, str]]:
+        """List authored and latest session scene reference images.
 
         Returns:
             A list of dictionaries with image names, file paths, and metadata descriptions.
         """
-        results = self.image_library.list_references()
+        results = self.reference_manager.list_references(include_characters=False)
         self._trigger_after_tool_call("list_references")
         return results
 
@@ -611,13 +603,13 @@ class ImageTools(BaseTools):
 
     @logged_tool_call
     def browse_images(self) -> list[str]:
-        """Browse all available images, including preloaded reference assets and generated outputs.
+        """Browse available scene and authored reference images.
 
         Returns:
             A list of file paths to all available images.
         """
         try:
-            images = self.image_library.browse_images()
+            images = [entry["path"] for entry in self.reference_manager.list_references(include_characters=False)]
             self._trigger_after_tool_call("browse_images")
             logger.debug(f"[ImageTools] Found {len(images)} images: {images}")
             return images
@@ -628,7 +620,7 @@ class ImageTools(BaseTools):
 
     @logged_tool_call
     def search_image_by_metadata(self, metadata_query: str) -> list[str]:
-        """Search for images that match a given metadata description across generated images and references.
+        """Search for images that match a given metadata description across reference images.
 
         Args:
             metadata_query: A string to search for in image metadata titles, descriptions, names, or EXIF data.
@@ -637,7 +629,7 @@ class ImageTools(BaseTools):
             A list of file paths to images matching the query.
         """
         try:
-            matches = self.image_library.search_images(metadata_query)
+            matches = [entry["path"] for entry in self.reference_manager.find_image_names(metadata_query, include_characters=False)]
             self._trigger_after_tool_call("search_image_by_metadata")
             return matches
         except Exception as e:

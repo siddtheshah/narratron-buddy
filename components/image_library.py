@@ -1,8 +1,7 @@
-"""Read-only catalog and search support for a theater's image assets."""
+"""Read-only catalog and search support for generated image outputs."""
 
 from __future__ import annotations
 
-import logging
 import os
 import re
 from pathlib import Path
@@ -10,37 +9,24 @@ from pathlib import Path
 from components.theater_manager import Theater
 from utils.image_utils import extract_image_metadata_description, extract_image_metadata_title
 
-logger = logging.getLogger(__name__)
 IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".webp")
 
 
 class ImageLibrary:
-    """Discover mounted and generated images without modifying the canvas.
+    """Discover generated outputs without cataloging reference assets."""
 
-    The library deliberately returns stable ``name`` and ``alias`` fields so
-    planners can persist an image identifier in a sticky note and the live
-    agent can later pass that identifier to ``show_image``.
-    """
-
-    reference_dir: str = ""
     output_dir: str = ""
-    references_manifest: dict[str, dict[str, str]] = {}
 
     def __init__(self, theater: Theater) -> None:
         self.theater = theater
-        self.reference_dir = str(theater.references_dir())
         self.output_dir = str(theater.image_artifacts_dir())
-        self.references_manifest: dict[str, dict[str, str]] = {}
         config = theater.config()
         self._cover_stem = Path(config.get("starting_image", "")).stem
         self._exclude_starter = config.get("image_generation", {}).get("exclude_starter", True)
-        self._load_references()
 
     def _is_image(self, path: str) -> bool:
-        """Identify scene images, excluding character portraits and configured cover art."""
+        """Identify image outputs, excluding configured cover art."""
         image = Path(path)
-        if image.is_relative_to(Path(self.reference_dir) / "characters"):
-            return False
         return image.suffix.lower() in IMAGE_EXTENSIONS and (
             not self._exclude_starter or image.stem != self._cover_stem
         )
@@ -94,36 +80,12 @@ class ImageLibrary:
             "description": extract_image_metadata_description(path) or f"Image {filename}",
         }
 
-    def _load_references(self) -> None:
-        """Refresh the manifest of mounted reference images."""
-        self.references_manifest.clear()
-        try:
-            for root, _, files in os.walk(self.reference_dir):
-                for filename in files:
-                    path = os.path.join(root, filename)
-                    if self._is_image(path):
-                        self.references_manifest[path] = self._entry(path)
-        except OSError as exc:
-            logger.warning("[ImageLibrary] Failed to load references: %s", exc)
-
-    def list_references(self) -> list[dict[str, str]]:
-        """List mounted reference images with names, aliases, and metadata."""
-        return list(self.references_manifest.values())
-
     def browse_images(self) -> list[str]:
-        """Browse mounted and generated images, excluding adventure cover art."""
-        images: list[str] = []
-        seen: set[str] = set()
-        for directory in (self.reference_dir, self.output_dir):
-            if not os.path.isdir(directory):
-                continue
-            for root, _, files in os.walk(directory):
-                for filename in files:
-                    path = os.path.join(root, filename)
-                    if self._is_image(path) and path not in seen:
-                        seen.add(path)
-                        images.append(path)
-        return images
+        """Browse generated outputs, excluding adventure cover art."""
+        return [
+            str(path) for path in sorted(Path(self.output_dir).rglob("*"))
+            if path.is_file() and self._is_image(str(path))
+        ]
 
     def search_images(self, query: str) -> list[str]:
         """Return image paths whose filename or metadata matches ``query``."""
@@ -132,29 +94,24 @@ class ImageLibrary:
             return []
         matches: list[str] = []
         for path in self.browse_images():
-            entry = self.references_manifest.get(path) or self._entry(path)
+            entry = self._entry(path)
             searchable = (entry["name"], entry["alias"], entry["title"], entry["description"])
             if any(query in value.lower() for value in searchable):
                 matches.append(path)
         return matches
 
     def find_image_names(self, query: str = "") -> list[dict[str, str]]:
-        """Find image names for planner sticky notes.
-
-        Use the returned ``alias`` (or ``name``) in a sticky note; either can
-        later be supplied to the live agent's ``show_image`` tool.
-        """
+        """Find generated output names and metadata."""
         paths = self.search_images(query) if str(query).strip() else self.browse_images()
-        return [self.references_manifest.get(path) or self._entry(path) for path in paths]
+        return [self._entry(path) for path in paths]
 
     def get_recent_images(
-        self, limit: int = 5, generated_only: bool = True
+        self, limit: int = 5
     ) -> list[dict[str, str | float]]:
         """Return the most recently created images sorted descending by creation time.
 
         Args:
             limit: Maximum number of recent images to return (must be >= 1).
-            generated_only: If True, only search the output directory (default: True).
 
         Returns:
             A list of image entry dicts (with name, alias, path, title, description,
@@ -163,22 +120,12 @@ class ImageLibrary:
         if limit < 1:
             raise ValueError("limit must be at least 1.")
 
-        search_dirs = [self.output_dir] if generated_only else [self.output_dir, self.reference_dir]
         deduped: dict[tuple[str, str], str] = {}
-
-        for directory in search_dirs:
-            if not os.path.isdir(directory):
-                continue
-            for root, _, files in os.walk(directory):
-                for filename in files:
-                    path = os.path.join(root, filename)
-                    if not self._is_image(path):
-                        continue
-                    stem = Path(path).stem
-                    parent = str(Path(path).parent.resolve())
-                    key = (parent, stem)
-                    if key not in deduped or self._is_preferred_format(path, deduped[key]):
-                        deduped[key] = path
+        for path in self.browse_images():
+            image = Path(path)
+            key = (str(image.parent.resolve()), image.stem)
+            if key not in deduped or self._is_preferred_format(path, deduped[key]):
+                deduped[key] = path
 
         sorted_paths = sorted(
             deduped.values(),
@@ -188,7 +135,7 @@ class ImageLibrary:
 
         results: list[dict[str, str | float]] = []
         for path in sorted_paths[:limit]:
-            entry = dict(self.references_manifest.get(path) or self._entry(path))
+            entry = dict(self._entry(path))
             entry["created_at"] = self._get_creation_time(path)
             results.append(entry)
 

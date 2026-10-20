@@ -273,7 +273,6 @@ class TestCreateAgent(unittest.TestCase):
             canvas_manager=expected_canvas,
             adventure_mode=True,
             reference_manager=ANY,
-            image_library=ANY,
         )
         mock_animation_cls.assert_not_called()
         mock_chat_cls.assert_called_once_with(expected_theater, expected_canvas)
@@ -281,7 +280,6 @@ class TestCreateAgent(unittest.TestCase):
             expected_theater,
             canvas_manager=expected_canvas,
             text_response_provider=ANY,
-            image_library=ANY,
             reference_manager=ANY,
             lore_library=ANY,
         )
@@ -595,7 +593,6 @@ class TestCreateAgent(unittest.TestCase):
     @patch("services.live_agent.ReferenceManager")
     @patch("services.live_agent.Notepad")
     @patch("services.live_agent.LoreLibrary")
-    @patch("services.live_agent.ImageLibrary")
     @patch("services.live_agent.CanvasStateManager")
     @patch("services.live_agent.MusicCatalog.from_config")
     @patch("services.live_agent.get_video_provider")
@@ -606,7 +603,6 @@ class TestCreateAgent(unittest.TestCase):
         mock_get_video_provider,
         mock_music_catalog_from_config,
         mock_canvas_mgr_cls,
-        mock_img_lib_cls,
         mock_lore_lib_cls,
         mock_notepad_cls,
         mock_char_mgr_cls,
@@ -629,7 +625,6 @@ class TestCreateAgent(unittest.TestCase):
         )
 
         canvas_mgr = mock_canvas_mgr_cls.return_value
-        image_lib = mock_img_lib_cls.return_value
         lore_lib = mock_lore_lib_cls.return_value
         char_mgr = mock_char_mgr_cls.return_value
 
@@ -637,7 +632,6 @@ class TestCreateAgent(unittest.TestCase):
         self.assertIsNotNone(bundle)
 
         mock_canvas_mgr_cls.assert_called_once_with(theater)
-        mock_img_lib_cls.assert_called_once_with(theater)
         mock_lore_lib_cls.assert_called_once_with(theater=theater)
         mock_char_mgr_cls.assert_called_once()
         self.assertIs(mock_char_mgr_cls.call_args.kwargs["canvas_manager"], canvas_mgr)
@@ -648,13 +642,11 @@ class TestCreateAgent(unittest.TestCase):
             canvas_manager=canvas_mgr,
             adventure_mode=True,
             reference_manager=char_mgr,
-            image_library=image_lib,
         )
         mock_story_tool_cls.assert_called_once_with(
             theater,
             canvas_manager=canvas_mgr,
             text_response_provider=mock_get_text_provider.return_value,
-            image_library=image_lib,
             reference_manager=char_mgr,
             lore_library=lore_lib,
         )
@@ -667,7 +659,6 @@ class TestCreateAgent(unittest.TestCase):
     @patch("services.live_agent.ReferenceManager")
     @patch("services.live_agent.Notepad")
     @patch("services.live_agent.LoreLibrary")
-    @patch("services.live_agent.ImageLibrary")
     @patch("services.live_agent.CanvasStateManager")
     @patch("services.live_agent.MusicCatalog.from_config")
     @patch("services.live_agent.get_video_provider")
@@ -678,7 +669,6 @@ class TestCreateAgent(unittest.TestCase):
         mock_get_video_provider: MagicMock,
         mock_music_catalog_from_config: MagicMock,
         mock_canvas_mgr_cls: MagicMock,
-        mock_img_lib_cls: MagicMock,
         mock_lore_lib_cls: MagicMock,
         mock_notepad_cls: MagicMock,
         mock_char_mgr_cls: MagicMock,
@@ -697,6 +687,11 @@ class TestCreateAgent(unittest.TestCase):
             "Library": "/session/scenes/Library/1.png",
         }
 
+        mock_char_mgr_cls.return_value.list_references.return_value = [
+            {"name": "Arthur Modella", "alias": "<Arthur Modella>", "description": "Character portrait."},
+            {"name": "Library", "alias": "<Library>", "description": "Scene reference."},
+        ]
+
         bundle = create_tool_bundle_for_session(theater, canvas_manager=provided_canvas)
         self.assertIsNotNone(bundle)
         self.assertEqual([entry["name"] for entry in bundle.preloaded_references], ["Arthur Modella", "Library"])
@@ -710,7 +705,6 @@ class TestCreateAgent(unittest.TestCase):
             canvas_manager=provided_canvas,
             adventure_mode=False,
             reference_manager=mock_char_mgr_cls.return_value,
-            image_library=mock_img_lib_cls.return_value,
         )
 
     def test_get_references_context_with_references(self) -> None:

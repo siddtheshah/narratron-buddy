@@ -29,7 +29,6 @@ from components.lore_library import LoreLibrary
 from components.notepad import Notepad
 from tools.story.story_planning_module import StoryPlanningModule
 from tools.story.story_response_module import StoryResponseModule
-from components.image_library import ImageLibrary
 
 
 logger = logging.getLogger(__name__)
@@ -64,7 +63,6 @@ class StoryTool(BaseTools):
         theater: Theater,
         canvas_manager: CanvasStateManager,
         text_response_provider: TextResponseProvider,
-        image_library: Optional[ImageLibrary] = None,
         image_provider: ImageProvider | None = None,
         speech_provider: SpeechProvider | None = None,
         reference_manager: Optional[ReferenceManager] = None,
@@ -110,7 +108,6 @@ class StoryTool(BaseTools):
         self._load_story_log()
 
         self.lore_library = lore_library if lore_library is not None else LoreLibrary(theater=theater)
-        self.image_library = image_library if image_library is not None else ImageLibrary(theater=theater)
         if reference_manager is not None:
             self.reference_manager = reference_manager
         else:
@@ -158,7 +155,6 @@ class StoryTool(BaseTools):
             theater=theater,
             canvas_manager=canvas_manager,
             lore_library=self.lore_library,
-            image_library=self.image_library,
             reference_manager=self.reference_manager,
             session_service=self.planning_session_service,
             session_id=self.planning_session_id,

@@ -64,7 +64,7 @@ from pydantic import BaseModel, Field, JsonValue
 from components.canvas.game_runtime import GameAction, RenderedNode
 
 from components.canvas.canvas_state_service import CanvasStateService
-from components.image_library import ImageLibrary
+from components.reference_manager import ReferenceManager
 from components.theater_manager import TheaterManager
 from services.live_agent import (
     AGENT_INSTRUCTION_TEMPLATE,
@@ -699,34 +699,11 @@ class AdventureSession:
     def _create_agent(self) -> Agent:
         """Create ADK Agent using AGENT_INSTRUCTION_TEMPLATE and adventure config."""
         theater = self.theater_manager.theater(self.session_id)
-        image_library = ImageLibrary(theater)
-        preloaded_references: List[Dict[str, str]] = list(image_library.list_references())
         adventure_mode = bool(self.config.get("story_planning", {}).get("adventure_mode", False))
-        if adventure_mode and self.story_tool.reference_manager is not None:
-            for name, path in self.story_tool.reference_manager.available_character_images().items():
-                preloaded_references.append({
-                    "name": name,
-                    "alias": f"<{name}>",
-                    "path": path,
-                    "description": "Character portrait; use the exact name tag in image and animation prompts.",
-                })
-            for name, path in self.story_tool.reference_manager.available_scene_images().items():
-                preloaded_references.append({
-                    "name": name,
-                    "alias": name,
-                    "path": path,
-                    "description": "Scene reference.",
-                })
-        elif self.mock_tools.references:
-            for ref in self.mock_tools.references:
-                if isinstance(ref, dict) and "name" in ref and "path" in ref:
-                    preloaded_references.append({
-                        "name": str(ref["name"]),
-                        "alias": str(ref.get("alias") or ref["name"]),
-                        "path": str(ref["path"]),
-                        "description": str(ref.get("description") or "Preloaded reference image."),
-                    })
-
+        reference_manager = self.story_tool.reference_manager if adventure_mode else ReferenceManager(theater)
+        preloaded_references: List[Dict[str, str]] = reference_manager.list_references()
+        if not adventure_mode:
+            preloaded_references.extend(self.mock_tools.references)
         tool_bundle = ToolBundle(self.tools, preloaded_references=preloaded_references)
 
         references = get_references_context(tool_bundle)

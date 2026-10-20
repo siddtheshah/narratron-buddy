@@ -35,7 +35,7 @@ from components.canvas.story_state import CharacterState, PlayerCharacterState, 
 from services.quirk_service import get_quirk_generator_service
 from components.notepad import Notepad
 from components.theater_manager import Theater
-from utils.image_utils import embed_image_metadata
+from utils.image_utils import embed_image_metadata, extract_image_metadata_description, extract_image_metadata_title
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
@@ -887,6 +887,55 @@ class ReferenceManager:
         if not abs_dir.is_relative_to(abs_root) or abs_dir == abs_root:
             raise ValueError("Scene name must identify a folder inside the scene library.")
         return directory
+
+    def list_references(self, include_characters: bool = True) -> list[dict[str, str]]:
+        """Catalog authored assets and latest named references, never image outputs."""
+        entries: list[dict[str, str]] = []
+        root = self.theater.references_dir()
+        config = self.theater.config()
+        cover_stem = Path(config.get("starting_image", "")).stem
+        exclude_cover = config.get("image_generation", {}).get("exclude_starter", True)
+        for image in sorted(root.rglob("*")):
+            if not image.is_file() or image.suffix.lower() not in IMAGE_EXTENSIONS:
+                continue
+            if image.is_relative_to(root / "characters") or image.is_relative_to(root / "scenes"):
+                continue
+            if exclude_cover and image.stem == cover_stem:
+                continue
+            name = image.stem if image.parent == root else f"{image.parent.name}_{image.stem}"
+            entries.append({
+                "name": name,
+                "alias": re.sub(r"[^a-zA-Z0-9_-]", "_", name),
+                "path": str(image),
+                "title": extract_image_metadata_title(str(image)) or "",
+                "description": extract_image_metadata_description(str(image)) or f"Image {image.name}",
+            })
+        named_images = [("Scene", self.available_scene_images())]
+        if include_characters:
+            named_images.insert(0, ("Character", self.available_character_images()))
+        for kind, images in named_images:
+            for name, path in images.items():
+                entries.append({
+                    "name": name,
+                    "alias": f"<{name}>",
+                    "path": path,
+                    "title": extract_image_metadata_title(path) or f"Reference: {name}",
+                    "description": extract_image_metadata_description(path) or (
+                        f"{kind} reference; use the exact name tag in image and animation prompts."
+                    ),
+                })
+        return entries
+
+    def find_image_names(self, query: str = "", include_characters: bool = True) -> list[dict[str, str]]:
+        """Search only reference names, tags, and metadata."""
+        entries = self.list_references(include_characters=include_characters)
+        clean_query = query.strip().casefold()
+        if not clean_query:
+            return entries
+        return [entry for entry in entries if any(
+            clean_query in entry[field].casefold()
+            for field in ("name", "alias", "title", "description")
+        )]
 
     def available_scene_images(self) -> dict[str, str]:
         """List latest session images with authored images as the fallback."""

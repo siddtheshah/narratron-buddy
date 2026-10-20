@@ -7,7 +7,6 @@ from collections import deque
 import json
 import logging
 import os
-from pathlib import Path
 import threading
 from threading import Lock
 import time
@@ -40,10 +39,6 @@ from components.canvas.game_state import GameState
 from components.theater_manager import Theater
 from components.reference_manager import CharacterLookupResult, ReferenceManager, PlayerCharacter
 from components.lore_library import LoreLibrary
-from components.image_library import ImageLibrary
-from components.notepad import (
-    Notepad,
-)
 from tools.story.story_models import (
     DEFAULT_COMPACTION_TARGET_TOKENS,
     DEFAULT_COMPACTION_TRIGGER_TOKENS,
@@ -63,7 +58,6 @@ DEFAULT_DEEP_HEARTBEAT_FAILURE_RETRIES = 2
 STORY_LOG_CONTEXT_LINES = 200
 MAX_DEEP_READ_LORE_CALLS_PER_RUN = 3
 MAX_DEEP_SEARCH_LORE_CALLS_PER_RUN = 3
-DEFAULT_DEEP_RECENT_IMAGES_LIMIT = 5
 
 
 _DEEP_PLANNING_INSTRUCTION_TEMPLATE = Template(
@@ -93,7 +87,7 @@ You are the sole owner of Adventure Mode sticky notes. Assimilate the committed 
 
 # Character, Lore, and Image Tools
 You can canonically manage the player character using `update_player_character` (name, visual description) and query them with `get_player_character_info`. You can canonically create or update NPC records using `create_or_update_character`, manage scenery and locations using `create_or_update_scene`, and look up all characters using `lookup_character`.
-Use `deep_search_lore` and `deep_read_lore` only when the current queue batch exposes a concrete lore gap. Use `find_image_names` when a sticky needs the name of an older mounted or generated image. Store the returned `alias` (preferred) or `name`, never a guessed filename or absolute path. This heartbeat has a small independent tool budget. Prefer established lore over invention. Do not roll dice; you are planning, not resolving an uncertain action.
+Use `deep_search_lore` and `deep_read_lore` only when the current queue batch exposes a concrete lore gap. Use `find_image_names` when a sticky needs the name of an available reference image. Store the returned `alias` (preferred) or `name`, never a guessed filename or absolute path. This heartbeat has a small independent tool budget. Prefer established lore over invention. Do not roll dice; you are planning, not resolving an uncertain action.
 
 # Completion
 After tool calls, respond with a brief confirmation. Do not include a sticky-notes JSON payload in the final response.
@@ -132,6 +126,12 @@ This is one shallow, bounded planning heartbeat. Assimilate only the supplied qu
 {% if game_state_json -%}
 # Current Game State and Narratron Actions
 {{ game_state_json }}
+{% endif -%}
+{% if reference_images -%}
+## Available Reference Images
+{% for img in reference_images -%}
+- Alias: `{{ img.alias }}` | Name: `{{ img.name }}` | Description: {{ img.description }}
+{% endfor -%}
 {% endif -%}
 {% if turn_events -%}
 ## Newly Committed Turn Queue
@@ -196,8 +196,8 @@ No new responder events are queued. Use this heartbeat for one conservative refi
 
 {% endif -%}
 {% if new_images -%}
-## Newly Generated Images
-The following images were generated since the last heartbeat:
+## Newly Available References
+The following reference images became available since the last heartbeat:
 {% for img in new_images -%}
 - Alias: `{{ img.alias }}` | Name: `{{ img.name }}`{% if img.title %} | Title: "{{ img.title }}"{% endif %}{% if img.description and img.description != ('Image ' ~ img.name) and img.description != ('Image ' ~ img.name ~ '.jpg') and img.description != ('Image ' ~ img.name ~ '.png') and img.description != ('Image ' ~ img.name ~ '.webp') %} | Description: {{ img.description }}{% endif %}
 {% endfor -%}
@@ -255,7 +255,6 @@ class StoryPlanningModule:
         session_service: InMemorySessionService,
         session_id: str,
         story_log_context_fn: Optional[Callable[[], str]] = None,
-        image_library: Optional[ImageLibrary] = None,
         game_state: GameState | None = None,
     ) -> None:
         if theater is None:
@@ -279,7 +278,6 @@ class StoryPlanningModule:
         self.canvas_manager = canvas_manager
         self.game_state = game_state
         self.lore_library = lore_library
-        self.image_library = image_library or ImageLibrary(theater)
         self.reference_manager = reference_manager
         self._deep_read_lore_calls_this_run = 0
         self._deep_search_lore_calls_this_run = 0
@@ -320,14 +318,6 @@ class StoryPlanningModule:
         self.deep_max_events_per_turn: int = max(
             1,
             int(self.deep_planning_config.get("max_events_per_turn", DEFAULT_DEEP_MAX_EVENTS_PER_TURN)),
-        )
-        self.deep_recent_images_limit: int = max(
-            1,
-            int(
-                self.deep_planning_config.get(
-                    "recent_images_limit", DEFAULT_DEEP_RECENT_IMAGES_LIMIT
-                )
-            ),
         )
         self.deep_idle_refinement_turns: int = DEFAULT_DEEP_IDLE_REFINEMENT_TURNS
         self.deep_heartbeat_failure_retries: int = DEFAULT_DEEP_HEARTBEAT_FAILURE_RETRIES
@@ -505,38 +495,12 @@ class StoryPlanningModule:
         return f"Scene reference for '{clean_name}' is set."
 
     def find_image_names(self, query: str = "") -> list[dict[str, str]]:
-        """Find available image aliases and names for use in sticky notes.
+        """Find reference image tags and names for use in sticky notes.
 
         Returns only catalog data; this never displays an image or changes the
         canvas. Prefer the returned alias when recording an image reference.
         """
-        return self.image_library.find_image_names(query)
-
-    def _get_recent_images(self) -> list[dict[str, object]]:
-        """Fetch recently generated images safely from the image library."""
-        images = self.image_library.get_recent_images(
-            limit=self.deep_recent_images_limit, generated_only=True
-        )
-        return list(images) if images else []
-
-    def _format_recent_images(self, recent_images: list[dict[str, object]]) -> str:
-        if not recent_images:
-            return ""
-        lines: list[str] = []
-        for img in recent_images:
-            desc = str(img.get("description") or "")
-            title = str(img.get("title") or "")
-            name = str(img.get("name") or "")
-            alias = str(img.get("alias") or "")
-            parts = [f"Alias: `{alias}`", f"Name: `{name}`"]
-            if title:
-                parts.append(f'Title: "{title}"')
-            path = str(img.get("path") or "")
-            default_desc = f"Image {Path(path).name}" if path else ""
-            if desc and desc != default_desc:
-                parts.append(f"Description: {desc}")
-            lines.append("- " + " | ".join(parts))
-        return "\n".join(lines)
+        return self.reference_manager.find_image_names(query)
 
     def _build_deep_planner_instruction(self, ctx: object = None) -> str:
         lore_context = self.lore_library.get_lore_context()
@@ -728,14 +692,14 @@ class StoryPlanningModule:
             )
             for c in current_chars_list
         }
-        recent_images = self._get_recent_images()
+        reference_images = self.reference_manager.list_references()
         previous_known: set[str] = (
             self._last_state_snapshot.known_image_names
             if self._last_state_snapshot is not None
             else set()
         )
         all_known_images = previous_known | {
-            str(img.get("name") or "") for img in recent_images if img.get("name")
+            str(img.get("name") or "") for img in reference_images if img.get("name")
         }
         story_state = self.canvas_manager.story if self.canvas_manager is not None and self.canvas_manager.story is not None else StoryState()
         self._last_state_snapshot = create_snapshot(
@@ -961,7 +925,7 @@ class StoryPlanningModule:
                 )
                 for c in current_chars_list
             }
-            recent_images = self._get_recent_images()
+            reference_images = self.reference_manager.list_references()
 
             is_initial = self._last_state_snapshot is None
             if is_initial:
@@ -972,7 +936,7 @@ class StoryPlanningModule:
                     current_notes=self.notepad.get_present_sticky_notes(),
                     player_character=current_pc_obj,
                     characters=current_chars_list,
-                    recent_images=recent_images,
+                    reference_images=reference_images,
                     deep_plan_json=deep_plan_json if deep_plan_json != "{}" else "",
                 ).strip()
             else:
@@ -983,7 +947,7 @@ class StoryPlanningModule:
                     current_stickies=current_stickies,
                     current_pc=current_pc,
                     current_chars=current_chars,
-                    recent_images=recent_images,
+                    recent_images=reference_images,
                     current_deep_plan_revision=current_deep_plan_revision,
                     current_through_turn=heartbeat_through_turn,
                 )
@@ -994,6 +958,7 @@ class StoryPlanningModule:
                     sticky_diffs=story_diff.sticky_diffs,
                     player_character_diff=story_diff.player_character_diff,
                     character_diffs=story_diff.character_diffs,
+                    reference_images=reference_images,
                     new_images=story_diff.new_images,
                     deep_plan_diff=story_diff.deep_plan_diff,
                 ).strip()
