@@ -7,7 +7,9 @@ using the same runtime and renderer.
 
 The entry point is mounted by adventure selection, folder import and ZIP import.
 The canvas game button appears when a package is present and opens only on click.
-The active orator can submit actions; other viewers see the committed view.
+The active orator can submit actions; when the active orator enables collaboration
+mode, viewers with contributor permission can also submit actions annotated with
+`"permission": "contributor"`. Other viewers see the committed view.
 A live story agent is not required.
 
 ## Minimal package
@@ -27,6 +29,7 @@ expressions. Literal text therefore includes CEL string quotes.
   },
   "transitions": {
     "increment": {
+      "permission": "contributor",
       "parameters": {"type": "object", "additionalProperties": false},
       "guard": "state.count < 10",
       "result": "{\"count\": state.count + 1}"
@@ -68,22 +71,28 @@ expressions. Literal text therefore includes CEL string quotes.
   optional boolean `guard`, optional ordered `bindings`, and a `result`
   expression returning the **complete next state object**. Action arguments are
   available as `action`. Bindings cannot overwrite names already in scope.
-- Each transition can set `actor` to `"player"` or `"narratron"` and include a
-  short `description`. The default actor is `"player"` for existing packages.
+- Each transition can set `actor` to `"player"`, `"contributor"`, or `"narratron"`,
+  `permission` to `"orator"` (default) or `"contributor"`, and include a short
+  `description`. Setting `permission: "contributor"` (or `actor: "contributor"`)
+  allows viewers with contributor permission to invoke the action on the canvas
+  whenever the active orator has Collaboration Mode enabled. A button's `action`
+  in `view` can also set `permission: "contributor"` to annotate a specific view
+  action.
   An optional state-only `available` CEL expression controls whether a Narratron
   action appears in the planner's current action list. The transition's `guard`
   remains the authoritative check when an action is submitted.
-  View buttons may reference only player actions. The canvas action endpoint
-  likewise accepts only player actions. The story planner sees the current state,
-  revision, and Narratron action contracts, and can submit only those actions.
+  View buttons may reference only player/contributor actions. The canvas action
+  endpoint likewise accepts only player/contributor actions. The story planner
+  sees the current state, revision, and Narratron action contracts, and can submit
+  only those actions.
   The story responder sees the current game state in its turn prompt, without
   action contracts or package instructions, and cannot mutate it. An optional
-  `triggering` boolean (default `true`) controls whether a player action notifies
-  Narratron and queues a planner heartbeat; set `triggering: false` for exploratory
-  UI interactions like selection. A successful triggering player game action queues
-  a planner heartbeat with both the submitted action and an independent snapshot of
-  the newly committed state, so the Narratron side can react without waiting for a
-  separate narrated turn.
+  `triggering` boolean (default `true`) controls whether a player or contributor
+  action notifies Narratron and queues a planner heartbeat; set `triggering: false`
+  for exploratory UI interactions like selection. A successful triggering player or
+  contributor game action queues a planner heartbeat with both the submitted action
+  and an independent snapshot of the newly committed state, so the Narratron side
+  can react and narrate without waiting for a separate spoken turn.
 
 The host validates arguments, computes derived values, checks the guard, evaluates
 transition bindings and result, validates the candidate state and invariants, and
@@ -98,8 +107,17 @@ increments the state revision. Local-only UI selection is not implemented yet.
 
 ## Rendering language
 
-Nodes support `column`, `row`, `grid`, `text`, `button`, `svg`, `rect`, `circle`
-and `svg_text`. Each node has CEL-valued `props` and optional `children`.
+Nodes support `column`, `row`, `grid`, `text`, `button`, `svg`, `g`, `path`,
+`rect`, `circle`, `ellipse`, `line`, `polyline`, `polygon`, `svg_text`, `tspan`,
+`defs`, `linearGradient`, `radialGradient`, `stop`, `clipPath`, `mask`, and
+`symbol`. Each node has CEL-valued `props` and optional `children`.
+
+An `svg` node can also reference a static `.svg` asset placed in the adventure's
+`game/` folder using the `src` (or `href` / `asset`) prop (for example,
+`"src": "\"knight.svg\""` or `"src": "\"game/pieces/knight.svg\""`). SVG files in
+`game/` are validated against the same tag and attribute allowlist (no scripts,
+`foreignObject`, event handlers, or external URLs) and materialized into the
+rendered view tree.
 
 `repeat` is a CEL expression yielding a list; `binding` names the current item in
 each copy's scope (default `item`). For example, a grid can repeat a cell template
@@ -112,11 +130,18 @@ Supported properties:
 - Layout/style: `columns` (grid), `gap`, `padding`, `color`, `background` (color
   only), `fontSize`, `fontWeight`, `borderRadius`, `outline`, `aspectRatio`,
   `textAlign`.
-- SVG: `viewBox`, `x`, `y`, `width`, `height`, `cx`, `cy`, `r`, `rx`, `fill`,
-  `stroke`, `stroke-width`, `text-anchor`, `dominant-baseline`.
+- SVG: `src` (relative `.svg` file in `game/`), `viewBox`, `preserveAspectRatio`,
+  `x`, `y`, `x1`, `y1`, `x2`, `y2`, `dx`, `dy`, `width`, `height`, `cx`, `cy`,
+  `r`, `rx`, `ry`, `d`, `points`, `fill`, `fill-opacity`, `fill-rule`, `stroke`,
+  `stroke-width`, `stroke-opacity`, `stroke-linecap`, `stroke-linejoin`,
+  `stroke-dasharray`, `stroke-dashoffset`, `stroke-miterlimit`, `opacity`,
+  `transform`, `text-anchor`, `dominant-baseline`, `font-size`, `font-weight`,
+  `font-family`, `letter-spacing`, and gradient/stop attributes.
 
 A button's `action` declares CEL expressions for its `name` and JSON-object
-`arguments`. Optional `confirmation` is literal confirmation-dialog text.
+`arguments`. Optional `confirmation` is literal confirmation-dialog text, and
+optional `permission` (`"orator"` or `"contributor"`) annotates whether
+collaborating contributors may invoke the action.
 Disabled buttons are a UI aid; the server always validates the submitted action
 and guard independently. The renderer uses text nodes and an allowlist of tags,
 attributes and styles. It never evaluates theater JavaScript, inserts theater
@@ -138,7 +163,8 @@ are rejected.
 
 Limits include:
 
-- Package: 64 KiB; CEL expression: 4,000 characters and 1,000 AST nodes.
+- Package: 128 KiB (`game/game.json` and each `game/*.svg` asset); CEL expression:
+  4,000 characters and 1,000 AST nodes.
 - Each transition-evaluation or view-preparation phase: 500,000 visited AST nodes
   and a five-second deadline. Nested macros and author functions share the phase's
   budget. Work exhaustion rejects the operation even if CEL suppresses an error.
@@ -166,8 +192,10 @@ an old save using different rules. Format-1 prototype saves are not migrated.
 ```
 
 Stale revisions return 409. Illegal actions return 400. Viewer submissions return
-403. Successful actions return the new revision and materialized view and notify
-canvas subscribers. Retries with the same revision cannot apply twice.
+403 (unless Collaboration Mode is enabled, the viewer has contributor permission,
+and the action is annotated with `"permission": "contributor"`). Successful
+actions return the new revision and materialized view and notify canvas
+subscribers. Retries with the same revision cannot apply twice.
 
 Game failures are isolated from story and chat loading. Invalid packages expose
 a game-only error; invalid saved games retain the current valid game state and

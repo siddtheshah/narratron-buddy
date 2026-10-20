@@ -27,16 +27,23 @@ def test_game_survives_adventure_mount_and_canvas_reload(tmp_path: Path) -> None
 
 def test_zip_game_declaration_is_mounted_and_editable(tmp_path: Path) -> None:
     content = Path("adventures/example_adventure/game/game.json").read_bytes()
+    svg_content = b'<svg viewBox="0 0 32 32"><circle cx="16" cy="16" r="12" fill="#facc15"/></svg>'
     archive = BytesIO()
     with ZipFile(archive, "w") as package:
         package.writestr("checkers/game/game.json", content)
+        package.writestr("checkers/game/token.svg", svg_content)
     references, playlists, lore, _ = extract_asset_package(archive.getvalue())
     manager = TheaterManager(tmp_path)
     manager.create_theater("Checkers", "checkers", reference_files=references)
     assert (tmp_path / "checkers/game/game.json").read_bytes() == content
+    assert (tmp_path / "checkers/game/token.svg").read_bytes() == svg_content
     assert safe_asset_path(tmp_path, "game/game.json") == tmp_path / "game/game.json"
+    assert safe_asset_path(tmp_path, "game/token.svg") == tmp_path / "game/token.svg"
     assert upload_path("checkers/game/game.json", folder=True) == "game/game.json"
+    assert upload_path("checkers/game/token.svg", folder=True) == "game/token.svg"
+    assert upload_path("token.svg", folder=False) == "game/token.svg"
     validate_text("game/game.json", content.decode("utf-8"))
+    validate_text("game/token.svg", svg_content.decode("utf-8"))
 
 
 @pytest.mark.parametrize("first_finalizer", ["player", "narratron"])

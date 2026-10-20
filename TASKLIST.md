@@ -1,5 +1,11 @@
 # Narratron Task List
 
+## Game Engine Upgrades
+- [x] Raise `game.json` package size limit (`MAX_GAME_BYTES`) from 64 KiB to 128 KiB (131,072 bytes).
+- [x] Support loading, validating, packaging, and rendering SVG graphics placed in an adventure's `game/` folder.
+- [x] Allow game actions (`transitions` / `action` in `game.json`) to be annotated with `'contributor'` permission.
+- [x] Enable viewers with contributor permissions to take `'contributor'`-annotated game actions on the canvas when the active orator has collaboration enabled, triggering Narratron narration as usual.
+
 ## Auth, Security & Monetization
 - [ ] Add rate limits for registration/login, password reset, join-key resolution, uploads, payment attempts, and Live WebSocket connections.
 - [ ] Use secure production auth cookies and CSRF protection for authenticated state-changing endpoints.

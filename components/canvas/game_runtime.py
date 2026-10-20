@@ -4,9 +4,11 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 import json
+from pathlib import Path, PurePosixPath
 import re
 from time import monotonic
 from typing import Literal
+import xml.etree.ElementTree as ET
 
 from celpy import Environment, Runner, celtypes
 from celpy.adapter import json_to_cel
@@ -16,13 +18,38 @@ from lark import Token, Tree
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, ValidationError
 from components.canvas.game_values import MAX_VALUE_BYTES, checked_json
 
-MAX_GAME_BYTES = 65_536
+MAX_GAME_BYTES = 131_072
 MAX_STEPS = 500_000
 MAX_MODEL_STATE_BYTES = 16_384
+MAX_SVG_NODES = 512
+MAX_SVG_DEPTH = 12
 BOOL_ADAPTER = TypeAdapter(bool)
 STRING_ADAPTER = TypeAdapter(str)
 MAP_ADAPTER = TypeAdapter(dict[str, JsonValue])
 LIST_ADAPTER = TypeAdapter(list[JsonValue])
+
+SVG_NAMESPACE = "http://www.w3.org/2000/svg"
+ALLOWED_SVG_TAGS = {
+    "svg", "g", "path", "rect", "circle", "ellipse", "line", "polyline",
+    "polygon", "text", "tspan", "defs", "linearGradient", "radialGradient",
+    "stop", "clipPath", "mask", "symbol",
+}
+IGNORED_SVG_TAGS = {"title", "desc", "metadata"}
+ALLOWED_SVG_ATTRIBUTES = {
+    "id", "viewBox", "preserveAspectRatio", "x", "y", "width", "height",
+    "cx", "cy", "r", "rx", "ry", "x1", "y1", "x2", "y2", "d", "points",
+    "dx", "dy", "rotate", "pathLength", "transform", "transform-origin",
+    "fill", "fill-opacity", "fill-rule", "stroke", "stroke-width",
+    "stroke-opacity", "stroke-linecap", "stroke-linejoin", "stroke-miterlimit",
+    "stroke-dasharray", "stroke-dashoffset", "opacity", "color", "stop-color",
+    "stop-opacity", "offset", "gradientUnits", "gradientTransform",
+    "spreadMethod", "fx", "fy", "fr", "clipPathUnits", "maskUnits",
+    "maskContentUnits", "clip-rule", "text-anchor", "dominant-baseline",
+    "font-size", "fontSize", "font-weight", "fontWeight", "font-family",
+    "font-style", "letter-spacing", "vector-effect", "paint-order",
+    "shape-rendering", "display", "visibility",
+}
+UNSAFE_SVG_VALUE_RE = re.compile(r"url\s*\(|expression\s*\(|javascript\s*:|data\s*:|[<>{}\\]", re.IGNORECASE)
 
 
 class GameModel(BaseModel):
@@ -40,7 +67,8 @@ class FunctionDefinition(GameModel):
 
 
 class TransitionDefinition(GameModel):
-    actor: Literal["player", "narratron"] = "player"
+    actor: Literal["player", "contributor", "narratron"] = "player"
+    permission: Literal["orator", "contributor"] = "orator"
     description: str = Field(default="", max_length=500)
     available: str = Field(default="true", max_length=4000)
     parameters: dict[str, JsonValue]
@@ -49,15 +77,27 @@ class TransitionDefinition(GameModel):
     result: str = Field(min_length=1, max_length=4000)
     triggering: bool = Field(default=True)
 
+    @property
+    def is_player_actor(self) -> bool:
+        return self.actor in ("player", "contributor")
+
+    @property
+    def allows_contributor(self) -> bool:
+        return self.actor == "contributor" or self.permission == "contributor"
+
 
 class ViewAction(GameModel):
     name: str = Field(max_length=4000)
     arguments: str = Field(default="{}", max_length=4000)
     confirmation: str = Field(default="", max_length=200)
+    permission: Literal["orator", "contributor"] | None = None
 
 
 class ViewNode(GameModel):
-    kind: Literal["column", "row", "grid", "text", "button", "svg", "rect", "circle", "svg_text"]
+    kind: Literal[
+        "column", "row", "grid", "text", "button",
+        "svg", "g", "path", "rect", "circle", "ellipse", "line", "polyline", "polygon", "svg_text", "image",
+    ]
     props: dict[str, str] = Field(default_factory=dict, max_length=24)
     repeat: str | None = Field(default=None, max_length=4000)
     binding: str = Field(default="item", pattern=r"^[a-zA-Z][a-zA-Z0-9_]{0,39}$")
@@ -89,6 +129,7 @@ class RenderedAction(GameModel):
     name: str
     arguments: dict[str, JsonValue]
     confirmation: str = ""
+    permission: Literal["orator", "contributor"] = "orator"
 
 
 class RenderedNode(GameModel):
@@ -96,6 +137,134 @@ class RenderedNode(GameModel):
     props: dict[str, JsonValue]
     children: list[RenderedNode] = Field(default_factory=list)
     action: RenderedAction | None = None
+
+
+def normalize_game_svg_path(raw_path: str) -> str:
+    """Normalize a relative SVG path under game/ and reject traversal or invalid suffixes."""
+    cleaned = raw_path.strip()
+    if not cleaned or "\\" in cleaned or cleaned.startswith("/"):
+        raise ValueError(f"Invalid game SVG path: {raw_path!r}")
+    parts = [part for part in cleaned.split("/") if part]
+    if parts and parts[0] == "game":
+        parts = parts[1:]
+    if not parts or any(part in {".", ".."} or re.search(r'[<>:"|?*\x00-\x1f]', part) or part.endswith((".", " ")) for part in parts):
+        raise ValueError(f"Invalid game SVG path: {raw_path!r}")
+    normalized = "/".join(parts)
+    if PurePosixPath(normalized).suffix.lower() != ".svg":
+        raise ValueError(f"Game graphic must be an .svg file: {raw_path!r}")
+    return normalized
+
+
+def _validate_svg_attr(name: str, value: str) -> None:
+    if name not in ALLOWED_SVG_ATTRIBUTES:
+        raise ValueError(f"Unsupported SVG attribute: {name}")
+    max_len = 10_000 if name in {"d", "points"} else 200
+    if len(value) > max_len or UNSAFE_SVG_VALUE_RE.search(value):
+        raise ValueError(f"Invalid SVG attribute value for {name}.")
+
+
+def _strip_xml_namespace(tag_or_attr: str) -> tuple[str, str]:
+    if tag_or_attr.startswith("{"):
+        uri, _, local = tag_or_attr[1:].partition("}")
+        return uri, local
+    return "", tag_or_attr
+
+
+def _parse_svg_element(element: ET.Element, counter: list[int], depth: int) -> RenderedNode | None:
+    if depth > MAX_SVG_DEPTH:
+        raise ValueError("SVG element nesting exceeds its budget.")
+    uri, tag = _strip_xml_namespace(element.tag)
+    if uri not in ("", SVG_NAMESPACE):
+        raise ValueError("Unsupported XML namespace in SVG.")
+    if tag in IGNORED_SVG_TAGS:
+        return None
+    if tag not in ALLOWED_SVG_TAGS:
+        raise ValueError(f"Unsupported SVG tag: {tag}")
+    counter[0] += 1
+    if counter[0] > MAX_SVG_NODES:
+        raise ValueError("SVG asset exceeds its element budget.")
+    props: dict[str, JsonValue] = {}
+    for raw_attr, raw_val in element.attrib.items():
+        attr_uri, attr_name = _strip_xml_namespace(raw_attr)
+        if attr_uri or attr_name == "xmlns" or attr_name.startswith(("xmlns:", "xml:")):
+            continue
+        if attr_name.lower().startswith("on"):
+            raise ValueError(f"Event handler attributes are not permitted in SVG: {attr_name}")
+        if attr_name == "style":
+            for decl in raw_val.split(";"):
+                decl_clean = decl.strip()
+                if not decl_clean:
+                    continue
+                prop_name, sep, prop_val = decl_clean.partition(":")
+                if not sep:
+                    raise ValueError("Malformed style attribute in SVG.")
+                key = prop_name.strip()
+                val = prop_val.strip()
+                _validate_svg_attr(key, val)
+                if key not in props:
+                    props[key] = val
+            continue
+        _validate_svg_attr(attr_name, raw_val)
+        props[attr_name] = raw_val
+    if tag in {"text", "tspan"} and element.text and element.text.strip():
+        text_content = element.text.strip()
+        if len(text_content) > 500:
+            raise ValueError("SVG text content exceeds size budget.")
+        props["text"] = text_content
+    children: list[RenderedNode] = []
+    for child_elem in element:
+        parsed_child = _parse_svg_element(child_elem, counter, depth + 1)
+        if parsed_child is not None:
+            children.append(parsed_child)
+    node_kind = "svg_text" if tag == "text" else tag
+    return RenderedNode(kind=node_kind, props=props, children=children)
+
+
+def validate_game_svg(content: bytes) -> RenderedNode:
+    """Parse and validate a static SVG asset from the adventure's game/ directory."""
+    if len(content) > MAX_GAME_BYTES:
+        raise ValueError("Game SVG exceeds size limit.")
+    try:
+        text = content.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise ValueError("Game SVG must be UTF-8 encoded.") from exc
+    if re.search(r"<!\s*(DOCTYPE|ENTITY)\b", text, re.IGNORECASE):
+        raise ValueError("SVG DTDs and entities are not permitted.")
+    try:
+        root = ET.fromstring(text)
+    except ET.ParseError as exc:
+        raise ValueError(f"Malformed SVG XML: {str(exc)[:180]}") from exc
+    uri, root_tag = _strip_xml_namespace(root.tag)
+    if uri not in ("", SVG_NAMESPACE) or root_tag != "svg":
+        raise ValueError("Root element of game graphic must be <svg>.")
+    parsed = _parse_svg_element(root, [0], 0)
+    if parsed is None:
+        raise ValueError("Empty SVG document.")
+    if "viewBox" not in parsed.props:
+        width = parsed.props.get("width")
+        height = parsed.props.get("height")
+        if type(width) is str and type(height) is str:
+            w_match = re.fullmatch(r"\s*([0-9]+(?:\.[0-9]+)?)\s*(?:px)?\s*", width)
+            h_match = re.fullmatch(r"\s*([0-9]+(?:\.[0-9]+)?)\s*(?:px)?\s*", height)
+            if w_match and h_match:
+                parsed.props["viewBox"] = f"0 0 {w_match.group(1)} {h_match.group(1)}"
+    return parsed
+
+
+def load_game_svg_assets(game_dir: Path | None) -> dict[str, RenderedNode]:
+    """Load and validate all .svg files located under game_dir."""
+    assets: dict[str, RenderedNode] = {}
+    if game_dir is None or not game_dir.is_dir():
+        return assets
+    resolved_dir = game_dir.resolve()
+    for path in sorted(game_dir.rglob("*")):
+        if not path.is_file() or path.suffix.lower() != ".svg":
+            continue
+        if not path.resolve().is_relative_to(resolved_dir) or path.stat().st_size > MAX_GAME_BYTES:
+            raise ValueError(f"Game SVG path or size is invalid: {path.name}")
+        rel = normalize_game_svg_path(path.relative_to(game_dir).as_posix())
+        assets[rel] = validate_game_svg(path.read_bytes())
+    return assets
 
 
 @dataclass
@@ -159,8 +328,9 @@ def check_schema_features(schema: JsonValue) -> None:
 class GameProgram:
     """Compile a package once. No game names, field names or move types live here."""
 
-    def __init__(self, definition: GameDefinition) -> None:
+    def __init__(self, definition: GameDefinition, svg_assets: dict[str, RenderedNode] | None = None) -> None:
         self.definition = definition
+        self.svg_assets = svg_assets
         self.environment = Environment()
         self.programs: dict[str, Runner] = {}
         self.dependencies: dict[str, list[str]] = {}
@@ -185,6 +355,8 @@ class GameProgram:
         if definition.model_state is not None:
             self.compile(definition.model_state, allowed_functions)
         for transition in definition.transitions.values():
+            if transition.actor == "narratron" and transition.permission != "orator":
+                raise ValueError("Narratron transitions cannot declare contributor permission.")
             self.compile(transition.available, allowed_functions)
             if "action" in self.dependencies[transition.available]:
                 raise ValueError("Action availability cannot depend on action arguments.")
@@ -232,6 +404,7 @@ class Execution:
     def __init__(self, program: GameProgram) -> None:
         self.program = program
         self.budget = Budget()
+        self.svg_expanded_bytes: int = 0
         self._values: dict[int, tuple[JsonValue, celtypes.Value]] = {}
         self._results: dict[tuple[str, tuple[tuple[str, int], ...]], JsonValue] = {}
         self.functions: dict[str, Callable[..., celtypes.Value]] = {}
@@ -326,26 +499,61 @@ class Execution:
                 name = STRING_ADAPTER.validate_python(self.evaluate(node.action.name, scope), strict=True)
                 if name not in self.program.definition.transitions:
                     raise ValueError("View references an unknown transition.")
-                if self.program.definition.transitions[name].actor != "player":
+                transition = self.program.definition.transitions[name]
+                if not transition.is_player_actor:
                     raise ValueError("View cannot expose a Narratron-only transition.")
-                action = RenderedAction(name=name, arguments=MAP_ADAPTER.validate_python(self.evaluate(node.action.arguments, scope), strict=True), confirmation=node.action.confirmation)
+                effective_permission: Literal["orator", "contributor"] = (
+                    node.action.permission
+                    if node.action.permission is not None
+                    else ("contributor" if transition.allows_contributor else "orator")
+                )
+                action = RenderedAction(
+                    name=name,
+                    arguments=MAP_ADAPTER.validate_python(self.evaluate(node.action.arguments, scope), strict=True),
+                    confirmation=node.action.confirmation,
+                    permission=effective_permission,
+                )
             children = [child for template in node.children for child in self.render(template, scope)]
-            rendered.append(RenderedNode(kind=node.kind, props=props, children=children, action=action))
+            node_kind = "svg" if node.kind == "image" else node.kind
+            if node.kind in ("svg", "image"):
+                src_key = next((key for key in ("src", "href", "asset") if key in props), None)
+                if src_key is not None:
+                    raw_src = props.pop(src_key)
+                    if raw_src is not None and raw_src != "":
+                        src_str = STRING_ADAPTER.validate_python(raw_src, strict=True)
+                        normalized_src = normalize_game_svg_path(src_str)
+                        props["src"] = normalized_src
+                        if self.program.svg_assets is not None:
+                            if normalized_src not in self.program.svg_assets:
+                                raise ValueError(f"Unknown game SVG asset: {normalized_src}")
+                            asset = self.program.svg_assets[normalized_src]
+                            props = {**asset.props, **props}
+                            children = [*asset.children, *children]
+                            self.svg_expanded_bytes += len(
+                                json.dumps([child.model_dump(mode="json") for child in asset.children]).encode("utf-8")
+                            )
+            rendered.append(RenderedNode(kind=node_kind, props=props, children=children, action=action))
         return rendered
 
 
-def validate_game_package(content: bytes) -> GameProgram:
+def validate_game_package(
+    content: bytes,
+    *,
+    game_dir: Path | None = None,
+    svg_assets: dict[str, RenderedNode] | None = None,
+) -> GameProgram:
     if len(content) > MAX_GAME_BYTES:
         raise ValueError("Game definition exceeds size limit.")
     try:
+        resolved_svgs = svg_assets if svg_assets is not None else (load_game_svg_assets(game_dir) if game_dir is not None else None)
         definition = GameDefinition.model_validate_json(content)
-        program = GameProgram(definition)
+        program = GameProgram(definition, svg_assets=resolved_svgs)
         execution = program.execution()
         context = execution.context(definition.initial)
         execution.validate(definition.initial, context)
         program.initial_view = [node.model_dump(mode="json") for node in execution.render(definition.view, context)]
         program.initial_model_state, program.initial_narratron_actions = execution.model_context(context)
-        if len(json.dumps(program.initial_view).encode("utf-8")) > MAX_VALUE_BYTES:
+        if len(json.dumps(program.initial_view).encode("utf-8")) - execution.svg_expanded_bytes > MAX_VALUE_BYTES:
             raise ValueError("Rendered view exceeds its size budget.")
         return program
     except Exception as exc:

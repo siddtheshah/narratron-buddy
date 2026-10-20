@@ -11,7 +11,7 @@ from typing import Any, Dict, Optional, Union
 import uuid
 import yaml
 
-from fastapi import Request, Response, HTTPException
+from fastapi import Request, Response, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from starlette.staticfiles import NotModifiedResponse, StaticFiles
 from pydantic import BaseModel, Field, JsonValue
@@ -1090,6 +1090,8 @@ async def create_and_deploy_theater(request: Request):
                         reference_files.append(("metadata.json", content))
                     elif parts[-2:] == ["game", "game.json"]:
                         reference_files.append(("game/game.json", content))
+                    elif "game" in parts and parts.index("game") < len(parts) - 1 and clean_name.lower().endswith(".svg"):
+                        reference_files.append(("/".join(parts[parts.index("game"):]), content))
                     elif "references" in parts or (
                         clean_name.lower().endswith((".png", ".jpg", ".jpeg", ".webp", ".gif"))
                         and "playlists" not in parts

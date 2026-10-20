@@ -29,7 +29,7 @@ from api_server.shared import (
 )
 from api_server.dependencies import live_agent_manager
 from components.canvas.canvas_state_manager import CanvasStateManager
-from components.canvas.game_state import GameAction, StaleGameAction
+from components.canvas.game_state import GameAction, StaleGameAction, UnauthorizedGameAction
 from pydantic import JsonValue
 
 logger = logging.getLogger(__name__)
@@ -798,12 +798,22 @@ def post_game_action(
     _require_canvas_access(request, theater_id, join_key=join_key)
     deployment = db.get_deployment(theater_id)
     if not can_control_agent_websocket(deployment, current_user=get_current_user(request)):
-        raise HTTPException(status_code=403, detail="Only the active orator can control the game.")
+        state = _state(theater_id)
+        if not (
+            state.ui is not None
+            and state.ui.viewer_collab_enabled is True
+            and bool(deployment)
+            and is_contributor(deployment, current_user=get_current_user(request)) is True
+        ):
+            raise HTTPException(status_code=403, detail="Only the active orator can control the game.")
     state = _state(theater_id)
     if state.game is None:
         raise HTTPException(status_code=404, detail="This theater has no game.")
     try:
-        return state.game.act(payload)
+        is_orator = can_control_agent_websocket(deployment, current_user=get_current_user(request))
+        return state.game.act(payload) if is_orator else state.game.act(payload, actor="contributor")
+    except UnauthorizedGameAction as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     except StaleGameAction as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValueError as exc:

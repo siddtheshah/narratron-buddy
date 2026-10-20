@@ -7,8 +7,21 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from components.canvas.game_runtime import GameDefinition, GameProgram
-from components.canvas.game_state import GameAction, GameState, StaleGameAction
+from components.canvas.game_runtime import (
+    MAX_GAME_BYTES,
+    GameDefinition,
+    GameProgram,
+    ViewAction,
+    ViewNode,
+    validate_game_package,
+    validate_game_svg,
+)
+from components.canvas.game_state import (
+    GameAction,
+    GameState,
+    StaleGameAction,
+    UnauthorizedGameAction,
+)
 from components.canvas.canvas_state_manager import CanvasStateManager
 
 
@@ -124,8 +137,6 @@ def test_view_cannot_expose_narratron_only_action() -> None:
     definition = counter_definition()
     definition.transitions["add"].actor = "narratron"
     with pytest.raises(ValueError, match="Narratron-only"):
-        from components.canvas.game_runtime import validate_game_package
-
         validate_game_package(definition.model_dump_json().encode("utf-8"))
 
 
@@ -344,3 +355,120 @@ def test_example_adventure_checkers_narratron_interaction(tmp_path: Path) -> Non
     assert game.state["turn"] == 1
     assert game.revision == 3
 
+
+def test_game_package_size_limit_is_128kb(tmp_path: Path) -> None:
+    assert MAX_GAME_BYTES == 131_072
+    definition = counter_definition()
+    # Build a ~95 KiB package (above the old 64 KiB limit, within 128 KiB).
+    definition.constants = {"lore_table": ["x" * 900 for _ in range(95)]}
+    raw = definition.model_dump_json().encode("utf-8")
+    assert 65_536 < len(raw) <= MAX_GAME_BYTES
+    game = make_game(tmp_path, definition)
+    assert game.error == ""
+    assert game.state == {"count": 0}
+
+    oversized = b" " * (MAX_GAME_BYTES + 1)
+    with pytest.raises(ValueError, match="size limit"):
+        validate_game_package(oversized)
+
+
+def test_svg_graphics_from_game_folder_render_and_validate(tmp_path: Path) -> None:
+    game_dir = tmp_path / "game"
+    game_dir.mkdir(parents=True, exist_ok=True)
+    svg_text = (
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">'
+        '<g fill="#eab308" stroke="#1e293b" stroke-width="2">'
+        '<path d="M12 52 L52 52 L44 20 L20 20 Z"/>'
+        '<circle cx="32" cy="14" r="6"/>'
+        '</g>'
+        '</svg>'
+    )
+    (game_dir / "crown.svg").write_text(svg_text, encoding="utf-8")
+
+    definition = counter_definition()
+    definition.view.children.append(
+        ViewNode(
+            kind="svg",
+            props={"src": '"crown.svg"', "width": '"48"', "id": '"crown-graphic"'},
+        )
+    )
+    (game_dir / "game.json").write_text(definition.model_dump_json(), encoding="utf-8")
+
+    game = GameState(tmp_path, Mock(), Mock())
+    assert game.error == ""
+    payload = game.payload()
+    assert payload is not None
+    view_list = payload["view"]
+    assert type(view_list) is list
+    root_node = view_list[0]
+    assert type(root_node) is dict
+    children = root_node["children"]
+    assert type(children) is list
+    svg_node = children[-1]
+    assert type(svg_node) is dict
+    assert svg_node["kind"] == "svg"
+    assert svg_node["props"]["viewBox"] == "0 0 64 64"
+    assert svg_node["props"]["width"] == "48"
+    assert svg_node["props"]["src"] == "crown.svg"
+    svg_children = svg_node["children"]
+    assert type(svg_children) is list
+    assert len(svg_children) == 1
+    g_node = svg_children[0]
+    assert type(g_node) is dict
+    assert g_node["kind"] == "g"
+    assert g_node["props"]["fill"] == "#eab308"
+    assert len(g_node["children"]) == 2
+    assert g_node["children"][0]["kind"] == "path"
+    assert g_node["children"][1]["kind"] == "circle"
+
+
+@pytest.mark.parametrize(
+    "bad_svg",
+    [
+        '<svg><script>alert(1)</script></svg>',
+        '<svg onload="alert(1)"><circle cx="5" cy="5" r="4"/></svg>',
+        '<!DOCTYPE svg [<!ENTITY xxe "bad">]><svg/>',
+        '<svg><foreignObject><div>html</div></foreignObject></svg>',
+        '<svg><rect fill="url(https://evil.test/x)"/></svg>',
+    ],
+)
+def test_unsafe_svg_graphics_are_rejected(bad_svg: str) -> None:
+    with pytest.raises(ValueError):
+        validate_game_svg(bad_svg.encode("utf-8"))
+
+
+def test_contributor_permission_actions_and_narration(tmp_path: Path) -> None:
+    definition = counter_definition()
+    definition.transitions["add"].permission = "contributor"
+    # 'clear' remains default permission ('orator')
+    definition.view.children.append(
+        ViewNode(
+            kind="button",
+            props={"text": '"Clear"'},
+            action=ViewAction(name='"clear"', arguments="{}"),
+        )
+    )
+    game = make_game(tmp_path, definition)
+    callback = Mock()
+    game.on_player_action = callback
+
+    payload = game.payload()
+    assert payload is not None
+    children = payload["view"][0]["children"]
+    add_btn = children[1]
+    clear_btn = children[3]
+    assert add_btn["action"]["permission"] == "contributor"
+    assert clear_btn["action"]["permission"] == "orator"
+
+    # Contributor can take 'add' action and trigger narration callback
+    action = GameAction(name="add", arguments={"amount": 2}, revision=0)
+    game.act(action, actor="contributor")
+    assert game.state == {"count": 2}
+    assert game.revision == 1
+    callback.assert_called_once_with(action, {"revision": 1, "state": {"count": 2}})
+
+    # Contributor cannot take orator-only 'clear' action
+    with pytest.raises(UnauthorizedGameAction, match="Only the active orator"):
+        game.act(GameAction(name="clear", revision=1), actor="contributor")
+    assert game.state == {"count": 2}
+    assert game.revision == 1

@@ -199,6 +199,11 @@ def run_game_test(
             directory = Path(temporary)
             (directory / "game").mkdir()
             (directory / "game/game.json").write_bytes(content)
+            for svg_file in game_path.parent.rglob("*.svg"):
+                if svg_file.is_file():
+                    target_svg = (directory / "game") / svg_file.relative_to(game_path.parent)
+                    target_svg.parent.mkdir(parents=True, exist_ok=True)
+                    target_svg.write_bytes(svg_file.read_bytes())
             game = GameState(directory, no_persist, no_notify)
             if game.program is None:
                 raise ValueError(game.error)

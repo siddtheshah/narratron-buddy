@@ -4216,6 +4216,7 @@
             container: document.getElementById('game-state-layer'),
             toggleButton: document.getElementById('game-state-toggle-btn'),
             actionUrl: () => `/api/game/action?theater_id=${encodeURIComponent(currenttheaterId || '')}`,
+            canContribute: () => isCollabModeEnabled() && hasContributorsPermission(),
             canEdit: () => isCurrentOrator(),
             refresh: () => fetchLatestImage(),
         });
@@ -7941,6 +7942,7 @@
 
         function updateViewerCollabBar(enabled) {
             viewerCollabBar.style.display = isCurrentOrator() ? 'none' : 'flex';
+            gameRenderer.render();
             viewerCollabBar.classList.toggle('is-enabled', Boolean(enabled));
             viewerCollabBarStatus.textContent = enabled ? 'Collaboration: On' : 'Collaboration: Off';
         }
@@ -8111,6 +8113,7 @@
                         const isActiveOrator = data.metadata.is_active_orator;
                         const isContributor = data.metadata.is_contributor;
                         window._isContributor = Boolean(isOwner || isActiveOrator || isContributor);
+                        gameRenderer.render();
                         if (typeof isStampManagerOpen !== 'undefined' && isStampManagerOpen) {
                             if (typeof updateStampTabsVisibility === 'function') updateStampTabsVisibility();
                             updateStampManagerPermissionBanner();
@@ -8184,6 +8187,7 @@
             const isActiveOrator = currentUser && batonState.active_orator && currentUser.id === batonState.active_orator.id;
             const isContributorInList = currentUser && (batonState.contributors || []).some(u => u.id === currentUser.id);
             window._isContributor = Boolean(isOwner || isActiveOrator || isContributorInList);
+            gameRenderer.render();
 
             if (typeof isStampManagerOpen !== 'undefined' && isStampManagerOpen) {
                 updateStampManagerPermissionBanner();

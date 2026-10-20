@@ -30,7 +30,7 @@ MAX_DRAFT_BYTES = 100 * 1024 * 1024
 MAX_FILES = 500
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
 AUDIO_EXTENSIONS = {".mp3", ".wav", ".ogg", ".flac", ".m4a", ".aac"}
-TEXT_EXTENSIONS = {".txt", ".md", ".yaml", ".yml", ".json"}
+TEXT_EXTENSIONS = {".txt", ".md", ".yaml", ".yml", ".json", ".svg"}
 ROOT_FILES = {"theater.yaml", "planning.yaml", "metadata.json", "README.md"}
 
 
@@ -50,7 +50,7 @@ class BuilderFile(BaseModel):
 
 class FileWrite(BaseModel):
     path: str
-    content: str = Field(max_length=100_000)
+    content: str = Field(max_length=131_072)
 
 
 class FileMove(BaseModel):
@@ -87,6 +87,10 @@ def validate_text(path: str, content: str) -> None:
         if len(content.encode("utf-8")) > MAX_GAME_BYTES:
             raise ValueError("Game definition exceeds size limit.")
         validate_game_package(content.encode("utf-8"))
+    elif path.startswith("game/") and path.lower().endswith(".svg"):
+        from components.canvas.game_runtime import validate_game_svg
+
+        validate_game_svg(content.encode("utf-8"))
     if path.endswith((".yaml", ".yml")):
         mapping = TypeAdapter(dict[str, JsonValue]).validate_python(yaml.safe_load(content))
         if path == "theater.yaml" and not mapping:
@@ -118,6 +122,7 @@ def safe_asset_path(root: Path, relative: str) -> Path:
         raise ValueError("Reserved asset filename.")
     suffix = PurePosixPath(normalized).suffix.lower()
     allowed = normalized in ROOT_FILES or normalized == "game/game.json"
+    allowed |= len(parts) >= 2 and parts[0] == "game" and suffix == ".svg"
     allowed |= len(parts) >= 2 and parts[0] == "references" and suffix in IMAGE_EXTENSIONS
     allowed |= len(parts) >= 2 and parts[0] == "stamps" and suffix in IMAGE_EXTENSIONS
     if parts[:2] == ["references", "characters"]:
@@ -165,6 +170,8 @@ def upload_path(filename: str, folder: bool) -> str:
         return f"references/{relative}"
     name = parts[-1]
     suffix = PurePosixPath(name).suffix.lower()
+    if suffix == ".svg":
+        return f"game/{name}"
     if suffix in IMAGE_EXTENSIONS:
         if name.lower().startswith(("stamp_", "stamp-", "token_", "token-")):
             return f"stamps/{name}"

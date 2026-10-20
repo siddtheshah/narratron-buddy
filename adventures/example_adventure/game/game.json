@@ -1457,6 +1457,7 @@
   ],
   "transitions": {
     "select": {
+      "permission": "contributor",
       "parameters": {
         "type": "object",
         "properties": {
@@ -1476,6 +1477,7 @@
       "triggering": false
     },
     "move": {
+      "permission": "contributor",
       "parameters": {
         "type": "object",
         "properties": {
@@ -1618,6 +1620,16 @@
             "props": {
               "text": "\"Checkers Club\"",
               "fontSize": "\"20px\""
+            }
+          },
+          {
+            "kind": "svg",
+            "props": {
+              "id": "\"club-crest\"",
+              "src": "\"crest.svg\"",
+              "width": "\"32\"",
+              "height": "\"32\"",
+              "label": "\"Checkers Club crest\""
             }
           },
           {

@@ -5,8 +5,9 @@ from unittest.mock import Mock
 import pytest
 from playwright.sync_api import Page, Route, expect, sync_playwright
 
+from components.canvas.game_runtime import ViewNode
 from components.canvas.game_state import GameAction, GameState
-from testing.game_fixtures import make_game
+from testing.game_fixtures import counter_definition, make_game
 
 
 def test_checkers_renderer_moves_and_viewer_permissions(tmp_path: Path) -> None:
@@ -16,10 +17,12 @@ def test_checkers_renderer_moves_and_viewer_permissions(tmp_path: Path) -> None:
     <div id="game-state-layer" hidden></div><script type="module">
     import { createGameRenderer } from '/static/js/game-renderer.js';
     window.editable = true;
+    window.contributable = false;
     window.refresh = async () => renderer.render(await (await fetch('/latest')).json());
     const renderer = createGameRenderer({container: document.getElementById('game-state-layer'),
         toggleButton: document.getElementById('game-state-toggle-btn'),
-        actionUrl: () => '/action', canEdit: () => window.editable, refresh: window.refresh});
+        actionUrl: () => '/action', canEdit: () => window.editable,
+        canContribute: () => window.contributable, refresh: window.refresh});
     window.refresh();
     </script></body></html>"""
 
@@ -50,6 +53,7 @@ def test_checkers_renderer_moves_and_viewer_permissions(tmp_path: Path) -> None:
         toggle.click()
         expect(page.locator("#game-state-layer")).to_be_visible()
         expect(toggle).to_have_attribute("aria-expanded", "true")
+        expect(page.locator('[data-game-id="club-crest"]')).to_have_attribute("data-game-svg", "crest.svg")
         expect(page.locator(".game-grid .game-button")).to_have_count(64)
         page.locator('[data-game-id="square-40"]').click()
         expect(page.locator('[data-game-id="square-33"]')).to_be_enabled()
@@ -70,12 +74,33 @@ def test_checkers_renderer_moves_and_viewer_permissions(tmp_path: Path) -> None:
         page.evaluate("window.editable = false; window.refresh()")
         expect(page.get_by_role("button", name="New game")).to_be_disabled()
         assert page.locator(".game-grid button:enabled").count() == 0
-        # A different state schema and SVG view work without another renderer.
-        game = make_game(tmp_path / "counter")
+        # When collaboration is enabled for a contributor, contributor actions are enabled while orator-only actions stay disabled.
+        page.evaluate("window.contributable = true; window.refresh()")
+        expect(page.get_by_role("button", name="New game")).to_be_disabled()
+        expect(page.locator('[data-game-id="square-17"]')).to_be_enabled()
+        page.locator('[data-game-id="square-17"]').click()
+        expect(page.locator('[data-game-id="square-26"]')).to_be_enabled()
+        page.locator('[data-game-id="square-26"]').click()
+        expect(page.locator('[data-game-id="status"]')).to_have_text("Red to move")
+        assert game.state["board"][26] == -1
+        # A different state schema and SVG view (including game/*.svg asset) work without another renderer.
+        counter_dir = tmp_path / "counter"
+        (counter_dir / "game").mkdir(parents=True, exist_ok=True)
+        (counter_dir / "game/badge.svg").write_text(
+            '<svg viewBox="0 0 24 24"><g fill="#facc15"><path d="M12 2 L15 9 L22 9 L16 14 L18 21 L12 17 L6 21 L8 14 L2 9 L9 9 Z"/></g></svg>',
+            encoding="utf-8",
+        )
+        definition = counter_definition()
+        definition.view.children.append(ViewNode(kind="svg", props={"src": '"badge.svg"', "id": '"svg-badge"'}))
+        game = make_game(counter_dir, definition)
         page.reload()
         toggle.click()
         expect(page.locator('[data-game-id="counter"]')).to_have_text("Count: 0")
         expect(page.locator(".game-svg circle")).to_have_attribute("r", "0")
+        expect(page.locator('[data-game-id="svg-badge"]')).to_have_attribute("data-game-svg", "badge.svg")
+        expect(page.locator('[data-game-id="svg-badge"] g path')).to_have_attribute(
+            "d", "M12 2 L15 9 L22 9 L16 14 L18 21 L12 17 L6 21 L8 14 L2 9 L9 9 Z"
+        )
         page.get_by_role("button", name="Add one").click()
         expect(page.locator('[data-game-id="counter"]')).to_have_text("Count: 1")
         assert game.state == {"count": 1}
@@ -227,7 +252,6 @@ def test_game_panel_toggle_preserves_position(movable_game_page: Page) -> None:
     assert panel.evaluate("el => el.style.left") == "60%"
     assert panel.evaluate("el => el.style.top") == "60%"
 
-
     toggle = movable_game_page.get_by_role("button", name="Toggle game")
     toggle.click()
     expect(panel).to_be_hidden()
@@ -235,4 +259,3 @@ def test_game_panel_toggle_preserves_position(movable_game_page: Page) -> None:
     expect(panel).to_be_visible()
     assert panel.evaluate("el => el.style.left") == "60%"
     assert panel.evaluate("el => el.style.top") == "60%"
-

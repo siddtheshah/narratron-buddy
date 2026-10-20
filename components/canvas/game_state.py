@@ -30,6 +30,28 @@ class StaleGameAction(ValueError):
     """The action was based on a state that has already changed."""
 
 
+class UnauthorizedGameAction(ValueError):
+    """The caller does not have permission to take this game action."""
+
+
+def _view_nodes_allow_contributor(nodes: list[JsonValue], action: GameAction) -> bool:
+    for item in nodes:
+        if type(item) is not dict:
+            continue
+        node_action = item.get("action")
+        if type(node_action) is dict:
+            if (
+                node_action.get("name") == action.name
+                and node_action.get("permission") == "contributor"
+                and node_action.get("arguments") == action.arguments
+            ):
+                return True
+        children = item.get("children")
+        if type(children) is list and _view_nodes_allow_contributor(children, action):
+            return True
+    return False
+
+
 class GameState:
     def __init__(self, directory: Path, persist: Callable[[], None], notify: Callable[..., None]) -> None:
         self._lock = RLock()
@@ -52,7 +74,7 @@ class GameState:
             if not path.resolve().is_relative_to(directory.resolve()) or path.stat().st_size > MAX_GAME_BYTES:
                 raise ValueError("Game package path or size is invalid.")
             content = path.read_bytes()
-            self.program = validate_game_package(content)
+            self.program = validate_game_package(content, game_dir=path.parent)
             self.definition_hash = sha256(content).hexdigest()
             self.state = json.loads(json.dumps(self.program.definition.initial))
             self._view = json.loads(json.dumps(self.program.initial_view))
@@ -79,7 +101,7 @@ class GameState:
         context = execution.context(state)
         execution.validate(state, context)
         view = [node.model_dump(mode="json") for node in execution.render(self.program.definition.view, context)]
-        if len(json.dumps(view).encode("utf-8")) > MAX_VALUE_BYTES:
+        if len(json.dumps(view).encode("utf-8")) - execution.svg_expanded_bytes > MAX_VALUE_BYTES:
             raise ValueError("Rendered view exceeds its size budget.")
         model_state, actions = execution.model_context(context)
         self._view = view
@@ -171,7 +193,7 @@ class GameState:
         except Exception:
             logger.exception("Game update notification failed at revision %s", self.revision)
 
-    def act(self, action: GameAction, actor: Literal["player", "narratron"] = "player") -> dict[str, JsonValue] | None:
+    def act(self, action: GameAction, actor: Literal["player", "contributor", "narratron"] = "player") -> dict[str, JsonValue] | None:
         with self._lock:
             if self.program is None:
                 logger.debug("[GameState] Act rejected: no playable game")
@@ -190,14 +212,32 @@ class GameState:
             if transition is None:
                 logger.debug("[GameState] Act rejected: unknown action '%s'", action.name)
                 raise ValueError("Unknown game action.")
-            if transition.actor != actor:
-                logger.debug(
-                    "[GameState] Act rejected: actor mismatch for '%s' (action actor='%s', required actor='%s')",
-                    action.name,
-                    actor,
-                    transition.actor,
-                )
-                raise ValueError("This actor cannot take that game action.")
+            if actor == "narratron":
+                if transition.actor != "narratron":
+                    logger.debug(
+                        "[GameState] Act rejected: actor mismatch for '%s' (action actor='%s', required actor='%s')",
+                        action.name,
+                        actor,
+                        transition.actor,
+                    )
+                    raise ValueError("This actor cannot take that game action.")
+            else:
+                if not transition.is_player_actor:
+                    logger.debug(
+                        "[GameState] Act rejected: actor mismatch for '%s' (action actor='%s', required actor='%s')",
+                        action.name,
+                        actor,
+                        transition.actor,
+                    )
+                    raise ValueError("This actor cannot take that game action.")
+                if actor == "contributor" and not (
+                    transition.allows_contributor or _view_nodes_allow_contributor(self._view, action)
+                ):
+                    logger.debug(
+                        "[GameState] Act rejected: contributor permission required for '%s'",
+                        action.name,
+                    )
+                    raise UnauthorizedGameAction("Only the active orator can take this game action.")
             logger.debug(
                 "[GameState] Executing action '%s' by actor '%s' at revision=%d (arguments=%s)",
                 action.name,
@@ -238,7 +278,7 @@ class GameState:
                 raise ValueError(str(exc)[:250]) from exc
             self.error = ""
             self._notify_safely()
-            if actor == "player" and transition.triggering and self.on_player_action is not None:
+            if actor in ("player", "contributor") and transition.triggering and self.on_player_action is not None:
                 try:
                     snapshot = self.story_snapshot("responder")
                     assert snapshot is not None

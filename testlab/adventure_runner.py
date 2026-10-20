@@ -572,6 +572,7 @@ class AdventureSession:
         (game_target / "game.json").unlink(missing_ok=True)
         adventure_game = self.adventure_path / "game" / "game.json"
         if adventure_game.is_file():
+            shutil.copytree(self.adventure_path / "game", game_target, dirs_exist_ok=True)
             shutil.copy2(adventure_game, game_target / "game.json")
 
         for name in ("planning.yaml", "planning.yml"):

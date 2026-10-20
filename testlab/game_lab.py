@@ -52,6 +52,11 @@ class GameSession:
             root = Path(self.directory.name)
             (root / "game").mkdir()
             (root / "game/game.json").write_bytes(content)
+            for svg_file in path.parent.rglob("*.svg"):
+                if svg_file.is_file():
+                    target_svg = (root / "game") / svg_file.relative_to(path.parent)
+                    target_svg.parent.mkdir(parents=True, exist_ok=True)
+                    target_svg.write_bytes(svg_file.read_bytes())
             self.game = GameState(root, no_persist, no_notify)
             if self.game.program is None:
                 raise ValueError(self.game.error)

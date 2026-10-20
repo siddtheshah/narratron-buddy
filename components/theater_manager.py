@@ -517,6 +517,8 @@ def extract_asset_package(
                     raise ValueError(f"File '{filename}' exceeds maximum allowed size of 5MB.")
                 if parts[-2:] == ["game", "game.json"]:
                     reference_files.append(("game/game.json", content))
+                elif "game" in parts and parts.index("game") < len(parts) - 1 and filename.lower().endswith(".svg"):
+                    reference_files.append(("/".join(parts[parts.index("game"):]), content))
                 elif filename.lower() in ("planning.yaml", "planning.yml"):
                     reference_files.append(("planning.yaml", content))
                 elif "references" in parts or (filename.lower().endswith((".png", ".jpg", ".jpeg", ".webp", ".gif")) and "playlists" not in parts):
@@ -711,6 +713,12 @@ class TheaterManager:
                     raise ValueError("Game definition exceeds size limit.")
                 validate_game_package(content)
                 continue
+            if "game" in parts and parts.index("game") < len(parts) - 1 and parts[-1].lower().endswith(".svg"):
+                from components.canvas.game_runtime import validate_game_svg
+
+                asset_destination(theater_dir / "game", "/".join(parts[parts.index("game") + 1:]))
+                validate_game_svg(content)
+                continue
             if "stamps" in parts or parts[-1].lower() in {"metadata.json", "planning.yaml", "planning.yml"}:
                 if "stamps" in parts:
                     asset_destination(theater_dir / "stamps", "/".join(parts[parts.index("stamps") + 1:]))
@@ -789,6 +797,11 @@ class TheaterManager:
                 game_path = asset_destination(theater_dir, "game/game.json")
                 game_path.parent.mkdir(parents=True, exist_ok=True)
                 game_path.write_bytes(content)
+                continue
+            if "game" in parts and parts.index("game") < len(parts) - 1 and parts[-1].lower().endswith(".svg"):
+                svg_path = asset_destination(theater_dir / "game", "/".join(parts[parts.index("game") + 1:]))
+                svg_path.parent.mkdir(parents=True, exist_ok=True)
+                svg_path.write_bytes(content)
                 continue
             if relative_filename in ("planning.yaml", "planning.yml") or (parts and parts[-1].lower() in ("planning.yaml", "planning.yml")):
                 asset_destination(theater_dir, "planning.yaml").write_bytes(content)

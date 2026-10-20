@@ -1,10 +1,30 @@
 // Generic, host-rendered declarative views. No theater HTML, CSS or JavaScript executes.
-const TAGS = { column: 'div', row: 'div', grid: 'div', text: 'p', button: 'button', svg: 'svg', rect: 'rect', circle: 'circle', svg_text: 'text' };
-const SVG = new Set(['svg', 'rect', 'circle', 'svg_text']);
+const TAGS = {
+    column: 'div', row: 'div', grid: 'div', text: 'p', button: 'button',
+    svg: 'svg', g: 'g', path: 'path', rect: 'rect', circle: 'circle', ellipse: 'ellipse',
+    line: 'line', polyline: 'polyline', polygon: 'polygon', svg_text: 'text', tspan: 'tspan',
+    defs: 'defs', linearGradient: 'linearGradient', radialGradient: 'radialGradient',
+    stop: 'stop', clipPath: 'clipPath', mask: 'mask', symbol: 'symbol',
+};
+const SVG = new Set([
+    'svg', 'g', 'path', 'rect', 'circle', 'ellipse', 'line', 'polyline', 'polygon',
+    'svg_text', 'tspan', 'defs', 'linearGradient', 'radialGradient', 'stop',
+    'clipPath', 'mask', 'symbol',
+]);
 const STYLES = new Set(['gap', 'padding', 'color', 'background', 'fontSize', 'fontWeight', 'borderRadius', 'outline', 'aspectRatio', 'textAlign']);
-const ATTRIBUTES = new Set(['viewBox', 'x', 'y', 'width', 'height', 'cx', 'cy', 'r', 'rx', 'fill', 'stroke', 'stroke-width', 'text-anchor', 'dominant-baseline']);
+const ATTRIBUTES = new Set([
+    'viewBox', 'preserveAspectRatio', 'x', 'y', 'x1', 'y1', 'x2', 'y2', 'dx', 'dy',
+    'width', 'height', 'cx', 'cy', 'r', 'rx', 'ry', 'fx', 'fy', 'fr',
+    'd', 'points', 'fill', 'fill-opacity', 'fill-rule', 'stroke', 'stroke-width',
+    'stroke-opacity', 'stroke-linecap', 'stroke-linejoin', 'stroke-dasharray',
+    'stroke-dashoffset', 'stroke-miterlimit', 'opacity', 'transform',
+    'text-anchor', 'dominant-baseline', 'font-size', 'font-weight', 'font-family',
+    'letter-spacing', 'offset', 'stop-color', 'stop-opacity', 'gradientUnits',
+    'gradientTransform', 'spreadMethod', 'clipPathUnits', 'maskUnits', 'maskContentUnits',
+]);
 
-export function createGameRenderer({ container, toggleButton, actionUrl, canEdit, refresh,
+export function createGameRenderer({ container, toggleButton, actionUrl, canEdit,
+    canContribute = () => false, refresh,
     stylesheetUrl = '/static/css/game-renderer.css?v=5', initiallyOpen = false,
     onPendingChange = () => {}, onMove = () => {} }) {
     const stylesheet = document.createElement('link');
@@ -24,6 +44,12 @@ export function createGameRenderer({ container, toggleButton, actionUrl, canEdit
     let startLeft = 0;
     let startTop = 0;
 
+    function canAct(action) {
+        if (!action) return false;
+        if (canEdit()) return true;
+        return action.permission === 'contributor' && Boolean(canContribute());
+    }
+
     toggleButton.addEventListener('click', event => {
         event.stopPropagation();
         if (!game) return;
@@ -33,7 +59,7 @@ export function createGameRenderer({ container, toggleButton, actionUrl, canEdit
     toggleButton.addEventListener('pointerdown', event => event.stopPropagation());
 
     async function send(action) {
-        if (pending || !canEdit() || !game?.view) return;
+        if (pending || !canAct(action) || !game?.view) return;
         if (action.confirmation && !window.confirm(action.confirmation)) return;
         pending = true;
         onPendingChange(true);
@@ -67,6 +93,7 @@ export function createGameRenderer({ container, toggleButton, actionUrl, canEdit
         element.setAttribute('class', `game-node game-${node.kind}`);
         const props = node.props || {};
         if (props.id) element.dataset.gameId = String(props.id);
+        if (props.src && node.kind === 'svg') element.dataset.gameSvg = String(props.src);
         if (props.label) element.setAttribute('aria-label', String(props.label));
         if (props.text !== undefined) element.textContent = String(props.text);
         if (props.pressed !== undefined) element.setAttribute('aria-pressed', String(Boolean(props.pressed)));
@@ -79,7 +106,8 @@ export function createGameRenderer({ container, toggleButton, actionUrl, canEdit
                     element.style[name] = value;
                 }
             }
-            if (SVG.has(node.kind) && ATTRIBUTES.has(name) && String(value).length <= 100
+            const maxAttrLength = (name === 'd' || name === 'points') ? 10000 : 200;
+            if (SVG.has(node.kind) && ATTRIBUTES.has(name) && String(value).length <= maxAttrLength
                 && !/url\s*\(|[<>{}\\]/i.test(String(value))) element.setAttribute(name, String(value));
         }
         if (node.kind === 'grid') {
@@ -88,7 +116,8 @@ export function createGameRenderer({ container, toggleButton, actionUrl, canEdit
         }
         if (node.kind === 'button') {
             element.type = 'button';
-            element.disabled = pending || !canEdit() || Boolean(props.disabled) || !node.action;
+            element.disabled = pending || !canAct(node.action) || Boolean(props.disabled) || !node.action;
+            if (node.action?.permission) element.dataset.gamePermission = String(node.action.permission);
             if (node.action) element.addEventListener('click', () => send(node.action));
         }
         for (const child of node.children || []) element.append(nodeView(child, depth + 1));
@@ -205,7 +234,12 @@ export function createGameRenderer({ container, toggleButton, actionUrl, canEdit
             status.setAttribute('role', 'status');
             panel.append(status);
         }
-        if (!canEdit()) panel.append(message('Read-only · the active orator controls the game.', 'game-message'));
+        if (!canEdit()) {
+            const note = canContribute()
+                ? 'Contributor mode · collaboration-enabled actions are unlocked.'
+                : 'Read-only · the active orator controls the game.';
+            panel.append(message(note, 'game-message'));
+        }
         if (error || game.error) {
             const alert = message(error || game.error, 'game-error');
             alert.setAttribute('role', 'alert');
@@ -216,14 +250,15 @@ export function createGameRenderer({ container, toggleButton, actionUrl, canEdit
 
     return {
         render(next) {
-            if (next?.definition_hash === game?.definition_hash && next?.revision < game?.revision) return;
-            const nextSignature = JSON.stringify([next, canEdit()]);
+            const target = next === undefined ? game : next;
+            if (next !== undefined && next?.definition_hash === game?.definition_hash && next?.revision < game?.revision) return;
+            const nextSignature = JSON.stringify([target, canEdit(), Boolean(canContribute())]);
             if (nextSignature === signature) return;
             signature = nextSignature;
-            game = next;
+            game = target;
             if (activePointerId === null) {
-                if (next?.placement?.left_pct !== undefined) latestLeft = Number(next.placement.left_pct) || 50;
-                if (next?.placement?.top_pct !== undefined) latestTop = Number(next.placement.top_pct) || 50;
+                if (target?.placement?.left_pct !== undefined) latestLeft = Number(target.placement.left_pct) || 50;
+                if (target?.placement?.top_pct !== undefined) latestTop = Number(target.placement.top_pct) || 50;
             }
             draw();
         },

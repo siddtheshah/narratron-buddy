@@ -259,7 +259,7 @@ class AdventureService:
                             theater_config = loaded
                     except Exception as e:
                         logger.warning("Failed to parse theater.yaml for %s: %s", adventure_id, e)
-                elif rel == "game/game.json":
+                elif rel == "game/game.json" or (parts[0] == "game" and filename.lower().endswith(".svg")):
                     reference_files.append((rel, content))
                 elif rel in ("planning.yaml", "planning.yml") or filename.lower() in ("planning.yaml", "planning.yml"):
                     reference_files.append(("planning.yaml", content))
