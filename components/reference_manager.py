@@ -889,7 +889,7 @@ class ReferenceManager:
         return directory
 
     def list_references(self, include_characters: bool = True) -> list[dict[str, str]]:
-        """Catalog authored assets and latest named references, never image outputs."""
+        """Catalog authored assets, named references, and registered canvas captures."""
         entries: list[dict[str, str]] = []
         root = self.theater.references_dir()
         config = self.theater.config()
@@ -924,6 +924,18 @@ class ReferenceManager:
                         f"{kind} reference; use the exact name tag in image and animation prompts."
                     ),
                 })
+        seen_capture_paths: set[str] = set()
+        for handle, path in self.available_canvas_captures().items():
+            if handle == "canvas_capture" or path in seen_capture_paths or not Path(path).is_file():
+                continue
+            seen_capture_paths.add(path)
+            entries.append({
+                "name": handle,
+                "alias": f"<{handle}>",
+                "path": path,
+                "title": f"Canvas capture: {handle}",
+                "description": "Saved canvas capture; use the exact tag in image and animation prompts.",
+            })
         return entries
 
     def recent_reference_tags(self, limit: int = 10) -> list[str]:

@@ -472,6 +472,13 @@ class LiveAgentSession:
                 )
                 text_part = next((part for part in content.parts if part.text is not None), None)
                 if text_part is not None:
+                    if state_text is not None and text_part.text == state_text:
+                        # Saving the snapshot adds a reference. Advertise that
+                        # catalog change now and remember the same state for deduplication.
+                        state_text = format_canvas_state(
+                            self.canvas_state_manager, self.reference_manager,
+                        )
+                        text_part.text = state_text
                     text_part.text += reference_text
                 else:
                     content.parts.insert(0, types.Part(text=reference_text.lstrip()))

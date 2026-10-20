@@ -948,6 +948,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
             content = session.live_request_queue.send_content.call_args.args[0]
             self.assertEqual(content.role, "user")
             capture_handle = content.parts[0].text.split("[Canvas Capture]: ", 1)[1].splitlines()[0]
+            self.assertIn(f"[Available References]: <{capture_handle}>", content.parts[0].text)
             self.assertFalse("/" in capture_handle or "\\" in capture_handle)
             self.assertFalse(capture_handle.endswith(".png"))
             ref_mgr = ReferenceManager(canvas.theater)
@@ -975,8 +976,13 @@ class TestLiveAgentSessionManager(unittest.TestCase):
             self.assertIsNotNone(next_capture_path)
             self.assertEqual(Path(next_capture_path).read_bytes(), content.parts[-1].inline_data.data)
             self.assertEqual(Path(resolved_capture_path).read_bytes(), first_capture)
+            # The annotation-only snapshot registered a new reference; the next
+            # full state advertises that catalog change once.
+            self.assertTrue(session.send_agent_requested_observability())
+            content = session.live_request_queue.send_content.call_args.args[0]
+            self.assertIn(f"<{next_handle}>", content.parts[0].text)
             self.assertFalse(session.send_agent_requested_observability())
-            self.assertEqual(session.live_request_queue.send_content.call_count, 2)
+            self.assertEqual(session.live_request_queue.send_content.call_count, 3)
 
     def test_story_snapshot_omits_capture_reference_and_preserves_annotations(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

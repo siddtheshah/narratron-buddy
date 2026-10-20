@@ -34,10 +34,10 @@ class ReferenceTool(BaseTools):
 
     @logged_tool_call
     def list_references(self) -> list[dict[str, str]]:
-        """Browse authored assets and the latest character and scene references.
+        """Browse authored assets, character and scene references, and saved canvas captures.
 
         Returns names, exact reference tags, titles, descriptions, and paths.
-        Generated image outputs are excluded. Use reference tags in image and
+        Unregistered image outputs are excluded. Use reference tags in image and
         animation prompts; character portraits cannot be displayed as scenery.
         """
         result = self.reference_manager.list_references()
@@ -52,7 +52,7 @@ class ReferenceTool(BaseTools):
             query: Case-insensitive text to find; empty text lists all references.
 
         Returns matching reference entries with names, tags, metadata, and paths.
-        Generated image outputs are excluded.
+        Unregistered image outputs are excluded; registered canvas captures are included.
         """
         result = self.reference_manager.find_image_names(query)
         self._trigger_after_tool_call("search_references")

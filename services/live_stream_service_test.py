@@ -1,6 +1,7 @@
 import asyncio
 import os
 import unittest
+from io import BytesIO
 
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -130,6 +131,48 @@ def test_format_canvas_state_limits_tool_catalog_to_ten_newest_references(tmp_pa
     refreshed = format_canvas_state(CanvasFixture(), manager)
     assert f"[Available References]: {tags_by_path[str(paths[0])]}, " in refreshed
     assert tags_by_path[str(paths[2])] not in refreshed
+
+
+@pytest.mark.parametrize("reload_manager", [False, True])
+def test_recent_canvas_captures_share_reference_limit_without_paths(
+    tmp_path: Path, reload_manager: bool,
+) -> None:
+    theater = TheaterManager(tmp_path).theater("stage")
+    manager = ReferenceManager(theater, MagicMock(spec=TextResponseProvider))
+    portrait = theater.updated_characters_dir() / "Mara" / "1.png"
+    portrait.parent.mkdir(parents=True)
+    Image.new("RGB", (8, 8), "blue").save(portrait)
+    os.utime(portrait, (1010.5, 1010.5))
+
+    handles: list[str] = []
+    for index in range(12):
+        buffer = BytesIO()
+        Image.new("RGB", (8, 8), (index, 0, 0)).save(buffer, format="PNG")
+        handle = manager.save_canvas_capture(buffer.getvalue(), "image/png")
+        assert handle is not None
+        handles.append(handle)
+        capture_path = manager.get_canvas_capture_path(handle)
+        assert capture_path is not None
+        os.utime(capture_path, (1000 + index, 1000 + index))
+
+    if reload_manager:
+        manager = ReferenceManager(theater, MagicMock(spec=TextResponseProvider))
+    tool = ReferenceTool(theater, manager)
+    entries = tool.list_references()
+    assert len(entries) == 13  # One entry per capture, without lookup aliases.
+    assert tool.search_references(handles[-1])[0]["alias"] == f"<{handles[-1]}>"
+    expected = [f"<{handles[-1]}>", "<Mara>"] + [
+        f"<{handle}>" for handle in reversed(handles[3:-1])
+    ]
+    assert manager.recent_reference_tags() == expected
+    state = format_canvas_state(CanvasFixture(), manager)
+    assert f"[Available References]: {', '.join(expected)}." in state
+    for entry in entries:
+        assert entry["path"] not in state
+    for handle in handles[:3]:
+        assert f"<{handle}>" not in state
+    assert "<canvas_capture>" not in state
+    assert ".png" not in state
 
 
 def test_format_canvas_state_reads_current_character_catalog_without_story_sync(tmp_path: Path) -> None:
