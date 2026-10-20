@@ -16,7 +16,7 @@ from providers import (
     ImageProviderError,
     get_image_provider,
 )
-from tools.base_tool import BaseTools, CANVAS_PINNED_MESSAGE, blocked_when_canvas_pinned, logged_tool_call, with_cycle_cooldown
+from tools.base_tool import BaseTools, CANVAS_PINNED_MESSAGE, blocked_when_canvas_pinned, with_cycle_cooldown
 from tools.tool_metadata import terminal
 from tools.image.prompt_cleanup import clean_image_prompt
 from utils.image_utils import (
@@ -166,16 +166,6 @@ class ImageTools(BaseTools):
             logger.debug("[ImageTools] Registered %s reference images.", len(entries))
         except Exception as e:
             logger.warning(f"[ImageTools] Failed to load references: {e}")
-
-    def list_references(self) -> list[dict[str, str]]:
-        """List authored and latest session scene reference images.
-
-        Returns:
-            A list of dictionaries with image names, file paths, and metadata descriptions.
-        """
-        results = self.reference_manager.list_references(include_characters=False)
-        self._trigger_after_tool_call("list_references")
-        return results
 
     def join_generation(self, timeout: float = 10.0) -> None:
         """Helper for unit tests or teardown to wait for background image generation thread."""
@@ -599,39 +589,3 @@ class ImageTools(BaseTools):
 
         self._trigger_after_tool_call("show_image")
         return res
-
-
-    @logged_tool_call
-    def browse_images(self) -> list[str]:
-        """Browse available scene and authored reference images.
-
-        Returns:
-            A list of file paths to all available images.
-        """
-        try:
-            images = [entry["path"] for entry in self.reference_manager.list_references(include_characters=False)]
-            self._trigger_after_tool_call("browse_images")
-            logger.debug(f"[ImageTools] Found {len(images)} images: {images}")
-            return images
-        except Exception as e:
-            self._trigger_after_tool_call("browse_images")
-            logger.debug(f"[ImageTools] Error browsing images: {e}")
-            return [f"Error browsing images: {e}"]
-
-    @logged_tool_call
-    def search_image_by_metadata(self, metadata_query: str) -> list[str]:
-        """Search for images that match a given metadata description across reference images.
-
-        Args:
-            metadata_query: A string to search for in image metadata titles, descriptions, names, or EXIF data.
-
-        Returns:
-            A list of file paths to images matching the query.
-        """
-        try:
-            matches = [entry["path"] for entry in self.reference_manager.find_image_names(metadata_query, include_characters=False)]
-            self._trigger_after_tool_call("search_image_by_metadata")
-            return matches
-        except Exception as e:
-            self._trigger_after_tool_call("search_image_by_metadata")
-            return [f"Error searching images: {e}"]

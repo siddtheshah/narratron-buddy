@@ -65,6 +65,7 @@ from components.canvas.game_runtime import GameAction, RenderedNode
 
 from components.canvas.canvas_state_service import CanvasStateService
 from components.reference_manager import ReferenceManager
+from tools.reference_tool import ReferenceTool
 from components.theater_manager import TheaterManager
 from services.live_agent import (
     AGENT_INSTRUCTION_TEMPLATE,
@@ -155,11 +156,13 @@ class MockToolBundle:
                 logger.warning("Error in tool call callback: %s", e)
         return result
 
-    # --- Image Tools ---
+    # --- Reference Tools ---
 
     def list_references(self) -> List[Dict[str, str]]:
         """List preloaded reference images from the session references directory."""
         return self._record("list_references", {}, list(self.references))
+
+    # --- Image Tools ---
 
     def create_image(
         self,
@@ -201,16 +204,6 @@ class MockToolBundle:
             {"reference_handle": reference_handle, "transition": transition, "effect": effect},
             result,
         )
-
-    def browse_images(self) -> List[str]:
-        """Returns a list of all available generated image file paths."""
-        return self._record("browse_images", {}, list(self._created_images))
-
-    def search_image_by_metadata(self, metadata_query: str) -> List[str]:
-        """Returns a list of image file paths whose metadata matches the query."""
-        q = metadata_query.lower()
-        matches = [img for img in self._created_images if q in img.lower()]
-        return self._record("search_image_by_metadata", {"metadata_query": metadata_query}, matches)
 
     # --- Chat Tools ---
 
@@ -513,6 +506,12 @@ class AdventureSession:
         if bool(sp_config.get("adventure_mode", False)):
             self.story_tool.planning_module.on_trigger_story_response = self._trigger_game_story_response
 
+        reference_manager = (
+            self.story_tool.reference_manager if bool(sp_config.get("adventure_mode", False))
+            else ReferenceManager(theater)
+        )
+        self.reference_tools = ReferenceTool(theater, reference_manager, canvas_manager)
+
         # Build mock peripheral tool bundle
         references = self.theater_manager.get_theater_references(self.session_id)
         playlists = self.theater_manager.get_theater_playlists(self.session_id)
@@ -650,6 +649,8 @@ class AdventureSession:
         tools: List[Callable[..., Any]] = [
             self.mock_tools.show_image,
             self.mock_tools.send_chat_message,
+            self.reference_tools.list_references,
+            self.reference_tools.search_references,
         ]
 
         if user_help_enabled:
@@ -700,7 +701,7 @@ class AdventureSession:
         """Create ADK Agent using AGENT_INSTRUCTION_TEMPLATE and adventure config."""
         theater = self.theater_manager.theater(self.session_id)
         adventure_mode = bool(self.config.get("story_planning", {}).get("adventure_mode", False))
-        reference_manager = self.story_tool.reference_manager if adventure_mode else ReferenceManager(theater)
+        reference_manager = self.reference_tools.reference_manager
         preloaded_references: List[Dict[str, str]] = reference_manager.list_references()
         if not adventure_mode:
             preloaded_references.extend(self.mock_tools.references)

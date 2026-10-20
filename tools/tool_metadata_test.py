@@ -68,8 +68,8 @@ def test_finalized_actions_are_terminal_and_lookups_are_not() -> None:
     ):
         assert action.__dict__["terminal"] is True
     for lookup in (
-        ImageTools.browse_images, ImageTools.search_image_by_metadata,
-        ImageTools.list_references, AnimationTools.browse_animations,
+        ReferenceTool.list_references, ReferenceTool.search_references,
+        AnimationTools.browse_animations,
         ReferenceTool.lookup_character, ObservabilityTools.request_canvas_observability,
         UserHelpService.list_help_files, UserHelpService.search_help_files,
         UserHelpService.read_help_file,

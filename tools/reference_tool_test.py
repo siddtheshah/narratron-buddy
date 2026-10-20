@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import unittest
+from pathlib import Path
 from unittest.mock import MagicMock
+
+from PIL import Image, PngImagePlugin
 
 from components.canvas.story_state import StoryState
 from components.canvas_state import CanvasStateManager
@@ -12,7 +15,7 @@ from components.reference_manager import (
     CharacterLookupResult,
     ReferenceManager,
 )
-from components.theater_manager import Theater
+from components.theater_manager import Theater, TheaterManager
 from tools.reference_tool import ReferenceTool
 
 
@@ -200,3 +203,35 @@ class TestReferenceTool(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_reference_discovery_searches_metadata_and_latest_versions(tmp_path: Path) -> None:
+    theater = TheaterManager(base_theaters_dir=str(tmp_path)).theater("reference-search")
+    theater.directory().mkdir(parents=True)
+    (theater.directory() / "theater.yaml").write_text(
+        "reference_generation_enabled: false\n", encoding="utf-8"
+    )
+    metadata = PngImagePlugin.PngInfo()
+    metadata.add_text("Title", "The Candlelit Scribe")
+    metadata.add_text("Description", "A chrysolic monk writing by candlelight")
+    authored = theater.references_dir() / "scribe.png"
+    old_scene = theater.scenes_dir() / "Harbor" / "1.png"
+    latest_scene = theater.updated_scenes_dir() / "Harbor" / "2.png"
+    portrait = theater.characters_dir() / "Mira" / "1.png"
+    output = theater.image_artifacts_dir() / "generated_harbor.png"
+    for path in (authored, old_scene, latest_scene, portrait, output):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        Image.new("RGB", (8, 8), "blue").save(path, pnginfo=metadata if path == authored else None)
+    manager = ReferenceManager(theater)
+    canvas = MagicMock(spec=CanvasStateManager)
+    tool = ReferenceTool(theater, manager, canvas_manager=canvas)
+
+    entries = tool.list_references()
+    assert {entry["path"] for entry in entries} == {str(authored), str(latest_scene), str(portrait)}
+    assert tool.search_references("SCRIBE")[0]["title"] == "The Candlelit Scribe"
+    assert tool.search_references("chrysolic")[0]["description"] == "A chrysolic monk writing by candlelight"
+    assert tool.search_references("<Harbor>")[0]["path"] == str(latest_scene)
+    assert tool.search_references("Mira")[0]["alias"] == "<Mira>"
+    assert tool.search_references("generated_harbor") == []
+    assert tool.search_references("") == entries
+    canvas.visual.update_visual.assert_not_called()

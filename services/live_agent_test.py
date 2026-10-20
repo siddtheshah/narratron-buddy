@@ -150,8 +150,8 @@ class TestCreateAgent(unittest.TestCase):
         self, mock_agent_cls: MagicMock, mock_bundle_fn: MagicMock, mock_config: MagicMock,
     ) -> None:
         mock_config.return_value = {"live_agent": {"provider": "gemini", "model_id": "gemini-3.8-live"}}
-        mock_image_tools = MagicMock()
-        mock_image_tools.list_references.return_value = [
+        mock_reference_tools = MagicMock()
+        mock_reference_tools.list_references.return_value = [
             {
                 "name": "hero_character",
                 "alias": "hero_character",
@@ -161,7 +161,7 @@ class TestCreateAgent(unittest.TestCase):
         ]
         mock_tool = MagicMock()
         mock_tool.name = "list_references"
-        mock_tool.func = mock_image_tools.list_references
+        mock_tool.func = mock_reference_tools.list_references
         mock_bundle = MagicMock()
         mock_bundle.tools = [mock_tool]
         mock_bundle_fn.return_value = mock_bundle
@@ -169,7 +169,7 @@ class TestCreateAgent(unittest.TestCase):
         theater = make_test_theater("test_agent_theater", {})
         agent_inst = create_agent(theater, tool_bundle=mock_bundle)
 
-        mock_image_tools.list_references.assert_called_once()
+        mock_reference_tools.list_references.assert_called_once()
         instruction = mock_agent_cls.call_args.kwargs["instruction"]
         self.assertIn("Preloaded References Context", instruction)
         self.assertIn("hero_character", instruction)
@@ -256,7 +256,6 @@ class TestCreateAgent(unittest.TestCase):
     def test_create_agent_passes_canvas_state_service_to_every_tool(
         self, mock_agent_cls, mock_music_cls, mock_story_planning_cls, mock_chat_cls, mock_animation_cls, mock_image_cls, mock_get_text_provider
     ):
-        mock_image_cls.return_value.list_references.return_value = []
         config = {
             "agent": {"model_id": "test-model"},
             "story_planning": {"adventure_mode": True},
@@ -299,7 +298,6 @@ class TestCreateAgent(unittest.TestCase):
     def test_animation_tools_are_created_only_when_theater_enables_them(
         self, mock_agent_cls, mock_music_cls, mock_story_planning_cls, mock_chat_cls, mock_animation_cls, mock_image_cls, mock_get_text_provider
     ):
-        mock_image_cls.return_value.list_references.return_value = []
         config = {"animation": {"enabled": True}}
 
         theater = make_test_theater("animated_theater", config)
@@ -491,8 +489,9 @@ class TestCreateAgent(unittest.TestCase):
                 self.assertIn("reference_handle", parameters)
                 self.assertNotIn("file_path", parameters)
                 self.assertTrue({"create_image", "show_image"}.issubset(tool_names))
+                self.assertTrue({"list_references", "search_references"}.issubset(tool_names))
                 self.assertTrue(
-                    {"list_references", "browse_images", "search_image_by_metadata"}.isdisjoint(tool_names)
+                    {"browse_images", "search_image_by_metadata"}.isdisjoint(tool_names)
                 )
                 mock_image_provider.assert_called_once_with(expected_provider, expected_options)
                 image_tools = next(tool.func.__self__ for tool in bundle.tools if tool.name == "create_image")
@@ -848,6 +847,7 @@ class TestCreateAgent(unittest.TestCase):
         self.assertIn("lookup_character", non_adv_names)
         self.assertIn("clear_characters", non_adv_names)
         self.assertNotIn("process_user_action", non_adv_names)
+        self.assertTrue({"list_references", "search_references"}.issubset(non_adv_names))
 
         adv_theater = make_test_theater(
             "adv_theater",
@@ -863,6 +863,7 @@ class TestCreateAgent(unittest.TestCase):
         self.assertNotIn("lookup_character", adv_names)
         self.assertNotIn("clear_characters", adv_names)
         self.assertIn("process_user_action", adv_names)
+        self.assertTrue({"list_references", "search_references"}.issubset(adv_names))
 
     def test_create_agent_requires_theater_and_tool_bundle(self):
         theater = make_test_theater("test_agent_theater", {})

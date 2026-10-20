@@ -32,6 +32,32 @@ class ReferenceTool(BaseTools):
             raise ValueError("reference_manager is required.")
         self.reference_manager = reference_manager
 
+    @logged_tool_call
+    def list_references(self) -> list[dict[str, str]]:
+        """Browse authored assets and the latest character and scene references.
+
+        Returns names, exact reference tags, titles, descriptions, and paths.
+        Generated image outputs are excluded. Use reference tags in image and
+        animation prompts; character portraits cannot be displayed as scenery.
+        """
+        result = self.reference_manager.list_references()
+        self._trigger_after_tool_call("list_references")
+        return result
+
+    @logged_tool_call
+    def search_references(self, query: str) -> list[dict[str, str]]:
+        """Search reference names, tags, titles, and metadata descriptions.
+
+        Args:
+            query: Case-insensitive text to find; empty text lists all references.
+
+        Returns matching reference entries with names, tags, metadata, and paths.
+        Generated image outputs are excluded.
+        """
+        result = self.reference_manager.find_image_names(query)
+        self._trigger_after_tool_call("search_references")
+        return result
+
     @terminal
     @logged_tool_call
     def create_or_update_character(

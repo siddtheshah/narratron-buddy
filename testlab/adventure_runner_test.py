@@ -353,7 +353,8 @@ def test_adventure_session_assembly_and_prompt(sample_adventure):
         assert "user_help_tool" in tool_names
         assert "process_user_action" in tool_names or "_process_user_action_wrapper" in tool_names
         assert "update_interactive_canvas" in tool_names
-        assert {"list_references", "browse_images", "search_image_by_metadata"}.isdisjoint(tool_names)
+        assert {"browse_images", "search_image_by_metadata"}.isdisjoint(tool_names)
+        assert {"list_references", "search_references"}.issubset(tool_names)
         assert "## Preloaded References Context" in instruction
 
         # Initial state verification
@@ -928,7 +929,8 @@ live_agent:
         assert "process_user_action" not in tool_names
         assert "_process_user_action_wrapper" not in tool_names
         assert "user_help_tool" in tool_names
-        assert {"list_references", "browse_images", "search_image_by_metadata"}.isdisjoint(tool_names)
+        assert {"browse_images", "search_image_by_metadata"}.isdisjoint(tool_names)
+        assert {"list_references", "search_references"}.issubset(tool_names)
     finally:
         session.cleanup()
 

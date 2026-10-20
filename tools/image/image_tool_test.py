@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Optional
 from unittest.mock import MagicMock, patch
 
-from PIL import Image, PngImagePlugin
+from PIL import Image
 
 from components.canvas.canvas_state_service import CanvasStateService
 from components.canvas.visual_state import VisualState
@@ -335,19 +335,6 @@ class TestImageTools(BaseTestCase):
             "Error: image_name is required when creating an image.",
         )
         mock_get_provider.assert_not_called()
-
-    def test_search_image_by_metadata_matches_standard_description_and_title(self):
-        tools = self.make_image_tools(self.config, theater_id="metadata_search", theater_manager=self.manager)
-        reference_path = os.path.join(tools.reference_dir, "scene.png")
-        png_info = PngImagePlugin.PngInfo()
-        png_info.add_text("Title", "The Candlelit Scribe")
-        png_info.add_text("Description", "A chrysolic monk writing by candlelight")
-        Image.new("RGB", (10, 10), color="gold").save(reference_path, pnginfo=png_info)
-        tools._load_references()
-
-        self.assertEqual(tools.search_image_by_metadata("scribe"), [reference_path])
-        self.assertEqual(tools.search_image_by_metadata("chrysolic"), [reference_path])
-        self.assertEqual(tools.list_references()[0]["title"], "The Candlelit Scribe")
 
     @patch("tools.image.image_tool.get_image_provider")
     def test_show_image_cycle_and_staging(self, mock_get_provider):
@@ -1270,25 +1257,6 @@ class TestImageTools(BaseTestCase):
         char_img = os.path.join(char_dir, "1.png")
         Image.new("RGB", (10, 10), color="purple").save(char_img)
         tools._load_references()
-        self.assertNotIn(char_img, [entry["path"] for entry in tools.list_references()])
-
-        # Character image must not be in browse_images
-        browsed = tools.browse_images()
-        self.assertNotIn(scene_img, browsed)
-        self.assertIn(ref_img, browsed)
-        self.assertNotIn(char_img, browsed)
-
-        # Character image must not be in search_image_by_metadata
-        searched = tools.search_image_by_metadata("Soran")
-        self.assertNotIn(char_img, searched)
-        self.assertEqual(tools.search_image_by_metadata("ancient_forest"), [])
-
-        # Character image must not be in list_references
-        ref_manifest_paths = [str(r.get("path") or "") for r in tools.list_references()]
-        self.assertIn(ref_img, ref_manifest_paths)
-        self.assertNotIn(char_img, ref_manifest_paths)
-        self.assertNotIn(scene_img, ref_manifest_paths)
-
         # Generated outputs can still be displayed by their registered handles.
         self.assertIn("Successfully displayed", tools.show_image("ancient_forest"))
 

@@ -86,6 +86,7 @@ Use `create_or_update_character` for named characters, `create_or_update_scene` 
 
 ## Visual Staging
 Use `show_image(reference_handle=...)` with a preloaded image alias, scene name, or the `image_name` from a previous `create_image` call. Never pass a file path to `show_image`.
+Use `list_references` to browse available reference images and `search_references` to find them by name, tag, title, or description. These return reference assets, including the latest scene and character versions; generated image outputs are excluded. Character portraits are prompt references and cannot be displayed as scenery.
 For romantic or violent requests that cannot be portrayed directly, immediately use implied staging without offering alternatives or asking for confirmation: keep the event off-screen and support the scene through atmosphere, reactions, or a moment before or after it. If an explanation is needed, use `send_chat_message` to state concisely that the content is "implied"; keep the existing silence and player-agency rules.
 State it as the user describes, but prefix with qualifiers that keep the content safe and wholesome. Do not wait for their confirmation, as fast response time is crucial.
 {% if image_generation_enabled or animation_enabled %}
@@ -342,6 +343,13 @@ def create_tool_bundle_for_session(
     if image_generation_enabled:
         tools.append(image_tools.create_image)
 
+    reference_tools = ReferenceTool(
+        theater,
+        reference_manager=reference_manager,
+        canvas_manager=canvas_manager,
+    )
+    tools.extend([reference_tools.list_references, reference_tools.search_references])
+
     if adventure_mode:
         story_planning_tools = StoryTool(
             theater,
@@ -357,11 +365,6 @@ def create_tool_bundle_for_session(
             canvas_manager=canvas_manager,
         )
         tools.append(notepad_tools.update_sticky_note)
-        reference_tools = ReferenceTool(
-            theater,
-            reference_manager=reference_manager,
-            canvas_manager=canvas_manager,
-        )
         tools.extend([
             reference_tools.create_or_update_character,
             reference_tools.create_or_update_scene,
