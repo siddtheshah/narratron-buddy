@@ -1993,6 +1993,64 @@
             background: rgba(255, 255, 255, 0.55);
         }
 
+        #stamp-manager-pane {
+            display: none;
+            flex-direction: column;
+            flex: 1;
+            overflow: hidden;
+            min-height: 0;
+            background: rgba(15, 23, 42, 0.95);
+        }
+
+        .stamp-manager-body {
+            flex: 1;
+            min-height: 0;
+            overflow-y: auto;
+            overflow-x: hidden;
+            overscroll-behavior: contain;
+            -webkit-overflow-scrolling: touch;
+            touch-action: pan-y;
+            padding: 12px;
+            scrollbar-width: thin;
+            scrollbar-color: rgba(255, 255, 255, 0.28) transparent;
+        }
+
+        .stamp-manager-body::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .stamp-manager-body::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .stamp-manager-body::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.28);
+            border-radius: 10px;
+        }
+
+        .stamp-manager-body::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.55);
+        }
+
+        .characters-grid,
+        .scenes-grid,
+        .stamp-grid,
+        #playlists-manager,
+        #playlists-manager-content,
+        #animations-manager {
+            width: 100%;
+            min-width: 0;
+        }
+
+        .character-card,
+        .scene-card,
+        .stamp-card,
+        .playlist-group,
+        .asset-push-button {
+            min-width: 0;
+            box-sizing: border-box;
+        }
+
         .agent-thought-card {
             margin: 0.75rem 0.75rem 0;
             padding: 0.7rem 0.8rem;
@@ -3477,7 +3535,8 @@
             </form>
         </div>
 
-        <div id="stamp-manager-pane" role="tabpanel" aria-labelledby="chat-open-stamps-btn">
+        <div id="stamp-manager-pane" role="tabpanel" aria-labelledby="chat-open-stamps-btn"
+            style="display: none; flex-direction: column; flex: 1; overflow: hidden; min-height: 0;">
             <div class="stamp-manager-header">
                 <div class="stamp-manager-header-title">
                     <span aria-hidden="true" id="stamp-manager-header-icon">🏷️</span>
@@ -7542,6 +7601,10 @@
             }
             activeStampManagerTab = tab;
             ++assetLoadVersion;
+            const stampManagerBodyEl = document.getElementById('stamp-manager-body');
+            if (stampManagerBodyEl) {
+                stampManagerBodyEl.scrollTop = 0;
+            }
             for (const kind of ['playlists', 'animations']) {
                 extraAssetPanels[kind].hidden = tab !== kind;
                 document.getElementById(`stamp-tab-${kind}`)?.classList.toggle('active', tab === kind);

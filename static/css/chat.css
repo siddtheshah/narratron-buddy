@@ -829,9 +829,30 @@
     flex: 1;
     min-height: 0;
     overflow-y: auto;
+    overflow-x: hidden;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
     padding: 12px;
     scrollbar-width: thin;
-    scrollbar-color: rgba(255, 255, 255, 0.25) transparent;
+    scrollbar-color: rgba(255, 255, 255, 0.28) transparent;
+}
+
+.stamp-manager-body::-webkit-scrollbar {
+    width: 6px;
+}
+
+.stamp-manager-body::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.stamp-manager-body::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.28);
+    border-radius: 10px;
+}
+
+.stamp-manager-body::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.55);
 }
 
 .stamp-grid {
@@ -1305,6 +1326,8 @@
     background: rgba(255, 255, 255, 0.04);
     border: 1px solid rgba(255, 255, 255, 0.1);
     transition: all 0.2s ease;
+    min-width: 0;
+    box-sizing: border-box;
 }
 
 .character-card:hover {
