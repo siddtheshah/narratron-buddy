@@ -197,7 +197,7 @@
     </div>
     <section class="stage" aria-label="Large image effects preview">
       <figure id="featured-figure">
-        <img id="featured-image" src="/carousel/spacetime%20vortex.png" alt="Spacetime vortex preview">
+        <img id="featured-image" src="/carousel/spacetime%20vortex.webp" alt="Spacetime vortex preview">
         <figcaption><strong id="artwork-title">Spacetime vortex</strong><span id="artwork-kind">space</span>
         </figcaption>
       </figure>
@@ -206,16 +206,16 @@
   <script type="module">
     import { attachImageEffect, IMAGE_EFFECTS } from '/effects-static/js/image-effects.js?v=effects-20261005-1';
     const artworks = {
-      vortex: { src: '/carousel/spacetime%20vortex.png', alt: 'Spacetime vortex preview', title: 'Spacetime vortex', kind: 'space' },
+      vortex: { src: '/carousel/spacetime%20vortex.webp', alt: 'Spacetime vortex preview', title: 'Spacetime vortex', kind: 'space' },
       knightSword: { src: '/test-images/trace-knight-sword.png', alt: 'Armored knight holding a bright sword', title: 'Trace knight and sword', kind: 'trace target: sword blade' },
       energyStreams: { src: '/test-images/trace-energy-streams.png', alt: 'Mage charging a glowing energy attack surrounded by streamlines', title: 'Trace energy streamlines', kind: 'trace stress test: converging streams' },
-      pirate: { src: '/carousel/paint%20pirate.png', alt: 'Paint pirate preview', title: 'Paint pirate', kind: 'character' },
-      river: { src: '/carousel/glow%20river.png', alt: 'Glow river preview', title: 'Glow river', kind: 'landscape' },
-      map: { src: '/carousel/candle%20map.png', alt: 'Candle map detail preview', title: 'Candle map', kind: 'detail' },
-      nightLake: { src: '/carousel/sparse-night-lake.png', alt: 'Sparse night lake preview', title: 'Sparse night lake', kind: 'sparse highlights' },
+      pirate: { src: '/carousel/paint%20pirate.webp', alt: 'Paint pirate preview', title: 'Paint pirate', kind: 'character' },
+      river: { src: '/carousel/glow%20river.webp', alt: 'Glow river preview', title: 'Glow river', kind: 'landscape' },
+      map: { src: '/carousel/candle%20map.webp', alt: 'Candle map detail preview', title: 'Candle map', kind: 'detail' },
+      nightLake: { src: '/carousel/sparse-night-lake.webp', alt: 'Sparse night lake preview', title: 'Sparse night lake', kind: 'sparse highlights' },
       sunrise: { src: '/carousel/diffuse-sunrise.png', alt: 'Diffuse sunrise preview', title: 'Diffuse sunrise', kind: 'diffuse light' },
       obsidian: { src: '/carousel/obsidian-beams.png', alt: 'Obsidian beams preview', title: 'Obsidian beams', kind: 'hard highlights' },
-      astrolabe: { src: '/carousel/brass-astrolabe.png', alt: 'Brass astrolabe preview', title: 'Brass astrolabe', kind: 'dense specular detail' },
+      astrolabe: { src: '/carousel/brass-astrolabe.webp', alt: 'Brass astrolabe preview', title: 'Brass astrolabe', kind: 'dense specular detail' },
     };
     const featuredImage = document.querySelector('#featured-image');
     const controllers = [attachImageEffect(featuredImage, { effect: 'gleam3', intensity: 0.75 })];
