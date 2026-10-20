@@ -283,7 +283,7 @@ class StoryTool(BaseTools):
             self.record_tool_failure("process_user_action")
         self.append_story_log_entry(entry)
         action = self._pending_actions.pop(0) if self._pending_actions else None
-        if action is None and result.get("planning_request"):
+        if action is None and result.get("user_action"):
             action = str(result["user_action"])
         if action is not None and "error" not in result:
             self.planning_module.queue_deep_planning(result.get("turn_id", 0), action, result)
@@ -340,6 +340,9 @@ class StoryTool(BaseTools):
         """Apply the public cooldown before delegating story resolution."""
         self.append_story_log_entry({"type": "user_action", "action": str(user_action).strip()})
         self._pending_actions.append(str(user_action).strip())
+        self.planning_module.queue_deep_planning(
+            0, str(user_action).strip(), {"source": "user_action", "nudge": nudge}
+        )
         if nudge:
             res = self.response_module.process_user_action(user_action, nudge=nudge)
         else:

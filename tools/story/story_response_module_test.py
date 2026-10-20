@@ -298,6 +298,21 @@ class TestStoryResponseModuleBehavior(unittest.TestCase):
         self.assertIn(self.module.trigger_story_planning, agent.call_args.kwargs["tools"])
         self.assertIn("trigger_story_planning(reason)", self.module._build_responder_instruction())
 
+    def test_pins_only_responder_guide_and_records_its_activity(self) -> None:
+        self.theater.lore_documents.return_value = ["RESPONDER.md", "PLANNER.md", "read_legacy.txt"]
+        contents = {
+            "RESPONDER.md": "RESPONDER PRIORITY: resolve the scene.",
+            "PLANNER.md": "PLANNER SECRET: hidden faction plan.",
+            "read_legacy.txt": "LEGACY CONTENT: no longer pinned.",
+        }
+        self.theater.read_lore_document.side_effect = contents.__getitem__
+        instruction = self.module._build_responder_instruction()
+        self.assertIn(contents["RESPONDER.md"], instruction)
+        self.assertNotIn(contents["PLANNER.md"], instruction)
+        self.assertNotIn(contents["read_legacy.txt"], instruction)
+        self.assertEqual(self.module.get_lore_docs_browsed_this_turn(), ["RESPONDER.md"])
+        self.assertIn("private", self.module.read_lore("PLANNER.md"))
+
     def test_planning_request_includes_completed_turn_and_resets(self) -> None:
         def resolve(action: str, nudge: str = "") -> dict[str, str | list[str]]:
             self.assertIn("Story planning requested", self.module.trigger_story_planning("  Revise the quest  "))

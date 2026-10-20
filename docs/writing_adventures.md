@@ -84,7 +84,8 @@ adventures/my-custom-adventure/
 ├── theater.yaml            # Story planning rules, agent persona & tool config
 ├── README.md               # (Optional) Notes for players/developers
 ├── lore/                   # Lore text files read by the agent
-│   ├── readfirst_overview.txt # High-level guide always persisted in story context
+│   ├── RESPONDER.md         # Pinned immediate-response instructions
+│   ├── PLANNER.md           # Pinned background-planning instructions
 │   ├── factions/
 │   │   └── rebels.txt
 │   └── locations/
@@ -223,15 +224,15 @@ For full details on every field, default values, and advanced features (such as 
 
 Files in `lore/` are indexed and made available to the Gemini story planner to ground storytelling in your world's backstory, characters, and rules.
 
-#### Persistent Story Guide: `readfirst_<document>.txt`
+#### Pinned role guides: `RESPONDER.md` and `PLANNER.md`
 
-Any file starting with `readfirst_` (or `read_`, such as `lore/readfirst_overview.txt` or `lore/readfirst.txt`) is **always preloaded and permanently persisted in the active story context** across every turn of the adventure! (In contrast, other lore files are presented as an index and fetched dynamically on demand).
+Every adventure has two independent instruction files in `lore/`. The complete `RESPONDER.md` is pinned in the responder's instructions; the complete `PLANNER.md` is pinned in the planner's instructions on every run. Each module cannot list, search, or read the other's guide. Give each file its own priorities and enough context to perform its role independently.
 
-Because it is always persisted in story context, **it is best practice to use `readfirst_<document>.txt` as a high-level guide to quickly navigate and perform the adventure**. Think of this document as your Dungeon Master's Screen:
-- **Story Structure & Narrative Timeline**: Outline the narrative arc into milestones, acts, or in-game days (e.g., *Day 1: Arrival & Introductions*; *Day 2: Sabotage & Clue Gathering*; *Day 3: Escalation & Climax*).
-- **Directory & Asset Roadmap**: Provide a clear map of what content lives in each `lore/` subfolder (e.g., `characters/`, `locations/`, `factions/`).
-- **Victory & Resolution Conditions**: Clearly state the win, loss, and escape conditions so the DM agent can steer toward satisfying conclusions.
-- **Themes & DM Guidelines**: Set pacing cues, tone instructions, and boundaries on how quickly to reveal secrets.
+- **`lore/RESPONDER.md`**: Premise, opening scene, tone, immediate action resolution, dice rules, disclosure limits, local lore roadmap, and factual planning signals. The responder owns narration and NPC dialogue and never writes sticky notes.
+- **`lore/PLANNER.md`**: Campaign milestones, off-screen motives, clocks, consequences, outcomes, sticky schemas and update priorities, and Narratron game actions. The planner never narrates a parallel scene or rolls dice.
+- **Shared lore (`.txt` or `.md`)**: World facts, detailed mechanics, NPCs, locations, and factions that either role may fetch on demand. Put shared rules here rather than linking one private guide from the other.
+
+The planner starts immediately when `StoryTool.process_user_action` receives an action. The initial event is unresolved player intent: research and preparation can begin, but action-dependent changes await the responder's separate result event. Reconcile that result once; these events do not represent two player turns. Each planner run allows eight lore reads and eight searches; the responder retains three of each. Ordinary lore is indexed and fetched on demand, with no filename-prefix preloading.
 
 #### Best Practices for Authoring Lore
 
@@ -249,7 +250,8 @@ Because it is always persisted in story context, **it is best practice to use `r
    **Why this is a best practice**: When the story planner reads the lore file during play, using the canonical character name lets the planner bind the correct portrait and the live agent use `<Keeper Orun>` in visual prompts.
 
 2. **Organize by Domain**: Split detailed worldbuilding into clear subdirectories:
-   - `lore/readfirst_overview.txt`: High-level guide, timeline, and DM roadmap (persisted).
+   - `lore/RESPONDER.md`: Pinned immediate-resolution guide.
+   - `lore/PLANNER.md`: Pinned campaign and tracking guide.
    - `lore/characters/*.txt`: Key NPCs, personalities, secrets, dialogue habits, and their annotated `image_reference`.
    - `lore/locations/*.txt`: Sensory descriptions, secrets, hazard triggers, and interactable elements.
    - `lore/factions/*.txt`: Groups, motives, rivalries, and allegiances.
@@ -457,7 +459,7 @@ When your adventure is ready to be featured for everyone on **narratron.app**:
 - [ ] `metadata.json` exists, has a valid `id`, `title`, `author`, `genre`, and references a valid `cover_image`.
 - [ ] `theater.yaml` is valid YAML and includes `story_planning` with `adventure_mode: true`.
 - [ ] `required_stickies` match keys defined in `initial_elements`.
-- [ ] `lore/` contains a `readfirst_<document>.txt` high-level guide with campaign roadmap and annotated visual reference paths.
+- [ ] `lore/RESPONDER.md` and `lore/PLANNER.md` define independent priorities, role boundaries, and lore roadmaps; shared rules live in separate lore documents.
 - [ ] The adventure passes the smoke test:
   ```powershell
   uv run python testlab/adventure_runner.py --adventure <your-adventure-folder> --smoke

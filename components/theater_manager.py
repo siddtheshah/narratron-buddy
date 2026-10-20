@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 MAX_ZIP_BYTES = 5 * 1024 * 1024
 MAX_FILE_BYTES = 5 * 1024 * 1024
-LORE_TEXT_EXTENSION = ".txt"
+LORE_TEXT_EXTENSIONS = (".txt", ".md")
 MAX_LORE_DOCUMENT_BYTES = 256 * 1024
 WINDOWS_RESERVED_NAMES = {"CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$"} | {
     f"{prefix}{number}" for prefix in ("COM", "LPT") for number in "123456789¹²³"
@@ -530,7 +530,7 @@ def extract_asset_package(
                     else:
                         playlist = "default"
                     playlists_data.setdefault(playlist, []).append((filename, content))
-                elif "lore" in parts and filename.lower().endswith(LORE_TEXT_EXTENSION):
+                elif "lore" in parts and filename.lower().endswith(LORE_TEXT_EXTENSIONS):
                     if len(content) > MAX_LORE_DOCUMENT_BYTES:
                         raise ValueError(
                             f"Lore document '{filename}' exceeds the {MAX_LORE_DOCUMENT_BYTES // 1024}KB limit."
@@ -753,8 +753,8 @@ class TheaterManager:
             parts = validate_asset_path(filename)
             relative_name = "/".join(parts[parts.index("lore") + 1:]) if "lore" in parts else parts[-1]
             asset_destination(lore_dir, relative_name)
-            if not parts[-1].lower().endswith(LORE_TEXT_EXTENSION):
-                raise ValueError("Lore documents must be .txt files.")
+            if not parts[-1].lower().endswith(LORE_TEXT_EXTENSIONS):
+                raise ValueError("Lore documents must be .txt or .md files.")
             if len(content) > MAX_LORE_DOCUMENT_BYTES:
                 raise ValueError(f"Lore documents must be at most {MAX_LORE_DOCUMENT_BYTES // 1024}KB.")
             try:
@@ -881,16 +881,16 @@ class TheaterManager:
             return []
         return sorted(
             path.relative_to(lore_dir).as_posix()
-            for path in lore_dir.rglob(f"*{LORE_TEXT_EXTENSION}")
-            if path.is_file()
+            for path in lore_dir.rglob("*")
+            if path.is_file() and path.suffix.lower() in LORE_TEXT_EXTENSIONS
         )
 
     def read_lore_document(self, theater_id: str, document: str) -> str:
-        """Read one UTF-8 ``.txt`` lore document without leaving its theater workspace."""
+        """Read one UTF-8 lore document without leaving its theater workspace."""
         lore_dir = self._get_theater_lore_dir(theater_id).resolve()
         requested = Path(str(document or "").replace("\\", "/"))
-        if not document or requested.is_absolute() or requested.suffix.lower() != LORE_TEXT_EXTENSION:
-            raise ValueError("Lore documents must be relative .txt paths.")
+        if not document or requested.is_absolute() or requested.suffix.lower() not in LORE_TEXT_EXTENSIONS:
+            raise ValueError("Lore documents must be relative .txt or .md paths.")
         target = (lore_dir / requested).resolve()
         if lore_dir not in target.parents or not target.is_file():
             raise ValueError("Lore document was not found.")

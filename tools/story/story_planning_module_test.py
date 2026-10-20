@@ -4,6 +4,7 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 import tempfile
 import unittest
+from threading import Event
 from unittest.mock import MagicMock, patch
 
 from components.canvas import StoryState
@@ -13,6 +14,7 @@ from google.adk.plugins import ReflectAndRetryToolPlugin
 from google.adk.sessions import InMemorySessionService
 from google.adk.agents.run_config import RunConfig
 from google.genai import types
+from pydantic import JsonValue
 from components.reference_manager import Character, CharacterLookupResult, ReferenceManager, PlayerCharacter
 from components.lore_library import LoreLibrary
 from components.notepad import Notepad
@@ -271,24 +273,47 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
         lore_library.search_lore.return_value = "search result"
         module = self._make_module(lore_library)
 
-        self.assertEqual([module.deep_read_lore("lore.txt") for _ in range(3)], [
-            "read result",
-            "read result",
-            "read result",
-        ])
-        self.assertIn("Maximum deep_read_lore limit (3) reached", module.deep_read_lore("lore.txt"))
-        self.assertEqual([module.deep_search_lore("clue") for _ in range(3)], [
-            "search result",
-            "search result",
-            "search result",
-        ])
-        self.assertIn("Maximum deep_search_lore limit (3) reached", module.deep_search_lore("clue"))
-        self.assertEqual(lore_library.read_lore.call_count, 3)
-        self.assertEqual(lore_library.search_lore.call_count, 3)
+        self.assertEqual([module.deep_read_lore("lore.txt") for _ in range(8)], ["read result"] * 8)
+        self.assertIn("Maximum deep_read_lore limit (8) reached", module.deep_read_lore("lore.txt"))
+        self.assertEqual([module.deep_search_lore("clue") for _ in range(8)], ["search result"] * 8)
+        self.assertIn("Maximum deep_search_lore limit (8) reached", module.deep_search_lore("clue"))
+        self.assertEqual(lore_library.read_lore.call_count, 8)
+        self.assertEqual(lore_library.search_lore.call_count, 8)
+        lore_library.read_lore.assert_called_with("lore.txt", role="planner")
 
         module.reset_deep_lore_call_counts()
         self.assertEqual(module.deep_read_lore("lore.txt"), "read result")
         self.assertEqual(module.deep_search_lore("clue"), "search result")
+
+    def test_worker_starts_without_heartbeat_delay_and_drains_later_response(self) -> None:
+        module = self._make_module(MagicMock(spec=LoreLibrary), {"adventure_mode": True})
+        module.deep_heartbeat_seconds = 60.0
+        started = Event()
+        finish_action = Event()
+        batches: list[list[tuple[int, str, dict[str, JsonValue]]]] = []
+
+        def plan(batch: list[tuple[int, str, dict[str, JsonValue]]]) -> dict[str, JsonValue]:
+            batches.append(batch)
+            if len(batches) == 1:
+                started.set()
+                if not finish_action.wait(timeout=3.0):
+                    return {"error": "Test did not release worker"}
+            return {"tool_updates": True}
+
+        with patch.object(module, "_run_deep_planner_agent", side_effect=plan):
+            try:
+                worker = module.queue_deep_planning(0, "Open the door", {"source": "user_action"})
+                self.assertTrue(started.wait(timeout=1.0))
+                self.assertFalse(module.wait_for_deep_planning(timeout=0, target_turn_id=1))
+                same_worker = module.queue_deep_planning(1, "Open the door", {"narration": "The door opens."})
+                self.assertIs(same_worker, worker)
+            finally:
+                finish_action.set()
+                self.assertTrue(module.wait_for_pending_events(timeout=3.0))
+        self.assertEqual(len(batches), 2)
+        self.assertEqual(batches[0][0][2], {"source": "user_action"})
+        self.assertEqual(batches[1][0][2], {"narration": "The door opens."})
+        self.assertTrue(module.wait_for_deep_planning(timeout=0, target_turn_id=1))
 
     def test_exposes_image_name_lookup_to_deep_planner(self) -> None:
         library = MagicMock(spec=ReferenceManager)
@@ -807,6 +832,22 @@ class TestStoryPlanningModuleState(unittest.TestCase):
 
 
 class TestDeepPlanningPromptTemplate(unittest.TestCase):
+    def test_player_intent_is_distinct_from_responder_resolution(self) -> None:
+        rendered = _DEEP_PLANNING_TURN_PROMPT_TEMPLATE.render(
+            turn_events=[
+                {"source": "user_action", "turn_id": 0, "user_action": "I drink a potion", "nudge": "Describe its taste"},
+                {"source": "story", "turn_id": 1, "user_action": "I drink a potion", "narration": "The bottle was empty."},
+            ],
+            is_initial=True,
+            current_notes=[],
+        )
+        self.assertIn("Player Action (Awaiting Responder Resolution)", rendered)
+        self.assertIn("Responder Response — Turn 1", rendered)
+        self.assertIn("The bottle was empty.", rendered)
+        instruction = _DEEP_PLANNING_INSTRUCTION_TEMPLATE.render()
+        self.assertIn("never record attempted actions as successful", instruction)
+        self.assertIn("never apply its costs or consequences twice", instruction)
+
     def test_instruction_template_renders_rules_and_tools(self) -> None:
         rendered = _DEEP_PLANNING_INSTRUCTION_TEMPLATE.render(
             style="Epic fantasy",

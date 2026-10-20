@@ -56,8 +56,8 @@ DEFAULT_DEEP_MAX_EVENTS_PER_TURN = 4
 DEFAULT_DEEP_IDLE_REFINEMENT_TURNS = 0
 DEFAULT_DEEP_HEARTBEAT_FAILURE_RETRIES = 2
 STORY_LOG_CONTEXT_LINES = 200
-MAX_DEEP_READ_LORE_CALLS_PER_RUN = 3
-MAX_DEEP_SEARCH_LORE_CALLS_PER_RUN = 3
+MAX_DEEP_READ_LORE_CALLS_PER_RUN = 8
+MAX_DEEP_SEARCH_LORE_CALLS_PER_RUN = 8
 
 
 _DEEP_PLANNING_INSTRUCTION_TEMPLATE = Template(
@@ -65,6 +65,7 @@ _DEEP_PLANNING_INSTRUCTION_TEMPLATE = Template(
 You are the deep planner for an interactive adventure. You do not narrate the current scene and you never choose actions, speech, thoughts, or feelings for the player. Take a broad view of the player's accumulated actions, established lore, unresolved setups, off-screen actors, deadlines, and world consequences.
 
 You are the sole owner of Adventure Mode sticky notes. Assimilate the committed turn by deciding which individual notes, if any, need an update. Use `update_sticky_note` once per changed sticky; do not replace or restate notes that did not change. Before updating a schema-backed sticky, call `check_schema` for that sticky and use its result to retry any rejected update.
+Follow your pinned PLANNER.md for adventure-specific priorities. The responder has separate instructions and owns immediate action resolution. Player Action events are intentions awaiting resolution: research relevant lore and prepare plans immediately, but never record attempted actions as successful, spend resources, advance clocks, or apply consequences until a Responder Response event establishes them. The response is a second event for the same action, not another player turn; never apply its costs or consequences twice.
 
 # Non-Negotiable Planning Rules
 - Committed events are immutable facts. Replan around them; never retcon them to protect an outline.
@@ -87,7 +88,7 @@ You are the sole owner of Adventure Mode sticky notes. Assimilate the committed 
 
 # Character, Lore, and Image Tools
 You can canonically manage the player character using `update_player_character` (name, visual description) and query them with `get_player_character_info`. You can canonically create or update NPC records using `create_or_update_character`, manage scenery and locations using `create_or_update_scene`, and look up all characters using `lookup_character`.
-Use `deep_search_lore` and `deep_read_lore` only when the current queue batch exposes a concrete lore gap. Use `find_image_names` when a sticky needs the name of an available reference image. Store the returned `alias` (preferred) or `name`, never a guessed filename or absolute path. This heartbeat has a small independent tool budget. Prefer established lore over invention. Do not roll dice; you are planning, not resolving an uncertain action.
+Use `deep_search_lore` and `deep_read_lore` to close concrete lore gaps, with up to eight searches and eight reads per run. Use `find_image_names` when a sticky needs the name of an available reference image. Store the returned `alias` (preferred) or `name`, never a guessed filename or absolute path. Prefer established lore over invention. Do not roll dice; you are planning, not resolving an uncertain action.
 
 # Completion
 After tool calls, respond with a brief confirmation. Do not include a sticky-notes JSON payload in the final response.
@@ -122,7 +123,7 @@ Available theater lore (top-level documents and directories):
 
 _DEEP_PLANNING_TURN_PROMPT_TEMPLATE = Template(
 """# Heartbeat Work
-This is one shallow, bounded planning heartbeat. Assimilate only the supplied queue batch, then return a useful complete plan without exhaustive deliberation. Later heartbeats can refine it.
+Assimilate the supplied event batch and use the available tool budget to research and maintain accurate state. Player intentions and their eventual responder results arrive separately; reconcile them without counting an action twice.
 {% if game_state_json -%}
 # Current Game State and Narratron Actions
 {{ game_state_json }}
@@ -134,14 +135,18 @@ This is one shallow, bounded planning heartbeat. Assimilate only the supplied qu
 {% endfor -%}
 {% endif -%}
 {% if turn_events -%}
-## Newly Committed Turn Queue
+## Story Event Queue
 {% for event in turn_events -%}
 {% if event.source == 'game' -%}
 ### Player Game Action
 - Submitted action: {{ event.game_action_json }}
 - Committed new state: {{ event.committed_game_state_json }}
+{% elif event.source == 'user_action' -%}
+### Player Action (Awaiting Responder Resolution)
+- Player action: {{ event.user_action }}
+{% if event.nudge %}- Responder direction: {{ event.nudge }}{% endif %}
 {% else -%}
-### Turn {{ event.turn_id }}
+### Responder Response — Turn {{ event.turn_id }}
 - Player action: {{ event.user_action }}
 - Immediate narration: {{ event.narration }}
 {% endif -%}
@@ -401,7 +406,7 @@ class StoryPlanningModule:
                     "Finalize the deep plan now."
                 )
             self._deep_read_lore_calls_this_run += 1
-        return self.lore_library.read_lore(document)
+        return self.lore_library.read_lore(document, role="planner")
 
     def deep_search_lore(self, query: str) -> str:
         with self._deep_lore_calls_lock:
@@ -496,7 +501,7 @@ class StoryPlanningModule:
         return self.reference_manager.find_image_names(query)
 
     def _build_deep_planner_instruction(self, ctx: object = None) -> str:
-        lore_context = self.lore_library.get_lore_context()
+        lore_context = self.lore_library.get_lore_context(role="planner")
         sticky_schema_json = (
             json.dumps(
                 {
@@ -733,7 +738,6 @@ class StoryPlanningModule:
                 idle_refinements_remaining = self.deep_idle_refinement_turns
                 consecutive_failures = 0
                 while True:
-                    time.sleep(self.deep_heartbeat_seconds)
                     with self._deep_planning_queue_lock:
                         batch = list(self._deep_planning_queue)[: self.deep_max_events_per_turn]
 
@@ -751,6 +755,7 @@ class StoryPlanningModule:
                         if not committed:
                             consecutive_failures += 1
                             if consecutive_failures <= self.deep_heartbeat_failure_retries:
+                                time.sleep(self.deep_heartbeat_seconds)
                                 continue
                             with self._deep_planning_queue_lock:
                                 self._deep_planning_worker = None
@@ -843,6 +848,7 @@ class StoryPlanningModule:
                     "source": str(scene_reaction.get("source") or "story"),
                     "turn_id": turn_id,
                     "user_action": user_action,
+                    "nudge": str(scene_reaction.get("nudge") or ""),
                     "game_action_json": json.dumps(scene_reaction.get("game_action"), ensure_ascii=False),
                     "committed_game_state_json": json.dumps(scene_reaction.get("game_state"), ensure_ascii=False),
                     "narration": str(scene_reaction.get("narration") or "").strip(),

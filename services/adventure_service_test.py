@@ -8,7 +8,6 @@ import unittest
 from services.adventure_service import (
     AdventureService,
     FLAGS,
-    ensure_adventures_root,
     get_adventures_root,
 )
 
@@ -116,7 +115,10 @@ class TestAdventureService(unittest.TestCase):
         self.assertIsNotNone(cover_data)
         self.assertIn("png", ctype.lower())
 
-    def test_load_adventure_assets(self):
+    def test_load_adventure_assets(self) -> None:
+        lore_dir = self.adv1_dir / "lore"
+        (lore_dir / "RESPONDER.md").write_text("Resolve scenes.", encoding="utf-8")
+        (lore_dir / "PLANNER.md").write_text("Plan consequences.", encoding="utf-8")
         service = AdventureService(base_dir=self.local_dir)
         refs, playlists, lore, config = service.load_adventure_assets("alpha-adventure")
 
@@ -125,8 +127,10 @@ class TestAdventureService(unittest.TestCase):
         self.assertIn("battle", playlists)
         self.assertEqual(len(playlists["battle"]), 1)
         self.assertEqual(playlists["battle"][0][0], "theme.mp3")
-        self.assertEqual(len(lore), 1)
-        self.assertEqual(lore[0][0].replace("\\", "/"), "lore/history.txt")
+        self.assertEqual({path.replace("\\", "/") for path, _ in lore}, {
+            "lore/history.txt", "lore/RESPONDER.md", "lore/PLANNER.md",
+        })
+        self.assertEqual(service.get_adventure("alpha-adventure")["lore_count"], 3)
         self.assertIn("live_agent", config)
         self.assertEqual(config["live_agent"]["style"], "epic")
 

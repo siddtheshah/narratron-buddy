@@ -144,7 +144,7 @@ class AdventureService:
             if not meta.get("id"):
                 meta["id"] = adv_id
 
-            lore_count = len(list(folder.glob("lore/**/*.txt")))
+            lore_count = sum(1 for path in (folder / "lore").rglob("*") if path.is_file() and path.suffix.lower() in {".txt", ".md"})
             track_count = len([
                 p for p in folder.glob("playlists/**/*")
                 if p.is_file() and p.suffix.lower() in (".mp3", ".wav", ".ogg", ".flac", ".m4a")
@@ -274,7 +274,7 @@ class AdventureService:
                             playlists_data[pl_name] = []
                         playlists_data[pl_name].append((filename, content))
                 elif "lore" in parts:
-                    if filename.lower().endswith(".txt"):
+                    if filename.lower().endswith((".txt", ".md")):
                         lore_files.append((rel, content))
 
         return reference_files, playlists_data, lore_files, theater_config

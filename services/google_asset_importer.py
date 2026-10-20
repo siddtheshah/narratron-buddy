@@ -263,7 +263,11 @@ async def import_google_link(url: str, custom_name: str | None = None, client: h
 
     if suffix in {".txt", ".md"} or mime.startswith("text/"):
         stem = sanitize_filename_stem(custom_name or "", PurePosixPath(filename).stem)
-        target_path = f"lore/{stem}.txt"
+        target_path = (
+            f"lore/{stem.upper()}.md"
+            if suffix == ".md" and stem.upper() in {"RESPONDER", "PLANNER"}
+            else f"lore/{stem}.txt"
+        )
         return GoogleImportResult(
             kind="text",
             suggested_path=target_path,

@@ -22,7 +22,8 @@ adventures/<adventure-slug>/
 ├── planning.yaml           # Story planning schema, sticky definitions, fields, and initial values
 ├── README.md               # (Optional) Creator notes or developer documentation
 ├── lore/                   # Worldbuilding, DM screen, character dossiers, locations, and rules
-│   ├── readfirst_overview.txt # High-level DM guide permanently persisted in story context
+│   ├── RESPONDER.md         # Pinned immediate-response instructions
+│   ├── PLANNER.md           # Pinned background-planning instructions
 │   ├── characters/         # NPC dossiers with image references and behavior guidelines
 │   ├── locations/          # Regional descriptions, local commodities, and hazards
 │   └── factions/           # Agendas, rivalries, and allegiances
@@ -52,7 +53,7 @@ When creating a new adventure, follow this sequence:
 1. **Scaffold the Package**: Create `adventures/<adventure-slug>/` with `lore/`, `references/characters/`, `references/scenes/`, `references/`, and `playlists/` folders.
 2. **Author `metadata.json`**: Configure the display title, slug ID, genre, difficulty, player count, and cover image.
 3. **Configure `theater.yaml` & `planning.yaml`**: Set `adventure_mode: true` and define agent persona, art, and music direction in `theater.yaml`. Define structured sticky notes, initial values, and required stickies in `planning.yaml`.
-4. **Draft the DM Screen (`lore/readfirst_<name>.txt`)**: Define the high-level premise, timeline/acts, lore directory roadmap, win/loss conditions, and sticky note tracking rules.
+4. **Write independent role guides**: Put opening, tone, action-resolution and dice rules in `lore/RESPONDER.md`; put campaign milestones, hidden consequences and sticky tracking in `lore/PLANNER.md`. Each module has only its own complete guide pinned and cannot read the other. Put shared mechanics and facts in separate lore documents.
 5. **Flesh Out Modular Lore**: Create character dossiers, location profiles, and faction files. Annotate characters with their canonical name (`image_reference: Keeper Orun`); annotate locations with their canonical scene name (`image_reference: The Desk of Origins`); other assets can use `image_reference: references/<filename>`.
 6. **Add Assets**: Place character portraits in `references/characters/<Character Name>/1.png` (each character requires its own folder; loose images directly under `references/characters/` are unsupported), scene imagery in `references/scenes/<Scene Name>/1.png` (with `scene.yaml`; loose images directly under `references/scenes/` are unsupported), cover/location references in `references/`, and loopable tracks in `playlists/`. During play, character portraits are copied into `output/artifacts/updated_references/characters/`, scene imagery into `output/artifacts/updated_references/scenes/`, and all appearance updates stay there. The live agent uses `<Character Name>` in visual prompts to attach the latest portrait; authors can manually copy session updates back into `references/characters/` and `references/scenes/`. See `docs/writing_adventures.md` for session reset and reference behavior.
 7. **Test Locally**: Run smoke and interactive tests using `testlab/adventure_runner.py`.
@@ -195,13 +196,15 @@ handled by the deep story planner.
 
 The `lore/` folder is the core storytelling engine. Proven architectural patterns for structuring interactive adventure lore ensure high narrative consistency, deep player agency, and reliable tool calling.
 
-### 5.1. The Persistent DM Screen: `readfirst_<document>.txt`
+### 5.1. Pinned role instructions: `RESPONDER.md` and `PLANNER.md`
 
-In Narratron Buddy, **any file in `lore/` whose name begins with `readfirst_`, `readmefirst_`, or `read_` is permanently preloaded into the active LLM story planner's context window across every single turn**. Other lore files are indexed in a catalog and fetched dynamically on demand.
+Every adventure requires both files at the top level of `lore/`. The runtime pins the full `RESPONDER.md` only for the responder and the full `PLANNER.md` only for the planner. Neither module can read or search the other's guide. Other `.txt` and `.md` lore is indexed and fetched on demand; no filename-prefix preloading is supported.
 
-Therefore, your `readfirst_*.txt` must function as the **Dungeon Master's Screen / Campaign Bible**.
+Give the responder priorities for the opening, immediate action resolution, authored dice, dialogue, sensory feedback, disclosure, and factual planning signals. It does not write sticky notes. Give the planner priorities for durable state, off-screen actors, consequences, campaign pacing, and Narratron game actions. It never narrates a second scene or chooses dice outcomes. Shared world facts and mechanics belong in separate lore documents accessible to both roles.
 
-#### The 6 Essential Sections of a Great `readfirst_*.txt`
+The planner begins immediately on a Player Action event, before responder completion. Treat that event as intent: research and prepare, but await the separate Responder Response event before committing costs or outcomes. Never count the two events as two actions. The planner has eight lore reads and eight searches per run; the responder has three of each.
+
+#### Content to distribute by role
 
 1. **Premise & Core Philosophy**:
    - The central conflict and thematic foundation.
@@ -305,7 +308,7 @@ A cavernous dome of dark basalt with towering brass armillary spheres suspended 
 
 ### 5.4. Custom Mechanics & Subsystem Lore
 
-If your adventure features non-standard mechanics (such as trading economies, affection meters, or dice-based improvisation), document them clearly in `lore/rules/` or directly in `readfirst_*.txt`:
+If your adventure features non-standard mechanics (such as trading economies, affection meters, or dice-based improvisation), document them clearly in `lore/rules/` or in the appropriate role guide, with shared mechanics in separate lore documents:
 
 - **Economy & Inventory Pattern**:
   - Define trade goods, buy/sell values, weights, and carrying capacities.
@@ -319,7 +322,7 @@ If your adventure features non-standard mechanics (such as trading economies, af
 ---
 
 ### 5.5. Player Death, Lethal Consequences & Restarts
-- **Explicit Lethality**: When designing adventures with deadly hazards, hostile tyrants, assassinations, or lethal combat, explicitly permit player death in `theater.yaml` (`style`) and `lore/readfirst_*.txt`.
+- **Explicit Lethality**: When designing adventures with deadly hazards, hostile tyrants, assassinations, or lethal combat, explicitly permit player death in `theater.yaml` (`style`) and both `lore/RESPONDER.md` and `lore/PLANNER.md`.
 - **No Artificial Plot Armor**: Instruct the story planner that plot armor should not protect players who take deliberately suicidal actions, drink lethal poisons, or fail unescapable ultimatums.
 - **Restart on Continuation**: Clearly specify that if player death or a fatal loss condition occurs, any continued play represents a clean restart of the scenario from the beginning (as a new character, fresh incarnation, or timeline reset).
 - **Death Hint**: Add instructions for the story planner to give some possibly cryptic hint for why the player died, if it wasn't obvious. The player should feel like their death was a fair possibility, and learn from
@@ -451,8 +454,8 @@ Before packaging your adventure for players or deploying to a live session:
   - [ ] All keys in `required_stickies` exist in `initial_elements`.
   - [ ] `max_named_elements` is reasonably set (typically 6–10).
 - [ ] **`lore/` Architecture**:
-  - [ ] Contains a `readfirst_<name>.txt` (or `readfirst.txt`) serving as the DM screen.
-  - [ ] `readfirst_*.txt` defines premise, timeline/acts, lore directory roadmap, win/loss conditions, and dedicated sticky note tracking.
+  - [ ] Contains independent `lore/RESPONDER.md` and `lore/PLANNER.md` guides, with no dependency on the other private guide.
+  - [ ] The responder guide defines opening, tone and resolution; the planner guide defines campaign progression and sticky ownership; both have a shared lore roadmap.
   - [ ] Individual character and location lore files contain explicit `IMAGE_REFERENCE: references/<file>` annotations.
   - [ ] Secrets and spoilers are isolated from public knowledge.
 - [ ] **Assets**:

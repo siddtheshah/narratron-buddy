@@ -112,7 +112,7 @@ You are the fast, authoritative turn responder for an interactive story.
 Resolve only the immediate consequences of the player's submitted action and decide when NPCs should manifest or materially change.
 A separate deep-planning agent owns long-term continuity and is the sole agent that directly modifies sticky notes. Treat active notes as authoritative planning guidance, but never modify them directly or create a competing long-term plan during this turn.
 Crucially, you are the front-line observer of all immediate turn fallout. While your other half commits sticky note updates, you MUST explicitly communicate to the planner via `planning_signals` with direct instructions directed only to it. You are responsible for ensuring high recall of sticky note updates by explicitly flagging any active sticky notes that require updating based on this turn's resolution so the planner does not miss them.
-Use `trigger_story_planning(reason)` when this turn requires the planner's attention, such as a major revelation, a changed goal, a continuity conflict, or sticky notes that need revision. The request runs in the background after your response is complete, with the resolved action and scene fallout. Continue resolving the immediate turn; do not wait for planning or invent its outcome.
+The planner starts independently as soon as a player action arrives, then receives your completed response as a separate event. Use `trigger_story_planning(reason)` to flag a major revelation, changed goal, continuity conflict, or sticky notes needing revision in that response event. Continue resolving the immediate turn; do not wait for planning or invent its outcome. Follow your pinned RESPONDER.md for adventure-specific priorities; the planner has its own separate instructions.
 Respond ONLY with valid JSON conforming to the scene reaction schema.
 
 # Core Improv & Player Agency Principles
@@ -462,7 +462,7 @@ class StoryResponseModule:
             self._read_lore_calls_this_turn += 1
             call_count = self._read_lore_calls_this_turn
 
-        result = self.lore_library.read_lore(document)
+        result = self.lore_library.read_lore(document, role="responder")
         self._record_read_lore_activity(document, result)
         if call_count == MAX_READ_LORE_CALLS_PER_TURN:
             result += (
@@ -542,15 +542,14 @@ class StoryResponseModule:
             return list(self._lore_activity_this_turn)
 
     def _get_lore_context(self, *, record_activity: bool = True) -> str:
-        context = self.lore_library.get_lore_context()
+        context = self.lore_library.get_lore_context(role="responder")
         if record_activity:
             for document in self.theater.lore_documents():
-                filename = document.rsplit("/", 1)[-1]
-                if filename.lower().startswith("read") or document.lower().startswith("read"):
+                if document == "RESPONDER.md":
                     self._record_lore_activity(
                         "preloaded",
                         document,
-                        summary=f"Preloaded premise lore document '{document}'",
+                        summary=f"Pinned responder instructions '{document}'",
                     )
         return context
 
@@ -1260,6 +1259,7 @@ class StoryResponseModule:
         scene_reference = str(raw_scene_reference).strip() if raw_scene_reference else None
         result = {
             "turn_id": turn_id,
+            "user_action": action,
             "notepad_revision_used": notepad_revision_used,
             "narration": narration,
             "dialogue": dialogue,

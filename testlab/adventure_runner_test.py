@@ -198,18 +198,22 @@ def test_synchronous_action_queues_planning_before_wait(sample_adventure: Path) 
     lifecycle = MagicMock()
     try:
         with (
-            patch.object(session.story_tool.response_module, "_run_responder_agent", return_value=reaction),
+            patch.object(session.story_tool.response_module, "_run_responder_agent", return_value=reaction) as respond,
             patch.object(session.story_tool.planning_module, "queue_deep_planning") as queue,
             patch.object(session.story_tool.planning_module, "wait_for_deep_planning", return_value=True) as wait,
         ):
             lifecycle.attach_mock(queue, "queue")
+            lifecycle.attach_mock(respond, "respond")
             lifecycle.attach_mock(wait, "wait")
             session._process_user_action_wrapper("  Begin the hearing.  ")
 
-            queue.assert_called_once()
+            assert queue.call_count == 2
+            assert queue.call_args_list[0].args == (
+                0, "Begin the hearing.", {"source": "user_action", "nudge": ""},
+            )
             assert queue.call_args.args[1] == "Begin the hearing."
             assert queue.call_args.args[2]["narration"] == "The hearing begins."
-            assert [entry[0] for entry in lifecycle.mock_calls] == ["queue", "wait"]
+            assert [entry[0] for entry in lifecycle.mock_calls] == ["queue", "respond", "queue", "wait"]
             assert session.story_tool._pending_actions == []
             assert session.story_tool._story_log[-2]["action"] == "Begin the hearing."
             assert session.story_tool._story_log[-1]["type"] == "story_response"

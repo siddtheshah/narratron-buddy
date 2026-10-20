@@ -6,7 +6,8 @@ import logging
 import math
 import re
 from threading import Lock
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Literal, Optional, Tuple
+from pathlib import PurePosixPath
 
 from components.theater_manager import Theater
 
@@ -14,12 +15,15 @@ logger = logging.getLogger(__name__)
 
 MAX_LORE_DOCUMENT_CONTEXT_CHARS = 12_000
 MAX_LORE_DOCUMENTS_LISTED = 100
+StoryRole = Literal["responder", "planner"]
+ROLE_DOCUMENTS = {"responder": "RESPONDER.md", "planner": "PLANNER.md"}
+ROLE_FILENAMES = {name.casefold() for name in ROLE_DOCUMENTS.values()}
 
 
 class LoreLibrary:
     """Encapsulate lore reading, indexing, caching, and searching."""
 
-    def __init__(self, theater: Theater):
+    def __init__(self, theater: Theater) -> None:
         if theater is None:
             raise ValueError("theater is required.")
         self.theater: Theater = theater
@@ -28,6 +32,15 @@ class LoreLibrary:
         self._lore_index_cache: Optional[Dict[str, Dict[str, Any]]] = None
         self._lore_cache_lock: Lock = Lock()
         self._search_query_cache: Dict[str, str] = {}
+
+    def _visible_documents(self, role: StoryRole | None = None) -> list[str]:
+        """Keep role instructions out of other consumers' lists and search indexes."""
+        own_document = ROLE_DOCUMENTS[role] if role is not None else None
+        return [
+            path for path in self.theater.lore_documents()
+            if PurePosixPath(path).name.casefold() not in ROLE_FILENAMES
+            or path == own_document
+        ]
 
     @property
     def theater_id(self) -> str:
@@ -64,7 +77,7 @@ class LoreLibrary:
             if not self.theater_id:
                 return {}
 
-            documents = self.theater.lore_documents()
+            documents = self._visible_documents()
             corpus_index: Dict[str, Dict[str, Any]] = {}
             for doc_path in documents:
                 try:
@@ -90,10 +103,10 @@ class LoreLibrary:
             self._lore_index_cache = None
             self._search_query_cache.clear()
 
-    def read_lore(self, document: str = "") -> str:
+    def read_lore(self, document: str = "", *, role: StoryRole | None = None) -> str:
         """List or read the theater's text-only lore documents.
 
-        Call without ``document`` to list available ``.txt`` paths. Call again
+        Call without ``document`` to list available text paths. Call again
         with one listed relative path to read it before planning characters or
         scenes.
         """
@@ -102,7 +115,7 @@ class LoreLibrary:
             return "No theater is active, so no lore documents are available."
 
         if not document:
-            documents = self.theater.lore_documents()
+            documents = self._visible_documents(role)
             listed_documents = documents[:MAX_LORE_DOCUMENTS_LISTED]
             omission = (
                 f"\n[+{len(documents) - len(listed_documents)} additional documents omitted.]"
@@ -122,10 +135,14 @@ class LoreLibrary:
             )
 
         clean_doc = str(document or "").strip().replace("\\", "/")
-        if not clean_doc.lower().endswith(".txt"):
+        normalized_doc = PurePosixPath(clean_doc).as_posix()
+        if PurePosixPath(clean_doc).name.casefold() in ROLE_FILENAMES:
+            if role is None or normalized_doc.casefold() != ROLE_DOCUMENTS[role].casefold():
+                return "Error: Role instructions are private to their respective story module."
+        if not clean_doc.lower().endswith((".txt", ".md")):
             prefix = clean_doc.rstrip("/") + "/"
             matching = [
-                doc for doc in self.theater.lore_documents()
+                doc for doc in self._visible_documents(role)
                 if doc.startswith(prefix)
             ]
             if matching:
@@ -244,11 +261,11 @@ class LoreLibrary:
 
         return res_str
 
-    def get_lore_context(self) -> str:
-        """List top-level lore documents and directories for the planner context, automatically expanding files prefixed with 'read'."""
+    def get_lore_context(self, *, role: StoryRole | None = None) -> str:
+        """Pin the complete role guide, followed by the shared lore catalog."""
         if not self.theater_id:
             return ""
-        documents = self.theater.lore_documents()
+        documents = self._visible_documents(role)
         if not documents:
             return ""
         top_level_files: list[str] = []
@@ -256,17 +273,9 @@ class LoreLibrary:
         expanded_files: list[str] = []
         for doc in documents:
             parts = doc.split("/")
-            filename = parts[-1]
-            if filename.lower().startswith("read") or doc.lower().startswith("read"):
+            if role is not None and doc == ROLE_DOCUMENTS[role]:
                 content = self.theater.read_lore_document(doc)
-                if len(content) > MAX_LORE_DOCUMENT_CONTEXT_CHARS:
-                    content = (
-                        content[:MAX_LORE_DOCUMENT_CONTEXT_CHARS]
-                        + "\n[Excerpt truncated for planner context.]"
-                    )
-                expanded_files.append(f"- {doc}:\n{content}")
-                if len(parts) > 1:
-                    top_level_dirs.add(parts[0] + "/")
+                expanded_files.append(f"# Pinned {role.title()} Instructions ({doc})\n{content}")
             else:
                 if len(parts) == 1:
                     top_level_files.append(doc)
@@ -275,8 +284,5 @@ class LoreLibrary:
         items = (
             [f"- {d} (directory)" for d in sorted(top_level_dirs)]
             + [f"- {f}" for f in sorted(top_level_files)]
-            + expanded_files
         )
-        if not items:
-            items = [f"- {doc}" for doc in documents[:MAX_LORE_DOCUMENTS_LISTED]]
-        return "\n".join(items[:MAX_LORE_DOCUMENTS_LISTED])
+        return "\n".join(expanded_files + items[:MAX_LORE_DOCUMENTS_LISTED])

@@ -4,6 +4,7 @@ import unittest
 import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
+from pydantic import JsonValue
 
 from components.canvas.story_state import StoryState
 from components.canvas.game_runtime import GameAction
@@ -185,6 +186,42 @@ class TestStoryToolComposition(unittest.TestCase):
 
         self.assertEqual(result, {"narration": "Done"})
         response_type.return_value.process_user_action.assert_called_once_with("Open the door")
+
+    def test_action_starts_planning_before_responder_and_response_is_an_extra_event(self) -> None:
+        with (
+            patch("tools.story.story_tool.ReferenceManager"),
+            patch("tools.story.story_tool.LoreLibrary"),
+            patch("tools.story.story_tool.StoryPlanningModule"),
+            patch("tools.story.story_tool.StoryResponseModule"),
+        ):
+            tool = StoryTool(self.theater, self.canvas, self.provider)
+        result = {"turn_id": 1, "user_action": "Open the door", "narration": "The door opens."}
+
+        def resolve(action: str, nudge: str) -> dict[str, JsonValue]:
+            tool.planning_module.queue_deep_planning.assert_called_once_with(
+                0, action, {"source": "user_action", "nudge": nudge}
+            )
+            tool._handle_scene_reaction(result)
+            return {"status": "processing"}
+
+        tool.response_module.process_user_action.side_effect = resolve
+        tool.process_user_action("Open the door", nudge="Inspect the hinges")
+        calls = tool.planning_module.queue_deep_planning.call_args_list
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(calls[1].args, (1, "Open the door", result))
+        self.assertEqual(tool._pending_actions, [])
+
+    def test_game_triggered_responder_result_is_delivered_without_planning_request(self) -> None:
+        with (
+            patch("tools.story.story_tool.ReferenceManager"),
+            patch("tools.story.story_tool.LoreLibrary"),
+            patch("tools.story.story_tool.StoryPlanningModule"),
+            patch("tools.story.story_tool.StoryResponseModule"),
+        ):
+            tool = StoryTool(self.theater, self.canvas, self.provider)
+        result = {"turn_id": 2, "user_action": "Player traded a coin", "narration": "Sold."}
+        tool._handle_scene_reaction(result)
+        tool.planning_module.queue_deep_planning.assert_called_once_with(2, "Player traded a coin", result)
 
     def test_process_user_action_cycle_cooldown(self) -> None:
         with (

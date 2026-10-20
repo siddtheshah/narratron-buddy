@@ -16,7 +16,8 @@ example_adventure/
 ├── planning.yaml           # Deep planner schemas, sticky definitions, and initial notes
 ├── README.md               # This reference file
 ├── lore/                   # Contextual lore injected into the story planner
-│   ├── readfirst_overview.txt # High-level DM guide persisted in story context
+│   ├── RESPONDER.md         # Pinned immediate-response instructions
+│   ├── PLANNER.md           # Pinned background-planning instructions
 │   ├── characters/         # NPC dossiers
 │   │   └── the_caretaker.txt
 │   └── locations/          # Room layouts and sensory details

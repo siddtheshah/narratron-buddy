@@ -382,7 +382,7 @@ def list_available_adventures(adventures_dir: Optional[Path] = None) -> List[Dic
 
         title = meta.get("title") or item.name.replace("-", " ").title()
         description = meta.get("description") or f"Adventure package for {item.name}."
-        lore_files = list(item.glob("lore/**/*.txt"))
+        lore_files = [path for path in (item / "lore").rglob("*") if path.is_file() and path.suffix.lower() in {".txt", ".md"}]
         reference_files = [
             f for f in list(item.glob("references/**/*")) + list(item.glob("reference_library/**/*"))
             if f.is_file() and f.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp"}
@@ -592,6 +592,9 @@ class AdventureSession:
         # register the action and deliver its callback just as that tool does.
         self.story_tool.append_story_log_entry({"type": "user_action", "action": clean_action})
         self.story_tool._pending_actions.append(clean_action)
+        self.story_tool.planning_module.queue_deep_planning(
+            0, clean_action, {"source": "user_action", "nudge": clean_nudge}
+        )
 
         # Run in a dedicated worker thread so that the internal asyncio.run() in
         # StoryTool._resolve_user_action may create its own event loop, so keep

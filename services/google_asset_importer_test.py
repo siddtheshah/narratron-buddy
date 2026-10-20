@@ -216,6 +216,24 @@ async def test_import_google_link_for_image_and_doc() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("name", ["RESPONDER", "PLANNER"])
+async def test_import_preserves_private_role_guide_filename(name: str) -> None:
+    response = MagicMock(spec=httpx.Response)
+    response.status_code = 200
+    response.content = b"# Role priorities\nUse the shared lore."
+    response.url = httpx.URL("https://drive.usercontent.google.com/download?id=GUIDE")
+    response.headers = httpx.Headers({
+        "content-disposition": f'attachment; filename="{name}.md"',
+        "content-type": "text/markdown",
+    })
+    client = AsyncMock(spec=httpx.AsyncClient)
+    client.get.return_value = response
+    result = await import_google_link("https://drive.google.com/file/d/GUIDE/view", client=client)
+    assert result.suggested_path == f"lore/{name}.md"
+    assert result.content_bytes == response.content
+
+
+@pytest.mark.asyncio
 async def test_download_google_drive_rejects_oversized_file() -> None:
     mock_response = MagicMock(spec=httpx.Response)
     mock_response.status_code = 200
