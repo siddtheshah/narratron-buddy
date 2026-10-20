@@ -110,7 +110,10 @@ def get_session(session_id: str) -> GameSession:
 def game_renderer_asset(kind: str, name: str) -> FileResponse:
     if (kind, name) not in (("js", "game-renderer.js"), ("css", "game-renderer.css")):
         raise HTTPException(404, "Unknown game asset.")
-    return FileResponse(PROJECT_ROOT / "static" / kind / name)
+    return FileResponse(
+        PROJECT_ROOT / "static" / kind / name,
+        headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+    )
 
 
 @router.post("/api/game-lab/sessions")
@@ -209,7 +212,11 @@ def game_session_action(
 
 @router.get("/game-lab", include_in_schema=False)
 def game_lab_page() -> FileResponse:
-    return FileResponse(ROOT / "game_lab.html", media_type="text/html")
+    return FileResponse(
+        ROOT / "game_lab.html",
+        media_type="text/html",
+        headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+    )
 
 
 @router.get("/api/game-lab/catalog")

@@ -25,7 +25,7 @@ const ATTRIBUTES = new Set([
 
 export function createGameRenderer({ container, toggleButton, actionUrl, canEdit,
     canContribute = () => false, refresh,
-    stylesheetUrl = '/static/css/game-renderer.css?v=5', initiallyOpen = false,
+    stylesheetUrl = '/static/css/game-renderer.css?v=6', initiallyOpen = false,
     onPendingChange = () => {}, onMove = () => {} }) {
     const stylesheet = document.createElement('link');
     stylesheet.rel = 'stylesheet';
