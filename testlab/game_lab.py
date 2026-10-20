@@ -1,8 +1,10 @@
 """HTTP entry points for the isolated game harness."""
+import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from threading import RLock
 from time import monotonic
+from typing import Literal
 from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException
@@ -40,6 +42,11 @@ class GameSessionRequest(GameModel):
     provider_id: str = "gemini-3"
     model: str | None = DEFAULT_GAME_MODEL
     max_ai_actions: int = Field(default=8, ge=1, le=32)
+    ai_play: bool = Field(default=True)
+
+
+class SessionUpdateRequest(GameModel):
+    ai_play: bool | None = None
 
 
 class GameSession:
@@ -75,6 +82,7 @@ class GameSession:
             "game": self.game.payload(),
             "state": self.game.story_snapshot("narratron"),
             "turns": [turn.model_dump(mode="json") for turn in self.turns],
+            "ai_play": self.config.ai_play,
         }
 
 
@@ -136,6 +144,15 @@ def read_game_session(session_id: str) -> dict[str, JsonValue]:
         return session.snapshot(session_id)
 
 
+@router.patch("/api/game-lab/sessions/{session_id}")
+def update_game_session(session_id: str, body: SessionUpdateRequest) -> dict[str, JsonValue]:
+    session = get_session(session_id)
+    with session.lock:
+        if body.ai_play is not None:
+            session.config.ai_play = body.ai_play
+        return session.snapshot(session_id)
+
+
 @router.delete("/api/game-lab/sessions/{session_id}")
 def close_game_session(session_id: str) -> dict[str, bool]:
     with _sessions_lock:
@@ -148,11 +165,34 @@ def close_game_session(session_id: str) -> dict[str, bool]:
 
 
 @router.post("/api/game-lab/sessions/{session_id}/action")
-def game_session_action(session_id: str, action: GameAction) -> dict[str, JsonValue]:
+def game_session_action(
+    session_id: str,
+    action: GameAction,
+    ai_play: bool | None = None,
+    actor: Literal["player", "contributor", "narratron"] = "player",
+) -> dict[str, JsonValue]:
     session = get_session(session_id)
     with session.lock:
         if action.revision != session.game.revision:
             raise HTTPException(409, "The game changed. Refresh and try again.")
+        effective_ai = session.config.ai_play if ai_play is None else ai_play
+        if not effective_ai or actor == "narratron":
+            before = json.loads(json.dumps(session.game.state))
+            try:
+                session.game.act(action, actor=actor)
+            except Exception as exc:
+                session.game.report_error(str(exc))
+                raise HTTPException(400, str(exc)) from exc
+            trace = TurnTrace(
+                player=Move(name=action.name, arguments=action.arguments),
+                before=before,
+                after_player=json.loads(json.dumps(session.game.state)),
+                after=json.loads(json.dumps(session.game.state)),
+            )
+            session.turns.append(trace)
+            session.touched = monotonic()
+            return session.game.payload() or {}
+
         trace = play_turn(
             session.game, PlayerStep(move=Move(name=action.name, arguments=action.arguments)),
             session.provider, session.config.model or DEFAULT_GAME_MODEL, session.config.max_ai_actions, action,
