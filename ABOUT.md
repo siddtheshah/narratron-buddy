@@ -6,7 +6,7 @@
 Narratron does not stream your voice. Use a Meeting App or Discord, or if you prefer one-way communication, stream with OBS!
 
 ### Narratron connects but doesn't respond?
-Narratron uses Gemini 3.8 Live. If it connects but does not respond, check microphone access and try restarting the agent session.
+Check microphone access and try restarting the agent session.
 
 ### Are there free credits?
 New accounts do not come with free credits as it's pretty expensive to run this app from an API standpoint. You can buy credit packages or host your own if you wish to.

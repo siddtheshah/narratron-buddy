@@ -1,3 +1,34 @@
+Version 1.4.0 - 10/21/2026
+
+Theater Asset Management
+- Scenes
+- Characters
+- Stamps
+  - Generate stamps directly in canvas.
+
+Controls in Canvas
+- Manual push pane in Asset Manager
+- Action Wheels
+
+Narratron Mobile Remote
+- Play together on a big screen without needing to pass around a tablet. Your phone is a controller of the canvas.
+- Phones can accept baton, providing seamless handover experience.
+
+Adventures
+- Set up triadic story management, improving consistency.
+- New Adventures
+  - Peaks of Tianmu
+
+Theater Editor
+- Manage theater assets and lore from a unified interface.
+
+Ease of Use
+- Help tools in canvas and site front page.
+
+Optimizations
+- Significant AI cost improvements
+- Much faster image streaming.
+
 Version 1.3.0 - 9/12/2026
 
 Canvas
