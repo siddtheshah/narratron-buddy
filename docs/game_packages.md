@@ -25,17 +25,8 @@ The main game transactions must either require acceptance from both the player
 and Narratron, or strongly constrain what each can do independently before the
 other gets to act. This can take two forms:
 
-- **Mutual acceptance:** one side proposes specific terms, and the other accepts
-  or rejects them. For a trade, record the pending offer, then exchange goods and
-  payment together only when the recipient accepts those exact terms. Changing
-  the terms requires a new acceptance. Rejection or cancellation clears the offer
-  without completing the exchange. Apply the same rule to Narratron's offers to
-  the player.
-- **Bounded turns:** agreed rules authorize a limited action or sequence, then
-  hand control to the other side. In checkers, a legal move (including a required
-  chain of jumps) ends the side's turn. Neither side may keep taking unrelated
-  moves while waiting for the other. Individual moves need no separate approval
-  from the opponent because the turn rules already constrain them.
+- **Mutual acceptance:** one side proposes specific terms, and the other accepts or rejects them. For a trade, record the pending offer, then exchange goods and payment together only when the recipient accepts those exact terms. Changing the terms requires a new acceptance. Rejection or cancellation clears the offer without completing the exchange. Apply the same rule to Narratron's offers to the player.
+- **Bounded turns:** agreed rules authorize a limited action or sequence, then hand control to the other side. In checkers, a legal move (including a required chain of jumps) ends the side's turn. Neither side may keep taking unrelated moves while waiting for the other. Individual moves need no separate approval from the opponent because the turn rules already constrain them.
 
 An accepted game transaction can span several runtime transitions: proposing an
 offer commits pending state; accepting it later commits the exchange. Each
@@ -49,30 +40,15 @@ universal approval handshake or alternating-turn rule to packages.
 
 Use these questions before designing a package:
 
-1. **Can both sides wait?** If the player pauses or Narratron takes a while to
-   respond, can play remain at a valid decision point without missed inputs,
-   collisions or deadlines changing the outcome? If continuous timing is
-   essential, the game does not fit.
-2. **Can an action settle as a discrete result?** Can a move, purchase, trade or
-   production step be described by explicit inputs and a complete resulting
-   state? It must resolve within the runtime's execution limits, without an
-   ongoing simulation loop.
-3. **What stops either side acting alone indefinitely?** Identify the required
-   acceptance, turn boundary or finite action budget. Test both directions: the
-   player must not bypass Narratron's decision, and Narratron must not bypass the
-   player's. A stream of individually valid clicks is insufficient if it lets
-   one side advance the main game without that boundary.
-4. **Can the rules enforce the boundary?** Out-of-turn moves, repeated acceptance
-   and acceptance of changed terms must fail through guards and state checks.
-   Local selection and previews may explore choices, but must not complete a
-   shared outcome before its required acceptance or turn commitment.
+1. **Can both sides wait?** If the player pauses or Narratron takes a while to respond, can play remain at a valid decision point without missed inputs, collisions or deadlines changing the outcome? If continuous timing is essential, the game does not fit.
+2. **Can an action settle as a discrete result?** Can a move, purchase, trade or production step be described by explicit inputs and a complete resulting state? It must resolve within the runtime's execution limits, without an ongoing simulation loop.
+3. **What stops either side acting alone indefinitely?** Identify the required acceptance, turn boundary or finite action budget. Test both directions: the player must not bypass Narratron's decision, and Narratron must not bypass the player's. A stream of individually valid clicks is insufficient if it lets one side advance the main game without that boundary.
+4. **Can the rules enforce the boundary?** Out-of-turn moves, repeated acceptance and acceptance of changed terms must fail through guards and state checks. Local selection and previews may explore choices, but must not complete a shared outcome before its required acceptance or turn commitment.
 
-| Game idea | Fit | Reason |
-| --- | --- | --- |
-| Checkers | Yes | Moves have discrete outcomes, legal moves are constrained, and turns pass between the player and Narratron. The board can wait for either side. |
-| Brickbreaker | No | The moving ball and paddle require continuous simulation and timely player input. Waiting changes whether the player hits the ball. |
-| Cookie Clicker-style progression | Yes, with bounded transactions | Clicks, purchases and production can become discrete actions or finite batches. Require a handoff or mutual acceptance at the main progression boundaries; resolve production as explicit steps. Continuous background ticking and unlimited progression while Narratron waits do not fit this model. |
-| Angry Birds | No, in its usual physics-based form | Choosing a shot is discrete, but resolving flight, collisions and collapsing structures depends on a continuous physics simulation. A bounded rules-based shot outcome would be a redesigned transactional game. |
+- **Checkers — fits.** Moves have discrete outcomes, legal moves are constrained, and turns pass between the player and Narratron. The board can wait for either side.
+- **Brickbreaker — does not fit.** The moving ball and paddle require continuous simulation and timely player input. Waiting changes whether the player hits the ball.
+- **Cookie Clicker-style progression — fits with bounded transactions.** Clicks, purchases and production can become discrete actions or finite batches. Require a handoff or mutual acceptance at the main progression boundaries; resolve production as explicit steps. Continuous background ticking and unlimited progression while Narratron waits do not fit this model.
+- **Angry Birds — does not fit in its usual physics-based form.** Choosing a shot is discrete, but resolving flight, collisions and collapsing structures depends on a continuous physics simulation. A bounded rules-based shot outcome would be a redesigned transactional game.
 
 Selection, previews and other small interactions do not each need a Narratron
 response. They must stay within the current turn's constraints. For example, a
@@ -139,54 +115,15 @@ the same schemas, CEL validation and execution limits as JSON. The bundled
 ## State and transitions
 
 - `initial`: an arbitrary JSON object. There are no reserved game field names.
-- `instructions`: optional game-specific guidance shown to the story planner
-  with the current game state. Explain when the Narratron side should use its
-  actions and which projected fields are authoritative.
-- `model_state`: optional CEL expression that projects the complete game state
-  into a concise JSON value for story modules. The full state remains persisted
-  and validated; this projection is limited to 16 KiB. If omitted, story modules
-  see the full state.
+- `instructions`: optional game-specific guidance shown to the story planner with the current game state. Explain when the Narratron side should use its actions and which projected fields are authoritative.
+- `model_state`: optional CEL expression that projects the complete game state into a concise JSON value for story modules. The full state remains persisted and validated; this projection is limited to 16 KiB. If omitted, story modules see the full state.
 - `state_schema`: JSON Schema for every initial, restored and resulting state.
 - `constants`: optional immutable JSON data available to expressions.
-- `functions`: ordered named CEL expressions with `parameters` and `expr`.
-  A function may call earlier functions, but not itself or later functions.
-  It receives its parameters and `constants`; it has no implicit access to state.
-- `derived`: ordered `{ "name": "...", "expr": "..." }` bindings, evaluated from
-  `state`, `initial` and `constants`. These values are not persisted.
+- `functions`: ordered named CEL expressions with `parameters` and `expr`. A function may call earlier functions, but not itself or later functions. It receives its parameters and `constants`; it has no implicit access to state.
+- `derived`: ordered `{ "name": "...", "expr": "..." }` bindings, evaluated from `state`, `initial` and `constants`. These values are not persisted.
 - `invariants`: CEL boolean expressions checked against state and derived values.
-- `transitions`: author-named actions. Each declares a `parameters` JSON Schema,
-  optional boolean `guard`, optional ordered `bindings`, and a `result`
-  expression returning the **complete next state object**. Action arguments are
-  available as `action`. Bindings cannot overwrite names already in scope.
-- Each transition can set `actor` to `"player"`, `"contributor"`, or `"narratron"`,
-  `permission` to `"orator"` (default) or `"contributor"`, and include a short
-  `description`. Setting `permission: "contributor"` (or `actor: "contributor"`)
-  allows viewers with contributor permission to invoke the action on the canvas
-  whenever the active orator has Collaboration Mode enabled. A button's `action`
-  in `view` can also set `permission: "contributor"` to annotate a specific view
-  action.
-  An optional state-only `available` CEL expression controls whether a Narratron
-  action appears in the planner's current action list. The transition's `guard`
-  remains the authoritative check when an action is submitted.
-  StoryRecorder can execute Narratron actions while recording either a completed
-  story response or a committed player game action. Encode prerequisites such as
-  required player input, consent and turn order in transition guards; the source
-  of a recording event does not bypass them. Response recording cannot request
-  another narration pass, and Narratron receipts cannot trigger further actions.
-  View buttons may reference only player/contributor actions. The canvas action
-  endpoint likewise accepts only player/contributor actions. The story planner
-  sees the current state, revision, and Narratron action contracts, and can submit
-  only those actions.
-  The story responder sees the current game state in its turn prompt, without
-  action contracts or package instructions, and cannot mutate it. An optional
-  `triggering` boolean (default `true`) controls whether a player or contributor
-  action notifies Narratron and queues a planner heartbeat; set `triggering: false`
-  for exploratory UI interactions like selection. With `local_preview: true` at
-  the package root, these interactions run privately in the browser until a
-  triggering action submits the draft. A successful triggering player or
-  contributor game action queues a planner heartbeat with both the submitted action
-  and an independent snapshot of the newly committed state, so the Narratron side
-  can react and narrate without waiting for a separate spoken turn.
+- `transitions`: author-named actions. Each declares a `parameters` JSON Schema, optional boolean `guard`, optional ordered `bindings`, and a `result` expression returning the **complete next state object**. Action arguments are available as `action`. Bindings cannot overwrite names already in scope.
+- Each transition can set `actor` to `"player"`, `"contributor"`, or `"narratron"`, `permission` to `"orator"` (default) or `"contributor"`, and include a short `description`. Setting `permission: "contributor"` (or `actor: "contributor"`) allows viewers with contributor permission to invoke the action on the canvas whenever the active orator has Collaboration Mode enabled. A button's `action` in `view` can also set `permission: "contributor"` to annotate a specific view action. An optional state-only `available` CEL expression controls whether a Narratron action appears in the planner's current action list. The transition's `guard` remains the authoritative check when an action is submitted. StoryRecorder can execute Narratron actions while recording either a completed story response or a committed player game action. Encode prerequisites such as required player input, consent and turn order in transition guards; the source of a recording event does not bypass them. Response recording cannot request another narration pass, and Narratron receipts cannot trigger further actions. View buttons may reference only player/contributor actions. The canvas action endpoint likewise accepts only player/contributor actions. The story planner sees the current state, revision, and Narratron action contracts, and can submit only those actions. The story responder sees the current game state in its turn prompt, without action contracts or package instructions, and cannot mutate it. An optional `triggering` boolean (default `true`) controls whether a player or contributor action notifies Narratron and queues a planner heartbeat; set `triggering: false` for exploratory UI interactions like selection. With `local_preview: true` at the package root, these interactions run privately in the browser until a triggering action submits the draft. A successful triggering player or contributor game action queues a planner heartbeat with both the submitted action and an independent snapshot of the newly committed state, so the Narratron side can react and narrate without waiting for a separate spoken turn.
 
 The host validates arguments, computes derived values, checks the guard, evaluates
 transition bindings and result, validates the candidate state and invariants, and
@@ -252,16 +189,8 @@ coordinate system, piece type or player color.
 Supported properties:
 
 - Content/accessibility: `text`, `label`, `id`, `disabled`, `pressed`.
-- Layout/style: `columns` (grid), `gap`, `padding`, `color`, `background` (color
-  only), `fontSize`, `fontWeight`, `borderRadius`, `outline`, `aspectRatio`,
-  `textAlign`.
-- SVG: `src` (relative `.svg` file in `game/`), `viewBox`, `preserveAspectRatio`,
-  `x`, `y`, `x1`, `y1`, `x2`, `y2`, `dx`, `dy`, `width`, `height`, `cx`, `cy`,
-  `r`, `rx`, `ry`, `d`, `points`, `fill`, `fill-opacity`, `fill-rule`, `stroke`,
-  `stroke-width`, `stroke-opacity`, `stroke-linecap`, `stroke-linejoin`,
-  `stroke-dasharray`, `stroke-dashoffset`, `stroke-miterlimit`, `opacity`,
-  `transform`, `text-anchor`, `dominant-baseline`, `font-size`, `font-weight`,
-  `font-family`, `letter-spacing`, and gradient/stop attributes.
+- Layout/style: `columns` (grid), `gap`, `padding`, `color`, `background` (color only), `fontSize`, `fontWeight`, `borderRadius`, `outline`, `aspectRatio`, `textAlign`.
+- SVG: `src` (relative `.svg` file in `game/`), `viewBox`, `preserveAspectRatio`, `x`, `y`, `x1`, `y1`, `x2`, `y2`, `dx`, `dy`, `width`, `height`, `cx`, `cy`, `r`, `rx`, `ry`, `d`, `points`, `fill`, `fill-opacity`, `fill-rule`, `stroke`, `stroke-width`, `stroke-opacity`, `stroke-linecap`, `stroke-linejoin`, `stroke-dasharray`, `stroke-dashoffset`, `stroke-miterlimit`, `opacity`, `transform`, `text-anchor`, `dominant-baseline`, `font-size`, `font-weight`, `font-family`, `letter-spacing`, and gradient/stop attributes.
 
 A button's `action` declares CEL expressions for its `name` and JSON-object
 `arguments`. Optional `confirmation` is literal confirmation-dialog text, and
@@ -312,17 +241,11 @@ from the committed action.
 
 Limits include:
 
-- Package: 128 KiB (the YAML or JSON declaration, its decoded JSON, and each `game/*.svg` asset); CEL expression:
-  4,000 characters and 1,000 AST nodes.
-- Each transition-evaluation or view-preparation phase: 500,000 visited AST nodes
-  and a five-second deadline. Nested macros and author functions share the phase's
-  budget. Work exhaustion rejects the operation even if CEL suppresses an error.
-- Evaluated JSON values, state and materialized view: 128 KiB each. CEL values are
-  copied incrementally with a size budget and a nesting limit of 64, so oversized
-  repeated values are rejected before a full JSON expansion is allocated.
+- Package: 128 KiB (the YAML or JSON declaration, its decoded JSON, and each `game/*.svg` asset); CEL expression: 4,000 characters and 1,000 AST nodes.
+- Each transition-evaluation or view-preparation phase: 500,000 visited AST nodes and a five-second deadline. Nested macros and author functions share the phase's budget. Work exhaustion rejects the operation even if CEL suppresses an error.
+- Evaluated JSON values, state and materialized view: 128 KiB each. CEL values are copied incrementally with a size budget and a nesting limit of 64, so oversized repeated values are rejected before a full JSON expansion is allocated.
 - Action: 4 KiB; rendered view: 1,024 nodes, nesting depth 12, repetition 256.
-- JSON Schema references and regular expressions are rejected to prevent network
-  resolution, recursive references and unbounded regex evaluation.
+- JSON Schema references and regular expressions are rejected to prevent network resolution, recursive references and unbounded regex evaluation.
 
 Limits are host policy, not package-adjustable settings. This is an experimental
 format with bounded execution, not a claim of formal rule correctness.
