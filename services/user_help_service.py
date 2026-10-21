@@ -28,6 +28,7 @@ _DOC_URL_BY_FILE: dict[str, str] = {
     "virtual_tabletop_guide.md": "/docs/virtual-tabletop",
     "beyond20.md": "/docs/beyond20",
     "writing_adventures.md": "/docs/writing-adventures",
+    "game_packages.md": "/docs/game-packages",
     "theater_feedback_and_reports.md": "/docs/feedback-and-reporting",
     "theater_yaml_docs.html": "/docs/theater-yaml",
     "ideas.html": "/docs/ideas",
@@ -43,6 +44,7 @@ _DOC_FILE_BY_URL: dict[str, str] = {
     "/docs/vtt": "virtual_tabletop_guide.md",
     "/docs/beyond20": "beyond20.md",
     "/docs/writing-adventures": "writing_adventures.md",
+    "/docs/game-packages": "game_packages.md",
     "/docs/feedback-and-reporting": "theater_feedback_and_reports.md",
     "/docs/theater-yaml": "theater_yaml_docs.html",
     "/docs/ideas": "ideas.html",
@@ -217,6 +219,7 @@ class UserHelpService:
                 "- [Virtual Tabletop Guide](/docs/virtual-tabletop): 2D battlemaps, Orator Action Wheel, stamps, tokens & minis, tactical movement, and Beyond20 rolls.\n"
                 "- [theater.yaml Reference](/docs/theater-yaml): Configuration reference covering all sections, settings, live_agent, canvas, visuals, and audio.\n"
                 "- [Writing Adventures Guide](/docs/writing-adventures): Authoring interactive adventures, world lore, and scene design.\n"
+                "- [Game Packages](/docs/game-packages): Turn-based transactional games, state, transitions, and views.\n"
                 "- [Beyond20 Integration Guide](/docs/beyond20): Beyond20 extension setup and forwarding D&D Beyond rolls.\n"
                 "- [Ideas & Recipes](/docs/ideas): Customization recipes, prompt techniques, and image effects.\n"
                 "- [About Narratron](/docs/about): Platform overview and background.\n"

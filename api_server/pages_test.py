@@ -99,6 +99,21 @@ def test_docs_virtual_tabletop_page_serves_markdown_content():
     assert "Action Wheel" in response
 
 
+def test_game_packages_guide_has_a_public_page_and_search_results() -> None:
+    response = TestClient(pages.app).get("/docs/game-packages")
+    assert response.status_code == 200
+    assert "Theater game packages" in response.text
+    assert "turn-based transactional" in response.text
+    assert "<pre><code" in response.text
+    assert '<title>Game Packages | Narratron Docs</title>' in response.text
+    assert 'href="/docs/game-packages" class="is-active"' in response.text
+    assert 'href="/docs" class="deploy-nav-btn active"' in response.text
+    assert "https://narratron.app/docs/game-packages" in pages.read_sitemap().body.decode()
+    pages.rebuild_docs_search_index()
+    results = pages.search_docs(q="turn-based transactional", limit=8)
+    assert any(result["href"].startswith("/docs/game-packages") for result in results["results"])
+
+
 def test_virtual_tabletop_guide_images_load_and_references_render_as_lists() -> None:
     response = pages.read_docs_virtual_tabletop()
     assert '<pre><code' not in response
@@ -124,6 +139,7 @@ def test_docs_index_links_to_each_documentation_page():
     assert 'href="/docs/ideas"' in response
     assert 'href="/docs/theater-yaml"' in response
     assert 'href="/docs/writing-adventures"' in response
+    assert 'href="/docs/game-packages"' in response
     assert 'href="/docs/beyond20"' in response
     assert 'href="/docs/virtual-tabletop"' in response
 
@@ -135,6 +151,7 @@ def test_docs_pages_render_persistent_navigation_and_search():
         pages.read_docs_ideas(),
         pages.read_docs_theater_yaml(),
         pages.read_docs_writing_adventures(),
+        pages.read_docs_game_packages(),
         pages.read_docs_beyond20(),
         pages.read_docs_virtual_tabletop(),
         pages.read_terms(),
