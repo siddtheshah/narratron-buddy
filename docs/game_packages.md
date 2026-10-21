@@ -12,6 +12,73 @@ mode, viewers with contributor permission can also submit actions annotated with
 `"permission": "contributor"`. Other viewers see the committed view.
 A live story agent is not required.
 
+## Interaction model: turn-based transactional games
+
+Narratron supports **turn-based transactional** games. Play advances through
+discrete, validated changes to shared state, with stable points where the player
+and Narratron can inspect the result and decide what to do next. Narratron does
+not support real-time game environments: mechanics must tolerate either side
+taking time to respond, without requiring continuous input, physics updates or
+precisely timed reactions.
+
+The main game transactions must either require acceptance from both the player
+and Narratron, or strongly constrain what each can do independently before the
+other gets to act. This can take two forms:
+
+- **Mutual acceptance:** one side proposes specific terms, and the other accepts
+  or rejects them. For a trade, record the pending offer, then exchange goods and
+  payment together only when the recipient accepts those exact terms. Changing
+  the terms requires a new acceptance. Rejection or cancellation clears the offer
+  without completing the exchange. Apply the same rule to Narratron's offers to
+  the player.
+- **Bounded turns:** agreed rules authorize a limited action or sequence, then
+  hand control to the other side. In checkers, a legal move (including a required
+  chain of jumps) ends the side's turn. Neither side may keep taking unrelated
+  moves while waiting for the other. Individual moves need no separate approval
+  from the opponent because the turn rules already constrain them.
+
+An accepted game transaction can span several runtime transitions: proposing an
+offer commits pending state; accepting it later commits the exchange. Each
+transition is atomic, but runtime validation of a proposal is **not** Narratron's
+acceptance. Authors must encode pending terms, acceptance, turn ownership and
+action limits in state and transition guards. Narration, disabled buttons and
+planner instructions alone do not enforce these rules. The host does not add a
+universal approval handshake or alternating-turn rule to packages.
+
+### Conceptual tests for a game idea
+
+Use these questions before designing a package:
+
+1. **Can both sides wait?** If the player pauses or Narratron takes a while to
+   respond, can play remain at a valid decision point without missed inputs,
+   collisions or deadlines changing the outcome? If continuous timing is
+   essential, the game does not fit.
+2. **Can an action settle as a discrete result?** Can a move, purchase, trade or
+   production step be described by explicit inputs and a complete resulting
+   state? It must resolve within the runtime's execution limits, without an
+   ongoing simulation loop.
+3. **What stops either side acting alone indefinitely?** Identify the required
+   acceptance, turn boundary or finite action budget. Test both directions: the
+   player must not bypass Narratron's decision, and Narratron must not bypass the
+   player's. A stream of individually valid clicks is insufficient if it lets
+   one side advance the main game without that boundary.
+4. **Can the rules enforce the boundary?** Out-of-turn moves, repeated acceptance
+   and acceptance of changed terms must fail through guards and state checks.
+   Local selection and previews may explore choices, but must not complete a
+   shared outcome before its required acceptance or turn commitment.
+
+| Game idea | Fit | Reason |
+| --- | --- | --- |
+| Checkers | Yes | Moves have discrete outcomes, legal moves are constrained, and turns pass between the player and Narratron. The board can wait for either side. |
+| Brickbreaker | No | The moving ball and paddle require continuous simulation and timely player input. Waiting changes whether the player hits the ball. |
+| Cookie Clicker-style progression | Yes, with bounded transactions | Clicks, purchases and production can become discrete actions or finite batches. Require a handoff or mutual acceptance at the main progression boundaries; resolve production as explicit steps. Continuous background ticking and unlimited progression while Narratron waits do not fit this model. |
+| Angry Birds | No, in its usual physics-based form | Choosing a shot is discrete, but resolving flight, collisions and collapsing structures depends on a continuous physics simulation. A bounded rules-based shot outcome would be a redesigned transactional game. |
+
+Selection, previews and other small interactions do not each need a Narratron
+response. They must stay within the current turn's constraints. For example, a
+player can adjust an offer privately before submitting it, but cannot use those
+adjustments to transfer goods before the other side accepts.
+
 ## Minimal package
 
 Use YAML for human-authored packages: comments explain intent, and `|-` lets CEL
@@ -81,7 +148,7 @@ the same schemas, CEL validation and execution limits as JSON. The bundled
   see the full state.
 - `state_schema`: JSON Schema for every initial, restored and resulting state.
 - `constants`: optional immutable JSON data available to expressions.
-- `functions`: ordered named pure CEL expressions with `parameters` and `expr`.
+- `functions`: ordered named CEL expressions with `parameters` and `expr`.
   A function may call earlier functions, but not itself or later functions.
   It receives its parameters and `constants`; it has no implicit access to state.
 - `derived`: ordered `{ "name": "...", "expr": "..." }` bindings, evaluated from
@@ -213,11 +280,35 @@ authors should not render hidden information or include it in action arguments.
 ## CEL and execution limits
 
 The runtime uses the CEL interpreter, with no Python compilation or host I/O
-extensions. Supported calls are `size`, `string`, `int`, `bool`, author-defined
-pure functions, and collection `map`, `filter`, `exists`, `all`, `size` methods.
+extensions. Supported calls are `size`, `string`, `int`, `bool`, `random_int`,
+author-defined functions, and collection `map`, `filter`, `exists`, `all`, `size` methods.
 Arithmetic, conditions, list/map literals and indexing are available. Arbitrary
 methods, regular-expression methods, object construction and recursive functions
 are rejected.
+
+`random_int(min, max)` returns a uniformly random integer with **both bounds
+included**. For example, `random_int(1, 6)` rolls a six-sided die and
+`random_int(0, 1)` flips a coin. Both arguments must be CEL integers, with
+`min <= max`; equal bounds return that value. Invalid arguments fail evaluation.
+Each call draws afresh, including calls inside author-defined functions and
+collection macros; expressions containing random calls are not memoized.
+
+Roll in a transition binding and store the result in state when it must be
+reused or survive save/restore. For example:
+
+```yaml
+bindings:
+  - name: roll
+    expr: 'random_int(1, 6)'
+result: '{"last_roll": roll, "total": state.total + roll}'
+```
+
+This draws once and uses the same roll for both fields. Direct random calls in
+derived values, guards, invariants or views draw again whenever evaluated; keep
+those expressions deterministic by reading the stored state instead. Packages
+whose exported browser rules contain randomness fall back to server rendering,
+even with `local_preview: true`, so a preview cannot roll a different outcome
+from the committed action.
 
 Limits include:
 

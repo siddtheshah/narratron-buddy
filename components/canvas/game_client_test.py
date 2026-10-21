@@ -1,8 +1,10 @@
 from pathlib import Path
 from unittest.mock import Mock
 
+import pytest
+
 from components.canvas.game_client import browser_program
-from components.canvas.game_runtime import GameProgram
+from components.canvas.game_runtime import FunctionDefinition, GameAction, GameProgram
 from components.canvas.game_state import GameState
 from testing.game_fixtures import counter_definition
 
@@ -31,3 +33,22 @@ def test_unsupported_browser_expression_preserves_server_rendering(tmp_path: Pat
     assert game.error == ''
     assert 'client' not in game.payload()
     assert game.payload()['view'][0]['props']['opacity'] == 0.5
+
+
+@pytest.mark.parametrize('helper', [False, True])
+def test_random_rules_use_server_rendering(tmp_path: Path, helper: bool) -> None:
+    definition = counter_definition()
+    definition.local_preview = True
+    source = 'random_int(1, 6)'
+    if helper:
+        definition.functions['roll'] = FunctionDefinition(parameters=[], expr=source)
+        source = 'roll()'
+    definition.transitions['clear'].result = '{"count": ' + source + '}'
+    directory = tmp_path / 'game'
+    directory.mkdir()
+    (directory / 'game.json').write_text(definition.model_dump_json(), encoding='utf-8')
+    game = GameState(tmp_path, Mock(), Mock())
+    assert game.error == ''
+    assert 'client' not in game.payload()
+    game.act(GameAction(name='clear', revision=0))
+    assert 1 <= game.state['count'] <= 6

@@ -35,6 +35,8 @@ def _expression(program: GameProgram, node: Tree[Token] | Token) -> JsonValue:
         return str(node)
     kind = str(node.data)
     children = node.children
+    if kind == "ident_arg" and str(children[0]) == "random_int":
+        raise ValueError("Random calls use the server runtime.")
     if kind == "literal":
         # Preserve CEL's integer division; unsupported numeric kinds use server rendering.
         if children[0].type not in {"INT_LIT", "STRING_LIT", "BOOL_LIT", "NULL_LIT"}:

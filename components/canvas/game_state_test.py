@@ -9,6 +9,7 @@ import pytest
 
 from components.canvas.game_runtime import (
     MAX_GAME_BYTES,
+    Binding,
     GameDefinition,
     GameProgram,
     GameStep,
@@ -27,6 +28,38 @@ from components.canvas.canvas_state_manager import CanvasStateManager
 
 
 from testing.game_fixtures import counter_definition, make_game
+
+
+def test_random_binding_is_drawn_once_and_persisted(tmp_path: Path) -> None:
+    definition = counter_definition()
+    definition.transitions['clear'].bindings = [Binding(name='roll', expr='random_int(1, 5)')]
+    definition.transitions['clear'].result = '{"count": roll + roll}'
+    game = make_game(tmp_path, definition)
+    with patch('components.canvas.game_runtime.random.randint', return_value=5) as draw:
+        result = game.act(GameAction(name='clear', revision=0))
+        assert game.state == {'count': 10}
+        assert result['view'][0]['children'][0]['props']['text'] == 'Count: 10'
+        draw.assert_called_once_with(1, 5)
+        draw.reset_mock()
+        restored = make_game(tmp_path, definition)
+        restored.load(game.serialize()['game_state'])
+        assert restored.payload() == result
+        with pytest.raises(StaleGameAction):
+            game.act(GameAction(name='clear', revision=0))
+        draw.assert_not_called()
+
+
+def test_random_result_rejected_by_invariant_rolls_back(tmp_path: Path) -> None:
+    definition = counter_definition()
+    definition.transitions['clear'].result = '{"count": random_int(1, 6)}'
+    definition.invariants = ['state.count == 0']
+    game = make_game(tmp_path, definition)
+    before = game.serialize()
+    with patch('components.canvas.game_runtime.random.randint', return_value=6):
+        with pytest.raises(ValueError, match='invariant'):
+            game.act(GameAction(name='clear', revision=0))
+    assert game.serialize() == before
+    assert game.payload()['view'][0]['children'][0]['props']['text'] == 'Count: 0'
 
 
 def test_generic_state_transitions_rendering_and_restore(tmp_path: Path) -> None:

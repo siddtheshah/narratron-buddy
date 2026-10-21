@@ -5,6 +5,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 import json
 from pathlib import Path, PurePosixPath
+import random
 import re
 from time import monotonic
 from typing import Literal
@@ -332,6 +333,15 @@ def check_schema_features(schema: JsonValue) -> None:
             check_schema_features(node[keyword])
 
 
+def random_int(lower: celtypes.IntType, upper: celtypes.IntType) -> celtypes.IntType:
+    """Draw a CEL integer uniformly from the inclusive bounds."""
+    if type(lower) is not celtypes.IntType or type(upper) is not celtypes.IntType:
+        raise TypeError("random_int requires two integer bounds.")
+    if lower > upper:
+        raise ValueError("random_int lower bound must not exceed its upper bound.")
+    return celtypes.IntType(random.randint(int(lower), int(upper)))
+
+
 class GameProgram:
     """Compile a package once. No game names, field names or move types live here."""
 
@@ -341,19 +351,23 @@ class GameProgram:
         self.environment = Environment()
         self.programs: dict[str, Runner] = {}
         self.dependencies: dict[str, list[str]] = {}
+        self.random_expressions: set[str] = set()
+        self.random_functions: set[str] = {"random_int"}
         self.initial_view: list[JsonValue] = []
         self.initial_model_state: JsonValue = definition.initial
         self.initial_narratron_actions: dict[str, JsonValue] = {}
         self.state_validator = validate_schema(definition.state_schema)
         self.action_validators = {name: validate_schema(transition.parameters) for name, transition in definition.transitions.items()}
         self.state_validator.validate(definition.initial)
-        allowed_functions = {"size", "string", "int", "bool"}
+        allowed_functions = {"size", "string", "int", "bool", "random_int"}
         for name, function in definition.functions.items():
             if not re.fullmatch(r"[a-zA-Z][a-zA-Z0-9_]{0,39}", name) or name in allowed_functions:
                 raise ValueError("Invalid or duplicate function name.")
             if len(set(function.parameters)) != len(function.parameters) or any(not re.fullmatch(r"[a-zA-Z][a-zA-Z0-9_]{0,39}", param) for param in function.parameters):
                 raise ValueError("Invalid function parameters.")
             self.compile(function.expr, allowed_functions)
+            if function.expr in self.random_expressions:
+                self.random_functions.add(name)
             allowed_functions.add(name)
         for binding in definition.derived:
             self.compile(binding.expr, allowed_functions)
@@ -389,6 +403,8 @@ class GameProgram:
                 raise ValueError(f"Unsupported CEL method: {node.children[1]}")
         self.programs[source] = self.environment.program(tree)
         self.dependencies[source] = sorted({str(node.children[0]) for node in nodes if node.data == "ident"})
+        if any(node.data == "ident_arg" and str(node.children[0]) in self.random_functions for node in nodes):
+            self.random_expressions.add(source)
 
     def compile_view(self, node: ViewNode, functions: set[str], depth: int) -> None:
         if depth > 12:
@@ -414,7 +430,7 @@ class Execution:
         self.svg_expanded_bytes: int = 0
         self._values: dict[int, tuple[JsonValue, celtypes.Value]] = {}
         self._results: dict[tuple[str, tuple[tuple[str, int], ...]], JsonValue] = {}
-        self.functions: dict[str, Callable[..., celtypes.Value]] = {}
+        self.functions: dict[str, Callable[..., celtypes.Value]] = {"random_int": random_int}
         for name, definition in program.definition.functions.items():
             self.functions[name] = self.function(definition)
 
@@ -431,7 +447,8 @@ class Execution:
     def evaluate(self, source: str, context: dict[str, JsonValue]) -> JsonValue:
         dependencies = self.program.dependencies[source]
         key = (source, tuple((name, id(context[name])) for name in dependencies if name in context))
-        if key in self._results:
+        cacheable = source not in self.program.random_expressions
+        if cacheable and key in self._results:
             return self._results[key]
         runner = self.program.programs[source]
         activation = Activation(vars={key: self.convert(value) for key, value in context.items()}, functions=self.functions)
@@ -441,7 +458,8 @@ class Execution:
             # exhaustion must still reject the whole evaluation.
             self.budget.charge()
             value = checked_json(result)
-            self._results[key] = value
+            if cacheable:
+                self._results[key] = value
             return value
         except Exception as exc:
             raise ValueError(f"CEL evaluation failed: {str(exc)[:180]}") from exc
