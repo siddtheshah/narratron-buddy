@@ -26,7 +26,7 @@ const ATTRIBUTES = new Set([
 
 export function createGameRenderer({ container, toggleButton, actionUrl, canEdit,
     canContribute = () => false, refresh,
-    stylesheetUrl = '/static/css/game-renderer.css?v=6', initiallyOpen = false,
+    stylesheetUrl = '/static/css/game-renderer.css?v=7', initiallyOpen = false,
     onPendingChange = () => {}, onMove = () => {} }) {
     const stylesheet = document.createElement('link');
     stylesheet.rel = 'stylesheet';
@@ -37,6 +37,9 @@ export function createGameRenderer({ container, toggleButton, actionUrl, canEdit
     let error = '';
     let signature = '';
     let open = initiallyOpen;
+    let unseenUpdate = false;
+    let highlightUntil = 0;
+    let highlightTimer = null;
     let latestLeft = 50;
     let latestTop = 50;
     let activePointerId = null;
@@ -72,10 +75,24 @@ export function createGameRenderer({ container, toggleButton, actionUrl, canEdit
         return action.permission === 'contributor' && Boolean(canContribute());
     }
 
+    function highlightUpdate() {
+        highlightUntil = Date.now() + 2400;
+        clearTimeout(highlightTimer);
+        highlightTimer = setTimeout(() => {
+            highlightUntil = 0;
+            highlightTimer = null;
+            container.querySelector('.game-panel')?.classList.remove('game-panel-updated');
+        }, 2400);
+    }
+
     toggleButton.addEventListener('click', event => {
         event.stopPropagation();
         if (!game) return;
         open = !open;
+        if (open && unseenUpdate) {
+            unseenUpdate = false;
+            highlightUpdate();
+        }
         draw();
     });
     toggleButton.addEventListener('pointerdown', event => event.stopPropagation());
@@ -171,13 +188,17 @@ export function createGameRenderer({ container, toggleButton, actionUrl, canEdit
         toggleButton.setAttribute('aria-expanded', String(open));
         const hasError = Boolean(error || game?.error);
         toggleButton.dataset.gameError = String(hasError);
-        toggleButton.setAttribute('aria-label', hasError ? 'Toggle game — game error' : 'Toggle game');
-        toggleButton.title = hasError ? 'Game error — click to view details' : (open ? 'Close game' : 'Open game');
+        toggleButton.dataset.gameUpdated = String(unseenUpdate && !open);
+        const label = hasError ? 'Toggle game — game error' : 'Toggle game';
+        toggleButton.setAttribute('aria-label', unseenUpdate ? `${label} — new update` : label);
+        toggleButton.title = hasError ? 'Game error — click to view details'
+            : unseenUpdate ? 'Game updated — click to view' : (open ? 'Close game' : 'Open game');
         container.hidden = !game || !open;
         container.replaceChildren();
         if (!game) return;
         const panel = document.createElement('section');
         panel.className = 'game-panel';
+        panel.classList.toggle('game-panel-updated', open && Date.now() < highlightUntil);
         panel.setAttribute('aria-busy', String(pending));
         if (!panel.classList.contains('dragging')) {
             panel.style.left = `${latestLeft}%`;
@@ -310,6 +331,17 @@ export function createGameRenderer({ container, toggleButton, actionUrl, canEdit
             if (nextSignature === signature) return;
             signature = nextSignature;
             const changed = target?.definition_hash !== game?.definition_hash || target?.revision !== game?.revision;
+            // Polling, permission changes and placement updates are not new game actions.
+            // The first payload establishes the baseline; subsequent revisions signal updates.
+            if (!target) {
+                unseenUpdate = false;
+                highlightUntil = 0;
+                clearTimeout(highlightTimer);
+                highlightTimer = null;
+            } else if (game && changed) {
+                if (open) highlightUpdate();
+                else unseenUpdate = true;
+            }
             const permissionChanged = draft.length && draftPermission !== JSON.stringify([canEdit(), Boolean(canContribute())]);
             if (changed || permissionChanged) {
                 if (draft.length && !pending) error = 'The game or your permissions changed. Local exploration was discarded.';
