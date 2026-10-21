@@ -86,6 +86,7 @@ adventures/my-custom-adventure/
 ├── lore/                   # Lore text files read by the agent
 │   ├── RESPONDER.md         # Pinned immediate-response instructions
 │   ├── PLANNER.md           # Pinned background-planning instructions
+│   ├── RECORDER.md          # Pinned factual recording and game-action instructions
 │   ├── factions/
 │   │   └── rebels.txt
 │   └── locations/
@@ -224,13 +225,14 @@ For full details on every field, default values, and advanced features (such as 
 
 Files in `lore/` are indexed and made available to the Gemini story planner to ground storytelling in your world's backstory, characters, and rules.
 
-#### Pinned role guides: `RESPONDER.md` and `PLANNER.md`
+#### Pinned role guides: `RESPONDER.md`, `PLANNER.md`, and `RECORDER.md`
 
-Every adventure has two independent instruction files in `lore/`. The complete `RESPONDER.md` is pinned in the responder's instructions; the complete `PLANNER.md` is pinned in the planner's instructions on every run. Each module cannot list, search, or read the other's guide. Give each file its own priorities and enough context to perform its role independently.
+Every adventure has three independent instruction files in `lore/`. The complete `RESPONDER.md` is pinned in the responder's instructions; the complete `PLANNER.md` is pinned in the planner's instructions; and the complete `RECORDER.md` is pinned in the recorder's instructions. Each module cannot list, search, or read the others' guides. Give each file its own priorities and enough context to perform its role independently.
 
-- **`lore/RESPONDER.md`**: Premise, opening scene, tone, immediate action resolution, dice rules, disclosure limits, local lore roadmap, and factual planning signals. The responder owns narration and NPC dialogue and never writes sticky notes.
-- **`lore/PLANNER.md`**: Campaign milestones, off-screen motives, clocks, consequences, outcomes, sticky schemas and update priorities, and Narratron game actions. The planner never narrates a parallel scene or rolls dice.
-- **Shared lore (`.txt` or `.md`)**: World facts, detailed mechanics, NPCs, locations, and factions that either role may fetch on demand. Put shared rules here rather than linking one private guide from the other.
+- **`lore/RESPONDER.md`**: Premise, opening scene, tone, immediate action resolution, dice rules, disclosure limits, local lore roadmap, and factual planning signals. The responder owns narration and NPC dialogue and never writes sticky notes or takes game actions.
+- **`lore/PLANNER.md`**: Campaign milestones, off-screen motives, clocks, consequences, outcomes, and planner-owned sticky notes. The planner never narrates a parallel scene, rolls dice, or takes game actions.
+- **`lore/RECORDER.md`**: Factual note reconciliation, recorder-owned sticky tracking, and validated Narratron game actions. The recorder reconciles completed responses and committed player events against established facts.
+- **Shared lore (`.txt` or `.md`)**: World facts, detailed mechanics, NPCs, locations, and factions that roles may fetch on demand. Put shared rules here rather than linking one private guide from another.
 
 The planner starts immediately when `StoryTool.process_user_action` receives an action. The initial event is unresolved player intent: research and preparation can begin, but action-dependent changes await the responder's separate result event. Reconcile that result once; these events do not represent two player turns. Each planner run allows eight lore reads and eight searches; the responder retains three of each. Ordinary lore is indexed and fetched on demand, with no filename-prefix preloading.
 
@@ -252,6 +254,7 @@ The planner starts immediately when `StoryTool.process_user_action` receives an 
 2. **Organize by Domain**: Split detailed worldbuilding into clear subdirectories:
    - `lore/RESPONDER.md`: Pinned immediate-resolution guide.
    - `lore/PLANNER.md`: Pinned campaign and tracking guide.
+   - `lore/RECORDER.md`: Pinned factual note reconciliation and game actions guide.
    - `lore/characters/*.txt`: Key NPCs, personalities, secrets, dialogue habits, and their annotated `image_reference`.
    - `lore/locations/*.txt`: Sensory descriptions, secrets, hazard triggers, and interactable elements.
    - `lore/factions/*.txt`: Groups, motives, rivalries, and allegiances.
@@ -459,7 +462,7 @@ When your adventure is ready to be featured for everyone on **narratron.app**:
 - [ ] `metadata.json` exists, has a valid `id`, `title`, `author`, `genre`, and references a valid `cover_image`.
 - [ ] `theater.yaml` is valid YAML and includes `story_planning` with `adventure_mode: true`.
 - [ ] `required_stickies` match keys defined in `initial_elements`.
-- [ ] `lore/RESPONDER.md` and `lore/PLANNER.md` define independent priorities, role boundaries, and lore roadmaps; shared rules live in separate lore documents.
+- [ ] `lore/RESPONDER.md`, `lore/PLANNER.md`, and `lore/RECORDER.md` define independent priorities, role boundaries, and lore roadmaps; shared rules live in separate lore documents.
 - [ ] The adventure passes the smoke test:
   ```powershell
   uv run python testlab/adventure_runner.py --adventure <your-adventure-folder> --smoke

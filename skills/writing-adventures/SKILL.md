@@ -24,6 +24,7 @@ adventures/<adventure-slug>/
 ├── lore/                   # Worldbuilding, DM screen, character dossiers, locations, and rules
 │   ├── RESPONDER.md         # Pinned immediate-response instructions
 │   ├── PLANNER.md           # Pinned background-planning instructions
+│   ├── RECORDER.md          # Pinned factual recording and game-action instructions
 │   ├── characters/         # NPC dossiers with image references and behavior guidelines
 │   ├── locations/          # Regional descriptions, local commodities, and hazards
 │   └── factions/           # Agendas, rivalries, and allegiances
@@ -53,7 +54,7 @@ When creating a new adventure, follow this sequence:
 1. **Scaffold the Package**: Create `adventures/<adventure-slug>/` with `lore/`, `references/characters/`, `references/scenes/`, `references/`, and `playlists/` folders.
 2. **Author `metadata.json`**: Configure the display title, slug ID, genre, difficulty, player count, and cover image.
 3. **Configure `theater.yaml` & `planning.yaml`**: Set `adventure_mode: true` and define agent persona, art, and music direction in `theater.yaml`. Define structured sticky notes, initial values, and required stickies in `planning.yaml`.
-4. **Write independent role guides**: Put opening, tone, action-resolution and dice rules in `lore/RESPONDER.md`; put campaign milestones, hidden consequences and sticky tracking in `lore/PLANNER.md`. Each module has only its own complete guide pinned and cannot read the other. Put shared mechanics and facts in separate lore documents.
+4. **Write independent role guides**: Put opening, tone, action-resolution and dice rules in `lore/RESPONDER.md`; put campaign milestones, hidden consequences and planner sticky tracking in `lore/PLANNER.md`; put factual note reconciliation and game actions in `lore/RECORDER.md`. Each module has only its own complete guide pinned and cannot read the others. Put shared mechanics and facts in separate lore documents.
 5. **Flesh Out Modular Lore**: Create character dossiers, location profiles, and faction files. Annotate characters with their canonical name (`image_reference: Keeper Orun`); annotate locations with their canonical scene name (`image_reference: The Desk of Origins`); other assets can use `image_reference: references/<filename>`.
 6. **Add Assets**: Place character portraits in `references/characters/<Character Name>/1.png` (each character requires its own folder; loose images directly under `references/characters/` are unsupported), scene imagery in `references/scenes/<Scene Name>/1.png` (with `scene.yaml`; loose images directly under `references/scenes/` are unsupported), cover/location references in `references/`, and loopable tracks in `playlists/`. During play, character portraits are copied into `output/artifacts/updated_references/characters/`, scene imagery into `output/artifacts/updated_references/scenes/`, and all appearance updates stay there. The live agent uses `<Character Name>` in visual prompts to attach the latest portrait; authors can manually copy session updates back into `references/characters/` and `references/scenes/`. See `docs/writing_adventures.md` for session reset and reference behavior.
 7. **Test Locally**: Run smoke and interactive tests using `testlab/adventure_runner.py`.
@@ -196,11 +197,11 @@ handled by the deep story planner.
 
 The `lore/` folder is the core storytelling engine. Proven architectural patterns for structuring interactive adventure lore ensure high narrative consistency, deep player agency, and reliable tool calling.
 
-### 5.1. Pinned role instructions: `RESPONDER.md` and `PLANNER.md`
+### 5.1. Pinned role instructions: `RESPONDER.md`, `PLANNER.md`, and `RECORDER.md`
 
-Every adventure requires both files at the top level of `lore/`. The runtime pins the full `RESPONDER.md` only for the responder and the full `PLANNER.md` only for the planner. Neither module can read or search the other's guide. Other `.txt` and `.md` lore is indexed and fetched on demand; no filename-prefix preloading is supported.
+Every adventure requires all three files at the top level of `lore/`. The runtime pins the full `RESPONDER.md` only for the responder, the full `PLANNER.md` only for the planner, and the full `RECORDER.md` only for the recorder. None of the modules can read or search the others' guides. Other `.txt` and `.md` lore is indexed and fetched on demand; no filename-prefix preloading is supported.
 
-Give the responder priorities for the opening, immediate action resolution, authored dice, dialogue, sensory feedback, disclosure, and factual planning signals. It does not write sticky notes. Give the planner priorities for durable state, off-screen actors, consequences, campaign pacing, and Narratron game actions. It never narrates a second scene or chooses dice outcomes. Shared world facts and mechanics belong in separate lore documents accessible to both roles.
+Give the responder priorities for the opening, immediate action resolution, authored dice, dialogue, sensory feedback, disclosure, and factual planning signals. It does not write sticky notes or take game actions. Give the planner priorities for contingent future developments, off-screen actors, opposition intentions, campaign pacing, and planner-owned sticky notes. It never narrates a second scene or chooses dice outcomes. Give the recorder priorities for reconciling completed responses and committed player events against established facts, maintaining recorder-owned sticky notes, and taking validated Narratron game actions. Shared world facts and mechanics belong in separate lore documents accessible to all roles.
 
 The planner begins immediately on a Player Action event, before responder completion. Treat that event as intent: research and prepare, but await the separate Responder Response event before committing costs or outcomes. Never count the two events as two actions. The planner has eight lore reads and eight searches per run; the responder has three of each.
 
@@ -454,8 +455,8 @@ Before packaging your adventure for players or deploying to a live session:
   - [ ] All keys in `required_stickies` exist in `initial_elements`.
   - [ ] `max_named_elements` is reasonably set (typically 6–10).
 - [ ] **`lore/` Architecture**:
-  - [ ] Contains independent `lore/RESPONDER.md` and `lore/PLANNER.md` guides, with no dependency on the other private guide.
-  - [ ] The responder guide defines opening, tone and resolution; the planner guide defines campaign progression and sticky ownership; both have a shared lore roadmap.
+  - [ ] Contains independent `lore/RESPONDER.md`, `lore/PLANNER.md`, and `lore/RECORDER.md` guides, with no dependency on the other private guides.
+  - [ ] The responder guide defines opening, tone and resolution; the planner guide defines campaign progression and pacing; the recorder guide defines factual note reconciliation and game actions.
   - [ ] Individual character and location lore files contain explicit `IMAGE_REFERENCE: references/<file>` annotations.
   - [ ] Secrets and spoilers are isolated from public knowledge.
 - [ ] **Assets**:
