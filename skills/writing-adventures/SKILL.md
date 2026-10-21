@@ -190,6 +190,8 @@ handled by the deep story planner.
 4. **`hidden_stickies` overlay**: Optional list in `theater.yaml` of sticky note names hidden in the canvas UI view by default when hovering over the sticky notes widget.
 5. **`starting_image` must exist**: Ensure the file referenced by `starting_image` is present in your adventure folder (usually under `references/`).
 6. **`speech` settings**: Configure `voice_language_code` and `accent_augmentation` to shape NPC voice generation; backend speech provider and model are application-level operational settings defined in `app.yaml`, which override corresponding fields.
+7. **Planner-owned 'Upcoming Encounter Suggestion' sticky**: Include a hidden sticky owned by the planner (`owner: planner`, `hidden: true`) with fields for `encounter`, `story_goal`, and `drama` to continuously stage narrative obstacles and dramatic tension.
+
 
 ---
 
@@ -201,7 +203,7 @@ The `lore/` folder is the core storytelling engine. Proven architectural pattern
 
 Every adventure requires all three files at the top level of `lore/`. The runtime pins the full `RESPONDER.md` only for the responder, the full `PLANNER.md` only for the planner, and the full `RECORDER.md` only for the recorder. None of the modules can read or search the others' guides. Other `.txt` and `.md` lore is indexed and fetched on demand; no filename-prefix preloading is supported.
 
-Give the responder priorities for the opening, immediate action resolution, authored dice, dialogue, sensory feedback, disclosure, and factual planning signals. It does not write sticky notes or take game actions. Give the planner priorities for contingent future developments, off-screen actors, opposition intentions, campaign pacing, and planner-owned sticky notes. It never narrates a second scene or chooses dice outcomes. Give the recorder priorities for reconciling completed responses and committed player events against established facts, maintaining recorder-owned sticky notes, and taking validated Narratron game actions. Shared world facts and mechanics belong in separate lore documents accessible to all roles.
+Give the responder priorities for the opening, immediate action resolution, authored dice, dialogue, sensory feedback, disclosure, and factual planning signals. It does not write sticky notes or take game actions. Ensure `RESPONDER.md` is robust and features an explicit **Lore Directory Layout** detailing subdirectories and files (`lore/characters/`, `lore/locations/`, `lore/rules/`, etc.) so the live narrator knows where canonical facts live. Give the planner priorities for contingent future developments, off-screen actors, opposition intentions, campaign pacing, and planner-owned sticky notes (such as the hidden `Upcoming Encounter Suggestion`). It never narrates a second scene or chooses dice outcomes. Give the recorder priorities for reconciling completed responses and committed player events against established facts, maintaining recorder-owned sticky notes, and taking validated Narratron game actions. Shared world facts and mechanics belong in separate lore documents accessible to all roles.
 
 The planner begins immediately on a Player Action event, before responder completion. Treat that event as intent: research and prepare, but await the separate Responder Response event before committing costs or outcomes. Never count the two events as two actions. The planner has eight lore reads and eight searches per run; the responder has three of each.
 

@@ -43,6 +43,10 @@ story_planning:
     # Maximum number of persistent stickies tracked on the board
     max_named_elements: 5
 
+    # Sticky notes hidden from player canvas view by default
+    hidden_stickies:
+        - "Upcoming Encounter Suggestion"
+
 # Chat cooldown in seconds
 chat:
     cooldown_duration: 10

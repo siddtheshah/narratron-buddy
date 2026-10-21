@@ -29,3 +29,18 @@
   owner: recorder
   description: "Fragments of forgotten plots, erased characters, and incomplete endings found by the player."
   initial: "Found: A compass with a missing protagonist's name; fragments of an unwritten finale."
+
+"Upcoming Encounter Suggestion":
+  owner: planner
+  hidden: true
+  description: "Upcoming narrative dilemma, forgotten concept, or character echo prepared by the story planner."
+  render: "Encounter: {encounter} | Story Goal: {story_goal} | Dramatic Tension: {drama}"
+  fields:
+    encounter: "Upcoming situation, discarded character, or metaphysical anomaly"
+    story_goal: "Underlying narrative objective or creative choice for the player"
+    drama: "Dramatic stakes, emotional resonance, or lingering question"
+  initial:
+    encounter: "Echo of a Scrapped Protagonist in the margin shadows"
+    story_goal: "Uncover why this character was abandoned before their final chapter"
+    drama: "The forgotten protagonist fears being read again, fearing it will erase their hard-won peace"
+

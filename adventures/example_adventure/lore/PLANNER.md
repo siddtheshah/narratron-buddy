@@ -29,3 +29,9 @@ The player has wandered into the Library through an open book spine.
 ## Themes & DM Guidelines
 - Atmospheric wonder, gentle curiosity, and nostalgic mystery.
 - Emphasize sensory details: the smell of aged paper and dried ink, floating illuminated words, quiet rustling pages.
+
+## Planner-Owned Sticky Notes
+- **`Upcoming Encounter Suggestion` (Hidden)**:
+  - You own this hidden note. Maintain the next staged encounter or anomaly (`encounter`), the player's underlying narrative test or choice (`story_goal`), and the emotional or metaphysical stakes (`drama`).
+  - Keep this updated as the player explores deeper into the Library, staging discoveries that test their curiosity and creative instincts.
+
