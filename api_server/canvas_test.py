@@ -179,12 +179,28 @@ def test_collaboration_mode_rejects_owner_when_baton_handed_to_another_orator() 
     service.get.assert_not_called()
 
 
-def test_active_orator_can_pin_canvas_and_agent_is_notified():
+@pytest.mark.parametrize("visual_pinned", [False, True])
+@pytest.mark.parametrize("music_pinned", [False, True])
+@pytest.mark.parametrize("pinned", [False, True])
+def test_active_orator_sets_both_pins_and_notifies_agent_on_change(
+    visual_pinned: bool, music_pinned: bool, pinned: bool,
+) -> None:
     registry_db = MagicMock()
     registry_db.get_deployment.return_value = {"user_id": 3, "active_orator_id": 3}
     state = MagicMock()
-    state.visual.pinned = True
-    state.visual.set_pinned.return_value = True
+    state.visual.pinned = visual_pinned
+    state.audio.pinned = music_pinned
+
+    def set_visual_pinned(value: bool) -> bool:
+        changed = state.visual.pinned != value
+        state.visual.pinned = value
+        return changed
+
+    def set_music_pinned(value: bool) -> None:
+        state.audio.pinned = value
+
+    state.visual.set_pinned.side_effect = set_visual_pinned
+    state.audio.set_pinned.side_effect = set_music_pinned
     service = MagicMock()
     service.get.return_value = state
     session = MagicMock(is_alive=True)
@@ -192,17 +208,27 @@ def test_active_orator_can_pin_canvas_and_agent_is_notified():
     manager.get_session.return_value = session
 
     with patch.object(object_registry, "db", registry_db), patch.object(object_registry, "canvas_states", service), patch.object(object_registry, "live_agent_manager", manager), patch.object(canvas, "_require_canvas_access"), patch.object(canvas, "get_current_user", return_value={"id": 3}):
-        result = canvas.set_canvas_pin("stage", canvas.CanvasPinRequest(pinned=True), request())
+        result = canvas.set_canvas_pin("stage", canvas.CanvasPinRequest(pinned=pinned), request())
 
-    assert result == {"theater_id": "stage", "pinned": True}
-    state.visual.set_pinned.assert_called_once_with(True)
-    state.persist.assert_called_once_with()
-    notification = session.send_content.call_args.args[0].parts[0].text
-    assert "orator has pinned the canvas" in notification
-    assert "tools are now blocked" in notification
+    assert result == {"theater_id": "stage", "pinned": pinned, "music_pinned": pinned}
+    state.visual.set_pinned.assert_called_once_with(pinned)
+    if music_pinned != pinned:
+        state.audio.set_pinned.assert_called_once_with(pinned)
+    else:
+        state.audio.set_pinned.assert_not_called()
+    if visual_pinned != pinned or music_pinned != pinned:
+        state.persist.assert_called_once_with()
+        session.send_content.assert_called_once()
+        notification = session.send_content.call_args.args[0].parts[0].text
+        status = "pinned" if pinned else "unpinned"
+        assert f"orator has {status} the canvas image and music" in notification
+        assert "tools are now blocked" in notification if pinned else "tools are available again" in notification
+    else:
+        state.persist.assert_not_called()
+        session.send_content.assert_not_called()
 
 
-def test_non_orator_cannot_pin_canvas():
+def test_non_orator_cannot_pin_canvas() -> None:
     registry_db = MagicMock()
     registry_db.get_deployment.return_value = {"user_id": 3, "active_orator_id": 3}
     service = MagicMock()

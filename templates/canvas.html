@@ -3167,7 +3167,7 @@
                     </svg>
                 </div>
             </div>
-            <button id="canvas-pin-btn" type="button" aria-pressed="false" title="Pin the current canvas visual">
+            <button id="canvas-pin-btn" type="button" aria-pressed="false" title="Pin the current image and music">
                 <span id="canvas-pin-icon" aria-hidden="true">📌</span>
             </button>
             <!-- Hide All Text On Canvas Floating Button (Lower Right) -->
@@ -4413,13 +4413,14 @@
 
         function updateCanvasPinButton() {
             if (!canvasPinBtn) return;
+            const allPinned = canvasPinned && musicPinned;
             canvasPinBtn.style.display = isCurrentOrator() ? 'inline-flex' : 'none';
-            canvasPinBtn.classList.toggle('active', canvasPinned);
-            canvasPinBtn.setAttribute('aria-pressed', String(canvasPinned));
-            canvasPinBtn.title = canvasPinned
-                ? 'Unpin canvas and allow visual changes'
-                : 'Pin the current canvas and block visual changes';
-            if (canvasPinLabel) canvasPinLabel.textContent = canvasPinned ? 'Canvas pinned' : 'Pin canvas';
+            canvasPinBtn.classList.toggle('active', allPinned);
+            canvasPinBtn.setAttribute('aria-pressed', canvasPinned !== musicPinned ? 'mixed' : String(allPinned));
+            canvasPinBtn.title = allPinned
+                ? 'Unpin image and music and allow changes'
+                : 'Pin the current image and music and block changes';
+            if (canvasPinLabel) canvasPinLabel.textContent = allPinned ? 'Image and music pinned' : 'Pin image and music';
         }
 
         canvasPinBtn?.addEventListener('click', async () => {
@@ -4429,11 +4430,12 @@
                 const response = await fetch(`/api/theaters/${encodeURIComponent(theaterId)}/canvas-pin`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ pinned: !canvasPinned }),
+                    body: JSON.stringify({ pinned: !(canvasPinned && musicPinned) }),
                 });
                 const result = await response.json().catch(() => ({}));
                 if (!response.ok) throw new Error(result.detail || 'Unable to update the canvas pin.');
                 canvasPinned = Boolean(result.pinned);
+                musicPinned = Boolean(result.music_pinned);
                 updateCanvasPinButton();
                 actionWheel.updateState(canvasPinned, musicPinned);
             } catch (error) {

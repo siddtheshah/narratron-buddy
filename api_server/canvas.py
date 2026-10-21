@@ -852,8 +852,8 @@ def post_orator_command(command: OratorCommand, request: Request, theater_id: st
 
 
 @app.post("/api/theaters/{theater_id}/canvas-pin")
-def set_canvas_pin(theater_id: str, payload: CanvasPinRequest, request: Request):
-    """Pin the current canvas visual on behalf of the active orator."""
+def set_canvas_pin(theater_id: str, payload: CanvasPinRequest, request: Request) -> dict[str, str | bool]:
+    """Pin the current image and music on behalf of the active orator."""
     _require_canvas_access(request, theater_id)
     deployment = db.get_deployment(theater_id)
     current_user = get_current_user(request)
@@ -862,20 +862,23 @@ def set_canvas_pin(theater_id: str, payload: CanvasPinRequest, request: Request)
 
     state = _state(theater_id)
     changed = state.visual.set_pinned(payload.pinned)
+    if state.audio.pinned != payload.pinned:
+        state.audio.set_pinned(payload.pinned)
+        changed = True
     if changed:
         state.persist()
         session = live_agent_manager.get_session(theater_id)
         if session and session.is_alive:
             status = "pinned" if payload.pinned else "unpinned"
             guidance = (
-                "Image and animation tools are now blocked; keep the current visual unchanged."
+                "Image, animation, and music tools are now blocked; keep the current image and music unchanged."
                 if payload.pinned
-                else "Image and animation tools are available again."
+                else "Image, animation, and music tools are available again."
             )
             session.send_content(types.Content(parts=[types.Part(text=(
-                f"[System Notification] The orator has {status} the canvas. {guidance}"
+                f"[System Notification] The orator has {status} the canvas image and music. {guidance}"
             ))]))
-    return {"theater_id": theater_id, "pinned": state.visual.pinned}
+    return {"theater_id": theater_id, "pinned": state.visual.pinned, "music_pinned": state.audio.pinned}
 
 
 @app.post("/api/theaters/{theater_id}/orator-action")
