@@ -89,7 +89,9 @@ expressions. Literal text therefore includes CEL string quotes.
   action contracts or package instructions, and cannot mutate it. An optional
   `triggering` boolean (default `true`) controls whether a player or contributor
   action notifies Narratron and queues a planner heartbeat; set `triggering: false`
-  for exploratory UI interactions like selection. A successful triggering player or
+  for exploratory UI interactions like selection. With `local_preview: true` at
+  the package root, these interactions run privately in the browser until a
+  triggering action submits the draft. A successful triggering player or
   contributor game action queues a planner heartbeat with both the submitted action
   and an independent snapshot of the newly committed state, so the Narratron side
   can react and narrate without waiting for a separate spoken turn.
@@ -102,8 +104,39 @@ an accepted transition's individual fields.
 
 Reset, selection, movement, trading, automatic reactions, turns and game-over
 rules are all authored transitions/expressions, not built-in host operations.
-The example's `select` is a real transition: selection is shared by viewers and
-increments the state revision. Local-only UI selection is not implemented yet.
+Without `local_preview`, every action remains a shared, revisioned transition.
+
+## Local exploration and turn commitment
+
+Set `local_preview: true` to send the state and compiled player rules with the
+view. The browser interprets a bounded, data-only CEL tree; package JavaScript
+never executes. Narratron instructions, model projections and Narratron-only
+transitions are excluded from this client program. The exporter supports integer,
+string, boolean, null, list and map expressions used by the bundled games.
+Unsupported expressions (including floating-point literals) keep the package on
+the existing server-rendered path.
+
+Non-triggering transitions update a private draft without making network calls,
+persisting shared state, or notifying StoryRecorder. The UI offers Undo and Discard
+changes. A triggering transition such as Trader's Propose trade sends the draft
+and final action in one request. Set `preview: true` on a triggering transition
+to preview it first and display an explicit End turn button, as checkers does for
+movement. After that preview, use Undo to try a different move or End turn to
+commit it. Continued checkers jumps retain their existing per-jump commit boundary.
+
+The action request contains `{name, arguments, revision, draft: [{name, arguments}]}`.
+The server checks the original revision, every step's actor and contributor
+permission, argument schemas, guards, resulting state and invariants, then
+publishes the final view. Draft prefixes may contain only non-triggering player
+actions. The final action must trigger game control. The entire draft commits
+with one revision, persistence operation, durable receipt and StoryRecorder event;
+any failed step rolls everything back. The client never submits a replacement
+state. Old action requests without a draft remain supported.
+
+Polling the same game revision preserves the draft. A newer revision, different
+package, or permission change discards it with a visible explanation. Rejected
+submissions discard the draft and refresh the authoritative view. Reloading also
+discards private exploration; other viewers see only committed state.
 
 ## Rendering language
 

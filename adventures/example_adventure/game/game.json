@@ -1534,7 +1534,8 @@
         }
       ],
       "result": "{\"board\": board, \"turn\": nextTurn, \"forced\": forced, \"selected\": continuing ? action.target : -1, \"winner\": won ? -nextTurn : 0, \"draw\": !won && quiet >= 80, \"quiet\": quiet, \"receipt\": coordinate(action.source) + \" \u2192 \" + coordinate(action.target) + (chosen.jump ? \" \u00b7 captured a piece\" : \"\") + (promoted ? \" \u00b7 crowned king\" : \"\") + (continuing ? \" \u00b7 continue jumping\" : \"\")}",
-      "triggering": true
+      "triggering": true,
+      "preview": true
     },
     "reset": {
       "parameters": {
@@ -1735,5 +1736,6 @@
     ]
   },
   "instructions": "Checkers game in the Library of Origins. You play Ivory (turn == -1) against the player's Red (turn == 1). When turn == -1 and moves are available, use 'narratron_move' to advance an Ivory piece.",
-  "model_state": "{\"board\": state.board, \"turn\": state.turn, \"turn_name\": sideName(state.turn), \"winner\": state.winner, \"draw\": state.draw, \"receipt\": state.receipt, \"red_count\": constants.indices.filter(i, state.board[i] > 0).size(), \"ivory_count\": constants.indices.filter(i, state.board[i] < 0).size(), \"legal_moves\": moves.map(m, {\"source\": m.source, \"target\": m.target, \"from\": coordinate(m.source), \"to\": coordinate(m.target), \"jump\": m.jump})}"
+  "model_state": "{\"board\": state.board, \"turn\": state.turn, \"turn_name\": sideName(state.turn), \"winner\": state.winner, \"draw\": state.draw, \"receipt\": state.receipt, \"red_count\": constants.indices.filter(i, state.board[i] > 0).size(), \"ivory_count\": constants.indices.filter(i, state.board[i] < 0).size(), \"legal_moves\": moves.map(m, {\"source\": m.source, \"target\": m.target, \"from\": coordinate(m.source), \"to\": coordinate(m.target), \"jump\": m.jump})}",
+  "local_preview": true
 }

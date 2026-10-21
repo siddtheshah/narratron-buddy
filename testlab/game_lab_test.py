@@ -103,6 +103,9 @@ def test_renderer_assets_are_shared_and_paths_are_restricted(manual_client: Test
     css_resp = manual_client.get("/game-lab-assets/css/game-renderer.css")
     assert css_resp.status_code == 200
     assert "no-cache" in css_resp.headers.get("cache-control", "")
+    runtime_resp = manual_client.get("/game-lab-assets/js/game-runtime.js")
+    assert runtime_resp.status_code == 200
+    assert 'createLocalGame' in runtime_resp.text
     assert manual_client.get("/game-lab-assets/js/other.js").status_code == 404
 
 

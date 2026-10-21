@@ -1143,7 +1143,7 @@
     let gameRenderer = null;
     let gamePending = false;
     let gameHistoryCount = 0;
-    import('/game-lab-assets/js/game-renderer.js?v=6').then(({ createGameRenderer }) => {
+    import('/game-lab-assets/js/game-renderer.js?v=7').then(({ createGameRenderer }) => {
       gameRenderer = createGameRenderer({
         container: $('game-preview'), toggleButton: $('game-toggle'),
         actionUrl: () => `/api/adventure-runner/sessions/${currentSessionId}/game/action`,

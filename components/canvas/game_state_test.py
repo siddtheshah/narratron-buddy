@@ -11,6 +11,7 @@ from components.canvas.game_runtime import (
     MAX_GAME_BYTES,
     GameDefinition,
     GameProgram,
+    GameStep,
     ViewAction,
     ViewNode,
     validate_game_package,
@@ -72,6 +73,84 @@ def test_stale_and_concurrent_submissions_commit_once(tmp_path: Path) -> None:
         futures = [pool.submit(attempt) for _ in range(2)]
         assert [future.result() for future in futures].count(True) == 1
     assert game.state == {'count': 1}
+
+
+def test_local_draft_replays_as_one_durable_player_event(tmp_path: Path) -> None:
+    definition = counter_definition()
+    definition.local_preview = True
+    definition.transitions['add'].triggering = False
+    definition.transitions['clear'].result = '{"count": state.count}'
+    game = make_game(tmp_path, definition)
+    persist, notify, callback = Mock(), Mock(), Mock()
+    game._persist, game._notify, game.on_player_action = persist, notify, callback
+    action = GameAction(name='clear', revision=0, draft=[
+        GameStep(name='add', arguments={'amount': 2}),
+        GameStep(name='add', arguments={'amount': 3}),
+    ])
+    result = game.act(action)
+    assert result['revision'] == 1
+    assert game.state == {'count': 5}
+    persist.assert_called_once()
+    notify.assert_called_once()
+    callback.assert_called_once()
+    assert callback.call_args.args[0] == action
+    assert callback.call_args.args[1]['state'] == {'count': 5}
+    restored = make_game(tmp_path, definition)
+    restored.load(game.serialize()['game_state'])
+    assert restored.pending_story_actions()[0][0] == action
+    with pytest.raises(StaleGameAction):
+        game.act(action)
+    callback.assert_called_once()
+
+
+@pytest.mark.parametrize('invalid', [
+    GameStep(name='add', arguments={'amount': 10}),
+    GameStep(name='add', arguments={'amount': '2'}),
+    GameStep(name='missing'),
+    GameStep(name='clear'),
+])
+def test_invalid_draft_rolls_back_every_step(tmp_path: Path, invalid: GameStep) -> None:
+    definition = counter_definition()
+    definition.local_preview = True
+    definition.transitions['add'].triggering = False
+    game = make_game(tmp_path, definition)
+    before = game.serialize()
+    callback = Mock()
+    game.on_player_action = callback
+    with pytest.raises(ValueError):
+        game.act(GameAction(name='clear', revision=0, draft=[
+            GameStep(name='add', arguments={'amount': 1}), invalid,
+        ]))
+    assert game.serialize() == before
+    assert game.payload()['view'][0]['children'][0]['props']['text'] == 'Count: 0'
+    callback.assert_not_called()
+
+
+def test_draft_cannot_smuggle_orator_action_as_contributor(tmp_path: Path) -> None:
+    definition = counter_definition()
+    definition.local_preview = True
+    definition.transitions['add'].triggering = False
+    definition.transitions['clear'].permission = 'contributor'
+    game = make_game(tmp_path, definition)
+    before = game.serialize()
+    with pytest.raises(UnauthorizedGameAction):
+        game.act(GameAction(name='clear', revision=0, draft=[
+            GameStep(name='add', arguments={'amount': 1}),
+        ]), actor='contributor')
+    assert game.serialize() == before
+
+
+def test_draft_cannot_smuggle_narratron_action(tmp_path: Path) -> None:
+    definition = counter_definition()
+    definition.local_preview = True
+    definition.transitions['add'].actor = 'narratron'
+    definition.view.children = [definition.view.children[0]]
+    game = make_game(tmp_path, definition)
+    with pytest.raises(ValueError, match='exploratory'):
+        game.act(GameAction(name='clear', revision=0, draft=[
+            GameStep(name='add', arguments={'amount': 1}),
+        ]))
+    assert game.state == {'count': 0}
 
 
 def test_guard_schema_and_invariant_rejections_roll_back(tmp_path: Path) -> None:

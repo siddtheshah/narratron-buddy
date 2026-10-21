@@ -1,4 +1,5 @@
-// Generic, host-rendered declarative views. No theater HTML, CSS or JavaScript executes.
+// Generic declarative views with optional data-only local exploration.
+import { createLocalGame } from './game-runtime.js?v=1';
 const TAGS = {
     column: 'div', row: 'div', grid: 'div', text: 'p', button: 'button',
     svg: 'svg', g: 'g', path: 'path', rect: 'rect', circle: 'circle', ellipse: 'ellipse',
@@ -43,6 +44,27 @@ export function createGameRenderer({ container, toggleButton, actionUrl, canEdit
     let startY = 0;
     let startLeft = 0;
     let startTop = 0;
+    let local = null;
+    let draft = [];
+    let draftViews = [];
+    let draftPermission = '';
+
+    function clearDraft() {
+        draft = [];
+        draftViews = [];
+        draftPermission = '';
+    }
+
+    function currentView() { return draftViews.length ? draftViews[draftViews.length - 1].view : game.view; }
+
+    function explore(action) {
+        if (draft.length >= 64) throw new Error('Commit or discard these changes before continuing.');
+        const state = draftViews.length ? draftViews[draftViews.length - 1].state : game.state;
+        const result = local.apply(state, action);
+        draft.push({ name: action.name, arguments: action.arguments });
+        draftViews.push(result);
+        draftPermission = JSON.stringify([canEdit(), Boolean(canContribute())]);
+    }
 
     function canAct(action) {
         if (!action) return false;
@@ -58,9 +80,15 @@ export function createGameRenderer({ container, toggleButton, actionUrl, canEdit
     });
     toggleButton.addEventListener('pointerdown', event => event.stopPropagation());
 
-    async function send(action) {
+    async function send(action, committing = false) {
         if (pending || !canAct(action) || !game?.view) return;
         if (action.confirmation && !window.confirm(action.confirmation)) return;
+        const transition = game.client?.transitions[action.name];
+        if (!committing && local && transition && (!transition.triggering || transition.preview)) {
+            try { explore(action); error = ''; } catch (failure) { error = failure.message; }
+            draw();
+            return;
+        }
         pending = true;
         onPendingChange(true);
         error = '';
@@ -70,13 +98,18 @@ export function createGameRenderer({ container, toggleButton, actionUrl, canEdit
         try {
             const response = await fetch(actionUrl(), {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name: action.name, arguments: action.arguments, revision }),
+                body: JSON.stringify({ name: action.name, arguments: action.arguments, revision,
+                    draft: committing ? draft.slice(0, -1) : draft }),
             });
             const result = await response.json();
             if (!response.ok) throw new Error(typeof result.detail === 'string' ? result.detail : 'Action rejected.');
-            if (game?.definition_hash === definitionHash && result.revision >= game.revision) game = result;
+            if (game?.definition_hash === definitionHash && result.revision >= game.revision) {
+                game = result;
+                clearDraft();
+            }
         } catch (failure) {
             error = failure.message || 'Could not submit action.';
+            if (game?.definition_hash === definitionHash) clearDraft();
         } finally {
             pending = false;
             onPendingChange(false);
@@ -116,7 +149,8 @@ export function createGameRenderer({ container, toggleButton, actionUrl, canEdit
         }
         if (node.kind === 'button') {
             element.type = 'button';
-            element.disabled = pending || !canAct(node.action) || Boolean(props.disabled) || !node.action;
+            const awaitingCommit = draft.length && game.client.transitions[draft[draft.length - 1].name].triggering;
+            element.disabled = pending || Boolean(awaitingCommit) || !canAct(node.action) || Boolean(props.disabled) || !node.action;
             if (node.action?.permission) element.dataset.gamePermission = String(node.action.permission);
             if (node.action) element.addEventListener('click', () => send(node.action));
         }
@@ -228,7 +262,27 @@ export function createGameRenderer({ container, toggleButton, actionUrl, canEdit
         panel.addEventListener('pointercancel', finishDrag);
         panel.addEventListener('lostpointercapture', finishDrag);
 
-        for (const node of game.view || []) panel.append(nodeView(node));
+        for (const node of currentView() || []) panel.append(nodeView(node));
+        if (draft.length) {
+            const controls = document.createElement('div');
+            controls.className = 'game-node game-row';
+            controls.append(message('Exploring · changes are private until submitted.', 'game-message'));
+            const button = (label, callback) => {
+                const element = document.createElement('button');
+                element.className = 'game-node game-button';
+                element.textContent = label;
+                element.disabled = pending;
+                element.addEventListener('click', callback);
+                controls.append(element);
+            };
+            const last = draft[draft.length - 1];
+            if (game.client.transitions[last.name].triggering) {
+                button('End turn', () => send({ ...last, permission: draftPermission === '[false,true]' ? 'contributor' : 'orator' }, true));
+            }
+            button('Undo', () => { draft.pop(); draftViews.pop(); error = ''; draw(); });
+            button('Discard changes', () => { clearDraft(); error = ''; draw(); });
+            panel.append(controls);
+        }
         if (pending) {
             const status = message('Resolving action…', 'game-message');
             status.setAttribute('role', 'status');
@@ -255,6 +309,13 @@ export function createGameRenderer({ container, toggleButton, actionUrl, canEdit
             const nextSignature = JSON.stringify([target, canEdit(), Boolean(canContribute())]);
             if (nextSignature === signature) return;
             signature = nextSignature;
+            const changed = target?.definition_hash !== game?.definition_hash || target?.revision !== game?.revision;
+            const permissionChanged = draft.length && draftPermission !== JSON.stringify([canEdit(), Boolean(canContribute())]);
+            if (changed || permissionChanged) {
+                if (draft.length && !pending) error = 'The game or your permissions changed. Local exploration was discarded.';
+                clearDraft();
+            }
+            if (target?.client !== game?.client) local = target?.client ? createLocalGame(target.client) : null;
             game = target;
             if (activePointerId === null) {
                 if (target?.placement?.left_pct !== undefined) latestLeft = Number(target.placement.left_pct) || 50;

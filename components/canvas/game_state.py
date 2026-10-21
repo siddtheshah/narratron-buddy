@@ -11,8 +11,9 @@ from typing import Literal
 
 from pydantic import Field, JsonValue, TypeAdapter
 
+from components.canvas.game_client import browser_compatible, browser_program
 from components.canvas.game_runtime import (
-    GameAction, GameModel, GameProgram, MAX_GAME_BYTES, MAX_VALUE_BYTES,
+    Budget, GameAction, GameStep, GameModel, GameProgram, MAX_GAME_BYTES, MAX_VALUE_BYTES,
     validate_game_package,
 )
 
@@ -75,6 +76,7 @@ class GameState:
         self._model_state: JsonValue = {}
         self._narratron_actions: dict[str, JsonValue] = {}
         self._story_commits: dict[str, StoryGameCommit] = {}
+        self._client: dict[str, JsonValue] | None = None
         path = directory / GAME_FILE
         try:
             if not path.exists():
@@ -84,6 +86,7 @@ class GameState:
                 raise ValueError("Game package path or size is invalid.")
             content = path.read_bytes()
             self.program = validate_game_package(content, game_dir=path.parent)
+            self._client = browser_program(self.program)
             self.definition_hash = sha256(content).hexdigest()
             self.state = json.loads(json.dumps(self.program.definition.initial))
             self._view = json.loads(json.dumps(self.program.initial_view))
@@ -101,12 +104,15 @@ class GameState:
             self.error = "Game package could not be loaded. Check its declaration and CEL expressions."
             self.program = None
 
-    def _prepare(self, state: dict[str, JsonValue]) -> list[JsonValue]:
+    def _prepare(self, state: dict[str, JsonValue], budget: Budget | None = None) -> list[JsonValue]:
         assert self.program is not None
         logger.debug("[GameState] Preparing state (revision=%d): %s", self.revision, state)
         if len(json.dumps(state, allow_nan=False).encode("utf-8")) > MAX_VALUE_BYTES:
             raise ValueError("Game state exceeds its size budget.")
         execution = self.program.execution()
+        if budget is not None:
+            execution.budget = budget
+            budget.nodes = 0
         context = execution.context(state)
         execution.validate(state, context)
         view = [node.model_dump(mode="json") for node in execution.render(self.program.definition.view, context)]
@@ -211,7 +217,11 @@ class GameState:
         with self._lock:
             if self.program is None:
                 return {"error": self.error} if self.error else None
-            return {"definition_hash": self.definition_hash, "revision": self.revision, "view": json.loads(json.dumps(self._view)), "error": self.error}
+            payload: dict[str, JsonValue] = {"definition_hash": self.definition_hash, "revision": self.revision, "view": self._view, "error": self.error}
+            if self._client is not None and browser_compatible(self.state):
+                payload["client"] = self._client
+                payload["state"] = self.state
+            return json.loads(json.dumps(payload))
 
     def story_snapshot(self, audience: Literal["responder", "narratron"]) -> dict[str, JsonValue] | None:
         """Give the responder facts and the planner its package-owned instructions."""
@@ -257,13 +267,15 @@ class GameState:
                     self.revision,
                 )
                 raise StaleGameAction("The game changed. Review its current state and try again.")
-            if len(action.model_dump_json().encode("utf-8")) > 4096:
+            if len(action.model_dump_json().encode("utf-8")) > 32768:
                 logger.debug("[GameState] Act rejected: action exceeds size budget")
                 raise ValueError("Game action exceeds its size budget.")
             transition = self.program.definition.transitions.get(action.name)
             if transition is None:
                 logger.debug("[GameState] Act rejected: unknown action '%s'", action.name)
                 raise ValueError("Unknown game action.")
+            if action.draft and (actor == "narratron" or not self.program.definition.local_preview or not transition.triggering):
+                raise ValueError("Draft actions require a player turn commitment.")
             if actor == "narratron":
                 if transition.actor != "narratron":
                     logger.debug(
@@ -282,14 +294,6 @@ class GameState:
                         transition.actor,
                     )
                     raise ValueError("This actor cannot take that game action.")
-                if actor == "contributor" and not (
-                    transition.allows_contributor or _view_nodes_allow_contributor(self._view, action)
-                ):
-                    logger.debug(
-                        "[GameState] Act rejected: contributor permission required for '%s'",
-                        action.name,
-                    )
-                    raise UnauthorizedGameAction("Only the active orator can take this game action.")
             logger.debug(
                 "[GameState] Executing action '%s' by actor '%s' at revision=%d (arguments=%s)",
                 action.name,
@@ -302,18 +306,10 @@ class GameState:
             )
             event_id = story_event_id or f"player:{self.definition_hash}:{action.revision}"
             try:
-                self.program.action_validators[action.name].validate(action.arguments)
-                execution = self.program.execution()
-                context = execution.context(self.state)
-                context["action"] = action.arguments
-                if not TypeAdapter(bool).validate_python(execution.evaluate(transition.guard, context), strict=True):
-                    logger.debug("[GameState] Guard condition failed for action '%s'", action.name)
-                    raise ValueError("This action is not permitted in the current game state.")
-                execution.bindings(transition.bindings, context)
-                candidate = TypeAdapter(dict[str, JsonValue]).validate_python(execution.evaluate(transition.result, context), strict=True)
-                # Evaluate the complete view before publishing or persisting anything.
-                self._prepare(candidate)
-                self.state = candidate
+                budget = Budget()
+                for step in action.draft:
+                    self._apply_step(step, actor, budget, exploratory=True)
+                self._apply_step(GameStep(name=action.name, arguments=action.arguments), actor, budget)
                 self.revision += 1
                 snapshot = self.story_snapshot("narratron")
                 assert snapshot is not None
@@ -336,6 +332,8 @@ class GameState:
                 )
                 logger.exception("Game action failed: %s", action.name)
                 self.report_error("Game action failed; the previous game state was retained.")
+                if type(exc) is UnauthorizedGameAction:
+                    raise
                 raise ValueError(str(exc)[:250]) from exc
             self.error = ""
             self._notify_safely()
@@ -350,3 +348,44 @@ class GameState:
                 except Exception:
                     logger.exception("Player game action callback failed at revision %s", self.revision)
             return self.payload()
+
+    def _apply_step(
+        self, step: GameStep, actor: Literal["player", "contributor", "narratron"], budget: Budget,
+        *, exploratory: bool = False,
+    ) -> None:
+        """Replay a step inside the enclosing atomic commit and rollback boundary."""
+        assert self.program is not None
+        transition = self.program.definition.transitions.get(step.name)
+        if transition is None:
+            raise ValueError("Unknown game action.")
+        if exploratory and (not transition.is_player_actor or transition.triggering):
+            raise ValueError("Only exploratory actions can precede a turn commitment.")
+        if (actor == "narratron") != (transition.actor == "narratron"):
+            raise ValueError("This actor cannot take that game action.")
+        if actor == "contributor" and not transition.allows_contributor:
+            view_execution = self.program.execution()
+            view_execution.budget = budget
+            budget.nodes = 0
+            view = [node.model_dump(mode="json") for node in view_execution.render(
+                self.program.definition.view, view_execution.context(self.state),
+            )]
+            if not _view_nodes_allow_contributor(
+                view, GameAction(name=step.name, arguments=step.arguments, revision=self.revision),
+            ):
+                raise UnauthorizedGameAction("Only the active orator can take this game action.")
+        if len(step.model_dump_json().encode("utf-8")) > 4096:
+            raise ValueError("Game action exceeds its size budget.")
+        self.program.action_validators[step.name].validate(step.arguments)
+        execution = self.program.execution()
+        execution.budget = budget
+        context = execution.context(self.state)
+        context["action"] = step.arguments
+        if not TypeAdapter(bool).validate_python(execution.evaluate(transition.guard, context), strict=True):
+            raise ValueError("This action is not permitted in the current game state.")
+        execution.bindings(transition.bindings, context)
+        candidate = TypeAdapter(dict[str, JsonValue]).validate_python(execution.evaluate(transition.result, context), strict=True)
+        if exploratory:
+            execution.validate(candidate, execution.context(candidate))
+        else:
+            self._prepare(candidate, budget)
+        self.state = candidate

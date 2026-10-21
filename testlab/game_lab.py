@@ -108,7 +108,7 @@ def get_session(session_id: str) -> GameSession:
 
 @router.get("/game-lab-assets/{kind}/{name}", include_in_schema=False)
 def game_renderer_asset(kind: str, name: str) -> FileResponse:
-    if (kind, name) not in (("js", "game-renderer.js"), ("css", "game-renderer.css")):
+    if (kind, name) not in (("js", "game-renderer.js"), ("js", "game-runtime.js"), ("css", "game-renderer.css")):
         raise HTTPException(404, "Unknown game asset.")
     return FileResponse(
         PROJECT_ROOT / "static" / kind / name,

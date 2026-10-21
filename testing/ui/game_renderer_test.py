@@ -3,7 +3,7 @@ from pathlib import Path
 from unittest.mock import Mock
 
 import pytest
-from playwright.sync_api import Page, Route, expect, sync_playwright
+from playwright.sync_api import Page, Request, Route, expect, sync_playwright
 
 from components.canvas.game_runtime import ViewNode
 from components.canvas.game_state import GameAction, GameState
@@ -18,7 +18,10 @@ def test_checkers_renderer_moves_and_viewer_permissions(tmp_path: Path) -> None:
     import { createGameRenderer } from '/static/js/game-renderer.js';
     window.editable = true;
     window.contributable = false;
-    window.refresh = async () => renderer.render(await (await fetch('/latest')).json());
+    window.refresh = async () => {
+        window.lastGame = await (await fetch('/latest')).json();
+        renderer.render(window.lastGame);
+    };
     const renderer = createGameRenderer({container: document.getElementById('game-state-layer'),
         toggleButton: document.getElementById('game-state-toggle-btn'),
         actionUrl: () => '/action', canEdit: () => window.editable,
@@ -59,6 +62,8 @@ def test_checkers_renderer_moves_and_viewer_permissions(tmp_path: Path) -> None:
         expect(page.locator('[data-game-id="square-33"]')).to_be_enabled()
         page.locator('[data-game-id="square-33"]').click()
         expect(page.locator('[data-game-id="status"]')).to_have_text("Ivory to move")
+        assert game.revision == 0
+        page.get_by_role('button', name='End turn', exact=True).click()
         assert game.state["board"][33] == 1
         toggle.click()
         page.evaluate("window.refresh()")
@@ -82,6 +87,7 @@ def test_checkers_renderer_moves_and_viewer_permissions(tmp_path: Path) -> None:
         expect(page.locator('[data-game-id="square-26"]')).to_be_enabled()
         page.locator('[data-game-id="square-26"]').click()
         expect(page.locator('[data-game-id="status"]')).to_have_text("Red to move")
+        page.get_by_role('button', name='End turn', exact=True).click()
         assert game.state["board"][26] == -1
         # A different state schema and SVG view (including game/*.svg asset) work without another renderer.
         counter_dir = tmp_path / "counter"
@@ -129,7 +135,10 @@ def movable_game_page() -> Iterator[Page]:
     import { createGameRenderer } from '/static/js/game-renderer.js';
     window.editable = true;
     window.moves = [];
-    window.refresh = async () => renderer.render(await (await fetch('/latest')).json());
+    window.refresh = async () => {
+        window.lastGame = await (await fetch('/latest')).json();
+        renderer.render(window.lastGame);
+    };
     const renderer = createGameRenderer({
         container: document.getElementById('game-state-layer'),
         toggleButton: document.getElementById('game-state-toggle-btn'),
@@ -259,3 +268,49 @@ def test_game_panel_toggle_preserves_position(movable_game_page: Page) -> None:
     expect(panel).to_be_visible()
     assert panel.evaluate("el => el.style.left") == "60%"
     assert panel.evaluate("el => el.style.top") == "60%"
+
+
+def test_exploration_undo_and_polling_need_no_action_requests(movable_game_page: Page) -> None:
+    page = movable_game_page
+    requests: list[str] = []
+
+    def record_request(request: Request) -> None:
+        requests.append(request.url)
+
+    page.on('request', record_request)
+    page.locator('[data-game-id="square-40"]').click()
+    page.locator('[data-game-id="square-33"]').click()
+    expect(page.locator('[data-game-id="status"]')).to_have_text('Ivory to move')
+    assert requests == []
+    page.get_by_role('button', name='Undo', exact=True).click()
+    expect(page.locator('[data-game-id="square-40"]')).to_have_attribute('aria-pressed', 'true')
+    page.locator('[data-game-id="square-42"]').click()
+    page.locator('[data-game-id="square-35"]').click()
+    assert requests == []
+    page.evaluate('window.refresh()')
+    expect(page.locator('[data-game-id="square-35"] circle')).to_have_attribute('fill', '#e05252')
+    assert len(requests) == 1 and requests[0].endswith('/latest')
+    page.get_by_role('button', name='End turn', exact=True).click()
+    expect(page.get_by_role('button', name='End turn', exact=True)).to_have_count(0)
+    assert len([url for url in requests if url.endswith('/action')]) == 1
+    page.wait_for_function('window.lastGame.revision === 1')
+    assert page.evaluate('window.lastGame.revision') == 1
+    assert page.evaluate('window.lastGame.state.board[40]') == 1
+    assert page.evaluate('window.lastGame.state.board[35]') == 1
+
+
+@pytest.mark.parametrize('change', ['revision', 'permission', 'package'])
+def test_exploration_is_discarded_when_authority_changes(movable_game_page: Page, change: str) -> None:
+    page = movable_game_page
+    page.locator('[data-game-id="square-40"]').click()
+    page.locator('[data-game-id="square-33"]').click()
+    expect(page.get_by_role('button', name='End turn', exact=True)).to_be_visible()
+    if change == 'revision':
+        page.evaluate('window.renderer.render({...window.lastGame, revision: 1})')
+    elif change == 'permission':
+        page.evaluate('window.editable = false; window.renderer.render(window.lastGame)')
+    else:
+        page.evaluate('window.renderer.render({...window.lastGame, definition_hash: "new-package"})')
+    expect(page.get_by_role('button', name='End turn', exact=True)).to_have_count(0)
+    expect(page.locator('[data-game-id="status"]')).to_have_text('Red to move')
+    expect(page.get_by_role('alert')).to_contain_text('Local exploration was discarded')

@@ -76,6 +76,7 @@ class TransitionDefinition(GameModel):
     bindings: list[Binding] = Field(default_factory=list, max_length=32)
     result: str = Field(min_length=1, max_length=4000)
     triggering: bool = Field(default=True)
+    preview: bool = False
 
     @property
     def is_player_actor(self) -> bool:
@@ -107,6 +108,7 @@ class ViewNode(GameModel):
 
 class GameDefinition(GameModel):
     version: Literal[2]
+    local_preview: bool = False
     instructions: str = Field(default="", max_length=4000)
     model_state: str | None = Field(default=None, min_length=1, max_length=4000)
     initial: dict[str, JsonValue]
@@ -119,10 +121,14 @@ class GameDefinition(GameModel):
     view: ViewNode
 
 
-class GameAction(GameModel):
+class GameStep(GameModel):
     name: str = Field(min_length=1, max_length=80)
     arguments: dict[str, JsonValue] = Field(default_factory=dict)
+
+
+class GameAction(GameStep):
     revision: int = Field(ge=0)
+    draft: list[GameStep] = Field(default_factory=list, max_length=64)
 
 
 class RenderedAction(GameModel):
