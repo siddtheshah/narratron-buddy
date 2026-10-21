@@ -2,13 +2,14 @@ import time
 import os
 import shutil
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock
 
 from components.theater_manager import TheaterManager
 from components.canvas.canvas_state_service import CanvasStateService
-from providers.music_provider import MusicGenerationResult
+from providers.music_provider import MusicGenerationRequest, MusicGenerationResult, MusicProviderError
 from testing.base import BaseTestCase
 from services.live_agent import get_playlists_context
 from services.music_catalog import MusicCatalog
@@ -191,21 +192,34 @@ class TestMusicTools(BaseTestCase):
         self.assertIn("Successfully resumed", resume_res)
         mock_resume_cb.assert_called_once()
 
-    def test_create_music_and_play_handle(self):
+    def test_create_music_and_play_handle(self) -> None:
+        generation_started = threading.Event()
+        finish_generation = threading.Event()
+
+        def generate(_request: MusicGenerationRequest) -> MusicGenerationResult:
+            generation_started.set()
+            assert finish_generation.wait(timeout=5.0)
+            return MusicGenerationResult(
+                audio_bytes=b"fake audio data",
+                mime_type="audio/mp3",
+                provider="lyria",
+                model="lyria-3-pro-preview",
+            )
+
         mock_provider = MagicMock()
-        mock_provider.generate.return_value = MusicGenerationResult(
-            audio_bytes=b"fake audio data",
-            mime_type="audio/mp3",
-            provider="lyria",
-            model="lyria-3-pro-preview",
-        )
+        mock_provider.generate.side_effect = generate
         self.music_tools._music_provider = mock_provider
         self.music_tools.cooldown_duration = 0.0
 
         res = self.music_tools.create_music("epic adventure theme", handle="hero_theme")
-        self.assertIn("Music generation started in background with handle 'hero_theme'", res)
-
-        self.music_tools.join_generation(timeout=5.0)
+        try:
+            self.assertIn("Music generation started in background with handle 'hero_theme'", res)
+            assert generation_started.wait(timeout=5.0)
+            assert self.music_tools.canvas_manager.tool_response.activity_payload()["music_generating"] is True
+        finally:
+            finish_generation.set()
+            self.music_tools.join_generation(timeout=5.0)
+        assert self.music_tools.canvas_manager.tool_response.activity_payload()["music_generating"] is False
 
         # Check saved file in output/music
         output_dir = self.music_tools.output_dir
@@ -219,6 +233,25 @@ class TestMusicTools(BaseTestCase):
 
         catalog_files = [name for name in os.listdir(self.catalog_dir) if name.endswith(".mp3")]
         self.assertEqual(len(catalog_files), 1)
+
+    def test_music_generation_activity_clears_on_failure(self) -> None:
+        tools = self.music_tools
+        activity = MagicMock(wraps=tools.canvas_manager.tool_response.set_activity)
+        tools.canvas_manager.tool_response.set_activity = activity
+        provider = MagicMock()
+        provider.generate.return_value = MusicGenerationResult(
+            audio_bytes=b"", mime_type="audio/mpeg", provider="lyria", model="test"
+        )
+        tools._music_provider = provider
+
+        for error in (None, MusicProviderError("provider failed"), RuntimeError("generation failed")):
+            with self.subTest(error=error):
+                activity.reset_mock()
+                provider.generate.side_effect = error
+                assert "started in background" in tools.create_music("epic theme")
+                tools.join_generation(timeout=5.0)
+                assert tools.canvas_manager.tool_response.activity_payload()["music_generating"] is False
+                assert [call.kwargs["active"] for call in activity.call_args_list] == [True, False]
 
     def test_create_music_reuses_private_catalog_without_provider_call(self):
         # The local TF-IDF pass nominates the candidate; a deterministic

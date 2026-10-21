@@ -222,7 +222,8 @@ class MusicTools(BaseTools):
             return cooldown_error
         self.record_tool_call("create_music")
 
-        def _worker():
+        def _worker() -> None:
+            self.canvas_manager.tool_response.set_activity("music", active=True)
             try:
                 provider = self._get_music_provider()
                 logger.debug("[MusicTools] Generating with provider=%s.", self.music_provider_id)
@@ -274,6 +275,8 @@ class MusicTools(BaseTools):
                 logger.error("[MusicTools] Music provider failed: %s", e)
             except Exception as e:
                 logger.error("[MusicTools] Background music generation failed: %s", e)
+            finally:
+                self.canvas_manager.tool_response.set_activity("music", active=False)
 
         t = threading.Thread(target=_worker, daemon=True)
         self._last_generation_thread = t

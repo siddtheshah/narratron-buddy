@@ -1477,6 +1477,12 @@
             animation: agentActivityPulse 1s ease-in-out infinite;
         }
 
+        .agent-activity-icon.music {
+            color: #f9a8d4;
+            border-color: rgba(249, 168, 212, 0.7);
+            animation: agentActivityPulse 1s ease-in-out infinite;
+        }
+
         .agent-activity-icon.reference {
             color: #38bdf8;
             border-color: rgba(56, 189, 248, 0.7);
@@ -3115,6 +3121,16 @@
                         <path d="m13.5 17 2-6c.8-2.4 2.8-4.2 5.5-4.8-.4 2.4-1.8 4.6-4 5.8l-3.5 5Z" />
                         <path d="m16.5 9 2.5 1" />
                         <path d="M13.5 17c1.2.3 2.5-.2 3.5-.8" />
+                    </svg>
+                </div>
+                <div id="agent-music-indicator" class="agent-activity-icon music" role="status"
+                    title="Agent is creating music" aria-label="Agent is creating music" aria-hidden="true">
+                    <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                        stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M9 18V5l12-3v13" />
+                        <path d="M9 9l12-3" />
+                        <ellipse cx="6" cy="18" rx="3" ry="3" />
+                        <ellipse cx="18" cy="15" rx="3" ry="3" />
                     </svg>
                 </div>
                 <div id="agent-dice-indicator" class="agent-activity-icon dice" role="status"
@@ -4986,6 +5002,7 @@
         const pcmBroadcastIndicator = document.getElementById('pcm-broadcast-indicator');
         const drawingIndicator = document.getElementById('agent-drawing-indicator');
         const writingIndicator = document.getElementById('agent-writing-indicator');
+        const musicIndicator = document.getElementById('agent-music-indicator');
         const diceIndicator = document.getElementById('agent-dice-indicator');
         const referenceIndicator = document.getElementById('agent-reference-indicator');
         const disconnectedIndicator = document.getElementById('agent-disconnected-indicator');
@@ -5014,6 +5031,7 @@
                 }
             }
             setVisible(writingIndicator, toolActivity.user_action_processing);
+            setVisible(musicIndicator, toolActivity.music_generating);
             setVisible(diceIndicator, toolActivity.dice_rolling);
             setVisible(referenceIndicator, Boolean(toolActivity.reference_generating));
             const diceResult = toolActivity.dice_result || {};

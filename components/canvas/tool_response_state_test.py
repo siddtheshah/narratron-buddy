@@ -15,6 +15,7 @@ def test_tool_response_state_initial_payloads() -> None:
     assert payload == {
         "image_generating": False,
         "animation_generating": False,
+        "music_generating": False,
         "user_action_processing": False,
         "reference_generating": False,
         "live_ready": False,
@@ -23,6 +24,18 @@ def test_tool_response_state_initial_payloads() -> None:
     }
     thought = state.agent_thought_payload()
     assert thought == {"text": "", "time": 0.0}
+
+
+def test_set_activity_music_generation() -> None:
+    events: list[str] = []
+    state = ToolResponseState(events.append)
+
+    state.set_activity("music", True)
+    assert state.activity_payload()["music_generating"] is True
+
+    state.set_activity("music", False)
+    assert state.activity_payload()["music_generating"] is False
+    assert events == ["latest", "latest"]
 
 
 def test_set_activity_reference_generation() -> None:
