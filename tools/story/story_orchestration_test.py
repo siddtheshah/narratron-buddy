@@ -324,3 +324,72 @@ def test_planner_can_continue_while_next_action_records_and_rechecks_stale_guida
     assert sources[1] > sources[0]
     assert len(tool.turn_journal.turns()) == 2
     assert all(turn.completed for turn in tool.turn_journal.turns())
+
+
+def test_failed_turn_recovers_on_subsequent_player_game_action(
+    harness: TurnHarness, tmp_path: Path,
+) -> None:
+    tool = harness.new_tool()
+    game = make_game(tmp_path / "game-recovery", exchange_definition())
+    tool.canvas_manager.game = game
+    tool.recorder_module._game_state = game
+    tool.planning_module.game_state = game
+    game.before_player_action = tool._wait_for_foreground
+    game.on_player_action = tool._handle_player_game_action
+
+    harness.fail_recording = True
+    assert "error" in tool.resolve_action("Turn the key")
+    assert not tool.turn_journal.turns()[0].foreground_ready
+
+    # Transient recording failure clears; next player game action recovers the
+    # prior turn in before_player_action instead of remaining permanently wedged.
+    harness.fail_recording = False
+    game.act(GameAction(name="player_place", arguments={"item": "red"}, revision=0))
+    assert tool.wait_for_pending_events(5)
+    assert len(tool.turn_journal.turns()) == 2
+    assert all(turn.completed for turn in tool.turn_journal.turns())
+
+
+def test_in_flight_turn_failure_recovers_when_queued_action_runs(harness: TurnHarness) -> None:
+    tool = harness.new_tool()
+    started, release = Event(), Event()
+    attempts = 0
+    original_record = tool.recorder_module.record
+
+    def record_once_failing(event: RecordingEvent) -> int:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            started.set()
+            assert release.wait(5)
+            raise RuntimeError("transient recorder timeout")
+        return original_record(event)
+
+    with (
+        patch.object(tool.recorder_module, "record", side_effect=record_once_failing),
+        patch.object(StoryTool, "_schedule_cooldown_timer"),
+    ):
+        first = tool.process_user_action("Turn the key")
+        assert type(first) is dict
+        assert started.wait(5)
+        second = tool._schedule_turn(
+            tool.turn_journal.accept(
+                tool.turn_journal.turns()[0].model_copy(
+                    update={"turn_id": "turn-2", "position": 0, "action": "Open the door", "response": None}
+                )
+            ),
+            retry_earlier=True,
+        )
+        release.set()
+        result = second.result(timeout=5)
+        assert "error" not in result
+        assert tool.wait_for_pending_events(5)
+    assert all(turn.completed for turn in tool.turn_journal.turns())
+
+
+def test_process_user_action_rejects_internal_game_entry_narration_prompt(harness: TurnHarness) -> None:
+    tool = harness.new_tool()
+    result = tool.process_user_action("Narrate the recorder-established outcome.")
+    assert type(result) is dict
+    assert "error" in result
+    assert tool.turn_journal.turns() == []

@@ -165,6 +165,69 @@ def test_projection_omits_interrupted_unpaired_tool_invocations() -> None:
     assert view[0].parts[0].text == "Retry intention"
 
 
+def test_projection_omits_aborted_invocations_after_tool_response_or_malformed_call() -> None:
+    events = [
+        Event(author="user", invocation_id="recorder:ok", content=types.Content(role="user", parts=[types.Part(text="Turn 1")])),
+        Event(author="story_recorder", invocation_id="recorder:ok", content=final("Recorded turn 1")),
+        Event(author="user", invocation_id="recorder:malformed", content=types.Content(role="user", parts=[types.Part(text="Turn 2 aborted")])),
+        Event(author="story_recorder", invocation_id="recorder:malformed", content=types.Content(role="model", parts=[
+            types.Part(function_call=types.FunctionCall(name="check_schema", args={"topic": "Log"}, id="call-1")),
+        ])),
+        Event(author="story_recorder", invocation_id="recorder:malformed", content=types.Content(role="user", parts=[
+            types.Part(function_response=types.FunctionResponse(name="check_schema", response={"result": "ok"}, id="call-1")),
+        ])),
+        Event(
+            author="story_recorder",
+            invocation_id="recorder:malformed",
+            finish_reason=types.FinishReason.MALFORMED_FUNCTION_CALL,
+            error_code="MALFORMED_FUNCTION_CALL",
+        ),
+        Event(author="user", invocation_id="recorder:retry", content=types.Content(role="user", parts=[types.Part(text="Turn 2 retry")])),
+    ]
+    view = project_role_contents(events, "recorder")
+    assert [part.text for content in view for part in content.parts or []] == [
+        "Turn 1",
+        "Recorded turn 1",
+        "Turn 2 retry",
+    ]
+
+
+class MalformedOnceModel(BaseLlm):
+    model: str = "malformed-once"
+    requests: list[LlmRequest] = Field(default_factory=list)
+    _failed_once: bool = PrivateAttr(default=False)
+
+    async def generate_content_async(
+        self, llm_request: LlmRequest, stream: bool = False,
+    ) -> AsyncGenerator[LlmResponse, None]:
+        self.requests.append(llm_request.model_copy(deep=True))
+        if not self._failed_once:
+            self._failed_once = True
+            yield LlmResponse(
+                error_code="MALFORMED_FUNCTION_CALL",
+                finish_reason=types.FinishReason.MALFORMED_FUNCTION_CALL,
+            )
+            return
+        yield LlmResponse(content=final("Recovered recorder output"))
+
+
+def test_story_session_retries_malformed_function_call_with_clean_view(tmp_path: Path) -> None:
+    recorder = MalformedOnceModel()
+    shared = StorySession(tmp_path / "sessions.sqlite", "malformed-retry")
+    shared.bind([
+        Agent(name="story_recorder", model=recorder, tools=[private_tool], output_key="recorder_output"),
+        Agent(name="story_responder", model=CapturingModel(), output_key="responder_output"),
+        Agent(name="story_deep_planner", model=CapturingModel(), output_key="planner_output"),
+    ])
+    try:
+        assert shared.run("recorder", "Record trade proposal.") == "Recovered recorder output"
+        assert len(recorder.requests) == 2
+        assert len(recorder.requests[0].contents) == 1
+        assert len(recorder.requests[1].contents) == 1
+    finally:
+        shared.close()
+
+
 def test_structured_output_tool_preserves_explicit_null_narration_skip(tmp_path: Path) -> None:
     recorder = CapturingModel(replies=[
         types.Content(role="model", parts=[types.Part(function_call=types.FunctionCall(

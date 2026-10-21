@@ -304,3 +304,38 @@ def test_deleting_theater_asks_for_confirmation_once_until_reloaded(deploy_page:
     assert len(reloaded_dialog_messages) == 1
     assert "theater-alpha" in reloaded_dialog_messages[0]
 
+
+def test_theater_deletion_stops_agent_session_first(deploy_page: Page) -> None:
+    page = deploy_page
+    page.evaluate("""() => {
+        window.fetchLog = [];
+        window.theaterList = [
+            {theater_id: 'theater-alpha', name: 'Alpha Theater', is_owner: true, join_key: 'KEY-ALPHA'}
+        ];
+        window.fetch = async (url, options = {}) => {
+            if (url === '/api/theaters') {
+                return {ok: true, json: async () => window.theaterList};
+            }
+            if (url.includes('/agent/stop')) {
+                window.fetchLog.push({type: 'stop_agent', url: url});
+                return {ok: true, json: async () => ({status: 'stopped'})};
+            }
+            if (options.method === 'DELETE') {
+                window.fetchLog.push({type: 'delete_theater', url: url});
+                return {ok: true, json: async () => ({status: 'ok'})};
+            }
+            return {ok: true, json: async () => []};
+        };
+        window.theaterDeletionConfirmed = true;
+        loadTheaters();
+    }""")
+    expect(page.locator("#theatersTableBody tr")).to_have_count(1)
+    page.locator("#theatersTableBody tr").first.locator("button.btn-danger").click()
+    page.wait_for_function("window.fetchLog.some(item => item.type === 'delete_theater')")
+    log: list[dict[str, str]] = page.evaluate("window.fetchLog")
+    assert len(log) == 2
+    assert log[0]["type"] == "stop_agent"
+    assert "theater-alpha" in log[0]["url"]
+    assert log[1]["type"] == "delete_theater"
+    assert "theater-alpha" in log[1]["url"]
+

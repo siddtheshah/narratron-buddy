@@ -1009,6 +1009,42 @@ music:
         # Verify deployment is removed from DB
         self.assertIsNone(db.get_deployment(theater_id))
 
+    def test_destroy_theater_stops_agent_session_first(self) -> None:
+        reg_res = self.client.post("/api/auth/register", json={
+            "age_attested": True,
+            "username": "stop_agent_user",
+            "email": "stop_agent@example.com",
+            "password": "Password123"
+        })
+        self.assertEqual(reg_res.status_code, 200)
+
+        response = self.client.post(
+            "/api/theaters/create-and-deploy",
+            data={"name": "Stop Session Test Theater", "style": "cyberpunk"},
+        )
+        self.assertEqual(response.status_code, 200)
+        theater_id = response.json()["theater_id"]
+
+        call_order: list[str] = []
+        original_stop_session = theaters.live_agent_manager.stop_session
+        original_destroy_theater = theater_manager.destroy_theater
+
+        def spy_stop_session(theater_id: str) -> bool:
+            call_order.append("stop_session")
+            return original_stop_session(theater_id=theater_id)
+
+        def spy_destroy_theater(theater_id: str) -> bool:
+            call_order.append("destroy_theater")
+            return original_destroy_theater(theater_id)
+
+        with patch.object(theaters.live_agent_manager, "stop_session", side_effect=spy_stop_session) as mock_stop, \
+             patch.object(theater_manager, "destroy_theater", side_effect=spy_destroy_theater) as mock_destroy:
+            del_res = self.client.delete(f"/api/theaters/{theater_id}")
+            self.assertEqual(del_res.status_code, 200)
+            mock_stop.assert_called_once_with(theater_id=theater_id)
+            mock_destroy.assert_called_once_with(theater_id)
+            self.assertEqual(call_order, ["stop_session", "destroy_theater"])
+
     def test_destroy_theater_rejects_encoded_dot_segments(self):
         reg_res = self.client.post("/api/auth/register", json={
             "age_attested": True,

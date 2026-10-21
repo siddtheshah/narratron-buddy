@@ -285,8 +285,12 @@ class StoryRecorderModule:
 
     def _control_model_stage(self, event: RecordingEvent) -> GameControlOutcome:
         """One recorder model stage covers decisions and all factual projections."""
-        self.journal.enqueue(event)
         with self._lock:
+            self.journal.enqueue(event)
+            if self.journal.recorded_revision(event.event_id) is None:
+                pending = self.journal.pending()
+                if not pending or pending[0].event_id != event.event_id:
+                    raise ValueError("An earlier event still requires recording.")
             if self._game_state is not None:
                 for receipt_id, action, receipt in self._game_state.story_action_commits(f"{event.event_id}:narratron:"):
                     self.journal.record_narratron_receipt(CommittedGameReceipt(
@@ -317,6 +321,10 @@ class StoryRecorderModule:
                 revision = self.notepad.publish_role_updates(
                     "recorder", decision.factual_updates, source=source, persist=persist,
                 )
+            else:
+                saved = self.journal.latest_snapshot()
+                if saved is not None and saved.revision > self.notepad.revision:
+                    self.notepad.restore_recorded_snapshot(saved)
             receipts = tuple(self.journal.narratron_receipts(event.event_id))
             for receipt in receipts:
                 if self.journal.recorded_revision(receipt.event_id) is None:

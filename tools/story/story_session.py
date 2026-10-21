@@ -15,6 +15,7 @@ from google.adk.apps import App
 from google.adk.events import Event
 from google.adk.models.llm_request import LlmRequest
 from google.adk.models.llm_response import LlmResponse
+from google.adk.plugins import ReflectAndRetryToolPlugin
 from google.adk.runners import Runner
 from google.adk.sessions import DatabaseSessionService
 from google.adk.sessions.session import Session
@@ -38,24 +39,34 @@ def project_role_contents(events: list[Event], role: StoryRole) -> list[types.Co
     Cross-role handoffs are application-built inputs in the recipient's invocation.
     Unlabelled ingress, peer events, and session-wide summaries are never replayed.
     """
-    permitted = [
+    role_events = [
         event for event in events
         if event.invocation_id.startswith(f"{role}:")
-        and event.author in ("user", ROLE_AUTHORS[role])
+    ]
+    active_invocation_id = role_events[-1].invocation_id if role_events else ""
+    failed_invocations = {
+        event.invocation_id for event in role_events
+        if event.error_code or event.finish_reason == types.FinishReason.MALFORMED_FUNCTION_CALL
+    }
+    permitted = [
+        event for event in role_events
+        if event.author in ("user", ROLE_AUTHORS[role])
         and event.content is not None
         and event.content.parts
         and not event.partial
     ]
-    exchanges: dict[str, list[types.Content]] = {}
+    exchanges: dict[str, list[Event]] = {}
     for event in permitted:
-        assert event.content is not None
-        exchanges.setdefault(event.invocation_id, []).append(event.content)
+        exchanges.setdefault(event.invocation_id, []).append(event)
     complete: set[str] = set()
-    for invocation_id, contents in exchanges.items():
+    for invocation_id, inv_events in exchanges.items():
+        if invocation_id in failed_invocations:
+            continue
         pending: list[tuple[str, str]] = []
         valid = True
-        for content in contents:
-            for part in content.parts or []:
+        for event in inv_events:
+            assert event.content is not None
+            for part in event.content.parts or []:
                 if part.function_call is not None:
                     call = part.function_call
                     pending.append((call.id or "", call.name or ""))
@@ -66,7 +77,11 @@ def project_role_contents(events: list[Event], role: StoryRole) -> list[types.Co
                         valid = False
                         break
                     pending.remove(key)
-        if valid and not pending:
+        finished = (
+            inv_events[-1].author == ROLE_AUTHORS[role]
+            and inv_events[-1].is_final_response()
+        )
+        if valid and not pending and (finished or invocation_id == active_invocation_id):
             complete.add(invocation_id)
     return [
         event.content.model_copy(deep=True) for event in permitted
@@ -126,9 +141,10 @@ class StorySession:
     mixed-history compaction and provider compression are deliberately disabled.
     """
 
-    def __init__(self, path: Path, session_id: str) -> None:
+    def __init__(self, path: Path, session_id: str, *, max_attempts: int = 2) -> None:
         self.session_id = session_id
         self.session_service = StorySessionService(path)
+        self.max_attempts = max(1, max_attempts)
         self._lock = RLock()
         self._loop = asyncio.new_event_loop()
         self._thread: Thread | None = None
@@ -140,7 +156,11 @@ class StorySession:
             agent.include_contents = "none"
             agent.before_model_callback = build_role_request
         self.runner = Runner(
-            app=App(name=APP_NAME, root_agent=StoryRoleRouter(name="story", sub_agents=agents)),
+            app=App(
+                name=APP_NAME,
+                root_agent=StoryRoleRouter(name="story", sub_agents=agents),
+                plugins=[ReflectAndRetryToolPlugin()],
+            ),
             session_service=self.session_service,
             auto_create_session=True,
         )
@@ -160,27 +180,36 @@ class StorySession:
     async def _run(self, role: StoryRole, prompt: str, stage_id: str) -> str:
         if self.runner is None:
             raise RuntimeError("Story roles have not been bound.")
-        final_text = ""
-        structured_args: dict[str, JsonValue] | None = None
-        async for event in self.runner.run_async(
-            user_id=USER_ID,
-            session_id=self.session_id,
-            invocation_id=f"{role}:{stage_id}:{uuid4().hex}",
-            new_message=types.Content(role="user", parts=[types.Part(text=prompt)]),
-        ):
-            if event.author == ROLE_AUTHORS[role] and event.content:
-                for part in event.content.parts or []:
-                    if part.function_call is not None and part.function_call.name == "set_model_response":
-                        structured_args = TypeAdapter(dict[str, JsonValue]).validate_python(
-                            dict(part.function_call.args or {})
-                        )
-                if event.is_final_response():
-                    final_text = "".join(part.text or "" for part in event.content.parts or [])
-        if not final_text.strip():
-            raise ValueError(f"Story {role} returned no completion.")
-        if structured_args is not None:
-            return json.dumps(structured_args, ensure_ascii=False)
-        return final_text
+        for attempt in range(self.max_attempts):
+            final_text = ""
+            structured_args: dict[str, JsonValue] | None = None
+            malformed = False
+            async for event in self.runner.run_async(
+                user_id=USER_ID,
+                session_id=self.session_id,
+                invocation_id=f"{role}:{stage_id}:{uuid4().hex}",
+                new_message=types.Content(role="user", parts=[types.Part(text=prompt)]),
+            ):
+                if (
+                    event.error_code == "MALFORMED_FUNCTION_CALL"
+                    or event.finish_reason == types.FinishReason.MALFORMED_FUNCTION_CALL
+                ):
+                    malformed = True
+                if event.author == ROLE_AUTHORS[role] and event.content:
+                    for part in event.content.parts or []:
+                        if part.function_call is not None and part.function_call.name == "set_model_response":
+                            structured_args = TypeAdapter(dict[str, JsonValue]).validate_python(
+                                dict(part.function_call.args or {})
+                            )
+                    if event.is_final_response():
+                        final_text = "".join(part.text or "" for part in event.content.parts or [])
+            if final_text.strip():
+                if structured_args is not None:
+                    return json.dumps(structured_args, ensure_ascii=False)
+                return final_text
+            if not malformed or attempt + 1 >= self.max_attempts:
+                break
+        raise ValueError(f"Story {role} returned no completion.")
 
     def close(self) -> None:
         with self._lock:

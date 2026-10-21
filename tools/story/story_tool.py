@@ -192,12 +192,14 @@ class StoryTool(BaseTools):
                         lines.append(f"Dialogue — {dialogue.get('speaker', '')}: {dialogue['text']}")
         return "\n".join(lines)
 
-    def _schedule_turn(self, turn: StoryTurn) -> Future[dict[str, JsonValue]]:
+    def _schedule_turn(self, turn: StoryTurn, *, retry_earlier: bool = False) -> Future[dict[str, JsonValue]]:
         with self._work_lock:
             existing = self._foreground_work.get(turn.turn_id)
             if existing is not None and not existing.done():
                 return existing
-            future = self._foreground_executor.submit(self._run_turn, turn.turn_id)
+            future = self._foreground_executor.submit(
+                self._run_turn, turn.turn_id, retry_earlier=retry_earlier,
+            )
             self._foreground_work[turn.turn_id] = future
             return future
 
@@ -210,11 +212,20 @@ class StoryTool(BaseTools):
             payload=turn.game_payload if turn.ingress == "game_action" else (turn.response or {}),
         )
 
-    def _run_turn(self, turn_id: str) -> dict[str, JsonValue]:
+    def _run_turn(
+        self, turn_id: str, *, retry_earlier: bool = False, release_cycle: bool = True,
+    ) -> dict[str, JsonValue]:
         turn = self.turn_journal.get(turn_id)
         assert turn is not None
         try:
             with self._state_lock:
+                if retry_earlier:
+                    for previous in self.turn_journal.turns():
+                        if previous.position < turn.position and (
+                            not previous.foreground_ready
+                            or (previous.response is not None and not previous.delivered)
+                        ):
+                            self._run_turn(previous.turn_id, release_cycle=False)
                 if any(previous.position < turn.position and not previous.foreground_ready for previous in self.turn_journal.turns()):
                     raise RuntimeError("An earlier story turn still requires factual recording or narration.")
                 if turn.ingress == "communicated_action":
@@ -266,7 +277,7 @@ class StoryTool(BaseTools):
                 self._on_scene_reaction(result)
             return result
         finally:
-            if turn.ingress == "communicated_action":
+            if release_cycle and turn.ingress == "communicated_action":
                 self._on_cycle_tool_completed("process_user_action")
 
     def _schedule_planning(self, turn: StoryTurn) -> None:
@@ -320,13 +331,14 @@ class StoryTool(BaseTools):
             self._on_scene_reaction(result)
 
     def _handle_player_game_action(self, action: GameAction, new_state: dict[str, JsonValue]) -> None:
+        self.retry_pending_turns()
         event_id = str(new_state.get("story_event_id") or f"game:{action.revision}")
         turn = self.turn_journal.accept(StoryTurn(
             turn_id=event_id, ingress="game_action", action="Game panel action",
             source_revision=self.notepad.revision,
             game_payload={"action": action.model_dump(mode="json"), "receipt": new_state, "actor": "player"},
         ))
-        self._schedule_turn(turn)
+        self._schedule_turn(turn, retry_earlier=True)
         if self.canvas_manager.game is not None and new_state.get("story_event_id"):
             self.canvas_manager.game.acknowledge_story_action(event_id)
 
@@ -340,12 +352,16 @@ class StoryTool(BaseTools):
 
     def _wait_for_foreground(self) -> None:
         """Game commits cannot race preceding causal factual stages."""
+        self.retry_pending_turns()
         with self._work_lock:
-            foreground = list(self._foreground_work.values())
-        for future in foreground:
+            foreground = list(self._foreground_work.items())
+        for turn_id, future in foreground:
             result = future.result(timeout=180)
-            if result.get("error"):
+            turn = self.turn_journal.get(turn_id)
+            if result.get("error") and (turn is None or not turn.foreground_ready):
                 raise RuntimeError("A preceding story turn requires recovery before another game action.")
+        if any(not turn.foreground_ready for turn in self.turn_journal.turns()):
+            raise RuntimeError("A preceding story turn requires recovery before another game action.")
 
     def resolve_action(self, user_action: str, nudge: str = "", *, drain: bool = False) -> dict[str, JsonValue]:
         """Harness entry using production scheduling with an optional deterministic drain."""
@@ -423,6 +439,8 @@ class StoryTool(BaseTools):
         action = user_action.strip()
         if not action:
             return {"error": "User action cannot be empty."}
+        if action == "Narrate the recorder-established outcome.":
+            return {"error": "Game-entry narration is already resolved; do not submit it to process_user_action."}
         if len(action) > 2000 or len(nudge) > 1000:
             return {"error": "Story action or nudge exceeds its size limit."}
         if not self.response_module.adventure_mode:
@@ -437,7 +455,7 @@ class StoryTool(BaseTools):
             turn_id=uuid4().hex, ingress="communicated_action", action=action, nudge=nudge,
         ))
         self.append_story_log_entry({"type": "user_action", "action": action})
-        self._schedule_turn(turn)
+        self._schedule_turn(turn, retry_earlier=True)
         return {"status": "processing", "story_turn_id": turn.turn_id, "message": "Story turn queued."}
 
     def get_tools(self) -> list[Callable]:

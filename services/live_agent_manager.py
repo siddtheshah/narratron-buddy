@@ -1305,7 +1305,7 @@ class LiveAgentSession:
                     self.websockets.discard(ws)
                     self.websocket_user_ids.pop(ws, None)
 
-    def close(self):
+    def close(self) -> None:
         """Close LiveRequestQueue and cancel background tasks."""
         if self.websocket_connected:
             self._record_theater_disconnection()
@@ -1324,6 +1324,8 @@ class LiveAgentSession:
             self.live_tool_reminder_task.cancel()
         if self._doodle_snapshot_task and not self._doodle_snapshot_task.done():
             self._doodle_snapshot_task.cancel()
+        if self.story_planning_tools is not None:
+            self.story_planning_tools.close()
         try:
             self.live_request_queue.close()
         except Exception as e:

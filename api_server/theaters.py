@@ -1251,6 +1251,7 @@ def destroy_theater(theater_id: str, request: Request) -> dict[str, str]:
     if dep.get("user_id") is None or dep["user_id"] != user["id"]:
         raise HTTPException(status_code=403, detail="Permission denied. Only the theater owner can delete this theater.")
 
+    live_agent_manager.stop_session(theater_id=theater_id)
     disk_removed = theater_manager.destroy_theater(theater_id)
     db_deleted = db.delete_deployment(theater_id)
     theater_access_cache.invalidate_theater(theater_id)
