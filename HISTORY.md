@@ -18,6 +18,8 @@ Adventures
 - Set up triadic story management, improving consistency.
 - New Adventures
   - Peaks of Tianmu
+- Games!
+  - You can set up transactional/turn-based games in narratron. Checkers, and more!
 
 Theater Editor
 - Manage theater assets and lore from a unified interface.

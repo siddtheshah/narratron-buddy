@@ -215,13 +215,13 @@ def test_public_pages_include_canonical_metadata_and_structured_data() -> None:
     assert '<script type="application/ld+json">' in response
 
 
-def test_join_splash_features_include_stamps_and_theater_builder() -> None:
+def test_join_splash_features_include_assets_and_theater_editor() -> None:
     response = pages.read_join_splash()
 
-    assert "Stamps" in response
-    assert "Theater Builder" in response
-    assert "Place, resize, and maneuver character miniatures, tokens, and tactical markers" in response
-    assert "Shape custom worlds, organize lore, craft scenes, and collaborate with your" in response
+    assert "Theater Assets" in response
+    assert "Theater Editor" in response
+    assert "Organize scenes, characters, and stamps in your theater's Asset Manager." in response
+    assert "Prepare your next session in one place. Manage theater assets and lore" in response
 
 
 def test_private_pages_are_marked_noindex_without_structured_data():
