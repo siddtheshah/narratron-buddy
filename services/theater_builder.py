@@ -168,7 +168,7 @@ def upload_path(filename: str, folder: bool) -> str:
         return f"references/{relative}"
     name = parts[-1]
     suffix = PurePosixPath(name).suffix.lower()
-    if name.upper() in {"RESPONDER.MD", "PLANNER.MD"}:
+    if name.upper() in {"RESPONDER.MD", "PLANNER.MD", "RECORDER.MD"}:
         return f"lore/{PurePosixPath(name).stem.upper()}.md"
     if suffix == ".svg":
         return f"game/{name}"
@@ -325,7 +325,8 @@ class TheaterBuilderStore:
         files.setdefault("theater.yaml", default_yaml.encode("utf-8"))
         if source is None and populate_default:
             files["lore/RESPONDER.md"] = b"# Responder\nResolve the immediate scene, preserve player agency, and send factual planning signals.\nDescribe the premise, opening scene, tone, and action-resolution rules here.\n"
-            files["lore/PLANNER.md"] = b"# Planner\nOwn sticky updates, continuity, off-screen actors, and long-term consequences.\nDescribe the campaign roadmap, tracking rules, and outcomes here.\nWait for responder results before committing attempted actions as facts.\n"
+            files["lore/RECORDER.md"] = b"# Recorder\nReconcile established facts, own recorder sticky updates, maintain canonical characters and scenes, and control permitted game actions.\n"
+            files["lore/PLANNER.md"] = b"# Planner\nOwn only planner sticky updates, conditional off-screen intentions, and long-term plans.\nDescribe the campaign roadmap, tracking rules, and outcomes here.\nWait for responder results before committing attempted actions as facts.\n"
             project_root = Path(__file__).resolve().parent.parent
             for asset in (project_root / "reference_library").glob("*"):
                 if asset.is_file() and asset.suffix.lower() in IMAGE_EXTENSIONS:
@@ -502,7 +503,7 @@ class TheaterBuilderStore:
                         "Use live_agent.special_instructions for the persona; visuals.style, music.style and story_planning.style for styles. "
                         "Use story_planning.adventure_mode and auto_begin for interactive adventures. Keep existing settings unless requested. "
                         "planning.yaml defines named sticky topics, descriptions, fields, render templates and initial string values. "
-                        "Write lore/RESPONDER.md for immediate narration, action resolution, tone, and planning signals; write lore/PLANNER.md for sticky ownership, campaign pacing, off-screen consequences, and long-term plans. Each module has only its own guide permanently pinned and cannot read the other's. Put shared facts and mechanics in separate lore text documents. The planner starts on player intent and later receives the responder result; do not count them as two actions. Other lore is fetched on demand. "
+                        "Write lore/RESPONDER.md for immediate narration, action resolution, tone, and planning signals; write lore/PLANNER.md for sticky ownership, campaign pacing, off-screen consequences, and long-term plans. Each module has only its own guide permanently pinned and cannot read the other's. Put shared facts and mechanics in separate lore text documents. Write lore/RECORDER.md for factual reconciliation, recorder sticky ownership, canonical character and scene updates, and permitted game control. Declare exactly one owner, recorder or planner, on every planning.yaml topic; split mixed factual and planning topics. The orchestrator records each turn before planning once, and game narration may be skipped with an explicit reason. Other lore is fetched on demand. "
                         "Organize flat uploads using file moves into meaningful subfolders, stamps/, references/characters/<Character Name>/, references/scenes/<Scene Name>/, and named playlists. Preserve extensions and avoid overwrites. "
                         "Character portraits belong in references/characters/<Character Name>/<iteration>.ext (e.g. references/characters/Arthur Modella/1.webp). Each character must have its own subfolder; loose files directly under references/characters/ are not permitted. Supported image formats are PNG, JPEG, WebP, and GIF. Numbered iterations such as 1.webp, 2.webp allow visual evolution. Organize character portrait uploads into references/characters/<Character Name>/1.ext. Store character traits in references/characters/<Character Name>/character.yaml using description, personality, motivation, quirk, gender (male, female, or nonbinary), and voice_tags (a YAML list). Keep additional character lore in lore/characters/*.txt and reference canonical character names. "
                         "Scene imagery belongs in references/scenes/<Scene Name>/<iteration>.ext (e.g. references/scenes/Old Harbor/1.webp). Each scene must have its own subfolder; loose files directly under references/scenes/ are not permitted. Supported image formats are PNG, JPEG, WebP, and GIF. Numbered iterations such as 1.webp, 2.webp allow visual evolution across story arcs. Organize scene image uploads into references/scenes/<Scene Name>/1.ext. Scene descriptions belong in references/scenes/<Scene Name>/scene.yaml with a description string alongside their image iterations. Keep additional location lore in lore/locations/*.txt (or lore/*.txt). "

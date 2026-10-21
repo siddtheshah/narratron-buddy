@@ -452,6 +452,20 @@ class Notepad:
             self._recently_changed.clear()
             return self.snapshot(), changed
 
+    def validate_role_update(self, owner: StickyOwner, topic: str, info: str) -> None:
+        """Validate a staged model tool write without publishing it."""
+        with self._sticky_notes_lock:
+            error = self._check_sticky_owner(owner, topic)
+            if error:
+                raise ValueError(error)
+            if not info or len(info) > MAX_STICKY_NOTE_INFO_CHARS:
+                raise ValueError(f"Invalid sticky value length for '{topic}'.")
+            error, value = self._validate_structured_update(topic, info)
+            if error:
+                raise ValueError(error)
+            if self._render(topic, value).count("|") != self._sticky_notes.get(topic, "").count("|"):
+                raise ValueError(f"Sticky note divider count mismatch for '{topic}'.")
+
     def publish_role_updates(
         self,
         owner: StickyOwner,
@@ -530,13 +544,13 @@ class Notepad:
                 raise ValueError("Recorded snapshot does not contain the configured topics.")
             if set(snapshot.structured_notes) != set(self._sticky_definitions):
                 raise ValueError("Recorded snapshot lacks structured topic values.")
-            self._sticky_notes = OrderedDict(
-                (topic, snapshot.notes[topic]) for topic in self._sticky_definitions
-            )
-            self._structured_sticky_notes = OrderedDict(
-                (topic, snapshot.structured_notes[topic]) for topic in self._sticky_definitions
-            )
-            self._revision = snapshot.revision
+            preserve_planning = self._revision > snapshot.revision
+            for topic, definition in self._sticky_definitions.items():
+                if preserve_planning and definition.get("owner") == "planner":
+                    continue
+                self._sticky_notes[topic] = snapshot.notes[topic]
+                self._structured_sticky_notes[topic] = snapshot.structured_notes[topic]
+            self._revision = max(self._revision, snapshot.revision)
             self._recently_changed.update(self._sticky_definitions)
 
     def _update_sticky_note(

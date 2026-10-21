@@ -8,6 +8,8 @@ import pytest
 
 from testing.game_fixtures import counter_definition
 from testlab import adventure_runner, server
+from tools.story.story_handoffs import GameControlDecision
+from tools.story.story_session import StoryRole, StorySession
 
 
 @pytest.mark.usefixtures("offline_lab_text_providers")
@@ -22,6 +24,18 @@ def test_adventure_lab_game_moves_and_reset(monkeypatch: MonkeyPatch, tmp_path: 
     monkeypatch.setattr(adventure_runner, "ADVENTURES_DIR", adventures)
     monkeypatch.setattr(adventure_runner, "THEATERS_DIR", tmp_path / "theaters")
     monkeypatch.setattr(server, "_adventure_runner_sessions", {})
+
+    def offline_story_role(
+        session: StorySession, role: StoryRole, prompt: str, *, timeout: float = 60.0, stage_id: str = "",
+    ) -> str:
+        """A minor game move: record it, skip narration, and plan nothing."""
+        if role == "recorder":
+            return GameControlDecision().model_dump_json()
+        if role == "planner":
+            return "No planning changes."
+        raise AssertionError("A routine counter move must not invoke the responder.")
+
+    monkeypatch.setattr(StorySession, "run", offline_story_role)
     client = TestClient(server.app)
 
     def route_request(route: Route) -> None:

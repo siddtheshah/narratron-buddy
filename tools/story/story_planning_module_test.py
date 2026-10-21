@@ -550,80 +550,22 @@ class TestStoryPlanningModuleState(unittest.TestCase):
             {"HUD", "Location", "Quest"},
         )
 
-    def test_planner_reads_game_and_can_only_take_narratron_actions(self) -> None:
+    def test_planner_game_context_is_read_only_and_cannot_trigger_peers(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             game = make_game(Path(tmp_dir), exchange_definition())
             self.module.game_state = game
-            snapshot = self.module._game_state_json()
-            self.assertIn('"instructions": "Test exchange', snapshot)
-            self.assertIn('"stock"', snapshot)
-            self.assertIn('"narratron_place"', snapshot)
-            self.assertNotIn('"player_place"', snapshot)
-            denied = self.module.take_game_action("player_place", '{"item":"red"}', 0)
-            self.assertIn("cannot take", denied)
+            self.assertIn('"instructions": "Test exchange', self.module._game_state_json())
+            for action in ("player_place", "narratron_place"):
+                self.assertIn("Only the recorder", self.module.take_game_action(action, '{"item":"green"}', 0))
             self.assertEqual(game.revision, 0)
-            accepted = self.module.take_game_action("narratron_place", '{"item":"green"}', 0)
-            self.assertIn('"table": {"player": [], "narratron": ["green"]}', accepted)
-            self.assertEqual(game.revision, 1)
-
-    def test_trigger_story_response_requires_handler(self) -> None:
-        self.module.on_trigger_story_response = None
-        result = self.module.trigger_story_response("Player placed red piece")
-        self.assertIn("unavailable", result)
-
-    def test_trigger_story_response_rejected_during_non_game_heartbeat(self) -> None:
-        self.module.on_trigger_story_response = MagicMock(return_value={"status": "processing"})
-        self.module._running_heartbeat = True
-        self.module._current_heartbeat_has_game_action = False
-        try:
-            result = self.module.trigger_story_response("Player placed red piece")
-            self.assertIn("only be triggered when responding to a player game move", result)
-            self.module.on_trigger_story_response.assert_not_called()
-        finally:
-            self.module._running_heartbeat = False
-
-    def test_trigger_story_response_successful_during_game_heartbeat(self) -> None:
-        handler = MagicMock(return_value={"status": "processing"})
+        handler = MagicMock()
         self.module.on_trigger_story_response = handler
-        self.module._running_heartbeat = True
-        self.module._current_heartbeat_has_game_action = True
-        self.module._current_game_action = {"name": "place_card", "arguments": {"card": "Ace"}}
-        try:
-            result = self.module.trigger_story_response("Player placed the Ace of Spades", nudge="Build tension")
-            self.assertIn("Story response triggered for: Player placed the Ace of Spades", result)
-            handler.assert_called_once_with("Player placed the Ace of Spades", "Build tension")
-
-            duplicate = self.module.trigger_story_response("Another reaction")
-            self.assertIn("already been triggered", duplicate)
-        finally:
-            self.module._running_heartbeat = False
-            self.module._current_heartbeat_has_game_action = False
-            self.module._current_game_action = None
-            self.module._story_response_triggered_this_heartbeat = False
-
-    def test_trigger_story_response_defaults_user_action_from_game_action(self) -> None:
-        handler = MagicMock(return_value={"status": "processing"})
-        self.module.on_trigger_story_response = handler
-        self.module._running_heartbeat = True
-        self.module._current_heartbeat_has_game_action = True
-        self.module._current_game_action = {"name": "jump_piece"}
-        try:
-            result = self.module.trigger_story_response()
-            self.assertIn("Player took game action: jump_piece", result)
-            handler.assert_called_once_with("Player took game action: jump_piece", "")
-        finally:
-            self.module._running_heartbeat = False
-            self.module._current_heartbeat_has_game_action = False
-            self.module._current_game_action = None
-            self.module._story_response_triggered_this_heartbeat = False
-
-    def test_instruction_template_includes_trigger_story_response_when_has_game(self) -> None:
-        rendered = _DEEP_PLANNING_INSTRUCTION_TEMPLATE.render(
-            has_game=True,
-            style="Adventure style",
-        )
-        self.assertIn("trigger_story_response", rendered)
-        self.assertIn("choose to trigger a story response", rendered)
+        self.assertIn("Only StoryTool", self.module.trigger_story_response("Player moved"))
+        handler.assert_not_called()
+        rendered = _DEEP_PLANNING_INSTRUCTION_TEMPLATE.render(has_game=True)
+        self.assertNotIn("trigger_story_response", rendered)
+        self.assertNotIn("take_game_action", rendered)
+        self.assertIn("read only", rendered)
 
     def test_game_action_heartbeat_identifies_committed_panel_action(self) -> None:
         prompt = _DEEP_PLANNING_TURN_PROMPT_TEMPLATE.render(
@@ -669,6 +611,7 @@ class TestStoryPlanningModuleState(unittest.TestCase):
             "adventure_mode": True,
             "planning_schema": {
                 "Stats": {
+                    "owner": "recorder",
                     "required": True,
                     "fields": {
                         "hp": "Hit points",
@@ -678,6 +621,7 @@ class TestStoryPlanningModuleState(unittest.TestCase):
                     "render": "HP: {hp} | LVL: {level}",
                 },
                 "Inventory": {
+                    "owner": "recorder",
                     "required": False,
                     "description": "Simple string list of items",
                     "initial": "Sword, Shield",
@@ -706,6 +650,7 @@ class TestStoryPlanningModuleState(unittest.TestCase):
         theater.theater_id = "schema_theater"
         theater.read_planning_schema.return_value = {
             "Clock": {
+                    "owner": "recorder",
                 "required": True,
                 "fields": {
                     "time": "Current time",
@@ -715,10 +660,12 @@ class TestStoryPlanningModuleState(unittest.TestCase):
                 "render": "Time: {time} | Deadline: {deadline}",
             },
             "Contraband": {
+                    "owner": "recorder",
                 "required": False,
                 "initial": "Quill, Turnip",
             },
             "Secret Plot": {
+                    "owner": "planner",
                 "required": False,
                 "initial": "Mole investigating",
             },
@@ -860,6 +807,61 @@ class TestDeepPlanningPromptTemplate(unittest.TestCase):
         self.assertIn("# Story-Planning Style\nEpic fantasy", rendered)
         self.assertIn("# Sticky State Schema Reference", rendered)
         self.assertIn("# Available Theater Lore", rendered)
+
+    def test_instruction_reflects_tri_role_architecture(self) -> None:
+        rendered = _DEEP_PLANNING_INSTRUCTION_TEMPLATE.render(
+            style="Dark mystery",
+            sticky_schema_json='{"Plot": {"owner": "planner", "fields": {"clue": "Next clue"}}}',
+            lore_context="lore.md",
+        )
+        self.assertIn("You own only `planner`-owned sticky notes", rendered)
+        self.assertIn("never attempt to write `recorder`-owned sticky notes", rendered)
+        self.assertIn("RECORDER.md", rendered)
+        self.assertIn("Factual recording of inventory, location, stats, and resources is maintained by the recorder", rendered)
+        self.assertIn("deep_search_lore", rendered)
+        self.assertIn("deep_read_lore", rendered)
+        self.assertNotIn("You are the sole owner of Adventure Mode sticky notes", rendered)
+
+    def test_build_deep_planner_instruction_filters_to_planner_owned_schemas(self) -> None:
+        lore_library = MagicMock(spec=LoreLibrary)
+        lore_library.get_lore_context.return_value = "lore.md"
+        theater = MagicMock(spec=Theater)
+        theater.theater_id = "tri-role-test"
+        theater.config.return_value = {}
+        theater.read_planning_schema.return_value = {
+            "Inventory": {
+                "owner": "recorder",
+                "description": "Items carried",
+                "initial": "Key",
+            },
+            "Faction Scheme": {
+                "owner": "planner",
+                "description": "Antagonist plans",
+                "initial": "Gathering forces",
+            },
+        }
+        canvas = MagicMock(spec=CanvasStateManager)
+        notepad = Notepad(theater, canvas_manager=canvas)
+        canvas.notepad = notepad
+        session_service = MagicMock(spec=InMemorySessionService)
+
+        with (
+            patch.object(StoryPlanningModule, "_create_deep_planner_agent"),
+            patch("tools.story.story_planning_module.App"),
+            patch("tools.story.story_planning_module.Runner"),
+        ):
+            module = StoryPlanningModule(
+                theater=theater,
+                canvas_manager=canvas,
+                lore_library=lore_library,
+                reference_manager=MagicMock(spec=ReferenceManager),
+                session_service=session_service,
+                session_id="tri-role-session",
+            )
+
+        instruction = module._build_deep_planner_instruction()
+        self.assertIn("Faction Scheme", instruction)
+        self.assertNotIn("Inventory", instruction)
 
     def test_turn_prompt_renders_responder_signals_and_turn_events(self) -> None:
         rendered = _DEEP_PLANNING_TURN_PROMPT_TEMPLATE.render(

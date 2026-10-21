@@ -4,317 +4,13 @@ import unittest
 import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
-from pydantic import JsonValue
 
 from components.canvas.story_state import StoryState
-from components.canvas.game_runtime import GameAction
 from components.canvas_state import CanvasStateManager
 from components.reference_manager import ReferenceManager
 from components.theater_manager import Theater, TheaterManager
 from providers import ImageProvider, SpeechProvider, TextResponseProvider
-from tools.story.story_tool import StoryPlanningTools, StoryResponseTool, StoryTool
-
-
-class TestStoryToolComposition(unittest.TestCase):
-    def setUp(self) -> None:
-        self.theater_directory = tempfile.TemporaryDirectory()
-        self.addCleanup(self.theater_directory.cleanup)
-        self.theater = MagicMock(
-            spec=Theater,
-            wraps=TheaterManager(Path(self.theater_directory.name)).theater("test_theater"),
-        )
-        self.theater.theater_id = "boundary_theater"
-        self.theater.config.return_value = {"story_planning": {"session_id": "shared-session"}}
-        self.canvas = MagicMock(spec=CanvasStateManager)
-        self.canvas.notepad = None
-        self.canvas.story = MagicMock(spec=StoryState)
-        self.canvas.story.speech_provider = MagicMock(spec=SpeechProvider)
-        self.provider = MagicMock(spec=TextResponseProvider)
-        self.reference_manager = MagicMock(spec=ReferenceManager)
-
-    def test_initializes_modules_with_shared_dependencies(self) -> None:
-        with (
-            patch("tools.story.story_tool.LoreLibrary") as lore_type,
-            patch("tools.story.story_tool.StoryPlanningModule") as planning_type,
-            patch("tools.story.story_tool.StoryResponseModule") as response_type,
-        ):
-            lore = lore_type.return_value
-            planning = planning_type.return_value
-            response = response_type.return_value
-            ref_mgr = MagicMock(spec=ReferenceManager)
-
-            tool = StoryTool(self.theater, self.canvas, self.provider, reference_manager=ref_mgr)
-
-        lore_type.assert_called_once_with(theater=self.theater)
-        planning_kwargs = planning_type.call_args.kwargs
-        response_kwargs = response_type.call_args.kwargs
-        self.assertIs(planning_kwargs["lore_library"], lore)
-        self.assertIs(response_kwargs["lore_library"], lore)
-        self.assertIs(planning_kwargs["reference_manager"], ref_mgr)
-        self.assertIs(response_kwargs["reference_manager"], ref_mgr)
-        self.assertNotIn("text_response_provider", planning_kwargs)
-        self.assertNotIn("text_response_provider", response_kwargs)
-        self.assertNotIn("planning_module", response_kwargs)
-        self.assertNotIn("notepad", planning_kwargs)
-        self.assertNotIn("notepad", response_kwargs)
-        self.assertIsNot(
-            planning_kwargs["session_service"],
-            response_kwargs["session_service"],
-        )
-        self.assertEqual(planning_kwargs["session_id"], "shared-session_planning")
-        self.assertEqual(response_kwargs["session_id"], "shared-session_response")
-        self.assertNotEqual(planning_kwargs["session_id"], response_kwargs["session_id"])
-        self.assertNotIn("config", planning_kwargs)
-        self.assertIs(tool.lore_library, lore)
-        self.assertIs(tool.reference_manager, ref_mgr)
-        self.assertIs(tool.planning_module, planning)
-        self.assertIs(tool.response_module, response)
-
-    def test_wires_cross_module_callbacks_after_construction(self) -> None:
-        with (
-            patch("tools.story.story_tool.LoreLibrary"),
-            patch("tools.story.story_tool.StoryPlanningModule"),
-            patch("tools.story.story_tool.StoryResponseModule") as response_type,
-        ):
-            response = response_type.return_value
-            tool = StoryTool(self.theater, self.canvas, self.provider, reference_manager=self.reference_manager)
-
-        callback = MagicMock()
-        tool.on_scene_reaction = callback
-        self.assertIs(tool.on_scene_reaction, callback)
-        self.assertIs(response.on_scene_reaction.__self__, tool)
-        self.assertIs(self.canvas.game.on_player_action.__self__, tool)
-        self.assertIs(tool.planning_module.on_trigger_story_response.__self__, tool)
-        action = GameAction(name="player_place", arguments={"item": "Pack mule"}, revision=0)
-        new_state = {"revision": 1, "state": {"player_offer": ["Pack mule"]}}
-        self.canvas.game.on_player_action(action, new_state)
-        tool.planning_module.queue_deep_planning.assert_called_once_with(
-            0,
-            "Game panel action",
-            {"source": "game", "game_action": action.model_dump(mode="json"), "game_state": new_state},
-        )
-
-    def test_tool_trigger_story_response_delegates_to_response_module(self) -> None:
-        with (
-            patch("tools.story.story_tool.LoreLibrary"),
-            patch("tools.story.story_tool.StoryPlanningModule"),
-            patch("tools.story.story_tool.StoryResponseModule") as response_type,
-        ):
-            response = response_type.return_value
-            response.process_user_action.return_value = {"status": "processing"}
-            tool = StoryTool(self.theater, self.canvas, self.provider, reference_manager=self.reference_manager)
-
-        res = tool.trigger_story_response("Player placed a coin", nudge="Make it dramatic")
-        self.assertEqual(res, {"status": "processing"})
-        response.record_user_input.assert_called_once()
-        response.process_user_action.assert_called_once_with("Player placed a coin", nudge="Make it dramatic")
-        self.assertEqual(tool._story_log[-1]["type"], "user_action")
-        self.assertEqual(tool._story_log[-1]["action"], "Player placed a coin")
-
-    def test_scene_reaction_queues_explicit_planning_request_once(self) -> None:
-        for pending_action in (None, "I turn the key."):
-            with (
-                self.subTest(pending_action=pending_action),
-                patch("tools.story.story_tool.LoreLibrary"),
-                patch("tools.story.story_tool.StoryPlanningModule"),
-                patch("tools.story.story_tool.StoryResponseModule"),
-            ):
-                tool = StoryTool(self.theater, self.canvas, self.provider, reference_manager=self.reference_manager)
-                if pending_action is not None:
-                    tool._pending_actions.append(pending_action)
-                result = {
-                    "turn_id": 7,
-                    "user_action": "I turn the key.",
-                    "narration": "The key breaks.",
-                    "planning_request": "Revise the quest",
-                    "proposed_factual_changes": [{
-                        "topic": "Inventory",
-                        "info": "Broken key",
-                        "evidence": "The key breaks in the completed response.",
-                    }],
-                    "planning_signals": ["[PLANNING REQUEST] Revise the quest"],
-                    "notepad_revision_used": 3,
-                }
-                tool._handle_scene_reaction(result)
-                tool.planning_module.queue_deep_planning.assert_called_once_with(7, "I turn the key.", result)
-                self.assertEqual(result["notepad_revision_used"], 3)
-                self.assertEqual(tool._pending_actions, [])
-                self.assertEqual(
-                    tool._story_log[-1]["output"]["proposed_factual_changes"],
-                    result["proposed_factual_changes"],
-                )
-                self.assertEqual(
-                    tool._story_log[-1]["output"]["planning_request"], "Revise the quest",
-                )
-
-    def test_scene_reaction_without_pending_action_or_request_does_not_queue(self) -> None:
-        with (
-            patch("tools.story.story_tool.LoreLibrary"),
-            patch("tools.story.story_tool.StoryPlanningModule"),
-            patch("tools.story.story_tool.StoryResponseModule"),
-        ):
-            tool = StoryTool(self.theater, self.canvas, self.provider, reference_manager=self.reference_manager)
-        tool._handle_scene_reaction({"narration": "Stillness."})
-        tool.planning_module.queue_deep_planning.assert_not_called()
-
-    def test_failed_scene_reaction_does_not_queue_planning(self) -> None:
-        with (
-            patch("tools.story.story_tool.LoreLibrary"),
-            patch("tools.story.story_tool.StoryPlanningModule"),
-            patch("tools.story.story_tool.StoryResponseModule"),
-        ):
-            tool = StoryTool(self.theater, self.canvas, self.provider, reference_manager=self.reference_manager)
-        tool._pending_actions.append("I turn the key.")
-        tool._handle_scene_reaction({"error": "Responder failed"})
-        tool.planning_module.queue_deep_planning.assert_not_called()
-        self.assertEqual(tool._pending_actions, [])
-
-    def test_delegates_public_surface_to_response_module(self) -> None:
-        with (
-            patch("tools.story.story_tool.LoreLibrary"),
-            patch("tools.story.story_tool.StoryPlanningModule"),
-            patch("tools.story.story_tool.StoryResponseModule") as response_type,
-        ):
-            response_type.return_value.process_user_action.return_value = {"narration": "Done"}
-            tool = StoryTool(self.theater, self.canvas, self.provider, reference_manager=self.reference_manager)
-
-        result = tool.process_user_action("Open the door")
-
-        self.assertEqual(result, {"narration": "Done"})
-        response_type.return_value.process_user_action.assert_called_once_with("Open the door")
-
-    def test_action_starts_planning_before_responder_and_response_is_an_extra_event(self) -> None:
-        with (
-            patch("tools.story.story_tool.LoreLibrary"),
-            patch("tools.story.story_tool.StoryPlanningModule"),
-            patch("tools.story.story_tool.StoryResponseModule"),
-        ):
-            tool = StoryTool(self.theater, self.canvas, self.provider, reference_manager=self.reference_manager)
-        result = {"turn_id": 1, "user_action": "Open the door", "narration": "The door opens."}
-
-        def resolve(action: str, nudge: str) -> dict[str, JsonValue]:
-            tool.planning_module.queue_deep_planning.assert_called_once_with(
-                0, action, {"source": "user_action", "nudge": nudge}
-            )
-            tool._handle_scene_reaction(result)
-            return {"status": "processing"}
-
-        tool.response_module.process_user_action.side_effect = resolve
-        tool.process_user_action("Open the door", nudge="Inspect the hinges")
-        calls = tool.planning_module.queue_deep_planning.call_args_list
-        self.assertEqual(len(calls), 2)
-        self.assertEqual(calls[1].args, (1, "Open the door", result))
-        self.assertEqual(tool._pending_actions, [])
-
-    def test_game_triggered_responder_result_is_delivered_without_planning_request(self) -> None:
-        with (
-            patch("tools.story.story_tool.LoreLibrary"),
-            patch("tools.story.story_tool.StoryPlanningModule"),
-            patch("tools.story.story_tool.StoryResponseModule"),
-        ):
-            tool = StoryTool(self.theater, self.canvas, self.provider, reference_manager=self.reference_manager)
-        result = {"turn_id": 2, "user_action": "Player traded a coin", "narration": "Sold."}
-        tool._handle_scene_reaction(result)
-        tool.planning_module.queue_deep_planning.assert_called_once_with(2, "Player traded a coin", result)
-
-    def test_process_user_action_cycle_cooldown(self) -> None:
-        with (
-            patch("tools.story.story_tool.LoreLibrary"),
-            patch("tools.story.story_tool.StoryPlanningModule"),
-            patch("tools.story.story_tool.StoryResponseModule") as response_type,
-        ):
-            response_type.return_value.process_user_action.return_value = {"narration": "Done"}
-            tool = StoryTool(self.theater, self.canvas, self.provider, reference_manager=self.reference_manager)
-
-        # First call executes immediately
-        res1 = tool.process_user_action("First action")
-        self.assertEqual(res1, {"narration": "Done"})
-
-        # Second call within cooldown is scheduled
-        res2 = tool.process_user_action("Second action")
-        self.assertEqual(res2, "Tool 'process_user_action' scheduled for next cycle when cooldown expires.")
-
-        # Third call modifies parameters for the next cycle
-        res3 = tool.process_user_action("Third action", nudge="look closely")
-        self.assertEqual(res3, "Tool 'process_user_action' parameters updated for next cycle.")
-
-        pending = tool.get_pending_cycle_call("process_user_action")
-        self.assertIsNotNone(pending)
-        self.assertEqual(pending["args"], ("Third action",))
-        self.assertEqual(pending["kwargs"], {"nudge": "look closely"})
-
-    def test_process_user_action_swallows_duplicate_calls(self) -> None:
-        with (
-            patch("tools.story.story_tool.LoreLibrary"),
-            patch("tools.story.story_tool.StoryPlanningModule"),
-            patch("tools.story.story_tool.StoryResponseModule") as response_type,
-        ):
-            response_type.return_value.process_user_action.return_value = {"narration": "Done"}
-            tool = StoryTool(self.theater, self.canvas, self.provider, reference_manager=self.reference_manager)
-
-        # First call executes immediately
-        res1 = tool.process_user_action("Open the ancient door")
-        self.assertEqual(res1, {"narration": "Done"})
-        response_type.return_value.process_user_action.assert_called_once_with("Open the ancient door")
-
-        # Second call with slightly different phrasing / casing / punctuation is swallowed,
-        # but returns standard scheduling confirmation to keep model interaction smooth
-        res2 = tool.process_user_action("I open the ancient door.")
-        self.assertEqual(res2, "Tool 'process_user_action' scheduled for next cycle when cooldown expires.")
-
-        # Verify it was NOT enqueued for next cycle
-        pending = tool.get_pending_cycle_call("process_user_action")
-        self.assertIsNone(pending)
-
-    def test_process_user_action_timeout_failure_disables_swallowing(self) -> None:
-        with (
-            patch("tools.story.story_tool.LoreLibrary"),
-            patch("tools.story.story_tool.StoryPlanningModule"),
-            patch("tools.story.story_tool.StoryResponseModule") as response_type,
-        ):
-            response_type.return_value.process_user_action.return_value = {"status": "processing"}
-            tool = StoryTool(self.theater, self.canvas, self.provider, reference_manager=self.reference_manager)
-
-        # First call starts processing
-        res1 = tool.process_user_action("Open the ancient door")
-        self.assertEqual(res1, {"status": "processing"})
-
-        # Background resolution times out and notifies scene reaction with error
-        tool._handle_scene_reaction({
-            "error": "Story responder timed out after 35.0 seconds. The story responder agent was killed and restarted."
-        })
-
-        # Retry call with identical action must NOT be swallowed because the previous call failed
-        res2 = tool.process_user_action("Open the ancient door")
-        self.assertEqual(res2, {"status": "processing"})
-        self.assertEqual(response_type.return_value.process_user_action.call_count, 2)
-
-        # Now simulate success
-        tool._handle_scene_reaction({"narration": "The ancient door creaks open."})
-
-        # Subsequent call with identical action SHOULD now be swallowed
-        res3 = tool.process_user_action("Open the ancient door")
-        self.assertEqual(res3, "Tool 'process_user_action' scheduled for next cycle when cooldown expires.")
-        self.assertEqual(response_type.return_value.process_user_action.call_count, 2)
-
-    def test_requires_text_response_provider(self) -> None:
-        with self.assertRaisesRegex(ValueError, "text_response_provider is required"):
-            StoryTool(self.theater, self.canvas, None, reference_manager=self.reference_manager)  # type: ignore[arg-type]
-
-    def test_requires_reference_manager(self) -> None:
-        with self.assertRaisesRegex(ValueError, "reference_manager is required"):
-            StoryTool(self.theater, self.canvas, self.provider, None)  # type: ignore[arg-type]
-
-    def test_keeps_legacy_story_tool_aliases(self) -> None:
-        self.assertIs(StoryPlanningTools, StoryTool)
-        self.assertIs(StoryResponseTool, StoryTool)
-
-    def test_exports_reflect_and_retry(self) -> None:
-        from tools.story import ReflectAndRetry, ReflectAndRetryToolPlugin
-        from google.adk.plugins import ReflectAndRetryToolPlugin as ADKPlugin
-
-        self.assertIs(ReflectAndRetry, ADKPlugin)
-        self.assertIs(ReflectAndRetryToolPlugin, ADKPlugin)
+from tools.story.story_tool import StoryTool
 
 
 class TestStoryToolStateIntegration(unittest.TestCase):
@@ -385,6 +81,9 @@ class TestStoryToolStateIntegration(unittest.TestCase):
             reference_manager=self.reference_manager,
         )
 
+    def tearDown(self) -> None:
+        self.tool.close()
+
     def test_saves_and_reloads_story_planning_state(self) -> None:
         self.tool.create_or_update_character(
             name="Lyra",
@@ -395,7 +94,7 @@ class TestStoryToolStateIntegration(unittest.TestCase):
             voice_tags=["female"],
         )
         self.tool.reference_manager.wait_for_reference_updates(["Lyra"], timeout=5)
-        self.tool.update_sticky_note(
+        self.tool.notepad.update_sticky_note(
             "Quest",
             "Tower investigated; key retrieved",
         )
@@ -439,6 +138,7 @@ class TestStoryToolStateIntegration(unittest.TestCase):
             text_response_provider=self.provider,
             reference_manager=reloaded_reference_manager,
         )
+        self.addCleanup(reloaded_tool.close)
         reloaded_tool.reload_from_session_state()
 
         characters = reloaded_tool.get_present_characters()

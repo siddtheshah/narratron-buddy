@@ -1,4 +1,4 @@
-"""Story planning module: owns sticky notes and background deep planning."""
+"""Story planning module: owns planner sticky notes and background deep planning."""
 
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ from typing import Callable, Optional
 
 from jinja2 import Template
 from google.adk.agents import Agent
+from google.adk.agents.readonly_context import ReadonlyContext
 from google.adk.apps.app import App, EventsCompactionConfig
 from google.adk.plugins import ReflectAndRetryToolPlugin
 from google.adk.plugins.base_plugin import BasePlugin
@@ -34,11 +35,13 @@ from tools.story.story_snapshot import (
     diff,
 )
 from components.canvas_state import CanvasStateManager
-from components.canvas.game_runtime import GameAction
 from components.canvas.game_state import GameState
 from components.theater_manager import Theater
 from components.reference_manager import CharacterLookupResult, ReferenceManager, PlayerCharacter
 from components.lore_library import LoreLibrary
+from components.notepad import NoteSnapshot
+from tools.story.story_session import StorySession
+from tools.story.story_staged_notes import StagedStoryNotes
 from tools.story.story_models import (
     DEFAULT_COMPACTION_TARGET_TOKENS,
     DEFAULT_COMPACTION_TRIGGER_TOKENS,
@@ -64,30 +67,26 @@ _DEEP_PLANNING_INSTRUCTION_TEMPLATE = Template(
 """# Role & Mission
 You are the deep planner for an interactive adventure. You do not narrate the current scene and you never choose actions, speech, thoughts, or feelings for the player. Take a broad view of the player's accumulated actions, established lore, unresolved setups, off-screen actors, deadlines, and world consequences.
 
-You are the sole owner of Adventure Mode sticky notes. Assimilate the committed turn by deciding which individual notes, if any, need an update. Use `update_sticky_note` once per changed sticky; do not replace or restate notes that did not change. Before updating a schema-backed sticky, call `check_schema` for that sticky and use its result to retry any rejected update.
-Follow your pinned PLANNER.md for adventure-specific priorities. The responder has separate instructions and owns immediate action resolution. Player Action events are intentions awaiting resolution: research relevant lore and prepare plans immediately, but never record attempted actions as successful, spend resources, advance clocks, or apply consequences until a Responder Response event establishes them. The response is a second event for the same action, not another player turn; never apply its costs or consequences twice.
+You own only `planner`-owned sticky notes. Assimilate the committed turn by deciding which planner-owned notes, if any, need an update. Use `check_schema(topic)` before updating a schema-backed sticky note and `update_sticky_note(topic, info)` once per changed note; never attempt to write `recorder`-owned sticky notes or restate notes that did not change.
+Follow your pinned PLANNER.md for adventure-specific priorities. The responder (RESPONDER.md) owns immediate action resolution and narration, and the recorder (RECORDER.md) owns factual state recording and bookkeeping. Player Action events are intentions awaiting resolution: research relevant lore and prepare plans immediately, but never record attempted actions as successful, spend resources, advance clocks, or apply consequences until a Responder Response or committed game event establishes them. The response is a second event for the same action, not another player turn; never apply its costs or consequences twice.
 
 # Non-Negotiable Planning Rules
 - Committed events are immutable facts. Replan around them; never retcon them to protect an outline.
-- Independent Analysis & Responder Communication: The turn responder directly communicates cues via 'Turn responder direct communication & planning signals' to improve recall (such as `[STICKY UPDATE: <Topic>]`). While you must promptly review all flagged stickies, DO NOT solely rely on responder signals. The responder operates quickly and focuses on immediate narration; it may overlook subtle stat changes, numeric increments, lore rules, or off-screen consequences. You are the sole authoritative owner of sticky notes and must perform your own independent analysis across the entire turn (action, narration, dialogue, dice results, and lore constraints). Update any sticky note that requires modification, even if the responder omitted or failed to flag it.
+- Independent Analysis & Responder Communication: The turn responder directly communicates cues via 'Turn responder direct communication & planning signals' to improve recall (such as `[STICKY UPDATE: <Topic>]`) and planning requests to highlight emerging developments. While you must promptly review all flagged stickies, DO NOT solely rely on responder signals. The responder operates quickly and focuses on immediate narration; it may overlook subtle lore rules, looming deadlines, or off-screen consequences. You are the sole authoritative owner of planner-owned sticky notes and must perform your own independent analysis across the entire turn (action, narration, dialogue, dice results, and lore constraints). Update any planner-owned sticky note that requires modification, even if the responder omitted or failed to flag it. Factual recording of inventory, location, stats, and resources is maintained by the recorder.
 - Preserve player agency. Never prescribe player actions.
 - Maintain causal continuity across many turns. Advance factions and antagonists off-screen when their knowledge, resources, motives, and elapsed time justify it.
 - Audit earlier player behavior when lore calls for counter-plotting. Opposition should investigate evidence the player plausibly left, but must not gain impossible knowledge.
 - Use the author-defined sticky fields as the only durable planning vocabulary. Do not invent a parallel generic summary, thread tracker, consequence list, clock, or faction model.
 - Think across short, medium, and long horizons, but publish only the configured sticky state.
 - If there are stickies that are for plot building or reveals, these are a priority for you to set up and maintain.
-- For stickies that track numeric state, ensure you follow the appropriate rules defined in the lore to faithfully update them.
+- For planner-owned stickies that track numeric state, clocks, or hidden scores, ensure you follow the appropriate rules defined in the lore to faithfully update them. Factual inventory, player stats, and mechanical state are handled by the recorder.
 - For you, accuracy is more important than speed.
 {% if has_game -%}
-- The Current Game State in each heartbeat is the package-selected model view. Read its `instructions`, `state`, `revision`, and listed Narratron `actions` before deciding whether to act. The game instructions explain when its actions are appropriate; apply them alongside established story facts and player agency. The game runtime validates the complete underlying state and every submitted action.
-- Call `take_game_action(name, arguments_json, revision)` only when a listed Narratron action is justified by the current game state and committed story. Encode arguments as a JSON object matching that action's `parameters`. Never submit a player action or infer that the player clicked a game button from narration alone.
-- Each successful game action changes the revision. Read the returned state and revision before another action. If an action is rejected, reread the current game state and decide again. If no action is justified, leave the game untouched.
-- A Player Game Action event contains the submitted action and the state immediately after it committed. Use that pair to interpret the event; the Current Game State above may include later actions.
-- When responding to a Player Game Action, you can choose to trigger a story response using `trigger_story_response(user_action, nudge)` if the player's move or resulting game development warrants immediate scene narration, NPC dialogue, or narrative reaction. If the move is minor, routine, or purely mechanical and does not warrant a story reaction, do not call `trigger_story_response`.
+- Read the Current Game State and rules to develop conditional plans. Game state is read only. The recorder alone chooses and executes permitted game actions and decides whether narration is warranted.
 {% endif -%}
 
 # Character, Lore, and Image Tools
-You can canonically manage the player character using `update_player_character` (name, visual description) and query them with `get_player_character_info`. You can canonically create or update NPC records using `create_or_update_character`, manage scenery and locations using `create_or_update_scene`, and look up all characters using `lookup_character`.
+Use get_player_character_info and lookup_character for read-only reference context. The recorder owns canonical character and scene changes.
 Use `deep_search_lore` and `deep_read_lore` to close concrete lore gaps, with up to eight searches and eight reads per run. Use `find_image_names` when a sticky needs the name of an available reference image. Store the returned `alias` (preferred) or `name`, never a guessed filename or absolute path. Prefer established lore over invention. Do not roll dice; you are planning, not resolving an uncertain action.
 
 # Completion
@@ -96,11 +95,11 @@ After tool calls, respond with a brief confirmation. Do not include a sticky-not
 
 # Typical Planning Procedure
 
-1. Search lore library for relevant story info {% if has_game %} or game rules {% endif %} using `search_lore`
-2. Read relevant lore documents using `read_lore`
-3. Update sticky notes using any explicit rules from lore. {% if has_game %}Take game actions to respond to player game actions, and choose whether to call `trigger_story_response` to narrate significant game moves. {% endif %}
+1. Search lore library for relevant story info {% if has_game %} or game rules {% endif %} using `deep_search_lore`
+2. Read relevant lore documents using `deep_read_lore`
+3. Update only planner-owned sticky notes using lore rules. Never execute game actions or trigger peers.
 4. Come up with some interesting possible developments given current state.
-5. Use your taste and imagination to make additional updates to sticky notes and characters based on that plan.
+5. Use your taste and imagination to make additional updates to planner-owned sticky notes based on that plan.
 
 # Story-Planning Style
 {{ style }}
@@ -108,7 +107,7 @@ After tool calls, respond with a brief confirmation. Do not include a sticky-not
 {% if sticky_schema_json -%}
 
 # Sticky State Schema Reference
-Each topic below is independently validated by the notepad tool. Do not attempt to publish a complete `sticky_notes` object. Call `check_schema(topic)` immediately before each schema-backed update; for field-backed notes, its `info` argument must be a JSON object encoded as a string.
+Each planner-owned topic below is independently validated by the notepad tool. Do not attempt to publish a complete `sticky_notes` object. Call `check_schema(topic)` immediately before each schema-backed update; for field-backed notes, its `info` argument must be a JSON object encoded as a string. Never attempt to write recorder-owned sticky notes.
 {{ sticky_schema_json }}
 {% endif -%}
 {% if lore_context -%}
@@ -217,7 +216,7 @@ The following reference images became available since the last heartbeat:
 # Current Sticky Notes
 {% if current_notes -%}
 {% for note in current_notes -%}
-- {{ note.topic }}: {{ note.info }}
+- {% if note.owner %}[{{ note.owner }}] {% endif %}{{ note.topic }}: {{ note.info }}
 {% endfor -%}
 {% else -%}
 (No active sticky notes)
@@ -244,7 +243,7 @@ PlannerStateSnapshot = StoryStateSnapshot
 
 
 class StoryPlanningModule:
-    """Sole owner of background deep planning."""
+    """Owner of background deep planning and planner-owned sticky notes."""
 
     def __init__(
         self,
@@ -256,6 +255,7 @@ class StoryPlanningModule:
         session_id: str,
         story_log_context_fn: Optional[Callable[[], str]] = None,
         game_state: GameState | None = None,
+        story_session: StorySession | None = None,
     ) -> None:
         if theater is None:
             raise ValueError("theater is required.")
@@ -272,6 +272,8 @@ class StoryPlanningModule:
         if not session_id:
             raise ValueError("session_id is required.")
         self.notepad = canvas_manager.notepad
+        self.story_session = story_session
+        self.staged_notes = StagedStoryNotes(self.notepad, "planner")
 
         self.theater = theater
         self.theater_id: str = theater.theater_id or ""
@@ -334,9 +336,11 @@ class StoryPlanningModule:
         self.vertex_location: str = str(
             self.config.get("vertex_location") or os.getenv("GOOGLE_CLOUD_LOCATION") or "global"
         )
-        self.compaction_config: Optional[EventsCompactionConfig] = self._build_compaction_config()
+        self.compaction_config: Optional[EventsCompactionConfig] = (
+            None if story_session is not None else self._build_compaction_config()
+        )
         self._run_compression_config: Optional[types.ContextWindowCompressionConfig] = (
-            self._build_run_compression_config()
+            None if story_session is not None else self._build_run_compression_config()
         )
 
         self.plugins: list[BasePlugin] = [ReflectAndRetryToolPlugin()]
@@ -350,13 +354,13 @@ class StoryPlanningModule:
         self._story_response_triggered_this_heartbeat: bool = False
 
         self._deep_planner_agent: Agent = self._create_deep_planner_agent()
-        self._deep_planner_app: App = App(
+        self._deep_planner_app: App | None = None if story_session is not None else App(
             name="narratron_story_deep_planner",
             root_agent=self._deep_planner_agent,
             plugins=self.plugins,
             events_compaction_config=self.compaction_config,
         )
-        self._deep_planner_runner: Runner = Runner(
+        self._deep_planner_runner: Runner | None = None if story_session is not None else Runner(
             app=self._deep_planner_app,
             session_service=self.session_service,
             auto_create_session=True,
@@ -500,22 +504,24 @@ class StoryPlanningModule:
         """
         return self.reference_manager.find_image_names(query)
 
-    def _build_deep_planner_instruction(self, ctx: object = None) -> str:
+    def _build_deep_planner_instruction(self, ctx: ReadonlyContext | None = None) -> str:
         lore_context = self.lore_library.get_lore_context(role="planner")
+        sticky_definitions = {
+            topic: {
+                k: v
+                for k, v in definition.items()
+                if k in ("description", "fields", "render", "required", "owner") and v is not None
+            }
+            for topic, definition in self.notepad.sticky_definitions.items()
+            if definition.get("owner") == "planner"
+        }
         sticky_schema_json = (
             json.dumps(
-                {
-                    topic: {
-                        k: v
-                        for k, v in definition.items()
-                        if k in ("description", "fields", "render", "required") and v is not None
-                    }
-                    for topic, definition in self.notepad.sticky_definitions.items()
-                },
+                sticky_definitions,
                 ensure_ascii=False,
                 indent=2,
             )
-            if self.notepad.sticky_definitions
+            if sticky_definitions
             else ""
         )
         return _DEEP_PLANNING_INSTRUCTION_TEMPLATE.render(
@@ -526,46 +532,10 @@ class StoryPlanningModule:
         ).strip()
 
     def take_game_action(self, name: str, arguments_json: str, revision: int) -> str:
-        """Apply one Narratron-only game action using JSON arguments and the current revision."""
-        logger.debug(f"[StoryPlanningModule] take_game_action: {name}")
-        logger.debug(f"[StoryPlanningModule] take_game_action: {arguments_json}")
-        if self.game_state is None:
-            return "No game is available."
-        try:
-            arguments = json.loads(arguments_json)
-            action = GameAction(name=name, arguments=arguments, revision=revision)
-            self.game_state.act(action, actor="narratron")
-            return json.dumps(self.game_state.story_snapshot("narratron"), ensure_ascii=False)
-        except (ValueError, TypeError) as exc:
-            return f"Game action rejected: {exc}"
+        return "Error: Only the recorder may mutate game state."
 
     def trigger_story_response(self, user_action: str = "", nudge: str = "") -> str:
-        """Trigger an immediate story response (narration and dialogue) for a player game move.
-
-        Args:
-            user_action: Optional description of the action or event to narrate.
-                If omitted, the player's game action will be used.
-            nudge: Optional directing instruction or focus for the story responder.
-        """
-        logger.debug(f"[StoryPlanningModule] trigger_story_response: action={user_action!r}, nudge={nudge!r}")
-        if self._running_heartbeat and not self._current_heartbeat_has_game_action:
-            return "Story response can only be triggered when responding to a player game move."
-        if self._story_response_triggered_this_heartbeat:
-            return "Story response has already been triggered for this game move."
-        if self.on_trigger_story_response is None:
-            return "Story response is unavailable: no trigger handler configured."
-        action_text = str(user_action or "").strip()
-        if not action_text:
-            if self._current_game_action is not None:
-                act_name = str(self._current_game_action.get("name") or "action")
-                action_text = f"Player took game action: {act_name}"
-            else:
-                action_text = "Player took a game action."
-        self._story_response_triggered_this_heartbeat = True
-        res = self.on_trigger_story_response(action_text, str(nudge or "").strip())
-        if type(res) is dict and "error" in res:
-            return f"Failed to trigger story response: {res['error']}"
-        return f"Story response triggered for: {action_text}"
+        return "Error: Only StoryTool may schedule story roles."
 
     def _game_state_json(self) -> str:
         if self.game_state is None:
@@ -584,7 +554,7 @@ class StoryPlanningModule:
             )
         return Agent(
             name="story_deep_planner",
-            description="Long-horizon story planner and sole Adventure Mode sticky-note owner.",
+            description="Long-horizon story planner and owner of planner-owned sticky notes.",
             model=VertexGemini(
                 model=self.deep_planner_model,
                 project_id=self.vertex_project,
@@ -596,21 +566,37 @@ class StoryPlanningModule:
                 self.deep_read_lore,
                 self.lookup_character,
                 self.get_player_character_info,
-                self.update_player_character,
-                self.create_or_update_character,
-                self.create_or_update_scene,
                 self.find_image_names,
-                self.notepad.check_schema,
-                self.notepad.update_sticky_note,
-                *([self.take_game_action] if self.game_state is not None and self.game_state.program is not None else []),
-                *([self.trigger_story_response] if self.game_state is not None or self.on_trigger_story_response is not None else []),
+                self.staged_notes.check_schema,
+                self.staged_notes.update_sticky_note,
             ],
             disallow_transfer_to_parent=True,
             disallow_transfer_to_peers=True,
+            output_key="story_planner_output",
+            include_contents="none" if self.story_session is not None else "default",
             generate_content_config=generate_content_config,
         )
 
+    def plan_recorded_turn(self, handoff: dict[str, JsonValue], source: NoteSnapshot) -> dict[str, str]:
+        """Plan exactly one committed turn; publishing cannot schedule a peer."""
+        if self.story_session is None:
+            raise RuntimeError("A shared story session is required for turn planning.")
+        self.reset_deep_lore_call_counts()
+        self.staged_notes.updates.clear()
+        prompt = json.dumps({
+            "recorded_turn": handoff,
+            "source_revision": source.revision,
+            "sticky_notes": source.notes,
+            "game_state": handoff.get("game_state"),
+        }, ensure_ascii=False)
+        self.story_session.run("planner", prompt, timeout=self.deep_planner_timeout_seconds, stage_id=str(handoff["turn_id"]))
+        return dict(self.staged_notes.updates)
+
     def restart_deep_planner_agent(self) -> None:
+        if self.story_session is not None:
+            self._last_state_snapshot = None
+            self.reset_deep_lore_call_counts()
+            return
         logger.info(
             "[StoryPlanningModule] Resetting deep planner agent for theater=%s",
             self.theater_id,
@@ -724,6 +710,8 @@ class StoryPlanningModule:
     def queue_deep_planning(
         self, turn_id: int, action: str, result: dict[str, object]
     ) -> threading.Thread:
+        if self.story_session is not None:
+            raise RuntimeError("StoryTool owns per-turn planner scheduling.")
         if not self.deep_planning_enabled:
             thread = threading.Thread(target=lambda: None, daemon=True)
             thread.start()
@@ -888,13 +876,25 @@ class StoryPlanningModule:
             }
             reference_images = self.reference_manager.list_references()
 
+            owners = {
+                topic: str(definition.get("owner") or "unknown")
+                for topic, definition in self.notepad.sticky_definitions.items()
+            }
+            present_notes = [
+                {
+                    **note,
+                    **({"owner": owners[note["topic"]]} if note["topic"] in owners else {}),
+                }
+                for note in self.notepad.get_present_sticky_notes()
+            ]
+
             is_initial = self._last_state_snapshot is None
             if is_initial:
                 prompt_input = _DEEP_PLANNING_TURN_PROMPT_TEMPLATE.render(
                     is_initial=True,
                     game_state_json=self._game_state_json(),
                     turn_events=event_payloads,
-                    current_notes=self.notepad.get_present_sticky_notes(),
+                    current_notes=present_notes,
                     player_character=current_pc_obj,
                     characters=current_chars_list,
                     reference_images=reference_images,

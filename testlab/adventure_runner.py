@@ -447,12 +447,14 @@ class AdventureSession:
         planner_model: Optional[str] = None,
         nodes_ahead: Optional[int] = None,
         session_id: Optional[str] = None,
+        drain_story_turns: bool = True,
     ) -> None:
         self.adventure_id_or_path = adventure_id_or_path
         self.agent_model_override = agent_model
         self.planner_model_override = planner_model
         self.nodes_ahead_override = nodes_ahead
         self.session_id = session_id or f"adv_runner_{Path(adventure_id_or_path).name}_{uuid.uuid4().hex[:8]}"
+        self.drain_story_turns = drain_story_turns
         self.created_at = time.time()
         self.lock = RLock()
 
@@ -509,8 +511,6 @@ class AdventureSession:
             if bool(sp_config.get("adventure_mode", False))
             else NotepadTool(theater, canvas_manager=canvas_manager)
         )
-        if bool(sp_config.get("adventure_mode", False)):
-            self.story_tool.planning_module.on_trigger_story_response = self._trigger_game_story_response
 
         self.reference_tools = ReferenceTool(theater, reference_manager, canvas_manager)
 
@@ -590,41 +590,7 @@ class AdventureSession:
         clean_nudge = str(nudge or "").strip()
         logger.info("[AdventureRunner] process_user_action called: action=%r, nudge=%r", clean_action, clean_nudge)
 
-        # The synchronous harness bypasses the public asynchronous tool, so
-        # register the action and deliver its callback just as that tool does.
-        self.story_tool.append_story_log_entry({"type": "user_action", "action": clean_action})
-        self.story_tool._pending_actions.append(clean_action)
-        self.story_tool.planning_module.queue_deep_planning(
-            0, clean_action, {"source": "user_action", "nudge": clean_nudge}
-        )
-
-        # Run in a dedicated worker thread so that the internal asyncio.run() in
-        # StoryTool._resolve_user_action may create its own event loop, so keep
-        # it isolated from the ADK agent's event loop.
-        with ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(
-                self.story_tool._resolve_user_action,
-                clean_action,
-                nudge=clean_nudge,
-            )
-            result = future.result()
-
-        self.story_tool._handle_scene_reaction(result)
-
-        # Production narration never waits for long-horizon planning, but the
-        # deterministic CLI/autoplay harness should observe the completed plan
-        # and sticky projection before choosing its next action.
-        deep_wait_timeout = float(
-            getattr(self.story_tool, "deep_planner_timeout_seconds", 300.0)
-        ) + 5.0
-        if not self.story_tool.wait_for_deep_planning(
-            timeout=deep_wait_timeout,
-            target_turn_id=int(result.get("turn_id") or 0),
-        ):
-            logger.warning(
-                "[AdventureRunner] Deep planner did not drain within %.1f seconds",
-                deep_wait_timeout,
-            )
+        result = self.story_tool.resolve_action(clean_action, nudge=clean_nudge, drain=self.drain_story_turns)
 
         self.mock_canvas.log_call(
             "process_user_action",
@@ -787,16 +753,6 @@ class AdventureSession:
             tools=self.tools,
         )
 
-    def _trigger_game_story_response(self, user_action: str = "", nudge: str = "") -> str:
-        """Complete game narration before the planning worker reports the move finished."""
-        clean_action = user_action.strip() or "Player took a game action."
-        self.story_tool.append_story_log_entry({"type": "user_action", "action": clean_action})
-        with ThreadPoolExecutor(max_workers=1) as executor:
-            result = executor.submit(self.story_tool._resolve_user_action, clean_action, nudge=nudge).result()
-        self.story_tool._handle_scene_reaction(result)
-        self.mock_canvas.log_call("game_story_response", {"user_action": clean_action, "nudge": nudge}, result)
-        return json.dumps(result, ensure_ascii=False)
-
     def take_game_action(self, action: GameAction) -> dict[str, JsonValue]:
         """Commit a player move and drain the same planning callback used by the canvas."""
         with self.lock:
@@ -807,7 +763,7 @@ class AdventureSession:
             adventure_mode = bool(self.config.get("story_planning", {}).get("adventure_mode", False))
             previous_reaction = self.story_tool._last_scene_reaction if adventure_mode else {}
             self.game.act(action, actor="player")
-            drained = not adventure_mode or self.story_tool.wait_for_pending_events(
+            drained = not adventure_mode or not self.drain_story_turns or self.story_tool.wait_for_pending_events(
                 timeout=float(self.story_tool.deep_planner_timeout_seconds)
                 * (self.story_tool.deep_heartbeat_failure_retries + 1) + 5.0,
             )
@@ -945,6 +901,10 @@ class AdventureSession:
             if bool(self.config.get("story_planning", {}).get("adventure_mode", False)):
                 if not self.story_tool.wait_for_pending_events(timeout=float(self.story_tool.deep_planner_timeout_seconds) + 5.0):
                     raise ValueError("The planner is still running. Wait before resetting the adventure.")
+                self.story_tool.close()
+                for name in ("story.sqlite", "story_adk.sqlite"):
+                    journal = self.theater_manager.theater(self.session_id).output_dir() / name
+                    journal.unlink(missing_ok=True)
             state_file = self.theater_manager.theater(self.session_id).directory() / "theater.json"
             if state_file.is_file():
                 document = json.loads(state_file.read_text(encoding="utf-8"))
@@ -956,6 +916,8 @@ class AdventureSession:
 
     def cleanup(self) -> None:
         """Remove temporary session theater files."""
+        if bool(self.config.get("story_planning", {}).get("adventure_mode", False)):
+            self.story_tool.close()
         if self.theaters_root.exists():
             try:
                 shutil.rmtree(self.theaters_root)

@@ -292,11 +292,11 @@ class TestStoryResponseModuleBehavior(unittest.TestCase):
             session_id="response-test-session",
         )
 
-    def test_planning_trigger_is_available_to_responder(self) -> None:
+    def test_planning_cues_do_not_expose_peer_trigger_tools(self) -> None:
         with patch("tools.story.story_response_module.Agent") as agent:
             self.module._create_responder_agent()
-        self.assertIn(self.module.trigger_story_planning, agent.call_args.kwargs["tools"])
-        self.assertIn("trigger_story_planning(reason)", self.module._build_responder_instruction())
+        self.assertNotIn(self.module.trigger_story_planning, agent.call_args.kwargs["tools"])
+        self.assertIn("planning_request is advisory", self.module._build_responder_instruction())
 
     def test_pins_only_responder_guide_and_records_its_activity(self) -> None:
         self.theater.lore_documents.return_value = ["RESPONDER.md", "PLANNER.md", "read_legacy.txt"]
@@ -755,8 +755,8 @@ class TestBuildSceneReactionPrompt(unittest.TestCase):
         )
         self.assertIn("planning_signals", prompt)
         self.assertIn("STICKY UPDATE", prompt)
-        self.assertIn("sole agent that directly modifies sticky notes", prompt)
-        self.assertIn("high recall of sticky note updates", prompt)
+        self.assertIn("A recorder reconciles established facts", prompt)
+        self.assertIn("proposed_factual_changes", prompt)
         self.assertIn("scene_reference", prompt)
 
     def test_scene_reaction_model_validates_sticky_update_signals(self) -> None:
@@ -989,7 +989,7 @@ class TestResponderInstructionAndTurnPrompt(unittest.TestCase):
         self.assertTrue(prompt.startswith("# Current Story State\nYour sticky notes:\n- HUD: HP: 100"))
         self.assertIn("# Player Action\nI look north.\n\n[Live Agent Nudge to Accommodate]: Fog rolls in.", prompt)
 
-    def test_turn_prompt_includes_read_only_game_state(self) -> None:
+    def test_turn_prompt_excludes_game_state(self) -> None:
         from unittest.mock import Mock
         from components.canvas.game_state import GameState
 
@@ -997,8 +997,8 @@ class TestResponderInstructionAndTurnPrompt(unittest.TestCase):
         self.reference_manager.count.return_value = 0
         self.reference_manager.get_player_character.return_value = None
         prompt = self.module._build_responder_turn_prompt("I inspect the game board.")
-        self.assertIn("# Current Game State (read only)", prompt)
-        self.assertIn('"board"', prompt)
+        self.assertNotIn("# Current Game State", prompt)
+        self.assertNotIn('"board"', prompt)
         self.assertNotIn('"instructions"', prompt)
         self.assertNotIn('"actions"', prompt)
 

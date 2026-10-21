@@ -4,11 +4,12 @@ version = "0.0.0"
 requires-python = ">=3.10"
 dependencies = [
     "absl-py",
+    "aiosqlite>=0.22.1",
     "av>=12.0.0",
     "cel-python>=0.4,<0.5",
     "cloud-sql-python-connector[pg8000]",
     "fastapi",
-    "google-adk",
+    "google-adk[db]",
     "google-cloud-storage>=3.0.0",
     "google-cloud-texttospeech",
     "google-genai>=2.25.0",
@@ -26,6 +27,7 @@ dependencies = [
     "python-multipart",
     "pyyaml",
     "scikit-learn>=1.5",
+    "sqlalchemy>=2.0.55",
     "stripe>=7.0.0",
     "uvicorn",
 ]

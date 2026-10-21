@@ -1,6 +1,7 @@
 """Validated content passed between story roles, separate from routing metadata."""
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
+from typing import Literal
 
 from components.canvas.game_runtime import GameAction
 
@@ -36,6 +37,7 @@ class NarrationRequest(BaseModel):
 
     user_action: str = Field(min_length=1, max_length=2000)
     nudge: str = Field(default="", max_length=1000)
+    brief: str = Field(default="", max_length=4000)
 
 
 class CommittedGameReceipt(BaseModel):
@@ -51,12 +53,29 @@ class CommittedGameReceipt(BaseModel):
     receipt: dict[str, JsonValue]
 
 
+class CanonicalReferenceUpdate(BaseModel):
+    """An explicit recorder-owned upsert of established character or scene facts."""
+
+    model_config = ConfigDict(extra="forbid")
+    kind: Literal["player", "character", "scene"]
+    name: str = Field(min_length=1)
+    description: str = ""
+    personality: str = ""
+    motivation: str = ""
+    quirk: str = ""
+    gender: Literal["male", "female", "nonbinary"] = "nonbinary"
+    voice_tags: list[str] = Field(default_factory=list)
+
+
 class GameControlDecision(BaseModel):
     """The game-control outcome selected for one committed player game event."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     narration_request: NarrationRequest | None = None
+    reason: str = Field(default="Routine mechanical action.", min_length=1, max_length=1000)
+    factual_updates: dict[str, str] = Field(default_factory=dict)
+    reference_updates: tuple[CanonicalReferenceUpdate, ...] = ()
 
 
 class GameControlOutcome(BaseModel):

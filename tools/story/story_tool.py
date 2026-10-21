@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
-import secrets
+from concurrent.futures import Future, ThreadPoolExecutor, wait
+from threading import RLock
+from uuid import uuid4
 from datetime import datetime, timezone
 import logging
-from typing import Any, Callable, Dict, Optional, Union
+import time
+from typing import Callable, Optional
 
-from google.adk.sessions import InMemorySessionService
-from pydantic import BaseModel, Field, JsonValue
+from pydantic import BaseModel, Field, JsonValue, TypeAdapter
 
 from components.canvas.story_state import CharacterState, PlayerCharacterState, StoryState
 from components.canvas.game_runtime import GameAction
@@ -26,10 +28,14 @@ from tools.base_tool import BaseTools, with_cycle_cooldown
 from tools.tool_metadata import terminal
 from components.reference_manager import ReferenceManager
 from components.lore_library import LoreLibrary
-from components.notepad import Notepad
+from components.notepad import Notepad, NoteSnapshot, StaleNoteSnapshot
 from tools.story.story_planning_module import StoryPlanningModule
 from tools.story.story_response_module import StoryResponseModule
 from tools.story.story_handoffs import ProposedFactChange
+from tools.story.story_recorder_module import StoryRecorderModule
+from tools.story.story_recording_journal import RecordingEvent, StoryRecordingJournal
+from tools.story.story_session import StorySession
+from tools.story.story_turn_journal import StoryTurn, StoryTurnJournal
 
 
 logger = logging.getLogger(__name__)
@@ -38,8 +44,8 @@ STORY_LOG_CONTEXT_LINES = 200
 
 class StoryResponseOutput(BaseModel):
     narration: str = ""
-    dialogue: list[Dict[str, Any]] = Field(default_factory=list)
-    die_rolls: list[Dict[str, Any]] = Field(default_factory=list)
+    dialogue: list[dict[str, JsonValue]] = Field(default_factory=list)
+    die_rolls: list[dict[str, JsonValue]] = Field(default_factory=list)
     scene_reference: Optional[str] = None
     proposed_factual_changes: list[ProposedFactChange] = Field(default_factory=list)
     planning_request: str | None = None
@@ -80,222 +86,321 @@ class StoryTool(BaseTools):
         self.text_response_provider = text_response_provider
 
         raw_config = theater.config() or {}
-        subconfig = (
-            raw_config.get("story_planning", raw_config)
-            if "story_planning" in raw_config
-            else raw_config
-        )
-        self.config: Dict[str, Any] = subconfig if isinstance(subconfig, dict) else {}
-        self.cooldown_duration = float(
-            self.config.get(
-                "cooldown_duration",
-                self.config.get("action_cooldown_base_seconds", 15.0),
-            )
-        )
+        self.config = raw_config.get("story_planning", raw_config)
+        self.cooldown_duration = float(self.config.get("cooldown_duration", self.config.get("action_cooldown_base_seconds", 15.0)))
         self.action_cooldown_base_seconds = self.cooldown_duration
-        # This is the single note collection for both story modules.
-        if canvas_manager is not None and canvas_manager.notepad is not None:
-            self.notepad = canvas_manager.notepad
-        else:
-            self.notepad = Notepad(
-                theater,
-                canvas_manager=canvas_manager,
-                # Adventure planning defaults to strict per-sticky contracts, but
-                # theater authors may deliberately opt out.
-                enforce_structured=bool(self.config.get("enforce_structured", True)),
-            )
-            if canvas_manager is not None:
-                canvas_manager.notepad = self.notepad
-        self._story_log: list[Dict[str, Any]] = []
-        self._pending_actions: list[str] = []
-        self.on_scene_reaction = None
+        self.notepad = canvas_manager.notepad or Notepad(
+            theater, canvas_manager=canvas_manager,
+            enforce_structured=bool(self.config.get("enforce_structured", True)),
+        )
+        canvas_manager.notepad = self.notepad
+        self._story_log: list[dict[str, JsonValue]] = []
+        self._on_scene_reaction: Callable[[dict[str, JsonValue]], None] | None = None
         self._load_story_log()
-
         self.lore_library = lore_library if lore_library is not None else LoreLibrary(theater=theater)
         self.reference_manager = reference_manager
         if speech_provider is not None and self.reference_manager.speech_provider is None:
             self.reference_manager.speech_provider = speech_provider
-        configured_session_id = str(self.config.get("session_id") or "").strip()
-        theater_id = theater.theater_id or ""
-        self.planning_session_service = InMemorySessionService()
-        self.planning_session_id = (
-            f"{configured_session_id}_planning"
-            if configured_session_id
-            else f"planner_{theater_id}_{secrets.token_hex(8)}"
-        )
-        self.response_session_service = InMemorySessionService()
-        self.response_session_id = (
-            f"{configured_session_id}_response"
-            if configured_session_id
-            else f"responder_{theater_id}_{secrets.token_hex(8)}"
-        )
 
-        self.planning_module = StoryPlanningModule(
-            theater=theater,
-            canvas_manager=canvas_manager,
-            lore_library=self.lore_library,
-            reference_manager=self.reference_manager,
-            session_service=self.planning_session_service,
-            session_id=self.planning_session_id,
-            story_log_context_fn=self.format_recent_story_log,
-            game_state=canvas_manager.game,
+        journal_path = theater.output_dir() / "story.sqlite"
+        self.recording_journal = StoryRecordingJournal(journal_path)
+        self.turn_journal = StoryTurnJournal(journal_path)
+        self.story_session = StorySession(
+            theater.output_dir() / "story_adk.sqlite",
+            str(self.config.get("session_id") or f"story_{theater.theater_id}"),
         )
         self.response_module = StoryResponseModule(
-            theater=theater,
-            canvas_manager=canvas_manager,
-            lore_library=self.lore_library,
+            theater=theater, canvas_manager=canvas_manager, lore_library=self.lore_library,
             reference_manager=self.reference_manager,
-            session_service=self.response_session_service,
-            session_id=self.response_session_id,
-            game_state=canvas_manager.game,
+            session_service=self.story_session.session_service,
+            session_id=self.story_session.session_id, story_session=self.story_session,
         )
-
-        # Cross-module communication stays explicit and is wired only after
-        # both modules have been initialized.
+        self.planning_module = StoryPlanningModule(
+            theater=theater, canvas_manager=canvas_manager, lore_library=self.lore_library,
+            reference_manager=self.reference_manager,
+            session_service=self.story_session.session_service,
+            session_id=self.story_session.session_id, story_session=self.story_session,
+            story_log_context_fn=self.format_recent_story_log, game_state=canvas_manager.game,
+        )
+        self.recorder_module = StoryRecorderModule(
+            self.notepad, self.recording_journal,
+            lore_library=self.lore_library, game_state=canvas_manager.game,
+            story_session=self.story_session, reference_manager=self.reference_manager,
+        )
+        assert self.recorder_module.agent is not None
+        self.story_session.bind([
+            self.response_module._responder_agent,
+            self.recorder_module.agent,
+            self.planning_module._deep_planner_agent,
+        ])
+        self._state_lock = RLock()
+        self._work_lock = RLock()
+        self._foreground_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="story-turn")
+        self._planner_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="story-plan")
+        self._foreground_work: dict[str, Future[dict[str, JsonValue]]] = {}
+        self._planning_work: dict[str, Future[None]] = {}
+        self._closed = False
         self.notepad.on_change = self.response_module.save_to_session_state
-        self.response_module.on_scene_reaction = self._handle_scene_reaction
         self.response_module.on_failure = lambda: self.record_tool_failure("process_user_action")
-        self.planning_module.on_trigger_story_response = self.trigger_story_response
         if canvas_manager.game is not None:
+            canvas_manager.game.before_player_action = self._wait_for_foreground
             canvas_manager.game.on_player_action = self._handle_player_game_action
+            for action, receipt in canvas_manager.game.pending_story_actions():
+                self._handle_player_game_action(action, receipt)
         self.sync_character_bindings()
+        self.retry_pending_turns()
 
     def sync_character_voice_tags(self) -> None:
-        """Backward-compatible alias for synchronizing character bindings."""
         self.sync_character_bindings()
 
     def sync_character_bindings(self) -> None:
-        """Publish manager-owned tags and stable voice IDs to StoryState."""
-        if not (self.canvas_manager and hasattr(self.canvas_manager, "story")):
-            return
         story = self.canvas_manager.story
-        if not story or not hasattr(story, "update_character_voice_tags"):
+        if story is None:
             return
         characters = self.reference_manager.export_characters()
-        tag_map = {
-            char.name: char.voice_tags or [char.gender]
-            for char in characters
-            if hasattr(char, "name") or "name" in char
-        }
-        story.update_character_voice_tags(tag_map)
-        if hasattr(story, "assign_character_voice"):
-            for character in characters:
-                voice_id = getattr(character, "voice_id", None) or character.get("voice_id")
-                if voice_id:
-                    name = getattr(character, "name", None) or character.get("name")
-                    story.assign_character_voice(name, str(voice_id))
+        story.update_character_voice_tags({char.name: char.voice_tags or [char.gender] for char in characters})
+        for char in characters:
+            if char.voice_id:
+                story.assign_character_voice(char.name, str(char.voice_id))
 
     def _load_story_log(self) -> None:
-        """Restore the theater log into the shared Notepad store."""
-        if not getattr(self.theater, "theater_id", ""):
+        if not self.theater.theater_id:
             return
-        try:
-            if hasattr(self.theater, "read_output_file_lines"):
-                lines = self.theater.read_output_file_lines("story_log.jsonl")
-            elif hasattr(self.theater, "output_dir"):
-                path = self.theater.output_dir() / "story_log.jsonl"
-                lines = path.read_text(encoding="utf-8", errors="replace").splitlines() if path.is_file() else []
-            else:
-                lines = []
-            entries = []
-            for line in lines[-STORY_LOG_CONTEXT_LINES:]:
-                try:
-                    entries.append(StoryLogEntry.model_validate_json(line).model_dump(mode="json"))
-                except Exception:
-                    logger.warning("[StoryTool] Ignoring invalid story log line.")
-            self._story_log = entries
-        except Exception as exc:
-            logger.warning("[StoryTool] Failed to read theater story log: %s", exc)
+        for line in self.theater.read_output_file_lines("story_log.jsonl")[-STORY_LOG_CONTEXT_LINES:]:
+            try:
+                self._story_log.append(StoryLogEntry.model_validate_json(line).model_dump(mode="json"))
+            except ValueError:
+                logger.warning("[StoryTool] Ignoring invalid story log line.")
 
-    def append_story_log_entry(self, entry: Dict[str, Any]) -> None:
-        """Validate, persist, and publish a responder event through Notepad."""
-        try:
-            parsed = StoryLogEntry.model_validate(entry)
-        except Exception as exc:
-            logger.warning("[StoryTool] Ignoring invalid story log entry: %s", exc)
-            return
+    def append_story_log_entry(self, entry: dict[str, JsonValue]) -> None:
+        parsed = StoryLogEntry.model_validate(entry)
         self._story_log.append(parsed.model_dump(mode="json"))
         self._story_log = self._story_log[-STORY_LOG_CONTEXT_LINES:]
-        try:
-            if hasattr(self.theater, "append_output_file"):
-                self.theater.append_output_file("story_log.jsonl", parsed.model_dump_json() + "\n")
-            elif hasattr(self.theater, "output_dir"):
-                path = self.theater.output_dir() / "story_log.jsonl"
-                path.parent.mkdir(parents=True, exist_ok=True)
-                with open(path, "a", encoding="utf-8") as output:
-                    output.write(parsed.model_dump_json() + "\n")
-        except Exception:
-            logger.exception("[StoryTool] Failed to append theater story log")
+        self.theater.append_output_file("story_log.jsonl", parsed.model_dump_json() + "\n")
 
     def format_recent_story_log(self) -> str:
-        """Render the shared Notepad log as compact responder context."""
         lines: list[str] = []
-        for raw_entry in self._story_log:
-            try:
-                entry = StoryLogEntry.model_validate(raw_entry)
-            except Exception:
-                continue
+        for raw in self._story_log:
+            entry = StoryLogEntry.model_validate(raw)
             if entry.type == "user_action" and entry.action:
                 lines.append(f"Player: {entry.action}")
-            elif entry.output:
-                for roll in entry.output.die_rolls:
-                    lines.append(f"Roll: {roll.get('count', 1)}d{roll.get('sides', 20)} -> {roll.get('total', 0)}")
+            elif entry.output is not None:
                 if entry.output.narration:
                     lines.append(f"Narration: {entry.output.narration}")
                 for dialogue in entry.output.dialogue:
-                    if isinstance(dialogue, dict) and dialogue.get("text"):
+                    if dialogue.get("text"):
                         lines.append(f"Dialogue — {dialogue.get('speaker', '')}: {dialogue['text']}")
         return "\n".join(lines)
 
-    def _handle_scene_reaction(self, result: Dict[str, Any]) -> None:
-        entry: Dict[str, Any] = {"type": "story_response"}
-        if "error" not in result:
-            raw_scene_ref = result.get("scene_reference")
-            clean_scene_ref = str(raw_scene_ref).strip() if raw_scene_ref else None
-            entry["output"] = {
-                "narration": str(result.get("narration") or "").strip(),
-                "dialogue": result.get("dialogue") if type(result.get("dialogue")) is list else [],
-                "die_rolls": result.get("die_rolls") if type(result.get("die_rolls")) is list else [],
-                "proposed_factual_changes": result.get("proposed_factual_changes") or [],
-                "planning_request": result.get("planning_request"),
-                **({"scene_reference": clean_scene_ref} if clean_scene_ref else {}),
-            }
-        else:
+    def _schedule_turn(self, turn: StoryTurn) -> Future[dict[str, JsonValue]]:
+        with self._work_lock:
+            existing = self._foreground_work.get(turn.turn_id)
+            if existing is not None and not existing.done():
+                return existing
+            future = self._foreground_executor.submit(self._run_turn, turn.turn_id)
+            self._foreground_work[turn.turn_id] = future
+            return future
+
+    def _recording_event(self, turn: StoryTurn) -> RecordingEvent:
+        return RecordingEvent(
+            event_id=f"{turn.turn_id}:recording", action_id=turn.turn_id,
+            source_event_ids=(f"{turn.turn_id}:responder",) if turn.ingress == "communicated_action" else (),
+            kind="committed_game_action" if turn.ingress == "game_action" else "completed_response",
+            source_revision=int((turn.response or {}).get("notepad_revision_used", turn.source_revision)),
+            payload=turn.game_payload if turn.ingress == "game_action" else (turn.response or {}),
+        )
+
+    def _run_turn(self, turn_id: str) -> dict[str, JsonValue]:
+        turn = self.turn_journal.get(turn_id)
+        assert turn is not None
+        try:
+            with self._state_lock:
+                if any(previous.position < turn.position and not previous.foreground_ready for previous in self.turn_journal.turns()):
+                    raise RuntimeError("An earlier story turn still requires factual recording or narration.")
+                if turn.ingress == "communicated_action":
+                    if turn.response is None:
+                        result = self.response_module._resolve_user_action(
+                            turn.action, nudge=turn.nudge, publish=False, stage_id=turn.turn_id,
+                        )
+                        if result.get("error"):
+                            raise RuntimeError(str(result["error"]))
+                        turn.response = TypeAdapter(dict[str, JsonValue]).validate_python(result)
+                        self.turn_journal.save(turn)
+                    if not turn.recorder_completed:
+                        self.recorder_module.record(self._recording_event(turn))
+                        turn.recorder_completed = True
+                        self.turn_journal.save(turn)
+                else:
+                    if not turn.recorder_completed:
+                        event = self._recording_event(turn)
+                        outcome = self.recorder_module.control_game(event)
+                        decision = self.recording_journal.game_control_decision(event.event_id)
+                        assert decision is not None
+                        turn.recorder_completed = True
+                        turn.narration_reason = decision.reason
+                        turn.responder_skipped = outcome.narration_request is None
+                        turn.narrative_brief = outcome.narration_request.brief if outcome.narration_request is not None else None
+                        self.turn_journal.save(turn)
+                    if turn.response is None and not turn.responder_skipped:
+                        result = self.response_module._resolve_user_action(
+                            "Narrate the recorder-established outcome.",
+                            nudge=turn.narrative_brief or "", publish=False, game_entry=True,
+                            stage_id=turn.turn_id,
+                        )
+                        if result.get("error"):
+                            raise RuntimeError(str(result["error"]))
+                        turn.response = TypeAdapter(dict[str, JsonValue]).validate_python(result)
+                        self.turn_journal.save(turn)
+                if turn.response is not None and not turn.delivered:
+                    self._handle_scene_reaction(turn.response)
+                    turn.delivered = True
+                    self.turn_journal.save(turn)
+                self.sync_character_bindings()
+                self._schedule_planning(turn)
+            return turn.response or {"status": "completed", "narration_skipped": True, "reason": turn.narration_reason}
+        except Exception as exc:
+            logger.exception("[StoryTool] Turn %s remains pending", turn_id)
             self.record_tool_failure("process_user_action")
-        self.append_story_log_entry(entry)
-        action = self._pending_actions.pop(0) if self._pending_actions else None
-        if action is None and result.get("user_action"):
-            action = str(result["user_action"])
-        if action is not None and "error" not in result:
-            self.planning_module.queue_deep_planning(result.get("turn_id", 0), action, result)
-        self.sync_character_bindings()
-        if self._on_scene_reaction:
+            result: dict[str, JsonValue] = {"error": str(exc), "story_turn_id": turn_id}
+            if self._on_scene_reaction is not None:
+                self._on_scene_reaction(result)
+            return result
+        finally:
+            if turn.ingress == "communicated_action":
+                self._on_cycle_tool_completed("process_user_action")
+
+    def _schedule_planning(self, turn: StoryTurn) -> None:
+        if turn.planner_completed:
+            return
+        with self._work_lock:
+            existing = self._planning_work.get(turn.turn_id)
+            if existing is None or existing.done():
+                self._planning_work[turn.turn_id] = self._planner_executor.submit(self._plan_turn, turn.turn_id)
+
+    def _plan_turn(self, turn_id: str) -> None:
+        try:
+            for attempt in range(3):
+                with self._state_lock:
+                    turn = self.turn_journal.get(turn_id)
+                    assert turn is not None
+                    if turn.planner_completed:
+                        return
+                    if not turn.foreground_ready:
+                        raise RuntimeError("Planning requires the foreground stages' committed handoffs.")
+                    source = self.notepad.snapshot()
+                    handoff = turn.model_dump(mode="json")
+                    handoff["source_event_ids"] = [f"{turn.turn_id}:recording"]
+                    handoff["audience"] = ["planner"]
+                    game = self.canvas_manager.game
+                    game_snapshot = game.story_snapshot("narratron") if game is not None else None
+                    handoff["game_state"] = game_snapshot
+                updates = self.planning_module.plan_recorded_turn(handoff, source)
+
+                def persist(snapshot: NoteSnapshot) -> None:
+                    self.turn_journal.commit_planning(turn, snapshot)
+
+                try:
+                    with self._state_lock:
+                        current_game = game.story_snapshot("narratron") if game is not None else None
+                        if current_game != game_snapshot:
+                            raise StaleNoteSnapshot("Game state changed during planning; recheck the guidance.")
+                        self.notepad.publish_role_updates("planner", updates, source=source, persist=persist)
+                    return
+                except StaleNoteSnapshot:
+                    if attempt == 2:
+                        raise
+        except Exception:
+            logger.exception("[StoryTool] Planner stage %s remains pending", turn_id)
+
+    def _handle_scene_reaction(self, result: dict[str, JsonValue]) -> None:
+        """Delivery cannot open a turn or schedule another role."""
+        self.response_module.deliver_response(result)
+        self.append_story_log_entry({"type": "story_response", "output": result})
+        if self._on_scene_reaction is not None:
             self._on_scene_reaction(result)
 
     def _handle_player_game_action(self, action: GameAction, new_state: dict[str, JsonValue]) -> None:
-        """Queue the player action with its committed state for the planner."""
-        self.planning_module.queue_deep_planning(
-            0,
-            "Game panel action",
-            {
-                "source": "game",
-                "game_action": action.model_dump(mode="json"),
-                "game_state": new_state,
-            },
-        )
+        event_id = str(new_state.get("story_event_id") or f"game:{action.revision}")
+        turn = self.turn_journal.accept(StoryTurn(
+            turn_id=event_id, ingress="game_action", action="Game panel action",
+            source_revision=self.notepad.revision,
+            game_payload={"action": action.model_dump(mode="json"), "receipt": new_state, "actor": "player"},
+        ))
+        self._schedule_turn(turn)
+        if self.canvas_manager.game is not None and new_state.get("story_event_id"):
+            self.canvas_manager.game.acknowledge_story_action(event_id)
 
-    def trigger_story_response(self, user_action: str = "", nudge: str = "") -> dict[str, JsonValue] | str:
-        """Trigger an immediate story response from the responder module for a game action."""
-        clean_action = str(user_action or "").strip()
-        if not clean_action:
-            clean_action = "Player took a game action."
-        self.response_module.record_user_input()
-        self.append_story_log_entry({"type": "user_action", "action": clean_action})
-        if nudge:
-            return self.response_module.process_user_action(clean_action, nudge=nudge)
-        return self.response_module.process_user_action(clean_action)
+    def retry_pending_turns(self) -> None:
+        """Restart unfinished stages with the original turn and committed effects."""
+        for turn in self.turn_journal.turns():
+            if not turn.foreground_ready or (turn.response is not None and not turn.delivered):
+                self._schedule_turn(turn)
+            elif not turn.planner_completed:
+                self._schedule_planning(turn)
 
-    def __getattr__(self, name: str) -> Any:
+    def _wait_for_foreground(self) -> None:
+        """Game commits cannot race preceding causal factual stages."""
+        with self._work_lock:
+            foreground = list(self._foreground_work.values())
+        for future in foreground:
+            result = future.result(timeout=180)
+            if result.get("error"):
+                raise RuntimeError("A preceding story turn requires recovery before another game action.")
+
+    def resolve_action(self, user_action: str, nudge: str = "", *, drain: bool = False) -> dict[str, JsonValue]:
+        """Harness entry using production scheduling with an optional deterministic drain."""
+        turn = self.turn_journal.accept(StoryTurn(
+            turn_id=uuid4().hex, ingress="communicated_action", action=user_action, nudge=nudge,
+        ))
+        result = self._schedule_turn(turn).result()
+        if drain:
+            self.wait_for_pending_events(timeout=300)
+        return result
+
+    def wait_for_pending_events(self, timeout: float = 5.0) -> bool:
+        deadline = time.monotonic() + timeout
+        while True:
+            with self._work_lock:
+                foreground = [f for f in self._foreground_work.values() if not f.done()]
+            if foreground:
+                _, pending = wait(foreground, timeout=max(0.0, deadline - time.monotonic()))
+                if pending:
+                    return False
+                continue
+            with self._work_lock:
+                planning = [f for f in self._planning_work.values() if not f.done()]
+            if planning:
+                _, pending = wait(planning, timeout=max(0.0, deadline - time.monotonic()))
+                if pending:
+                    return False
+                continue
+            if self.is_in_flight("process_user_action") and time.monotonic() < deadline:
+                time.sleep(0.01)
+                continue
+            return not self.is_in_flight("process_user_action") and all(
+                turn.completed for turn in self.turn_journal.turns()
+            )
+
+    def wait_for_deep_planning(self, timeout: float = 5.0, target_turn_id: int | None = None) -> bool:
+        return self.wait_for_pending_events(timeout)
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        self.cancel_pending_cycle_call("process_user_action")
+        for timer in self._cooldown_timers.values():
+            timer.cancel()
+        self._foreground_executor.shutdown(wait=True)
+        self._planner_executor.shutdown(wait=True)
+        if self.canvas_manager.game is not None:
+            self.canvas_manager.game.on_player_action = None
+            self.canvas_manager.game.before_player_action = None
+        self.story_session.close()
+        self.turn_journal.close()
+        self.recording_journal.close()
+
+    def __getattr__(self, name: str) -> Callable:
         """Expose the response module's existing public tool surface."""
         response_module = self.__dict__.get("response_module")
         if response_module is not None:
@@ -313,36 +418,41 @@ class StoryTool(BaseTools):
 
 
     @terminal
-    @with_cycle_cooldown(
-        action_desc="resolving story update",
-        tool_name="process_user_action",
-    )
-    def process_user_action(self, user_action: str, nudge: str = "") -> Union[Dict[str, Any], str]:
-        """Apply the public cooldown before delegating story resolution."""
-        self.append_story_log_entry({"type": "user_action", "action": str(user_action).strip()})
-        self._pending_actions.append(str(user_action).strip())
-        self.planning_module.queue_deep_planning(
-            0, str(user_action).strip(), {"source": "user_action", "nudge": nudge}
-        )
-        if nudge:
-            res = self.response_module.process_user_action(user_action, nudge=nudge)
-        else:
-            res = self.response_module.process_user_action(user_action)
-        if type(res) is dict and "error" in res:
-            self.record_tool_failure("process_user_action")
-            if self._pending_actions:
-                self._pending_actions.pop()
-        return res
+    @with_cycle_cooldown(action_desc="resolving story update", tool_name="process_user_action", hold_until_released=True)
+    def process_user_action(self, user_action: str, nudge: str = "") -> dict[str, JsonValue] | str:
+        action = user_action.strip()
+        if not action:
+            return {"error": "User action cannot be empty."}
+        if len(action) > 2000 or len(nudge) > 1000:
+            return {"error": "Story action or nudge exceeds its size limit."}
+        if not self.response_module.adventure_mode:
+            return {"error": "Adventure Mode is not enabled for this theater."}
+        self.retry_pending_turns()
+        for pending in self.turn_journal.turns():
+            if not pending.foreground_ready and pending.ingress == "communicated_action" and pending.action == action:
+                return {"status": "processing", "story_turn_id": pending.turn_id, "message": "Resuming the pending story turn."}
+        if not self.response_module.consume_user_input():
+            return {"error": "No input from the orator was detected."}
+        turn = self.turn_journal.accept(StoryTurn(
+            turn_id=uuid4().hex, ingress="communicated_action", action=action, nudge=nudge,
+        ))
+        self.append_story_log_entry({"type": "user_action", "action": action})
+        self._schedule_turn(turn)
+        return {"status": "processing", "story_turn_id": turn.turn_id, "message": "Story turn queued."}
 
-    def get_tools(self) -> list[Any]:
+    def get_tools(self) -> list[Callable]:
         return [self.process_user_action]
 
     @property
-    def on_scene_reaction(self) -> Optional[Callable[[Dict[str, Any]], None]]:
+    def is_action_in_flight(self) -> bool:
+        return self.is_in_flight("process_user_action")
+
+    @property
+    def on_scene_reaction(self) -> Optional[Callable[[dict[str, JsonValue]], None]]:
         return self.__dict__.get("_on_scene_reaction")
 
     @on_scene_reaction.setter
-    def on_scene_reaction(self, callback: Optional[Callable[[Dict[str, Any]], None]]) -> None:
+    def on_scene_reaction(self, callback: Optional[Callable[[dict[str, JsonValue]], None]]) -> None:
         self._on_scene_reaction = callback
 
     @property
@@ -362,12 +472,12 @@ class StoryTool(BaseTools):
         self._on_cooldown_expired = callback
 
     @property
-    def on_after_tool_call(self) -> Optional[Callable[[str, Dict[str, Any]], None]]:
+    def on_after_tool_call(self) -> Optional[Callable[[str, dict[str, JsonValue]], None]]:
         return self.__dict__.get("_on_after_tool_call")
 
     @on_after_tool_call.setter
     def on_after_tool_call(
-        self, callback: Optional[Callable[[str, Dict[str, Any]], None]]
+        self, callback: Optional[Callable[[str, dict[str, JsonValue]], None]]
     ) -> None:
         self._on_after_tool_call = callback
 
@@ -391,7 +501,9 @@ class StoryTool(BaseTools):
     @terminal
     def update_sticky_note(self, topic: str, info: str) -> str:
         """Insert or replace one sticky note in the current scene."""
-        return self.notepad.update_sticky_note(topic, info)
+        if not self.response_module.adventure_mode:
+            return self.notepad.update_sticky_note(topic, info)
+        return "Error: Adventure sticky writes belong to the recorder and planner stages."
 
     def get_present_sticky_notes(self) -> list[dict[str, str]]:
         return self.notepad.get_present_sticky_notes()
@@ -399,7 +511,7 @@ class StoryTool(BaseTools):
     def get_present_elements(self) -> list[dict[str, str]]:
         return self.notepad.get_present_elements()
 
-    def get_present_structured_sticky_notes(self) -> Dict[str, Any]:
+    def get_present_structured_sticky_notes(self) -> dict[str, JsonValue]:
         return self.notepad.get_present_structured_sticky_notes()
 
     def get_required_sticky_notes(self) -> list[str]:

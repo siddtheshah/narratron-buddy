@@ -2,11 +2,24 @@ from fastapi.testclient import TestClient
 import pytest
 
 from testlab.server import app
+from tools.story.story_handoffs import GameControlDecision
+from tools.story.story_session import StoryRole, StorySession
 
 pytestmark = pytest.mark.usefixtures("offline_lab_text_providers")
 
 
-def test_story_planner_lab_routes_create_isolated_session():
+def offline_recorder_and_planner(
+    session: StorySession, role: StoryRole, prompt: str, *, timeout: float = 60.0, stage_id: str = "",
+) -> str:
+    """Shared-session roles after the mocked responder: record nothing, plan nothing."""
+    if role == "recorder":
+        return GameControlDecision().model_dump_json()
+    if role == "planner":
+        return "No planning changes."
+    raise AssertionError("The responder is mocked separately in this test.")
+
+
+def test_story_planner_lab_routes_create_isolated_session() -> None:
     client = TestClient(app)
 
     index = client.get("/")
@@ -33,7 +46,7 @@ def test_story_planner_lab_routes_create_isolated_session():
     assert fetched.json()["id"] == payload["id"]
 
 
-def test_story_planner_lab_submits_action_and_records_event():
+def test_story_planner_lab_submits_action_and_records_event() -> None:
     import time
     from unittest.mock import patch
 
@@ -60,10 +73,7 @@ def test_story_planner_lab_submits_action_and_records_event():
             "tools.story.story_response_module.StoryResponseModule._run_responder_agent",
             return_value=mock_reaction,
         ) as mock_run,
-        patch(
-            "tools.story.story_planning_module.StoryPlanningModule._run_deep_planner_agent",
-            return_value={"tool_updates": True},
-        ),
+        patch.object(StorySession, "run", offline_recorder_and_planner),
     ):
         submitted = client.post(
             f"/api/story-planner/sessions/{session_id}/actions",
@@ -85,4 +95,3 @@ def test_story_planner_lab_submits_action_and_records_event():
         assert len(data["events"]) == 1
         assert data["events"][0]["result"]["narration"] == mock_reaction["narration"]
         mock_run.assert_called_once_with("I step into the hallway.", nudge="An ominous chill fills the air")
-

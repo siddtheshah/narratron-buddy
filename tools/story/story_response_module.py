@@ -16,7 +16,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 from absl import flags
 from jinja2 import Template
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, JsonValue
 from google.adk.agents import Agent
 from google.adk.agents.readonly_context import ReadonlyContext
 from google.adk.apps.app import App, EventsCompactionConfig
@@ -39,6 +39,7 @@ from components.reference_manager import (
 from components.lore_library import LoreLibrary
 from components.notepad import NoteSnapshot
 from tools.story.story_handoffs import PlanningRequest, ProposedFactChange
+from tools.story.story_session import StorySession
 from tools.story.story_models import (
     VertexGemini,
     DEFAULT_COMPACTION_TRIGGER_TOKENS,
@@ -112,10 +113,10 @@ _RESPONDER_INSTRUCTION_TEMPLATE = Template(
 """# Role & Mission
 You are the fast, authoritative turn responder for an interactive story.
 Resolve only the immediate consequences of the player's submitted action and decide when NPCs should manifest or materially change.
-A separate deep-planning agent owns long-term continuity and is the sole agent that directly modifies sticky notes. Treat active notes as authoritative planning guidance, but never modify them directly or create a competing long-term plan during this turn.
-Crucially, you are the front-line observer of all immediate turn fallout. While your other half commits sticky note updates, you MUST explicitly communicate to the planner via `planning_signals` with direct instructions directed only to it. You are responsible for ensuring high recall of sticky note updates by explicitly flagging any active sticky notes that require updating based on this turn's resolution so the planner does not miss them.
+A recorder reconciles established facts and owns factual sticky notes. A planner owns conditional guidance only. Read both collections; planner intentions are not proof an event happened and private plans must not automatically become player-visible. Never modify sticky notes or canonical character, scene, or game state directly.
+Communicate immediate factual fallout through proposed_factual_changes and planning cues through planning_signals.
 Also return `proposed_factual_changes` for established outcomes that affect factual sticky notes. Each proposal names its topic, the proposed complete value in `info`, and supporting `evidence`. These are claims for reconciliation, not committed facts: never turn player intentions or conditional plans into established outcomes, and never override validated game state. Return an optional `planning_request` with a concrete `reason` when future guidance needs revision. Routine bookkeeping alone does not require creative planning.
-The planner starts independently as soon as a player action arrives, then receives your completed response as a separate event. Use `trigger_story_planning(reason)` to flag a major revelation, changed goal, continuity conflict, or sticky notes needing revision in that response event. Continue resolving the immediate turn; do not wait for planning or invent its outcome. Follow your pinned RESPONDER.md for adventure-specific priorities; the planner has its own separate instructions.
+The orchestrator always records your completed response before planning once for the turn. planning_request is advisory context, never a scheduling trigger. Follow your pinned RESPONDER.md. On game-entry turns, narrate only the recorder's established outcomes and brief: do not resolve the game again, roll dice, or propose additional factual changes.
 Respond ONLY with valid JSON conforming to the scene reaction schema.
 
 # Core Improv & Player Agency Principles
@@ -144,9 +145,7 @@ Respond ONLY with valid JSON conforming to the scene reaction schema.
 - Dice rolling is disabled. Resolve uncertain outcomes through established lore and narrative consequences without rolling dice or inventing roll results.
 {% endif -%}
 - **Character Lookup (`lookup_character`)**: Call `lookup_character` to list all known session characters or search for a specific NPC by name, role, or trait to view their full profile, personality, motivation, and quirk when encountering or referencing characters created earlier in the story.
-- **Character Creation & Updates (`create_or_update_character`)**: You may call `create_or_update_character` to create or update an NPC profile with explicit gender ('male', 'female', or 'nonbinary') and voice tags. If the character doesn't exist, it is generated; if it exists, specified fields are updated.
-- **Scene Reference (`create_or_update_scene`)**: Call `create_or_update_scene` to establish or update scenery and location reference visuals by name and concept description.
-- **Player Character Management (`update_player_character`)**: Call `update_player_character` to establish or update the player's canonical name or visual appearance description when established or clarified.
+- Canonical character and scene updates belong to the recorder. Describe established changes in the structured response for reconciliation.
 
 # Scene Reaction Output Requirements
 - **Narration**: Write narration only about the world and the consequences of the submitted action. Keep responses focused: narration should normally be 20-50 words that also describe the visual resolution and immediate outcome of the character's action rather than just scenery alone. Return one complete scene delta that leaves the player's next action, speech, thoughts, and choices entirely open.
@@ -155,22 +154,22 @@ Respond ONLY with valid JSON conforming to the scene reaction schema.
 - **Planning Signals (Direct Communication to Deep Planner)**: These signals are internal communication directed solely to the deep planner (never shown to the player). You MUST use this channel to ensure high recall of sticky note updates: explicitly review your active sticky notes and call out any topics that need an update based on this turn's resolution (e.g. `[STICKY UPDATE: <Exact Topic Name>] <what changed or new value>` for stat changes, inventory items gained/lost, location shifts, quest progress, combat status, enemy stats, or lasting effects), followed by factual story fallout and thread consequences for background planning. Do not invent future player events; describe what was established this turn.
 
 # Character Generation
-- Important characters should always be generated with `create_or_update_character` before writing dialogue for them.
+- Look up important characters before writing dialogue for them. The recorder maintains canonical character profiles.
   - You can look up the character using `lookup_character` to see if they have already been created.
 - Do not expose secret character information via the character name when creating a character. Everything else is otherwise private.
 - If a character is disguised, make sure you give them an alias that hides their nature, rather than using their real name.
 - Every generated character must have an explicit gender assignment ('male', 'female', or 'nonbinary') to ensure appropriate voice synthesis.
 
 # Scene Reference
-- **Scene Reference**: If the scene takes placed in a named location which is established in lore, or requires a new important named location, provide the scene name or label in `scene_reference` to signal the live agent which scene reference to use for background scenery. If no specific reference exists for this scenery, set it to null. Use `create_or_update_scene` to create or update scene references.
+- **Scene Reference**: Return an established scene reference identifier in `scene_reference`, or null. The recorder owns canonical scene updates.
 {% if style -%}
 
 # Typical Response Procedure
 
 1. Search lore library for relevant context using `search_lore`
 2. Read relevant lore documents using `read_lore`
-3. Create or update characters using `create_or_update_character` and scenes using `create_or_update_scene`
-4. Update player character using `update_player_character`
+3. Resolve the immediate action from established facts and lore.
+4. Propose factual changes for recorder reconciliation.
 5. Finalize scene reaction.
 
 # Story-Planning Style (User Specified)
@@ -200,10 +199,6 @@ No lore documents are available for this theater. Invent the lore, world details
 _RESPONDER_TURN_PROMPT_TEMPLATE = Template(
 """# Current Story State
 {{ story_state }}
-{% if game_state_json %}
-# Current Game State (read only)
-{{ game_state_json }}
-{% endif %}
 
 # Player Action
 {{ user_action }}{% if nudge %}
@@ -314,6 +309,7 @@ class StoryResponseModule:
         session_service: InMemorySessionService,
         session_id: str,
         game_state: GameState | None = None,
+        story_session: StorySession | None = None,
     ) -> None:
         if canvas_manager is None:
             raise ValueError("canvas_manager is required.")
@@ -331,7 +327,9 @@ class StoryResponseModule:
 
         self.theater = theater
         self.canvas_manager = canvas_manager
-        self.game_state = game_state
+        self.story_session = story_session
+        self._game_entry = False
+        self._story_stage_id = ""
         raw_config = theater.config() or {}
         subconfig = raw_config.get("story_planning", raw_config) if "story_planning" in raw_config else raw_config
         self.config = subconfig if isinstance(subconfig, dict) else {}
@@ -381,9 +379,11 @@ class StoryResponseModule:
         )
         self.session_id = str(session_id)
         self.session_service = session_service
-        self.compaction_config: Optional[EventsCompactionConfig] = self._build_compaction_config()
+        self.compaction_config: Optional[EventsCompactionConfig] = (
+            None if story_session is not None else self._build_compaction_config()
+        )
         self._run_compression_config: Optional[types.ContextWindowCompressionConfig] = (
-            self._build_run_compression_config()
+            None if story_session is not None else self._build_run_compression_config()
         )
         self.responder_model: str = str(
             self.config.get("responder_model")
@@ -420,13 +420,13 @@ class StoryResponseModule:
 
         # Fast responder runner
         self._responder_agent: Agent = self._create_responder_agent()
-        self._responder_app: App = App(
+        self._responder_app: App | None = None if story_session is not None else App(
             name="narratron_story_responder",
             root_agent=self._responder_agent,
             plugins=self.plugins,
             events_compaction_config=self.compaction_config,
         )
-        self._responder_runner: Runner = Runner(
+        self._responder_runner: Runner | None = None if story_session is not None else Runner(
             app=self._responder_app,
             session_service=self.session_service,
             auto_create_session=True,
@@ -618,6 +618,16 @@ class StoryResponseModule:
                 self._last_voice_input_log_time = now
                 logger.debug("[StoryResponseModule] User input detected; process_user_action is re-enabled.")
 
+    def consume_user_input(self) -> bool:
+        """Atomically accept one communicated ingress through the orator input gate."""
+        with self._user_input_lock:
+            if self.require_user_input and not self._user_input_detected:
+                return False
+            if self.require_user_input:
+                self._user_input_detected = False
+                self._last_voice_input_log_time = -float("inf")
+            return True
+
     @property
     def is_action_in_flight(self) -> bool:
         return self.is_in_flight("process_user_action")
@@ -661,6 +671,8 @@ class StoryResponseModule:
                 for player reactionary rolls (e.g., resolving a player's action, skill checks,
                 saving throws, contests) so the roll is visibly animated on the canvas.
         """
+        if self._game_entry:
+            return {"error": "Game-entry narration cannot roll dice."}
         if self.config.get("enable_dice", True) is False:
             return {"error": "Dice rolling is disabled."}
         safe_sides = max(2, min(100, int(sides)))
@@ -905,7 +917,7 @@ class StoryResponseModule:
             style=self.style,
             lore_context=lore_context,
             max_sticky_notes=self.notepad.max_sticky_notes,
-            enable_dice=self.config.get("enable_dice", True) is not False,
+            enable_dice=not self._game_entry and self.config.get("enable_dice", True) is not False,
         )
 
     def _build_responder_turn_prompt(self, user_action: str, nudge: str = "") -> str:
@@ -922,10 +934,6 @@ class StoryResponseModule:
             story_state=story_state,
             user_action=user_action,
             nudge=nudge,
-            game_state_json=(
-                json.dumps(self.game_state.story_snapshot("responder"), ensure_ascii=False)
-                if self.game_state is not None and self.game_state.program is not None else ""
-            ),
         )
 
     def trigger_story_planning(self, reason: str) -> str:
@@ -980,20 +988,20 @@ class StoryResponseModule:
                 self.search_lore,
                 self.read_lore,
                 self.lookup_character,
-                self.update_player_character,
-                self.create_or_update_character,
-                self.create_or_update_scene,
-                self.trigger_story_planning,
                 *([self.roll_dice] if self.config.get("enable_dice", True) is not False else []),
             ],
             output_schema=SceneReaction,
             output_key="scene_reaction",
+            include_contents="none" if self.story_session is not None else "default",
             disallow_transfer_to_parent=True,
             disallow_transfer_to_peers=True,
             generate_content_config=generate_content_config,
         )
 
     def restart_responder_agent(self) -> None:
+        if self.story_session is not None:
+            self.reset_lore_call_counts()
+            return
         logger.info(
             "[StoryResponseModule] Resetting and restarting story responder agent for theater=%s",
             self.theater_id,
@@ -1021,6 +1029,11 @@ class StoryResponseModule:
 
     def _run_responder_agent(self, user_action: str, nudge: str = "") -> Dict[str, Any]:
         self.reset_lore_call_counts()
+        if self.story_session is not None:
+            prompt = self._build_responder_turn_prompt(user_action, nudge=nudge)
+            return SceneReaction.model_validate_json(self.story_session.run(
+                "responder", prompt, timeout=self.user_action_timeout_seconds, stage_id=self._story_stage_id,
+            )).model_dump(mode="json")
         runner = self._get_or_create_responder_runner()
         session_id = self.session_id
         theater = self.theater_id or "default"
@@ -1226,11 +1239,16 @@ class StoryResponseModule:
         threading.Thread(target=resolve_and_notify, daemon=True).start()
         return {"status": "processing", "message": "Story responder is resolving the action."}
 
-    def _resolve_user_action(self, action: str, nudge: str = "") -> Dict[str, Any]:
+    def _resolve_user_action(
+        self, action: str, nudge: str = "", *, publish: bool = True, game_entry: bool = False,
+        stage_id: str = "",
+    ) -> Dict[str, JsonValue]:
         if not self.adventure_mode:
             return {"error": "Adventure Mode is not enabled for this theater."}
 
         self._planning_request_reason = None
+        self._game_entry = game_entry
+        self._story_stage_id = stage_id
         self._turn_note_snapshot = self.notepad.snapshot()
         try:
             parsed = self._run_responder_agent(action, nudge=nudge)
@@ -1239,6 +1257,7 @@ class StoryResponseModule:
         finally:
             self._planning_request_reason = None
             self._turn_note_snapshot = None
+            self._game_entry = False
         notepad_revision_used = (
             snapshot_used.revision if snapshot_used is not None else self.notepad.revision
         )
@@ -1250,6 +1269,8 @@ class StoryResponseModule:
             ProposedFactChange.model_validate(change).model_dump(mode="json")
             for change in (parsed.get("proposed_factual_changes") or [])
         ]
+        if game_entry and (factual_changes or self.get_die_rolls_this_turn()):
+            raise ValueError("Game-entry narration cannot establish new factual or mechanical changes.")
         if parsed.get("planning_request") is not None:
             structured_request = PlanningRequest.model_validate(parsed["planning_request"])
             if planning_request is None:
@@ -1296,21 +1317,22 @@ class StoryResponseModule:
             planning_signals.append(f"[PLANNING REQUEST] {planning_request}")
         player_char = self.reference_manager.get_player_character()
         result["player_character"] = player_char.for_model_context().model_dump(exclude_none=True) if player_char else None
+        if publish:
+            self.deliver_response(result)
+        return result
+
+    def deliver_response(self, result: dict[str, JsonValue]) -> None:
+        """Deliver only an application-persisted response, separately from model execution."""
         self._last_scene_reaction = result
         self._last_action_response_word_count = self._count_response_words(result)
         self.save_to_session_state()
-        self._publish_scene(narration, dialogue)
-        logger.debug(
-            "[StoryResponseModule] Scene reference: %s", scene_reference
-        )
+        self._publish_scene(str(result.get("narration") or ""), self._clean_dialogue(result.get("dialogue")))
         callback = self.on_story_response_completed
         if callback:
             try:
                 callback()
             except Exception:
                 logger.exception("[StoryResponseModule] Story response usage callback failed")
-
-        return result
 
     @staticmethod
     def _count_response_words(result: Dict[str, Any]) -> int:

@@ -262,7 +262,7 @@ def test_player_actions_wake_story_callback_after_commit(tmp_path: Path) -> None
     game.on_player_action = callback
     action = GameAction(name='add', arguments={'amount': 1}, revision=0)
     game.act(action)
-    callback.assert_called_once_with(action, {'revision': 1, 'state': {'count': 1}})
+    callback.assert_called_once_with(action, game.pending_story_actions()[0][1])
     assert game.state == {'count': 1}
     assert game.revision == 1
 
@@ -273,8 +273,10 @@ def test_player_action_event_preserves_each_committed_state(tmp_path: Path) -> N
     game.on_player_action = callback
     game.act(GameAction(name='add', arguments={'amount': 1}, revision=0))
     game.act(GameAction(name='add', arguments={'amount': 2}, revision=1))
-    assert callback.call_args_list[0].args[1] == {'revision': 1, 'state': {'count': 1}}
-    assert callback.call_args_list[1].args[1] == {'revision': 2, 'state': {'count': 3}}
+    assert callback.call_args_list[0].args[1]['state'] == {'count': 1}
+    assert callback.call_args_list[0].args[1]['revision'] == 1
+    assert callback.call_args_list[1].args[1]['state'] == {'count': 3}
+    assert callback.call_args_list[1].args[1]['revision'] == 2
 
 
 def test_game_state_emits_debug_logs(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
@@ -465,7 +467,7 @@ def test_contributor_permission_actions_and_narration(tmp_path: Path) -> None:
     game.act(action, actor="contributor")
     assert game.state == {"count": 2}
     assert game.revision == 1
-    callback.assert_called_once_with(action, {"revision": 1, "state": {"count": 2}})
+    callback.assert_called_once_with(action, game.pending_story_actions()[0][1])
 
     # Contributor cannot take orator-only 'clear' action
     with pytest.raises(UnauthorizedGameAction, match="Only the active orator"):

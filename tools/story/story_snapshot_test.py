@@ -1,3 +1,4 @@
+import pytest
 from unittest.mock import MagicMock
 from pathlib import Path
 
@@ -21,6 +22,7 @@ def test_story_snapshot_and_diff_built_from_story_state_and_notepad_together(tmp
     theater = MagicMock(spec=Theater)
     theater.theater_id = "snapshot_theater"
     theater.directory.return_value = tmp_path
+    theater.output_dir.return_value = tmp_path / "output"
     theater.config.return_value = {
         "story_planning": {
             "initial_sticky_notes": {
@@ -104,10 +106,11 @@ def test_story_snapshot_and_diff_built_from_story_state_and_notepad_together(tmp
     assert pc_diff == diff_result.player_character_diff
 
 
-def test_story_tool_creates_snapshot_and_diff(tmp_path: Path) -> None:
+def test_story_tool_creates_snapshot_and_diff(tmp_path: Path, request: pytest.FixtureRequest) -> None:
     theater = MagicMock(spec=Theater)
     theater.theater_id = "tool_snapshot_theater"
     theater.directory.return_value = tmp_path
+    theater.output_dir.return_value = tmp_path / "output"
     theater.config.return_value = {
         "story_planning": {
             "initial_sticky_notes": {
@@ -131,6 +134,7 @@ def test_story_tool_creates_snapshot_and_diff(tmp_path: Path) -> None:
         reference_manager=ref_mgr,
     )
 
+    request.addfinalizer(tool.close)
     snap1 = tool.create_snapshot(
         player_character=PlayerCharacterState(name="Lyra", image_description="Mage"),
         characters={"Boran": CharacterState(name="Boran", personality="Bold")},
@@ -138,7 +142,7 @@ def test_story_tool_creates_snapshot_and_diff(tmp_path: Path) -> None:
     )
     assert snap1.stickies["Quest"] == "Defeat dragon"
 
-    tool.update_sticky_note("Quest", "Dragon befriended")
+    tool.notepad.update_sticky_note("Quest", "Dragon befriended")
 
     diff_res = tool.diff(
         previous=snap1,
@@ -151,6 +155,6 @@ def test_story_tool_creates_snapshot_and_diff(tmp_path: Path) -> None:
     # Revision defaults come from the shared notepad without planner metadata.
     snap2 = tool.create_snapshot()
     assert snap2.notepad_revision == tool.notepad.revision
-    tool.update_sticky_note("Quest", "Travel with the dragon")
+    tool.notepad.update_sticky_note("Quest", "Travel with the dragon")
     diff_res = tool.diff(previous=snap2)
     assert f"to {tool.notepad.revision}" in diff_res.notepad_diff

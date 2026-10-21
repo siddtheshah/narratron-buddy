@@ -20,10 +20,17 @@ logger = logging.getLogger(__name__)
 GAME_FILE = "game/game.json"
 
 
+class StoryGameCommit(GameModel):
+    action: GameAction
+    receipt: dict[str, JsonValue]
+    pending: bool = False
+
+
 class SavedGame(GameModel):
     definition_hash: str
     state: dict[str, JsonValue]
     revision: int = Field(ge=0)
+    story_commits: dict[str, StoryGameCommit] = Field(default_factory=dict)
 
 
 class StaleGameAction(ValueError):
@@ -58,6 +65,7 @@ class GameState:
         self._persist = persist
         self._notify = notify
         self.on_player_action: Callable[[GameAction, dict[str, JsonValue]], None] | None = None
+        self.before_player_action: Callable[[], None] | None = None
         self.program: GameProgram | None = None
         self.state: dict[str, JsonValue] = {}
         self.revision = 0
@@ -66,6 +74,7 @@ class GameState:
         self._view: list[JsonValue] = []
         self._model_state: JsonValue = {}
         self._narratron_actions: dict[str, JsonValue] = {}
+        self._story_commits: dict[str, StoryGameCommit] = {}
         path = directory / GAME_FILE
         try:
             if not path.exists():
@@ -139,6 +148,7 @@ class GameState:
                 restored = SavedGame.model_validate(data)
                 self._prepare(restored.state)
                 self.state, self.revision = restored.state, restored.revision
+                self._story_commits = restored.story_commits
                 logger.debug(
                     "[GameState] Restored saved game to revision=%d (state=%s)",
                     self.revision,
@@ -158,7 +168,44 @@ class GameState:
                 logger.debug("[GameState] Serializing empty game state (no program)")
                 return {"game_state": None}
             logger.debug("[GameState] Serializing game state (revision=%d)", self.revision)
-            return {"game_state": SavedGame(definition_hash=self.definition_hash, state=self.state, revision=self.revision).model_dump(mode="json")}
+            return {"game_state": SavedGame(definition_hash=self.definition_hash, state=self.state, revision=self.revision, story_commits=self._story_commits).model_dump(mode="json")}
+
+    def pending_story_actions(self) -> list[tuple[GameAction, dict[str, JsonValue]]]:
+        """Recover player ingress even when a post-commit callback failed."""
+        with self._lock:
+            return [
+                (commit.action.model_copy(deep=True), json.loads(json.dumps(commit.receipt)))
+                for commit in self._story_commits.values() if commit.pending
+            ]
+
+    def story_action_commits(self, prefix: str) -> list[tuple[str, GameAction, dict[str, JsonValue]]]:
+        with self._lock:
+            return [
+                (event_id, commit.action.model_copy(deep=True), json.loads(json.dumps(commit.receipt)))
+                for event_id, commit in self._story_commits.items() if event_id.startswith(prefix)
+            ]
+
+    def acknowledge_story_action(self, event_id: str) -> None:
+        with self._lock:
+            commit = self._story_commits[event_id]
+            if commit.pending:
+                commit.pending = False
+                try:
+                    self._persist()
+                except Exception:
+                    commit.pending = True
+                    raise
+
+    def commit_story_action(self, action: GameAction, event_id: str) -> dict[str, JsonValue]:
+        """Idempotently commit and return the receipt captured at the commit boundary."""
+        with self._lock:
+            existing = self._story_commits.get(event_id)
+            if existing is not None:
+                if existing.action != action:
+                    raise ValueError("Game action identity reused with different content.")
+                return json.loads(json.dumps(existing.receipt))
+            self.act(action, actor="narratron", story_event_id=event_id)
+            return json.loads(json.dumps(self._story_commits[event_id].receipt))
 
     def payload(self) -> dict[str, JsonValue] | None:
         with self._lock:
@@ -193,7 +240,12 @@ class GameState:
         except Exception:
             logger.exception("Game update notification failed at revision %s", self.revision)
 
-    def act(self, action: GameAction, actor: Literal["player", "contributor", "narratron"] = "player") -> dict[str, JsonValue] | None:
+    def act(
+        self, action: GameAction, actor: Literal["player", "contributor", "narratron"] = "player",
+        *, story_event_id: str = "",
+    ) -> dict[str, JsonValue] | None:
+        if actor in ("player", "contributor") and self.before_player_action is not None:
+            self.before_player_action()
         with self._lock:
             if self.program is None:
                 logger.debug("[GameState] Act rejected: no playable game")
@@ -248,6 +300,7 @@ class GameState:
             previous, previous_view, previous_model_state, previous_actions, revision = (
                 self.state, self._view, self._model_state, self._narratron_actions, self.revision
             )
+            event_id = story_event_id or f"player:{self.definition_hash}:{action.revision}"
             try:
                 self.program.action_validators[action.name].validate(action.arguments)
                 execution = self.program.execution()
@@ -262,6 +315,13 @@ class GameState:
                 self._prepare(candidate)
                 self.state = candidate
                 self.revision += 1
+                snapshot = self.story_snapshot("narratron")
+                assert snapshot is not None
+                snapshot["story_event_id"] = event_id
+                self._story_commits[event_id] = StoryGameCommit(
+                    action=action, receipt=snapshot,
+                    pending=actor in ("player", "contributor") and transition.triggering,
+                )
                 self._persist()
                 logger.debug(
                     "[GameState] Action '%s' applied: revision advanced to %d, new state=%s",
@@ -270,6 +330,7 @@ class GameState:
                     self.state,
                 )
             except Exception as exc:
+                self._story_commits.pop(event_id, None)
                 self.state, self._view, self._model_state, self._narratron_actions, self.revision = (
                     previous, previous_view, previous_model_state, previous_actions, revision
                 )
@@ -280,8 +341,6 @@ class GameState:
             self._notify_safely()
             if actor in ("player", "contributor") and transition.triggering and self.on_player_action is not None:
                 try:
-                    snapshot = self.story_snapshot("responder")
-                    assert snapshot is not None
                     logger.debug(
                         "[GameState] Invoking on_player_action callback for action '%s' at revision=%d",
                         action.name,

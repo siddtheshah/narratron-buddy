@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 from pydantic import JsonValue
+from tools.story.story_handoffs import GameControlDecision, NarrationRequest
+from tools.story.story_session import StoryRole, StorySession
 from components.canvas.game_runtime import GameAction
 from components.reference_manager import Character
 from testing.game_fixtures import exchange_definition
@@ -35,18 +37,15 @@ def test_adventure_game_moves_use_real_callback_and_reset(sample_adventure: Path
     session = AdventureSession("synthetic-test-adventure")
     try:
         assert session.game is session.story_tool.planning_module.game_state
-        assert session.game is session.story_tool.response_module.game_state
+        assert session.game is session.story_tool.recorder_module._game_state
+        assert "game_state" not in session.story_tool.response_module.__dict__
         assert session.get_state()["game"]["revision"] == 0
         move = GameAction(name="player_place", arguments={"item": "red"}, revision=0)
-        with (
-            patch.object(session.story_tool.planning_module, "queue_deep_planning") as queue,
-            patch.object(session.story_tool.planning_module, "wait_for_pending_events", return_value=True) as wait,
-        ):
-            result = session.take_game_action(move)
-            assert result["revision"] == 1
-            assert queue.call_args.args[2]["source"] == "game"
-            assert queue.call_args.args[2]["game_state"]["revision"] == 1
-            wait.assert_called_once()
+        result = session.take_game_action(move)
+        assert result["revision"] == 1
+        turn = session.story_tool.turn_journal.turns()[0]
+        assert turn.game_payload["receipt"]["revision"] == 1
+        assert turn.completed and turn.responder_skipped
         assert session.history[-1]["game_action"] == move.model_dump(mode="json")
         assert session.history[-1]["narration"] == ""
         session.reset()
@@ -117,26 +116,20 @@ def test_game_turn_waits_for_narratron_response(sample_adventure: Path) -> None:
     game_dir.mkdir()
     (game_dir / "game.json").write_text(exchange_definition().model_dump_json(), encoding="utf-8")
     session = AdventureSession("synthetic-test-adventure")
-    planner = session.story_tool.planning_module
-    planner.deep_planning_enabled = True
-    planner.deep_heartbeat_seconds = 0.001
-    planner.deep_idle_refinement_turns = 0
-
-    def respond(batch: list[tuple[int, str, dict[str, JsonValue]]]) -> dict[str, JsonValue]:
-        assert batch[0][2]["source"] == "game"
-        session.game.act(GameAction(name="narratron_place", arguments={"item": "green"}, revision=1), actor="narratron")
-        return {"tool_updates": True}
+    def run(shared: StorySession, role: StoryRole, prompt: str, *, timeout: float = 60.0, stage_id: str = "") -> str:
+        if role == "recorder":
+            assert '"player_place"' in prompt
+            session.story_tool.recorder_module.take_game_action("narratron_place", '{"item":"green"}', 1)
+            return GameControlDecision().model_dump_json()
+        return "No changes."
 
     try:
-        with (
-            patch.object(planner, "_run_deep_planner_agent", side_effect=respond),
-            patch.object(planner, "_complete_planning_heartbeat", return_value=True),
-        ):
+        with patch.object(StorySession, "run", run):
             result = session.take_game_action(GameAction(name="player_place", arguments={"item": "red"}, revision=0))
         assert result["revision"] == 2
         assert session.game.state["narratron_offer"] == ["green"]
         assert session.history[-1]["planning_completed"] is True
-        assert planner.wait_for_pending_events(timeout=0)
+        assert session.story_tool.wait_for_pending_events(timeout=0)
     finally:
         session.cleanup()
 
@@ -176,10 +169,14 @@ def test_game_narration_finishes_before_return_and_state_serializes(sample_adven
             patch.object(session.story_tool.response_module, "_resolve_user_action", return_value=reaction) as resolve,
             patch.object(session.story_tool, "_handle_scene_reaction") as handle,
         ):
-            result = session.story_tool.planning_module.on_trigger_story_response("Red moves.", "Checkers")
-            resolve.assert_called_once_with("Red moves.", nudge="Checkers")
+            decision = GameControlDecision(narration_request=NarrationRequest(user_action="Red moves.", brief="Ivory replies."))
+            with patch.object(session.story_tool.recorder_module, "_run_model", return_value=decision):
+                session.story_tool._handle_player_game_action(GameAction(name="move", arguments={}, revision=0), {"revision": 1})
+                assert session.story_tool.wait_for_pending_events(5)
+            assert resolve.call_count == 1
+            assert resolve.call_args.kwargs["game_entry"] is True
+            assert resolve.call_args.kwargs["nudge"] == "Ivory replies."
             handle.assert_called_once_with(reaction)
-            assert json.loads(result)["narration"] == "Ivory replies."
         with patch.object(session.story_tool, "get_present_characters", return_value=[character]):
             state = json.loads(json.dumps(session.get_state()))
             assert state["characters"][0]["name"] == "The Caretaker"
@@ -187,43 +184,43 @@ def test_game_narration_finishes_before_return_and_state_serializes(sample_adven
         session.cleanup()
 
 
-def test_synchronous_action_queues_planning_before_wait(sample_adventure: Path) -> None:
+def test_synchronous_action_uses_production_order_before_deterministic_drain(sample_adventure: Path) -> None:
     session = AdventureSession(adventure_id_or_path="synthetic-test-adventure")
-    reaction = {
-        "turn_id": 1,
-        "narration": "The hearing begins.",
-        "dialogue": [],
-        "planning_signals": ["Docket phase: Hearing"],
-    }
-    lifecycle = MagicMock()
+    reaction = {"turn_id": 1, "narration": "The hearing begins.", "dialogue": [], "planning_signals": []}
+    order: list[str] = []
+
+    def respond(action: str, nudge: str = "") -> dict[str, JsonValue]:
+        order.append("responder")
+        return reaction
+
+    def run(shared: StorySession, role: StoryRole, prompt: str, *, timeout: float = 60.0, stage_id: str = "") -> str:
+        order.append(role)
+        return GameControlDecision().model_dump_json() if role == "recorder" else "No changes."
+
     try:
         with (
-            patch.object(session.story_tool.response_module, "_run_responder_agent", return_value=reaction) as respond,
-            patch.object(session.story_tool.planning_module, "queue_deep_planning") as queue,
-            patch.object(session.story_tool.planning_module, "wait_for_deep_planning", return_value=True) as wait,
+            patch.object(session.story_tool.response_module, "_run_responder_agent", side_effect=respond),
+            patch.object(StorySession, "run", run),
         ):
-            lifecycle.attach_mock(queue, "queue")
-            lifecycle.attach_mock(respond, "respond")
-            lifecycle.attach_mock(wait, "wait")
             session._process_user_action_wrapper("  Begin the hearing.  ")
-
-            assert queue.call_count == 2
-            assert queue.call_args_list[0].args == (
-                0, "Begin the hearing.", {"source": "user_action", "nudge": ""},
-            )
-            assert queue.call_args.args[1] == "Begin the hearing."
-            assert queue.call_args.args[2]["narration"] == "The hearing begins."
-            assert [entry[0] for entry in lifecycle.mock_calls] == ["queue", "respond", "queue", "wait"]
-            assert session.story_tool._pending_actions == []
-            assert session.story_tool._story_log[-2]["action"] == "Begin the hearing."
-            assert session.story_tool._story_log[-1]["type"] == "story_response"
+        assert order == ["responder", "recorder", "planner"]
+        assert session.story_tool.turn_journal.turns()[0].completed
+        assert session.story_tool._story_log[-1]["type"] == "story_response"
     finally:
         session.cleanup()
 
 
 @pytest.fixture
-def sample_adventure(tmp_path, monkeypatch):
+def sample_adventure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Create an isolated, synthetic adventure directory for unit testing without depending on disk assets."""
+    def run(shared: StorySession, role: StoryRole, prompt: str, *, timeout: float = 60.0, stage_id: str = "") -> str:
+        if role == "recorder":
+            return GameControlDecision().model_dump_json()
+        if role == "responder":
+            return '{"narration":"The synthetic scene changes."}'
+        return "No changes."
+
+    monkeypatch.setattr(StorySession, "run", run)
     adventures_dir = tmp_path / "adventures"
     adventures_dir.mkdir(parents=True, exist_ok=True)
     adv_dir = adventures_dir / "synthetic-test-adventure"

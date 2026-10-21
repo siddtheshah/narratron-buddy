@@ -27,6 +27,8 @@ def test_paths_cannot_escape_or_edit_internal_files(tmp_path: Path, path: str) -
     ("notes.md", False, "lore/notes.txt"),
     ("RESPONDER.md", False, "lore/RESPONDER.md"),
     ("PLANNER.md", False, "lore/PLANNER.md"),
+    ("RECORDER.md", False, "lore/RECORDER.md"),
+    ("world/RECORDER.md", True, "lore/RECORDER.md"),
     ("world/lore/RESPONDER.md", True, "lore/RESPONDER.md"),
     ("world/references/people/hero.png", True, "references/people/hero.png"),
     ("world/stamps/tokens/hero.png", True, "stamps/tokens/hero.png"),
@@ -58,7 +60,8 @@ def test_default_draft_has_separate_role_guides_and_preserves_them_on_publish(tm
     target.mkdir()
     store.copy_to(info, target)
     assert "immediate scene" in (target / "lore/RESPONDER.md").read_text(encoding="utf-8")
-    assert "off-screen actors" in (target / "lore/PLANNER.md").read_text(encoding="utf-8")
+    assert "conditional off-screen intentions" in (target / "lore/PLANNER.md").read_text(encoding="utf-8")
+    assert "Reconcile established facts" in (target / "lore/RECORDER.md").read_text(encoding="utf-8")
     assert not list((target / "lore").glob("read*"))
 
 

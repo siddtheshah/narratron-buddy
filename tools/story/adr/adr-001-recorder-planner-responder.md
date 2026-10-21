@@ -20,7 +20,7 @@ This assigns two different kinds of work to the background planner:
 - Developing conditional future events, opposition intentions, setups, and pacing.
 
 Factual recording must finish before another action depends on its results.
-Creative planning can take longer and need not run after every action. Combining
+Creative planning can take longer and run in the background. Combining
 them allows the next response to encounter stale factual notes, spends planning
 effort on routine bookkeeping, and complicates recovery from partial tool writes.
 
@@ -33,14 +33,28 @@ model-visible event projection for each role.
 
 | Role | Responsibility | Authorized mutations |
 | --- | --- | --- |
-| Recorder / game controller | Reconcile committed events, maintain factual state, choose and execute permitted game responses, and request narration when warranted | Recorder-owned stickies and validated Narratron game actions |
-| Responder | Resolve immediate fictional consequences, narrate the scene, speak for NPCs, roll permitted dice, and identify planning needs | Structured response and proposed factual changes; no direct sticky writes |
-| Planner | Develop contingent future events, faction intentions, setups, and pacing from committed facts | Planner-owned stickies |
+| Recorder / game controller | Reconcile committed events, maintain factual state, and choose and execute permitted game responses | Recorder-owned stickies and game-state mutations through the validated game runtime |
+| Responder | Resolve communicated user actions, narrate the immediate scene, speak for NPCs, and roll permitted dice; narrate recorder-established outcomes on game-entry turns | Structured response and proposed factual changes; no direct sticky or game-state writes |
+| Planner | Develop contingent future events, faction intentions, setups, and pacing from committed facts | Planner-owned stickies; no game-state writes or peer triggers |
 
-The recorder has two explicit phases: recording established outcomes and
-controlling game responses. Selecting a new NPC game action is a new decision,
-not a fact inferred to have already happened. The game runtime continues to
-validate actions and own mechanical game state.
+The recorder has two ingress-dependent modes: recording a completed response on
+a communicated-action turn, or controlling and recording game developments on a
+game-action turn. These are alternative uses of its one logical invocation per
+turn, not a reason to invoke it again after the responder. Selecting a new NPC
+game action is a new decision, not a fact inferred to have already happened. The
+recorder is the sole role authorized to mutate game state; the game runtime
+continues to validate, commit, and persist those mutations.
+
+The agreed turn contract is: **one accepted ingress, one entry role, and at most
+one invocation of each other role.** Recorder and planner stages are mandatory.
+The responder runs once on communicated-action turns; on game-action turns the
+recorder can omit narration when the action is minor or purely mechanical. The
+entry role's completion causes the orchestrator to schedule the required remaining
+stages once and persist any responder skip decision. Follow-up roles do not
+recursively trigger peers. The planner only publishes sticky context for
+subsequent invocations. A completed turn contains one logical recorder stage,
+one planner stage, and either one responder stage or an explicit game-entry
+narration skip.
 
 ## Sticky ownership in `planning.yaml`
 
@@ -70,56 +84,132 @@ schema and update tools must enforce it in application code. Instructions alone
 are insufficient. Existing field schemas, rendering, and per-topic validation
 remain applicable.
 
-Ownership controls writing, not visibility. Each role receives the readable
-context it needs; private planning material must not automatically become
+Ownership controls writing, not visibility. All three roles read both sticky
+collections. Private planning material must not automatically become
 player-visible. Recorder notes establish facts. Planner notes describe intentions
 and conditional possibilities and must not be treated as proof that an event
-occurred.
+occurred. Publishing a sticky update never schedules another role or opens a turn.
+
+| Context / capability | Recorder | Responder | Planner |
+| --- | --- | --- | --- |
+| Read recorder-owned stickies | Yes | Yes | Yes |
+| Read planner-owned stickies | Yes | Yes | Yes |
+| Write recorder-owned stickies | Yes | No | No |
+| Write planner-owned stickies | No | No | Yes |
+| Read raw game state, receipts, game instructions, and action schemas | Yes | No | Yes |
+| Mutate game state through the validated runtime | Yes | No | No |
+| Trigger peers through model tools or sticky updates | No | No | No |
+
+The responder's game-state exclusion is an application-enforced context boundary.
+Do not supply raw game data through prompts, history, shared session state, tool
+results, or summaries. It receives concise narrative facts from recorder-owned
+stickies and an explicit recorder brief instead. Keep game analysis and complex
+mechanical instructions in the recorder and planner so the responder stays fast.
 
 ## Event flow
 
 ```mermaid
 flowchart TD
-    T[Player text action] --> S[Responder]
-    G[Committed player game action] --> R[Recorder / game controller]
-    R -->|Narrative reaction warranted| S
-    S --> C[Recorder commits turn facts]
-    C -->|Planning requested| P[Planner]
-    P --> N[Planner-owned guidance]
-    N -->|Read on subsequent turns| S
+    T[Live agent: communicated user action] --> S1[Responder: resolve and narrate]
+    S1 --> R1[Recorder: reconcile and commit facts]
+    R1 --> P[Planner: publish guidance once per turn]
+
+    G[Game action entry point] --> R2[Recorder: game control and factual commit]
+    R2 --> D{Narration warranted?}
+    D -->|Yes: concise narrative brief, no raw game state| S2[Responder: narrate committed outcome]
+    D -->|No: persist narration skip| P
+    S2 --> P
+
+    R1 -.-> F[Recorder-owned factual stickies]
+    R2 -.-> F
+    P -.-> N[Planner-owned guidance stickies]
+    F --- C[Both sticky collections are readable by all three roles]
+    N --- C
 ```
 
-### Text actions
+Solid arrows represent orchestrator-controlled stage order, not model-exposed
+peer-trigger tools. Dotted arrows publish state and have no scheduling effect.
+The duplicated role boxes show alternative ingress paths, not additional
+invocations in one turn. There is deliberately no game-entry edge from the
+responder back to the recorder, and no outgoing scheduling edge from the planner.
+
+### Communicated user actions: responder entry
 
 1. The orchestrator assigns a stable action ID and ensures preceding causal
-   events have been recorded before admitting the action for resolution.
-2. The responder reads a consistent snapshot of recorded facts, current game
-   state, and available planning guidance. Player input remains an intention
-   until resolved.
+   events have been recorded before admitting the action communicated by the live
+   agent. This ingress creates a turn whose entry role is the responder.
+2. The responder reads a consistent snapshot of both sticky collections and its
+   own permitted history, without raw game state. Player input remains an
+   intention until resolved.
 3. The responder returns narration, dialogue, actual dice results, proposed
-   factual changes, and an optional planning request with a reason.
-4. The orchestrator always submits the completed response to the recorder.
-   Recording does not depend on a planning request.
+   factual changes, and optional planning cues.
+4. The entry completion schedules one recorder stage and one planner stage. The
+   planner depends on the recorder's factual commit, so it cannot plan from a
+   partially recorded response. Neither stage depends on a model planning request.
 5. The recorder reconciles the result against established facts, lore, and game
-   receipts, commits factual updates, and marks the event recorded.
-6. If planning was requested, the orchestrator schedules the planner against the
-   newly recorded state. The next player action need not wait for planning.
+   receipts, commits factual updates, and marks the event recorded. It does not
+   trigger another responder invocation.
+6. The planner receives the recorded outcome and committed state, then updates
+   only its own stickies or explicitly completes with no changes. Its completion
+   triggers neither the responder nor the recorder.
 
-### Game actions
+### Game actions: recorder entry
 
 1. The game runtime validates and commits the player's action. Its action and
-   resulting state receipt become input to the recorder.
+   resulting state receipt become input to the recorder. This ingress creates a
+   turn whose entry role is the recorder.
 2. The recorder updates factual projections and, when justified by game rules,
    selects permitted Narratron actions. Each submitted action uses the current
-   game revision and produces a new receipt.
-3. The recorder can request a responder reaction to significant game developments.
-   Routine mechanical changes can finish without narration.
-4. Any completed response returns through the mandatory recording path. An
-   optional responder planning request is delivered after recording completes.
+   game revision and produces a durable receipt. All factual projections of those
+   receipts finish within this recorder stage before it completes.
+3. The recorder decides whether the committed development warrants narration or
+   NPC dialogue. Minor, routine, or purely mechanical actions may skip the
+   responder. It returns an explicit narration decision with a reason and, when
+   narration is requested, a concise brief containing established outcomes,
+   relevant consequences, and narration cues. Raw game state, receipts, action
+   schemas, revision bookkeeping, and mechanical instructions stay out of the
+   responder's context.
+4. Entry completion always schedules one planner stage and conditionally schedules
+   one responder stage. The orchestrator persists the recorder's narration
+   decision so retries cannot change a skip into a new invocation. If invoked,
+   the responder narrates the committed outcome; it does not resolve the game
+   again or establish additional state mutations requiring another recorder pass.
+5. The planner receives the recorder-established facts, readable game state, and
+   either the completed narrative handoff or the explicit narration skip. It runs
+   once after the responder completes, or directly after the recorder when
+   narration is skipped, and publishes guidance only through its own stickies.
+6. The responder's completion does not trigger a second recorder stage. The
+   planner's completion triggers neither role. An out-of-scope factual or
+   mechanical mutation in the game-entry response is a contract violation to
+   handle within that responder stage, not permission to start another role cycle.
 
-Recording a response must not automatically replay the game-control phase or
-trigger another response. Triggers are associated with specific causal events
-and phases so the flow cannot become an unconditional agent loop.
+### Turn lifecycle and trigger budget
+
+`StoryTool` owns scheduling. Models return outputs and handoffs; they cannot call
+one another directly. Record the ingress kind and entry role with the turn ID,
+then use the bounded stage sequence for that ingress:
+
+| Ingress | Entry stage | Follow-up stage | Final background stage |
+| --- | --- | --- | --- |
+| Communicated user action | Responder, once | Recorder, once | Planner, once |
+| Committed player game action | Recorder, once | Responder, zero or once according to the recorder's narration decision | Planner, once |
+
+Entry completion durably schedules the required follow-up stages once, with the
+dependency order shown above. Only the game-entry responder stage can be skipped;
+this never skips planning. Completing a follow-up stage only satisfies that
+existing dependency; it cannot enqueue another peer invocation. Internal handoffs,
+Narratron receipts, callbacks, planning cues, and sticky writes are not new ingress
+events and cannot replenish the turn's trigger budget. Only a new accepted
+external ingress opens a new turn.
+
+One logical stage may contain model/tool continuations and may need failure
+retries. Retries retain the same turn, role, stage identity, and committed effects;
+they do not create another logical invocation or repeat successful downstream
+stages. Mark a turn complete when every required stage has completed and any
+optional responder skip is durably recorded, including explicit no-change
+outcomes. Foreground readiness is separate: a subsequent action can proceed after
+the recorder and any required responder have finished and all causal facts are
+committed, while the planner continues in the background.
 
 ## Shared ADK session and role-specific event visibility
 
@@ -139,13 +229,16 @@ not make it visible to every role.
 | Own prior model outputs and tool exchanges | Yes | Yes | Yes |
 | Another role's raw tool exchanges and private intermediate outputs | No | No | No |
 | Player text intention | When needed for reconciliation | When resolving the action | When included in a recorded-turn handoff |
-| Committed game receipts | When recording or controlling the game | Relevant receipts for narration | Relevant facts in the planning handoff |
-| Completed response and proposed factual changes | Explicit recording handoff | Own response history | Recorded outcome supplied after reconciliation |
-| Recorded factual state | Yes | Yes | Yes |
-| Published planning guidance | When relevant to game decisions | When relevant to response resolution | Own planning state |
+| Raw game state, committed receipts, game instructions, and action schemas | Yes | No | Yes, read only |
+| Concise recorder narrative brief or narration skip | Own published decision | Brief only, when invoked on game-entry turns | Yes |
+| Completed response and proposed factual changes | Explicit recording handoff on responder-entry turns; no second invocation on game-entry turns | Own response history | Recorded outcome on responder-entry turns; narrative handoff alongside recorder-established facts on game-entry turns |
+| Recorder-owned factual stickies | Yes | Yes | Yes |
+| Planner-owned guidance stickies | Yes | Yes | Yes |
 
-Own-event visibility alone is insufficient: the recorder needs the responder's
-result, and the planner needs recorded outcomes. Cross-role communication uses
+Own-event visibility alone is insufficient: on responder-entry turns the recorder
+needs the responder's result; on game-entry turns an invoked responder needs the
+recorder's narrative brief. The planner needs the foreground stages' handoffs and
+committed facts in either case. Cross-role communication uses
 explicit handoff events and published state, without replaying a peer's entire
 conversation. A handoff carries its source event IDs, intended recipients,
 purpose, and source state revision. The orchestrator supplies this routing
@@ -205,6 +298,12 @@ cost without measurement.
 - Use stable action and event IDs, causal links, and durable recording progress.
   Distinguish a player intention, its resolved response, and individual committed
   game actions while preserving their relationship.
+- Persist the ingress kind, entry role, and completion/scheduling state of each
+  role stage. Duplicate callbacks and retries must not schedule a role twice.
+  Persist the recorder's game-entry narration decision and reason; an explicit
+  skip satisfies that optional stage without invoking the responder.
+  Recovery must resume unfinished game control, narration, and planning as well
+  as pending factual projection; a recorded event alone is not a completed turn.
 - Record proposed factual changes as structured data alongside prose. The
   recorder must reconcile them rather than blindly accept them. Narrative claims
   cannot override the game runtime's validated state.
@@ -213,6 +312,10 @@ cost without measurement.
 - Preserve committed game receipts across retries. Note recording and game
   actions are separate commit boundaries; retrying projection or narration must
   not execute an already committed game action again.
+- Provide recovery for a game commit followed by a failed receipt write. Capture
+  the action's receipt at its commit boundary, rather than reading a possibly
+  newer game snapshot afterward. Acknowledging asynchronous narration submission
+  is not evidence that its responder stage completed successfully.
 - Capture the state revision with the actual response snapshot. A revision read
   earlier than the snapshot is insufficient to identify what the responder saw.
 - If recording fails, retain the pending event and retry safely. Dependent player
@@ -224,19 +327,34 @@ cost without measurement.
 - Planner output cannot retcon established events. Once a planned development
   actually occurs through response resolution or a game action, the recorder
   records it as a fact.
+- Restart restoration must preserve newer planner-owned state and monotonic
+  revisions. Restoring the recorder's last checkpoint must not replace newer
+  planner stickies with the older copies embedded in that checkpoint.
 
 ## Scheduling and efficiency
 
-The recorder processes every committed event that affects factual state. Prefer
-ordinary code for direct projections of validated game state. Keep any recorder
-model context and reasoning budget focused on reconciliation and required game
-decisions.
+Every accepted turn schedules the recorder and planner exactly once in its
+ingress-defined order. The responder runs once for communicated actions and at
+most once for game actions, according to the recorder's narration decision.
+The recorder processes its stage's factual events and game receipts within
+that single invocation. Prefer ordinary code for direct projections of validated
+game state. Keep any recorder model context and reasoning budget focused on
+reconciliation and required game decisions.
 
-The planner runs when the responder requests it, rather than automatically on
-both player intention and completed response. Explicit initialization or
-orchestrator requests can establish or refresh guidance when no narrated turn
-exists. Planning requests may be coalesced, retaining their reasons and source
-events.
+The planner runs once per turn after the recorder and any required responder,
+including game turns that skip narration, whether or not the responder supplied
+a planning request. Existing planning requests become advisory
+context, not scheduling authority. Do not run the planner separately for player
+intent, each game receipt, and completed narration. Do not add autonomous idle
+refinement runs to the turn. Retries resume the same planner stage. Explicit
+initialization or maintenance work outside an external turn must have its own
+identity and cannot trigger the responder or recorder.
+
+Planner work can continue in the background after foreground readiness, but each
+turn retains its own planner-stage identity and completion state. No-op planning
+is valid. Background publication updates context passively; it never wakes the
+other roles. The responder consumes narrative context and stickies only, leaving
+raw game analysis to the recorder and planner.
 
 This adds a recording completion boundary between dependent actions. It may
 increase latency or total cost when an LLM recorder is required. It is a proposed
@@ -250,26 +368,41 @@ continuity errors separately.
    adventure schemas explicitly; do not silently guess ownership of legacy notes.
 2. Extract factual recording, game actions, and game-triggered response handling
    into a recorder module. Retain creative planning in the planning module.
-3. Extend structured response output with proposed factual changes and a planning
-   request. Keep the existing planning-request tool as an optional way to populate
-   that request; scheduling remains the orchestrator's responsibility.
+3. Extend structured response output with proposed factual changes and optional
+   planning cues. Add a durable game-entry narration decision with a reason and
+   an optional concise recorder-to-responder narrative brief. Enforce the
+   responder's game-state exclusion across every context path; game-entry
+   narration must stay within recorder-established outcomes.
 4. Consolidate ADK wiring into one application/session and add the role-specific
    context builder, explicit handoffs, scoped output keys, and compatible history
    summarization. Preserve the full stored event history.
-5. Add durable event identity, recording progress, staged note publication, and
-   retry handling before enabling the new scheduling behavior.
-6. Wire the mandatory response-to-recorder path and selective planner scheduling
-   through `StoryTool`. Route canonical character and scene mutations through
-   explicit ownership contracts so they do not bypass factual recording.
+5. Add durable turn/event identity, role-stage scheduling and completion progress,
+   staged note publication, and retry/restart handling before enabling the new
+   scheduling behavior. Close receipt-write and snapshot-restoration recovery gaps.
+6. Wire the two bounded ingress paths through `StoryTool`, including the optional
+   game-entry responder stage and mandatory planner stage. Remove direct
+   peer-trigger tools, planner game writes, and recursive response recording on
+   game-entry turns. Route canonical character and scene mutations through
+   explicit ownership contracts so they do not bypass factual recording. Preserve
+   all three private role-guide filenames through uploads and imports.
 7. Update the test harness to exercise production scheduling as well as a fully
    drained deterministic mode.
 
-Validation should cover unauthorized sticky writes, rapid dependent actions,
-recording without planning, planning after recording, partial failures and retries,
-game-action deduplication, stale guidance, and prevention of trigger loops. Capture
+Validation should cover both ingress paths with exactly one logical invocation of
+the recorder and planner, one responder invocation for communicated actions, and
+zero or one responder invocations for game actions. Verify minor-action narration
+skips, significant-action narration, durable skip decisions across retries and
+restarts, unconditional per-turn planner scheduling, and no responder-to-recorder
+bounce on game-entry turns. Also cover unauthorized sticky/game writes, rapid
+dependent actions, partial failures and retries, game-action deduplication,
+recovery after a game commit but before receipt persistence, unfinished-stage
+recovery, preservation of newer planner notes on restart, stale guidance, and
+prevention of trigger loops from callbacks or sticky updates. Capture
 actual model requests to verify own-role history, authorized handoffs, exclusion
-of peer internals, correct tool pairing, summary isolation, and distinct output
-keys across interleaved runs and restarts.
+of peer internals and all raw game context from the responder, correct tool
+pairing, summary isolation, and distinct output keys across interleaved runs and
+restarts. Assert that planner publication only changes its stickies and invokes
+no peer role.
 
 ## Alternatives considered
 
@@ -278,8 +411,14 @@ keys across interleaved runs and restarts.
 - **Let the responder write factual notes directly:** Avoids a separate model
   pass, but adds reconciliation and game-control responsibilities to the fast
   responder. Useful as a performance baseline.
-- **Run all three roles serially on every action:** Simple ordering, but makes
-  optional creative planning part of every action's critical path.
+- **Wait for all three roles before admitting the next action:** Simple ordering,
+  but puts background creative planning on every action's foreground critical path.
+- **Recursively react to every peer completion:** Allows repeated reconciliation,
+  but violates the once-per-role turn contract and can create unbounded loops.
+- **Schedule planning only on responder request:** Can reduce planner runs, but
+  does not satisfy mandatory per-turn planning, including turns without narration.
+- **Narrate every game action:** Simple scheduling, but adds latency and narration
+  noise for minor mechanical actions that the recorder can handle without a response.
 - **Separate ADK sessions for each role:** Provides simpler history separation,
   but requires explicit synchronization and separate traces. Retain as a fallback
   if shared-session projections cannot reliably preserve visibility and recovery.
@@ -302,51 +441,31 @@ The first foundation is implemented in `components/notepad.py`:
 - Ownership tests cover denied writes, legacy migration, field validation,
   schema replacement, reassignment, and revision preservation on rejected writes.
 
-The current two-role runtime still uses unrestricted notepad methods. These are
-retained for compatibility and application persistence; the future three-role
-agents must receive only their bound tools. Role binding is not yet wired into
-`StoryTool`, because removing factual writes from its existing planner before
-introducing the recorder would leave committed outcomes unrecorded.
+The three-role runtime is now wired into `StoryTool`:
 
-Next: extract the recorder and game controller, then complete the handoff,
-shared-session, and durable recording prerequisites before enabling the new
-scheduling. This foundation does not claim a performance improvement.
-
-Additional prerequisites are now implemented:
-
-- `story_handoffs.py` defines validated factual proposals with supporting evidence
-  and a structured planning request. The responder schema accepts both, validates
-  them before delivering the scene, and returns them to the orchestrator without
-  applying proposed changes. The existing planning-request tool remains supported.
-  `StoryTool` retains these fields in its response log.
-- `Notepad.snapshot()` and `Notepad.consume_responder_snapshot()` capture note
-  values, ownership schema, changed-topic markers, and content revision under one
-  lock. `StoryResponseModule` builds its turn prompt from that snapshot and
-  records the snapshot's revision as `notepad_revision_used`.
-- `publish_role_updates()` validates an entire batch before mutation, rejects
-  stale snapshots (including ownership-only changes), runs an optional durable
-  persistence hook before mutating live state, and publishes changed notes under
-  one revision with one notification.
-- `story_recording_journal.py` and `story_recorder_module.py` provide durable
-  SQLite queueing (`StoryRecordingJournal`) and the two-phase `StoryRecorderModule`:
-  - `record(event)` commits the oldest pending event's factual note updates and
-    recording progress in one SQLite transaction, restores committed snapshots on
-    restart, blocks successor events when an earlier event fails, and has no
-    game-action or narration capability.
-  - `control_game(event)` accepts only root player `committed_game_action` events
-    (rejecting completed responses and Narratron receipts to prevent loops),
-    persists each committed Narratron game receipt and its recording event
-    immediately after `GameState.act()`, deduplicates committed game actions and
-    controller decisions across projection or narration retries, and triggers
-    narration at most once per player game event.
-  - `StoryRecorderModule` defines module-level instruction and turn-prompt
-    templates (`_RECORDER_INSTRUCTION_TEMPLATE` and `_RECORDER_TURN_PROMPT_TEMPLATE`)
-    alongside bounded lore tools (`read_lore`, `search_lore`) and `LoreLibrary`
-    support for a pinned `RECORDER.md` guide isolated from `RESPONDER.md` and
-    `PLANNER.md`.
-
-Remaining gates include shared ADK session projections, wiring the model-backed
-recorder/game-controller into `StoryTool` with mandatory recording and selective
-planning scheduling, migrating the remaining adventure `planning.yaml` schemas,
-canonical character/scene mutation contracts, and production-mode harness
-validation. The current `StoryTool` runtime must not be described as three-role yet.
+- `story_session.py` (`StorySession`, `StorySessionService`, `StoryRoleRouter`,
+  `build_role_request`, `project_role_contents`) binds `story_responder`,
+  `story_recorder`, and `story_deep_planner` into one `narratron_story` ADK
+  application and SQLite session with `include_contents="none"`, distinct output
+  keys, serialized event appends, own-role complete tool-pair projections, and
+  preservation of explicit `null` structured-output fields across ADK's
+  `set_model_response` tool.
+- `story_turn_journal.py` (`StoryTurn`, `StoryTurnJournal`) and
+  `story_staged_notes.py` (`StagedStoryNotes`) persist bounded turn lifecycles
+  (`communicated_action` and `game_action`), explicit game-entry narration
+  decisions and reasons, staged role-scoped sticky writes, and atomic planner
+  checkpoint commits (`commit_planning`), while `Notepad.restore_recorded_snapshot()`
+  preserves newer planner-owned stickies across restarts.
+- `components/canvas/game_state.py` persists `StoryGameCommit` records at the
+  game commit boundary (`pending_story_actions`, `acknowledge_story_action`,
+  `commit_story_action`, `story_action_commits`) and blocks new player game moves
+  on unfinished foreground turns (`before_player_action`).
+- `StoryTool` schedules the two bounded ingress paths without model-exposed
+  peer-trigger tools, excludes raw game state and dice rolling from game-entry
+  responder turns, routes canonical player/character/scene mutations through
+  recorder-owned `CanonicalReferenceUpdate` records, and preserves `RECORDER.md`
+  through `services/theater_builder.py`.
+- `story_session_test.py`, `story_orchestration_test.py`, `adventure_runner_test.py`,
+  and UI/testlab suites validate both ingress paths, role isolation on captured
+  ADK `LlmRequest` payloads, narration skip persistence, receipt/stage recovery,
+  and restart behavior.

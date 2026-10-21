@@ -203,7 +203,7 @@ def test_pending_game_receipt_survives_restart(tmp_path: Path) -> None:
         restored.close()
 
 
-def test_retrying_projection_or_narration_does_not_reexecute_committed_game_action(
+def test_retrying_projection_preserves_narration_handoff_without_peer_triggering(
     pad: Notepad, tmp_path: Path
 ) -> None:
     journal = StoryRecordingJournal(tmp_path / "recording.sqlite")
@@ -224,15 +224,6 @@ def test_retrying_projection_or_narration_does_not_reexecute_committed_game_acti
             {"Location": "Square B2"},
         ]
     )
-    narration_calls = 0
-
-    def trigger_narration(request: NarrationRequest) -> dict[str, str]:
-        nonlocal narration_calls
-        narration_calls += 1
-        if narration_calls == 1:
-            return {"error": "Responder temporarily unavailable"}
-        return {"status": "processing"}
-
     def control(
         event: RecordingEvent, snapshot: NoteSnapshot, submit: SubmitGameAction
     ) -> GameControlDecision:
@@ -253,37 +244,26 @@ def test_retrying_projection_or_narration_does_not_reexecute_committed_game_acti
         reconcile,
         game_state=game_state,
         control_game=control_mock,
-        trigger_narration=trigger_narration,
     )
     try:
         with pytest.raises(RuntimeError, match="Transient projection failure"):
             recorder.control_game(player_event)
         game_state.act.assert_called_once_with(narratron_action, actor="narratron")
         assert pad.snapshot().notes["Location"] == "Square A2"
-        assert narration_calls == 0
-
-        with pytest.raises(RuntimeError, match="Responder temporarily unavailable"):
-            recorder.control_game(player_event)
-        game_state.act.assert_called_once()
-        control_mock.assert_called_once()
-        assert pad.snapshot().notes["Location"] == "Square B2"
-        assert narration_calls == 1
-        assert not journal.is_game_control_completed("game-1")
 
         outcome = recorder.control_game(player_event)
         assert outcome.player_recorded_revision == 1
         assert outcome.final_recorded_revision == 2
         assert len(outcome.narratron_receipts) == 1
-        assert outcome.narration_triggered is True
+        assert outcome.narration_request is not None
+        assert outcome.narration_triggered is False
         assert journal.is_game_control_completed("game-1")
-        assert narration_calls == 2
         game_state.act.assert_called_once()
         control_mock.assert_called_once()
         assert reconcile.call_count == 3
 
         repeated = recorder.control_game(player_event)
         assert repeated == outcome
-        assert narration_calls == 2
         assert reconcile.call_count == 3
     finally:
         journal.close()
