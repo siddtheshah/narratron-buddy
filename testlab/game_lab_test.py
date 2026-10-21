@@ -32,7 +32,7 @@ def test_manual_session_keeps_state_runs_ai_and_cleans_up(
         return provider
 
     monkeypatch.setattr(game_lab, "get_text_response_provider", get_provider)
-    created = manual_client.post("/api/game-lab/sessions", json={"game_path": "adventures/example_adventure/game/game.json"})
+    created = manual_client.post("/api/game-lab/sessions", json={"game_path": "adventures/example_adventure/game/game.yaml"})
     assert created.status_code == 200
     session_id = created.json()["session_id"]
     url = f"/api/game-lab/sessions/{session_id}"
@@ -69,7 +69,7 @@ def test_manual_ai_failure_retains_player_move_and_reports_error(
         return provider
 
     monkeypatch.setattr(game_lab, "get_text_response_provider", get_provider)
-    created = manual_client.post("/api/game-lab/sessions", json={"game_path": "adventures/example_adventure/game/game.json"})
+    created = manual_client.post("/api/game-lab/sessions", json={"game_path": "adventures/example_adventure/game/game.yaml"})
     url = f"/api/game-lab/sessions/{created.json()['session_id']}"
     moved = manual_client.post(url + "/action", json={"name": "move", "arguments": {"source": 40, "target": 33}, "revision": 0})
     assert moved.json()["revision"] == 1
@@ -89,8 +89,8 @@ def test_manual_games_do_not_share_state(manual_client: TestClient, monkeypatch:
         return provider
 
     monkeypatch.setattr(game_lab, "get_text_response_provider", get_provider)
-    first = manual_client.post("/api/game-lab/sessions", json={"game_path": "adventures/example_adventure/game/game.json"}).json()["session_id"]
-    second = manual_client.post("/api/game-lab/sessions", json={"game_path": "adventures/example_adventure/game/game.json"}).json()["session_id"]
+    first = manual_client.post("/api/game-lab/sessions", json={"game_path": "adventures/example_adventure/game/game.yaml"}).json()["session_id"]
+    second = manual_client.post("/api/game-lab/sessions", json={"game_path": "adventures/example_adventure/game/game.yaml"}).json()["session_id"]
     manual_client.post(f"/api/game-lab/sessions/{first}/action", json={"name": "select", "arguments": {"index": 40}, "revision": 0})
     assert manual_client.get(f"/api/game-lab/sessions/{first}").json()["game"]["revision"] == 1
     assert manual_client.get(f"/api/game-lab/sessions/{second}").json()["game"]["revision"] == 0
@@ -129,9 +129,9 @@ def test_page_and_run_endpoint_use_game_harness(monkeypatch: MonkeyPatch) -> Non
     monkeypatch.setattr(game_lab, "get_text_response_provider", get_provider)
     assert "Game Testing Lab" in client.get("/game-lab").text
     catalog = client.get("/api/game-lab/catalog")
-    assert "adventures/example_adventure/game/game.json" in catalog.json()["games"]
+    assert "adventures/example_adventure/game/game.yaml" in catalog.json()["games"]
     result = client.post("/api/game-lab/run", json={
-        "game_path": "adventures/example_adventure/game/game.json",
+        "game_path": "adventures/example_adventure/game/game.yaml",
         "scenario": scenario().model_dump(mode="json"),
     })
     assert result.status_code == 200
@@ -146,5 +146,5 @@ def test_endpoint_rejects_outside_workspace_and_invalid_scenario(tmp_path: Path)
     outside.write_text("{}", encoding="utf-8")
     result = client.post("/api/game-lab/run", json={"game_path": str(outside), "scenario": scenario().model_dump(mode="json")})
     assert result.status_code == 400
-    result = client.post("/api/game-lab/run", json={"game_path": "adventures/example_adventure/game/game.json", "scenario": {"steps": []}})
+    result = client.post("/api/game-lab/run", json={"game_path": "adventures/example_adventure/game/game.yaml", "scenario": {"steps": []}})
     assert result.status_code == 422

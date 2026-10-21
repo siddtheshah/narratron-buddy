@@ -20,6 +20,8 @@ adventures/<adventure-slug>/
 ├── metadata.json           # Catalog metadata, genre tags, and browser display attributes
 ├── theater.yaml            # Story planning rules, agent persona, and tool settings
 ├── planning.yaml           # Story planning schema, sticky definitions, fields, and initial values
+├── game/                   # Optional declarative game; see docs/game_packages.md
+│   └── game.yaml           # State, CEL rules, actions and view (game.yml/game.json also supported)
 ├── README.md               # (Optional) Creator notes or developer documentation
 ├── lore/                   # Worldbuilding, DM screen, character dossiers, locations, and rules
 │   ├── RESPONDER.md         # Pinned immediate-response instructions
@@ -48,6 +50,12 @@ adventures/<adventure-slug>/
 ---
 
 ## 2. Quickstart: The Adventure Authoring Workflow
+
+For adventures with a board or structured game mechanics, prefer `game/game.yaml`
+for human editing. Use comments and `|-` for multiline CEL expressions, and keep
+CEL literal quotes in view props (`text: '"Play"'`). Keep exactly one declaration
+(`game.yaml`, `game.yml`, or `game.json`) in `game/`. Follow `docs/game_packages.md`
+for contracts and validation; the example adventure includes commented checkers.
 
 When creating a new adventure, follow this sequence:
 

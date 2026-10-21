@@ -12,13 +12,13 @@ from typing import Literal
 from pydantic import Field, JsonValue, TypeAdapter
 
 from components.canvas.game_client import browser_compatible, browser_program
+from components.game_source import find_game_file
 from components.canvas.game_runtime import (
     Budget, GameAction, GameStep, GameModel, GameProgram, MAX_GAME_BYTES, MAX_VALUE_BYTES,
     validate_game_package,
 )
 
 logger = logging.getLogger(__name__)
-GAME_FILE = "game/game.json"
 
 
 class StoryGameCommit(GameModel):
@@ -77,15 +77,15 @@ class GameState:
         self._narratron_actions: dict[str, JsonValue] = {}
         self._story_commits: dict[str, StoryGameCommit] = {}
         self._client: dict[str, JsonValue] | None = None
-        path = directory / GAME_FILE
         try:
-            if not path.exists():
-                logger.debug("[GameState] No game package found at %s", path)
+            path = find_game_file(directory)
+            if path is None:
+                logger.debug("[GameState] No game package found at %s", directory)
                 return
             if not path.resolve().is_relative_to(directory.resolve()) or path.stat().st_size > MAX_GAME_BYTES:
                 raise ValueError("Game package path or size is invalid.")
             content = path.read_bytes()
-            self.program = validate_game_package(content, game_dir=path.parent)
+            self.program = validate_game_package(content, filename=path.name, game_dir=path.parent)
             self._client = browser_program(self.program)
             self.definition_hash = sha256(content).hexdigest()
             self.state = json.loads(json.dumps(self.program.definition.initial))

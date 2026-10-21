@@ -11,6 +11,7 @@ from components.reference_manager import Character
 from testing.game_fixtures import exchange_definition
 from fastapi.testclient import TestClient
 import pytest
+import yaml
 
 from testlab.adventure_runner import (
     AdventureSession,
@@ -30,10 +31,13 @@ from testlab.server import app
 pytestmark = pytest.mark.usefixtures("offline_lab_text_providers")
 
 
-def test_adventure_game_moves_use_real_callback_and_reset(sample_adventure: Path) -> None:
+@pytest.mark.parametrize("filename", ["game.yaml", "game.yml", "game.json"])
+def test_adventure_game_moves_use_real_callback_and_reset(sample_adventure: Path, filename: str) -> None:
     game_dir = sample_adventure / "game"
     game_dir.mkdir()
-    (game_dir / "game.json").write_text(exchange_definition().model_dump_json(), encoding="utf-8")
+    definition = exchange_definition()
+    content = definition.model_dump_json() if filename == "game.json" else yaml.safe_dump(definition.model_dump(mode="json"))
+    (game_dir / filename).write_text(content, encoding="utf-8")
     session = AdventureSession("synthetic-test-adventure")
     try:
         assert session.game is session.story_tool.planning_module.game_state
@@ -53,7 +57,7 @@ def test_adventure_game_moves_use_real_callback_and_reset(sample_adventure: Path
         assert session.game.state["player_offer"] == []
         assert session.mock_tools.canvas_state is session.mock_canvas
         assert session.history == []
-        (game_dir / "game.json").unlink()
+        (game_dir / filename).unlink()
         session.reset()
         assert session.get_state()["game"] is None
     finally:

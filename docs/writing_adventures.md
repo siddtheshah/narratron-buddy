@@ -10,6 +10,7 @@ A **Narratron Adventure** is a self-contained content package that turns Narratr
 
 - **Narrative Logic & Agent Persona (`theater.yaml`)**: Custom instructions, story planning rules, persistent "sticky note" tracking, art direction, and pacing controls for Google Gemini.
 - **Package Metadata (`metadata.json`)**: Title, description, genre tags, author credits, difficulty, and player count.
+- **Optional Game (`game/game.yaml`)**: State, rules, actions and board layout. YAML supports comments and multiline expressions; `game.yml` and existing `game.json` packages also work. See [Game packages](game_packages.md) and the commented example adventure.
 - **Lore Context (`lore/`)**: Deep backstory, world lore, factions, secrets, and NPC motivations provided directly to the language model.
 - **Characters (`references/characters/`)**: One folder per character containing its portrait iterations.
 - **Visual References (`references/`)**: Maps, item designs, environment images, and cover artwork used to guide generative image tools.

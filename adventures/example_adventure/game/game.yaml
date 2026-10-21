@@ -1,0 +1,482 @@
+# Checkers Club — edit this file to change the game.
+# See docs/game_packages.md for the format. CEL expressions use |- for multiple lines.
+
+version: 2
+
+# Starting position and UI state. Piece values: Red 1, Ivory -1; kings use 2 and -2.
+initial:
+  # Eight rows, from rank 8 at the top to rank 1 at the bottom.
+  board: [
+     0, -1,  0, -1,  0, -1,  0, -1,
+    -1,  0, -1,  0, -1,  0, -1,  0,
+     0, -1,  0, -1,  0, -1,  0, -1,
+     0,  0,  0,  0,  0,  0,  0,  0,
+     0,  0,  0,  0,  0,  0,  0,  0,
+     1,  0,  1,  0,  1,  0,  1,  0,
+     0,  1,  0,  1,  0,  1,  0,  1,
+     1,  0,  1,  0,  1,  0,  1,  0
+  ]
+  turn: 1
+  forced: -1
+  winner: 0
+  draw: false
+  quiet: 0
+  selected: -1
+  receipt: Select a piece to begin.
+
+# Every saved position and move result must satisfy this schema.
+state_schema:
+  type: object
+  properties:
+    board:
+      type: array
+      minItems: 64
+      maxItems: 64
+      items:
+        enum: [-2, -1, 0, 1, 2]
+    turn:
+      enum: [-1, 1]
+    forced:
+      type: integer
+      minimum: -1
+      maximum: 63
+    winner:
+      enum: [-1, 0, 1]
+    draw:
+      type: boolean
+    quiet:
+      type: integer
+      minimum: 0
+      maximum: 80
+    selected:
+      type: integer
+      minimum: -1
+      maximum: 63
+    receipt:
+      type: string
+      maxLength: 300
+  required: [board, turn, forced, winner, draw, quiet, selected, receipt]
+  additionalProperties: false
+
+# Board coordinates and movement topology. Most rule changes belong below.
+constants:
+  indices: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+    25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49,
+    50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63]
+  files: [a, b, c, d, e, f, g, h]
+  edges:
+  - {source: 1, target: 10, middle: -1, dr: 1, jump: false}
+  - {source: 1, target: 8, middle: -1, dr: 1, jump: false}
+  - {source: 1, target: 19, middle: 10, dr: 2, jump: true}
+  - {source: 3, target: 12, middle: -1, dr: 1, jump: false}
+  - {source: 3, target: 10, middle: -1, dr: 1, jump: false}
+  - {source: 3, target: 21, middle: 12, dr: 2, jump: true}
+  - {source: 3, target: 17, middle: 10, dr: 2, jump: true}
+  - {source: 5, target: 14, middle: -1, dr: 1, jump: false}
+  - {source: 5, target: 12, middle: -1, dr: 1, jump: false}
+  - {source: 5, target: 23, middle: 14, dr: 2, jump: true}
+  - {source: 5, target: 19, middle: 12, dr: 2, jump: true}
+  - {source: 7, target: 14, middle: -1, dr: 1, jump: false}
+  - {source: 7, target: 21, middle: 14, dr: 2, jump: true}
+  - {source: 8, target: 17, middle: -1, dr: 1, jump: false}
+  - {source: 8, target: 1, middle: -1, dr: -1, jump: false}
+  - {source: 8, target: 26, middle: 17, dr: 2, jump: true}
+  - {source: 10, target: 19, middle: -1, dr: 1, jump: false}
+  - {source: 10, target: 17, middle: -1, dr: 1, jump: false}
+  - {source: 10, target: 3, middle: -1, dr: -1, jump: false}
+  - {source: 10, target: 1, middle: -1, dr: -1, jump: false}
+  - {source: 10, target: 28, middle: 19, dr: 2, jump: true}
+  - {source: 10, target: 24, middle: 17, dr: 2, jump: true}
+  - {source: 12, target: 21, middle: -1, dr: 1, jump: false}
+  - {source: 12, target: 19, middle: -1, dr: 1, jump: false}
+  - {source: 12, target: 5, middle: -1, dr: -1, jump: false}
+  - {source: 12, target: 3, middle: -1, dr: -1, jump: false}
+  - {source: 12, target: 30, middle: 21, dr: 2, jump: true}
+  - {source: 12, target: 26, middle: 19, dr: 2, jump: true}
+  - {source: 14, target: 23, middle: -1, dr: 1, jump: false}
+  - {source: 14, target: 21, middle: -1, dr: 1, jump: false}
+  - {source: 14, target: 7, middle: -1, dr: -1, jump: false}
+  - {source: 14, target: 5, middle: -1, dr: -1, jump: false}
+  - {source: 14, target: 28, middle: 21, dr: 2, jump: true}
+  - {source: 17, target: 26, middle: -1, dr: 1, jump: false}
+  - {source: 17, target: 24, middle: -1, dr: 1, jump: false}
+  - {source: 17, target: 10, middle: -1, dr: -1, jump: false}
+  - {source: 17, target: 8, middle: -1, dr: -1, jump: false}
+  - {source: 17, target: 35, middle: 26, dr: 2, jump: true}
+  - {source: 17, target: 3, middle: 10, dr: -2, jump: true}
+  - {source: 19, target: 28, middle: -1, dr: 1, jump: false}
+  - {source: 19, target: 26, middle: -1, dr: 1, jump: false}
+  - {source: 19, target: 12, middle: -1, dr: -1, jump: false}
+  - {source: 19, target: 10, middle: -1, dr: -1, jump: false}
+  - {source: 19, target: 37, middle: 28, dr: 2, jump: true}
+  - {source: 19, target: 33, middle: 26, dr: 2, jump: true}
+  - {source: 19, target: 5, middle: 12, dr: -2, jump: true}
+  - {source: 19, target: 1, middle: 10, dr: -2, jump: true}
+  - {source: 21, target: 30, middle: -1, dr: 1, jump: false}
+  - {source: 21, target: 28, middle: -1, dr: 1, jump: false}
+  - {source: 21, target: 14, middle: -1, dr: -1, jump: false}
+  - {source: 21, target: 12, middle: -1, dr: -1, jump: false}
+  - {source: 21, target: 39, middle: 30, dr: 2, jump: true}
+  - {source: 21, target: 35, middle: 28, dr: 2, jump: true}
+  - {source: 21, target: 7, middle: 14, dr: -2, jump: true}
+  - {source: 21, target: 3, middle: 12, dr: -2, jump: true}
+  - {source: 23, target: 30, middle: -1, dr: 1, jump: false}
+  - {source: 23, target: 14, middle: -1, dr: -1, jump: false}
+  - {source: 23, target: 37, middle: 30, dr: 2, jump: true}
+  - {source: 23, target: 5, middle: 14, dr: -2, jump: true}
+  - {source: 24, target: 33, middle: -1, dr: 1, jump: false}
+  - {source: 24, target: 17, middle: -1, dr: -1, jump: false}
+  - {source: 24, target: 42, middle: 33, dr: 2, jump: true}
+  - {source: 24, target: 10, middle: 17, dr: -2, jump: true}
+  - {source: 26, target: 35, middle: -1, dr: 1, jump: false}
+  - {source: 26, target: 33, middle: -1, dr: 1, jump: false}
+  - {source: 26, target: 19, middle: -1, dr: -1, jump: false}
+  - {source: 26, target: 17, middle: -1, dr: -1, jump: false}
+  - {source: 26, target: 44, middle: 35, dr: 2, jump: true}
+  - {source: 26, target: 40, middle: 33, dr: 2, jump: true}
+  - {source: 26, target: 12, middle: 19, dr: -2, jump: true}
+  - {source: 26, target: 8, middle: 17, dr: -2, jump: true}
+  - {source: 28, target: 37, middle: -1, dr: 1, jump: false}
+  - {source: 28, target: 35, middle: -1, dr: 1, jump: false}
+  - {source: 28, target: 21, middle: -1, dr: -1, jump: false}
+  - {source: 28, target: 19, middle: -1, dr: -1, jump: false}
+  - {source: 28, target: 46, middle: 37, dr: 2, jump: true}
+  - {source: 28, target: 42, middle: 35, dr: 2, jump: true}
+  - {source: 28, target: 14, middle: 21, dr: -2, jump: true}
+  - {source: 28, target: 10, middle: 19, dr: -2, jump: true}
+  - {source: 30, target: 39, middle: -1, dr: 1, jump: false}
+  - {source: 30, target: 37, middle: -1, dr: 1, jump: false}
+  - {source: 30, target: 23, middle: -1, dr: -1, jump: false}
+  - {source: 30, target: 21, middle: -1, dr: -1, jump: false}
+  - {source: 30, target: 44, middle: 37, dr: 2, jump: true}
+  - {source: 30, target: 12, middle: 21, dr: -2, jump: true}
+  - {source: 33, target: 42, middle: -1, dr: 1, jump: false}
+  - {source: 33, target: 40, middle: -1, dr: 1, jump: false}
+  - {source: 33, target: 26, middle: -1, dr: -1, jump: false}
+  - {source: 33, target: 24, middle: -1, dr: -1, jump: false}
+  - {source: 33, target: 51, middle: 42, dr: 2, jump: true}
+  - {source: 33, target: 19, middle: 26, dr: -2, jump: true}
+  - {source: 35, target: 44, middle: -1, dr: 1, jump: false}
+  - {source: 35, target: 42, middle: -1, dr: 1, jump: false}
+  - {source: 35, target: 28, middle: -1, dr: -1, jump: false}
+  - {source: 35, target: 26, middle: -1, dr: -1, jump: false}
+  - {source: 35, target: 53, middle: 44, dr: 2, jump: true}
+  - {source: 35, target: 49, middle: 42, dr: 2, jump: true}
+  - {source: 35, target: 21, middle: 28, dr: -2, jump: true}
+  - {source: 35, target: 17, middle: 26, dr: -2, jump: true}
+  - {source: 37, target: 46, middle: -1, dr: 1, jump: false}
+  - {source: 37, target: 44, middle: -1, dr: 1, jump: false}
+  - {source: 37, target: 30, middle: -1, dr: -1, jump: false}
+  - {source: 37, target: 28, middle: -1, dr: -1, jump: false}
+  - {source: 37, target: 55, middle: 46, dr: 2, jump: true}
+  - {source: 37, target: 51, middle: 44, dr: 2, jump: true}
+  - {source: 37, target: 23, middle: 30, dr: -2, jump: true}
+  - {source: 37, target: 19, middle: 28, dr: -2, jump: true}
+  - {source: 39, target: 46, middle: -1, dr: 1, jump: false}
+  - {source: 39, target: 30, middle: -1, dr: -1, jump: false}
+  - {source: 39, target: 53, middle: 46, dr: 2, jump: true}
+  - {source: 39, target: 21, middle: 30, dr: -2, jump: true}
+  - {source: 40, target: 49, middle: -1, dr: 1, jump: false}
+  - {source: 40, target: 33, middle: -1, dr: -1, jump: false}
+  - {source: 40, target: 58, middle: 49, dr: 2, jump: true}
+  - {source: 40, target: 26, middle: 33, dr: -2, jump: true}
+  - {source: 42, target: 51, middle: -1, dr: 1, jump: false}
+  - {source: 42, target: 49, middle: -1, dr: 1, jump: false}
+  - {source: 42, target: 35, middle: -1, dr: -1, jump: false}
+  - {source: 42, target: 33, middle: -1, dr: -1, jump: false}
+  - {source: 42, target: 60, middle: 51, dr: 2, jump: true}
+  - {source: 42, target: 56, middle: 49, dr: 2, jump: true}
+  - {source: 42, target: 28, middle: 35, dr: -2, jump: true}
+  - {source: 42, target: 24, middle: 33, dr: -2, jump: true}
+  - {source: 44, target: 53, middle: -1, dr: 1, jump: false}
+  - {source: 44, target: 51, middle: -1, dr: 1, jump: false}
+  - {source: 44, target: 37, middle: -1, dr: -1, jump: false}
+  - {source: 44, target: 35, middle: -1, dr: -1, jump: false}
+  - {source: 44, target: 62, middle: 53, dr: 2, jump: true}
+  - {source: 44, target: 58, middle: 51, dr: 2, jump: true}
+  - {source: 44, target: 30, middle: 37, dr: -2, jump: true}
+  - {source: 44, target: 26, middle: 35, dr: -2, jump: true}
+  - {source: 46, target: 55, middle: -1, dr: 1, jump: false}
+  - {source: 46, target: 53, middle: -1, dr: 1, jump: false}
+  - {source: 46, target: 39, middle: -1, dr: -1, jump: false}
+  - {source: 46, target: 37, middle: -1, dr: -1, jump: false}
+  - {source: 46, target: 60, middle: 53, dr: 2, jump: true}
+  - {source: 46, target: 28, middle: 37, dr: -2, jump: true}
+  - {source: 49, target: 58, middle: -1, dr: 1, jump: false}
+  - {source: 49, target: 56, middle: -1, dr: 1, jump: false}
+  - {source: 49, target: 42, middle: -1, dr: -1, jump: false}
+  - {source: 49, target: 40, middle: -1, dr: -1, jump: false}
+  - {source: 49, target: 35, middle: 42, dr: -2, jump: true}
+  - {source: 51, target: 60, middle: -1, dr: 1, jump: false}
+  - {source: 51, target: 58, middle: -1, dr: 1, jump: false}
+  - {source: 51, target: 44, middle: -1, dr: -1, jump: false}
+  - {source: 51, target: 42, middle: -1, dr: -1, jump: false}
+  - {source: 51, target: 37, middle: 44, dr: -2, jump: true}
+  - {source: 51, target: 33, middle: 42, dr: -2, jump: true}
+  - {source: 53, target: 62, middle: -1, dr: 1, jump: false}
+  - {source: 53, target: 60, middle: -1, dr: 1, jump: false}
+  - {source: 53, target: 46, middle: -1, dr: -1, jump: false}
+  - {source: 53, target: 44, middle: -1, dr: -1, jump: false}
+  - {source: 53, target: 39, middle: 46, dr: -2, jump: true}
+  - {source: 53, target: 35, middle: 44, dr: -2, jump: true}
+  - {source: 55, target: 62, middle: -1, dr: 1, jump: false}
+  - {source: 55, target: 46, middle: -1, dr: -1, jump: false}
+  - {source: 55, target: 37, middle: 46, dr: -2, jump: true}
+  - {source: 56, target: 49, middle: -1, dr: -1, jump: false}
+  - {source: 56, target: 42, middle: 49, dr: -2, jump: true}
+  - {source: 58, target: 51, middle: -1, dr: -1, jump: false}
+  - {source: 58, target: 49, middle: -1, dr: -1, jump: false}
+  - {source: 58, target: 44, middle: 51, dr: -2, jump: true}
+  - {source: 58, target: 40, middle: 49, dr: -2, jump: true}
+  - {source: 60, target: 53, middle: -1, dr: -1, jump: false}
+  - {source: 60, target: 51, middle: -1, dr: -1, jump: false}
+  - {source: 60, target: 46, middle: 53, dr: -2, jump: true}
+  - {source: 60, target: 42, middle: 51, dr: -2, jump: true}
+  - {source: 62, target: 55, middle: -1, dr: -1, jump: false}
+  - {source: 62, target: 53, middle: -1, dr: -1, jump: false}
+  - {source: 62, target: 44, middle: 53, dr: -2, jump: true}
+
+# Reusable CEL rules. Functions can call functions defined earlier in this section.
+functions:
+  candidates:
+    parameters: [board, side, forced]
+    expr: |-
+      constants.edges.filter(m,
+        board[m.source] * side > 0 && board[m.target] == 0 &&
+        (forced < 0 || (m.source == forced && m.jump))
+      ).filter(m,
+        (board[m.source] == 2 || board[m.source] == -2 ||
+          m.dr == (m.jump ? -2 * side : -side)) &&
+        (!m.jump || board[m.middle] * side < 0)
+      )
+  prioritize:
+    parameters: [moves]
+    expr: 'moves.exists(m, m.jump) ? moves.filter(m, m.jump) : moves'
+  legal:
+    parameters: [board, side, forced]
+    expr: prioritize(candidates(board, side, forced))
+  sideName:
+    parameters: [side]
+    expr: 'side == 1 ? "Red" : "Ivory"'
+  coordinate:
+    parameters: [index]
+    expr: constants.files[index % 8] + string(8 - index / 8)
+
+# Values recalculated from the current state; these are not saved.
+derived:
+- name: moves
+  expr: 'state.winner != 0 || state.draw ? [] : legal(state.board, state.turn, state.forced)'
+invariants: ['constants.indices.all(i, state.board[i] == 0 || (i / 8 + i % 8) % 2 == 1)']
+
+# Actions: parameters, legality checks, intermediate calculations, complete next state.
+transitions:
+  select:
+    permission: contributor
+    parameters:
+      type: object
+      properties:
+        index:
+          type: integer
+          minimum: 0
+          maximum: 63
+      required: [index]
+      additionalProperties: false
+    guard: moves.exists(m, m.source == action.index)
+    result: |-
+      {"board": state.board, "turn": state.turn, "forced": state.forced,
+      "winner": state.winner, "draw": state.draw, "quiet": state.quiet,
+      "receipt": state.receipt, "selected": state.selected == action.index ? -1 : action.index}
+    triggering: false
+  move:
+    permission: contributor
+    parameters:
+      type: object
+      properties:
+        source:
+          type: integer
+          minimum: 0
+          maximum: 63
+        target:
+          type: integer
+          minimum: 0
+          maximum: 63
+      required: [source, target]
+      additionalProperties: false
+    guard: moves.exists(m, m.source == action.source && m.target == action.target)
+    bindings:
+    - name: chosen
+      expr: moves.filter(m, m.source == action.source && m.target == action.target)[0]
+    - name: promoted
+      expr: |-
+        state.board[action.source] * state.board[action.source] == 1 && ((state.turn == 1 && action.target < 8) || (state.turn == -1 && action.target >= 56))
+    - name: board
+      expr: |-
+        constants.indices.map(i, i == action.source || (chosen.jump && i == chosen.middle) ? 0 : i == action.target ? (promoted ? 2 * state.turn : state.board[action.source]) : state.board[i])
+    - name: continuing
+      expr: chosen.jump && !promoted && size(legal(board, state.turn, action.target)) > 0
+    - name: nextTurn
+      expr: 'continuing ? state.turn : -state.turn'
+    - name: forced
+      expr: 'continuing ? action.target : -1'
+    - name: won
+      expr: size(legal(board, nextTurn, forced)) == 0
+    - name: quiet
+      expr: 'chosen.jump || promoted ? 0 : state.quiet + 1'
+    result: |-
+      {"board": board, "turn": nextTurn, "forced": forced, "selected": continuing ? action.target : -1,
+      "winner": won ? -nextTurn : 0, "draw": !won && quiet >= 80,
+      "quiet": quiet, "receipt": coordinate(action.source) + " → " + coordinate(action.target) + (chosen.jump ? " · captured a piece" : "") + (promoted ? " · crowned king" : "") + (continuing ? " · continue jumping" : "")}
+    triggering: true
+    preview: true
+  reset:
+    parameters:
+      type: object
+      additionalProperties: false
+    result: initial
+    triggering: true
+  narratron_move:
+    actor: narratron
+    description: Make an Ivory move on Narratron's turn (turn == -1).
+    available: state.turn == -1 && state.winner == 0 && !state.draw
+    parameters:
+      type: object
+      properties:
+        source:
+          type: integer
+          minimum: 0
+          maximum: 63
+        target:
+          type: integer
+          minimum: 0
+          maximum: 63
+      required: [source, target]
+      additionalProperties: false
+    guard: state.turn == -1 && moves.exists(m, m.source == action.source && m.target == action.target)
+    bindings:
+    - name: chosen
+      expr: moves.filter(m, m.source == action.source && m.target == action.target)[0]
+    - name: promoted
+      expr: |-
+        state.board[action.source] * state.board[action.source] == 1 && ((state.turn == 1 && action.target < 8) || (state.turn == -1 && action.target >= 56))
+    - name: board
+      expr: |-
+        constants.indices.map(i, i == action.source || (chosen.jump && i == chosen.middle) ? 0 : i == action.target ? (promoted ? 2 * state.turn : state.board[action.source]) : state.board[i])
+    - name: continuing
+      expr: chosen.jump && !promoted && size(legal(board, state.turn, action.target)) > 0
+    - name: nextTurn
+      expr: 'continuing ? state.turn : -state.turn'
+    - name: forced
+      expr: 'continuing ? action.target : -1'
+    - name: won
+      expr: size(legal(board, nextTurn, forced)) == 0
+    - name: quiet
+      expr: 'chosen.jump || promoted ? 0 : state.quiet + 1'
+    result: |-
+      {"board": board, "turn": nextTurn, "forced": forced, "selected": -1,
+      "winner": won ? -nextTurn : 0, "draw": !won && quiet >= 80,
+      "quiet": quiet, "receipt": "Ivory: " + coordinate(action.source) + " → " + coordinate(action.target) + (chosen.jump ? " · captured a piece" : "") + (promoted ? " · crowned king" : "") + (continuing ? " · continue jumping" : "")}
+
+# Board layout. Values under props are CEL expressions; literal text keeps its CEL quotes.
+view:
+  kind: column
+  props:
+    gap: '"10px"'
+  children:
+  - kind: row
+    children:
+    - kind: text
+      props:
+        text: '"Checkers Club"'
+        fontSize: '"20px"'
+    - kind: svg
+      props:
+        id: '"club-crest"'
+        src: '"crest.svg"'
+        width: '"32"'
+        height: '"32"'
+        label: '"Checkers Club crest"'
+    - kind: button
+      props:
+        text: '"New game"'
+        label: '"New game"'
+      action:
+        name: '"reset"'
+        confirmation: Start a new game? This replaces the current position.
+  - kind: text
+    props:
+      id: '"status"'
+      text: |-
+        state.winner != 0 ? sideName(state.winner) + " wins" : state.draw ? "Draw — quiet-turn limit reached" : sideName(state.turn) + " to move" + (state.forced >= 0 ? " · continue the jump" : "")
+      color: '"#f8d887"'
+  - kind: grid
+    props:
+      columns: '8'
+      gap: '"0px"'
+      label: '"Checkers board"'
+    children:
+    - kind: button
+      repeat: constants.indices
+      binding: cell
+      props:
+        id: '"square-" + string(cell)'
+        label: |-
+          coordinate(cell) + (state.board[cell] == 0 ? " empty" : " " + sideName(state.board[cell] > 0 ? 1 : -1) + (state.board[cell] == 2 || state.board[cell] == -2 ? " king" : " piece"))
+        background: '(cell / 8 + cell % 8) % 2 == 0 ? "#9aa8b7" : "#34465c"'
+        color: 'state.board[cell] == 0 ? "#fde047" : state.board[cell] > 0 ? "#e05252" : "#d6bd8a"'
+        outline: 'cell == state.selected ? "3px solid #facc15" : "none"'
+        aspectRatio: '"1"'
+        padding: '"0px"'
+        borderRadius: '"0px"'
+        disabled: '!moves.exists(m, m.source == cell || (m.source == state.selected && m.target == cell))'
+        pressed: cell == state.selected
+      action:
+        name: 'moves.exists(m, m.source == state.selected && m.target == cell) ? "move" : "select"'
+        arguments: |-
+          moves.exists(m, m.source == state.selected && m.target == cell) ? {"source": state.selected,
+          "target": cell} : {"index": cell}
+      children:
+      - kind: svg
+        props:
+          viewBox: '"0 0 100 100"'
+        children:
+        - kind: circle
+          props:
+            cx: '50'
+            cy: '50'
+            r: |-
+              state.board[cell] != 0 ? 35 : moves.exists(m, m.source == state.selected && m.target == cell) ? 12 : 0
+            fill: 'state.board[cell] == 0 ? "#fde047" : state.board[cell] > 0 ? "#e05252" : "#d6bd8a"'
+            stroke: '"#ffffff66"'
+            stroke-width: '3'
+        - kind: svg_text
+          props:
+            x: '50'
+            y: '54'
+            text-anchor: '"middle"'
+            dominant-baseline: '"middle"'
+            fontSize: '"60px"'
+            fill: '"#ffffff"'
+            text: 'state.board[cell] == 2 || state.board[cell] == -2 ? "♛" : ""'
+  - kind: text
+    props:
+      text: state.receipt
+      fontSize: '"14px"'
+  - kind: text
+    props:
+      text: |-
+        "Two-player hot seat. Red moves toward rank 8. Select a piece, then a highlighted destination. Captures and continued jumps are mandatory. Kings move both ways. Crowning ends the turn."
+      fontSize: '"13px"'
+      color: '"#b9c6d8"'
+
+# Guidance and a concise state projection for Narratron.
+instructions: |-
+  Checkers game in the Library of Origins. You play Ivory (turn == -1) against the player's Red (turn == 1). When turn == -1 and moves are available, use 'narratron_move' to advance an Ivory piece.
+model_state: |-
+  {"board": state.board, "turn": state.turn, "turn_name": sideName(state.turn),
+  "winner": state.winner, "draw": state.draw, "receipt": state.receipt,
+  "red_count": constants.indices.filter(i, state.board[i] > 0).size(),
+  "ivory_count": constants.indices.filter(i, state.board[i] < 0).size(),
+  "legal_moves": moves.map(m, {"source": m.source, "target": m.target,
+  "from": coordinate(m.source), "to": coordinate(m.target),
+  "jump": m.jump})}
+local_preview: true

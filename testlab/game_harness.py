@@ -194,11 +194,11 @@ def run_game_test(
     try:
         with game_path.open("rb") as source:
             content = source.read(MAX_GAME_BYTES + 1)
-        validate_game_package(content)
+        validate_game_package(content, filename=game_path.name)
         with TemporaryDirectory(prefix="narratron-game-lab-") as temporary:
             directory = Path(temporary)
             (directory / "game").mkdir()
-            (directory / "game/game.json").write_bytes(content)
+            (directory / "game" / game_path.name).write_bytes(content)
             for svg_file in game_path.parent.rglob("*.svg"):
                 if svg_file.is_file():
                     target_svg = (directory / "game") / svg_file.relative_to(game_path.parent)
@@ -225,7 +225,7 @@ def run_game_test(
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--game", type=Path, required=True, help="Path to a version-2 game.json")
+    parser.add_argument("--game", type=Path, required=True, help="Path to a version-2 game.yaml, game.yml, or game.json")
     parser.add_argument("--scenario", type=Path, required=True, help="JSON scenario of sequential player steps")
     parser.add_argument("--provider", default="gemini-3")
     parser.add_argument("--model", default=DEFAULT_GAME_MODEL)

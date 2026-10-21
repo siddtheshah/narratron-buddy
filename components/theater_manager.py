@@ -16,6 +16,7 @@ import zipfile
 from pydantic import BaseModel, Field
 
 from absl import flags
+from components.game_source import GAME_FILES
 from components.playlist_audio import playlist_audio_type
 from components.reference_images import reference_image_type
 
@@ -515,8 +516,8 @@ def extract_asset_package(
                 filename, content = parts[-1], archive.read(info.filename)
                 if len(content) > MAX_FILE_BYTES:
                     raise ValueError(f"File '{filename}' exceeds maximum allowed size of 5MB.")
-                if parts[-2:] == ["game", "game.json"]:
-                    reference_files.append(("game/game.json", content))
+                if "/".join(parts[-2:]) in GAME_FILES:
+                    reference_files.append((f"game/{parts[-1]}", content))
                 elif "game" in parts and parts.index("game") < len(parts) - 1 and filename.lower().endswith(".svg"):
                     reference_files.append(("/".join(parts[parts.index("game"):]), content))
                 elif filename.lower() in ("planning.yaml", "planning.yml"):
@@ -702,16 +703,20 @@ class TheaterManager:
         playlists_dir = theater_dir / "playlists"
         lore_dir = theater_dir / "lore"
         characters_dir = theater_dir / "references" / "characters"
+        game_declaration: str | None = None
         for filename, content in reference_files or []:
             if len(content) > MAX_FILE_BYTES:
                 raise ValueError(f"File '{filename}' exceeds maximum allowed size of 5MB.")
             parts = validate_asset_path(filename)
-            if parts[-2:] == ["game", "game.json"]:
+            if "/".join(parts[-2:]) in GAME_FILES:
                 from components.canvas.game_runtime import validate_game_package, MAX_GAME_BYTES
 
+                if game_declaration is not None:
+                    raise ValueError("Keep only one game declaration: game.yaml, game.yml, or game.json.")
+                game_declaration = parts[-1]
                 if len(content) > MAX_GAME_BYTES:
                     raise ValueError("Game definition exceeds size limit.")
-                validate_game_package(content)
+                validate_game_package(content, filename=parts[-1])
                 continue
             if "game" in parts and parts.index("game") < len(parts) - 1 and parts[-1].lower().endswith(".svg"):
                 from components.canvas.game_runtime import validate_game_svg
@@ -788,13 +793,13 @@ class TheaterManager:
             if relative_filename == "metadata.json" or (parts and parts[-1].lower() == "metadata.json"):
                 asset_destination(theater_dir, "metadata.json").write_bytes(content)
                 continue
-            if parts[-2:] == ["game", "game.json"]:
+            if "/".join(parts[-2:]) in GAME_FILES:
                 from components.canvas.game_runtime import validate_game_package, MAX_GAME_BYTES
 
                 if len(content) > MAX_GAME_BYTES:
                     raise ValueError("Game definition exceeds size limit.")
-                validate_game_package(content)
-                game_path = asset_destination(theater_dir, "game/game.json")
+                validate_game_package(content, filename=parts[-1])
+                game_path = asset_destination(theater_dir, f"game/{parts[-1]}")
                 game_path.parent.mkdir(parents=True, exist_ok=True)
                 game_path.write_bytes(content)
                 continue

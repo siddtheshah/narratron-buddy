@@ -41,7 +41,7 @@ expectation. The browser default is a general canvas prompt; the health-bar scen
 # Adventure Runner and Game Actions
 
 Open `/adventure-runner`, start an adventure session, and choose the **Game** tab
-to play its `game/game.json` panel. The runner copies the package into its isolated
+to play its `game/game.yaml` (or `game.yml` / `game.json`) panel. The runner copies the package into its isolated
 theater and shares the real game state with the story responder and planner.
 Player moves use the same validation, revision checks, and planner callbacks as
 the main canvas. Moves and any resulting narration appear in the session history.
@@ -61,7 +61,7 @@ queued planning before the next decision and does not retry committed game moves
 # Game Testing Lab
 
 Open `/game-lab` in the Test Lab server (`uv run python -m testlab`) to choose a
-workspace `game.json`, text provider, optional model override, and player scenario.
+workspace `game.yaml`, `game.yml`, or `game.json`, text provider, optional model override, and player scenario.
 Click **Load fresh game** to play manually through the same declarative board,
 buttons, selection, confirmations, and disabled controls used in canvas. Each
 click updates an isolated session and triggering actions run the AI response
@@ -81,7 +81,7 @@ committed AI actions with revisions, before/after state, timings, and errors.
 For a command-line run:
 
 ```powershell
-uv run python -m testlab.game_harness --game adventures/example_adventure/game/game.json --scenario testlab/scenarios/checkers.json --provider gemini-3 --output output/game-test/report.json
+uv run python -m testlab.game_harness --game adventures/example_adventure/game/game.yaml --scenario testlab/scenarios/checkers.json --provider gemini-3 --output output/game-test/report.json
 ```
 
 Live runs use the existing provider configuration and credentials loaded from

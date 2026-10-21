@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import yaml
 
 from absl import flags
+from components.game_source import GAME_FILES
 
 if "testing_use_local" not in flags.FLAGS:
     flags.DEFINE_boolean(
@@ -259,7 +260,7 @@ class AdventureService:
                             theater_config = loaded
                     except Exception as e:
                         logger.warning("Failed to parse theater.yaml for %s: %s", adventure_id, e)
-                elif rel == "game/game.json" or (parts[0] == "game" and filename.lower().endswith(".svg")):
+                elif rel in GAME_FILES or (parts[0] == "game" and filename.lower().endswith(".svg")):
                     reference_files.append((rel, content))
                 elif rel in ("planning.yaml", "planning.yml") or filename.lower() in ("planning.yaml", "planning.yml"):
                     reference_files.append(("planning.yaml", content))

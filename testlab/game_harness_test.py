@@ -8,7 +8,7 @@ from providers.text_response_provider import TextResponseProvider, TextResponseR
 from testlab.game_harness import GameScenario, run_game_test
 
 ROOT = Path(__file__).resolve().parent.parent
-GAME = ROOT / "adventures/example_adventure/game/game.json"
+GAME = ROOT / "adventures/example_adventure/game/game.yaml"
 
 
 def scenario() -> GameScenario:

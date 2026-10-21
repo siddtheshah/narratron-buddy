@@ -18,6 +18,7 @@ from pydantic import BaseModel, Field, JsonValue, TypeAdapter
 from PIL import Image, UnidentifiedImageError
 import yaml
 
+from components.game_source import GAME_FILES, GAME_FILENAMES
 from components.theater_manager import MAX_LORE_DOCUMENT_BYTES
 from storage.storage_limits import (
     check_user_theaters_storage_allowance,
@@ -79,12 +80,13 @@ class ChatMessage(BaseModel):
 
 def validate_text(path: str, content: str) -> None:
     """Reject malformed configuration before it can replace a working draft."""
-    if path == "game/game.json":
+    if path in GAME_FILES:
         from components.canvas.game_runtime import validate_game_package, MAX_GAME_BYTES
 
         if len(content.encode("utf-8")) > MAX_GAME_BYTES:
             raise ValueError("Game definition exceeds size limit.")
-        validate_game_package(content.encode("utf-8"))
+        validate_game_package(content.encode("utf-8"), filename=PurePosixPath(path).name)
+        return
     elif path.startswith("game/") and path.lower().endswith(".svg"):
         from components.canvas.game_runtime import validate_game_svg
 
@@ -119,7 +121,7 @@ def safe_asset_path(root: Path, relative: str) -> Path:
     if any(re.fullmatch(r"(?i)(con|prn|aux|nul|com[0-9]|lpt[0-9])(?:\..*)?", part) for part in parts):
         raise ValueError("Reserved asset filename.")
     suffix = PurePosixPath(normalized).suffix.lower()
-    allowed = normalized in ROOT_FILES or normalized == "game/game.json"
+    allowed = normalized in ROOT_FILES or normalized in GAME_FILES
     allowed |= len(parts) >= 2 and parts[0] == "game" and suffix == ".svg"
     allowed |= len(parts) >= 2 and parts[0] == "references" and suffix in IMAGE_EXTENSIONS
     allowed |= len(parts) >= 2 and parts[0] == "stamps" and suffix in IMAGE_EXTENSIONS
@@ -156,6 +158,8 @@ def upload_path(filename: str, folder: bool) -> str:
         if len(parts) == 3 and PurePosixPath(parts[2]).suffix.lower() in IMAGE_EXTENSIONS:
             return f"references/scenes/{PurePosixPath(parts[2]).stem}/1{PurePosixPath(parts[2]).suffix.lower()}"
         return relative
+    if relative in GAME_FILENAMES:
+        return f"game/{relative}"
     if relative in ROOT_FILES or parts[0] in {"references", "stamps", "playlists", "lore", "game"}:
         return relative
     if parts[0] == "characters":

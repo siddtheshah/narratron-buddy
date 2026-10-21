@@ -1,6 +1,6 @@
 # Theater game packages
 
-`game/game.json` declares a game's state, transitions and view. Narratron has no
+`game/game.yaml` declares a game's state, transitions and view. Narratron has no
 built-in game rules or game-specific renderer. The example adventure contains a
 checkers implementation; `testing/game_fixtures.py` declares an unrelated counter
 using the same runtime and renderer.
@@ -14,40 +14,60 @@ A live story agent is not required.
 
 ## Minimal package
 
-All strings in `props`, and the `name` and `arguments` of a view action, are CEL
-expressions. Literal text therefore includes CEL string quotes.
+Use YAML for human-authored packages: comments explain intent, and `|-` lets CEL
+expressions span lines without escaping their quotes. `game/game.yml` and the
+existing `game/game.json` format are also supported everywhere, including imports,
+the theater editor, Adventure Runner and Game Testing Lab. Keep exactly one game
+declaration in the `game/` folder; multiple declarations are rejected.
 
-```json
-{
-  "version": 2,
-  "initial": {"count": 0},
-  "state_schema": {
-    "type": "object",
-    "properties": {"count": {"type": "integer", "minimum": 0, "maximum": 10}},
-    "required": ["count"],
-    "additionalProperties": false
-  },
-  "transitions": {
-    "increment": {
-      "permission": "contributor",
-      "parameters": {"type": "object", "additionalProperties": false},
-      "guard": "state.count < 10",
-      "result": "{\"count\": state.count + 1}"
-    }
-  },
-  "view": {
-    "kind": "column",
-    "children": [
-      {"kind": "text", "props": {"text": "\"Count: \" + string(state.count)"}},
-      {
-        "kind": "button",
-        "props": {"text": "\"Add one\"", "disabled": "state.count >= 10"},
-        "action": {"name": "\"increment\"", "arguments": "{}"}
-      }
-    ]
-  }
-}
+```yaml
+version: 2
+initial:
+  count: 0
+state_schema:
+  type: object
+  properties:
+    count: {type: integer, minimum: 0, maximum: 10}
+  required: [count]
+  additionalProperties: false
+
+transitions:
+  increment:
+    permission: contributor
+    parameters: {type: object, additionalProperties: false}
+    guard: state.count < 10
+    # Return the complete next state.
+    result: |-
+      {"count": state.count + 1}
+
+view:
+  kind: column
+  children:
+    - kind: text
+      props:
+        text: '"Count: " + string(state.count)'
+    - kind: button
+      props:
+        text: '"Add one"'
+        disabled: state.count >= 10
+      action:
+        name: '"increment"'
+        arguments: '{}'
 ```
+
+All values in `props`, and the `name` and `arguments` of a view action, are CEL
+expression **strings**. Literal text therefore keeps its CEL quotes, as in
+`text: '"Add one"'`. Quote numeric and boolean CEL expressions too: `columns: '8'`
+or `disabled: 'false'`. State data uses ordinary YAML values such as `count: 0`
+and `draw: false`. For expressions containing `: `, `#`, or leading punctuation,
+use a quoted string or `|-` to avoid YAML syntax ambiguity.
+
+The YAML loader accepts one document with string mapping keys and JSON-compatible
+values. Duplicate keys, aliases, custom executable tags and non-finite numbers
+are rejected. Only lowercase `true` and `false` implicitly become booleans;
+words like `yes`, `no`, `on`, `off`, and dates remain strings. YAML goes through
+the same schemas, CEL validation and execution limits as JSON. The bundled
+`adventures/example_adventure/game/game.yaml` is a commented checkers example.
 
 ## State and transitions
 
@@ -201,7 +221,7 @@ are rejected.
 
 Limits include:
 
-- Package: 128 KiB (`game/game.json` and each `game/*.svg` asset); CEL expression:
+- Package: 128 KiB (the YAML or JSON declaration, its decoded JSON, and each `game/*.svg` asset); CEL expression:
   4,000 characters and 1,000 AST nodes.
 - Each transition-evaluation or view-preparation phase: 500,000 visited AST nodes
   and a five-second deadline. Nested macros and author functions share the phase's
@@ -218,10 +238,12 @@ format with bounded execution, not a claim of formal rule correctness.
 
 ## Persistence and API
 
-`GameState` is independent of `StoryState`. Saved data is keyed by the package's
-SHA-256 hash and includes the generic state object and monotonic revision. A
-changed package starts from its declared initial state instead of interpreting
+`GameState` is independent of `StoryState`. Saved data is keyed by the source
+file's SHA-256 hash and includes the generic state object and monotonic revision.
+A changed package starts from its declared initial state instead of interpreting
 an old save using different rules. Format-1 prototype saves are not migrated.
+Converting JSON to YAML or changing comments also changes the source hash and
+starts a fresh game when the package is next loaded.
 
 `POST /api/game/action?theater_id=...` accepts:
 

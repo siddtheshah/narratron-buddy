@@ -11,6 +11,7 @@ from typing import Any, Dict, Optional, Union
 import uuid
 import yaml
 
+from components.game_source import GAME_FILES
 from fastapi import Request, Response, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from starlette.staticfiles import NotModifiedResponse, StaticFiles
@@ -1088,8 +1089,8 @@ async def create_and_deploy_theater(request: Request):
                         except Exception:
                             pass
                         reference_files.append(("metadata.json", content))
-                    elif parts[-2:] == ["game", "game.json"]:
-                        reference_files.append(("game/game.json", content))
+                    elif "/".join(parts[-2:]) in GAME_FILES:
+                        reference_files.append((f"game/{parts[-1]}", content))
                     elif "game" in parts and parts.index("game") < len(parts) - 1 and clean_name.lower().endswith(".svg"):
                         reference_files.append(("/".join(parts[parts.index("game"):]), content))
                     elif "references" in parts or (

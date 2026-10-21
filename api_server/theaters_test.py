@@ -48,11 +48,14 @@ def test_story_log_output_is_fresh_after_append(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize("source", ["adventure", "folder", "zip"])
-def test_deployment_preserves_character_folders(tmp_path: Path, source: str) -> None:
+@pytest.mark.parametrize("game_filename", ["game.yaml", "game.yml", "game.json"])
+def test_deployment_preserves_character_folders_and_game(tmp_path: Path, source: str, game_filename: str) -> None:
     from absl.testing import flagsaver
     from PIL import Image
     from components.theater_manager import TheaterManager
     from services.adventure_service import AdventureService
+    from components.canvas.game_state import GameAction, GameState
+    from testing.game_fixtures import counter_definition
 
     manager = TheaterManager(base_theaters_dir=tmp_path / "theaters")
     adventures_root = tmp_path / "adventures"
@@ -68,6 +71,12 @@ def test_deployment_preserves_character_folders(tmp_path: Path, source: str) -> 
         "lore/characters/arthur.txt": b"Arthur guards the forest.",
         "theater.yaml": b"live_agent:\n  special_instructions: Guide the quest.\n",
     }
+    definition = counter_definition()
+    game_content = (
+        definition.model_dump_json() if game_filename == "game.json"
+        else yaml.safe_dump(definition.model_dump(mode="json"))
+    )
+    assets[f"game/{game_filename}"] = game_content.encode("utf-8")
     for relative_path, content in assets.items():
         destination = adventure_dir / relative_path
         destination.parent.mkdir(parents=True, exist_ok=True)
@@ -106,6 +115,9 @@ def test_deployment_preserves_character_folders(tmp_path: Path, source: str) -> 
     assert response.json()["theater"]["status"] == "deployed"
     assert not (deployed_dir / "references/1.png").exists()
     assert not (deployed_dir / "references/2.png").exists()
+    game = GameState(deployed_dir, MagicMock(), MagicMock())
+    game.act(GameAction(name="add", arguments={"amount": 2}, revision=0))
+    assert game.state == {"count": 2}
 
 
 @pytest.mark.asyncio

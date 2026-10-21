@@ -5,13 +5,15 @@ from zipfile import ZipFile
 from unittest.mock import Mock
 
 import pytest
+import yaml
 
 from components.canvas.canvas_state_manager import CanvasStateManager
 from components.theater_manager import TheaterManager, extract_asset_package
 from services.adventure_service import AdventureService
 from services.theater_builder import safe_asset_path, upload_path, validate_text
 from components.canvas.game_state import GameAction, GameState
-from testing.game_fixtures import exchange_definition, make_game
+from components.game_source import GAME_FILENAMES
+from testing.game_fixtures import counter_definition, exchange_definition, make_game
 
 
 def test_game_survives_adventure_mount_and_canvas_reload(tmp_path: Path) -> None:
@@ -25,25 +27,45 @@ def test_game_survives_adventure_mount_and_canvas_reload(tmp_path: Path) -> None
     assert restored.game.revision == 1
 
 
-def test_zip_game_declaration_is_mounted_and_editable(tmp_path: Path) -> None:
-    content = Path("adventures/example_adventure/game/game.json").read_bytes()
+@pytest.mark.parametrize("filename", GAME_FILENAMES)
+def test_zip_game_declaration_is_mounted_and_editable(tmp_path: Path, filename: str) -> None:
+    definition = counter_definition()
+    content = (
+        definition.model_dump_json() if filename == "game.json"
+        else yaml.safe_dump(definition.model_dump(mode="json"))
+    ).encode("utf-8")
+    relative = f"game/{filename}"
     svg_content = b'<svg viewBox="0 0 32 32"><circle cx="16" cy="16" r="12" fill="#facc15"/></svg>'
     archive = BytesIO()
     with ZipFile(archive, "w") as package:
-        package.writestr("checkers/game/game.json", content)
+        package.writestr(f"checkers/{relative}", content)
         package.writestr("checkers/game/token.svg", svg_content)
     references, playlists, lore, _ = extract_asset_package(archive.getvalue())
     manager = TheaterManager(tmp_path)
     manager.create_theater("Checkers", "checkers", reference_files=references)
-    assert (tmp_path / "checkers/game/game.json").read_bytes() == content
+    assert (tmp_path / "checkers" / relative).read_bytes() == content
     assert (tmp_path / "checkers/game/token.svg").read_bytes() == svg_content
-    assert safe_asset_path(tmp_path, "game/game.json") == tmp_path / "game/game.json"
+    assert safe_asset_path(tmp_path, relative) == tmp_path / relative
     assert safe_asset_path(tmp_path, "game/token.svg") == tmp_path / "game/token.svg"
-    assert upload_path("checkers/game/game.json", folder=True) == "game/game.json"
+    assert upload_path(f"checkers/{relative}", folder=True) == relative
+    assert upload_path(filename, folder=False) == relative
     assert upload_path("checkers/game/token.svg", folder=True) == "game/token.svg"
     assert upload_path("token.svg", folder=False) == "game/token.svg"
-    validate_text("game/game.json", content.decode("utf-8"))
+    validate_text(relative, content.decode("utf-8"))
     validate_text("game/token.svg", svg_content.decode("utf-8"))
+    game = GameState(tmp_path / "checkers", Mock(), Mock())
+    game.act(GameAction(name="add", arguments={"amount": 3}, revision=0))
+    assert game.state == {"count": 3}
+
+
+def test_multiple_game_declarations_are_rejected_before_mount(tmp_path: Path) -> None:
+    content = counter_definition().model_dump_json().encode("utf-8")
+    manager = TheaterManager(tmp_path)
+    with pytest.raises(ValueError, match="one game declaration"):
+        manager.create_theater("Counter", "counter", reference_files=[
+            ("game/game.json", content), ("game/game.yaml", content),
+        ])
+    assert not (tmp_path / "counter").exists()
 
 
 @pytest.mark.parametrize("first_finalizer", ["player", "narratron"])

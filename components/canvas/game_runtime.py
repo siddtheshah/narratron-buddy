@@ -17,6 +17,7 @@ from jsonschema import Draft202012Validator
 from lark import Token, Tree
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, ValidationError
 from components.canvas.game_values import MAX_VALUE_BYTES, checked_json
+from components.game_source import game_source_json
 
 MAX_GAME_BYTES = 131_072
 MAX_STEPS = 500_000
@@ -545,6 +546,7 @@ class Execution:
 def validate_game_package(
     content: bytes,
     *,
+    filename: str = "game.json",
     game_dir: Path | None = None,
     svg_assets: dict[str, RenderedNode] | None = None,
 ) -> GameProgram:
@@ -552,7 +554,10 @@ def validate_game_package(
         raise ValueError("Game definition exceeds size limit.")
     try:
         resolved_svgs = svg_assets if svg_assets is not None else (load_game_svg_assets(game_dir) if game_dir is not None else None)
-        definition = GameDefinition.model_validate_json(content)
+        normalized = game_source_json(content, filename)
+        if len(normalized) > MAX_GAME_BYTES:
+            raise ValueError("Game definition exceeds size limit after decoding.")
+        definition = GameDefinition.model_validate_json(normalized)
         program = GameProgram(definition, svg_assets=resolved_svgs)
         execution = program.execution()
         context = execution.context(definition.initial)

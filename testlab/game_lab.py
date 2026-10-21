@@ -14,6 +14,7 @@ from pydantic import Field, JsonValue
 from providers import get_text_response_provider, list_text_response_provider_specs
 from components.canvas.game_runtime import GameAction, MAX_GAME_BYTES, validate_game_package
 from components.canvas.game_state import GameState
+from components.game_source import GAME_FILENAMES
 from providers.text_response_provider import TextResponseProvider
 from testlab.game_harness import (
     DEFAULT_GAME_MODEL, GameModel, GameReport, GameScenario, Move, PlayerStep, TurnTrace,
@@ -53,12 +54,12 @@ class GameSession:
     def __init__(self, path: Path, provider: TextResponseProvider, config: GameSessionRequest) -> None:
         with path.open("rb") as source:
             content = source.read(MAX_GAME_BYTES + 1)
-        validate_game_package(content)
+        validate_game_package(content, filename=path.name)
         self.directory: TemporaryDirectory[str] = TemporaryDirectory(prefix="narratron-manual-game-")
         try:
             root = Path(self.directory.name)
             (root / "game").mkdir()
-            (root / "game/game.json").write_bytes(content)
+            (root / "game" / path.name).write_bytes(content)
             for svg_file in path.parent.rglob("*.svg"):
                 if svg_file.is_file():
                     target_svg = (root / "game") / svg_file.relative_to(path.parent)
@@ -92,8 +93,8 @@ _sessions_lock = RLock()
 
 def game_path(value: str) -> Path:
     path = (PROJECT_ROOT / value).resolve()
-    if not path.is_relative_to(PROJECT_ROOT) or path.name != "game.json" or not path.is_file():
-        raise HTTPException(400, "Choose a workspace game.json file.")
+    if not path.is_relative_to(PROJECT_ROOT) or path.name not in GAME_FILENAMES or not path.is_file():
+        raise HTTPException(400, "Choose a workspace game.yaml, game.yml, or game.json file.")
     return path
 
 
@@ -224,7 +225,8 @@ def game_lab_catalog() -> GameCatalog:
     games = sorted(
         str(path.relative_to(PROJECT_ROOT)).replace("\\", "/")
         for folder in (PROJECT_ROOT / "adventures", PROJECT_ROOT / "theaters")
-        for path in folder.glob("*/game/game.json")
+        for filename in GAME_FILENAMES
+        for path in folder.glob(f"*/game/{filename}")
         if path.resolve().is_relative_to(PROJECT_ROOT)
     )
     return GameCatalog(games=games, providers=list_text_response_provider_specs())

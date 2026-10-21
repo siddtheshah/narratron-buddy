@@ -61,6 +61,7 @@ from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
 from google.genai import types
 from pydantic import BaseModel, Field, JsonValue
+from components.game_source import GAME_FILENAMES, find_game_file
 from components.canvas.game_runtime import GameAction, RenderedNode
 
 from components.canvas.canvas_state_service import CanvasStateService
@@ -570,11 +571,11 @@ class AdventureSession:
 
         game_target = theater.directory() / "game"
         game_target.mkdir(exist_ok=True)
-        (game_target / "game.json").unlink(missing_ok=True)
-        adventure_game = self.adventure_path / "game" / "game.json"
-        if adventure_game.is_file():
+        for filename in GAME_FILENAMES:
+            (game_target / filename).unlink(missing_ok=True)
+        adventure_game = find_game_file(self.adventure_path)
+        if adventure_game is not None:
             shutil.copytree(self.adventure_path / "game", game_target, dirs_exist_ok=True)
-            shutil.copy2(adventure_game, game_target / "game.json")
 
         for name in ("planning.yaml", "planning.yml"):
             adv_planning = self.adventure_path / name
