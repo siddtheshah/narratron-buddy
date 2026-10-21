@@ -436,3 +436,21 @@ def test_recorder_lore_budgets_and_reset(pad: Notepad, tmp_path: Path) -> None:
         assert "rules.txt" in recorder.search_lore("Brass")
     finally:
         journal.close()
+
+
+def test_recorder_debug_logging(pad: Notepad, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    journal = StoryRecordingJournal(tmp_path / "recording.sqlite")
+    reconcile = Mock(return_value={"Location": "Courtyard"})
+    try:
+        with caplog.at_level("DEBUG"):
+            recorder = StoryRecorderModule(pad, journal, reconcile)
+            assert recorder.record(response()) == 1
+            assert recorder.record(response()) == 1
+        assert "[StoryRecorderModule] Initialized" in caplog.text
+        assert "[StoryRecorderModule] record() called for event response-1" in caplog.text
+        assert "[StoryRecorderModule] Reconciled 1 update(s) for event response-1" in caplog.text
+        assert "[StoryRecorderModule] Published recorded revision 1 for event response-1" in caplog.text
+        assert "[StoryRecorderModule] Event response-1 already recorded at revision 1" in caplog.text
+    finally:
+        journal.close()
+

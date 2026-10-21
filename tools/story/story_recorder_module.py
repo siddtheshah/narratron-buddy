@@ -2,6 +2,7 @@
 
 from collections.abc import Callable
 import json
+import logging
 from threading import Lock, RLock
 from typing import Literal
 
@@ -26,6 +27,7 @@ from tools.story.story_session import StorySession
 from tools.story.story_staged_notes import StagedStoryNotes
 from tools.story.story_recording_journal import RecordingEvent, StoryRecordingJournal
 
+logger = logging.getLogger(__name__)
 
 MAX_RECORDER_READ_LORE_CALLS_PER_RUN = 4
 MAX_RECORDER_SEARCH_LORE_CALLS_PER_RUN = 4
@@ -45,10 +47,11 @@ Follow your pinned RECORDER.md for adventure-specific recording and game-control
 {% if has_game -%}
 
 # Phase 2 — Game Control Rules
-- Only root committed player game actions enter the game-control phase. Completed responder reactions and Narratron game receipts never re-enter game control.
+- Both completed story responses and root committed player game actions permit validated Narratron game actions during recording. Narratron game receipts are evidence to record and never open another action stage.
+- Let the game's action contracts and guards determine prerequisites, including required player input, consent, or turn order. A story response does not waive those prerequisites or authorize acting for the player.
 - Read the Current Game State's `instructions`, `state`, `revision`, and listed Narratron `actions` before deciding whether to act. The game runtime validates the complete underlying state and every submitted action.
 - Call `take_game_action(name, arguments_json, revision)` only when a listed Narratron action is justified by the game rules and established story facts. Each successful game action advances the revision and produces a durable receipt; read the returned state and revision before taking another action.
-- Return an explicit narration decision with a reason. For significant developments, include a concise narrative brief containing only established outcomes, consequences, and narration cues. Exclude raw game state, receipts, revisions, action schemas, and mechanical instructions. Routine mechanical updates finish with narration_request=null. The orchestrator schedules narration; you cannot trigger another role.
+- Only root player game-entry turns can request narration. When recording a completed story response, execute justified game actions and return narration_request=null. For significant game-entry developments, include a concise narrative brief containing only established outcomes, consequences, and narration cues. Exclude raw game state, receipts, revisions, action schemas, and mechanical instructions. Routine mechanical updates finish with narration_request=null. The orchestrator schedules narration; you cannot trigger another role.
 {% endif -%}
 
 # Lore and Reference Tools
@@ -162,9 +165,10 @@ class StoryRecorderModule:
 
     The injected reconciler receives committed events and a consistent snapshot.
     Its returned changes are independently authorized and validated by Notepad.
-    Response recording (`record`) deliberately has no game-action or narration
-    capability. Game-control decisions (`control_game`) run only for root player
-    game events and preserve committed Narratron game receipts across retries.
+    Completed response recording (`record`) can execute validated game actions
+    without requesting more narration. Game-entry decisions (`control_game`)
+    can also request narration. Both preserve game receipts across retries;
+    recording a Narratron receipt cannot execute further actions.
     """
 
     def __init__(
@@ -218,8 +222,16 @@ class StoryRecorderModule:
                 disallow_transfer_to_peers=True,
                 generate_content_config=types.GenerateContentConfig(temperature=0.2),
             )
+        logger.debug(
+            "[StoryRecorderModule] Initialized (has_story_session=%s, has_lore=%s, has_game_state=%s, has_reference_manager=%s)",
+            story_session is not None,
+            lore_library is not None,
+            game_state is not None,
+            reference_manager is not None,
+        )
         saved = journal.latest_snapshot()
         if saved is not None:
+            logger.debug("[StoryRecorderModule] Restoring recorded snapshot revision=%d", saved.revision)
             notepad.restore_recorded_snapshot(saved)
 
     def _run_model(
@@ -228,14 +240,22 @@ class StoryRecorderModule:
     ) -> GameControlDecision:
         if self.story_session is None:
             raise RuntimeError("A shared story session is required for model recording.")
+        logger.debug(
+            "[StoryRecorderModule] Running recorder model for event %s (action_id=%s, phase=%s, snapshot_revision=%d)",
+            event.event_id,
+            event.action_id,
+            phase,
+            snapshot.revision,
+        )
         self.reset_lore_call_counts()
         self.staged_notes.updates.clear()
         prompt = self._build_recorder_turn_prompt(event, snapshot, phase=phase)
-        if phase == "control_game":
+        if phase == "control_game" or event.kind == "completed_response":
             prompt += "\n# Already committed Narratron receipts (do not repeat)\n" + json.dumps([
                 receipt.model_dump(mode="json") for receipt in self.journal.narratron_receipts(event.event_id)
             ], ensure_ascii=False)
         raw = self.story_session.run("recorder", prompt, stage_id=event.action_id)
+        logger.debug("[StoryRecorderModule] Recorder model returned for event %s: %s", event.event_id, raw)
         if phase == "control_game":
             fields = TypeAdapter(dict[str, JsonValue]).validate_json(raw)
             if "reason" not in fields or "narration_request" not in fields:
@@ -244,15 +264,32 @@ class StoryRecorderModule:
         updates = {**decision.factual_updates, **self.staged_notes.updates}
         for topic, info in updates.items():
             self.notepad.validate_role_update("recorder", topic, info)
+        logger.debug(
+            "[StoryRecorderModule] Model decision validated for event %s: updates=%s, narration_request=%s, reference_updates=%d",
+            event.event_id,
+            list(updates.keys()),
+            decision.narration_request is not None,
+            len(decision.reference_updates),
+        )
         return decision.model_copy(update={"factual_updates": updates})
 
     def _reconcile_model(self, event: RecordingEvent, snapshot: NoteSnapshot) -> dict[str, str]:
         decision = self.journal.game_control_decision(event.event_id)
         if decision is None:
-            decision = self._run_model(event, snapshot, phase="record")
+            logger.debug("[StoryRecorderModule] No saved decision for event %s; running recorder model", event.event_id)
+            def submit(action: GameAction) -> dict[str, JsonValue]:
+                return self._commit_game_action(event, action)
+
+            self._submit_game_action = submit if event.kind == "completed_response" else None
+            try:
+                decision = self._run_model(event, snapshot, phase="record")
+            finally:
+                self._submit_game_action = None
             if decision.narration_request is not None:
                 raise ValueError("Response recording cannot request another responder stage.")
             self.journal.save_game_control_decision(event.event_id, decision)
+        else:
+            logger.debug("[StoryRecorderModule] Reusing saved game control decision for event %s", event.event_id)
         if decision.narration_request is not None:
             raise ValueError("Response recording cannot request another responder stage.")
         return decision.factual_updates
@@ -261,7 +298,14 @@ class StoryRecorderModule:
         decision = self.journal.game_control_decision(event_id)
         if decision is None or self.reference_manager is None:
             return
+        if decision.reference_updates:
+            logger.debug(
+                "[StoryRecorderModule] Applying %d reference update(s) for event %s",
+                len(decision.reference_updates),
+                event_id,
+            )
         for update in decision.reference_updates:
+            logger.debug("[StoryRecorderModule] Applying reference update: kind=%s, name=%s", update.kind, update.name)
             if update.kind == "player":
                 self.reference_manager.update_player_character(name=update.name, image_description=update.description)
             elif update.kind == "scene":
@@ -274,29 +318,35 @@ class StoryRecorderModule:
                 )
 
     def take_game_action(self, name: str, arguments_json: str, revision: int) -> str:
-        """Execute a permitted Narratron response during the game-entry recorder stage."""
+        """Execute a validated Narratron action while recording a story response or player game event."""
+        logger.debug(
+            "[StoryRecorderModule] take_game_action called: name=%s, revision=%d, arguments=%s",
+            name,
+            revision,
+            arguments_json,
+        )
         if self._submit_game_action is None:
-            return "Error: Game actions are permitted only on game-entry recorder stages."
+            logger.warning("[StoryRecorderModule] take_game_action rejected: no active response or game-entry recording stage")
+            return "Error: Game actions require an active story-response or game-entry recording stage."
         try:
             action = GameAction(name=name, arguments=TypeAdapter(dict[str, JsonValue]).validate_json(arguments_json), revision=revision)
-            return json.dumps(self._submit_game_action(action), ensure_ascii=False)
+            result = json.dumps(self._submit_game_action(action), ensure_ascii=False)
+            logger.debug("[StoryRecorderModule] take_game_action %s succeeded: %s", name, result)
+            return result
         except ValueError as exc:
+            logger.warning("[StoryRecorderModule] take_game_action %s failed: %s", name, exc)
             return f"Error: {exc}"
 
     def _control_model_stage(self, event: RecordingEvent) -> GameControlOutcome:
         """One recorder model stage covers decisions and all factual projections."""
+        logger.debug("[StoryRecorderModule] _control_model_stage started for event %s (action_id=%s)", event.event_id, event.action_id)
         with self._lock:
             self.journal.enqueue(event)
             if self.journal.recorded_revision(event.event_id) is None:
                 pending = self.journal.pending()
                 if not pending or pending[0].event_id != event.event_id:
                     raise ValueError("An earlier event still requires recording.")
-            if self._game_state is not None:
-                for receipt_id, action, receipt in self._game_state.story_action_commits(f"{event.event_id}:narratron:"):
-                    self.journal.record_narratron_receipt(CommittedGameReceipt(
-                        event_id=receipt_id, parent_event_id=event.event_id, action_id=event.action_id,
-                        source_revision=event.source_revision, action=action, receipt=receipt,
-                    ))
+            self._recover_game_receipts(event)
             decision = self.journal.game_control_decision(event.event_id)
             if decision is None:
                 def submit(action: GameAction) -> dict[str, JsonValue]:
@@ -310,6 +360,12 @@ class StoryRecorderModule:
                 if decision.narration_request is not None and not decision.narration_request.brief:
                     raise ValueError("Narration requires a concise recorder narrative brief.")
                 self.journal.save_game_control_decision(event.event_id, decision)
+                logger.debug(
+                    "[StoryRecorderModule] Game control decision saved for event %s (narration_request=%s, factual_updates=%s)",
+                    event.event_id,
+                    decision.narration_request is not None,
+                    list(decision.factual_updates.keys()),
+                )
 
             revision = self.journal.recorded_revision(event.event_id)
             if revision is None:
@@ -321,27 +377,69 @@ class StoryRecorderModule:
                 revision = self.notepad.publish_role_updates(
                     "recorder", decision.factual_updates, source=source, persist=persist,
                 )
+                logger.debug("[StoryRecorderModule] Published recorder updates for event %s at revision %d", event.event_id, revision)
             else:
                 saved = self.journal.latest_snapshot()
                 if saved is not None and saved.revision > self.notepad.revision:
+                    logger.debug("[StoryRecorderModule] Restoring recorded snapshot revision %d for event %s", saved.revision, event.event_id)
                     self.notepad.restore_recorded_snapshot(saved)
-            receipts = tuple(self.journal.narratron_receipts(event.event_id))
-            for receipt in receipts:
-                if self.journal.recorded_revision(receipt.event_id) is None:
-                    self.journal.commit(receipt.event_id, self.notepad.snapshot())
-            self.journal.complete_game_control(event.event_id)
+            receipts = self._complete_game_recording(event)
             self._apply_reference_updates(event.event_id)
+            logger.debug(
+                "[StoryRecorderModule] Game control model stage complete for event %s (revision=%d, receipts=%d, narration=%s)",
+                event.event_id,
+                revision,
+                len(receipts),
+                decision.narration_request is not None,
+            )
             return GameControlOutcome(
                 event_id=event.event_id, player_recorded_revision=revision,
                 narratron_receipts=receipts, final_recorded_revision=revision,
                 narration_request=decision.narration_request,
             )
 
+    def _recover_game_receipts(self, event: RecordingEvent) -> None:
+        """Recover actions persisted before an interrupted journal write."""
+        if self._game_state is None:
+            return
+        commits = self._game_state.story_action_commits(f"{event.event_id}:narratron:")
+        if commits:
+            logger.debug(
+                "[StoryRecorderModule] Recording %d existing Narratron commit(s) from game state for event %s",
+                len(commits), event.event_id,
+            )
+        for receipt_id, action, receipt in commits:
+            self.journal.record_narratron_receipt(CommittedGameReceipt(
+                event_id=receipt_id, parent_event_id=event.event_id, action_id=event.action_id,
+                source_revision=event.source_revision, action=action, receipt=receipt,
+            ))
+
+    def _complete_game_recording(self, event: RecordingEvent) -> tuple[CommittedGameReceipt, ...]:
+        """Publish receipts already reconciled by this event's model invocation."""
+        receipts = tuple(self.journal.narratron_receipts(event.event_id))
+        for receipt in receipts:
+            if self.journal.recorded_revision(receipt.event_id) is None:
+                self.journal.commit(receipt.event_id, self.notepad.snapshot())
+        if self.journal.game_control_decision(event.event_id) is not None:
+            self.journal.complete_game_control(event.event_id)
+        return receipts
+
     def _commit_game_action(self, event: RecordingEvent, action: GameAction) -> dict[str, JsonValue]:
+        logger.debug(
+            "[StoryRecorderModule] Committing Narratron game action %s (revision=%d) for event %s",
+            action.name,
+            action.revision,
+            event.event_id,
+        )
         existing = self.journal.narratron_receipt_for_revision(event.event_id, action.revision)
         if existing is not None:
             if existing.action != action:
                 raise ValueError("Game revision already has a different committed Narratron action.")
+            logger.debug(
+                "[StoryRecorderModule] Reusing existing Narratron receipt for event %s at revision %d",
+                event.event_id,
+                action.revision,
+            )
             return existing.receipt
         if self._game_state is None:
             raise ValueError("No game state is configured for Narratron game actions.")
@@ -352,6 +450,12 @@ class StoryRecorderModule:
             source_revision=event.source_revision, action=action, receipt=receipt,
         )
         self.journal.record_narratron_receipt(committed)
+        logger.debug(
+            "[StoryRecorderModule] Narratron game action %s committed at revision %d for event %s",
+            action.name,
+            action.revision,
+            event.event_id,
+        )
         return receipt
 
     def read_lore(self, document: str = "") -> str:
@@ -359,12 +463,24 @@ class StoryRecorderModule:
             return "No lore library is configured for the story recorder."
         with self._lore_calls_lock:
             if self._read_lore_calls_this_run >= MAX_RECORDER_READ_LORE_CALLS_PER_RUN:
+                logger.warning(
+                    "[StoryRecorderModule] read_lore limit reached (%d/%d)",
+                    self._read_lore_calls_this_run,
+                    MAX_RECORDER_READ_LORE_CALLS_PER_RUN,
+                )
                 return (
                     f"Error: Maximum recorder read_lore limit "
                     f"({MAX_RECORDER_READ_LORE_CALLS_PER_RUN}) reached. "
                     "Finalize factual recording now."
                 )
             self._read_lore_calls_this_run += 1
+            call_count = self._read_lore_calls_this_run
+        logger.debug(
+            "[StoryRecorderModule] read_lore called (%d/%d): document=%r",
+            call_count,
+            MAX_RECORDER_READ_LORE_CALLS_PER_RUN,
+            document,
+        )
         return self.lore_library.read_lore(document, role="recorder")
 
     def search_lore(self, query: str) -> str:
@@ -372,18 +488,31 @@ class StoryRecorderModule:
             return "No lore library is configured for the story recorder."
         with self._lore_calls_lock:
             if self._search_lore_calls_this_run >= MAX_RECORDER_SEARCH_LORE_CALLS_PER_RUN:
+                logger.warning(
+                    "[StoryRecorderModule] search_lore limit reached (%d/%d)",
+                    self._search_lore_calls_this_run,
+                    MAX_RECORDER_SEARCH_LORE_CALLS_PER_RUN,
+                )
                 return (
                     f"Error: Maximum recorder search_lore limit "
                     f"({MAX_RECORDER_SEARCH_LORE_CALLS_PER_RUN}) reached. "
                     "Finalize factual recording now."
                 )
             self._search_lore_calls_this_run += 1
+            call_count = self._search_lore_calls_this_run
+        logger.debug(
+            "[StoryRecorderModule] search_lore called (%d/%d): query=%r",
+            call_count,
+            MAX_RECORDER_SEARCH_LORE_CALLS_PER_RUN,
+            query,
+        )
         return self.lore_library.search_lore(query)
 
     def reset_lore_call_counts(self) -> None:
         with self._lore_calls_lock:
             self._read_lore_calls_this_run = 0
             self._search_lore_calls_this_run = 0
+        logger.debug("[StoryRecorderModule] Reset lore call counts")
 
     def _recorder_sticky_schema_json(self) -> str:
         recorder_definitions = {
@@ -438,20 +567,47 @@ class StoryRecorderModule:
 
     def record(self, event: RecordingEvent) -> int:
         """Retain failed events for retry and never reconcile a recorded event twice."""
+        logger.debug(
+            "[StoryRecorderModule] record() called for event %s (kind=%s, action_id=%s, source_rev=%d)",
+            event.event_id,
+            event.kind,
+            event.action_id,
+            event.source_revision,
+        )
         with self._lock:
             self.journal.enqueue(event)
+            if event.kind == "completed_response":
+                self._recover_game_receipts(event)
             recorded = self.journal.recorded_revision(event.event_id)
             if recorded is not None:
+                logger.debug(
+                    "[StoryRecorderModule] Event %s already recorded at revision %d; skipping reconcile",
+                    event.event_id,
+                    recorded,
+                )
                 saved = self.journal.latest_snapshot()
                 if saved is not None and saved.revision > self.notepad.revision:
                     self.notepad.restore_recorded_snapshot(saved)
+                if event.kind == "completed_response":
+                    self._complete_game_recording(event)
                 self._apply_reference_updates(event.event_id)
                 return recorded
             pending = self.journal.pending()
             if not pending or pending[0].event_id != event.event_id:
                 raise ValueError("An earlier event still requires recording.")
             source = self.notepad.snapshot()
+            logger.debug(
+                "[StoryRecorderModule] Reconciling event %s against snapshot revision %d",
+                event.event_id,
+                source.revision,
+            )
             updates = self._reconcile(event, source)
+            logger.debug(
+                "[StoryRecorderModule] Reconciled %d update(s) for event %s: %s",
+                len(updates),
+                event.event_id,
+                list(updates.keys()),
+            )
 
             def persist(snapshot: NoteSnapshot) -> None:
                 self.journal.commit(event.event_id, snapshot)
@@ -459,11 +615,24 @@ class StoryRecorderModule:
             revision = self.notepad.publish_role_updates(
                 "recorder", updates, source=source, persist=persist,
             )
+            logger.debug(
+                "[StoryRecorderModule] Published recorded revision %d for event %s",
+                revision,
+                event.event_id,
+            )
+            if event.kind == "completed_response":
+                self._complete_game_recording(event)
             self._apply_reference_updates(event.event_id)
             return revision
 
     def control_game(self, event: RecordingEvent) -> GameControlOutcome:
         """Record a player game move, execute Narratron responses once, and optionally request narration."""
+        logger.debug(
+            "[StoryRecorderModule] control_game() called for event %s (action_id=%s, kind=%s)",
+            event.event_id,
+            event.action_id,
+            event.kind,
+        )
         if event.kind != "committed_game_action":
             raise ValueError("Completed responses cannot enter game control.")
         if event.source_event_ids or event.payload.get("actor") == "narratron":
@@ -483,11 +652,22 @@ class StoryRecorderModule:
                             raise ValueError(
                                 "Game revision already has a different committed Narratron action."
                             )
+                        logger.debug(
+                            "[StoryRecorderModule] Reusing existing Narratron receipt for event %s at revision %d",
+                            event.event_id,
+                            action.revision,
+                        )
                         return existing.receipt
                     if self._game_state is None:
                         raise ValueError(
                             "No game state is configured for Narratron game actions."
                         )
+                    logger.debug(
+                        "[StoryRecorderModule] Executing Narratron game action %s (revision=%d) for event %s",
+                        action.name,
+                        action.revision,
+                        event.event_id,
+                    )
                     self._game_state.act(action, actor="narratron")
                     snapshot = self._game_state.story_snapshot("responder")
                     if snapshot is None:
@@ -501,6 +681,12 @@ class StoryRecorderModule:
                         receipt=snapshot,
                     )
                     self.journal.record_narratron_receipt(committed)
+                    logger.debug(
+                        "[StoryRecorderModule] Narratron game action %s committed at revision %d for event %s",
+                        action.name,
+                        action.revision,
+                        event.event_id,
+                    )
                     return snapshot
 
                 raw_decision = (
@@ -510,6 +696,12 @@ class StoryRecorderModule:
                 )
                 decision = raw_decision if raw_decision is not None else GameControlDecision()
                 self.journal.save_game_control_decision(event.event_id, decision)
+                logger.debug(
+                    "[StoryRecorderModule] Saved game control decision for event %s (narration_request=%s, factual_updates=%s)",
+                    event.event_id,
+                    decision.narration_request is not None,
+                    list(decision.factual_updates.keys()),
+                )
 
             receipts = tuple(self.journal.narratron_receipts(event.event_id))
             final_revision = player_revision
@@ -521,6 +713,14 @@ class StoryRecorderModule:
             if not self.journal.is_game_control_completed(event.event_id):
                 self.journal.complete_game_control(event.event_id)
 
+            logger.debug(
+                "[StoryRecorderModule] Game control completed for event %s: player_rev=%d, receipts=%d, final_rev=%d, narration=%s",
+                event.event_id,
+                player_revision,
+                len(receipts),
+                final_revision,
+                decision.narration_request is not None,
+            )
             return GameControlOutcome(
                 event_id=event.event_id,
                 player_recorded_revision=player_revision,
@@ -531,5 +731,7 @@ class StoryRecorderModule:
 
     def retry_pending(self) -> None:
         """Drain in causal queue order, stopping on the first unresolved failure."""
-        for event in self.journal.pending():
+        pending = self.journal.pending()
+        logger.debug("[StoryRecorderModule] retry_pending() called with %d pending event(s)", len(pending))
+        for event in pending:
             self.record(event)

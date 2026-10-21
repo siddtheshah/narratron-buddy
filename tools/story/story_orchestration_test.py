@@ -3,6 +3,7 @@
 from collections.abc import Iterator
 from pathlib import Path
 from threading import Event
+from typing import Literal
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -94,6 +95,149 @@ def test_communicated_turn_records_then_plans_without_request(harness: TurnHarne
     assert tool.notepad.snapshot().notes["Inventory"] == "Broken key"
     assert tool.turn_journal.turns()[0].completed
     assert tool.turn_journal.turns()[0].entry_role == "responder"
+    assert tool.recording_journal.pending() == []
+
+
+def test_response_recording_can_prepare_game_offer_awaiting_player_consent(
+    harness: TurnHarness, tmp_path: Path,
+) -> None:
+    tool = harness.new_tool()
+    game = make_game(tmp_path / "story-offer", exchange_definition())
+    tool.canvas_manager.game = game
+    tool.recorder_module._game_state = game
+    tool.planning_module.game_state = game
+
+    def model(session: StorySession, role: StoryRole, prompt: str, *, timeout: float = 60.0, stage_id: str = "") -> str:
+        if role == "recorder":
+            assert "# Recorder Work (record)" in prompt
+            for name, arguments in (("narratron_place", '{"item":"green"}'), ("narratron_finalize", "{}")):
+                receipt = tool.recorder_module.take_game_action(name, arguments, game.revision)
+                assert not receipt.startswith("Error:"), receipt
+        return harness.model_run(role, prompt)
+
+    with patch.object(StorySession, "run", model):
+        result = tool.resolve_action("Show me your offer", drain=True)
+        assert "error" not in result
+        assert harness.calls == ["responder", "recorder", "planner"]
+        assert game.revision == 2
+        assert game.state["narratron_offer"] == ["green"]
+        assert game.state["narratron_done"] is True
+        assert game.state["player_done"] is False
+        assert game.state["trades"] == 0
+        assert game.state["player_inventory"] == ["red", "blue"]
+        turn = tool.turn_journal.turns()[0]
+        assert turn.completed
+        event = tool._recording_event(turn)
+        receipts = tool.recording_journal.narratron_receipts(event.event_id)
+        assert len(receipts) == 2
+        assert all(tool.recording_journal.recorded_revision(receipt.event_id) is not None for receipt in receipts)
+        assert tool.recording_journal.is_game_control_completed(event.event_id)
+        assert tool.recording_journal.pending() == []
+        tool.recorder_module.record(event)
+        assert game.revision == 2
+        assert harness.calls == ["responder", "recorder", "planner"]
+        assert "Error:" in tool.recorder_module.take_game_action("narratron_finalize", "{}", game.revision)
+
+
+@pytest.mark.parametrize("attempt", ["prerequisite", "arguments", "actor"])
+def test_response_recording_preserves_game_validation(
+    harness: TurnHarness, tmp_path: Path, attempt: str,
+) -> None:
+    tool = harness.new_tool()
+    definition = exchange_definition()
+    definition.transitions["narratron_finalize"].guard = "state.player_done && state.player_offer.size() > 0"
+    game = make_game(tmp_path / "story-prerequisite", definition)
+    game.act(GameAction(name="player_place", arguments={"item": "red"}, revision=0))
+    tool.canvas_manager.game = game
+    tool.recorder_module._game_state = game
+    tool.planning_module.game_state = game
+    before = game.serialize()
+    errors: list[str] = []
+    actions = {
+        "prerequisite": ("narratron_finalize", "{}"),
+        "arguments": ("narratron_place", '{"item":42}'),
+        "actor": ("player_finalize", "{}"),
+    }
+
+    def model(session: StorySession, role: StoryRole, prompt: str, *, timeout: float = 60.0, stage_id: str = "") -> str:
+        if role == "recorder":
+            name, arguments = actions[attempt]
+            errors.append(tool.recorder_module.take_game_action(name, arguments, game.revision))
+        return harness.model_run(role, prompt)
+
+    with patch.object(StorySession, "run", model):
+        result = tool.resolve_action("Accept my offer", drain=True)
+    assert "error" not in result
+    assert len(errors) == 1 and errors[0].startswith("Error:")
+    assert "active story-response" not in errors[0]
+    assert game.serialize() == before
+    assert tool.recording_journal.pending() == []
+
+
+@pytest.mark.parametrize("boundary", ["receipt_projection", "completion"])
+def test_response_recording_retries_receipt_completion_without_repeating_models(
+    harness: TurnHarness, tmp_path: Path, boundary: str,
+) -> None:
+    tool = harness.new_tool()
+    game = make_game(tmp_path / "story-recovery", exchange_definition())
+    tool.canvas_manager.game = game
+    tool.recorder_module._game_state = game
+    tool.planning_module.game_state = game
+    commit = tool.recording_journal.commit
+
+    def fail_receipt_commit(event_id: str, snapshot: NoteSnapshot) -> None:
+        if ":narratron:" in event_id:
+            raise OSError("receipt projection unavailable")
+        commit(event_id, snapshot)
+
+    def model(session: StorySession, role: StoryRole, prompt: str, *, timeout: float = 60.0, stage_id: str = "") -> str:
+        if role == "recorder":
+            receipt = tool.recorder_module.take_game_action("narratron_place", '{"item":"green"}', game.revision)
+            assert not receipt.startswith("Error:"), receipt
+        return harness.model_run(role, prompt)
+
+    failure = (
+        patch.object(tool.recording_journal, "commit", side_effect=fail_receipt_commit)
+        if boundary == "receipt_projection"
+        else patch.object(tool.recording_journal, "complete_game_control", side_effect=OSError("completion unavailable"))
+    )
+    with patch.object(StorySession, "run", model):
+        with failure:
+            assert "error" in tool.resolve_action("Show me your offer")
+        assert game.revision == 1
+        assert harness.calls == ["responder", "recorder"]
+        tool.retry_pending_turns()
+        assert tool.wait_for_pending_events(5)
+    assert game.revision == 1
+    assert harness.calls == ["responder", "recorder", "planner"]
+    turn = tool.turn_journal.turns()[0]
+    assert turn.completed
+    assert tool.recording_journal.is_game_control_completed(tool._recording_event(turn).event_id)
+    assert tool.recording_journal.pending() == []
+
+
+def test_recording_narratron_receipt_cannot_submit_more_actions(
+    harness: TurnHarness, tmp_path: Path,
+) -> None:
+    tool = harness.new_tool()
+    game = make_game(tmp_path / "receipt-only", exchange_definition())
+    tool.recorder_module._game_state = game
+    errors: list[str] = []
+
+    def model(session: StorySession, role: StoryRole, prompt: str, *, timeout: float = 60.0, stage_id: str = "") -> str:
+        if role == "recorder":
+            errors.append(tool.recorder_module.take_game_action("narratron_place", '{"item":"green"}', game.revision))
+        return harness.model_run(role, prompt)
+
+    event = RecordingEvent(
+        event_id="receipt-only", action_id="story-turn", source_event_ids=("story-response",),
+        kind="committed_game_action", source_revision=0, payload={"actor": "narratron"},
+    )
+    with patch.object(StorySession, "run", model):
+        tool.recorder_module.record(event)
+    assert len(errors) == 1 and "active story-response or game-entry recording stage" in errors[0]
+    assert game.revision == 0
+    assert harness.calls == ["recorder"]
     assert tool.recording_journal.pending() == []
 
 
@@ -268,8 +412,9 @@ def test_restart_preserves_latest_planner_checkpoint(harness: TurnHarness) -> No
     assert restarted.notepad.revision >= revision
 
 
+@pytest.mark.parametrize("ingress", ["game_action", "communicated_action"])
 def test_failed_receipt_write_recovers_from_game_commit_without_reexecuting(
-    harness: TurnHarness, tmp_path: Path,
+    harness: TurnHarness, tmp_path: Path, ingress: Literal["game_action", "communicated_action"],
 ) -> None:
     tool = harness.new_tool()
     game = make_game(tmp_path / "game-case", exchange_definition())
@@ -292,13 +437,18 @@ def test_failed_receipt_write_recovers_from_game_commit_without_reexecuting(
 
     with patch.object(StorySession, "run", model):
         with patch.object(tool.recording_journal, "record_narratron_receipt", side_effect=OSError("journal offline")):
-            tool._handle_player_game_action(player, game.pending_story_actions()[0][1])
+            if ingress == "game_action":
+                tool._handle_player_game_action(player, game.pending_story_actions()[0][1])
+            else:
+                assert "error" in tool.resolve_action("Show me the green item")
             assert not tool.wait_for_pending_events(5)
             assert game.revision == 2
         tool.retry_pending_turns()
         assert tool.wait_for_pending_events(5)
     assert game.revision == 2
     assert len(tool.recording_journal.narratron_receipts(tool.turn_journal.turns()[0].turn_id + ":recording")) == 1
+    assert tool.recording_journal.pending() == []
+    assert tool.turn_journal.turns()[0].completed
 
 
 def test_planner_can_continue_while_next_action_records_and_rechecks_stale_guidance(harness: TurnHarness) -> None:

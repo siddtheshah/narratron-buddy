@@ -81,6 +81,11 @@ expressions. Literal text therefore includes CEL string quotes.
   An optional state-only `available` CEL expression controls whether a Narratron
   action appears in the planner's current action list. The transition's `guard`
   remains the authoritative check when an action is submitted.
+  StoryRecorder can execute Narratron actions while recording either a completed
+  story response or a committed player game action. Encode prerequisites such as
+  required player input, consent and turn order in transition guards; the source
+  of a recording event does not bypass them. Response recording cannot request
+  another narration pass, and Narratron receipts cannot trigger further actions.
   View buttons may reference only player/contributor actions. The canvas action
   endpoint likewise accepts only player/contributor actions. The story planner
   sees the current state, revision, and Narratron action contracts, and can submit
