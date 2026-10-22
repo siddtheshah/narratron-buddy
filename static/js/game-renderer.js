@@ -26,7 +26,8 @@ const ATTRIBUTES = new Set([
 
 export function createGameRenderer({ container, toggleButton, actionUrl, canEdit,
     canContribute = () => false, refresh,
-    stylesheetUrl = '/static/css/game-renderer.css?v=7', initiallyOpen = false,
+    canMove = () => canEdit() || canContribute(),
+    stylesheetUrl = '/static/css/game-renderer.css?v=8', initiallyOpen = false,
     onPendingChange = () => {}, onMove = () => {} }) {
     const stylesheet = document.createElement('link');
     stylesheet.rel = 'stylesheet';
@@ -42,6 +43,7 @@ export function createGameRenderer({ container, toggleButton, actionUrl, canEdit
     let highlightTimer = null;
     let latestLeft = 50;
     let latestTop = 50;
+    let localPlacement = null;
     let activePointerId = null;
     let startX = 0;
     let startY = 0;
@@ -143,6 +145,7 @@ export function createGameRenderer({ container, toggleButton, actionUrl, canEdit
         element.setAttribute('class', `game-node game-${node.kind}`);
         const props = node.props || {};
         if (props.id) element.dataset.gameId = String(props.id);
+        if (node.kind === 'row' && props.layout === 'sidebar') element.dataset.gameLayout = 'sidebar';
         if (props.src && node.kind === 'svg') element.dataset.gameSvg = String(props.src);
         if (props.label) element.setAttribute('aria-label', String(props.label));
         if (props.text !== undefined) element.textContent = String(props.text);
@@ -209,7 +212,7 @@ export function createGameRenderer({ container, toggleButton, actionUrl, canEdit
         }
 
         let move = null;
-        if (canEdit()) {
+        if (canMove()) {
             panel.classList.add('game-panel-editable', 'a2ui-surface-editable');
             const controls = document.createElement('div');
             controls.className = 'game-panel-controls a2ui-surface-controls';
@@ -225,7 +228,7 @@ export function createGameRenderer({ container, toggleButton, actionUrl, canEdit
             panel.addEventListener('pointerdown', event => {
                 // Only the outer padding and move control are drag handles.
                 if (event.target !== panel && !move.contains(event.target)) return;
-                if (event.button !== 0 || activePointerId !== null || !canEdit()) return;
+                if (event.button !== 0 || activePointerId !== null || !canMove()) return;
                 activePointerId = event.pointerId;
                 startX = event.clientX;
                 startY = event.clientY;
@@ -270,6 +273,10 @@ export function createGameRenderer({ container, toggleButton, actionUrl, canEdit
                 return;
             }
             if (latestLeft === startLeft && latestTop === startTop) return;
+            if (!canEdit()) {
+                localPlacement = { left_pct: latestLeft, top_pct: latestTop };
+                return;
+            }
             try {
                 if (typeof onMove === 'function') {
                     await onMove({ left_pct: latestLeft, top_pct: latestTop });
@@ -284,9 +291,10 @@ export function createGameRenderer({ container, toggleButton, actionUrl, canEdit
         panel.addEventListener('lostpointercapture', finishDrag);
 
         for (const node of currentView() || []) panel.append(nodeView(node));
+        const feedback = panel.querySelector('[data-game-layout="sidebar"] > .game-column') || panel;
         if (draft.length) {
             const controls = document.createElement('div');
-            controls.className = 'game-node game-row';
+            controls.className = feedback === panel ? 'game-node game-row' : 'game-node game-column';
             controls.append(message('Exploring · changes are private until submitted.', 'game-message'));
             const button = (label, callback) => {
                 const element = document.createElement('button');
@@ -302,23 +310,23 @@ export function createGameRenderer({ container, toggleButton, actionUrl, canEdit
             }
             button('Undo', () => { draft.pop(); draftViews.pop(); error = ''; draw(); });
             button('Discard changes', () => { clearDraft(); error = ''; draw(); });
-            panel.append(controls);
+            feedback.append(controls);
         }
         if (pending) {
             const status = message('Resolving action…', 'game-message');
             status.setAttribute('role', 'status');
-            panel.append(status);
+            feedback.append(status);
         }
         if (!canEdit()) {
             const note = canContribute()
                 ? 'Contributor mode · collaboration-enabled actions are unlocked.'
                 : 'Read-only · the active orator controls the game.';
-            panel.append(message(note, 'game-message'));
+            feedback.append(message(note, 'game-message'));
         }
         if (error || game.error) {
             const alert = message(error || game.error, 'game-error');
             alert.setAttribute('role', 'alert');
-            panel.append(alert);
+            feedback.append(alert);
         }
         container.append(panel);
     }
@@ -327,7 +335,7 @@ export function createGameRenderer({ container, toggleButton, actionUrl, canEdit
         render(next) {
             const target = next === undefined ? game : next;
             if (next !== undefined && next?.definition_hash === game?.definition_hash && next?.revision < game?.revision) return;
-            const nextSignature = JSON.stringify([target, canEdit(), Boolean(canContribute())]);
+            const nextSignature = JSON.stringify([target, canEdit(), Boolean(canContribute()), Boolean(canMove())]);
             if (nextSignature === signature) return;
             signature = nextSignature;
             const changed = target?.definition_hash !== game?.definition_hash || target?.revision !== game?.revision;
@@ -348,10 +356,12 @@ export function createGameRenderer({ container, toggleButton, actionUrl, canEdit
                 clearDraft();
             }
             if (target?.client !== game?.client) local = target?.client ? createLocalGame(target.client) : null;
+            if (target?.definition_hash !== game?.definition_hash) localPlacement = null;
             game = target;
             if (activePointerId === null) {
-                if (target?.placement?.left_pct !== undefined) latestLeft = Number(target.placement.left_pct) || 50;
-                if (target?.placement?.top_pct !== undefined) latestTop = Number(target.placement.top_pct) || 50;
+                const placement = localPlacement || target?.placement;
+                if (placement?.left_pct !== undefined) latestLeft = Number(placement.left_pct) || 50;
+                if (placement?.top_pct !== undefined) latestTop = Number(placement.top_pct) || 50;
             }
             draw();
         },

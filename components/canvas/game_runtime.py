@@ -13,7 +13,7 @@ import xml.etree.ElementTree as ET
 
 from celpy import Environment, Runner, celtypes
 from celpy.adapter import json_to_cel
-from celpy.evaluation import Activation, Evaluator, Result
+from celpy.evaluation import Activation, CELEvalError, Evaluator, Result, bool_eq, bool_ne
 from jsonschema import Draft202012Validator
 from lark import Token, Tree
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, ValidationError
@@ -423,6 +423,26 @@ class GameProgram:
         return Execution(self)
 
 
+def nullable_equal(left: celtypes.Value, right: celtypes.Value) -> Result:
+    """CEL's JSON null is comparable to an explicitly optional map/list value."""
+    if left is None or right is None:
+        try:
+            return celtypes.BoolType(checked_json(left) is None and checked_json(right) is None)
+        except ValueError as exc:
+            # Preserve CEL errors as values so a false && / true || may mask them.
+            return CELEvalError("Invalid null comparison operand", ValueError, exc.args)
+    return bool_eq(left, right)
+
+
+def nullable_not_equal(left: celtypes.Value, right: celtypes.Value) -> Result:
+    if left is None or right is None:
+        try:
+            return celtypes.BoolType(not (checked_json(left) is None and checked_json(right) is None))
+        except ValueError as exc:
+            return CELEvalError("Invalid null comparison operand", ValueError, exc.args)
+    return bool_ne(left, right)
+
+
 class Execution:
     def __init__(self, program: GameProgram) -> None:
         self.program = program
@@ -430,7 +450,9 @@ class Execution:
         self.svg_expanded_bytes: int = 0
         self._values: dict[int, tuple[JsonValue, celtypes.Value]] = {}
         self._results: dict[tuple[str, tuple[tuple[str, int], ...]], JsonValue] = {}
-        self.functions: dict[str, Callable[..., celtypes.Value]] = {"random_int": random_int}
+        self.functions: dict[str, Callable[..., Result]] = {
+            "random_int": random_int, "_==_": nullable_equal, "_!=_": nullable_not_equal,
+        }
         for name, definition in program.definition.functions.items():
             self.functions[name] = self.function(definition)
 

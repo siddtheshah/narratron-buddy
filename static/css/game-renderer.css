@@ -21,7 +21,7 @@
 .game-panel-editable > :not(.game-panel-controls):not(.a2ui-surface-controls),
 .game-panel.a2ui-surface-editable > :not(.game-panel-controls):not(.a2ui-surface-controls) { cursor: auto; touch-action: auto; }
 .game-panel-editable.dragging, .game-panel.a2ui-surface-editable.dragging { cursor: grabbing; user-select: none; }
-.game-panel-controls, .game-panel .a2ui-surface-controls { position: absolute; top: -14px; right: 8px; z-index: 2; display: flex; gap: 4px; opacity: 0.45; transition: opacity 150ms ease; }
+.game-panel-controls, .game-panel .a2ui-surface-controls { position: absolute; top: 4px; right: 4px; z-index: 2; display: flex; gap: 4px; opacity: 0.45; transition: opacity 150ms ease; }
 .game-panel:hover .game-panel-controls, .game-panel:focus-within .game-panel-controls,
 .game-panel:hover .a2ui-surface-controls, .game-panel:focus-within .a2ui-surface-controls { opacity: 1; }
 .game-panel-control, .game-panel .a2ui-surface-control { width: 28px; height: 28px; display: grid; place-items: center; padding: 0; border: 1px solid rgba(255, 255, 255, 0.26); border-radius: 999px; color: #fff; background: #0f172a; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35); font: 700 1rem/1 sans-serif; cursor: pointer; }
@@ -30,6 +30,9 @@
 .game-node { box-sizing: border-box; min-width: 0; margin: 0; }
 .game-column { display: flex; flex-direction: column; gap: 8px; }
 .game-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.game-panel:has([data-game-layout="sidebar"]) { width: min(900px, 92vw, 140vh); }
+.game-row[data-game-layout="sidebar"] { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); align-items: start; gap: 20px; }
+.game-row[data-game-layout="sidebar"] > .game-column > .game-row { flex-wrap: wrap; }
 .game-grid { display: grid; width: 100%; }
 .game-text { line-height: 1.5; overflow-wrap: anywhere; }
 .game-button { display: grid; place-items: center; padding: 8px; border: 0; border-radius: 6px; background: #293b53; color: inherit; cursor: pointer; touch-action: manipulation; outline-offset: -3px; }
@@ -39,4 +42,8 @@
 .game-message { color: #b9c6d8; font-size: .8rem; }
 .game-error { color: #fca5a5; font-size: .85rem; }
 @media (max-width: 600px) { .game-panel { padding: 10px; width: min(88vw, 66vh); } }
+@media (max-width: 600px) {
+    .game-panel:has([data-game-layout="sidebar"]) { width: 92vw; }
+    .game-row[data-game-layout="sidebar"] { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+}
 

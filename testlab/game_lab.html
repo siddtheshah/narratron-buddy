@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Game Testing Lab</title>
-<link rel="stylesheet" href="/game-lab-assets/css/game-renderer.css?v=6">
+<link rel="stylesheet" href="/game-lab-assets/css/game-renderer.css?v=8">
 <style>
 :root {
   color-scheme: dark;
@@ -339,7 +339,7 @@ button:disabled {
 }
 
 /* Authentic row and title alignment: prevent title wrapping and preserve crest */
-#game-preview .game-panel .game-row {
+#game-preview .game-panel .game-row:not([data-game-layout="sidebar"]) {
   display: flex !important;
   align-items: center !important;
   justify-content: space-between !important;
@@ -350,6 +350,16 @@ button:disabled {
   white-space: nowrap !important;
   flex-shrink: 0 !important;
   font-weight: 600 !important;
+}
+#game-preview .game-panel:has([data-game-layout="sidebar"]) {
+  width: min(900px, 100%) !important;
+}
+#game-preview .game-panel [data-game-layout="sidebar"] > .game-column > .game-row {
+  flex-wrap: wrap !important;
+}
+#game-preview .game-panel [data-game-layout="sidebar"] .game-row > .game-text {
+  white-space: normal !important;
+  flex-shrink: 1 !important;
 }
 #game-preview .game-panel .game-svg {
   flex-shrink: 0 !important;
@@ -588,7 +598,7 @@ pre {
 </details>
 
 <script type="module">
-import { createGameRenderer } from '/game-lab-assets/js/game-renderer.js?v=7';
+import { createGameRenderer } from '/game-lab-assets/js/game-renderer.js?v=9';
 
 const el = id => document.getElementById(id);
 let sessionId = null;
@@ -734,7 +744,7 @@ const renderer = createGameRenderer({
     canEdit,
     canContribute,
     refresh,
-    stylesheetUrl: '/game-lab-assets/css/game-renderer.css?v=6',
+    stylesheetUrl: '/game-lab-assets/css/game-renderer.css?v=8',
     initiallyOpen: true,
     onPendingChange: pending => {
         el('load').disabled = pending;

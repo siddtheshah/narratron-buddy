@@ -190,6 +190,7 @@ Supported properties:
 
 - Content/accessibility: `text`, `label`, `id`, `disabled`, `pressed`.
 - Layout/style: `columns` (grid), `gap`, `padding`, `color`, `background` (color only), `fontSize`, `fontWeight`, `borderRadius`, `outline`, `aspectRatio`, `textAlign`.
+- A row with `layout: '"sidebar"'` places its first child on the left and its second child on the right in a wider panel. It stacks the children on narrow screens.
 - SVG: `src` (relative `.svg` file in `game/`), `viewBox`, `preserveAspectRatio`, `x`, `y`, `x1`, `y1`, `x2`, `y2`, `dx`, `dy`, `width`, `height`, `cx`, `cy`, `r`, `rx`, `ry`, `d`, `points`, `fill`, `fill-opacity`, `fill-rule`, `stroke`, `stroke-width`, `stroke-opacity`, `stroke-linecap`, `stroke-linejoin`, `stroke-dasharray`, `stroke-dashoffset`, `stroke-miterlimit`, `opacity`, `transform`, `text-anchor`, `dominant-baseline`, `font-size`, `font-weight`, `font-family`, `letter-spacing`, and gradient/stop attributes.
 
 A button's `action` declares CEL expressions for its `name` and JSON-object

@@ -2,9 +2,41 @@
 from unittest.mock import patch
 
 import pytest
+from pydantic import JsonValue
 
 from components.canvas.game_runtime import FunctionDefinition, GameProgram
 from testing.game_fixtures import counter_definition
+
+
+@pytest.mark.parametrize("value", [None, {}, {"kind": "wrap"}, [], [None], "white", 0, False])
+@pytest.mark.parametrize("expression", ["value == null", "null == value", "value != null", "null != value"])
+def test_optional_json_entities_compare_to_null(value: JsonValue, expression: str) -> None:
+    definition = counter_definition()
+    definition.transitions["clear"].result = expression
+    execution = GameProgram(definition).execution()
+    expected = value is None if "==" in expression else value is not None
+    assert execution.evaluate(expression, {"value": value}) == expected
+
+
+@pytest.mark.parametrize("expression", ["missing == null", "null == missing", "missing != null", "null != missing"])
+def test_null_comparison_preserves_missing_value_errors(expression: str) -> None:
+    definition = counter_definition()
+    definition.transitions["clear"].result = expression
+    execution = GameProgram(definition).execution()
+    with pytest.raises(ValueError, match="CEL evaluation failed"):
+        execution.evaluate(expression, {})
+
+
+@pytest.mark.parametrize("expression,expected", [
+    ("false && missing != null", False),
+    ("true || null == missing", True),
+    ('[{"kind": "wrap"}, null].filter(r, r != null).size() == 1', True),
+])
+def test_nullable_entities_preserve_cel_error_masking(expression: str, expected: bool) -> None:
+    definition = counter_definition()
+    definition.transitions["clear"].result = expression
+    execution = GameProgram(definition).execution()
+    assert execution.evaluate(expression, {}) == expected
 
 
 @pytest.mark.parametrize('lower, upper', [

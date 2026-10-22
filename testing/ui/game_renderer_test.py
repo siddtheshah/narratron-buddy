@@ -3,11 +3,65 @@ from pathlib import Path
 from unittest.mock import Mock
 
 import pytest
-from playwright.sync_api import Page, Request, Route, expect, sync_playwright
+from playwright.sync_api import Error, Page, Request, Route, expect, sync_playwright
 
 from components.canvas.game_runtime import ViewNode
 from components.canvas.game_state import GameAction, GameState
 from testing.game_fixtures import counter_definition, make_game
+
+
+def test_canvas_game_permissions_do_not_interrupt_startup() -> None:
+    template = Path("templates/canvas.html").read_text(encoding="utf-8")
+    start = template.index("        const gameRenderer = createGameRenderer({")
+    renderer_setup = template[start:template.index("        const a2uiCanvasRenderer", start)]
+    start = template.index("        function isCollabModeEnabled()")
+    permission_helpers = template[start:template.index("        // Beyond20", start)]
+    # Keep the real canvas declaration order, including the initial viewer render.
+    startup = [
+        (template.index(declaration), declaration)
+        for declaration in (
+            "let currentUser = null;", "let viewerCollabEnabled = false;",
+            "let currentBatonState = null;",
+        )
+    ]
+    startup.extend([
+        (template.index(renderer_setup), renderer_setup),
+        (template.index("        applyRoleUI(false);"), "gameRenderer.render();"),
+    ])
+    script = "\n".join(snippet for _, snippet in sorted(startup))
+    html = """<!doctype html><html><body>
+    <button id="game-state-toggle-btn" hidden></button><div id="game-state-layer" hidden></div>
+    <script type="module">
+    import { createGameRenderer } from '/static/js/game-renderer.js';
+    const isCurrentOrator = () => Boolean(window._isActiveOratorState);
+    const fetchLatestImage = () => {};
+    """ + permission_helpers + script + """
+    window.canvasInitialized = true;
+    </script></body></html>"""
+
+    def route_request(route: Route) -> None:
+        path = route.request.url.split("http://game.test", 1)[-1]
+        if path == "/":
+            route.fulfill(content_type="text/html", body=html)
+        elif path.startswith("/static/"):
+            route.fulfill(path=Path(path.split("?", 1)[0].lstrip("/")))
+        else:
+            route.fulfill(status=404)
+
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        page = browser.new_page()
+        errors: list[str] = []
+
+        def record_error(error: Error) -> None:
+            errors.append(str(error))
+
+        page.on("pageerror", record_error)
+        page.route("http://game.test/**", route_request)
+        page.goto("http://game.test/")
+        assert errors == []
+        assert page.evaluate("window.canvasInitialized") is True
+        browser.close()
 
 
 def test_checkers_renderer_moves_and_viewer_permissions(tmp_path: Path) -> None:
@@ -134,6 +188,8 @@ def movable_game_page() -> Iterator[Page]:
     <div id="game-state-layer" hidden></div><script type="module">
     import { createGameRenderer } from '/static/js/game-renderer.js';
     window.editable = true;
+    window.contributable = false;
+    window.movable = false;
     window.moves = [];
     window.refresh = async () => {
         window.lastGame = await (await fetch('/latest')).json();
@@ -144,6 +200,8 @@ def movable_game_page() -> Iterator[Page]:
         toggleButton: document.getElementById('game-state-toggle-btn'),
         actionUrl: () => '/action',
         canEdit: () => window.editable,
+        canContribute: () => window.contributable,
+        canMove: () => window.editable || window.movable,
         refresh: window.refresh,
         onMove: move => window.moves.push(move),
     });
@@ -268,6 +326,43 @@ def test_game_panel_toggle_preserves_position(movable_game_page: Page) -> None:
     expect(panel).to_be_visible()
     assert panel.evaluate("el => el.style.left") == "60%"
     assert panel.evaluate("el => el.style.top") == "60%"
+
+
+@pytest.mark.parametrize("collaboration", [False, True])
+def test_contributor_panel_position_is_private_and_survives_refresh(
+    movable_game_page: Page, collaboration: bool,
+) -> None:
+    page = movable_game_page
+    page.evaluate("""collaboration => {
+        window.editable = false;
+        window.movable = true;
+        window.contributable = collaboration;
+        window.renderer.render({...window.lastGame, placement: {left_pct: 50, top_pct: 50}});
+    }""", collaboration)
+    control = page.locator(".game-move")
+    expect(control).to_be_visible()
+    bounds = control.bounding_box()
+    assert bounds is not None
+    x = bounds["x"] + bounds["width"] / 2
+    y = bounds["y"] + bounds["height"] / 2
+    page.mouse.move(x, y)
+    page.mouse.down()
+    page.mouse.move(x + 100, y + 80)
+    page.mouse.up()
+    panel = page.locator(".game-panel")
+    assert panel.evaluate("el => el.style.left") == "60%"
+    assert panel.evaluate("el => el.style.top") == "60%"
+    assert page.evaluate("window.moves") == []
+    page.evaluate("""window.renderer.render({...window.lastGame, revision: 1,
+        placement: {left_pct: 40, top_pct: 40}})""")
+    assert panel.evaluate("el => el.style.left") == "60%"
+    assert panel.evaluate("el => el.style.top") == "60%"
+    toggle = page.get_by_role("button", name="Toggle game")
+    toggle.click()
+    toggle.click()
+    assert panel.evaluate("el => el.style.left") == "60%"
+    assert panel.evaluate("el => el.style.top") == "60%"
+    expect(page.get_by_role("button", name="New game")).to_be_disabled()
 
 
 def test_exploration_undo_and_polling_need_no_action_requests(movable_game_page: Page) -> None:
