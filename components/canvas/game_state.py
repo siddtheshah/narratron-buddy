@@ -15,7 +15,7 @@ from components.canvas.game_client import browser_compatible, browser_program
 from components.game_source import find_game_file
 from components.canvas.game_runtime import (
     Budget, GameAction, GameStep, GameModel, GameProgram, MAX_GAME_BYTES, MAX_VALUE_BYTES,
-    validate_game_package,
+    GameWorkBudgetExceeded, evaluate_with_recovery, validate_game_package,
 )
 
 logger = logging.getLogger(__name__)
@@ -106,13 +106,17 @@ class GameState:
 
     def _prepare(self, state: dict[str, JsonValue], budget: Budget | None = None) -> list[JsonValue]:
         assert self.program is not None
+        if budget is None:
+            def prepare(budget: Budget) -> list[JsonValue]:
+                return self._prepare(state, budget)
+
+            return evaluate_with_recovery(prepare)
         logger.debug("[GameState] Preparing state (revision=%d): %s", self.revision, state)
         if len(json.dumps(state, allow_nan=False).encode("utf-8")) > MAX_VALUE_BYTES:
             raise ValueError("Game state exceeds its size budget.")
         execution = self.program.execution()
-        if budget is not None:
-            execution.budget = budget
-            budget.nodes = 0
+        execution.budget = budget
+        budget.nodes = 0
         context = execution.context(state)
         execution.validate(state, context)
         view = [node.model_dump(mode="json") for node in execution.render(self.program.definition.view, context)]
@@ -305,11 +309,11 @@ class GameState:
                 self.state, self._view, self._model_state, self._narratron_actions, self.revision
             )
             event_id = story_event_id or f"player:{self.definition_hash}:{action.revision}"
+
             try:
-                budget = Budget()
                 for step in action.draft:
-                    self._apply_step(step, actor, budget, exploratory=True)
-                self._apply_step(GameStep(name=action.name, arguments=action.arguments), actor, budget)
+                    self._apply_step(step, actor, exploratory=True)
+                self._apply_step(GameStep(name=action.name, arguments=action.arguments), actor)
                 self.revision += 1
                 snapshot = self.story_snapshot("narratron")
                 assert snapshot is not None
@@ -331,7 +335,15 @@ class GameState:
                     previous, previous_view, previous_model_state, previous_actions, revision
                 )
                 logger.exception("Game action failed: %s", action.name)
-                self.report_error("Game action failed; the previous game state was retained.")
+                message = (
+                    "Game evaluation is too expensive; the previous position was retained. "
+                    "Try another action."
+                    if type(exc) is GameWorkBudgetExceeded
+                    else "Game action failed; the previous game state was retained."
+                )
+                self.report_error(message)
+                if type(exc) is GameWorkBudgetExceeded:
+                    raise GameWorkBudgetExceeded(f"{exc} {message}") from exc
                 if type(exc) is UnauthorizedGameAction:
                     raise
                 raise ValueError(str(exc)[:250]) from exc
@@ -350,10 +362,20 @@ class GameState:
             return self.payload()
 
     def _apply_step(
+        self, step: GameStep, actor: Literal["player", "contributor", "narratron"],
+        *, exploratory: bool = False,
+    ) -> None:
+        """Give each replayed action its own work budget and bounded recovery."""
+        def evaluate_step(budget: Budget) -> None:
+            self._evaluate_step(step, actor, budget, exploratory=exploratory)
+
+        evaluate_with_recovery(evaluate_step)
+
+    def _evaluate_step(
         self, step: GameStep, actor: Literal["player", "contributor", "narratron"], budget: Budget,
         *, exploratory: bool = False,
     ) -> None:
-        """Replay a step inside the enclosing atomic commit and rollback boundary."""
+        """Publish a step's candidate only after all of its evaluation succeeds."""
         assert self.program is not None
         transition = self.program.definition.transitions.get(step.name)
         if transition is None:

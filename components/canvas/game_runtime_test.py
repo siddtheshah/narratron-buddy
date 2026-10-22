@@ -1,10 +1,15 @@
 """Random CEL calls must draw afresh, including through cached helper expressions."""
-from unittest.mock import patch
+from functools import partial
+from unittest.mock import Mock, patch
 
 import pytest
 from pydantic import JsonValue
 
-from components.canvas.game_runtime import FunctionDefinition, GameProgram
+from components.canvas.game_runtime import (
+    Budget, FunctionDefinition, GameProgram, GameWorkBudgetExceeded,
+    MAX_STEPS, MAX_SECONDS, RECOVERY_MAX_STEPS, RECOVERY_MAX_SECONDS,
+    evaluate_with_recovery, validate_game_package,
+)
 from testing.game_fixtures import counter_definition
 
 
@@ -101,3 +106,76 @@ def test_random_int_builtin_cannot_be_redefined() -> None:
     definition.functions['random_int'] = FunctionDefinition(parameters=[], expr='1')
     with pytest.raises(ValueError, match='duplicate function name'):
         GameProgram(definition)
+
+
+def test_step_exhaustion_remains_latched() -> None:
+    budget = Budget(remaining=0)
+    with pytest.raises(GameWorkBudgetExceeded, match="step limit"):
+        budget.charge()
+    budget.remaining = MAX_STEPS
+    with pytest.raises(GameWorkBudgetExceeded, match="step limit"):
+        budget.check()
+
+
+def test_deadline_exhaustion_remains_latched() -> None:
+    budget = Budget(remaining=257)
+    with patch("components.canvas.game_runtime.monotonic", return_value=budget.deadline + 1):
+        with pytest.raises(GameWorkBudgetExceeded, match="time limit"):
+            budget.charge()
+    with pytest.raises(GameWorkBudgetExceeded, match="time limit"):
+        budget.check()
+
+
+@pytest.mark.parametrize("source", ["true || burn()", "false && burn()"])
+def test_masked_helper_exhaustion_preserves_recoverable_error(source: str) -> None:
+    definition = counter_definition()
+    definition.constants = {"values": list(range(100))}
+    definition.functions["burn"] = FunctionDefinition(
+        parameters=[], expr="constants.values.map(x, x + 1).size() > 0",
+    )
+    definition.transitions["clear"].result = source
+    execution = GameProgram(definition).execution()
+    execution.budget = Budget(remaining=80)
+    with pytest.raises(GameWorkBudgetExceeded, match="step limit"):
+        execution.evaluate(source, {})
+
+
+def test_recovery_has_one_fixed_ceiling() -> None:
+    budgets: list[Budget] = []
+
+    def exhaust(budget: Budget) -> None:
+        budgets.append(budget)
+        budget.remaining = 0
+        budget.charge()
+
+    with pytest.raises(GameWorkBudgetExceeded):
+        evaluate_with_recovery(exhaust)
+    assert len(budgets) == 2
+    assert [budget.seconds for budget in budgets] == [MAX_SECONDS, RECOVERY_MAX_SECONDS]
+
+
+def test_only_resource_failures_are_retried() -> None:
+    operation = Mock(side_effect=ValueError("invalid action"))
+    with pytest.raises(ValueError, match="invalid action"):
+        evaluate_with_recovery(operation)
+    operation.assert_called_once()
+
+
+def test_package_initial_preparation_can_recover() -> None:
+    with patch("components.canvas.game_runtime.Budget", side_effect=partial(Budget, remaining=0)):
+        program = validate_game_package(counter_definition().model_dump_json().encode())
+    assert program.initial_view[0]["children"][0]["props"]["text"] == "Count: 0"
+
+
+def test_recovery_uses_larger_step_and_time_budgets() -> None:
+    limits: list[tuple[int, float]] = []
+
+    def evaluate(budget: Budget) -> int:
+        limits.append((budget.remaining, budget.seconds))
+        if len(limits) == 1:
+            budget.remaining = 0
+            budget.charge()
+        return 42
+
+    assert evaluate_with_recovery(evaluate) == 42
+    assert limits == [(MAX_STEPS, MAX_SECONDS), (RECOVERY_MAX_STEPS, RECOVERY_MAX_SECONDS)]

@@ -2,13 +2,14 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import json
+import logging
 from pathlib import Path, PurePosixPath
 import random
 import re
 from time import monotonic
-from typing import Literal
+from typing import Literal, TypeVar
 import xml.etree.ElementTree as ET
 
 from celpy import Environment, Runner, celtypes
@@ -22,6 +23,11 @@ from components.game_source import game_source_json
 
 MAX_GAME_BYTES = 131_072
 MAX_STEPS = 500_000
+RECOVERY_MAX_STEPS = 2_000_000
+MAX_SECONDS = 5.0
+RECOVERY_MAX_SECONDS = 10.0
+BudgetResult = TypeVar("BudgetResult")
+logger = logging.getLogger(__name__)
 MAX_MODEL_STATE_BYTES = 16_384
 MAX_SVG_NODES = 512
 MAX_SVG_DEPTH = 12
@@ -275,19 +281,42 @@ def load_game_svg_assets(game_dir: Path | None) -> dict[str, RenderedNode]:
     return assets
 
 
+class GameWorkBudgetExceeded(ValueError):
+    """A resource limit, distinct from an invalid CEL expression or game action."""
+
+
 @dataclass
 class Budget:
     remaining: int = MAX_STEPS
-    deadline: float = 0
+    seconds: float = MAX_SECONDS
+    deadline: float = field(init=False)
     nodes: int = 0
+    exhausted: str = field(default="", init=False)
 
     def __post_init__(self) -> None:
-        self.deadline = monotonic() + 5.0
+        self.deadline = monotonic() + self.seconds
+
+    def check(self) -> None:
+        if self.exhausted:
+            raise GameWorkBudgetExceeded(self.exhausted)
 
     def charge(self) -> None:
+        self.check()
         self.remaining -= 1
-        if self.remaining < 0 or (self.remaining % 256 == 0 and monotonic() > self.deadline):
-            raise ValueError("Game evaluation exceeded its work budget.")
+        if self.remaining < 0:
+            self.exhausted = "Game evaluation exceeded its work budget (step limit)."
+        elif self.remaining % 256 == 0 and monotonic() > self.deadline:
+            self.exhausted = "Game evaluation exceeded its work budget (time limit)."
+        self.check()
+
+
+def evaluate_with_recovery(operation: Callable[[Budget], BudgetResult]) -> BudgetResult:
+    """Retry resource exhaustion once; callers must discard partial evaluation state."""
+    try:
+        return operation(Budget())
+    except GameWorkBudgetExceeded as exc:
+        logger.warning("%s Retrying with %d steps and %.1f seconds.", exc, RECOVERY_MAX_STEPS, RECOVERY_MAX_SECONDS)
+    return operation(Budget(remaining=RECOVERY_MAX_STEPS, seconds=RECOVERY_MAX_SECONDS))
 
 
 class BoundedEvaluator(Evaluator):
@@ -467,6 +496,7 @@ class Execution:
         return invoke
 
     def evaluate(self, source: str, context: dict[str, JsonValue]) -> JsonValue:
+        self.budget.check()
         dependencies = self.program.dependencies[source]
         key = (source, tuple((name, id(context[name])) for name in dependencies if name in context))
         cacheable = source not in self.program.random_expressions
@@ -484,6 +514,9 @@ class Execution:
                 self._results[key] = value
             return value
         except Exception as exc:
+            # CEL can wrap or mask exceptions thrown by author functions.
+            # Preserve resource failures so only these qualify for recovery.
+            self.budget.check()
             raise ValueError(f"CEL evaluation failed: {str(exc)[:180]}") from exc
 
     def convert(self, value: JsonValue) -> celtypes.Value:
@@ -599,13 +632,20 @@ def validate_game_package(
             raise ValueError("Game definition exceeds size limit after decoding.")
         definition = GameDefinition.model_validate_json(normalized)
         program = GameProgram(definition, svg_assets=resolved_svgs)
-        execution = program.execution()
-        context = execution.context(definition.initial)
-        execution.validate(definition.initial, context)
-        program.initial_view = [node.model_dump(mode="json") for node in execution.render(definition.view, context)]
-        program.initial_model_state, program.initial_narratron_actions = execution.model_context(context)
-        if len(json.dumps(program.initial_view).encode("utf-8")) - execution.svg_expanded_bytes > MAX_VALUE_BYTES:
-            raise ValueError("Rendered view exceeds its size budget.")
+
+        def prepare_initial(budget: Budget) -> None:
+            execution = program.execution()
+            execution.budget = budget
+            context = execution.context(definition.initial)
+            execution.validate(definition.initial, context)
+            view = [node.model_dump(mode="json") for node in execution.render(definition.view, context)]
+            model_state, actions = execution.model_context(context)
+            if len(json.dumps(view).encode("utf-8")) - execution.svg_expanded_bytes > MAX_VALUE_BYTES:
+                raise ValueError("Rendered view exceeds its size budget.")
+            program.initial_view = view
+            program.initial_model_state, program.initial_narratron_actions = model_state, actions
+
+        evaluate_with_recovery(prepare_initial)
         return program
     except Exception as exc:
         raise ValueError(f"Invalid game package: {str(exc)[:250]}") from exc

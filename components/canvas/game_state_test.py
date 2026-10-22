@@ -1,18 +1,22 @@
 """Game-agnostic contract tests: the same runtime also runs a counter."""
 from concurrent.futures import ThreadPoolExecutor
+from functools import partial
 import json
 import logging
 from pathlib import Path
 from unittest.mock import Mock, patch
 
 import pytest
+from pydantic import JsonValue
 
 from components.canvas.game_runtime import (
     MAX_GAME_BYTES,
+    Budget,
     Binding,
     GameDefinition,
     GameProgram,
     GameStep,
+    GameWorkBudgetExceeded,
     ViewAction,
     ViewNode,
     validate_game_package,
@@ -298,6 +302,124 @@ def test_nested_macros_share_a_work_budget() -> None:
     execution.budget.remaining = 500
     with pytest.raises(ValueError, match='budget'):
         execution.context({'count': 0})
+
+
+def test_budget_recovery_retries_only_final_action_and_commits_once(tmp_path: Path) -> None:
+    definition = counter_definition()
+    definition.local_preview = True
+    definition.transitions['add'].triggering = False
+    definition.transitions['clear'].result = '{"count": state.count}'
+    game = make_game(tmp_path, definition)
+    persist, notify, callback = Mock(), Mock(), Mock()
+    game._persist, game._notify, game.on_player_action = persist, notify, callback
+    prepare = game._prepare
+    attempts: list[JsonValue] = []
+
+    def exhaust_first_preparation(state: dict[str, JsonValue], budget: Budget | None = None) -> list[JsonValue]:
+        assert budget is not None
+        attempts.append(state['count'])
+        if len(attempts) == 1:
+            budget.remaining = 0
+            budget.charge()
+        return prepare(state, budget)
+
+    action = GameAction(name='clear', revision=0, draft=[GameStep(name='add', arguments={'amount': 3})])
+    with patch.object(game, '_prepare', side_effect=exhaust_first_preparation), \
+            patch.object(game, '_evaluate_step', wraps=game._evaluate_step) as evaluate_step:
+        game.act(action)
+    assert [call.args[0].name for call in evaluate_step.call_args_list] == ['add', 'clear', 'clear']
+    assert attempts == [3, 3]
+    assert game.state == {'count': 3}
+    assert game.revision == 1 and game.error == ''
+    assert len(game.pending_story_actions()) == 1
+    persist.assert_called_once()
+    notify.assert_called_once()
+    callback.assert_called_once()
+    with pytest.raises(StaleGameAction):
+        game.act(action)
+
+
+def test_exhausted_recovery_retains_position_and_allows_later_action(tmp_path: Path) -> None:
+    game = make_game(tmp_path)
+    before = game.serialize()
+    view = game.payload()['view']
+    snapshot = game.story_snapshot('narratron')
+    persist, callback = Mock(), Mock()
+    game._persist, game.on_player_action = persist, callback
+    with patch('components.canvas.game_runtime.Budget', return_value=Budget(remaining=0)):
+        with pytest.raises(GameWorkBudgetExceeded, match='previous position was retained'):
+            game.act(GameAction(name='add', arguments={'amount': 1}, revision=0))
+    assert game.serialize() == before
+    assert game.payload()['view'] == view
+    assert game.story_snapshot('narratron') == snapshot
+    assert 'Try another action' in game.error
+    persist.assert_not_called()
+    callback.assert_not_called()
+    game.act(GameAction(name='add', arguments={'amount': 1}, revision=0))
+    assert game.state == {'count': 1} and game.error == ''
+    persist.assert_called_once()
+    callback.assert_called_once()
+
+
+def test_saved_game_preparation_can_recover(tmp_path: Path) -> None:
+    game = make_game(tmp_path)
+    game.act(GameAction(name='add', arguments={'amount': 2}, revision=0))
+    restored = make_game(tmp_path)
+    with patch('components.canvas.game_runtime.Budget', side_effect=partial(Budget, remaining=0)):
+        restored.load(game.serialize()['game_state'])
+    assert restored.payload() == game.payload()
+
+
+@pytest.mark.parametrize('no_op', [False, True])
+def test_draft_actions_each_receive_a_fresh_budget(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture, no_op: bool,
+) -> None:
+    definition = counter_definition()
+    definition.local_preview = True
+    definition.transitions['add'].triggering = False
+    definition.transitions['clear'].result = '{"count": state.count}'
+    if no_op:
+        definition.transitions['add'].result = '{"count": state.count}'
+    game = make_game(tmp_path, definition)
+    action = GameAction(name='clear', revision=0, draft=[
+        GameStep(name='add', arguments={'amount': 1}) for _ in range(64 if no_op else 6)
+    ])
+    with patch('components.canvas.game_runtime.Budget', side_effect=partial(Budget, remaining=1000)):
+        game.act(action)
+    assert 'Retrying with' not in caplog.text
+    assert game.state == {'count': 0 if no_op else 6} and game.revision == 1
+    assert game.error == '' and len(game.pending_story_actions()) == 1
+
+
+def test_failed_final_action_rolls_back_all_draft_actions(tmp_path: Path) -> None:
+    definition = counter_definition()
+    definition.local_preview = True
+    definition.transitions['add'].triggering = False
+    game = make_game(tmp_path, definition)
+    before = game.serialize()
+    payload = game.payload()
+    snapshot = game.story_snapshot('narratron')
+    persist, callback = Mock(), Mock()
+    game._persist, game.on_player_action = persist, callback
+    prepare = game._prepare
+
+    def exhaust_preparation(state: dict[str, JsonValue], budget: Budget | None = None) -> list[JsonValue]:
+        assert budget is not None
+        assert game.state == {'count': 3}
+        budget.remaining = 0
+        budget.charge()
+        return prepare(state, budget)
+
+    action = GameAction(name='clear', revision=0, draft=[GameStep(name='add', arguments={'amount': 3})])
+    with patch.object(game, '_prepare', side_effect=exhaust_preparation) as prepare_step:
+        with pytest.raises(GameWorkBudgetExceeded):
+            game.act(action)
+    assert prepare_step.call_count == 2
+    assert game.serialize() == before
+    assert game.payload()['view'] == payload['view']
+    assert game.story_snapshot('narratron') == snapshot
+    persist.assert_not_called()
+    callback.assert_not_called()
 
 
 @pytest.mark.parametrize('schema', [{'$ref': 'https://example.com/schema'}, {'type': 'string', 'pattern': '(a+)+$'}])

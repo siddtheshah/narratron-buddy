@@ -251,7 +251,8 @@ from the committed action.
 Limits include:
 
 - Package: 128 KiB (the YAML or JSON declaration, its decoded JSON, and each `game/*.svg` asset); CEL expression: 4,000 characters and 1,000 AST nodes.
-- Each transition-evaluation or view-preparation phase: 500,000 visited AST nodes and a five-second deadline. Nested macros and author functions share the phase's budget. Work exhaustion rejects the operation even if CEL suppresses an error.
+- Every replayed draft action and the final submitted action starts with its own 500,000 visited AST nodes and a five-second deadline. An action's permission checks, nested macros, author functions, validation, view preparation and model context share its budget. Work does not accumulate across actions, even within one submission. More complex positions can require more work per action.
+- On a step or time limit, only the exhausted action retries once from its input position with 2,000,000 steps and a ten-second deadline; completed draft actions are not replayed again. Initial package preparation and saved-state restoration use the same bounded recovery policy. An attempt's exhaustion remains fatal even if CEL masks a nested error. Invalid actions, CEL errors and persistence failures are not retried. An individual action's two attempts can consume up to 2,500,000 steps and about fifteen seconds in total. A submission can contain up to 64 draft actions plus its final action.
 - Evaluated JSON values, state and materialized view: 128 KiB each. CEL values are copied incrementally with a size budget and a nesting limit of 64, so oversized repeated values are rejected before a full JSON expansion is allocated.
 - Action: 4 KiB; rendered view: 1,024 nodes, nesting depth 12, repetition 256.
 - JSON Schema references and regular expressions are rejected to prevent network resolution, recursive references and unbounded regex evaluation.
@@ -290,6 +291,12 @@ Failed actions also publish a game error to canvas subscribers. The game button
 shows an error badge while the panel remains closed until clicked; the panel
 shows the message alongside the last valid view. A successful action clears the
 error. Internal tracebacks remain in server logs.
+Budget recovery replays evaluation only; a successful submission increments its
+revision, persists and emits its story callback once. Uncommitted random draws
+may be redrawn during the retry. If the recovery budget also runs out, the
+entire submission rolls back, including completed draft actions, and the previous
+position and view are retained. Try another action. Diagnostics
+distinguish step exhaustion from deadline exhaustion.
 These exception boundaries run in the server process, not a separate sandbox
 process, so they do not protect against process termination or resource exhaustion.
 
