@@ -508,6 +508,36 @@ def test_contributor_panel_position_is_private_and_survives_refresh(
     expect(page.get_by_role("button", name="New game")).to_be_disabled()
 
 
+def test_pending_submit_keeps_panel_dimensions_and_disables_controls(movable_game_page: Page) -> None:
+    page = movable_game_page
+    held_actions: list[Route] = []
+
+    def hold_action(route: Route) -> None:
+        held_actions.append(route)
+
+    page.route("http://game.test/action", hold_action)
+    page.locator('[data-game-id="square-40"]').click()
+    page.locator('[data-game-id="square-33"]').click()
+    panel = page.locator(".game-panel")
+    before = panel.bounding_box()
+    assert before is not None
+    submit = page.get_by_role("button", name="Submit", exact=True)
+    submit.click()
+    expect(panel).to_have_attribute("aria-busy", "true")
+    expect(submit).to_be_disabled()
+    expect(submit).to_have_text("Submit")
+    expect(page.get_by_role("button", name="Undo", exact=True)).to_be_disabled()
+    expect(page.get_by_text("Resolving action…", exact=True)).to_have_count(0)
+    during = panel.bounding_box()
+    assert during is not None
+    for dimension in ("x", "y", "width", "height"):
+        assert abs(during[dimension] - before[dimension]) < 1
+    assert len(held_actions) == 1
+    held_actions[0].fulfill(status=409, json={"detail": "Preview expired."})
+    expect(panel).to_have_attribute("aria-busy", "false")
+    expect(page.get_by_role("alert")).to_have_text("Preview expired.")
+
+
 def test_exploration_undo_and_polling_need_no_action_requests(movable_game_page: Page) -> None:
     page = movable_game_page
     requests: list[str] = []

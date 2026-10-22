@@ -400,11 +400,6 @@ export function createGameRenderer({ container, toggleButton, actionUrl, canEdit
             controls.append(actions);
             feedback.append(controls);
         }
-        if (pending) {
-            const status = message('Resolving action…', 'game-message');
-            status.setAttribute('role', 'status');
-            feedback.append(status);
-        }
         if (!canEdit()) {
             const note = canContribute()
                 ? 'Contributor mode · collaboration-enabled actions are unlocked.'
