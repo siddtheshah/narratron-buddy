@@ -149,9 +149,11 @@ Non-triggering transitions update a private draft without making network calls,
 persisting shared state, or notifying StoryRecorder. The UI offers Undo and Discard
 changes. A triggering transition such as Trader's Propose trade sends the draft
 and final action in one request. Set `preview: true` on a triggering transition
-to preview it first and display an explicit End turn button, as checkers does for
-movement. After that preview, use Undo to try a different move or End turn to
-commit it. Continued checkers jumps retain their existing per-jump commit boundary.
+to preview it first and display an explicit Submit button, as checkers does for
+movement. After that preview, use Undo to try a different move or Submit to
+commit it. Submit is orange when a move is ready to commit; selecting a piece
+alone leaves it disabled. Continued checkers jumps retain their existing
+per-jump commit boundary.
 
 The action request contains `{name, arguments, revision, draft: [{name, arguments}]}`.
 The server checks the original revision, every step's actor and contributor
@@ -169,7 +171,7 @@ discards private exploration; other viewers see only committed state.
 
 ## Rendering language
 
-Nodes support `column`, `row`, `grid`, `text`, `button`, `svg`, `g`, `path`,
+Nodes support `column`, `row`, `grid`, `tabs`, `text`, `button`, `svg`, `g`, `path`,
 `rect`, `circle`, `ellipse`, `line`, `polyline`, `polygon`, `svg_text`, `tspan`,
 `defs`, `linearGradient`, `radialGradient`, `stop`, `clipPath`, `mask`, and
 `symbol`. Each node has CEL-valued `props` and optional `children`.
@@ -191,6 +193,11 @@ Supported properties:
 - Content/accessibility: `text`, `label`, `id`, `disabled`, `pressed`.
 - Layout/style: `columns` (grid), `gap`, `padding`, `color`, `background` (color only), `fontSize`, `fontWeight`, `borderRadius`, `outline`, `aspectRatio`, `textAlign`.
 - A row with `layout: '"sidebar"'` places its first child on the left and its second child on the right in a wider panel. It stacks the children on narrow screens.
+- A `tabs` node displays its children as panels, using each child's `label` prop
+  as the tab title. The first tab opens by default. Selection stays local to the
+  viewer, survives game updates, and works for read-only viewers. Arrow keys,
+  Home and End navigate tabs. Give the tabs node a stable `id` if its position
+  in the view can change; changing the game package resets the selection.
 - SVG: `src` (relative `.svg` file in `game/`), `viewBox`, `preserveAspectRatio`, `x`, `y`, `x1`, `y1`, `x2`, `y2`, `dx`, `dy`, `width`, `height`, `cx`, `cy`, `r`, `rx`, `ry`, `d`, `points`, `fill`, `fill-opacity`, `fill-rule`, `stroke`, `stroke-width`, `stroke-opacity`, `stroke-linecap`, `stroke-linejoin`, `stroke-dasharray`, `stroke-dashoffset`, `stroke-miterlimit`, `opacity`, `transform`, `text-anchor`, `dominant-baseline`, `font-size`, `font-weight`, `font-family`, `letter-spacing`, and gradient/stop attributes.
 
 A button's `action` declares CEL expressions for its `name` and JSON-object

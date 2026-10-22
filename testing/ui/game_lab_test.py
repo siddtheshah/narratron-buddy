@@ -49,7 +49,7 @@ def test_manual_lab_plays_checkers_and_resets(
             page.locator('[data-game-id="square-33"]').click()
             expect(page.locator('[data-game-id="status"]')).to_have_text("Ivory to move")
             provider.generate.assert_not_called()
-            page.get_by_role('button', name='End turn', exact=True).click()
+            page.get_by_role('button', name='Submit', exact=True).click()
             expect(page.locator('[data-game-id="status"]')).to_have_text("Red to move")
             expect(page.locator("#turn-summary")).to_contain_text("1 AI actions")
             expect(page.locator("#replies")).to_contain_text("Narratron: I respond to the move.")

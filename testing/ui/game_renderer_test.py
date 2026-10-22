@@ -117,7 +117,7 @@ def test_checkers_renderer_moves_and_viewer_permissions(tmp_path: Path) -> None:
         page.locator('[data-game-id="square-33"]').click()
         expect(page.locator('[data-game-id="status"]')).to_have_text("Ivory to move")
         assert game.revision == 0
-        page.get_by_role('button', name='End turn', exact=True).click()
+        page.get_by_role('button', name='Submit', exact=True).click()
         assert game.state["board"][33] == 1
         toggle.click()
         page.evaluate("window.refresh()")
@@ -141,7 +141,7 @@ def test_checkers_renderer_moves_and_viewer_permissions(tmp_path: Path) -> None:
         expect(page.locator('[data-game-id="square-26"]')).to_be_enabled()
         page.locator('[data-game-id="square-26"]').click()
         expect(page.locator('[data-game-id="status"]')).to_have_text("Red to move")
-        page.get_by_role('button', name='End turn', exact=True).click()
+        page.get_by_role('button', name='Submit', exact=True).click()
         assert game.state["board"][26] == -1
         # A different state schema and SVG view (including game/*.svg asset) work without another renderer.
         counter_dir = tmp_path / "counter"
@@ -374,10 +374,17 @@ def test_exploration_undo_and_polling_need_no_action_requests(movable_game_page:
 
     page.on('request', record_request)
     page.locator('[data-game-id="square-40"]').click()
+    submit = page.get_by_role('button', name='Submit', exact=True)
+    expect(submit).to_be_disabled()
     page.locator('[data-game-id="square-33"]').click()
+    expect(submit).to_be_enabled()
+    page.mouse.move(0, 0)
+    assert submit.evaluate('el => getComputedStyle(el).backgroundColor') == 'rgb(249, 115, 22)'
     expect(page.locator('[data-game-id="status"]')).to_have_text('Ivory to move')
     assert requests == []
     page.get_by_role('button', name='Undo', exact=True).click()
+    expect(submit).to_be_disabled()
+    assert submit.evaluate('el => getComputedStyle(el).backgroundColor') != 'rgb(249, 115, 22)'
     expect(page.locator('[data-game-id="square-40"]')).to_have_attribute('aria-pressed', 'true')
     page.locator('[data-game-id="square-42"]').click()
     page.locator('[data-game-id="square-35"]').click()
@@ -385,8 +392,8 @@ def test_exploration_undo_and_polling_need_no_action_requests(movable_game_page:
     page.evaluate('window.refresh()')
     expect(page.locator('[data-game-id="square-35"] circle')).to_have_attribute('fill', '#e05252')
     assert len(requests) == 1 and requests[0].endswith('/latest')
-    page.get_by_role('button', name='End turn', exact=True).click()
-    expect(page.get_by_role('button', name='End turn', exact=True)).to_have_count(0)
+    page.get_by_role('button', name='Submit', exact=True).click()
+    expect(page.get_by_role('button', name='Submit', exact=True)).to_have_count(0)
     assert len([url for url in requests if url.endswith('/action')]) == 1
     page.wait_for_function('window.lastGame.revision === 1')
     assert page.evaluate('window.lastGame.revision') == 1
@@ -394,18 +401,66 @@ def test_exploration_undo_and_polling_need_no_action_requests(movable_game_page:
     assert page.evaluate('window.lastGame.state.board[35]') == 1
 
 
+def test_information_tabs_are_private_accessible_and_survive_updates(movable_game_page: Page) -> None:
+    page = movable_game_page
+    page.evaluate('''() => {
+        window.editable = false;
+        window.lastGame = {...window.lastGame, view: [{kind: 'tabs',
+            props: {id: 'information', label: 'Game information'}, children: [
+                {kind: 'column', props: {label: 'Events'}, children: [
+                    {kind: 'text', props: {text: 'Latest event'}}]},
+                {kind: 'column', props: {label: 'Terms'}, children: [
+                    {kind: 'text', props: {text: 'Term definitions'}}]},
+            ]}]};
+        window.renderer.render(window.lastGame);
+    }''')
+    requests: list[str] = []
+
+    def record_request(request: Request) -> None:
+        requests.append(request.url)
+
+    page.on('request', record_request)
+    events = page.get_by_role('tab', name='Events', exact=True)
+    terms = page.get_by_role('tab', name='Terms', exact=True)
+    expect(events).to_have_attribute('aria-selected', 'true')
+    expect(page.get_by_role('tabpanel', name='Events')).to_be_visible()
+    expect(page.get_by_role('tabpanel', name='Terms', include_hidden=True)).to_be_hidden()
+    events.focus()
+    events.press('ArrowLeft')
+    expect(terms).to_be_focused()
+    expect(terms).to_have_attribute('tabindex', '0')
+    expect(events).to_have_attribute('tabindex', '-1')
+    expect(page.get_by_role('tabpanel', name='Terms')).to_be_visible()
+    terms.press('Home')
+    expect(events).to_be_focused()
+    events.press('End')
+    expect(terms).to_be_focused()
+    terms.press('ArrowRight')
+    expect(events).to_be_focused()
+    terms.click()
+    page.evaluate('window.renderer.render({...window.lastGame, revision: 1})')
+    expect(terms).to_have_attribute('aria-selected', 'true')
+    toggle = page.get_by_role('button', name='Toggle game')
+    toggle.click()
+    toggle.click()
+    expect(terms).to_have_attribute('aria-selected', 'true')
+    page.evaluate('window.renderer.render({...window.lastGame, definition_hash: "new-package"})')
+    expect(events).to_have_attribute('aria-selected', 'true')
+    assert requests == []
+
+
 @pytest.mark.parametrize('change', ['revision', 'permission', 'package'])
 def test_exploration_is_discarded_when_authority_changes(movable_game_page: Page, change: str) -> None:
     page = movable_game_page
     page.locator('[data-game-id="square-40"]').click()
     page.locator('[data-game-id="square-33"]').click()
-    expect(page.get_by_role('button', name='End turn', exact=True)).to_be_visible()
+    expect(page.get_by_role('button', name='Submit', exact=True)).to_be_visible()
     if change == 'revision':
         page.evaluate('window.renderer.render({...window.lastGame, revision: 1})')
     elif change == 'permission':
         page.evaluate('window.editable = false; window.renderer.render(window.lastGame)')
     else:
         page.evaluate('window.renderer.render({...window.lastGame, definition_hash: "new-package"})')
-    expect(page.get_by_role('button', name='End turn', exact=True)).to_have_count(0)
+    expect(page.get_by_role('button', name='Submit', exact=True)).to_have_count(0)
     expect(page.locator('[data-game-id="status"]')).to_have_text('Red to move')
     expect(page.get_by_role('alert')).to_contain_text('Local exploration was discarded')

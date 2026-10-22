@@ -98,7 +98,7 @@ class ViewAction(GameModel):
 
 class ViewNode(GameModel):
     kind: Literal[
-        "column", "row", "grid", "text", "button",
+        "column", "row", "grid", "tabs", "text", "button",
         "svg", "g", "path", "rect", "circle", "ellipse", "line", "polyline", "polygon", "svg_text", "image",
     ]
     props: dict[str, str] = Field(default_factory=dict, max_length=24)

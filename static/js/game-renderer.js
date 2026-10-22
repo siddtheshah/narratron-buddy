@@ -1,7 +1,7 @@
 // Generic declarative views with optional data-only local exploration.
 import { createLocalGame } from './game-runtime.js?v=1';
 const TAGS = {
-    column: 'div', row: 'div', grid: 'div', text: 'p', button: 'button',
+    column: 'div', row: 'div', grid: 'div', tabs: 'div', text: 'p', button: 'button',
     svg: 'svg', g: 'g', path: 'path', rect: 'rect', circle: 'circle', ellipse: 'ellipse',
     line: 'line', polyline: 'polyline', polygon: 'polygon', svg_text: 'text', tspan: 'tspan',
     defs: 'defs', linearGradient: 'linearGradient', radialGradient: 'radialGradient',
@@ -23,11 +23,12 @@ const ATTRIBUTES = new Set([
     'letter-spacing', 'offset', 'stop-color', 'stop-opacity', 'gradientUnits',
     'gradientTransform', 'spreadMethod', 'clipPathUnits', 'maskUnits', 'maskContentUnits',
 ]);
+let rendererSequence = 0;
 
 export function createGameRenderer({ container, toggleButton, actionUrl, canEdit,
     canContribute = () => false, refresh,
     canMove = () => canEdit() || canContribute(),
-    stylesheetUrl = '/static/css/game-renderer.css?v=8', initiallyOpen = false,
+    stylesheetUrl = '/static/css/game-renderer.css?v=9', initiallyOpen = false,
     onPendingChange = () => {}, onMove = () => {} }) {
     const stylesheet = document.createElement('link');
     stylesheet.rel = 'stylesheet';
@@ -53,6 +54,8 @@ export function createGameRenderer({ container, toggleButton, actionUrl, canEdit
     let draft = [];
     let draftViews = [];
     let draftPermission = '';
+    const selectedTabs = new Map();
+    const rendererId = `game-renderer-${++rendererSequence}`;
 
     function clearDraft() {
         draft = [];
@@ -137,7 +140,7 @@ export function createGameRenderer({ container, toggleButton, actionUrl, canEdit
         }
     }
 
-    function nodeView(node, depth = 0) {
+    function nodeView(node, depth = 0, path = '0') {
         if (!Object.hasOwn(TAGS, node.kind) || depth > 12) return document.createTextNode('');
         const element = SVG.has(node.kind)
             ? document.createElementNS('http://www.w3.org/2000/svg', TAGS[node.kind])
@@ -174,7 +177,60 @@ export function createGameRenderer({ container, toggleButton, actionUrl, canEdit
             if (node.action?.permission) element.dataset.gamePermission = String(node.action.permission);
             if (node.action) element.addEventListener('click', () => send(node.action));
         }
-        for (const child of node.children || []) element.append(nodeView(child, depth + 1));
+        if (node.kind === 'tabs') {
+            const key = String(props.id || path);
+            const children = node.children || [];
+            const tablist = document.createElement('div');
+            tablist.className = 'game-tab-list';
+            tablist.setAttribute('role', 'tablist');
+            tablist.setAttribute('aria-label', String(props.label || 'Game information'));
+            const buttons = [];
+            const panels = [];
+            const activate = index => {
+                selectedTabs.set(key, index);
+                buttons.forEach((button, i) => {
+                    button.setAttribute('aria-selected', String(i === index));
+                    button.tabIndex = i === index ? 0 : -1;
+                    panels[i].hidden = i !== index;
+                });
+            };
+            children.forEach((child, index) => {
+                const id = `${rendererId}-${path}-${index}`;
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.className = 'game-button game-tab';
+                button.id = `${id}-tab`;
+                button.textContent = String(child.props?.label || `Tab ${index + 1}`);
+                button.setAttribute('role', 'tab');
+                button.setAttribute('aria-controls', `${id}-panel`);
+                button.addEventListener('click', () => activate(index));
+                button.addEventListener('keydown', event => {
+                    let next;
+                    if (event.key === 'ArrowRight') next = (index + 1) % children.length;
+                    else if (event.key === 'ArrowLeft') next = (index + children.length - 1) % children.length;
+                    else if (event.key === 'Home') next = 0;
+                    else if (event.key === 'End') next = children.length - 1;
+                    else return;
+                    event.preventDefault();
+                    activate(next);
+                    buttons[next].focus();
+                });
+                const panel = document.createElement('div');
+                panel.className = 'game-node game-tab-panel';
+                panel.append(nodeView(child, depth + 1, `${path}-${index}`));
+                panel.id = `${id}-panel`;
+                panel.setAttribute('role', 'tabpanel');
+                panel.setAttribute('aria-labelledby', button.id);
+                panel.tabIndex = 0;
+                buttons.push(button);
+                panels.push(panel);
+                tablist.append(button);
+            });
+            element.append(tablist, ...panels);
+            activate(Math.min(selectedTabs.get(key) || 0, Math.max(0, children.length - 1)));
+        } else {
+            (node.children || []).forEach((child, index) => element.append(nodeView(child, depth + 1, `${path}-${index}`)));
+        }
         return element;
     }
 
@@ -290,26 +346,33 @@ export function createGameRenderer({ container, toggleButton, actionUrl, canEdit
         panel.addEventListener('pointercancel', finishDrag);
         panel.addEventListener('lostpointercapture', finishDrag);
 
-        for (const node of currentView() || []) panel.append(nodeView(node));
+        (currentView() || []).forEach((node, index) => panel.append(nodeView(node, 0, String(index))));
         const feedback = panel.querySelector('[data-game-layout="sidebar"] > .game-column') || panel;
         if (draft.length) {
             const controls = document.createElement('div');
-            controls.className = feedback === panel ? 'game-node game-row' : 'game-node game-column';
-            controls.append(message('Exploring · changes are private until submitted.', 'game-message'));
+            controls.className = 'game-node game-column game-draft-controls';
+            const last = draft[draft.length - 1];
+            const ready = game.client.transitions[last.name].triggering;
+            const status = message(ready ? 'Move previewed · submit to confirm.' : 'Exploring · changes are private until submitted.', 'game-message');
+            status.setAttribute('role', 'status');
+            controls.append(status);
+            const actions = document.createElement('div');
+            actions.className = 'game-node game-row game-draft-actions';
             const button = (label, callback) => {
                 const element = document.createElement('button');
                 element.className = 'game-node game-button';
                 element.textContent = label;
                 element.disabled = pending;
                 element.addEventListener('click', callback);
-                controls.append(element);
+                actions.append(element);
+                return element;
             };
-            const last = draft[draft.length - 1];
-            if (game.client.transitions[last.name].triggering) {
-                button('End turn', () => send({ ...last, permission: draftPermission === '[false,true]' ? 'contributor' : 'orator' }, true));
-            }
+            const submit = button('Submit', () => send({ ...last, permission: draftPermission === '[false,true]' ? 'contributor' : 'orator' }, true));
+            submit.disabled = pending || !ready;
+            submit.classList.toggle('game-submit-ready', Boolean(ready));
             button('Undo', () => { draft.pop(); draftViews.pop(); error = ''; draw(); });
             button('Discard changes', () => { clearDraft(); error = ''; draw(); });
+            controls.append(actions);
             feedback.append(controls);
         }
         if (pending) {
@@ -356,7 +419,10 @@ export function createGameRenderer({ container, toggleButton, actionUrl, canEdit
                 clearDraft();
             }
             if (target?.client !== game?.client) local = target?.client ? createLocalGame(target.client) : null;
-            if (target?.definition_hash !== game?.definition_hash) localPlacement = null;
+            if (target?.definition_hash !== game?.definition_hash) {
+                localPlacement = null;
+                selectedTabs.clear();
+            }
             game = target;
             if (activePointerId === null) {
                 const placement = localPlacement || target?.placement;

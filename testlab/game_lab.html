@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Game Testing Lab</title>
-<link rel="stylesheet" href="/game-lab-assets/css/game-renderer.css?v=8">
+<link rel="stylesheet" href="/game-lab-assets/css/game-renderer.css?v=9">
 <style>
 :root {
   color-scheme: dark;
@@ -598,7 +598,7 @@ pre {
 </details>
 
 <script type="module">
-import { createGameRenderer } from '/game-lab-assets/js/game-renderer.js?v=9';
+import { createGameRenderer } from '/game-lab-assets/js/game-renderer.js?v=10';
 
 const el = id => document.getElementById(id);
 let sessionId = null;
@@ -744,7 +744,7 @@ const renderer = createGameRenderer({
     canEdit,
     canContribute,
     refresh,
-    stylesheetUrl: '/game-lab-assets/css/game-renderer.css?v=8',
+    stylesheetUrl: '/game-lab-assets/css/game-renderer.css?v=9',
     initiallyOpen: true,
     onPendingChange: pending => {
         el('load').disabled = pending;
