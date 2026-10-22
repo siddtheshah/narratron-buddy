@@ -401,16 +401,23 @@ def test_exploration_undo_and_polling_need_no_action_requests(movable_game_page:
     assert page.evaluate('window.lastGame.state.board[35]') == 1
 
 
-def test_information_tabs_are_private_accessible_and_survive_updates(movable_game_page: Page) -> None:
+@pytest.mark.parametrize('viewport', [{'width': 1100, 'height': 950}, {'width': 390, 'height': 844}])
+def test_information_tabs_are_private_accessible_and_survive_updates(
+    movable_game_page: Page, viewport: dict[str, int],
+) -> None:
     page = movable_game_page
+    page.set_viewport_size(viewport)
     page.evaluate('''() => {
+        document.body.style.width = '100vw';
+        document.body.style.height = '100vh';
         window.editable = false;
         window.lastGame = {...window.lastGame, view: [{kind: 'tabs',
             props: {id: 'information', label: 'Game information'}, children: [
                 {kind: 'column', props: {label: 'Events'}, children: [
                     {kind: 'text', props: {text: 'Latest event'}}]},
                 {kind: 'column', props: {label: 'Terms'}, children: [
-                    {kind: 'text', props: {text: 'Term definitions'}}]},
+                    ...Array.from({length: 60}, (_, i) =>
+                        ({kind: 'text', props: {text: `Term definition ${i + 1}`}}))]},
             ]}]};
         window.renderer.render(window.lastGame);
     }''')
@@ -425,12 +432,23 @@ def test_information_tabs_are_private_accessible_and_survive_updates(movable_gam
     expect(events).to_have_attribute('aria-selected', 'true')
     expect(page.get_by_role('tabpanel', name='Events')).to_be_visible()
     expect(page.get_by_role('tabpanel', name='Terms', include_hidden=True)).to_be_hidden()
+    original_bounds = page.locator('.game-panel').bounding_box()
+    assert original_bounds is not None
     events.focus()
     events.press('ArrowLeft')
     expect(terms).to_be_focused()
     expect(terms).to_have_attribute('tabindex', '0')
     expect(events).to_have_attribute('tabindex', '-1')
     expect(page.get_by_role('tabpanel', name='Terms')).to_be_visible()
+    help_bounds = page.locator('.game-panel').bounding_box()
+    assert help_bounds is not None
+    for dimension in ('x', 'y', 'width', 'height'):
+        assert abs(help_bounds[dimension] - original_bounds[dimension]) < 1
+    help_panel = page.get_by_role('tabpanel', name='Terms')
+    assert help_panel.evaluate('el => el.scrollHeight > el.clientHeight')
+    help_panel.focus()
+    help_panel.press('PageDown')
+    page.wait_for_function('id => document.getElementById(id).scrollTop > 0', arg=help_panel.get_attribute('id'))
     terms.press('Home')
     expect(events).to_be_focused()
     events.press('End')

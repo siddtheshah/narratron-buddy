@@ -28,7 +28,7 @@ let rendererSequence = 0;
 export function createGameRenderer({ container, toggleButton, actionUrl, canEdit,
     canContribute = () => false, refresh,
     canMove = () => canEdit() || canContribute(),
-    stylesheetUrl = '/static/css/game-renderer.css?v=9', initiallyOpen = false,
+    stylesheetUrl = '/static/css/game-renderer.css?v=10', initiallyOpen = false,
     onPendingChange = () => {}, onMove = () => {} }) {
     const stylesheet = document.createElement('link');
     stylesheet.rel = 'stylesheet';

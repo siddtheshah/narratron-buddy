@@ -194,7 +194,8 @@ Supported properties:
 - Layout/style: `columns` (grid), `gap`, `padding`, `color`, `background` (color only), `fontSize`, `fontWeight`, `borderRadius`, `outline`, `aspectRatio`, `textAlign`.
 - A row with `layout: '"sidebar"'` places its first child on the left and its second child on the right in a wider panel. It stacks the children on narrow screens.
 - A `tabs` node displays its children as panels, using each child's `label` prop
-  as the tab title. The first tab opens by default. Selection stays local to the
+  as the tab title. Panels share a fixed-height scroll area so switching tabs
+  does not resize the game panel. The first tab opens by default. Selection stays local to the
   viewer, survives game updates, and works for read-only viewers. Arrow keys,
   Home and End navigate tabs. Give the tabs node a stable `id` if its position
   in the view can change; changing the game package resets the selection.

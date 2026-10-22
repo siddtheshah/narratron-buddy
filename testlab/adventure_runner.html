@@ -1143,12 +1143,12 @@
     let gameRenderer = null;
     let gamePending = false;
     let gameHistoryCount = 0;
-    import('/game-lab-assets/js/game-renderer.js?v=10').then(({ createGameRenderer }) => {
+    import('/game-lab-assets/js/game-renderer.js?v=11').then(({ createGameRenderer }) => {
       gameRenderer = createGameRenderer({
         container: $('game-preview'), toggleButton: $('game-toggle'),
         actionUrl: () => `/api/adventure-runner/sessions/${currentSessionId}/game/action`,
         canEdit: () => Boolean(currentSessionId) && !$('user-input').disabled,
-        stylesheetUrl: '/game-lab-assets/css/game-renderer.css?v=9', initiallyOpen: true,
+        stylesheetUrl: '/game-lab-assets/css/game-renderer.css?v=10', initiallyOpen: true,
         onPendingChange: pending => {
           gamePending = pending;
           $('btn-send').disabled = pending;

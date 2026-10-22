@@ -31,6 +31,7 @@
 .game-column { display: flex; flex-direction: column; gap: 8px; }
 .game-tabs { display: flex; flex-direction: column; gap: 14px; }
 .game-tabs > [hidden] { display: none; }
+.game-tab-panel { height: 220px; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; padding: 10px; border: 1px solid #52647b; border-radius: 8px; background: #0d1626; }
 .game-tab-list { display: flex; gap: 4px; padding-bottom: 6px; border-bottom: 1px solid #52647b; }
 .game-tabs .game-tab { flex: 1; font: inherit; font-size: .85rem; background: transparent; color: #b9c6d8; }
 .game-tab[aria-selected="true"] { background: #293b53; color: #eef3fb; box-shadow: inset 0 -2px #67e8f9; }
