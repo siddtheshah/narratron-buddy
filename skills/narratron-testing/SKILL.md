@@ -85,6 +85,11 @@ uv run pytest -n 4
 
 Parallel execution via `pytest-xdist` significantly reduces full test suite run times (from minutes to under a minute on multi-core systems).
 
+Pytest uses `--import-mode=importlib` so independent adventure packages can reuse
+test filenames such as `game_test.py` without module-name collisions. Discovery
+excludes `theaters/`, which contains generated copies of adventure files; run
+the original tests under `adventures/` instead.
+
 ### Mocking Practices
 - **Gemini API / Vertex AI**: Always mock `genai.Client` in `ImageTools` tests using `unittest.mock.patch("tools.image_tool.genai.Client")` to avoid external API calls during unit tests.
 - **FileSystem & Time**: Use `tempfile.mkdtemp()` for isolated output directories and clean up in `tearDown()`.
