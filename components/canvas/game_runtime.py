@@ -74,6 +74,11 @@ class FunctionDefinition(GameModel):
     expr: str = Field(min_length=1, max_length=4000)
 
 
+class GameErrorRecovery(GameModel):
+    guard: str = Field(default="true", max_length=4000)
+    result: str = Field(min_length=1, max_length=4000)
+
+
 class TransitionDefinition(GameModel):
     actor: Literal["player", "contributor", "narratron"] = "player"
     permission: Literal["orator", "contributor"] = "orator"
@@ -85,6 +90,7 @@ class TransitionDefinition(GameModel):
     result: str = Field(min_length=1, max_length=4000)
     triggering: bool = Field(default=True)
     preview: bool = False
+    on_error: GameErrorRecovery | None = None
 
     @property
     def is_player_actor(self) -> bool:
@@ -412,6 +418,9 @@ class GameProgram:
                 raise ValueError("Action availability cannot depend on action arguments.")
             self.compile(transition.guard, allowed_functions)
             self.compile(transition.result, allowed_functions)
+            if transition.on_error is not None:
+                self.compile(transition.on_error.guard, allowed_functions)
+                self.compile(transition.on_error.result, allowed_functions)
             for binding in transition.bindings:
                 self.compile(binding.expr, allowed_functions)
         self.compile_view(definition.view, allowed_functions, 0)

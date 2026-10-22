@@ -11,6 +11,7 @@ const boolean = value => {
     if (typeof value !== 'boolean') throw new Error('Expected a boolean.');
     return value;
 };
+class InvalidGameInput extends Error {}
 
 export function createLocalGame(program) {
     let remaining;
@@ -163,19 +164,24 @@ export function createLocalGame(program) {
     }
     return {
         apply(state, action) {
-            resetBudget();
-            const transition = read(program.transitions, action.name);
-            const scope = { ...context(state), action: action.arguments };
-            if (!boolean(evaluate(transition.guard, scope))) throw new Error('This action is not permitted in the current game state.');
-            bindings(transition.bindings, scope);
-            const candidate = evaluate(transition.result, scope);
-            const next = context(candidate);
-            validate(next);
-            const view = render(program.view, next);
-            // JSON serialization also removes prototypes and enforces a bounded local snapshot.
-            const snapshot = JSON.stringify({ state: candidate, view });
-            if (snapshot.length > 262144) throw new Error('Game preview exceeds its size budget.');
-            return JSON.parse(snapshot);
+            try {
+                resetBudget();
+                const transition = read(program.transitions, action.name);
+                const scope = { ...context(state), action: action.arguments };
+                if (!boolean(evaluate(transition.guard, scope))) throw new InvalidGameInput('This action is not permitted in the current game state.');
+                bindings(transition.bindings, scope);
+                const candidate = evaluate(transition.result, scope);
+                const next = context(candidate);
+                validate(next);
+                const view = render(program.view, next);
+                // JSON serialization also removes prototypes and enforces a bounded local snapshot.
+                const snapshot = JSON.stringify({ state: candidate, view });
+                if (snapshot.length > 262144) throw new Error('Game preview exceeds its size budget.');
+                return JSON.parse(snapshot);
+            } catch (failure) {
+                if (failure instanceof InvalidGameInput) throw failure;
+                throw new Error('Game action could not be completed; the action was undone. Try another action.', { cause: failure });
+            }
         },
     };
 }

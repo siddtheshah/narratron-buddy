@@ -9,6 +9,7 @@ from pathlib import Path
 from threading import RLock
 from typing import Literal
 
+from jsonschema import ValidationError as SchemaValidationError
 from pydantic import Field, JsonValue, TypeAdapter
 
 from components.canvas.game_client import browser_compatible, browser_program
@@ -40,6 +41,10 @@ class StaleGameAction(ValueError):
 
 class UnauthorizedGameAction(ValueError):
     """The caller does not have permission to take this game action."""
+
+
+class InvalidGameInput(ValueError):
+    """The submitted arguments or chosen action are not valid."""
 
 
 def _view_nodes_allow_contributor(nodes: list[JsonValue], action: GameAction) -> bool:
@@ -335,18 +340,18 @@ class GameState:
                     previous, previous_view, previous_model_state, previous_actions, revision
                 )
                 logger.exception("Game action failed: %s", action.name)
-                message = (
-                    "Game evaluation is too expensive; the previous position was retained. "
-                    "Try another action."
-                    if type(exc) is GameWorkBudgetExceeded
-                    else "Game action failed; the previous game state was retained."
-                )
+                if type(exc) is GameWorkBudgetExceeded:
+                    message = "Game evaluation is too expensive; the previous position was retained. Try another action."
+                elif type(exc) in (InvalidGameInput, UnauthorizedGameAction):
+                    message = str(exc)
+                else:
+                    message = "Game action could not be completed; the action was undone. Try another action."
                 self.report_error(message)
                 if type(exc) is GameWorkBudgetExceeded:
                     raise GameWorkBudgetExceeded(f"{exc} {message}") from exc
                 if type(exc) is UnauthorizedGameAction:
                     raise
-                raise ValueError(str(exc)[:250]) from exc
+                raise ValueError(message) from exc
             self.error = ""
             self._notify_safely()
             if actor in ("player", "contributor") and transition.triggering and self.on_player_action is not None:
@@ -369,7 +374,40 @@ class GameState:
         def evaluate_step(budget: Budget) -> None:
             self._evaluate_step(step, actor, budget, exploratory=exploratory)
 
-        evaluate_with_recovery(evaluate_step)
+        try:
+            evaluate_with_recovery(evaluate_step)
+        except UnauthorizedGameAction:
+            raise
+        except Exception:
+            assert self.program is not None
+            transition = self.program.definition.transitions.get(step.name)
+            if exploratory or transition is None or transition.on_error is None:
+                raise
+            # A broken permission view must never authorize a contributor fallback.
+            if actor == "contributor" and not transition.allows_contributor:
+                raise
+
+            def recover(budget: Budget) -> bool:
+                assert self.program is not None
+                execution = self.program.execution()
+                execution.budget = budget
+                # Recovery must not repeat failing derived values or use unvalidated input.
+                context = {"state": self.state, "initial": self.program.definition.initial,
+                           "constants": self.program.definition.constants}
+                recovery = transition.on_error
+                assert recovery is not None
+                if not TypeAdapter(bool).validate_python(execution.evaluate(recovery.guard, context), strict=True):
+                    return False
+                candidate = TypeAdapter(dict[str, JsonValue]).validate_python(
+                    execution.evaluate(recovery.result, context), strict=True,
+                )
+                self._prepare(candidate, budget)
+                self.state = candidate
+                return True
+
+            if not evaluate_with_recovery(recover):
+                raise
+            logger.warning("Game action %s failed; applied its declared recovery", step.name, exc_info=True)
 
     def _evaluate_step(
         self, step: GameStep, actor: Literal["player", "contributor", "narratron"], budget: Budget,
@@ -379,11 +417,11 @@ class GameState:
         assert self.program is not None
         transition = self.program.definition.transitions.get(step.name)
         if transition is None:
-            raise ValueError("Unknown game action.")
+            raise InvalidGameInput("Unknown game action.")
         if exploratory and (not transition.is_player_actor or transition.triggering):
-            raise ValueError("Only exploratory actions can precede a turn commitment.")
+            raise InvalidGameInput("Only exploratory actions can precede a turn commitment.")
         if (actor == "narratron") != (transition.actor == "narratron"):
-            raise ValueError("This actor cannot take that game action.")
+            raise InvalidGameInput("This actor cannot take that game action.")
         if actor == "contributor" and not transition.allows_contributor:
             view_execution = self.program.execution()
             view_execution.budget = budget
@@ -396,14 +434,17 @@ class GameState:
             ):
                 raise UnauthorizedGameAction("Only the active orator can take this game action.")
         if len(step.model_dump_json().encode("utf-8")) > 4096:
-            raise ValueError("Game action exceeds its size budget.")
-        self.program.action_validators[step.name].validate(step.arguments)
+            raise InvalidGameInput("Game action exceeds its size budget.")
+        try:
+            self.program.action_validators[step.name].validate(step.arguments)
+        except SchemaValidationError as exc:
+            raise InvalidGameInput(f"Invalid input: {exc.message[:200]}") from exc
         execution = self.program.execution()
         execution.budget = budget
         context = execution.context(self.state)
         context["action"] = step.arguments
         if not TypeAdapter(bool).validate_python(execution.evaluate(transition.guard, context), strict=True):
-            raise ValueError("This action is not permitted in the current game state.")
+            raise InvalidGameInput("This action is not permitted in the current game state.")
         execution.bindings(transition.bindings, context)
         candidate = TypeAdapter(dict[str, JsonValue]).validate_python(execution.evaluate(transition.result, context), strict=True)
         if exploratory:

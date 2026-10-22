@@ -87,7 +87,9 @@ def browser_program(program: GameProgram) -> dict[str, JsonValue] | None:
             continue
         sources.update((transition.guard, transition.result))
         sources.update(binding.expr for binding in transition.bindings)
-        transitions[name] = transition.model_dump(mode="json")
+        client_transition = transition.model_dump(mode="json")
+        client_transition.pop("on_error")
+        transitions[name] = client_transition
     try:
         expressions: dict[str, JsonValue] = {source: _expression(program, program.programs[source].ast) for source in sorted(sources)}
     except ValueError:

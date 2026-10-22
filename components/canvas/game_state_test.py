@@ -14,6 +14,7 @@ from components.canvas.game_runtime import (
     Budget,
     Binding,
     GameDefinition,
+    GameErrorRecovery,
     GameProgram,
     GameStep,
     GameWorkBudgetExceeded,
@@ -60,7 +61,7 @@ def test_random_result_rejected_by_invariant_rolls_back(tmp_path: Path) -> None:
     game = make_game(tmp_path, definition)
     before = game.serialize()
     with patch('components.canvas.game_runtime.random.randint', return_value=6):
-        with pytest.raises(ValueError, match='invariant'):
+        with pytest.raises(ValueError, match='undone'):
             game.act(GameAction(name='clear', revision=0))
     assert game.serialize() == before
     assert game.payload()['view'][0]['children'][0]['props']['text'] == 'Count: 0'
@@ -205,7 +206,7 @@ def test_guard_schema_and_invariant_rejections_roll_back(tmp_path: Path) -> None
     definition.transitions['add'].result = '{"count": 1}'
     definition.invariants = ['state.count == 0']
     game = make_game(tmp_path, definition)
-    with pytest.raises(ValueError, match='invariant'):
+    with pytest.raises(ValueError, match='undone'):
         game.act(GameAction(name='add', arguments={'amount': 1}, revision=0))
     assert game.revision == 0
 
@@ -224,7 +225,7 @@ def test_view_failure_and_persistence_failure_roll_back(tmp_path: Path) -> None:
     game = make_game(tmp_path)
     game._persist = Mock(side_effect=OSError('disk full'))
     before = game.payload()
-    with pytest.raises(ValueError, match='disk full'):
+    with pytest.raises(ValueError, match='undone'):
         game.act(GameAction(name='add', arguments={'amount': 1}, revision=0))
     assert game.payload()['view'] == before['view']
     assert game.revision == before['revision']
@@ -232,6 +233,45 @@ def test_view_failure_and_persistence_failure_roll_back(tmp_path: Path) -> None:
     game._persist = Mock()
     game.act(GameAction(name='add', arguments={'amount': 1}, revision=0))
     assert game.payload()['error'] == ''
+
+
+@pytest.mark.parametrize('result,guard,commits', [
+    ('{"count": 2}', 'state.count == 0', True),
+    ('{"count": 999}', 'true', False),
+    ('{"count": 2}', 'false', False),
+])
+def test_declared_recovery_is_guarded_validated_and_idempotent(
+    tmp_path: Path, result: str, guard: str, commits: bool,
+) -> None:
+    definition = counter_definition()
+    definition.transitions['clear'].actor = 'narratron'
+    definition.transitions['clear'].result = '{"count": 1 / 0}'
+    definition.transitions['clear'].on_error = GameErrorRecovery(guard=guard, result=result)
+    game = make_game(tmp_path, definition)
+    before = game.serialize()
+    action = GameAction(name='clear', revision=0)
+    if commits:
+        receipt = game.commit_story_action(action, 'recovered')
+        assert receipt['revision'] == 1 and game.state == {'count': 2}
+        assert game.commit_story_action(action, 'recovered') == receipt
+        game._persist.assert_called_once()
+    else:
+        with pytest.raises(ValueError, match='undone'):
+            game.commit_story_action(action, 'recovered')
+        assert game.serialize() == before
+        game._persist.assert_not_called()
+
+
+def test_persistence_failure_never_invokes_declared_recovery(tmp_path: Path) -> None:
+    definition = counter_definition()
+    definition.transitions['add'].on_error = GameErrorRecovery(result='{"count": 2}')
+    game = make_game(tmp_path, definition)
+    before = game.serialize()
+    game._persist = Mock(side_effect=OSError('disk full'))
+    with pytest.raises(ValueError, match='undone'):
+        game.act(GameAction(name='add', arguments={'amount': 1}, revision=0))
+    assert game.serialize() == before
+    game._persist.assert_called_once()
 
 
 @pytest.mark.parametrize('expression', ['unknownFunction(1)', '"x".matches("x")', 'google.api.Request{}'])

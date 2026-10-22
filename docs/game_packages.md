@@ -131,6 +131,17 @@ materializes its view. Only then does it publish and persist the new state. Any
 failure leaves the old state, revision and view intact. It never partially applies
 an accepted transition's individual fields.
 
+A transition may declare `on_error: {guard: '...', result: '...'}` to recover
+from argument, guard, or evaluation failures. Recovery expressions receive only
+`state`, `initial`, and `constants`, so broken derived values and unvalidated
+arguments cannot block recovery. The guard must restrict recovery to the intended
+phase. The result is a complete state, validated and rendered before it commits
+with the original action's receipt and revision. Failed recovery rolls back the
+whole action. Permissions, stale revisions and persistence failures never trigger
+recovery. Recovery runs only on the server; local previews retain their last valid
+draft. Invalid input is shown as validation feedback; evaluation failures undo the
+action with a brief retry message.
+
 Reset, selection, movement, trading, automatic reactions, turns and game-over
 rules are all authored transitions/expressions, not built-in host operations.
 Without `local_preview`, every action remains a shared, revisioned transition.
