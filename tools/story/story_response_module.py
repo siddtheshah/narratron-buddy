@@ -75,6 +75,11 @@ MAX_PLANNING_SIGNAL_CHARS = 500
 MAX_NAMED_ELEMENTS = 10
 MAX_READ_LORE_CALLS_PER_TURN = 3
 MAX_SEARCH_LORE_CALLS_PER_TURN = 3
+MAX_GAME_ENTRY_RESPONSE_ATTEMPTS = 3
+
+
+class GameEntryNarrationRejected(ValueError):
+    """Narration still needs responder correction; never a live-agent error."""
 
 _STORY_CONTEXT_PROMPT_TEMPLATE = Template(
     """Your sticky notes:
@@ -329,6 +334,7 @@ class StoryResponseModule:
         self.canvas_manager = canvas_manager
         self.story_session = story_session
         self._game_entry = False
+        self._responder_feedback = ""
         self._story_stage_id = ""
         raw_config = theater.config() or {}
         subconfig = raw_config.get("story_planning", raw_config) if "story_planning" in raw_config else raw_config
@@ -672,6 +678,10 @@ class StoryResponseModule:
                 saving throws, contests) so the roll is visibly animated on the canvas.
         """
         if self._game_entry:
+            logger.warning(
+                "[StoryResponseModule] Rejected game-entry dice roll (stage=%s)",
+                self._story_stage_id,
+            )
             return {"error": "Game-entry narration cannot roll dice."}
         if self.config.get("enable_dice", True) is False:
             return {"error": "Dice rolling is disabled."}
@@ -930,11 +940,14 @@ class StoryResponseModule:
             changed_topics=changed_topics,
             player_character=self.reference_manager.get_player_character(),
         )
-        return build_responder_turn_prompt(
+        prompt = build_responder_turn_prompt(
             story_state=story_state,
             user_action=user_action,
             nudge=nudge,
         )
+        if self._responder_feedback:
+            prompt += f"\n\n# Application Validation Feedback\n{self._responder_feedback}"
+        return prompt
 
     def trigger_story_planning(self, reason: str) -> str:
         """Request background planning after this turn, explaining what needs attention."""
@@ -1247,15 +1260,42 @@ class StoryResponseModule:
             return {"error": "Adventure Mode is not enabled for this theater."}
 
         self._planning_request_reason = None
+        self._responder_feedback = ""
         self._game_entry = game_entry
         self._story_stage_id = stage_id
         self._turn_note_snapshot = self.notepad.snapshot()
         try:
-            parsed = self._run_responder_agent(action, nudge=nudge)
+            attempts = MAX_GAME_ENTRY_RESPONSE_ATTEMPTS if game_entry else 1
+            for attempt in range(attempts):
+                parsed = self._run_responder_agent(action, nudge=nudge)
+                if not game_entry or "error" in parsed or not (
+                    parsed.get("proposed_factual_changes") or self.get_die_rolls_this_turn()
+                ):
+                    break
+                self._responder_feedback = (
+                    "Your previous game-entry narration was rejected and was not published. "
+                    "Game-entry narration cannot establish new factual or mechanical changes. "
+                    "Return corrected narration and dialogue limited to the recorder-established "
+                    "outcomes in the original brief. Return proposed_factual_changes=[]; "
+                    "do not roll dice, resolve the game again, or introduce additional outcomes. "
+                    "The rejected response below is feedback only, not established story state.\n"
+                    f"Rejected response: {json.dumps(parsed, ensure_ascii=False)}"
+                )
+                logger.warning(
+                    "[StoryResponseModule] Rejected game-entry narration "
+                    "(stage=%s, attempt=%d/%d): %s",
+                    stage_id, attempt + 1, attempts, self._responder_feedback,
+                )
+                self._planning_request_reason = None
+            else:
+                raise GameEntryNarrationRejected(
+                    "Game-entry narration still requires responder correction."
+                )
             planning_request = self._planning_request_reason
             snapshot_used = self._turn_note_snapshot
         finally:
             self._planning_request_reason = None
+            self._responder_feedback = ""
             self._turn_note_snapshot = None
             self._game_entry = False
         notepad_revision_used = (
@@ -1269,8 +1309,6 @@ class StoryResponseModule:
             ProposedFactChange.model_validate(change).model_dump(mode="json")
             for change in (parsed.get("proposed_factual_changes") or [])
         ]
-        if game_entry and (factual_changes or self.get_die_rolls_this_turn()):
-            raise ValueError("Game-entry narration cannot establish new factual or mechanical changes.")
         if parsed.get("planning_request") is not None:
             structured_request = PlanningRequest.model_validate(parsed["planning_request"])
             if planning_request is None:

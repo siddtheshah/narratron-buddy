@@ -182,6 +182,10 @@ responder back to the recorder, and no outgoing scheduling edge from the planner
    planner's completion triggers neither role. An out-of-scope factual or
    mechanical mutation in the game-entry response is a contract violation to
    handle within that responder stage, not permission to start another role cycle.
+   Log rejected narration and return validation feedback to the responder for up
+   to three attempts, preserving the original brief and turn identity. Publish
+   only a compliant response. If correction is exhausted, leave narration pending
+   for retry without sending an error or failure callback to the live agent.
 
 ### Turn lifecycle and trigger budget
 

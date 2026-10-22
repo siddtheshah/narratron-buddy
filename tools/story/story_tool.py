@@ -30,7 +30,7 @@ from components.reference_manager import ReferenceManager
 from components.lore_library import LoreLibrary
 from components.notepad import Notepad, NoteSnapshot, StaleNoteSnapshot
 from tools.story.story_planning_module import StoryPlanningModule
-from tools.story.story_response_module import StoryResponseModule
+from tools.story.story_response_module import GameEntryNarrationRejected, StoryResponseModule
 from tools.story.story_handoffs import ProposedFactChange
 from tools.story.story_recorder_module import StoryRecorderModule
 from tools.story.story_recording_journal import RecordingEvent, StoryRecordingJournal
@@ -269,6 +269,12 @@ class StoryTool(BaseTools):
                 self.sync_character_bindings()
                 self._schedule_planning(turn)
             return turn.response or {"status": "completed", "narration_skipped": True, "reason": turn.narration_reason}
+        except GameEntryNarrationRejected:
+            logger.warning(
+                "[StoryTool] Turn %s awaits corrected game-entry narration; retry remains pending",
+                turn_id,
+            )
+            return {"status": "pending", "story_turn_id": turn_id}
         except Exception as exc:
             logger.exception("[StoryTool] Turn %s remains pending", turn_id)
             self.record_tool_failure("process_user_action")
@@ -588,15 +594,9 @@ class StoryTool(BaseTools):
         )
 
 
-# Compatibility names retained while callers migrate to ``StoryTool``.
-StoryPlanningTools = StoryTool
-StoryResponseTool = StoryTool
-
 
 __all__ = [
     "StoryTool",
-    "StoryPlanningTools",
-    "StoryResponseTool",
     "StoryLogEntry",
     "StoryResponseOutput",
 ]

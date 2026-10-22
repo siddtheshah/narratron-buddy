@@ -4249,7 +4249,7 @@
             });
         import { createDoodleRenderer, createImageRenderer } from "/static/js/canvas-renderers.js?v=multi-stamp-delete-video-loop-silent-20261018-1";
         import { createA2UICanvasRenderer } from "/static/js/a2ui-canvas-renderer.js?v=20261005-1";
-        import { createGameRenderer } from "/static/js/game-renderer.js?v=11";
+        import { createGameRenderer } from "/static/js/game-renderer.js?v=12";
         import { createNarrationPane } from "/static/js/narration-pane.js";
 
         let lastTime = -1;
@@ -4296,6 +4296,9 @@
             canMove: () => isCurrentOrator() || hasContributorsPermission(),
             canEdit: () => isCurrentOrator(),
             refresh: () => fetchLatestImage(),
+            beforeOpen: async () => {
+                if (isCurrentOrator() && !isAgentStarted) await startAgentTheater();
+            },
         });
         const a2uiCanvasRenderer = createA2UICanvasRenderer({
             container: a2uiCanvasLayer,
@@ -8701,6 +8704,7 @@
         function setAgentStartedUI(started) {
             isAgentStarted = started;
             window.isAgentStarted = started;
+            if (!started) gameRenderer.close();
             if (!agentStartStopBtn) return;
             if (started) {
                 agentStartStopBtn.textContent = '🛑 Banish';
@@ -8788,8 +8792,7 @@
 
         async function stopAgentTheater() {
             // Prevent the socket close handler from reconnecting while a stop is in flight.
-            isAgentStarted = false;
-            window.isAgentStarted = false;
+            setAgentStartedUI(false);
             cleanupAgentConnection();
             if (agentStartStopBtn) {
                 agentStartStopBtn.textContent = 'Stopping...';

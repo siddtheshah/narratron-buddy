@@ -315,6 +315,50 @@ def test_suppress_noisy_loggers_sets_wire_loggers_to_info():
         assert logging.getLogger(noisy).level == logging.INFO
 
 
+def test_game_package_loads_without_cel_tracing_under_app_debug_logging(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    import logging
+
+    from components.canvas.game_runtime import validate_game_package
+    from testing.game_fixtures import counter_definition
+
+    def reject_cel_trace(record: logging.LogRecord) -> bool:
+        assert not (record.name.startswith("celpy.") and record.levelno == logging.DEBUG), (
+            "CEL interpreter tracing must stay disabled for application debug prefixes"
+        )
+        return True
+
+    cel_logger = logging.getLogger("celpy")
+    previous_level = cel_logger.level
+    caplog.handler.addFilter(reject_cel_trace)
+    try:
+        cel_logger.setLevel(logging.NOTSET)
+        with caplog.at_level(logging.DEBUG):
+            app_module.suppress_noisy_loggers("[GameState]")
+            program = validate_game_package(counter_definition().model_dump_json().encode("utf-8"))
+            assert program.initial_view
+            assert program.definition.initial == {"count": 0}
+    finally:
+        caplog.handler.removeFilter(reject_cel_trace)
+        cel_logger.setLevel(previous_level)
+
+
+def test_cel_tracing_can_be_explicitly_requested(caplog: pytest.LogCaptureFixture) -> None:
+    import logging
+
+    cel_logger = logging.getLogger("celpy")
+    previous_level = cel_logger.level
+    try:
+        cel_logger.setLevel(logging.NOTSET)
+        with caplog.at_level(logging.DEBUG):
+            app_module.suppress_noisy_loggers("celpy")
+            logging.getLogger("celpy.Evaluator").debug("CEL trace probe")
+        assert "CEL trace probe" in caplog.messages
+    finally:
+        cel_logger.setLevel(previous_level)
+
+
 if __name__ == "__main__":
     unittest.main()
 

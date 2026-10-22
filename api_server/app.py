@@ -90,6 +90,9 @@ uvicorn_access = logging.getLogger("uvicorn.access")
 uvicorn_access.addFilter(log_filter)
 
 NOISY_DEBUG_LOGGERS = (
+    # Per-node CEL traces can exhaust the game's deadline even when LogFilter
+    # discards them, because filtering still formats their large payloads.
+    "celpy",
     "PIL",
     "httpcore",
     "httpx",

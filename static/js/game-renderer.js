@@ -29,7 +29,7 @@ export function createGameRenderer({ container, toggleButton, actionUrl, canEdit
     canContribute = () => false, refresh,
     canMove = () => canEdit() || canContribute(),
     stylesheetUrl = '/static/css/game-renderer.css?v=10', initiallyOpen = false,
-    onPendingChange = () => {}, onMove = () => {} }) {
+    beforeOpen = async () => {}, onPendingChange = () => {}, onMove = () => {} }) {
     const stylesheet = document.createElement('link');
     stylesheet.rel = 'stylesheet';
     stylesheet.href = stylesheetUrl;
@@ -39,6 +39,8 @@ export function createGameRenderer({ container, toggleButton, actionUrl, canEdit
     let error = '';
     let signature = '';
     let open = initiallyOpen;
+    let opening = false;
+    let openRequest = 0;
     let unseenUpdate = false;
     let highlightUntil = 0;
     let highlightTimer = null;
@@ -90,15 +92,38 @@ export function createGameRenderer({ container, toggleButton, actionUrl, canEdit
         }, 2400);
     }
 
-    toggleButton.addEventListener('click', event => {
+    function close() {
+        openRequest++;
+        opening = false;
+        open = false;
+        draw();
+    }
+
+    toggleButton.addEventListener('click', async event => {
         event.stopPropagation();
         if (!game) return;
-        open = !open;
-        if (open && unseenUpdate) {
-            unseenUpdate = false;
-            highlightUpdate();
+        if (open || opening) {
+            close();
+            return;
         }
-        draw();
+        const request = ++openRequest;
+        opening = true;
+        try {
+            await beforeOpen();
+            if (request !== openRequest || !game) return;
+            open = true;
+            if (unseenUpdate) {
+                unseenUpdate = false;
+                highlightUpdate();
+            }
+        } catch (failure) {
+            if (request === openRequest) error = failure.message || 'Could not open game.';
+        } finally {
+            if (request === openRequest) {
+                opening = false;
+                draw();
+            }
+        }
     });
     toggleButton.addEventListener('pointerdown', event => event.stopPropagation());
 
@@ -395,6 +420,7 @@ export function createGameRenderer({ container, toggleButton, actionUrl, canEdit
     }
 
     return {
+        close,
         render(next) {
             const target = next === undefined ? game : next;
             if (next !== undefined && next?.definition_hash === game?.definition_hash && next?.revision < game?.revision) return;

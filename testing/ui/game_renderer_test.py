@@ -10,6 +10,149 @@ from components.canvas.game_state import GameAction, GameState
 from testing.game_fixtures import counter_definition, make_game
 
 
+@pytest.fixture
+def agent_game_page() -> Iterator[Page]:
+    """Use the canvas's real game wiring and agent lifecycle with local routes."""
+    template = Path("templates/canvas.html").read_text(encoding="utf-8")
+    start = template.index("        const gameRenderer = createGameRenderer({")
+    renderer_setup = template[start:template.index("        const a2uiCanvasRenderer", start)]
+    start = template.index("        function setAgentStartedUI(started)")
+    lifecycle = template[start:template.index("        // Check agent status when active", start)]
+    html = """<!doctype html><html><body>
+    <button id="agent-start-stop-btn"></button>
+    <button id="game-state-toggle-btn" hidden></button><div id="game-state-layer" hidden></div>
+    <script type="module">
+    import { createGameRenderer } from '/static/js/game-renderer.js';
+    const theaterId = 'test';
+    const currenttheaterId = theaterId;
+    let isAgentStarted = false;
+    let agentReconnectTimer = null;
+    const agentStartStopBtn = document.getElementById('agent-start-stop-btn');
+    const agentConnectBtn = null;
+    const agentWs = {readyState: WebSocket.OPEN};
+    window.orator = true;
+    const isCurrentOrator = () => window.orator;
+    const isActiveCanvasWindow = () => true;
+    const isCollabModeEnabled = () => false;
+    const hasContributorsPermission = () => false;
+    const fetchLatestImage = () => {};
+    const connectAgent = async () => {};
+    const cleanupAgentConnection = () => {};
+    const showInsufficientCreditsModal = message => { window.creditMessage = message; };
+    """ + renderer_setup + lifecycle + """
+    window.checkAgentStatus = checkAgentStatus;
+    window.gameRenderer = gameRenderer;
+    gameRenderer.render({definition_hash: 'test', revision: 0, state: {},
+        view: [{kind: 'text', props: {text: 'Game ready'}}]});
+    setAgentStartedUI(false);
+    </script></body></html>"""
+
+    def route_request(route: Route) -> None:
+        path = route.request.url.split("http://game.test", 1)[-1]
+        if path == "/":
+            route.fulfill(content_type="text/html", body=html)
+        elif path.startswith("/static/"):
+            route.fulfill(path=Path(path.split("?", 1)[0].lstrip("/")))
+        elif path.endswith("/agent/start") or path.endswith("/agent/stop"):
+            route.fulfill(json={})
+        elif path.endswith("/agent/status"):
+            route.fulfill(json={"agent_running": False})
+        else:
+            route.fulfill(status=404)
+
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        page = browser.new_page()
+        page.route("http://game.test/**", route_request)
+        page.goto("http://game.test/")
+        expect(page.get_by_role("button", name="Toggle game")).to_be_visible()
+        yield page
+        browser.close()
+
+
+def test_opening_game_summons_once_and_banishing_closes_panel(agent_game_page: Page) -> None:
+    page = agent_game_page
+    starts: list[str] = []
+
+    def record_request(request: Request) -> None:
+        if request.url.endswith("/agent/start"):
+            starts.append(request.method)
+
+    page.on("request", record_request)
+    toggle = page.get_by_role("button", name="Toggle game")
+    toggle.click()
+    expect(page.locator("#game-state-layer")).to_be_visible()
+    expect(page.get_by_role("button", name="Banish")).to_be_visible()
+    assert starts == ["POST"]
+    toggle.click()
+    expect(page.locator("#game-state-layer")).to_be_hidden()
+    toggle.click()
+    expect(page.locator("#game-state-layer")).to_be_visible()
+    assert starts == ["POST"]
+    page.get_by_role("button", name="Banish").click()
+    expect(page.locator("#game-state-layer")).to_be_hidden()
+    expect(toggle).to_have_attribute("aria-expanded", "false")
+    toggle.click()
+    expect(page.locator("#game-state-layer")).to_be_visible()
+    assert starts == ["POST", "POST"]
+
+
+def test_stopped_agent_status_closes_game_panel(agent_game_page: Page) -> None:
+    page = agent_game_page
+    page.get_by_role("button", name="Toggle game").click()
+    expect(page.locator("#game-state-layer")).to_be_visible()
+    page.evaluate("window.checkAgentStatus()")
+    expect(page.locator("#game-state-layer")).to_be_hidden()
+
+
+def test_game_stays_closed_when_summoning_fails(agent_game_page: Page) -> None:
+    page = agent_game_page
+
+    def reject_start(route: Route) -> None:
+        route.fulfill(status=402, json={"insufficient_credits": True, "detail": "Top up credits"})
+
+    page.route("**/agent/start", reject_start)
+    toggle = page.get_by_role("button", name="Toggle game")
+    toggle.click()
+    page.wait_for_function("window.creditMessage === 'Top up credits'")
+    expect(page.locator("#game-state-layer")).to_be_hidden()
+    expect(toggle).to_have_attribute("aria-expanded", "false")
+    expect(page.get_by_role("button", name="Summon")).to_be_visible()
+
+
+def test_viewer_can_open_game_without_summoning(agent_game_page: Page) -> None:
+    page = agent_game_page
+    requests: list[str] = []
+
+    def record_request(request: Request) -> None:
+        requests.append(request.url)
+
+    page.on("request", record_request)
+    page.evaluate("window.orator = false")
+    page.get_by_role("button", name="Toggle game").click()
+    expect(page.locator("#game-state-layer")).to_be_visible()
+    assert requests == []
+
+
+def test_closing_game_during_summon_cancels_pending_open(agent_game_page: Page) -> None:
+    page = agent_game_page
+    pending: list[Route] = []
+
+    def delay_start(route: Route) -> None:
+        pending.append(route)
+
+    page.route("**/agent/start", delay_start)
+    toggle = page.get_by_role("button", name="Toggle game")
+    toggle.click()
+    expect(page.get_by_role("button", name="Starting...")).to_be_visible()
+    expect(page.locator("#game-state-layer")).to_be_hidden()
+    toggle.click()
+    assert len(pending) == 1
+    pending[0].fulfill(json={})
+    expect(page.get_by_role("button", name="Banish")).to_be_visible()
+    expect(page.locator("#game-state-layer")).to_be_hidden()
+
+
 def test_canvas_game_permissions_do_not_interrupt_startup() -> None:
     template = Path("templates/canvas.html").read_text(encoding="utf-8")
     start = template.index("        const gameRenderer = createGameRenderer({")
