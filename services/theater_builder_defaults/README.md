@@ -6,8 +6,17 @@ choose whether `auto_begin` should open the scene automatically.
 
 `planning.yaml` defines persistent sticky topics. Every topic has exactly one
 owner (`recorder` for established facts or `planner` for contingent developments).
-Use string fields and initial values. Keep `Upcoming Encounter Suggestion` hidden
-in `story_planning.hidden_stickies` as well as in its topic definition.
+Use string fields and initial values. Set `hidden: true` on
+`Upcoming Encounter Suggestion` in `planning.yaml`. Every topic is required and
+pinned in contract order. With `story_planning.enforce_structured: true` (the
+default), Adventure Mode requires a nonempty `planning.yaml`.
+Set it to `false` to let recorder and planner create and update shared freeform
+topics without a contract. Declared topics retain ownership and field validation.
+Freeform notes are visible by default and older optional notes can be evicted.
+
+The `notepad` section configures only normal narration: `initial_stickies`,
+`max_stickies`, `required_stickies`, and `hidden_stickies`. Adventure Mode
+ignores those settings and reads its stickies exclusively from `planning.yaml`.
 
 The three pinned role guides in `lore/` are independent: `RESPONDER.md` owns
 narration, `RECORDER.md` owns factual reconciliation and validated game actions,

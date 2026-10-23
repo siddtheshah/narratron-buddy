@@ -61,7 +61,7 @@ def test_docs_ideas_page_reads_the_ideas_template():
     assert "Available image effects" in response
 
 
-def test_docs_theater_yaml_page_reads_the_reference_template():
+def test_docs_theater_yaml_page_reads_the_reference_template() -> None:
     response = pages.read_docs_theater_yaml()
     assert "Configuration reference" in response
     assert "story_planning" in response
@@ -73,12 +73,17 @@ def test_docs_theater_yaml_page_reads_the_reference_template():
         "animation",
         "interactive-canvas",
         "music",
+        "notepad",
         "story-planning",
         "chat",
     ]:
         assert f'href="#{section_id}"' in response
         assert f'id="{section_id}"' in response
-    assert "required_stickies" not in response
+    assert "required_stickies" in response
+    assert "initial_stickies" in response
+    assert "max_stickies" in response
+    assert "initial_elements" not in response
+    assert "max_named_elements" not in response
     assert "nodes_ahead" not in response
 
 

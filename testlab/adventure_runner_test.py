@@ -248,11 +248,14 @@ story_planning:
   adventure_mode: true
   deep_planning:
     enabled: false
-  initial_elements:
-    "Synthetic Widget": "A synthetic widget for testing."
-    "Synthetic Radar": "A synthetic radar."
+  enforce_structured: true
 """
     (adv_dir / "theater.yaml").write_text(theater_yaml.strip(), encoding="utf-8")
+    (adv_dir / "planning.yaml").write_text(
+        "Synthetic Widget:\n  owner: recorder\n  initial: A synthetic widget for testing.\n"
+        "Synthetic Radar:\n  owner: recorder\n  initial: A synthetic radar.\n",
+        encoding="utf-8",
+    )
 
     lore_dir = adv_dir / "lore"
     lore_dir.mkdir(parents=True, exist_ok=True)
@@ -271,7 +274,7 @@ def test_load_adventure_config(sample_adventure):
     assert adv_id == "synthetic-test-adventure"
     assert adv_path.is_dir()
     assert config["story_planning"]["adventure_mode"] is True
-    assert "Synthetic Widget" in config["story_planning"]["initial_elements"]
+    assert "Synthetic Widget" in yaml.safe_load((adv_path / "planning.yaml").read_text(encoding="utf-8"))
     assert config["interactive_canvas"]["enabled"] is True
 
 

@@ -119,7 +119,8 @@ def test_default_draft_has_separate_role_guides_and_preserves_them_on_publish(tm
     assert set(encounter["fields"]) == {"encounter", "story_goal", "drama"}
     assert set(encounter["initial"]) == set(encounter["fields"])
     config = yaml.safe_load((target / "theater.yaml").read_text(encoding="utf-8"))
-    assert "Upcoming Encounter Suggestion" in config["story_planning"]["hidden_stickies"]
+    assert encounter["hidden"] is True
+    assert "hidden_stickies" not in config.get("story_planning", {})
 
 
 @pytest.mark.parametrize("source", [
@@ -173,7 +174,8 @@ def test_assistant_keeps_role_guides_and_planning_context_ahead_of_bulk_lore(tmp
     instructions = call["config"].system_instruction
     assert "game/game.yaml" in instructions
     assert "game_tool.enabled: true" in instructions
-    assert "hidden topics in story_planning.hidden_stickies" in instructions
+    assert "mark hidden topics with hidden: true in planning.yaml" in instructions
+    assert "notepad section is solely for normal narration" in instructions
 
 
 def test_invalid_batch_does_not_partially_write_or_move_files(tmp_path: Path) -> None:

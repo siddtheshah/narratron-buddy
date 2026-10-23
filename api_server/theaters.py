@@ -1565,7 +1565,7 @@ async def get_theater_suggestions(theater_id: str, request: Request):
 
 @app.get("/theaters/{theater_id}/sticky-notes")
 @app.get("/api/theaters/{theater_id}/sticky-notes")
-async def get_theater_sticky_notes(theater_id: str, request: Request):
+async def get_theater_sticky_notes(theater_id: str, request: Request) -> dict[str, JsonValue]:
     """Retrieve active sticky notes held by the story planning tool or canvas state."""
     await _require_canvas_access_async(request, theater_id)
     _safe_path_param(theater_id, "theater_id")
@@ -1573,37 +1573,16 @@ async def get_theater_sticky_notes(theater_id: str, request: Request):
     session = live_agent_manager.get_session(theater_id)
     sticky_notes = []
     notepad = _session_notepad(session)
-    if notepad and hasattr(notepad, "get_present_sticky_notes"):
+    if notepad is not None:
         sticky_notes = notepad.get_present_sticky_notes()
-    elif notepad and hasattr(notepad, "get_present_elements"):
-        sticky_notes = notepad.get_present_elements()
 
     if not sticky_notes and canvas_states:
         c_state = canvas_states.get(theater_id)
         if c_state is not None and c_state.notepad is not None:
-            sticky_notes = c_state.notepad.get_present_sticky_notes()
+            notepad = c_state.notepad
+            sticky_notes = notepad.get_present_sticky_notes()
 
-    hidden_stickies = []
-    try:
-        th_cfg = theater_manager.get_theater_config(theater_id)
-        sp_cfg = th_cfg.get("story_planning", {}) if isinstance(th_cfg.get("story_planning"), dict) else {}
-        raw_hidden = sp_cfg.get("hidden_stickies", th_cfg.get("hidden_stickies", []))
-        if isinstance(raw_hidden, (list, tuple, set)):
-            hidden_stickies = [str(x.get("topic", x.get("name", x)) if isinstance(x, dict) else x).strip() for x in raw_hidden if x]
-        elif isinstance(raw_hidden, str):
-            hidden_stickies = [s.strip() for s in raw_hidden.split(",") if s.strip()]
-        elif isinstance(raw_hidden, dict):
-            hidden_stickies = [str(k).strip() for k in raw_hidden.keys() if str(k).strip()]
-        structured = sp_cfg.get("stickies", {})
-        if isinstance(structured, dict):
-            hidden_stickies.extend(
-                str(topic).strip()
-                for topic, definition in structured.items()
-                if isinstance(definition, dict) and definition.get("hidden")
-            )
-            hidden_stickies = list(dict.fromkeys(hidden_stickies))
-    except Exception:
-        hidden_stickies = []
+    hidden_stickies = notepad.get_hidden_sticky_notes() if notepad is not None else []
 
     return {
         "sticky_notes": sticky_notes,

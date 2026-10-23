@@ -6,13 +6,12 @@ from collections import OrderedDict
 from dataclasses import dataclass
 import json
 import logging
-from pathlib import Path
 import re
 from threading import RLock
 from typing import Any, Callable, Dict, Literal, Optional
 
 from jinja2 import Template
-from pydantic import BaseModel, Field, JsonValue, TypeAdapter, create_model
+from pydantic import AliasChoices, BaseModel, Field, JsonValue, TypeAdapter, create_model
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
@@ -55,8 +54,8 @@ class StaleNoteSnapshot(ValueError):
 
 
 class StickyNoteItem(BaseModel):
-    topic: str = Field(description="Unique topic or concept for this sticky note.")
-    info: str = Field(description="Clear, concise, up-to-date summary of the topic state.")
+    topic: str = Field(description="Unique topic or concept for this sticky note.", validation_alias=AliasChoices("topic", "name"))
+    info: str = Field(description="Clear, concise, up-to-date summary of the topic state.", validation_alias=AliasChoices("info", "content"))
 
 
 class DeepPlanUpdate(BaseModel):
@@ -142,6 +141,7 @@ def parse_planning_schema(schema: Dict[str, Any]) -> OrderedDict[str, Dict[str, 
             "topic": topic,
             "description": str(entry.get("description", "")).strip(),
             "required": True,
+            "hidden": TypeAdapter(bool).validate_python(entry.get("hidden", False)),
             "render": str(entry.get("render", entry.get("display_template", entry.get("template", "")))).strip(),
             "fields": fields,
             "initial": initial,
@@ -200,12 +200,15 @@ class Notepad:
             raise ValueError("canvas_manager is required.")
         self.theater = theater
         raw_config = theater.config() or {}
-        subconfig = raw_config.get("story_planning", raw_config) if "story_planning" in raw_config else raw_config
-        self.config: Dict[str, Any] = subconfig if isinstance(subconfig, dict) else {}
+        story_config = TypeAdapter(dict[str, JsonValue]).validate_python(raw_config.get("story_planning", {}))
+        self.adventure_mode = bool(story_config.get("adventure_mode", False))
+        self.config = TypeAdapter(dict[str, JsonValue]).validate_python(
+            {} if self.adventure_mode else raw_config.get("notepad", {})
+        )
         # Normal narration accepts free-form notes. Adventure planning opts in
         # so its agent must satisfy the per-sticky contracts.
         self.enforce_structured = (
-            bool(self.config.get("enforce_structured", False))
+            self.adventure_mode and bool(story_config.get("enforce_structured", True))
             if enforce_structured is None
             else bool(enforce_structured)
         )
@@ -221,7 +224,7 @@ class Notepad:
         self._revision: int = 0
 
         self.max_sticky_notes = DEFAULT_MAX_STICKY_NOTES
-        self.configure_schema(self._read_planning_schema())
+        self.configure_schema(theater.read_planning_schema() if self.adventure_mode else None)
         # Initial contents are the baseline; later schema resets are mutations.
         self._revision = 0
 
@@ -239,56 +242,27 @@ class Notepad:
     def deep_plan_update_model(self) -> type[BaseModel]:
         return self._deep_plan_update_model
 
-    def _read_planning_schema(self) -> Any:
-        schema_data = None
-        if self.theater is not None:
-            try:
-                schema_data = self.theater.read_planning_schema()
-            except Exception as exc:
-                logger.warning("[Notepad] Failed to read Theater planning schema: %s", exc)
-        if not schema_data and self.theater is not None:
-            try:
-                theater_dir = self.theater.directory()
-                if isinstance(theater_dir, Path):
-                    for name in ("planning.yaml", "planning.yml"):
-                        path = theater_dir / name
-                        if path.is_file():
-                            try:
-                                import yaml
-
-                                loaded_schema = yaml.safe_load(path.read_text(encoding="utf-8"))
-                                if isinstance(loaded_schema, dict):
-                                    schema_data = loaded_schema
-                                    break
-                            except Exception as exc:
-                                logger.warning("[Notepad] Failed to load planning schema from %s: %s", path, exc)
-            except Exception as exc:
-                logger.warning("[Notepad] Failed to read directory from Theater: %s", exc)
-        if isinstance(schema_data, dict):
-            return schema_data
-        return self.config.get(
-            "planning_schema",
-            self.config.get("sticky_definitions", self.config.get("stickies")),
-        )
-
-    def configure_schema(self, schema: Any) -> None:
+    def configure_schema(self, schema: dict[str, JsonValue] | None) -> None:
         """Apply the Theater's planning schema before either story module uses the pad."""
+        definitions = parse_planning_schema(schema)
+        if self.enforce_structured and not definitions:
+            raise ValueError("Adventure Mode with enforce_structured: true requires a nonempty planning.yaml sticky contract.")
         with self._sticky_notes_lock:
             previous_notes = dict(self._sticky_notes)
             previous_structured = dict(self._structured_sticky_notes)
-            self._sticky_definitions = parse_planning_schema(schema)
+            self._sticky_definitions = definitions
             self._deep_plan_update_model = build_deep_plan_update_model(self._sticky_definitions)
             self._sticky_notes.clear()
             self._structured_sticky_notes.clear()
             self._required_stickies.clear()
             self._configure_required_stickies()
             self.max_sticky_notes = max(
-                len(self._required_stickies),
+                len(self._required_stickies) + (self.adventure_mode and not self.enforce_structured),
                 len(self._sticky_definitions),
                 max(
                     1,
                     min(
-                        int(self.config.get("max_sticky_notes", self.config.get("max_named_elements", DEFAULT_MAX_STICKY_NOTES))),
+                        TypeAdapter(int).validate_python(self.config.get("max_stickies", DEFAULT_MAX_STICKY_NOTES)),
                         MAX_STICKY_NOTES,
                     ),
                 ),
@@ -360,7 +334,7 @@ class Notepad:
                         self._required_stickies[topic] = self._sticky_notes[topic]
             self._enforce_pinned_order()
         else:
-            initial = self.config.get("initial_sticky_notes", self.config.get("initial_elements", {}))
+            initial = self.config.get("initial_stickies", {})
             if isinstance(initial, dict):
                 source = initial.items()
             elif isinstance(initial, list):
@@ -393,8 +367,14 @@ class Notepad:
         self._enforce_pinned_order()
 
     @property
-    def max_named_elements(self) -> int:
+    def max_stickies(self) -> int:
         return self.max_sticky_notes
+
+    def get_hidden_sticky_notes(self) -> list[str]:
+        """Return UI visibility from the contract used by this session mode."""
+        if self.adventure_mode:
+            return [topic for topic, definition in self._sticky_definitions.items() if definition["hidden"]]
+        return TypeAdapter(list[str]).validate_python(self.config.get("hidden_stickies", []))
 
     def update_sticky_note(self, topic: str, info: str) -> str:
         return self._update_sticky_note(topic, info)
@@ -407,12 +387,14 @@ class Notepad:
             error = self._check_sticky_owner(owner, topic)
             if error:
                 return error
-            return self._update_sticky_note(topic, info, require_schema=True)
+            return self._update_sticky_note(topic, info, require_schema=topic.strip() in self._sticky_definitions)
 
     def _check_sticky_owner(self, owner: StickyOwner, topic: str) -> str | None:
         definition = self._sticky_definitions.get(topic.strip())
         if owner not in ("recorder", "planner"):
             return "Error: Unknown sticky writer role."
+        if definition is None and not self.enforce_structured:
+            return None
         if definition is None or definition.get("owner") != owner:
             return f"Error: Role '{owner}' cannot write sticky note '{topic.strip()}'."
         return None
@@ -421,7 +403,14 @@ class Notepad:
         """Expose update contracts only for topics assigned to this writer."""
         with self._sticky_notes_lock:
             error = self._check_sticky_owner(owner, topic)
-            return error if error else self.check_schema(topic)
+            if error:
+                return error
+            if topic.strip() not in self._sticky_definitions:
+                return json.dumps({
+                    "topic": topic.strip(), "type": "string", "ownership": "shared",
+                    "update_format": "Pass info as a plain string. This freeform topic may be created or updated by either recorder or planner.",
+                })
+            return self.check_schema(topic)
 
     def for_role(self, owner: StickyOwner) -> RoleScopedNotepad:
         """Bind model tools to one writer, requiring explicit schema migration."""
@@ -455,16 +444,29 @@ class Notepad:
     def validate_role_update(self, owner: StickyOwner, topic: str, info: str) -> None:
         """Validate a staged model tool write without publishing it."""
         with self._sticky_notes_lock:
-            error = self._check_sticky_owner(owner, topic)
+            self._validate_role_value(owner, topic.strip(), info.strip())
+
+    def _validate_role_value(
+        self, owner: StickyOwner, topic: str, info: str,
+    ) -> tuple[str, str | dict[str, str] | None]:
+        error = self._check_sticky_owner(owner, topic)
+        if error:
+            raise ValueError(error)
+        if not topic or len(topic) > MAX_STICKY_NOTE_TOPIC_CHARS:
+            raise ValueError("Invalid sticky topic length.")
+        if not info or len(info) > MAX_STICKY_NOTE_INFO_CHARS:
+            raise ValueError(f"Invalid sticky value length for '{topic}'.")
+        value: str | dict[str, str] | None = None
+        rendered = info
+        if topic in self._sticky_definitions:
+            error, raw_value = self._validate_structured_update(topic, info)
             if error:
                 raise ValueError(error)
-            if not info or len(info) > MAX_STICKY_NOTE_INFO_CHARS:
-                raise ValueError(f"Invalid sticky value length for '{topic}'.")
-            error, value = self._validate_structured_update(topic, info)
-            if error:
-                raise ValueError(error)
-            if self._render(topic, value).count("|") != self._sticky_notes.get(topic, "").count("|"):
-                raise ValueError(f"Sticky note divider count mismatch for '{topic}'.")
+            value = TypeAdapter(str | dict[str, str]).validate_python(raw_value)
+            rendered = self._render(topic, value)
+        if topic in self._sticky_notes and rendered.count("|") != self._sticky_notes[topic].count("|"):
+            raise ValueError(f"Sticky note divider count mismatch for '{topic}'.")
+        return rendered, value
 
     def publish_role_updates(
         self,
@@ -487,36 +489,32 @@ class Notepad:
                 or json.dumps(self._sticky_definitions, sort_keys=True) != source.schema_token
             ):
                 raise StaleNoteSnapshot("Notes or ownership changed; reconcile against a fresh snapshot.")
-            staged: dict[str, tuple[str, str | dict[str, str]]] = {}
+            staged: dict[str, tuple[str, str | dict[str, str] | None]] = {}
             for topic, info in updates.items():
                 clean_topic, clean_info = topic.strip(), info.strip()
-                error = self._check_sticky_owner(owner, clean_topic)
-                if error:
-                    raise ValueError(error)
-                if not clean_info or len(clean_info) > MAX_STICKY_NOTE_INFO_CHARS:
-                    raise ValueError(f"Invalid sticky value length for '{clean_topic}'.")
                 if clean_topic in staged:
                     raise ValueError(f"Duplicate sticky topic '{clean_topic}'.")
-                error, value = self._validate_structured_update(clean_topic, clean_info)
-                if error:
-                    raise ValueError(error)
-                validated = TypeAdapter(str | dict[str, str]).validate_python(value)
-                rendered = self._render(clean_topic, validated)
-                existing = self._sticky_notes.get(clean_topic, "")
-                if rendered.count("|") != existing.count("|"):
-                    raise ValueError(f"Sticky note divider count mismatch for '{clean_topic}'.")
-                staged[clean_topic] = (rendered, validated)
-            changed = {
-                topic for topic, (rendered, value) in staged.items()
-                if self._sticky_notes.get(topic) != rendered
-                or self._structured_sticky_notes.get(topic) != value
-            }
-            next_notes = dict(self._sticky_notes)
+                staged[clean_topic] = self._validate_role_value(owner, clean_topic, clean_info)
+            next_notes = OrderedDict(self._sticky_notes)
             next_structured = dict(source.structured_notes)
-            for topic in changed:
-                rendered, value = staged[topic]
+            for topic, (rendered, value) in staged.items():
+                if self._sticky_notes.get(topic) == rendered and self._structured_sticky_notes.get(topic) == value:
+                    continue
                 next_notes[topic] = rendered
-                next_structured[topic] = value
+                if value is not None:
+                    next_structured[topic] = value
+                else:
+                    next_notes.move_to_end(topic)
+            while len(next_notes) > self.max_sticky_notes:
+                evict = next((topic for topic in next_notes if topic not in self._required_stickies), None)
+                if evict is None:
+                    break
+                del next_notes[evict]
+            changed = {
+                topic for topic in self._sticky_notes.keys() | next_notes.keys()
+                if self._sticky_notes.get(topic) != next_notes.get(topic)
+                or self._structured_sticky_notes.get(topic) != next_structured.get(topic)
+            }
             revision = self._revision + bool(changed)
             candidate = NoteSnapshot(
                 revision=revision,
@@ -540,18 +538,24 @@ class Notepad:
         with self._sticky_notes_lock:
             if json.dumps(self._sticky_definitions, sort_keys=True) != snapshot.schema_token:
                 raise ValueError("Recorded note schema differs; explicit save migration is required.")
-            if set(snapshot.notes) != set(self._sticky_definitions):
+            if not set(self._sticky_definitions) <= set(snapshot.notes) or (
+                self.enforce_structured and set(snapshot.notes) != set(self._sticky_definitions)
+            ):
                 raise ValueError("Recorded snapshot does not contain the configured topics.")
             if set(snapshot.structured_notes) != set(self._sticky_definitions):
                 raise ValueError("Recorded snapshot lacks structured topic values.")
             preserve_planning = self._revision > snapshot.revision
+            if not preserve_planning:
+                self._sticky_notes = OrderedDict(snapshot.notes)
+                self._structured_sticky_notes = OrderedDict(snapshot.structured_notes)
             for topic, definition in self._sticky_definitions.items():
                 if preserve_planning and definition.get("owner") == "planner":
                     continue
                 self._sticky_notes[topic] = snapshot.notes[topic]
                 self._structured_sticky_notes[topic] = snapshot.structured_notes[topic]
             self._revision = max(self._revision, snapshot.revision)
-            self._recently_changed.update(self._sticky_definitions)
+            self._restore_required_and_enforce_limit()
+            self._recently_changed.update(self._sticky_notes)
 
     def _update_sticky_note(
         self, topic: str, info: str, *, require_schema: bool = False
@@ -775,6 +779,8 @@ class Notepad:
                         structured = {}
                 for topic, value in self._structured_sticky_notes.items():
                     self._sticky_notes[topic] = self._render(topic, value)
+                if not self.enforce_structured:
+                    self._import_freeform_notes(state.get("all_sticky_notes", state.get("sticky_notes", [])))
                 self._enforce_pinned_order()
             else:
                 notes = state.get("all_sticky_notes", state.get("sticky_notes", state.get("named_elements", legacy_plan.get("sticky_notes", []))))
@@ -787,6 +793,22 @@ class Notepad:
                     if topic and info:
                         self._sticky_notes[topic] = info
             self._restore_required_and_enforce_limit()
+
+    def _import_freeform_notes(self, raw_notes: JsonValue) -> None:
+        """Restore undeclared topics alongside schema-backed notes."""
+        try:
+            notes = TypeAdapter(dict[str, str]).validate_python(raw_notes)
+        except ValueError:
+            try:
+                items = TypeAdapter(list[StickyNoteItem]).validate_python(raw_notes)
+            except ValueError:
+                return
+            notes = {item.topic: item.info for item in items}
+        for topic, info in notes.items():
+            clean_topic = topic.strip()[:MAX_STICKY_NOTE_TOPIC_CHARS]
+            clean_info = info.strip()[:MAX_STICKY_NOTE_INFO_CHARS]
+            if clean_topic and clean_info and clean_topic not in self._sticky_definitions:
+                self._sticky_notes[clean_topic] = clean_info
 
     def get_recently_changed_topics(self) -> frozenset[str]:
         """Return the set of sticky topics modified since the last call to mark_stickies_read()."""

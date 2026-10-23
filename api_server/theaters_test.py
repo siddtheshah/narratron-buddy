@@ -1429,6 +1429,7 @@ async def test_get_theater_suggestions_endpoint():
 async def test_get_theater_sticky_notes_endpoint():
     mock_agent_mgr = MagicMock()
     mock_notepad = MagicMock()
+    mock_notepad.get_hidden_sticky_notes.return_value = []
     mock_notepad.get_present_sticky_notes.return_value = [
         {"topic": "Ancient Key", "info": "Rust-covered bronze key found under floorboards."}
     ]
@@ -1455,9 +1456,10 @@ async def test_get_theater_sticky_notes_endpoint():
 
 
 @pytest.mark.asyncio
-async def test_get_theater_sticky_notes_with_hidden_stickies():
+async def test_get_theater_sticky_notes_with_hidden_stickies() -> None:
     mock_agent_mgr = MagicMock()
     mock_notepad = MagicMock()
+    mock_notepad.get_hidden_sticky_notes.return_value = ["Secret Letter", "Planner Audit"]
     mock_notepad.get_present_sticky_notes.return_value = [
         {"topic": "Ancient Key", "info": "Rust-covered bronze key."},
         {"topic": "Secret Letter", "info": "Treasonous correspondence."},
@@ -1465,18 +1467,9 @@ async def test_get_theater_sticky_notes_with_hidden_stickies():
     mock_session = SimpleNamespace(notepad_tool=SimpleNamespace(notepad=mock_notepad))
     mock_agent_mgr.get_session.return_value = mock_session
 
-    mock_tm = MagicMock()
-    mock_tm.get_theater_config.return_value = {
-        "story_planning": {
-            "hidden_stickies": ["Secret Letter"],
-            "stickies": {"Planner Audit": {"hidden": True}},
-        }
-    }
-
     with patch.object(theaters, "_require_canvas_access_async", new=AsyncMock()), \
          patch.object(theaters, "_safe_path_param"), \
-         patch.object(object_registry, "live_agent_manager", mock_agent_mgr), \
-         patch.object(theaters, "theater_manager", mock_tm):
+         patch.object(object_registry, "live_agent_manager", mock_agent_mgr):
 
         request = MagicMock()
         res = await theaters.get_theater_sticky_notes("stage", request)
@@ -1491,6 +1484,7 @@ async def test_get_theater_sticky_notes_fallback_to_canvas_state_notepad():
     mock_agent_mgr.get_session.return_value = None
 
     mock_canvas_states = MagicMock()
+    mock_canvas_states.get.return_value.notepad.get_hidden_sticky_notes.return_value = []
     mock_canvas_states.get.return_value.notepad.get_present_sticky_notes.return_value = [
         {"topic": "Fallback Key", "info": "Cached sticky from notepad state."}
     ]

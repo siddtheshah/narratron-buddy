@@ -1104,44 +1104,18 @@ def get_suggestions(request: Request, theater_id: str):
 
 
 @app.get("/api/sticky-notes")
-def get_sticky_notes(request: Request, theater_id: str):
+def get_sticky_notes(request: Request, theater_id: str) -> dict[str, JsonValue]:
     if not theater_id or not theater_id.strip():
         raise HTTPException(status_code=400, detail="theater_id is required.")
     theater_id = theater_id.strip()
     _require_canvas_access(request, theater_id)
 
-    hidden_stickies = []
-    try:
-        th_cfg = theater_manager.get_theater_config(theater_id)
-        sp_cfg = th_cfg.get("story_planning", {}) if isinstance(th_cfg.get("story_planning"), dict) else {}
-        raw_hidden = sp_cfg.get("hidden_stickies", th_cfg.get("hidden_stickies", []))
-        if isinstance(raw_hidden, (list, tuple, set)):
-            hidden_stickies = [str(x.get("topic", x.get("name", x)) if isinstance(x, dict) else x).strip() for x in raw_hidden if x]
-        elif isinstance(raw_hidden, str):
-            hidden_stickies = [s.strip() for s in raw_hidden.split(",") if s.strip()]
-        elif isinstance(raw_hidden, dict):
-            hidden_stickies = [str(k).strip() for k in raw_hidden.keys() if str(k).strip()]
-        structured = sp_cfg.get("stickies", {})
-        if isinstance(structured, dict):
-            hidden_stickies.extend(
-                str(topic).strip()
-                for topic, definition in structured.items()
-                if isinstance(definition, dict) and definition.get("hidden")
-            )
-            hidden_stickies = list(dict.fromkeys(hidden_stickies))
-    except Exception:
-        hidden_stickies = []
-
     session = live_agent_manager.get_session(theater_id)
     notepad = _session_notepad(session)
-    if notepad and hasattr(notepad, "get_present_sticky_notes"):
-        notes = notepad.get_present_sticky_notes()
-        return {"sticky_notes": notes, "hidden_stickies": hidden_stickies, "count": len(notes)}
-    elif notepad and hasattr(notepad, "get_present_elements"):
-        notes = notepad.get_present_elements()
-        return {"sticky_notes": notes, "hidden_stickies": hidden_stickies, "count": len(notes)}
-    canvas_state = _state(theater_id)
-    notes = canvas_state.notepad.get_present_sticky_notes() if canvas_state.notepad is not None else []
+    if notepad is None:
+        notepad = _state(theater_id).notepad
+    notes = notepad.get_present_sticky_notes() if notepad is not None else []
+    hidden_stickies = notepad.get_hidden_sticky_notes() if notepad is not None else []
     return {"sticky_notes": notes, "hidden_stickies": hidden_stickies, "count": len(notes)}
 
 

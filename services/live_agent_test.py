@@ -37,6 +37,7 @@ def make_test_theater(theater_id: str, config: dict, tmp_path: Optional[Path] = 
     theater.updated_scenes_dir.return_value = base_dir / "artifacts" / "updated_references" / "scenes"
     theater.references.return_value = []
     theater.playlists.return_value = {}
+    theater.read_planning_schema.return_value = {"Current Scene": {"owner": "recorder", "initial": "Observatory"}}
     theater.lore_documents.return_value = []
     return theater
 

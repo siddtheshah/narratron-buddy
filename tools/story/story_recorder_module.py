@@ -37,6 +37,9 @@ _RECORDER_INSTRUCTION_TEMPLATE = Template(
 You are the factual recorder and game controller for an interactive adventure. You do not narrate the current scene, speak for NPCs, roll dice, or invent conditional future plans.
 
 You own only `recorder`-owned sticky notes and validated Narratron game actions. Assimilate the committed event by deciding which recorder-owned sticky notes, if any, require an update. Use `check_schema(topic)` before updating a schema-backed sticky note and `update_sticky_note(topic, info)` once per changed note; never attempt to write `planner`-owned sticky notes or restate notes that did not change.
+{% if allow_freeform -%}
+Freeform sticky creation is enabled. You may also create and update shared freeform topics with `update_sticky_note(topic, info)`, using a descriptive topic and a concise plain string for established facts. No planning.yaml entry is needed for a new topic. Shared freeform notes can be updated by either recorder or planner; keep contingent plans distinct from established facts and avoid duplicating existing topics. Declared topics still require their owner's schema. Notes have a bounded capacity; older freeform topics may be evicted.
+{% endif -%}
 Follow your pinned RECORDER.md for adventure-specific recording and game-control rules. The responder (RESPONDER.md) owns immediate action resolution and narration, and the deep planner (PLANNER.md) owns long-horizon conditional plans and `planner`-owned sticky notes.
 
 # Phase 1 — Factual Recording Rules
@@ -112,6 +115,7 @@ def build_recorder_instructions(
     sticky_schema_json: str = "",
     lore_context: str = "",
     has_game: bool = False,
+    allow_freeform: bool = False,
     max_read_lore_calls: int = MAX_RECORDER_READ_LORE_CALLS_PER_RUN,
     max_search_lore_calls: int = MAX_RECORDER_SEARCH_LORE_CALLS_PER_RUN,
 ) -> str:
@@ -120,6 +124,7 @@ def build_recorder_instructions(
         sticky_schema_json=sticky_schema_json,
         lore_context=lore_context,
         has_game=has_game,
+        allow_freeform=allow_freeform,
         max_read_lore_calls=max_read_lore_calls,
         max_search_lore_calls=max_search_lore_calls,
     ).strip()
@@ -194,7 +199,9 @@ class StoryRecorderModule:
         self._reconcile = reconcile or self._reconcile_model
         self._game_state = game_state
         self._control_game = control_game
-        configured_style = style or str(notepad.config.get("style", DEFAULT_STORY_PLANNING_STYLE))
+        raw_config = notepad.theater.config()
+        config = raw_config.get("story_planning", raw_config)
+        configured_style = style or str(config.get("style", DEFAULT_STORY_PLANNING_STYLE))
         self.style: str = configured_style.strip() or DEFAULT_STORY_PLANNING_STYLE
         self._read_lore_calls_this_run = 0
         self._search_lore_calls_this_run = 0
@@ -206,9 +213,9 @@ class StoryRecorderModule:
             self.agent = Agent(
                 name="story_recorder",
                 model=VertexGemini(
-                    model=str(notepad.config.get("recorder_model") or notepad.config.get("responder_model") or "gemini-3.7-flash"),
-                    project_id=notepad.config.get("vertex_project"),
-                    location=str(notepad.config.get("vertex_location") or "global"),
+                    model=str(config.get("recorder_model") or config.get("responder_model") or "gemini-3.7-flash"),
+                    project_id=config.get("vertex_project"),
+                    location=str(config.get("vertex_location") or "global"),
                 ),
                 instruction=self._build_recorder_instruction,
                 tools=[self.read_lore, self.search_lore, self.staged_notes.check_schema,
@@ -539,6 +546,7 @@ class StoryRecorderModule:
             sticky_schema_json=self._recorder_sticky_schema_json(),
             lore_context=lore_context,
             has_game=self._game_state is not None and self._game_state.program is not None,
+            allow_freeform=not self.notepad.enforce_structured,
         )
 
     def _build_recorder_turn_prompt(

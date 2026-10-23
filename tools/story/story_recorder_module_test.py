@@ -25,7 +25,7 @@ from tools.story.story_recording_journal import RecordingEvent, StoryRecordingJo
 @pytest.fixture
 def pad(tmp_path: Path) -> Notepad:
     theater = Mock(spec=Theater)
-    theater.config.return_value = {}
+    theater.config.return_value = {"story_planning": {"adventure_mode": True, "enforce_structured": False}}
     theater.directory.return_value = tmp_path
     theater.read_planning_schema.return_value = {
         "Location": {"owner": "recorder", "initial": "Gate"},

@@ -5,6 +5,9 @@ import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, Mock
 
+import pytest
+from pydantic import JsonValue
+
 from components.canvas.story_state import StoryState
 from components.canvas_state import CanvasStateManager
 from components.theater_manager import Theater
@@ -20,25 +23,28 @@ class TestNotepad(unittest.TestCase):
 
     def _make_notepad(
         self,
-        config: dict,
-        schema: dict | None = None,
+        config: dict[str, JsonValue],
+        schema: dict[str, JsonValue] | None = None,
         canvas_manager: CanvasStateManager | None = None,
-        **kwargs: object,
+        on_change: Mock | None = None,
     ) -> Notepad:
-        self.theater.config.return_value = config
+        self.theater.config.return_value = {
+            "story_planning": {"adventure_mode": schema is not None, "enforce_structured": config.get("enforce_structured", False)},
+            "notepad": config,
+        }
         self.theater.read_planning_schema.return_value = schema
         return Notepad(
             self.theater,
             canvas_manager=canvas_manager or self.canvas_manager,
-            **kwargs,
+            on_change=on_change,
         )
 
     def test_initializes_required_notes_and_exports_every_note(self) -> None:
         pad = self._make_notepad(
             {
-                "max_sticky_notes": 3,
+                "max_stickies": 3,
                 "required_stickies": {"HUD": "HP: 10"},
-                "initial_sticky_notes": {
+                "initial_stickies": {
                     "HUD": "HP: 10",
                     "Secret": "The gate is trapped",
                     "Quest": "Reach the gate",
@@ -58,7 +64,7 @@ class TestNotepad(unittest.TestCase):
     def test_revision_tracks_changed_content_and_eviction_only(self) -> None:
         changed = Mock()
         pad = self._make_notepad(
-            {"max_sticky_notes": 1, "initial_sticky_notes": {"HUD": "HP: 10 | MP: 5"}},
+            {"max_stickies": 1, "initial_stickies": {"HUD": "HP: 10 | MP: 5"}},
             on_change=changed,
         )
         self.assertEqual(pad.revision, 0)
@@ -138,9 +144,9 @@ class TestNotepad(unittest.TestCase):
     def test_default_reference_stickies_are_retained(self) -> None:
         from utils.config_loader import get_theater_default_config
 
-        config = get_theater_default_config()["story_planning"]
+        config = get_theater_default_config()["notepad"]
         pad = self._make_notepad(config)
-        topics = ["current_scene_reference_only", "current_present_character_references_only"]
+        topics = ["Current Scene (Ref)", "Current Present Characters (Refs)"]
         self.assertEqual(pad.get_required_sticky_notes(), topics)
         self.assertEqual([note["topic"] for note in pad.get_present_sticky_notes()], topics)
         pad.update_sticky_note(topics[0], "library_scene")
@@ -161,9 +167,9 @@ class TestNotepad(unittest.TestCase):
         changed = Mock()
         pad = self._make_notepad(
             {
-                "max_sticky_notes": 2,
+                "max_stickies": 2,
                 "required_stickies": ["HUD"],
-                "initial_sticky_notes": {"HUD": "HP: 10 | MP: 5", "Quest": "Find key"},
+                "initial_stickies": {"HUD": "HP: 10 | MP: 5", "Quest": "Find key"},
             },
             on_change=changed,
         )
@@ -179,9 +185,9 @@ class TestNotepad(unittest.TestCase):
     def test_deep_replacement_preserves_required_notes_and_applies_limit(self) -> None:
         pad = self._make_notepad(
             {
-                "max_sticky_notes": 2,
+                "max_stickies": 2,
                 "required_stickies": {"HUD": "HP: 10"},
-                "initial_sticky_notes": {"HUD": "HP: 10", "Quest": "Find key"},
+                "initial_stickies": {"HUD": "HP: 10", "Quest": "Find key"},
             }
         )
 
@@ -260,7 +266,7 @@ class TestNotepad(unittest.TestCase):
         canvas_manager.story = StoryState()
         pad = self._make_notepad(
             {
-                "initial_sticky_notes": {"Location": "Observatory", "Secret": "Hidden passage"},
+                "initial_stickies": {"Location": "Observatory", "Secret": "Hidden passage"},
             },
             canvas_manager=canvas_manager,
         )
@@ -290,8 +296,8 @@ class TestNotepad(unittest.TestCase):
     def test_recently_changed_tracks_updates_and_is_cleared_on_read(self) -> None:
         pad = self._make_notepad(
             {
-                "max_sticky_notes": 3,
-                "initial_sticky_notes": {"HUD": "HP: 10"},
+                "max_stickies": 3,
+                "initial_stickies": {"HUD": "HP: 10"},
             }
         )
         # Initial stickies should NOT appear in recently-changed.
@@ -309,8 +315,8 @@ class TestNotepad(unittest.TestCase):
     def test_recently_changed_tracks_deep_update_only_for_modified_values(self) -> None:
         pad = self._make_notepad(
             {
-                "max_sticky_notes": 3,
-                "initial_sticky_notes": {"HUD": "HP: 10", "Quest": "Find key"},
+                "max_stickies": 3,
+                "initial_stickies": {"HUD": "HP: 10", "Quest": "Find key"},
             }
         )
         pad.mark_stickies_read()  # clear any initial pollution
@@ -408,7 +414,8 @@ class TestNotepad(unittest.TestCase):
             "First": {"initial": "1"},
             "Second": {"initial": "2"},
         }
-        pad = self._make_notepad({"max_sticky_notes": 4}, schema=schema)
+        pad = self._make_notepad({}, schema=schema)
+        pad.max_sticky_notes = 4
         pad.update_sticky_note("Extra1", "info1")
         pad.update_sticky_note("Extra2", "info2")
         self.assertEqual(
@@ -427,6 +434,101 @@ class TestNotepad(unittest.TestCase):
             [note["topic"] for note in pad.get_present_sticky_notes()],
             ["First", "Second", "Extra2", "Extra1"],
         )
+
+
+def test_normal_narration_uses_only_notepad_settings(tmp_path: Path) -> None:
+    theater = Mock(spec=Theater)
+    theater.config.return_value = {
+        "notepad": {
+            "max_stickies": 2,
+            "initial_stickies": {"Scene": "Gate", "Clue": "Key"},
+            "required_stickies": ["Scene"],
+            "hidden_stickies": ["Scene"],
+        },
+        "story_planning": {
+            "enforce_structured": True,
+            "initial_elements": {"Legacy": "Ignored"},
+            "required_stickies": ["Legacy"],
+            "hidden_stickies": ["Legacy"],
+            "max_named_elements": 1,
+            "stickies": {"Inline": {"initial": "Ignored"}},
+        },
+    }
+    theater.directory.return_value = tmp_path
+    theater.read_planning_schema.side_effect = AssertionError("Normal narration must not read planning.yaml")
+    pad = Notepad(theater, canvas_manager=Mock(spec=CanvasStateManager))
+
+    assert pad.enforce_structured is False
+    assert pad.max_stickies == 2
+    assert pad.get_required_sticky_notes() == ["Scene"]
+    assert pad.get_hidden_sticky_notes() == ["Scene"]
+    assert "Clue" in pad.update_sticky_note("Quest", "Find the lock")
+    assert [(note["topic"], note["info"]) for note in pad.get_present_sticky_notes()] == [
+        ("Scene", "Gate"), ("Quest", "Find the lock"),
+    ]
+
+
+@pytest.mark.parametrize("schema", [None, {}, {"stickies": {}}])
+def test_structured_adventure_requires_a_planning_contract(schema: dict[str, JsonValue] | None) -> None:
+    theater = Mock(spec=Theater)
+    theater.config.return_value = {
+        "story_planning": {
+            "adventure_mode": True,
+            "stickies": {"Inline": {"initial": "Not a file contract"}},
+        },
+    }
+    theater.read_planning_schema.return_value = schema
+    with pytest.raises(ValueError, match="requires a nonempty planning.yaml"):
+        Notepad(theater, canvas_manager=Mock(spec=CanvasStateManager))
+
+
+def test_unstructured_adventure_allows_missing_contract_and_ignores_notepad_settings() -> None:
+    theater = Mock(spec=Theater)
+    theater.config.return_value = {
+        "story_planning": {"adventure_mode": True, "enforce_structured": False},
+        "notepad": {
+            "initial_stickies": {"Normal": "Ignored"},
+            "required_stickies": ["Normal"],
+            "hidden_stickies": ["Normal"],
+            "max_stickies": 1,
+        },
+    }
+    theater.read_planning_schema.return_value = None
+    pad = Notepad(theater, canvas_manager=Mock(spec=CanvasStateManager))
+    assert pad.get_present_sticky_notes() == []
+    assert pad.get_required_sticky_notes() == []
+    assert pad.get_hidden_sticky_notes() == []
+    assert pad.update_sticky_note("New", "Free form").startswith("Added")
+
+
+def test_adventure_reads_contract_visibility_and_retains_all_topics(tmp_path: Path) -> None:
+    from components.theater_manager import TheaterManager
+
+    theater = TheaterManager(tmp_path).theater("contract")
+    theater.directory().mkdir(parents=True, exist_ok=True)
+    (theater.directory() / "theater.yaml").write_text(
+        "story_planning:\n  adventure_mode: true\nnotepad:\n  max_stickies: 1\n"
+        "  required_stickies: [Normal]\n  hidden_stickies: [Visible]\n"
+        "  initial_stickies: {Normal: Ignored}\n", encoding="utf-8",
+    )
+    (theater.directory() / "planning.yaml").write_text(
+        "Visible:\n  owner: recorder\n  initial: Public\n"
+        "Secret:\n  owner: planner\n  hidden: true\n  initial: Private\n"
+        + "".join(f"Topic {index}:\n  owner: recorder\n  initial: 'Value {index}'\n" for index in range(10)),
+        encoding="utf-8",
+    )
+    pad = Notepad(theater, canvas_manager=Mock(spec=CanvasStateManager))
+    assert pad.enforce_structured is True
+    assert pad.get_hidden_sticky_notes() == ["Secret"]
+    assert pad.get_required_sticky_notes() == ["Visible", "Secret", *[f"Topic {index}" for index in range(10)]]
+    assert len(pad.get_present_sticky_notes()) == 12
+    assert pad.max_stickies == 12
+    assert pad.for_role("planner").update_sticky_note("Secret", "Revised plan").startswith("Updated")
+    assert pad.get_present_sticky_notes()[1]["info"] == "Revised plan"
+    before = pad.export_state()
+    with pytest.raises(ValueError, match="requires a nonempty planning.yaml"):
+        pad.configure_schema({})
+    assert pad.export_state() == before
 
 
 if __name__ == "__main__":

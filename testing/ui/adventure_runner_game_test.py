@@ -21,6 +21,9 @@ def test_adventure_lab_game_moves_and_reset(monkeypatch: MonkeyPatch, tmp_path: 
     (adventure / "theater.yaml").write_text(
         "story_planning:\n  adventure_mode: true\n  deep_planning:\n    enabled: false\n", encoding="utf-8",
     )
+    (adventure / "planning.yaml").write_text(
+        "Current Scene:\n  owner: recorder\n  initial: Counter room\n", encoding="utf-8",
+    )
     monkeypatch.setattr(adventure_runner, "ADVENTURES_DIR", adventures)
     monkeypatch.setattr(adventure_runner, "THEATERS_DIR", tmp_path / "theaters")
     monkeypatch.setattr(server, "_adventure_runner_sessions", {})

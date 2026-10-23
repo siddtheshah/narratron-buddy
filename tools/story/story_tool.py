@@ -91,7 +91,6 @@ class StoryTool(BaseTools):
         self.action_cooldown_base_seconds = self.cooldown_duration
         self.notepad = canvas_manager.notepad or Notepad(
             theater, canvas_manager=canvas_manager,
-            enforce_structured=bool(self.config.get("enforce_structured", True)),
         )
         canvas_manager.notepad = self.notepad
         self._story_log: list[dict[str, JsonValue]] = []
@@ -514,8 +513,8 @@ class StoryTool(BaseTools):
         self.notepad.max_sticky_notes = max(1, int(value))
 
     @property
-    def max_named_elements(self) -> int:
-        return self.notepad.max_named_elements
+    def max_stickies(self) -> int:
+        return self.notepad.max_stickies
 
     @terminal
     def create_or_update_scene(self, name: str, description: str = "") -> str:

@@ -55,25 +55,25 @@ music:
     switch_cooldown: 15
     style: "no lyrics, instrumental focus, steady volume, 90 second duration, loopable ambiance"
 
-story_planning:
-    # Adventure planners validate each schema-backed sticky update. The normal
-    # live-agent notepad deliberately keeps this disabled.
-    enforce_structured: true
-    max_named_elements: 5
-    initial_elements: {}
-    # Optional schema-backed sticky contracts. Each topic declares field names,
-    # a conforming initial mapping, and an optional render string. The deep
-    # planner validates and updates these stickies independently.
-    stickies: {}
-    # List of sticky note keys/topics that the story planner must always retain and never drop
+# Normal narration only: configuration for notepad_tool.
+# Adventure Mode defines its sticky contracts and visibility in planning.yaml.
+notepad:
+    max_stickies: 5
+    initial_stickies: {}
+    # Topics that the notepad must always retain.
     required_stickies:
-        - current_scene_reference_only
-        - current_present_character_references_only
+        - Current Scene (Ref)
+        - Current Present Characters (Refs)
     # Names of sticky notes to hide in the canvas UI view by default until toggled
     hidden_stickies:
-        - current_scene_reference_only
-        - current_present_character_references_only
+        - Current Scene (Ref)
+        - Current Present Characters (Refs)
 
+story_planning:
+    # Require a nonempty planning.yaml contract and validate sticky updates.
+    # When false, recorder and planner can also create shared freeform topics.
+    # Declared topics retain their ownership and field contracts.
+    enforce_structured: true
     adventure_mode: false
     # Allow player-action and hidden procedural dice rolls. Defaults to true.
     enable_dice: true
@@ -89,7 +89,7 @@ story_planning:
     # Adventure Mode uses a shallow background planning heartbeat. Completed
     # responder turns enter an ordered queue; each heartbeat assimilates a
     # bounded batch and publishes typed sticky state.
-    # Adventure-specific durable concepts belong in the sticky schemas above.
+    # Adventure-specific durable concepts belong in planning.yaml.
     deep_planning:
         enabled: true
         max_events_per_turn: 4

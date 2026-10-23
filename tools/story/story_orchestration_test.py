@@ -100,6 +100,43 @@ def test_communicated_turn_records_then_plans_without_request(harness: TurnHarne
     assert tool.recording_journal.pending() == []
 
 
+@pytest.mark.parametrize("with_contract", [False, True])
+def test_unstructured_adventure_stages_freeform_notes_and_recovers_after_restart(
+    harness: TurnHarness, with_contract: bool,
+) -> None:
+    harness.theater.config.return_value["story_planning"]["enforce_structured"] = False
+    if not with_contract:
+        harness.theater.read_planning_schema.return_value = None
+    harness.decision = GameControlDecision()
+    tool = harness.new_tool()
+    assert "Freeform sticky creation is enabled" in tool.recorder_module._build_recorder_instruction()
+    planner_instruction = tool.planning_module._build_deep_planner_instruction()
+    assert "Freeform sticky creation is enabled" in planner_instruction
+    assert "only durable planning vocabulary" not in planner_instruction
+
+    def run(session: StorySession, role: StoryRole, prompt: str, *, timeout: float = 60.0, stage_id: str = "") -> str:
+        if role == "recorder":
+            assert tool.recorder_module.staged_notes.update_sticky_note("Discovery", "Found a key").endswith("staged.")
+            assert "Discovery" not in tool.notepad.snapshot().notes
+        elif role == "planner":
+            assert "Found a key" in prompt
+            assert tool.planning_module.staged_notes.update_sticky_note("Possibility", "A guard may investigate").endswith("staged.")
+            assert "Possibility" not in tool.notepad.snapshot().notes
+        return harness.model_run(role, prompt)
+
+    with patch.object(StorySession, "run", run):
+        assert "error" not in tool.resolve_action("Inspect the courtyard", drain=True)
+    assert harness.calls == ["responder", "recorder", "planner"]
+    assert tool.notepad.snapshot().notes["Discovery"] == "Found a key"
+    assert tool.notepad.snapshot().notes["Possibility"] == "A guard may investigate"
+    snapshot = tool.notepad.snapshot()
+    tool.close()
+    harness.tools.remove(tool)
+    restarted = harness.new_tool()
+    assert restarted.wait_for_pending_events(5)
+    assert restarted.notepad.snapshot() == snapshot
+
+
 def test_response_recording_can_prepare_game_offer_awaiting_player_consent(
     harness: TurnHarness, tmp_path: Path,
 ) -> None:

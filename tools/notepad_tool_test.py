@@ -13,9 +13,9 @@ class TestNotepadTool(unittest.TestCase):
         self.theater = MagicMock(spec=Theater)
         self.theater.theater_id = "notepad-tool"
         self.theater.config.return_value = {
-            "story_planning": {
-                "adventure_mode": False,
-                "initial_sticky_notes": {"Location": "Observatory"},
+            "story_planning": {"adventure_mode": False},
+            "notepad": {
+                "initial_stickies": {"Location": "Observatory"},
             }
         }
         self.canvas = MagicMock(spec=CanvasStateManager)

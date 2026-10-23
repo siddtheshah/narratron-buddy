@@ -264,7 +264,7 @@ def test_format_canvas_state_only_includes_raw_notes_outside_adventure_mode(
     adventure_mode: bool, tmp_path: Path, reference_manager: MagicMock,
 ) -> None:
     theater = MagicMock(wraps=TheaterManager(tmp_path).theater("stage"))
-    theater.config.return_value = {"story_planning": {"adventure_mode": adventure_mode}}
+    theater.config.return_value = {"story_planning": {"adventure_mode": adventure_mode, "enforce_structured": False}}
     theater.theater_id = "stage"
     canvas = CanvasStateManager(theater)
     assert canvas.story.adventure_mode is adventure_mode

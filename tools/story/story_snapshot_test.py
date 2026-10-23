@@ -24,8 +24,8 @@ def test_story_snapshot_and_diff_built_from_story_state_and_notepad_together(tmp
     theater.directory.return_value = tmp_path
     theater.output_dir.return_value = tmp_path / "output"
     theater.config.return_value = {
-        "story_planning": {
-            "initial_sticky_notes": {
+        "notepad": {
+            "initial_stickies": {
                 "HUD": "HP: 100",
                 "OldNote": "Keep quiet",
             }
@@ -112,8 +112,8 @@ def test_story_tool_creates_snapshot_and_diff(tmp_path: Path, request: pytest.Fi
     theater.directory.return_value = tmp_path
     theater.output_dir.return_value = tmp_path / "output"
     theater.config.return_value = {
-        "story_planning": {
-            "initial_sticky_notes": {
+        "notepad": {
+            "initial_stickies": {
                 "Quest": "Defeat dragon",
             }
         }

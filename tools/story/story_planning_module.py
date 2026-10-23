@@ -68,6 +68,9 @@ _DEEP_PLANNING_INSTRUCTION_TEMPLATE = Template(
 You are the deep planner for an interactive adventure. You do not narrate the current scene and you never choose actions, speech, thoughts, or feelings for the player. Take a broad view of the player's accumulated actions, established lore, unresolved setups, off-screen actors, deadlines, and world consequences.
 
 You own only `planner`-owned sticky notes. Assimilate the committed turn by deciding which planner-owned notes, if any, need an update. Use `check_schema(topic)` before updating a schema-backed sticky note and `update_sticky_note(topic, info)` once per changed note; never attempt to write `recorder`-owned sticky notes or restate notes that did not change.
+{% if allow_freeform -%}
+Freeform sticky creation is enabled. You may also create and update shared freeform topics with `update_sticky_note(topic, info)`, using a descriptive topic and a concise plain string for contingent plans. No planning.yaml entry is needed for a new topic. Shared freeform notes can be updated by either recorder or planner; preserve established facts and avoid duplicating existing topics. Declared topics still require their owner's schema. Notes have a bounded capacity; older freeform topics may be evicted.
+{% endif -%}
 Follow your pinned PLANNER.md for adventure-specific priorities. The responder (RESPONDER.md) owns immediate action resolution and narration, and the recorder (RECORDER.md) owns factual state recording and bookkeeping. Player Action events are intentions awaiting resolution: research relevant lore and prepare plans immediately, but never record attempted actions as successful, spend resources, advance clocks, or apply consequences until a Responder Response or committed game event establishes them. The response is a second event for the same action, not another player turn; never apply its costs or consequences twice.
 
 # Non-Negotiable Planning Rules
@@ -76,8 +79,12 @@ Follow your pinned PLANNER.md for adventure-specific priorities. The responder (
 - Preserve player agency. Never prescribe player actions.
 - Maintain causal continuity across many turns. Advance factions and antagonists off-screen when their knowledge, resources, motives, and elapsed time justify it.
 - Audit earlier player behavior when lore calls for counter-plotting. Opposition should investigate evidence the player plausibly left, but must not gain impossible knowledge.
+{% if not allow_freeform -%}
 - Use the author-defined sticky fields as the only durable planning vocabulary. Do not invent a parallel generic summary, thread tracker, consequence list, clock, or faction model.
 - Think across short, medium, and long horizons, but publish only the configured sticky state.
+{% else -%}
+- Think across short, medium, and long horizons. Publish concise contingent plans in declared planner-owned topics or shared freeform topics.
+{% endif -%}
 - If there are stickies that are for plot building or reveals, these are a priority for you to set up and maintain.
 - For planner-owned stickies that track numeric state, clocks, or hidden scores, ensure you follow the appropriate rules defined in the lore to faithfully update them. Factual inventory, player stats, and mechanical state are handled by the recorder.
 - For you, accuracy is more important than speed.
@@ -97,9 +104,9 @@ After tool calls, respond with a brief confirmation. Do not include a sticky-not
 
 1. Search lore library for relevant story info {% if has_game %} or game rules {% endif %} using `deep_search_lore`
 2. Read relevant lore documents using `deep_read_lore`
-3. Update only planner-owned sticky notes using lore rules. Never execute game actions or trigger peers.
+3. Update planner-owned sticky notes{% if allow_freeform %} or shared freeform topics{% endif %} using lore rules. Never execute game actions or trigger peers.
 4. Come up with some interesting possible developments given current state.
-5. Use your taste and imagination to make additional updates to planner-owned sticky notes based on that plan.
+5. Use your taste and imagination to update planner-owned sticky notes{% if allow_freeform %} or shared freeform topics{% endif %} based on that plan.
 
 # Story-Planning Style
 {{ style }}
@@ -287,7 +294,8 @@ class StoryPlanningModule:
         self.session_service = session_service
         self.session_id = str(session_id)
         self._story_log_context_fn = story_log_context_fn or (lambda: "")
-        self.config = self.notepad.config
+        raw_config = theater.config()
+        self.config = raw_config.get("story_planning", raw_config)
 
         self.adventure_mode: bool = bool(self.config.get("adventure_mode", False))
         configured_style = self.config.get("style", DEFAULT_STORY_PLANNING_STYLE)
@@ -529,6 +537,7 @@ class StoryPlanningModule:
             sticky_schema_json=sticky_schema_json,
             lore_context=lore_context or "",
             has_game=self.game_state is not None and self.game_state.program is not None,
+            allow_freeform=not self.notepad.enforce_structured,
         ).strip()
 
     def take_game_action(self, name: str, arguments_json: str, revision: int) -> str:

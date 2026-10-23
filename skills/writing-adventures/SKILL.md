@@ -136,11 +136,8 @@ story_planning:
     text_beautification: true        # Polishes narrative output
     style: "engaging mystery with player agency, dramatic tension, and fair consequences"
 
-    max_named_elements: 8            # Maximum sticky notes maintained on the canvas board
-
-    # Optional overlay: sticky note topics hidden in canvas UI view by default until toggled
-    hidden_stickies:
-        - "Known Clues"
+    # Require sticky definitions, initial values, and visibility in planning.yaml.
+    enforce_structured: true
 
     cooldown_duration: 10
     require_user_input: true
@@ -153,6 +150,17 @@ speech:
     accent_augmentation: true        # Amplifies character accent voice tags into explicit delivery instructions
 ```
 
+The top-level `notepad` section is solely for normal narration and configures
+`initial_stickies`, `max_stickies`, `required_stickies`, and `hidden_stickies`.
+Adventure Mode ignores these settings; all adventure topics are required and
+pinned in `planning.yaml` order, and capacity includes every declared topic.
+With `story_planning.enforce_structured: true` (the default), a missing or empty
+contract is a configuration error. Set this flag to `false` to let recorder and
+planner also create and update shared freeform topics without a contract entry.
+Declared topics retain ownership and field validation. Freeform topics are
+visible by default and persist across saves and restarts; older optional notes
+are evicted at capacity, with at least one freeform slot alongside required topics.
+
 ### 4.2. Deep Planning Schema Template (`planning.yaml`)
 
 Adventures use `planning.yaml` to define the persistent state that is
@@ -163,6 +171,7 @@ handled by the deep story planner.
 # All fields and sticky values are strictly strings. No arrays, numbers, or complex JSON Schema objects.
 
 "Player Character":
+  owner: recorder
   description: "Established player identity, objective, and physical condition."
   render: "Name: {name} | Objective: {objective} | Inventory: {inventory} | Condition: {condition}"
   fields:
@@ -177,6 +186,7 @@ handled by the deep story planner.
     condition: "Healthy"
 
 "Spire Security Level":
+  owner: recorder
   description: "Alert level and defense automaton activity."
   render: "Alert: {alert} | Automatons: {automatons}"
   fields:
@@ -187,6 +197,8 @@ handled by the deep story planner.
     automatons: "Dormant"
 
 "Known Clues":
+  owner: recorder
+  hidden: true
   description: "Discovered clues and historical hints."
   initial: "The Spire activates only when three harmonic keys are aligned."
 ```
@@ -195,7 +207,7 @@ handled by the deep story planner.
 1. **Use `live_agent` for live-agent settings**: Put persona flags and `special_instructions` under `live_agent`; the former `agent` and `agent_internal` section names are no longer used.
 2. **`adventure_mode: true` is mandatory**: Without this flag, Narratron operates in passive storytelling mode rather than interactive adventure mode.
 3. **Move stickies to `planning.yaml`**: Define initial notes, field schemas, and rendering strings in `planning.yaml`. All entries are assumed required and pinned in order.
-4. **`hidden_stickies` overlay**: Optional list in `theater.yaml` of sticky note names hidden in the canvas UI view by default when hovering over the sticky notes widget.
+4. **Sticky visibility**: Set `hidden: true` on each hidden topic in `planning.yaml`. The `notepad.hidden_stickies` list applies only to normal narration.
 5. **`starting_image` must exist**: Ensure the file referenced by `starting_image` is present in your adventure folder (usually under `references/`).
 6. **`speech` settings**: Configure `voice_language_code` and `accent_augmentation` to shape NPC voice generation; backend speech provider and model are application-level operational settings defined in `app.yaml`, which override corresponding fields.
 7. **Planner-owned 'Upcoming Encounter Suggestion' sticky**: Include a hidden sticky owned by the planner (`owner: planner`, `hidden: true`) with fields for `encounter`, `story_goal`, and `drama` to continuously stage narrative obstacles and dramatic tension.
@@ -462,8 +474,8 @@ Before packaging your adventure for players or deploying to a live session:
   - [ ] Live-agent behavior and instructions use the `live_agent` section.
   - [ ] `story_planning.adventure_mode: true` is set.
   - [ ] `starting_image` points to a valid file in `references/`.
-  - [ ] All keys in `required_stickies` exist in `initial_elements`.
-  - [ ] `max_named_elements` is reasonably set (typically 6–10).
+  - [ ] `planning.yaml` defines every sticky with an explicit owner and valid initial values.
+  - [ ] `story_planning.enforce_structured: true` has a nonempty `planning.yaml` contract.
 - [ ] **`lore/` Architecture**:
   - [ ] Contains independent `lore/RESPONDER.md`, `lore/PLANNER.md`, and `lore/RECORDER.md` guides, with no dependency on the other private guides.
   - [ ] The responder guide defines opening, tone and resolution; the planner guide defines campaign progression and pacing; the recorder guide defines factual note reconciliation and game actions.

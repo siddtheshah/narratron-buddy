@@ -259,7 +259,7 @@ class TestStoryResponseModuleBehavior(unittest.TestCase):
         )
         self.config = {
             "adventure_mode": True,
-            "initial_sticky_notes": {"HUD": "HP: 100 | MP: 50"},
+            "notepad": {"initial_stickies": {"HUD": "HP: 100 | MP: 50"}},
         }
         self.theater.config.return_value = self.config
 
@@ -800,7 +800,7 @@ class TestStoryResponseModulePlayerCharacter(unittest.TestCase):
             wraps=TheaterManager(Path(self.theater_directory.name)).theater("test_theater"),
         )
         self.theater.theater_id = "test_player_theater"
-        self.theater.config.return_value = {"story_planning": {"adventure_mode": True}}
+        self.theater.config.return_value = {"story_planning": {"adventure_mode": True, "enforce_structured": False}}
         self.canvas = MagicMock(spec=CanvasStateManager)
         self.lore_library = MagicMock(spec=LoreLibrary)
         self.notepad = Notepad(self.theater, canvas_manager=self.canvas)
@@ -901,6 +901,7 @@ class TestResponderInstructionAndTurnPrompt(unittest.TestCase):
             "story_planning": {
                 "adventure_mode": True,
                 "style": "Mythic space opera",
+                "enforce_structured": False,
             }
         }
         self.canvas = MagicMock(spec=CanvasStateManager)

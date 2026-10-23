@@ -328,7 +328,7 @@
             href="#observability-tool"><code>observability_tool</code></a><a href="#visuals"><code>visuals</code></a><a
             href="#image-generation"><code>image_generation</code></a><a href="#animation"><code>animation</code></a><a
             href="#interactive-canvas"><code>interactive_canvas</code></a><a href="#game-tool"><code>game_tool</code></a><a href="#music"><code>music</code></a><a
-            href="#story-planning"><code>story_planning</code></a><a href="#speech"><code>speech</code></a><a href="#chat"><code>chat</code></a>
+            href="#notepad"><code>notepad</code></a><a href="#story-planning"><code>story_planning</code></a><a href="#speech"><code>speech</code></a><a href="#chat"><code>chat</code></a>
         </aside>
         <article class="content">
           <section class="section" id="loading">
@@ -536,6 +536,31 @@ story_planning:
             </dl>
           </section>
 
+          <section class="section" id="notepad">
+            <h2><code>notepad</code></h2>
+            <p>Configures <code>notepad_tool</code> for normal narration. Adventure Mode uses
+              <code>planning.yaml</code> and ignores this section.</p>
+            <dl class="options">
+              <dt><code>max_stickies</code> <span class="type">integer</span></dt>
+              <dd>Maximum sticky notes, clamped from 1 to 10 and raised to retain every required topic. Default: 5.</dd>
+              <dt><code>initial_stickies</code> <span class="type">mapping or list</span></dt>
+              <dd>Initial topic-to-information pairs, or entries with <code>topic</code> and <code>info</code>.</dd>
+              <dt><code>required_stickies</code> <span class="type">list or mapping</span></dt>
+              <dd>Topics always retained; a mapping can supply their initial values.</dd>
+              <dt><code>hidden_stickies</code> <span class="type">list of strings</span></dt>
+              <dd>Topic names hidden until the sticky widget's visibility toggle reveals them.
+                In Adventure Mode, set <code>hidden: true</code> on each topic in <code>planning.yaml</code>.</dd>
+            </dl>
+            <pre>notepad:
+  max_stickies: 5
+  initial_stickies:
+    Current Scene: "The observatory"
+  required_stickies:
+    - Current Scene
+  hidden_stickies:
+    - Current Scene</pre>
+          </section>
+
           <section class="section" id="story-planning">
             <h2><code>story_planning</code></h2>
             <p>Defines the Adventure Mode planner: its durable story context, pacing, and optional NPC speech.</p>
@@ -553,23 +578,19 @@ story_planning:
                 narration and dialogue spans using TextBeautifier. Default: <code>true</code>.</dd>
               <dt><code>style</code> <span class="type">string</span></dt>
               <dd>Guidance for the planner’s pacing, consequences, and narrative tone. Limited to 500 characters.</dd>
-              <dt><code>max_named_elements</code> <span class="type">integer</span></dt>
-              <dd>Maximum sticky-note story elements. Alias for <code>max_sticky_notes</code>; the effective value is
-                clamped from <code>1</code> to <code>10</code>.</dd>
-              <dt><code>initial_elements</code> <span class="type">mapping or list</span></dt>
-              <dd>Legacy inline initial sticky notes. Prefer <code>planning.yaml</code> for adventures. A mapping uses topic-to-information pairs; a list can contain objects with
-                <code>topic</code>/<code>name</code> and <code>info</code>/<code>content</code>.</dd>
-              <dt><code>hidden_stickies</code> <span class="type">list of strings</span></dt>
-              <dd>Sticky-note topic names hidden in the canvas UI by default. Players can reveal them with the
-                sticky widget's visibility toggle. Include planner-only topics such as <code>Upcoming Encounter Suggestion</code>.</dd>
+              <dt><code>enforce_structured</code> <span class="type">boolean</span></dt>
+              <dd>Requires a nonempty <code>planning.yaml</code> contract and validates sticky updates in Adventure Mode.
+                Default: <code>true</code>. All declared topics are required and pinned in contract order;
+                capacity includes every topic. Set to <code>false</code> to let recorder and planner create
+                and update shared freeform topics without a contract. Declared topics retain ownership and
+                field validation. Freeform topics are visible by default and older optional notes are evicted
+                at capacity; at least one freeform slot remains available alongside required topics.</dd>
             </dl>
             <h3>Example: durable adventure context</h3>
             <pre>story_planning:
   adventure_mode: true
   auto_begin: true
   enforce_structured: true
-  hidden_stickies:
-    - Upcoming Encounter Suggestion
   style: "Tense science-fiction mystery; setbacks are fair and consequential."
   require_user_input: true</pre>
             <p>Keep sticky contracts in a separate <code>planning.yaml</code>. Every topic has one owner:

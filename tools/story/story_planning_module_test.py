@@ -124,7 +124,10 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
         reference_manager = MagicMock(spec=ReferenceManager)
         theater = MagicMock(spec=Theater)
         theater.theater_id = "planning-boundary"
-        theater.config.return_value = {"story_planning": {"max_sticky_notes": 7}}
+        theater.config.return_value = {
+            "notepad": {"max_stickies": 7, "style": "Ignored normal-note style"},
+            "story_planning": {"style": "Author-defined pacing"},
+        }
         theater.read_planning_schema.return_value = None
         canvas = MagicMock(spec=CanvasStateManager)
         canvas.notepad = Notepad(theater, canvas_manager=canvas)
@@ -151,7 +154,8 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
         self.assertIs(module.session_service, session_service)
         self.assertEqual(module.session_id, "planning-boundary-session")
         self.assertEqual(module.notepad.max_sticky_notes, 7)
-        theater.config.assert_called_once_with()
+        self.assertEqual(module.style, "Author-defined pacing")
+        self.assertEqual(theater.config.call_count, 2)
         create_agent.assert_called_once_with()
 
         mock_result = CharacterLookupResult(
@@ -508,17 +512,13 @@ class TestStoryPlanningModuleState(unittest.TestCase):
         self.canvas = MagicMock(spec=CanvasStateManager)
         self.canvas.story = StoryState()
         self.session_service = InMemorySessionService()
-        self.config = {
-            "adventure_mode": True,
-            "max_sticky_notes": 4,
-            "required_stickies": ["HUD", "Location"],
-            "initial_sticky_notes": {
-                "HUD": "HP: 100 | MP: 50",
-                "Location": "Whispering Woods",
-                "Quest": "Find the ancient relic",
-            },
-        }
+        self.config = {"story_planning": {"adventure_mode": True}}
         self.theater.config.return_value = self.config
+        self.theater.read_planning_schema.return_value = {
+            "HUD": {"owner": "recorder", "initial": "HP: 100 | MP: 50"},
+            "Location": {"owner": "recorder", "initial": "Whispering Woods"},
+            "Quest": {"owner": "planner", "initial": "Find the ancient relic"},
+        }
         self.module = self._make_module(session_id="planning-state-session")
 
     def _make_module(
@@ -543,7 +543,7 @@ class TestStoryPlanningModuleState(unittest.TestCase):
         self.assertEqual(len(notes), 3)
         self.assertEqual(
             self.module.notepad.get_required_sticky_notes(),
-            ["HUD", "Location"],
+            ["HUD", "Location", "Quest"],
         )
         self.assertEqual(
             {note["topic"] for note in notes},
@@ -597,35 +597,28 @@ class TestStoryPlanningModuleState(unittest.TestCase):
             self.module.notepad.update_sticky_note("HUD", "HP: 80"),
         )
 
-    def test_capacity_enforcement_drops_oldest_non_required_note(self) -> None:
-        self.module.notepad.update_sticky_note("Clue1", "Found a footprint")
-        self.module.notepad.update_sticky_note("Clue2", "Found a dagger")
+    def test_enforced_contract_rejects_unconfigured_notes(self) -> None:
+        before = self.module.notepad.export_state()
+        self.assertIn("not configured", self.module.notepad.update_sticky_note("Clue", "Found a footprint"))
+        self.assertEqual(self.module.notepad.export_state(), before)
 
-        topics = [
-            note["topic"] for note in self.module.notepad.get_present_sticky_notes()
-        ]
-        self.assertEqual(topics, ["HUD", "Location", "Clue1", "Clue2"])
-
-    def test_loads_structured_sticky_definitions_from_config(self) -> None:
-        self.theater.config.return_value = {
-            "adventure_mode": True,
-            "planning_schema": {
-                "Stats": {
-                    "owner": "recorder",
-                    "required": True,
-                    "fields": {
-                        "hp": "Hit points",
-                        "level": "Player level",
-                    },
-                    "initial": {"hp": "100", "level": "1"},
-                    "render": "HP: {hp} | LVL: {level}",
+    def test_loads_structured_sticky_definitions_from_planning_contract(self) -> None:
+        self.theater.read_planning_schema.return_value = {
+            "Stats": {
+                "owner": "recorder",
+                "required": True,
+                "fields": {
+                    "hp": "Hit points",
+                    "level": "Player level",
                 },
-                "Inventory": {
-                    "owner": "recorder",
-                    "required": False,
-                    "description": "Simple string list of items",
-                    "initial": "Sword, Shield",
-                },
+                "initial": {"hp": "100", "level": "1"},
+                "render": "HP: {hp} | LVL: {level}",
+            },
+            "Inventory": {
+                "owner": "recorder",
+                "required": False,
+                "description": "Simple string list of items",
+                "initial": "Sword, Shield",
             },
         }
         module = self._make_module(session_id="structured-planning-session")
@@ -670,10 +663,8 @@ class TestStoryPlanningModuleState(unittest.TestCase):
                 "initial": "Mole investigating",
             },
         }
-        theater.config.return_value = {
-            "adventure_mode": True,
-            "hidden_stickies": ["Secret Plot"],
-        }
+        theater.config.return_value = {"story_planning": {"adventure_mode": True}}
+        theater.read_planning_schema.return_value["Secret Plot"]["hidden"] = True
         module = self._make_module(
             theater=theater,
             session_id="theater-schema-session",
@@ -695,7 +686,7 @@ class TestStoryPlanningModuleState(unittest.TestCase):
             {note["topic"] for note in exported["all_sticky_notes"]},
         )
 
-        module.notepad.update_sticky_note("Clock", "Time: 10:00 AM | Deadline: 3:00 PM")
+        module.notepad.update_sticky_note("Clock", '{"time":"10:00 AM","deadline":"3:00 PM"}')
         module.notepad.update_sticky_note("Contraband", "Quill, Poison Phial")
         module.notepad.update_sticky_note("Secret Plot", "Mole discovered in archives")
         committed = module._complete_planning_heartbeat(1, {"tool_updates": True})
@@ -827,7 +818,7 @@ class TestDeepPlanningPromptTemplate(unittest.TestCase):
         lore_library.get_lore_context.return_value = "lore.md"
         theater = MagicMock(spec=Theater)
         theater.theater_id = "tri-role-test"
-        theater.config.return_value = {}
+        theater.config.return_value = {"story_planning": {"adventure_mode": True}}
         theater.read_planning_schema.return_value = {
             "Inventory": {
                 "owner": "recorder",

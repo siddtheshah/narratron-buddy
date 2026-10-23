@@ -5,6 +5,8 @@ from pathlib import Path
 import tempfile
 import unittest
 
+import yaml
+
 from services.adventure_service import (
     AdventureService,
     FLAGS,
@@ -76,7 +78,12 @@ class TestAdventureService(unittest.TestCase):
             encoding="utf-8",
         )
         (self.adv3_dir / "theater.yaml").write_text(
-            "live_agent:\n  style: space-funk\nstory_planning:\n  adventure_mode: true\n  required_stickies:\n    - HUD\n    - Radar\n",
+            "live_agent:\n  style: space-funk\nstory_planning:\n  adventure_mode: true\n  enforce_structured: true\n",
+            encoding="utf-8",
+        )
+        (self.adv3_dir / "planning.yaml").write_text(
+            "HUD:\n  owner: recorder\n  initial: 'HP: 10'\n"
+            "Radar:\n  owner: recorder\n  hidden: true\n  initial: Clear\n",
             encoding="utf-8",
         )
         refs3_dir = self.adv3_dir / "references"
@@ -134,7 +141,7 @@ class TestAdventureService(unittest.TestCase):
         self.assertIn("live_agent", config)
         self.assertEqual(config["live_agent"]["style"], "epic")
 
-    def test_adventure_package_structure_and_required_stickies(self):
+    def test_adventure_package_structure_and_planning_contract(self) -> None:
         service = AdventureService(base_dir=self.local_dir)
         adv = service.get_adventure("gamma-quest")
         self.assertIsNotNone(adv)
@@ -145,11 +152,11 @@ class TestAdventureService(unittest.TestCase):
         refs, playlists, lore, config = service.load_adventure_assets("gamma-quest")
         self.assertIn("story_planning", config)
         self.assertTrue(config["story_planning"]["adventure_mode"])
-        self.assertIn("required_stickies", config["story_planning"])
-        self.assertEqual(
-            config["story_planning"]["required_stickies"],
-            ["HUD", "Radar"],
-        )
+        self.assertNotIn("required_stickies", config["story_planning"])
+        contracts = {name: content for name, content in refs}
+        schema = yaml.safe_load(contracts["planning.yaml"])
+        self.assertEqual(list(schema), ["HUD", "Radar"])
+        self.assertTrue(schema["Radar"]["hidden"])
 
     def test_cache_invalidation(self):
         service = AdventureService(base_dir=self.local_dir)

@@ -59,10 +59,10 @@ def test_upvote_reports_missing_suggestion():
     assert error.value.status_code == 404
 
 
-@patch("api_server.canvas.theater_manager.get_theater_config", return_value={})
-def test_get_sticky_notes_uses_session_or_canvas_state(mock_config: MagicMock) -> None:
+def test_get_sticky_notes_uses_session_or_canvas_state() -> None:
     mock_agent_mgr = MagicMock()
     mock_notepad = MagicMock()
+    mock_notepad.get_hidden_sticky_notes.return_value = []
     mock_notepad.get_present_sticky_notes.return_value = [{"topic": "Clue", "info": "Old map"}]
     mock_session = SimpleNamespace(notepad_tool=SimpleNamespace(notepad=mock_notepad))
     mock_agent_mgr.get_session.return_value = mock_session
@@ -74,15 +74,17 @@ def test_get_sticky_notes_uses_session_or_canvas_state(mock_config: MagicMock) -
     # Test fallback to canvas_states
     mock_agent_mgr.get_session.return_value = None
     mock_canvas_states = MagicMock()
+    mock_canvas_states.get.return_value.notepad.get_hidden_sticky_notes.return_value = []
     mock_canvas_states.get.return_value.notepad.get_present_sticky_notes.return_value = [{"topic": "Fallback", "info": "Cached note"}]
     with patch.object(canvas, "_require_canvas_access"), patch.object(object_registry, "live_agent_manager", mock_agent_mgr), patch.object(object_registry, "canvas_states", mock_canvas_states):
         result = canvas.get_sticky_notes(request(), "stage")
     assert result == {"sticky_notes": [{"topic": "Fallback", "info": "Cached note"}], "hidden_stickies": [], "count": 1}
 
 
-def test_get_sticky_notes_returns_configured_hidden_stickies():
+def test_get_sticky_notes_returns_notepad_visibility() -> None:
     mock_agent_mgr = MagicMock()
     mock_notepad = MagicMock()
+    mock_notepad.get_hidden_sticky_notes.return_value = ["Secret", "Planner Audit"]
     mock_notepad.get_present_sticky_notes.return_value = [
         {"topic": "Visible", "info": "Public"},
         {"topic": "Secret", "info": "Hidden detail"},
@@ -90,17 +92,8 @@ def test_get_sticky_notes_returns_configured_hidden_stickies():
     mock_session = SimpleNamespace(notepad_tool=SimpleNamespace(notepad=mock_notepad))
     mock_agent_mgr.get_session.return_value = mock_session
 
-    mock_tm = MagicMock()
-    mock_tm.get_theater_config.return_value = {
-        "story_planning": {
-            "hidden_stickies": ["Secret"],
-            "stickies": {"Planner Audit": {"hidden": True}},
-        }
-    }
-
     with patch.object(canvas, "_require_canvas_access"), \
-         patch.object(object_registry, "live_agent_manager", mock_agent_mgr), \
-         patch.object(canvas, "theater_manager", mock_tm):
+         patch.object(object_registry, "live_agent_manager", mock_agent_mgr):
         result = canvas.get_sticky_notes(request(), "stage")
 
     assert result["hidden_stickies"] == ["Secret", "Planner Audit"]

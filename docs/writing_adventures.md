@@ -172,24 +172,28 @@ story_planning:
     auto_begin: true                 # Automatically initiates the opening narrative scene
     style: "engaging mystery with player agency, dramatic tension, and fair consequences"
 
-    # Maximum number of persistent state stickies kept on the canvas board
-    max_named_elements: 6
-
-    # Optional overlay: sticky note topics hidden in canvas UI view by default until toggled
-    hidden_stickies:
-        - "Known Clues"
+    # Require sticky definitions, initial values, and visibility in planning.yaml.
+    enforce_structured: true
 
 chat:
     cooldown_duration: 20
 ```
 
+The top-level `notepad` section is solely for normal narration and configures
+`initial_stickies`, `max_stickies`, `required_stickies`, and `hidden_stickies`.
+Adventure Mode ignores these settings; all adventure topics are required and
+pinned in `planning.yaml` order, and capacity includes every declared topic.
+With `story_planning.enforce_structured: true` (the default), a missing or empty
+contract is a configuration error.
+
 ### 4.3. `planning.yaml` Specification
 
-Sticky notes and persistent story planning contracts are configured in `planning.yaml`. All field values are strictly strings. Adventure planning checks a sticky's contract before it updates that individual note; set `story_planning.enforce_structured: false` only when intentionally allowing free-form sticky updates.
+Sticky notes and persistent story planning contracts are configured in `planning.yaml`. All field values are strictly strings. Adventure planning checks each declared sticky's ownership and field contract before updating it. Set `story_planning.enforce_structured: false` to let recorder and planner also create and update shared freeform topics without a `planning.yaml` entry. Declared topics retain their contracts. Freeform topics are visible by default and persist across saves and restarts. Older optional notes are evicted at capacity; at least one freeform slot is available alongside required topics.
 
 ```yaml
 # Deep Planner Schema: planning.yaml
 "Player Character":
+  owner: recorder
   description: "Established player identity, objective, and condition."
   render: "Name: {name} | Objective: {objective} | Inventory: {inventory} | Condition: {condition}"
   fields:
@@ -204,6 +208,7 @@ Sticky notes and persistent story planning contracts are configured in `planning
     condition: "Healthy"
 
 "Spire Security Level":
+  owner: recorder
   description: "Alert tier and automaton activity."
   render: "Alert: {alert} | Automatons: {automatons}"
   fields:
@@ -214,6 +219,8 @@ Sticky notes and persistent story planning contracts are configured in `planning
     automatons: "Dormant"
 
 "Known Clues":
+  owner: recorder
+  hidden: true
   description: "Discovered clues and hints."
   initial: "The Spire activates only when three harmonic keys are aligned."
 ```
@@ -462,7 +469,7 @@ When your adventure is ready to be featured for everyone on **narratron.app**:
 ### Pre-Submission Checklist
 - [ ] `metadata.json` exists, has a valid `id`, `title`, `author`, `genre`, and references a valid `cover_image`.
 - [ ] `theater.yaml` is valid YAML and includes `story_planning` with `adventure_mode: true`.
-- [ ] `required_stickies` match keys defined in `initial_elements`.
+- [ ] `planning.yaml` defines all required topics, owners, initial values, and hidden flags.
 - [ ] `lore/RESPONDER.md`, `lore/PLANNER.md`, and `lore/RECORDER.md` define independent priorities, role boundaries, and lore roadmaps; shared rules live in separate lore documents.
 - [ ] The adventure passes the smoke test:
   ```powershell

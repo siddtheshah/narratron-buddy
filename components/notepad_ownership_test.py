@@ -10,12 +10,13 @@ from pydantic import JsonValue
 from components.canvas_state import CanvasStateManager
 from components.notepad import Notepad, StaleNoteSnapshot, parse_planning_schema
 from components.theater_manager import Theater
+from tools.story.story_staged_notes import StagedStoryNotes
 
 
 @pytest.fixture
 def pad(tmp_path: Path) -> Notepad:
     theater = Mock(spec=Theater)
-    theater.config.return_value = {}
+    theater.config.return_value = {"story_planning": {"adventure_mode": True, "enforce_structured": False}}
     theater.directory.return_value = tmp_path
     theater.read_planning_schema.return_value = {
         "Location": {"owner": "recorder", "initial": "Gate"},
@@ -54,6 +55,7 @@ def test_legacy_notes_require_explicit_migration_before_role_binding(pad: Notepa
 
 
 def test_roles_cannot_write_peer_unknown_or_unowned_topics(pad: Notepad) -> None:
+    pad.enforce_structured = True
     recorder = pad.for_role("recorder")
     planner = pad.for_role("planner")
     before = pad.export_state()
@@ -162,3 +164,90 @@ def test_consume_responder_snapshot_captures_notes_revision_and_changed_topics_a
     assert snapshot.present_notes(pad.max_sticky_notes)[0]["info"] == "Courtyard"
     _, changed_again = pad.consume_responder_snapshot()
     assert changed_again == frozenset()
+
+
+@pytest.mark.parametrize("with_contract", [False, True])
+def test_freeform_topics_stage_commit_and_round_trip(pad: Notepad, with_contract: bool) -> None:
+    if not with_contract:
+        pad.theater.read_planning_schema.return_value = None
+        pad.configure_schema(None)
+    recorder = StagedStoryNotes(pad, "recorder")
+    planner = StagedStoryNotes(pad, "planner")
+    source = pad.snapshot()
+    contract = json.loads(recorder.check_schema("Travel Log"))
+    assert contract["type"] == "string"
+    assert contract["ownership"] == "shared"
+    assert recorder.update_sticky_note("Travel Log", "Found a key | Entered the courtyard").endswith("staged.")
+    assert pad.snapshot() == source
+    pad.publish_role_updates("recorder", recorder.updates, source=source)
+    assert planner.update_sticky_note("Travel Log", "Found a key | Guard may investigate").endswith("staged.")
+    pad.publish_role_updates("planner", planner.updates, source=pad.snapshot())
+    assert pad.snapshot().notes["Travel Log"] == "Found a key | Guard may investigate"
+    assert "Travel Log" not in pad.snapshot().structured_notes
+
+    snapshot = pad.snapshot()
+    state = pad.export_state()
+    imported = Notepad(pad.theater, canvas_manager=Mock(spec=CanvasStateManager))
+    imported.import_state(state)
+    assert imported.snapshot() == snapshot
+    recovered = Notepad(pad.theater, canvas_manager=Mock(spec=CanvasStateManager))
+    recovered.restore_recorded_snapshot(snapshot)
+    assert recovered.snapshot() == snapshot
+
+
+def test_freeform_direct_role_tools_allow_shared_updates(pad: Notepad) -> None:
+    assert pad.for_role("recorder").update_sticky_note("Discovery", "Found key").startswith("Added")
+    assert pad.for_role("planner").update_sticky_note("Discovery", "The key may open the gate").startswith("Updated")
+    assert pad.snapshot().notes["Discovery"] == "The key may open the gate"
+
+
+@pytest.mark.parametrize("topic,info", [
+    ("", "Text"), (" " * 2, "Text"), ("x" * 101, "Text"), ("New", ""), ("New", "x" * 501),
+])
+def test_freeform_invalid_batch_leaves_all_notes_untouched(pad: Notepad, topic: str, info: str) -> None:
+    before = pad.snapshot()
+    assert StagedStoryNotes(pad, "recorder").update_sticky_note(topic, info).startswith("Error:")
+    with pytest.raises(ValueError):
+        pad.publish_role_updates("recorder", {"Valid": "Text", topic: info}, source=before)
+    assert pad.snapshot() == before
+
+
+def test_freeform_dividers_are_checked_only_when_updating_existing_notes(pad: Notepad) -> None:
+    pad.publish_role_updates("recorder", {"New": "One | Two"}, source=pad.snapshot())
+    before = pad.snapshot()
+    with pytest.raises(ValueError, match="divider count"):
+        pad.publish_role_updates("planner", {"New": "Only one"}, source=before)
+    assert pad.snapshot() == before
+
+
+def test_freeform_batch_eviction_is_ordered_and_keeps_contract_topics(pad: Notepad) -> None:
+    pad.publish_role_updates("recorder", {"One": "First", "Two": "Second"}, source=pad.snapshot())
+    source = pad.snapshot()
+    persist = Mock()
+    pad.publish_role_updates("planner", {"Three": "Third", "Four": "Fourth"}, source=source, persist=persist)
+    assert list(pad.snapshot().notes) == ["Location", "Stats", "Ambush", "Three", "Four"]
+    assert persist.call_args.args[0] == pad.snapshot()
+    assert pad.snapshot().structured_notes == source.structured_notes
+
+
+def test_freeform_creation_has_room_when_contract_fills_default_limit(pad: Notepad) -> None:
+    pad.configure_schema({f"Required {index}": {"owner": "recorder", "initial": "Pinned"} for index in range(5)})
+    pad.publish_role_updates("planner", {"New": "Plan"}, source=pad.snapshot())
+    assert len(pad.snapshot().notes) == 6
+    pad.publish_role_updates("planner", {"Next": "Next plan"}, source=pad.snapshot())
+    assert len(pad.snapshot().notes) == 6
+    assert "New" not in pad.snapshot().notes
+    assert pad.snapshot().notes["Next"] == "Next plan"
+
+
+def test_freeform_persistence_failure_is_atomic_and_stale_publication_is_rejected(pad: Notepad) -> None:
+    before = pad.snapshot()
+    with pytest.raises(OSError, match="offline"):
+        pad.publish_role_updates("recorder", {"New": "Fact"}, source=before, persist=Mock(side_effect=OSError("offline")))
+    assert pad.snapshot() == before
+    pad.publish_role_updates("planner", {"Plan": "Wait"}, source=before)
+    with pytest.raises(StaleNoteSnapshot):
+        pad.publish_role_updates("recorder", {"New": "Fact"}, source=before)
+    latest = pad.snapshot()
+    pad.restore_recorded_snapshot(before)
+    assert pad.snapshot().notes == latest.notes

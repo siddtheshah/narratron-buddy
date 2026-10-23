@@ -56,11 +56,11 @@ class TestStoryToolStateIntegration(unittest.TestCase):
         self.theater.theater_id = "integration_theater"
         self.theater.lore_documents.return_value = []
         self.theater.config.return_value = {
-            "adventure_mode": True,
-            "initial_sticky_notes": {
-                "HUD": "HP: 100 | MP: 50",
-                "Quest": "Investigate the tower",
-            },
+            "story_planning": {"adventure_mode": True},
+        }
+        self.theater.read_planning_schema.return_value = {
+            "HUD": {"owner": "recorder", "initial": "HP: 100 | MP: 50"},
+            "Quest": {"owner": "planner", "initial": "Investigate the tower"},
         }
         self.provider = MagicMock(spec=TextResponseProvider)
         self.image_provider = MagicMock(spec=ImageProvider)
