@@ -213,6 +213,49 @@
       overflow-wrap: anywhere;
     }
 
+    .friend-theater-group {
+      margin: 10px 0;
+      padding: 12px;
+      border: 1px solid var(--glass-border);
+      border-radius: 12px;
+      text-align: left;
+    }
+
+    .friend-theater-group summary {
+      cursor: pointer;
+      font-weight: 600;
+    }
+
+    .friend-theater-group summary:focus-visible {
+      outline: 2px solid currentColor;
+      outline-offset: 4px;
+      border-radius: 4px;
+    }
+
+    #friend-theaters-pagination:not([hidden]) {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 16px;
+    }
+
+    #friend-theaters-pagination button {
+      padding: 8px 12px;
+      border: 1px solid var(--glass-border);
+      border-radius: 8px;
+      background: rgba(30, 27, 75, 0.5);
+      color: inherit;
+      font: inherit;
+      cursor: pointer;
+    }
+
+    #friend-theaters-pagination button:disabled {
+      opacity: 0.45;
+      cursor: default;
+    }
+
     @media (max-width: 760px) {
       .join-options {
         overflow: hidden;
@@ -998,6 +1041,11 @@
       <h2 id="friend-theaters-title">Join a friend's theater</h2>
       <p>Choose a friend's theater to join. No key needed.</p>
       <div id="friend-theaters-list" aria-live="polite"><p>Loading friends' theaters…</p></div>
+      <nav id="friend-theaters-pagination" aria-label="Friends' theaters pages" hidden>
+        <button type="button" id="friend-theaters-previous" aria-controls="friend-theaters-list">Previous</button>
+        <span id="friend-theaters-page" role="status"></span>
+        <button type="button" id="friend-theaters-next" aria-controls="friend-theaters-list">Next</button>
+      </nav>
       <p id="friend-theaters-status" role="status"></p>
     </section>
     </div>

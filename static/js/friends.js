@@ -73,11 +73,41 @@
     if (!section) return;
     const list = document.getElementById('friend-theaters-list');
     const status = document.getElementById('friend-theaters-status');
+    const pagination = document.getElementById('friend-theaters-pagination');
+    const previous = document.getElementById('friend-theaters-previous');
+    const next = document.getElementById('friend-theaters-next');
+    const pageLabel = document.getElementById('friend-theaters-page');
+    const friendsPerPage = 5;
+    let currentPage = 0;
+    function updatePagination() {
+      const groups = Array.from(list.querySelectorAll('details'));
+      const pageCount = Math.ceil(groups.length / friendsPerPage);
+      currentPage = Math.min(currentPage, Math.max(0, pageCount - 1));
+      groups.forEach((group, index) => {
+        group.hidden = Math.floor(index / friendsPerPage) !== currentPage;
+      });
+      pagination.hidden = pageCount <= 1;
+      previous.disabled = currentPage === 0;
+      next.disabled = currentPage >= pageCount - 1;
+      pageLabel.textContent = pageCount ? `Page ${currentPage + 1} of ${pageCount}` : '';
+    }
+    previous.onclick = () => {
+      currentPage -= 1;
+      updatePagination();
+      list.scrollTop = 0;
+    };
+    next.onclick = () => {
+      currentPage += 1;
+      updatePagination();
+      list.scrollTop = 0;
+    };
     async function refresh() {
       if (document.hidden) return;
       try {
         const auth = await getAuthState();
         if (!auth.authenticated) {
+          currentPage = 0;
+          pagination.hidden = true;
           list.innerHTML = '<p>Sign in to see your friends’ theaters and join them in one click.</p><button type="button" class="join-btn" id="friend-theaters-sign-in">Sign in</button>';
           document.getElementById('friend-theaters-sign-in').onclick = () => openAuthModal('login');
           return;
@@ -85,28 +115,46 @@
         section.hidden = false;
         const response = await fetch('/api/friend-theaters', {cache: 'no-store'});
         if (!response.ok) throw new Error('Could not load friends’ theaters.');
-        const theaters = await response.json();
-        theaters.sort((a, b) => Number(b.online) - Number(a.online));
+        const theaters = (await response.json()).filter(theater => theater.online);
+        const friends = new Map();
+        for (const theater of theaters) {
+          if (!friends.has(theater.username)) friends.set(theater.username, []);
+          friends.get(theater.username).push(theater);
+        }
+        const expandedFriends = new Set(
+          Array.from(list.querySelectorAll('details[open]'), group => group.dataset.username)
+        );
         list.replaceChildren();
         if (!theaters.length) {
-          list.innerHTML = `<p>No friends' theaters yet. Send requests from their profiles, or manage <a href="${profileLink(auth.user.username)}">your friends</a>.</p>`;
+          list.innerHTML = `<p>No friends have online theaters right now. Manage <a href="${profileLink(auth.user.username)}">your friends</a>.</p>`;
         }
-        for (const theater of theaters) {
-          const join = document.createElement('button');
-          join.type = 'button'; join.className = 'join-btn';
-          join.style.cssText = 'display:block;width:100%;margin:.6rem 0;white-space:normal;text-align:center';
-          join.textContent = `${theater.online ? '🟢' : '⚪'} ${theater.username} — ${theater.name || theater.theater_id} · ${theater.online ? 'Narratron online' : 'Narratron offline'}`;
-          join.onclick = async () => {
-            join.disabled = true; status.textContent = '';
-            try {
-              const result = await fetch(`/api/friend-theaters/${encodeURIComponent(theater.theater_id)}/join`, {method: 'POST'});
-              const data = await result.json();
-              if (!result.ok) throw new Error(data.detail || 'Could not join theater.');
-              location.href = `/canvas?theater_id=${encodeURIComponent(data.theater_id)}`;
-            } catch (error) { status.textContent = error.message; join.disabled = false; }
-          };
-          list.append(join);
+        for (const [username, friendTheaters] of [...friends].sort(([a], [b]) => a.localeCompare(b))) {
+          const group = document.createElement('details');
+          group.className = 'friend-theater-group';
+          group.dataset.username = username;
+          group.open = expandedFriends.has(username);
+          const summary = document.createElement('summary');
+          summary.textContent = username;
+          group.append(summary);
+          for (const theater of friendTheaters) {
+            const join = document.createElement('button');
+            join.type = 'button'; join.className = 'join-btn';
+            join.style.cssText = 'display:block;width:100%;margin:.6rem 0;white-space:normal;text-align:center';
+            join.textContent = `🟢 ${theater.name || theater.theater_id} · Narratron online`;
+            join.onclick = async () => {
+              join.disabled = true; status.textContent = '';
+              try {
+                const result = await fetch(`/api/friend-theaters/${encodeURIComponent(theater.theater_id)}/join`, {method: 'POST'});
+                const data = await result.json();
+                if (!result.ok) throw new Error(data.detail || 'Could not join theater.');
+                location.href = `/canvas?theater_id=${encodeURIComponent(data.theater_id)}`;
+              } catch (error) { status.textContent = error.message; join.disabled = false; }
+            };
+            group.append(join);
+          }
+          list.append(group);
         }
+        updatePagination();
       } catch (error) { section.hidden = false; status.textContent = error.message; }
     }
     await refresh();

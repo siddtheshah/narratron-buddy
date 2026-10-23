@@ -1,17 +1,94 @@
 """Public user profile routes and owner profile settings."""
 
+import asyncio
+import logging
 import os
 from pathlib import Path
 from typing import Optional, Union
 from urllib.parse import urlsplit
 
 from fastapi import File, Form, HTTPException, Request, Response, UploadFile
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, JsonValue
 
-from api_server.shared import app, db, get_current_user, stamp_storage
+from api_server.shared import app, db, get_current_user, get_current_user_async, stamp_storage
+from api_server.dependencies import pricing_controller
+from services.generation_billing import billing_locks, MAX_CONCURRENT_GENERATION_JOBS, GENERATION_SLOT_TTL_SECONDS
+from services.theater_image_generation import generate_theater_image
 from storage.stamp_storage import process_stamp_image
 from storage.storage_limits import MAX_FILE_UPLOAD_BYTES
 from utils.auth_cache import auth_session_cache
+
+logger = logging.getLogger(__name__)
+
+
+class GenerateProfileStampRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    prompt: str = Field(min_length=1, max_length=4000)
+
+
+@app.post("/api/users/me/stamps/generate")
+async def generate_profile_stamp(request: Request, body: GenerateProfileStampRequest) -> dict[str, JsonValue]:
+    """Generate and save a personal stamp at the standard image credit rate."""
+    user = await get_current_user_async(request)
+    if user is None:
+        raise HTTPException(status_code=401, detail="Sign in to generate stamps.")
+    name, prompt = body.name.strip(), body.prompt.strip()
+    if not name or not prompt:
+        raise HTTPException(status_code=422, detail="Enter a stamp name and image prompt.")
+    user_id = int(user["id"])
+    slot_id = await asyncio.to_thread(
+        db.acquire_generation_slot, user_id, "stamp", f"profile:{user_id}",
+        MAX_CONCURRENT_GENERATION_JOBS, GENERATION_SLOT_TTL_SECONDS,
+    )
+    if slot_id is None:
+        raise HTTPException(status_code=429, detail="Too many concurrent generation jobs. Please try again shortly.")
+    try:
+        async with billing_locks.setdefault(user_id, asyncio.Lock()):
+            if await asyncio.to_thread(db.count_user_stamps, user_id) >= 10:
+                raise HTTPException(status_code=400, detail="Maximum limit of 10 stamps reached. Delete a stamp first.")
+            cost = pricing_controller.get_rates()["image_credit_rate"]
+            account = await asyncio.to_thread(db.get_user_by_id, user_id)
+            if not account or account["credits"] < cost:
+                raise HTTPException(status_code=402, detail=f"Generation requires {cost:g} credits. Top up on /deploy.")
+        try:
+            image = await asyncio.to_thread(generate_theater_image, None, kind="stamp", prompt=prompt, references=[])
+            processed_bytes, content_type = await asyncio.to_thread(process_stamp_image, image.image_bytes)
+        except Exception as error:
+            logger.exception("Profile stamp generation failed")
+            raise HTTPException(status_code=502, detail="Stamp generation failed; no credits were charged.") from error
+
+        async with billing_locks.setdefault(user_id, asyncio.Lock()):
+            # Recheck capacity after generation; uploads and other jobs may have filled it.
+            if await asyncio.to_thread(db.count_user_stamps, user_id) >= 10:
+                raise HTTPException(status_code=400, detail="Maximum limit of 10 stamps reached; no credits were charged.")
+            try:
+                filename = await asyncio.to_thread(stamp_storage.save_stamp, user_id, "stamp.webp", processed_bytes, content_type)
+            except Exception as error:
+                logger.exception("Profile stamp storage failed")
+                raise HTTPException(status_code=502, detail="Could not save stamp; no credits were charged.") from error
+            try:
+                stamp = await asyncio.to_thread(db.create_user_stamp, user_id, name, filename, content_type)
+            except ValueError as error:
+                await asyncio.to_thread(stamp_storage.delete_stamp, user_id, filename)
+                raise HTTPException(status_code=400, detail=str(error)) from error
+            except Exception as error:
+                await asyncio.to_thread(stamp_storage.delete_stamp, user_id, filename)
+                logger.exception("Profile stamp storage failed")
+                raise HTTPException(status_code=502, detail="Could not save stamp; no credits were charged.") from error
+            try:
+                updated = await asyncio.to_thread(
+                    db.record_user_usage, user_id, images_created=1, credit_cost=cost,
+                    idempotency_key=f"profile-stamp:{user_id}:{stamp['id']}:{filename}",
+                )
+            except Exception as error:
+                await asyncio.to_thread(db.delete_user_stamp, int(stamp["id"]), user_id)
+                await asyncio.to_thread(stamp_storage.delete_stamp, user_id, filename)
+                logger.exception("Profile stamp billing failed")
+                raise HTTPException(status_code=503, detail="Could not settle generation credits. Please try again.") from error
+            auth_session_cache.invalidate_user(user_id)
+        return {"stamp": {**stamp, "url": f"/api/stamps/{stamp['id']}"}, "credits_charged": cost, "credits": float(updated["credits"])}
+    finally:
+        await asyncio.to_thread(db.release_generation_slot, slot_id)
 
 
 class ProfileUpdate(BaseModel):

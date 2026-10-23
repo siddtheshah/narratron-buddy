@@ -40,6 +40,24 @@ def test_stamp_uses_sunburst_transparency_and_cutout_instructions(tmp_path: Path
     assert "checkerboard" in request.prompt
 
 
+def test_personal_stamp_ignores_configured_styles(reference_config: MagicMock) -> None:
+    reference_config.return_value["visuals"]["style"] = "Configured watercolor style"
+    provider = MagicMock()
+    with (
+        patch("services.theater_image_generation.get_image_provider", return_value=provider) as resolve,
+        patch("utils.config_loader.get_theater_default_config") as theater_defaults,
+    ):
+        generate_theater_image(None, kind="stamp", prompt="Goblin scout", references=[])
+    theater_defaults.assert_not_called()
+    resolve.assert_called_once_with("openai-gpt-image-flare", {"model": "gpt-image-2.5-sunburst", "quality": "medium"})
+    request = provider.generate.call_args.args[0]
+    assert request.prompt.startswith("Goblin scout\nCreate a single movable canvas stamp")
+    assert "Style:" not in request.prompt
+    assert "Configured watercolor style" not in request.prompt
+    assert request.background == "transparent"
+    assert request.aspect_ratio == "1:1"
+
+
 def test_reference_uses_sunburst_scene_prompt_and_selected_references(tmp_path: Path) -> None:
     (tmp_path / "theater.yaml").write_text("visuals:\n  style: Painted fantasy\n", encoding="utf-8")
     references = [ImageReference(name="hero.png", data=b"hero", mime_type="image/png")]
