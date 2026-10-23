@@ -1,0 +1,39 @@
+# Sticky contracts: every topic has exactly one writer.
+# Fields and initial values are strings; quote numbers and booleans.
+"Player Character":
+  owner: recorder
+  description: "Player identity, objective, and condition established during play."
+  render: "Name: {name} | Goal: {goal} | Condition: {condition}"
+  fields:
+    name: "Player-provided character name"
+    goal: "Established current objective"
+    condition: "Established physical and mental condition"
+  initial:
+    name: "Not established"
+    goal: "Not established"
+    condition: "Not established"
+
+"Current Scene":
+  owner: recorder
+  description: "The established location and characters currently present."
+  render: "Location: {location} | Present: {characters}"
+  fields:
+    location: "Current canonical location name"
+    characters: "Canonical names of characters present"
+  initial:
+    location: "Not established"
+    characters: "Not established"
+
+"Upcoming Encounter Suggestion":
+  owner: planner
+  hidden: true
+  description: "One contingent encounter prepared from established events and shared lore."
+  render: "Encounter: {encounter} | Story Goal: {story_goal} | Dramatic Tension: {drama}"
+  fields:
+    encounter: "Next possible obstacle, opportunity, or NPC intention"
+    story_goal: "Choice or discovery this encounter could support"
+    drama: "Stakes grounded in established facts"
+  initial:
+    encounter: "Await the opening premise"
+    story_goal: "Offer a meaningful player choice"
+    drama: "To be established through play"

@@ -186,7 +186,8 @@ async def open_draft(theater_id: str, request: Request) -> DraftResponse:
         else:
             source = theater_manager.theater(theater_id).directory()
             if source.is_dir():
-                await asyncio.to_thread(store().sync_source_characters, info, source)
+                with invalid_input():
+                    await asyncio.to_thread(store().sync_source_characters, info, source)
             else:
                 await asyncio.to_thread(store().ensure_directories, info.theater_id)
         info = await require_draft(request, theater_id)

@@ -153,6 +153,36 @@ def test_upload_assets_rejects_file_over_5mb(builder: BuilderHarness) -> None:
     assert "at most 5MB" in result.text
 
 
+def test_example_adventure_folder_survives_editor_upload_and_download(builder: BuilderHarness) -> None:
+    data = builder.create()
+    base = f"/api/theater-editor/{data['draft']['theater_id']}"
+    source = Path("adventures/example_adventure")
+    expected = {path.relative_to(source).as_posix(): path.read_bytes() for path in source.rglob("*") if path.is_file()}
+    uploaded = builder.client.post(
+        f"{base}/upload", data={"revision": data["draft"]["revision"], "folder": "true"},
+        files=[("files", (f"example_adventure/{path}", content)) for path, content in expected.items()],
+    )
+    assert uploaded.status_code == 200, uploaded.text
+    assert {item["path"] for item in uploaded.json()["files"]} == expected.keys()
+    downloaded = builder.client.get(f"{base}/download")
+    assert downloaded.status_code == 200
+    with zipfile.ZipFile(BytesIO(downloaded.content)) as archive:
+        assert set(archive.namelist()) == expected.keys()
+        for path, content in expected.items():
+            assert archive.read(path) == content
+
+
+def test_reopen_rejects_outdated_reference_layout_with_an_actionable_error(builder: BuilderHarness) -> None:
+    data = builder.create()
+    identifier = data["draft"]["theater_id"]
+    directory = builder.manager.theater(identifier).directory() / "references/characters"
+    directory.mkdir(parents=True)
+    (directory / "Loose.webp").write_bytes(b"image")
+    result = builder.client.get(f"/api/theater-editor/{identifier}")
+    assert result.status_code == 400
+    assert "references/characters/<Name>/" in result.json()["detail"]
+
+
 def test_upload_assets_rejects_when_user_storage_cap_exceeded(builder: BuilderHarness) -> None:
     data = builder.create()
     base = f"/api/theater-editor/{data['draft']['theater_id']}"

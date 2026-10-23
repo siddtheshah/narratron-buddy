@@ -634,6 +634,18 @@ def test_assistant_proposes_deletions_ui(editor_page: Page) -> None:
     expect(page.locator('.file-button[title="lore/guide.txt"]')).not_to_be_visible()
 
 
+def test_scene_proposal_is_labeled_as_a_scene_visual(editor_page: Page) -> None:
+    editor_page.evaluate("""() => {
+        window.assistantProposal = {
+            message: 'Add the harbor scene.', writes: [], moves: [], deletions: [],
+            generations: [{kind: 'scene', name: 'Old Harbor', prompt: 'A harbor at dawn.'}]
+        };
+    }""")
+    editor_page.locator("#assistant-input").fill("Create the harbor scene")
+    editor_page.locator("#assistant-send").click()
+    expect(editor_page.locator("#assistant-proposal")).to_contain_text("Scene visual: Old Harbor")
+
+
 def test_concurrent_image_generations_do_not_block_each_other_in_ui(editor_page: Page) -> None:
     page = editor_page
     page.evaluate("""

@@ -6,6 +6,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from PIL import Image
+import json
+import yaml
+
+from components.notepad import parse_planning_schema
 
 from services.theater_builder import (
     BuilderProposal, FileMove, FileWrite, GenerationRequest, TheaterBuilderStore,
@@ -32,17 +36,19 @@ def test_paths_cannot_escape_or_edit_internal_files(tmp_path: Path, path: str) -
     ("world/lore/RESPONDER.md", True, "lore/RESPONDER.md"),
     ("world/references/people/hero.png", True, "references/people/hero.png"),
     ("world/stamps/tokens/hero.png", True, "stamps/tokens/hero.png"),
-    ("world/characters/Arthur Modella/1.png", True, "references/characters/Arthur Modella/1.png"),
     ("world/references/characters/Arthur Modella/1.png", True, "references/characters/Arthur Modella/1.png"),
-    ("references/characters/Arthur Modella.jpg", False, "references/characters/Arthur Modella/1.jpg"),
     ("references/characters/Arthur Modella/1.png", False, "references/characters/Arthur Modella/1.png"),
-    ("world/scenes/Old Harbor/1.png", True, "references/scenes/Old Harbor/1.png"),
     ("world/references/scenes/Old Harbor/1.png", True, "references/scenes/Old Harbor/1.png"),
-    ("references/scenes/Old Harbor.jpg", False, "references/scenes/Old Harbor/1.jpg"),
     ("references/scenes/Old Harbor/1.png", False, "references/scenes/Old Harbor/1.png"),
-    ("scenes/Old Harbor.png", False, "references/scenes/Old Harbor/1.png"),
     ("world/playlists/mystery/rain.mp3", True, "playlists/mystery/rain.mp3"),
     ("world/theater.yaml", True, "theater.yaml"),
+    ("game.yaml", False, "game/game.yaml"),
+    ("game.yml", False, "game/game.yml"),
+    ("game.json", False, "game/game.json"),
+    ("world/game/crest.svg", True, "game/crest.svg"),
+    ("world/game/entity_schema.json", True, "game/entity_schema.json"),
+    ("world/references/characters/Keeper/character.yaml", True, "references/characters/Keeper/character.yaml"),
+    ("world/references/scenes/Library/scene.yaml", True, "references/scenes/Library/scene.yaml"),
 ])
 def test_flat_uploads_are_classified_and_folder_structure_is_preserved(name: str, folder: bool, expected: str) -> None:
     assert upload_path(name, folder) == expected
@@ -51,6 +57,29 @@ def test_flat_uploads_are_classified_and_folder_structure_is_preserved(name: str
 def test_folder_normalization_does_not_hide_traversal() -> None:
     with pytest.raises(ValueError):
         upload_path("../portrait.png", True)
+
+
+@pytest.mark.parametrize("filename", [
+    "characters/Keeper/1.webp", "scenes/Library/1.webp",
+    "references/characters/Keeper.webp", "references/scenes/Library.webp", "planning.yml",
+])
+def test_upload_rejects_outdated_layouts_instead_of_rewriting_paths(tmp_path: Path, filename: str) -> None:
+    with pytest.raises(ValueError):
+        safe_asset_path(tmp_path, upload_path(filename, False))
+
+
+@pytest.mark.parametrize("kind", ["characters", "scenes"])
+def test_source_reference_import_rejects_loose_images(tmp_path: Path, kind: str) -> None:
+    source = tmp_path / "source"
+    directory = source / "references" / kind
+    directory.mkdir(parents=True)
+    (directory / "Loose.webp").write_bytes(b"image")
+    store = TheaterBuilderStore(tmp_path / "repository")
+    with pytest.raises(ValueError, match="references"):
+        store.create(7, "World", "live_agent: {}\n", source=source)
+    info = store.create(7, "World", "live_agent: {}\n", populate_default=False)
+    with pytest.raises(ValueError, match="references"):
+        store.sync_source_characters(info, source)
 
 
 def test_default_draft_has_separate_role_guides_and_preserves_them_on_publish(tmp_path: Path) -> None:
@@ -63,6 +92,69 @@ def test_default_draft_has_separate_role_guides_and_preserves_them_on_publish(tm
     assert "conditional off-screen intentions" in (target / "lore/PLANNER.md").read_text(encoding="utf-8")
     assert "Reconcile established facts" in (target / "lore/RECORDER.md").read_text(encoding="utf-8")
     assert not list((target / "lore").glob("read*"))
+    definitions = parse_planning_schema(yaml.safe_load((target / "planning.yaml").read_text(encoding="utf-8")))
+    assert definitions["Player Character"]["owner"] == "recorder"
+    assert definitions["Current Scene"]["owner"] == "recorder"
+    encounter = definitions["Upcoming Encounter Suggestion"]
+    assert encounter["owner"] == "planner"
+    assert set(encounter["fields"]) == {"encounter", "story_goal", "drama"}
+    assert set(encounter["initial"]) == set(encounter["fields"])
+    config = yaml.safe_load((target / "theater.yaml").read_text(encoding="utf-8"))
+    assert "Upcoming Encounter Suggestion" in config["story_planning"]["hidden_stickies"]
+
+
+@pytest.mark.parametrize("source", [
+    pytest.param(path, id=path.name) for path in sorted(Path("adventures").iterdir())
+    if (path / "theater.yaml").is_file()
+])
+def test_adventure_layout_round_trips_without_losing_package_files(tmp_path: Path, source: Path) -> None:
+    store = TheaterBuilderStore(tmp_path / "repository")
+    info = store.create(7, source.name, "live_agent: {}\n", source=source)
+    target = tmp_path / "export"
+    store.copy_to(info, target)
+    paths = {item.path for item in store.files(info.theater_id)}
+    assert {"theater.yaml", "planning.yaml", "lore/RESPONDER.md", "lore/PLANNER.md", "lore/RECORDER.md"} <= paths
+    for relative in paths:
+        assert (target / relative).read_bytes() == (source / relative).read_bytes()
+    for directory in ("game", "references/characters", "references/scenes"):
+        for asset in (source / directory).rglob("*"):
+            if asset.is_file() and asset.suffix in {".yaml", ".yml", ".json", ".svg", ".webp", ".png", ".jpg"}:
+                assert asset.relative_to(source).as_posix() in paths
+
+
+def test_game_format_replacement_is_atomic_and_multiple_declarations_are_rejected(tmp_path: Path) -> None:
+    store = TheaterBuilderStore(tmp_path)
+    info = store.create(7, "Game", "live_agent: {}\n", populate_default=False)
+    game = Path("adventures/example_adventure/game/game.yaml").read_bytes()
+    store.write_files(info, {"game/game.yaml": game, "game/entity_schema.json": b'{"type": "object"}'})
+    revision = info.revision
+    with pytest.raises(ValueError, match="only one game declaration"):
+        store.write_files(info, {"game/game.yml": game, "lore/new.txt": b"Must not be written"})
+    assert info.revision == revision
+    assert not (store.directory(info.theater_id) / "lore/new.txt").exists()
+    store.write_files(info, {"game/game.yml": game}, deletions=["game/game.yaml"])
+    assert (store.directory(info.theater_id) / "game/game.yml").read_bytes() == game
+    assert not (store.directory(info.theater_id) / "game/game.yaml").exists()
+    target = tmp_path / "published"
+    store.copy_to(info, target)
+    assert (target / "game/entity_schema.json").read_bytes() == b'{"type": "object"}'
+
+
+def test_assistant_keeps_role_guides_and_planning_context_ahead_of_bulk_lore(tmp_path: Path) -> None:
+    store = TheaterBuilderStore(tmp_path)
+    info = store.create(7, "World", "live_agent: {}\n")
+    store.write_files(info, {f"lore/aaa_{index}.txt": b"x" * 20_000 for index in range(5)})
+    client = MagicMock()
+    client.models.generate_content.return_value.text = '{"message":"Ready"}'
+    with patch("services.theater_builder.genai.Client", return_value=client):
+        store.propose(info, "Develop this adventure", [], {})
+    call = client.models.generate_content.call_args.kwargs
+    context = json.loads(call["contents"][0].text)["text_files"]
+    assert {"theater.yaml", "planning.yaml", "lore/RESPONDER.md", "lore/PLANNER.md", "lore/RECORDER.md"} <= context.keys()
+    instructions = call["config"].system_instruction
+    assert "game/game.yaml" in instructions
+    assert "game_tool.enabled: true" in instructions
+    assert "hidden topics in story_planning.hidden_stickies" in instructions
 
 
 def test_invalid_batch_does_not_partially_write_or_move_files(tmp_path: Path) -> None:
@@ -267,8 +359,8 @@ def test_loading_theater_into_editor_preserves_characters_folder_and_assets(tmp_
     (source / "references" / "characters").mkdir(parents=True)
     (source / "references" / "characters" / "Arthur Modella").mkdir()
     (source / "references" / "characters" / "Arthur Modella" / "1.png").write_bytes(b"arthur_png")
-    # Loose character file in source
-    (source / "references" / "characters" / "Grim Vallos.png").write_bytes(b"grim_png")
+    (source / "references" / "characters" / "Grim Vallos").mkdir()
+    (source / "references" / "characters" / "Grim Vallos" / "1.png").write_bytes(b"grim_png")
     # Session updated character
     (source / "output" / "artifacts" / "updated_references" / "characters" / "Lyra").mkdir(parents=True)
     (source / "output" / "artifacts" / "updated_references" / "characters" / "Lyra" / "1.png").write_bytes(b"lyra_png")
@@ -317,8 +409,8 @@ def test_loading_theater_into_editor_preserves_scenes_folder_and_assets(tmp_path
     (source / "references" / "scenes" / "Old Harbor").mkdir()
     (source / "references" / "scenes" / "Old Harbor" / "1.png").write_bytes(b"harbor_png")
     (source / "references" / "scenes" / "Old Harbor" / "scene.yaml").write_bytes(b"description: Harbor at dawn\n")
-    # Loose scene file in source
-    (source / "references" / "scenes" / "High Peaks.png").write_bytes(b"peaks_png")
+    (source / "references" / "scenes" / "High Peaks").mkdir()
+    (source / "references" / "scenes" / "High Peaks" / "1.png").write_bytes(b"peaks_png")
     # Session updated scene
     (source / "output" / "artifacts" / "updated_references" / "scenes" / "Sunken Crypt").mkdir(parents=True)
     (source / "output" / "artifacts" / "updated_references" / "scenes" / "Sunken Crypt" / "1.png").write_bytes(b"crypt_png")

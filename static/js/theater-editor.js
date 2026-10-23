@@ -458,7 +458,7 @@
     }
     for (const generation of proposal.generations) {
       const card = document.createElement('div'); card.className = 'generation-card';
-      const kindLabel = generation.kind === 'reference' ? 'Reference' : (generation.kind === 'stamp' ? 'Stamp token' : (generation.kind === 'character' ? 'Character portrait' : 'Playlist track'));
+      const kindLabel = { reference: 'Reference', stamp: 'Stamp token', character: 'Character portrait', scene: 'Scene visual', playlist: 'Playlist track' }[generation.kind];
       const label = document.createElement('strong'); label.textContent = `${kindLabel}: ${generation.name}`;
       const description = document.createElement('p'); description.textContent = generation.prompt;
       const button = document.createElement('button'); button.type = 'button';
@@ -717,7 +717,7 @@
     const path = el('new-file-path').value.trim();
     if (state.files.some(file => file.path === path)) { status('That file already exists. Select it to edit.', true); return; }
     run(async () => {
-      await save(); render(await post('/save', { revision: state.draft.revision, name: state.draft.name, writes: [{ path, content: path.endsWith('.yaml') || path.endsWith('.json') ? '{}\n' : '' }] }));
+      await save(); render(await post('/save', { revision: state.draft.revision, name: state.draft.name, writes: [{ path, content: /\.(yaml|yml|json)$/.test(path) ? '{}\n' : '' }] }));
       status(`Created ${path}. Select it to begin writing.`);
     }, 'Creating file…');
   });
