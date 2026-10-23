@@ -1,3 +1,4 @@
+import asyncio
 from collections.abc import Iterator
 from unittest.mock import MagicMock, patch
 
@@ -5,8 +6,11 @@ import pytest
 from fastapi import HTTPException, Request
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
+from google.genai import types
 
 from api_server import canvas
+from providers import LiveAgentProvider
+from services.live_agent_manager import LiveAgentSession
 
 
 @pytest.fixture
@@ -82,6 +86,61 @@ def test_pin_action_toggles_without_live_agent(
     target = state.visual if action == "toggle_canvas_pin" else state.audio
     target.set_pinned.assert_called_once_with(True)
     session.send_notification.assert_not_called()
+
+
+@pytest.mark.parametrize("action", ["canvas-pin", "toggle_canvas_pin", "toggle_music_pin"])
+@pytest.mark.parametrize("delivery_mode", ["complete", "partial", "partial_exhausted"])
+def test_unpin_reaches_live_request_queue(
+    action_services: tuple[MagicMock, MagicMock], action: str, delivery_mode: str,
+) -> None:
+    async def run() -> None:
+        state, _ = action_services
+        state.visual.pinned = True
+        state.audio.pinned = True
+
+        def set_visual_pinned(value: bool) -> bool:
+            changed = state.visual.pinned != value
+            state.visual.pinned = value
+            return changed
+
+        def set_music_pinned(value: bool) -> None:
+            state.audio.pinned = value
+
+        state.visual.set_pinned.side_effect = set_visual_pinned
+        state.audio.set_pinned.side_effect = set_music_pinned
+        provider = MagicMock(spec=LiveAgentProvider)
+        provider.background_content_is_partial = delivery_mode != "complete"
+        provider.tool_results_bypass_input_window = False
+        runner = MagicMock()
+        runner.agent.tools = []
+        session = LiveAgentSession("stage", runner, MagicMock(), provider=provider)
+        queue = session.live_request_queue
+        if delivery_mode == "partial_exhausted":
+            queue.send_user_input(types.Content(parts=[types.Part(text="Earlier narration")]))
+            await queue.get()
+            queue.record_model_tool_calls(queue.remaining_live_tool_budget)
+            assert not queue.live_tool_window_active
+
+        with patch.object(canvas.live_agent_manager, "get_session", return_value=session):
+            if action == "canvas-pin":
+                canvas.set_canvas_pin("stage", canvas.CanvasPinRequest(pinned=False), Request({"type": "http"}))
+            else:
+                canvas.post_orator_action("stage", canvas.OratorAction(action=action), Request({"type": "http"}))
+
+        delivered = await asyncio.wait_for(queue.get(), timeout=1)
+        assert delivered.partial is False
+        assert delivered.content.role == "system"
+        text = delivered.content.parts[0].text
+        if action == "canvas-pin":
+            assert "unpinned the canvas image and music" in text
+            assert "tools are available again" in text
+        elif action == "toggle_canvas_pin":
+            assert "Canvas pinned: False. Music pinned: True." in text
+        else:
+            assert "Canvas pinned: True. Music pinned: False." in text
+        state.persist.assert_called_once_with()
+
+    asyncio.run(run())
 
 
 def test_actions_reject_viewers(action_services: tuple[MagicMock, MagicMock]) -> None:

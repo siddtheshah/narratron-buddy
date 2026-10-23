@@ -211,14 +211,17 @@ def test_active_orator_sets_both_pins_and_notifies_agent_on_change(
         state.audio.set_pinned.assert_not_called()
     if visual_pinned != pinned or music_pinned != pinned:
         state.persist.assert_called_once_with()
-        session.send_content.assert_called_once()
-        notification = session.send_content.call_args.args[0].parts[0].text
+        session.send_notification.assert_called_once()
+        content = session.send_notification.call_args.args[0]
+        assert content.role == "system"
+        notification = content.parts[0].text
         status = "pinned" if pinned else "unpinned"
         assert f"orator has {status} the canvas image and music" in notification
         assert "tools are now blocked" in notification if pinned else "tools are available again" in notification
     else:
         state.persist.assert_not_called()
-        session.send_content.assert_not_called()
+        session.send_notification.assert_not_called()
+    session.send_content.assert_not_called()
 
 
 def test_non_orator_cannot_pin_canvas() -> None:

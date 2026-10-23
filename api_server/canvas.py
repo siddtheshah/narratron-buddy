@@ -875,7 +875,7 @@ def set_canvas_pin(theater_id: str, payload: CanvasPinRequest, request: Request)
                 if payload.pinned
                 else "Image, animation, and music tools are available again."
             )
-            session.send_content(types.Content(parts=[types.Part(text=(
+            session.send_notification(types.Content(role="system", parts=[types.Part(text=(
                 f"[System Notification] The orator has {status} the canvas image and music. {guidance}"
             ))]))
     return {"theater_id": theater_id, "pinned": state.visual.pinned, "music_pinned": state.audio.pinned}
@@ -989,14 +989,14 @@ def post_orator_action(
     elif payload.action == "toggle_canvas_pin":
         state.visual.set_pinned(not state.visual.pinned)
         if session and session.is_alive:
-            session.send_content(types.Content(role="system", parts=[types.Part(text=(
+            session.send_notification(types.Content(role="system", parts=[types.Part(text=(
                 f"[Orator Action] Canvas pinned: {state.visual.pinned}. Music pinned: {state.audio.pinned}. "
                 "Keep pinned media unchanged until the orator unpins it."
             ))]))
     elif payload.action == "toggle_music_pin":
         state.audio.set_pinned(not state.audio.pinned)
         if session and session.is_alive:
-            session.send_content(types.Content(role="system", parts=[types.Part(text=(
+            session.send_notification(types.Content(role="system", parts=[types.Part(text=(
                 f"[Orator Action] Canvas pinned: {state.visual.pinned}. Music pinned: {state.audio.pinned}. "
                 "Keep pinned media unchanged until the orator unpins it."
             ))]))
