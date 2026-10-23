@@ -208,54 +208,127 @@
     }
 
     #friend-theaters-list {
-      max-height: 360px;
-      overflow-y: auto;
       overflow-wrap: anywhere;
     }
 
-    .friend-theater-group {
-      margin: 10px 0;
-      padding: 12px;
+    .friend-theaters-browser {
+      display: grid;
+      grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+      grid-template-rows: minmax(0, 1fr);
+      height: 215px;
       border: 1px solid var(--glass-border);
-      border-radius: 12px;
+      border-radius: 8px;
+      overflow: hidden;
+      background: rgba(15, 23, 42, 0.35);
       text-align: left;
     }
 
-    .friend-theater-group summary {
-      cursor: pointer;
-      font-weight: 600;
+    .friend-usernames,
+    .friend-active-theaters {
+      min-width: 0;
+      min-height: 0;
+      overflow-y: auto;
+      scrollbar-width: thin;
+      scrollbar-color: #625487 transparent;
     }
 
-    .friend-theater-group summary:focus-visible {
-      outline: 2px solid currentColor;
-      outline-offset: 4px;
-      border-radius: 4px;
+    .friend-usernames {
+      border-right: 1px solid var(--glass-border);
+      padding: 4px 0;
     }
 
-    #friend-theaters-pagination:not([hidden]) {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      flex-wrap: wrap;
-      gap: 12px;
-      margin-top: 16px;
-    }
-
-    #friend-theaters-pagination button {
-      padding: 8px 12px;
-      border: 1px solid var(--glass-border);
-      border-radius: 8px;
-      background: rgba(30, 27, 75, 0.5);
-      color: inherit;
+    .friend-username {
+      display: block;
+      width: 100%;
+      padding: 9px 12px;
+      border: 0;
+      border-left: 2px solid transparent;
+      background: transparent;
+      color: #cbd5e1;
       font: inherit;
+      font-size: 0.85rem;
+      text-align: left;
+      overflow-wrap: anywhere;
       cursor: pointer;
     }
 
-    #friend-theaters-pagination button:disabled {
-      opacity: 0.45;
+    .friend-username:hover,
+    .friend-theater-option:hover {
+      background: rgba(139, 92, 246, 0.1);
+    }
+
+    .friend-username[aria-pressed="true"] {
+      background: rgba(139, 92, 246, 0.18);
+      border-left-color: #a78bfa;
+      color: #fff;
+    }
+
+    .friend-username:focus-visible,
+    #friend-theater-join:focus-visible {
+      outline: 2px solid #c4b5fd;
+      outline-offset: -2px;
+    }
+
+    .friend-active-theaters {
+      padding: 4px;
+    }
+
+    .friend-active-theaters p {
+      margin: 8px;
+      font-size: 0.85rem;
+      line-height: 1.5;
+    }
+
+    .friend-theater-option {
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+      padding: 9px 8px;
+      border-radius: 4px;
+      font-size: 0.85rem;
+      line-height: 1.4;
+      cursor: pointer;
+    }
+
+    .friend-theater-option:has(input:checked) {
+      color: #fff;
+      background: rgba(139, 92, 246, 0.18);
+    }
+
+    .friend-theater-option input {
+      flex: 0 0 auto;
+      accent-color: #a78bfa;
+    }
+
+    .friend-theater-option span {
+      min-width: 0;
+    }
+
+    .friend-theaters-footer:not([hidden]) {
+      padding-top: 12px;
+      display: flex;
+      justify-content: center;
+    }
+
+    #friend-theater-join {
+      padding: 7px 14px;
+      height: 33px;
+      font-size: 0.85rem;
+    }
+
+    #friend-theater-join:disabled {
+      opacity: 0.4;
       cursor: default;
     }
 
+    #friend-theaters-status:empty {
+      display: none;
+    }
+
+    #friend-theaters-status:not(:empty) {
+      margin: 10px 0 0;
+      font-size: 0.85rem;
+    }
     @media (max-width: 760px) {
       .join-options {
         overflow: hidden;
@@ -1039,13 +1112,9 @@
     <section id="friend-theaters" class="join-card" aria-labelledby="friend-theaters-title">
       <button type="button" class="join-card-switch" data-join-card="join" aria-controls="join-adventure"><span aria-hidden="true">←</span> Join / adventure</button>
       <h2 id="friend-theaters-title">Join a friend's theater</h2>
-      <p>Choose a friend's theater to join. No key needed.</p>
+      <p>Choose a friend, then an active theater. No key needed.</p>
       <div id="friend-theaters-list" aria-live="polite"><p>Loading friends' theaters…</p></div>
-      <nav id="friend-theaters-pagination" aria-label="Friends' theaters pages" hidden>
-        <button type="button" id="friend-theaters-previous" aria-controls="friend-theaters-list">Previous</button>
-        <span id="friend-theaters-page" role="status"></span>
-        <button type="button" id="friend-theaters-next" aria-controls="friend-theaters-list">Next</button>
-      </nav>
+      <div class="friend-theaters-footer" hidden><button type="button" id="friend-theater-join" class="join-btn" disabled>Join theater</button></div>
       <p id="friend-theaters-status" role="status"></p>
     </section>
     </div>

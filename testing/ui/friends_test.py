@@ -75,18 +75,29 @@ def test_profile_requests_and_friend_join_menu() -> None:
         page.get_by_role('button', name='Decline', exact=True).click()
         expect(page.get_by_role('button', name='Accept', exact=True)).to_have_count(0)
         page.goto('http://narratron.test/join')
-        groups = page.locator('#friend-theaters-list details')
-        expect(groups.locator('summary')).to_have_text(['Bobby', 'Dana'])
-        expect(page.locator('#friend-theaters-list details[open]')).to_have_count(0)
-        dragon = page.get_by_role('button', name='🟢 Dragon story · Narratron online', exact=True)
+        groups = page.locator('#friend-theaters-list .friend-username')
+        expect(groups).to_have_text(['Bobby', 'Dana'])
+        expect(page.locator('#friend-active-theaters')).to_contain_text('Select a friend')
+        dragon = page.get_by_role('radio', name='Dragon story', exact=True)
         expect(dragon).not_to_be_visible()
-        groups.locator('summary').first.click()
+        groups.first.click()
         expect(dragon).to_be_visible()
-        expect(page.get_by_role('button', name='🟢 Forest story · Narratron online', exact=True)).to_be_visible()
+        expect(page.get_by_role('radio', name='Forest story', exact=True)).to_be_visible()
         expect(page.locator('#friend-theaters-list')).not_to_contain_text('Sleeping story')
         expect(page.locator('#friend-theaters-list')).not_to_contain_text('Carol')
-        expect(page.get_by_role('button', name='🟢 Sun story · Narratron online', exact=True)).not_to_be_visible()
-        # Polling preserves an expanded friend and keeps new groups collapsed.
+        expect(page.get_by_role('radio', name='Sun story', exact=True)).not_to_be_visible()
+        expect(groups.first).to_have_attribute('aria-pressed', 'true')
+        usernames_box = page.locator('.friend-usernames').bounding_box()
+        theaters_box = page.locator('#friend-active-theaters').bounding_box()
+        assert usernames_box is not None and theaters_box is not None
+        assert usernames_box['x'] + usernames_box['width'] <= theaters_box['x'] + 1
+        groups.get_by_text('Dana', exact=True).click()
+        expect(page.get_by_role('radio', name='Sun story', exact=True)).to_be_visible()
+        expect(dragon).not_to_be_visible()
+        groups.first.focus()
+        page.keyboard.press('Enter')
+        expect(dragon).to_be_visible()
+        # Polling preserves the selected friend.
         page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
         expect(dragon).to_be_visible()
         page.set_viewport_size({'width': 390, 'height': 844})
@@ -95,46 +106,52 @@ def test_profile_requests_and_friend_join_menu() -> None:
         expect(page.locator('#join-adventure')).to_have_attribute('aria-hidden', 'true')
         page.wait_for_function("document.getElementById('friend-theaters').getBoundingClientRect().right <= window.innerWidth")
         expect(page.get_by_role('button', name='Join / adventure', exact=True)).to_be_focused()
+        usernames_box = page.locator('.friend-usernames').bounding_box()
+        theaters_box = page.locator('#friend-active-theaters').bounding_box()
+        assert usernames_box is not None and theaters_box is not None
+        assert usernames_box['x'] + usernames_box['width'] <= theaters_box['x'] + 1
+        assert theaters_box['x'] + theaters_box['width'] <= 390
         page.get_by_role('button', name='Join / adventure', exact=True).click()
         expect(page.locator('#friend-theaters')).to_have_attribute('aria-hidden', 'true')
         expect(page.get_by_role('button', name="Friends' theaters", exact=True)).to_be_focused()
         page.set_viewport_size({'width': 1100, 'height': 900})
-        pagination = page.get_by_role('navigation', name="Friends' theaters pages")
-        expect(pagination).not_to_be_visible()
+        join = page.get_by_role('button', name='Join theater', exact=True)
+        expect(join).to_be_disabled()
+        expect(page.locator('#friend-active-theaters h3')).to_have_count(0)
+        dragon.check()
+        expect(join).to_be_enabled()
+        assert joins == []
         original_theaters = theaters.copy()
         theaters.extend([
-            {'username': username, 'theater_id': username, 'name': username, 'online': True}
-            for username in ['Erin', 'Frank', 'Grace', 'Hannah', 'Ivan']
+            {'username': f'Friend {index:02}', 'theater_id': f'stage-{index}', 'name': 'Story', 'online': True}
+            for index in range(20)
         ])
         with page.expect_response('**/api/friend-theaters'):
             page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
-        visible_groups = page.locator('#friend-theaters-list details:visible')
-        expect(visible_groups.locator('summary')).to_have_text(['Bobby', 'Dana', 'Erin', 'Frank', 'Grace'])
-        expect(pagination).to_be_visible()
-        expect(pagination.get_by_role('button', name='Previous')).to_be_disabled()
-        pagination.get_by_role('button', name='Next').click()
-        expect(visible_groups.locator('summary')).to_have_text(['Hannah', 'Ivan'])
-        expect(pagination).to_contain_text('Page 2 of 2')
-        expect(pagination.get_by_role('button', name='Next')).to_be_disabled()
-        expect(dragon).not_to_be_visible()
-        with page.expect_response('**/api/friend-theaters'):
-            page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
-        expect(visible_groups.locator('summary')).to_have_text(['Hannah', 'Ivan'])
-        pagination.get_by_role('button', name='Previous').click()
-        expect(dragon).to_be_visible()
-        pagination.get_by_role('button', name='Next').click()
+        expect(groups).to_have_count(22)
+        expect(dragon).to_be_checked()
+        expect(join).to_be_enabled()
+        expect(page.locator('#friend-theaters-pagination')).to_have_count(0)
+        assert page.locator('.friend-usernames').evaluate('(el) => el.scrollHeight > el.clientHeight')
+        usernames_box = page.locator('.friend-usernames').bounding_box()
+        browser_box = page.locator('.friend-theaters-browser').bounding_box()
+        assert usernames_box is not None and browser_box is not None
+        assert abs(usernames_box['height'] - (browser_box['height'] - 2)) < 1
+        groups.last.click()
+        expect(join).to_be_disabled()
         theaters[:] = original_theaters
         with page.expect_response('**/api/friend-theaters'):
             page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
-        expect(visible_groups.locator('summary')).to_have_text(['Bobby', 'Dana'])
-        expect(pagination).not_to_be_visible()
-        expect(dragon).to_be_visible()
-        dragon.click()
+        expect(groups).to_have_text(['Bobby', 'Dana'])
+        expect(join).to_be_disabled()
+        groups.first.click()
+        dragon.check()
+        join.click()
         expect(page).to_have_url('http://narratron.test/canvas?theater_id=bob-stage')
         assert joins == ['/api/friend-theaters/bob-stage/join']
         theaters[:] = [theater for theater in theaters if not theater['online']]
         page.goto('http://narratron.test/join')
-        expect(page.locator('#friend-theaters-list')).to_contain_text('No friends have online theaters right now.')
+        expect(page.locator('#friend-theaters-list')).to_contain_text('No friends have active theaters right now.')
         expect(groups).to_have_count(0)
         assert errors == []
         browser.close()

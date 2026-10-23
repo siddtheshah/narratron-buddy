@@ -1,11 +1,12 @@
 """Authenticated friend requests and friend-based theater admission."""
 
+from datetime import datetime, timedelta, timezone
 from typing import Literal
 
 from fastapi import HTTPException, Request, Response
 from pydantic import BaseModel, JsonValue
 
-from api_server.dependencies import live_agent_manager
+from api_server.dependencies import theater_manager
 from api_server.shared import app, db, get_current_user, _grant_canvas_access
 
 
@@ -39,10 +40,20 @@ def update_friend(username: str, payload: FriendAction, request: Request) -> dic
 def list_friend_theaters(request: Request, response: Response) -> list[dict[str, JsonValue]]:
     response.headers["Cache-Control"] = "no-store"
     theaters = db.get_friend_theaters(_user_id(request))
+    now = datetime.now(timezone.utc)
     for theater in theaters:
         theater.pop("join_key")
-        session = live_agent_manager.get_session(str(theater["theater_id"]))
-        theater["online"] = bool(session and session.is_online)
+        metadata = theater_manager.get_theater(str(theater["theater_id"]))
+        theater["online"] = False
+        if metadata is None or not metadata.last_connected_at:
+            continue
+        try:
+            last_connected = datetime.fromisoformat(metadata.last_connected_at)
+        except ValueError:
+            continue
+        if last_connected.tzinfo is None:
+            last_connected = last_connected.replace(tzinfo=timezone.utc)
+        theater["online"] = timedelta(0) <= now - last_connected < timedelta(minutes=10)
     return theaters
 
 
