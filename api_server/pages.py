@@ -400,8 +400,8 @@ def read_docs_writing_adventures():
 
 @app.get("/docs/game-packages", response_class=HTMLResponse)
 def read_docs_game_packages() -> str:
-    """Serve the game package guide from docs/game_packages.md."""
-    doc_path = PROJECT_ROOT / "docs" / "game_packages.md"
+    """Serve the lightweight game package overview."""
+    doc_path = PROJECT_ROOT / "docs" / "game_packages_overview.md"
     content = render_about_markdown(doc_path.read_text(encoding="utf-8"))
     return render_page_template(
         "about.html",
@@ -409,7 +409,7 @@ def read_docs_game_packages() -> str:
         extra_replacements={"<!-- ABOUT_CONTENT -->": content},
         seo_metadata=SeoMetadata(
             title="Game Packages | Narratron Docs",
-            description="Build turn-based transactional games with Narratron game packages, state, transitions, and views.",
+            description="Learn what Narratron game packages are, which games work, and how to play together.",
             path="/docs/game-packages",
         ),
     )
