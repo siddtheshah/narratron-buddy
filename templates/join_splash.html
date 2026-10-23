@@ -123,6 +123,7 @@
       justify-content: center;
       padding: 40px 24px;
       max-width: 1000px;
+      width: 100%;
       margin: 0 auto;
       text-align: center;
     }
@@ -159,6 +160,15 @@
       line-height: 1.6;
     }
 
+    .join-options {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 24px;
+      width: 100%;
+      margin-bottom: 48px;
+      align-items: stretch;
+    }
+
     .join-card {
       background: rgba(30, 27, 75, 0.5);
       backdrop-filter: blur(16px);
@@ -166,9 +176,39 @@
       border-radius: 24px;
       padding: 36px;
       width: 100%;
-      max-width: 480px;
+      min-width: 0;
       box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
-      margin-bottom: 48px;
+      text-align: center;
+    }
+
+    .adventure-options {
+      margin-top: 28px;
+      padding-top: 24px;
+      border-top: 1px solid var(--glass-border);
+    }
+
+    .adventure-options h3 {
+      margin: 0 0 16px;
+      font-size: 1.1rem;
+    }
+
+    .adventure-links {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    #friend-theaters-list {
+      max-height: 360px;
+      overflow-y: auto;
+      overflow-wrap: anywhere;
+    }
+
+    @media (max-width: 760px) {
+      .join-options {
+        grid-template-columns: minmax(0, 1fr);
+      }
     }
 
     .join-card h2 {
@@ -887,8 +927,9 @@
       <a href="/demos">Explore Narratron demos →</a>
       <a href="https://discord.gg/YDnDwK2dw" target="_blank" rel="noopener noreferrer">Join our community Discord ↗</a>
     </p>
-    <div class="join-card">
-      <h2>Enter Theater Join Key</h2>
+    <div class="join-options">
+    <section class="join-card" aria-labelledby="join-theater-title">
+      <h2 id="join-theater-title">Join a theater</h2>
       <p>Ask the theater host for their 8-character join key</p>
       <div class="input-group">
         <input type="text" id="joinKeyInput" class="join-input" placeholder="KEY-XXXXXX" maxlength="12"
@@ -897,6 +938,20 @@
         <button class="join-btn" onclick="submitJoinKey()">Join</button>
       </div>
       <div id="errorMessage" class="error-msg"></div>
+      <aside class="adventure-options" aria-label="Host a theater">
+        <h3>Start an adventure</h3>
+        <div class="adventure-links">
+          <a href="/adventures" class="host-theater-link">Explore Adventures</a>
+          <a href="/deploy?creation_path=adventure" class="host-theater-link">Deploy Custom</a>
+        </div>
+      </aside>
+    </section>
+    <section id="friend-theaters" class="join-card" aria-labelledby="friend-theaters-title">
+      <h2 id="friend-theaters-title">Join a friend's theater</h2>
+      <p>Choose a friend's theater to join. No key needed.</p>
+      <div id="friend-theaters-list" aria-live="polite"><p>Loading friends' theaters…</p></div>
+      <p id="friend-theaters-status" role="status"></p>
+    </section>
     </div>
 
     <section class="visitor-help" aria-labelledby="visitor-help-title">
@@ -963,18 +1018,6 @@
         </footer>
       </div>
     </section>
-
-    <aside class="host-theater-card" aria-label="Host a theater">
-      <div style="text-align: center; width: 100%;">
-        <h3>Adventure Mode is here!</h3>
-      </div>
-      <div style="display: flex; gap: 8px; justify-content: center; flex-wrap: wrap;">
-        <a href="/adventures" class="host-theater-link"
-          style="background: linear-gradient(135deg, #8b5cf6, #ec4899); border: none; color: #fff;">Explore
-          Adventures</a>
-        <a href="/deploy?creation_path=adventure" class="host-theater-link">Deploy Custom</a>
-      </div>
-    </aside>
 
     <section class="features-carousel splide" id="featuresCarousel" aria-labelledby="featuresCarouselTitle">
       <div class="features-carousel-header">
@@ -1070,6 +1113,7 @@
     Narratron &copy; 2026 &middot; <a href="/terms">Terms of Service</a> &middot; <a href="/privacy">Privacy Policy</a>
   </footer>
 
+  <script src="/static/js/friends.js" defer></script>
   <script src="/static/js/user-help.js?v=20261008-support-chat" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/@splidejs/splide@4.1.4/dist/js/splide.min.js"></script>
   <script>

@@ -27,6 +27,16 @@ CREATE TABLE IF NOT EXISTS users (
 
 CREATE UNIQUE INDEX IF NOT EXISTS users_username_lower_unique ON users (LOWER(username));
 CREATE UNIQUE INDEX IF NOT EXISTS users_email_lower_unique ON users (LOWER(email));
+CREATE TABLE IF NOT EXISTS friendships (
+    user_low BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    user_high BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    requester_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'accepted')),
+    PRIMARY KEY (user_low, user_high),
+    CHECK (user_low < user_high),
+    CHECK (requester_id = user_low OR requester_id = user_high)
+);
+CREATE INDEX IF NOT EXISTS friendships_high_idx ON friendships(user_high);
 ALTER TABLE users ADD COLUMN IF NOT EXISTS total_live_agent_tool_calls INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS total_character_voiced_turns INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS total_interactive_canvas_used INTEGER NOT NULL DEFAULT 0;

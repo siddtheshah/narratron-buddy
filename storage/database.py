@@ -690,6 +690,65 @@ class _DatabaseManagerBase:
             profile["stamps"] = self.get_user_stamps(profile_user_id)
             return profile
 
+    def friend_action(self, user_id: int, username: str, action: str) -> None:
+        """Change a single undirected relationship; only its recipient may accept."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT id FROM users WHERE LOWER(username) = LOWER(?)", (username.strip(),))
+            target = cursor.fetchone()
+            if not target:
+                raise ValueError("User not found.")
+            target_id = int(target["id"])
+            if user_id == target_id:
+                raise ValueError("You cannot friend yourself.")
+            pair = (min(user_id, target_id), max(user_id, target_id))
+            if action == "request":
+                cursor.execute(
+                    "INSERT INTO friendships (user_low, user_high, requester_id) VALUES (?, ?, ?) ON CONFLICT (user_low, user_high) DO NOTHING",
+                    (*pair, user_id),
+                )
+            elif action == "accept":
+                cursor.execute(
+                    "UPDATE friendships SET status = 'accepted' WHERE user_low = ? AND user_high = ? AND requester_id = ? AND status = 'pending'",
+                    (*pair, target_id),
+                )
+                if not cursor.rowcount:
+                    raise ValueError("No incoming friend request to accept.")
+            elif action == "remove":
+                cursor.execute("DELETE FROM friendships WHERE user_low = ? AND user_high = ?", pair)
+            else:
+                raise ValueError("Unknown friend action.")
+
+    def get_friendships(self, user_id: int) -> list[dict[str, JsonValue]]:
+        """List accepted friends and incoming/outgoing requests without private data."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """SELECT u.username, f.status, f.requester_id
+                FROM friendships f JOIN users u
+                  ON u.id = CASE WHEN f.user_low = ? THEN f.user_high ELSE f.user_low END
+                WHERE f.user_low = ? OR f.user_high = ? ORDER BY LOWER(u.username)""",
+                (user_id, user_id, user_id),
+            )
+            return [{"username": row["username"], "status": row["status"] if row["status"] == "accepted" else
+                     ("outgoing" if row["requester_id"] == user_id else "incoming")} for row in cursor.fetchall()]
+
+    def get_friend_theaters(self, user_id: int) -> list[dict[str, JsonValue]]:
+        """Only accepted friends grant discovery of their joinable theaters."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """SELECT t.theater_id, t.name, t.join_key, u.username
+                FROM friendships f JOIN users u
+                  ON u.id = CASE WHEN f.user_low = ? THEN f.user_high ELSE f.user_low END
+                JOIN theaters t ON t.user_id = u.id
+                WHERE (f.user_low = ? OR f.user_high = ?) AND f.status = 'accepted'
+                  AND t.join_key IS NOT NULL AND t.join_key <> ''
+                ORDER BY LOWER(u.username), t.name, t.theater_id""",
+                (user_id, user_id, user_id),
+            )
+            return [dict(row) for row in cursor.fetchall()]
+
     def update_user_profile(self, user_id: int, bio: str, stats_visible: bool, profile_color: str) -> bool:
         """Update the owner-controlled public fields of a profile."""
         if len(bio) > 1_000:

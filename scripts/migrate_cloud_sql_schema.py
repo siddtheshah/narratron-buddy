@@ -1,8 +1,8 @@
 """Apply idempotent Narratron PostgreSQL schema migrations to Cloud SQL.
 
-Run this after deploying a release that adds columns to storage/schema/postgres.sql.
+Run this after deploying a release that adds schema to storage/schema/postgres.sql.
 It uses the configured Cloud SQL IAM connection and only executes the additive
-column migrations needed by an already-bootstrapped application database. It
+migrations needed by an already-bootstrapped application database. It
 must be run as the owning Cloud SQL role (not the application IAM user).
 """
 
@@ -18,6 +18,16 @@ from storage.database import CloudPostgresDatabaseManager
 
 
 MIGRATIONS = (
+    """CREATE TABLE IF NOT EXISTS friendships (
+        user_low BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        user_high BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        requester_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'accepted')),
+        PRIMARY KEY (user_low, user_high),
+        CHECK (user_low < user_high),
+        CHECK (requester_id = user_low OR requester_id = user_high)
+    )""",
+    "CREATE INDEX IF NOT EXISTS friendships_high_idx ON friendships(user_high)",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS total_live_agent_tool_calls INTEGER NOT NULL DEFAULT 0",
     "ALTER TABLE usage_events ADD COLUMN IF NOT EXISTS live_agent_tool_calls INTEGER NOT NULL DEFAULT 0",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS age_attested_at TEXT",

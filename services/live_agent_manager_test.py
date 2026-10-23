@@ -60,6 +60,22 @@ def configure_observability_dependencies(session: LiveAgentSession) -> None:
 
 
 class TestLiveAgentSessionManager(unittest.TestCase):
+    def test_friend_presence_tracks_summoning_and_termination(self) -> None:
+        runner = MagicMock()
+        runner.agent.tools = []
+        session = LiveAgentSession(theater_id="presence", runner=runner, tool_bundle=MagicMock())
+        self.assertFalse(session.is_online)
+        session.summon()
+        self.assertTrue(session.is_online)
+        session.status = "ready"
+        self.assertTrue(session.is_online)
+        session.downstream_task = MagicMock()
+        session.downstream_task.done.return_value = True
+        self.assertFalse(session.is_online)
+        session.downstream_task = None
+        session.status = "stopped"
+        self.assertFalse(session.is_online)
+
     def test_downstream_bills_all_calls_even_when_tool_fails(self) -> None:
         async def events() -> AsyncGenerator[Event, None]:
             yield Event(author="agent", content=types.Content(parts=[

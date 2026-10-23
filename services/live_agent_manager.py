@@ -251,6 +251,11 @@ class LiveAgentSession:
         return True
 
     @property
+    def is_online(self) -> bool:
+        """Expose presence while summoned or connected, until stopped or terminated."""
+        return self.is_alive and (self._summoned or self.status == "active")
+
+    @property
     def websocket_connected(self) -> bool:
         return len(self.websockets) > 0
 

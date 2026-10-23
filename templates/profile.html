@@ -13,6 +13,7 @@
 <body>
   <!-- SHARED_TOPBAR -->
   <main><div id="profile"><p class="empty">Loading profile…</p></div></main>
+  <script src="/static/js/friends.js"></script>
   <script>
     const username = decodeURIComponent(location.pathname.split('/').pop());
     const el = document.getElementById('profile'); let profilePicker = null; let selectedProfileColor = '#818cf8';
@@ -37,6 +38,7 @@
       const tabs = tab('overview','◉','Overview','Profile',false,true)+tab('stamps','✦','Stamps',String(stampCount))+(profile.is_owner ? `<div class="tab-divider"></div>${tab('settings','⚙','Settings')}${tab('gifts','↗','Gift credits')}${tab('danger','!','Danger zone','',true)}` : '');
       el.innerHTML = `<div class="profile-shell" style="--accent:${color}"><aside class="profile-sidebar"><div class="identity"><div class="avatar">${initial}</div><div><h1 style="color:${color}">${esc(profile.username)}</h1><p>${profile.is_owner ? 'Your profile' : 'Storyteller profile'}</p></div></div><nav class="tab-list" role="tablist" aria-label="Profile sections">${tabs}</nav></aside><div class="panel">${overview}${stampsPanel}${settings}${gifts}${danger}</div></div>`;
       document.querySelectorAll('.tab-button').forEach(button => button.addEventListener('click', () => activateTab(button.dataset.tab)));
+      setupProfileFriends(profile);
       if (profilePicker) profilePicker.destroyAndRemove(); selectedProfileColor = color;
       if (profile.is_owner && window.Pickr) profilePicker = Pickr.create({el:'#color-picker',theme:'monolith',default:color,components:{preview:true,opacity:false,hue:true,interaction:{hex:true,input:true,save:true}}}).on('change', picked => { selectedProfileColor = picked.toHEXA().toString(); }).on('save', picked => { selectedProfileColor = picked.toHEXA().toString(); profilePicker.hide(); });
       const save = document.getElementById('save'); if (save) save.onclick = async () => { const result = await fetch('/api/users/me/profile',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({bio:profile.bio,stats_visible:document.getElementById('visible').checked,profile_color:selectedProfileColor})}); document.getElementById('status').textContent = result.ok ? 'Saved' : 'Could not save'; if (result.ok) load(); };
