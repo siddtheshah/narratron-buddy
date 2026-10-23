@@ -105,8 +105,21 @@
           status.textContent = '';
         };
         const name = document.createElement('span');
+        name.className = 'friend-theater-name';
         name.textContent = theater.name || theater.theater_id;
-        option.append(radio, name);
+        name.title = name.textContent;
+        const info = document.createElement('span');
+        info.className = 'friend-theater-info';
+        const viewers = document.createElement('small');
+        viewers.className = 'friend-theater-viewers';
+        const activeViewers = theater.active_viewers || [];
+        viewers.textContent = `${activeViewers.length} ${activeViewers.length === 1 ? 'viewer' : 'viewers'}`;
+        viewers.title = activeViewers.length
+          ? `Viewing: ${activeViewers.map(username => `@${username}`).join(', ')}`
+          : 'No signed-in viewers';
+        radio.setAttribute('aria-label', name.textContent);
+        info.append(name, viewers);
+        option.append(radio, info);
         details.append(option);
       }
     }

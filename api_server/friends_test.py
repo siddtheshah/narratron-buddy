@@ -6,11 +6,21 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from fastapi.testclient import TestClient
+from fastapi import WebSocket
 import pytest
 
 from api_server import friends
 from components.theater_manager import TheaterMetadata
+from components.canvas.connection_state import ConnectionState
 from storage.database import LocalDatabaseManager
+
+
+@pytest.fixture(autouse=True)
+def canvases() -> Iterator[MagicMock]:
+    service = MagicMock()
+    service.states = {}
+    with patch.object(friends, "canvas_states", service):
+        yield service
 
 
 @pytest.fixture
@@ -86,7 +96,7 @@ def test_api_admission_rechecks_friendship_and_hides_keys(database: LocalDatabas
         database.friend_action(bob, "Alice", "accept")
         response = client.get('/api/friend-theaters')
         assert response.headers['cache-control'] == 'no-store'
-        assert response.json() == [{"theater_id": "bob-theater", "name": "Bob's story", "username": "Bobby", "online": False}]
+        assert response.json() == [{"theater_id": "bob-theater", "name": "Bob's story", "username": "Bobby", "online": False, "active_viewers": []}]
         manager.get_theater.return_value = TheaterMetadata(
             theater_id="bob-theater", name="Bob's story",
             last_connected_at=datetime.now(timezone.utc).isoformat(),
@@ -97,6 +107,38 @@ def test_api_admission_rechecks_friendship_and_hides_keys(database: LocalDatabas
         database.friend_action(bob, "Alice", "remove")
         assert client.post('/api/friend-theaters/bob-theater/join').status_code == 404
         assert grant.call_count == 1
+
+
+def test_friend_theaters_include_distinct_connected_viewers(
+    database: LocalDatabaseManager, canvases: MagicMock,
+) -> None:
+    alice = user_id(database, "Alice")
+    bob = user_id(database, "Bobby")
+    database.record_deployment("bob-theater", bob, "SECRET")
+    database.record_deployment("unrelated", user_id(database, "Carol"), "PRIVATE")
+    database.friend_action(alice, "Bobby", "request")
+    database.friend_action(bob, "Alice", "accept")
+    connections = ConnectionState()
+    first = MagicMock(spec=WebSocket)
+    second = MagicMock(spec=WebSocket)
+    connections.register_websocket(first, {"id": bob, "username": "Bobby", "email": "private"})
+    connections.register_websocket(second, {"id": bob, "username": "Bobby"})
+    connections.register_websocket(MagicMock(spec=WebSocket))
+    canvas = MagicMock(connections=connections)
+    canvases.states = {"bob-theater": canvas}
+    manager = MagicMock()
+    manager.get_theater.return_value = None
+    with patch.object(friends, "db", database), \
+         patch.object(friends, "theater_manager", manager), \
+         patch.object(friends, "get_current_user", return_value={"id": alice}), \
+         TestClient(friends.app) as client:
+        theaters = client.get('/api/friend-theaters').json()
+        assert len(theaters) == 1
+        assert theaters[0]['active_viewers'] == ['Bobby']
+        connections.unregister_websocket(first)
+        connections.unregister_websocket(second)
+        assert client.get('/api/friend-theaters').json()[0]['active_viewers'] == []
+    canvases.get.assert_not_called()
 
 
 @pytest.mark.parametrize(

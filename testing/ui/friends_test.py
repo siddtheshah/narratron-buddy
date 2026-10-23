@@ -6,15 +6,18 @@ import sys
 from urllib.parse import urlsplit
 
 from playwright.sync_api import Route, expect, sync_playwright
+from pydantic import JsonValue
 
 
 def test_profile_requests_and_friend_join_menu() -> None:
     relationships: list[dict[str, str]] = []
     joins: list[str] = []
-    theaters: list[dict[str, str | bool]] = [
+    long_name = 'Forest story with a very long theater name that should be truncated'
+    theaters: list[dict[str, JsonValue]] = [
         {'username': 'Dana', 'theater_id': 'dana-stage', 'name': 'Sun story', 'online': True},
-        {'username': 'Bobby', 'theater_id': 'bob-stage', 'name': 'Dragon story', 'online': True},
-        {'username': 'Bobby', 'theater_id': 'bob-other', 'name': 'Forest story', 'online': True},
+        {'username': 'Bobby', 'theater_id': 'bob-stage', 'name': 'Dragon story', 'online': True,
+         'active_viewers': ['Bobby', '<Alice>']},
+        {'username': 'Bobby', 'theater_id': 'bob-other', 'name': long_name, 'online': True},
         {'username': 'Bobby', 'theater_id': 'bob-offline', 'name': 'Sleeping story', 'online': False},
         {'username': 'Carol', 'theater_id': 'carol-stage', 'name': 'Moon story', 'online': False},
     ]
@@ -82,7 +85,10 @@ def test_profile_requests_and_friend_join_menu() -> None:
         expect(dragon).not_to_be_visible()
         groups.first.click()
         expect(dragon).to_be_visible()
-        expect(page.get_by_role('radio', name='Forest story', exact=True)).to_be_visible()
+        expect(page.locator('.friend-theater-viewers').first).to_have_text('2 viewers')
+        expect(page.locator('.friend-theater-viewers').first).to_have_attribute('title', 'Viewing: @Bobby, @<Alice>')
+        expect(page.locator('.friend-theater-viewers').last).to_have_text('0 viewers')
+        expect(page.get_by_role('radio', name=long_name, exact=True)).to_be_visible()
         expect(page.locator('#friend-theaters-list')).not_to_contain_text('Sleeping story')
         expect(page.locator('#friend-theaters-list')).not_to_contain_text('Carol')
         expect(page.get_by_role('radio', name='Sun story', exact=True)).not_to_be_visible()
@@ -98,7 +104,10 @@ def test_profile_requests_and_friend_join_menu() -> None:
         page.keyboard.press('Enter')
         expect(dragon).to_be_visible()
         # Polling preserves the selected friend.
-        page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
+        theaters[1]['active_viewers'] = ['Bobby']
+        with page.expect_response('**/api/friend-theaters'):
+            page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
+        expect(page.locator('.friend-theater-viewers').first).to_have_text('1 viewer')
         expect(dragon).to_be_visible()
         page.set_viewport_size({'width': 390, 'height': 844})
         expect(page.locator('#friend-theaters')).to_have_attribute('aria-hidden', 'true')
@@ -111,6 +120,13 @@ def test_profile_requests_and_friend_join_menu() -> None:
         assert usernames_box is not None and theaters_box is not None
         assert usernames_box['x'] + usernames_box['width'] <= theaters_box['x'] + 1
         assert theaters_box['x'] + theaters_box['width'] <= 390
+        long_title = page.locator('.friend-theater-name').last
+        expect(long_title).to_have_attribute('title', long_name)
+        assert long_title.evaluate('(el) => el.scrollWidth > el.clientWidth && getComputedStyle(el).textOverflow === "ellipsis"')
+        name_box = long_title.bounding_box()
+        count_box = page.locator('.friend-theater-viewers').last.bounding_box()
+        assert name_box is not None and count_box is not None
+        assert name_box['x'] + name_box['width'] <= count_box['x']
         page.get_by_role('button', name='Join / adventure', exact=True).click()
         expect(page.locator('#friend-theaters')).to_have_attribute('aria-hidden', 'true')
         expect(page.get_by_role('button', name="Friends' theaters", exact=True)).to_be_focused()

@@ -6,7 +6,7 @@ from typing import Literal
 from fastapi import HTTPException, Request, Response
 from pydantic import BaseModel, JsonValue
 
-from api_server.dependencies import theater_manager
+from api_server.dependencies import canvas_states, theater_manager
 from api_server.shared import app, db, get_current_user, _grant_canvas_access
 
 
@@ -43,6 +43,12 @@ def list_friend_theaters(request: Request, response: Response) -> list[dict[str,
     now = datetime.now(timezone.utc)
     for theater in theaters:
         theater.pop("join_key")
+        canvas = canvas_states.states.get(str(theater["theater_id"]))
+        theater["active_viewers"] = [
+            str(viewer["username"])
+            for viewer in canvas.connections.get_active_viewers()
+            if viewer["username"]
+        ] if canvas is not None else []
         metadata = theater_manager.get_theater(str(theater["theater_id"]))
         theater["online"] = False
         if metadata is None or not metadata.last_connected_at:
