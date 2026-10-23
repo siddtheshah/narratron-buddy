@@ -161,12 +161,20 @@
     }
 
     .join-options {
+      width: 100%;
+      margin-bottom: 48px;
+    }
+
+    .join-options-track {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: 24px;
       width: 100%;
-      margin-bottom: 48px;
       align-items: stretch;
+    }
+
+    .join-card-switch {
+      display: none;
     }
 
     .join-card {
@@ -207,7 +215,44 @@
 
     @media (max-width: 760px) {
       .join-options {
-        grid-template-columns: minmax(0, 1fr);
+        overflow: hidden;
+        border-radius: 24px;
+      }
+
+      .join-options-track {
+        grid-template-columns: repeat(2, 100%);
+        transition: transform 280ms ease;
+      }
+
+      .join-options.show-friends .join-options-track {
+        transform: translateX(calc(-100% - 24px));
+      }
+
+      .join-card-switch {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        margin: 0 auto 20px;
+        padding: 10px 14px;
+        min-height: 44px;
+        border: 1px solid var(--glass-border);
+        border-radius: 12px;
+        background: rgba(139, 92, 246, 0.16);
+        color: #e2e8f0;
+        font: inherit;
+        cursor: pointer;
+      }
+
+      .join-card-switch:focus-visible {
+        outline: 2px solid #c4b5fd;
+        outline-offset: 3px;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .join-options-track {
+        transition: none;
       }
     }
 
@@ -928,7 +973,9 @@
       <a href="https://discord.gg/YDnDwK2dw" target="_blank" rel="noopener noreferrer">Join our community Discord ↗</a>
     </p>
     <div class="join-options">
-    <section class="join-card" aria-labelledby="join-theater-title">
+    <div class="join-options-track">
+    <section id="join-adventure" class="join-card" aria-labelledby="join-theater-title">
+      <button type="button" class="join-card-switch" data-join-card="friends" aria-controls="friend-theaters">Friends' theaters <span aria-hidden="true">→</span></button>
       <h2 id="join-theater-title">Join a theater</h2>
       <p>Ask the theater host for their 8-character join key</p>
       <div class="input-group">
@@ -947,11 +994,13 @@
       </aside>
     </section>
     <section id="friend-theaters" class="join-card" aria-labelledby="friend-theaters-title">
+      <button type="button" class="join-card-switch" data-join-card="join" aria-controls="join-adventure"><span aria-hidden="true">←</span> Join / adventure</button>
       <h2 id="friend-theaters-title">Join a friend's theater</h2>
       <p>Choose a friend's theater to join. No key needed.</p>
       <div id="friend-theaters-list" aria-live="polite"><p>Loading friends' theaters…</p></div>
       <p id="friend-theaters-status" role="status"></p>
     </section>
+    </div>
     </div>
 
     <section class="visitor-help" aria-labelledby="visitor-help-title">
@@ -1117,6 +1166,31 @@
   <script src="/static/js/user-help.js?v=20261008-support-chat" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/@splidejs/splide@4.1.4/dist/js/splide.min.js"></script>
   <script>
+    const joinOptions = document.querySelector('.join-options');
+    const joinCards = [...document.querySelectorAll('.join-options-track > .join-card')];
+    const mobileJoinView = window.matchMedia('(max-width: 760px)');
+    let showFriendCard = false;
+
+    function updateJoinCards() {
+      joinOptions.classList.toggle('show-friends', showFriendCard);
+      joinCards.forEach((card, index) => {
+        const inactive = mobileJoinView.matches && index !== Number(showFriendCard);
+        card.inert = inactive;
+        if (inactive) card.setAttribute('aria-hidden', 'true');
+        else card.removeAttribute('aria-hidden');
+      });
+    }
+
+    document.querySelectorAll('[data-join-card]').forEach(button => {
+      button.addEventListener('click', () => {
+        showFriendCard = button.dataset.joinCard === 'friends';
+        updateJoinCards();
+        joinCards[Number(showFriendCard)].querySelector('.join-card-switch').focus({preventScroll: true});
+      });
+    });
+    mobileJoinView.addEventListener('change', updateJoinCards);
+    updateJoinCards();
+
     const carouselSlides = [...document.querySelectorAll('.carousel-slide')];
     let activeSlide = 0;
     new Splide('#featuresCarousel', {
