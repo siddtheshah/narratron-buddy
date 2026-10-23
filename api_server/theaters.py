@@ -226,6 +226,11 @@ class PushSceneRequest(BaseModel):
     scene_id: Optional[str] = None
 
 
+class PushCharacterRequest(BaseModel):
+    name: str = ""
+    character_id: Optional[str] = None
+
+
 class PushAssetRequest(BaseModel):
     id: str = Field(min_length=1, max_length=2000)
 
@@ -408,6 +413,73 @@ async def push_theater_scene(
         "scene_name": target_scene["name"],
         "scene_id": target_scene["id"],
         "url": target_scene["url"],
+        "message": update_res["message"],
+    }
+
+
+@app.post("/api/theaters/{theater_id}/characters/push")
+async def push_theater_character(
+    payload: PushCharacterRequest,
+    request: Request,
+    theater_id: str,
+    join_key: Optional[str] = None,
+) -> dict[str, str]:
+    await _require_canvas_access_async(request, theater_id, join_key=join_key)
+    _safe_path_param(theater_id, "theater_id")
+    deployment = db.get_deployment(theater_id)
+    current_user = await get_current_user_async(request)
+    if not can_control_agent_websocket(deployment, current_user=current_user):
+        raise HTTPException(status_code=403, detail="Only the active orator can push characters to the canvas.")
+
+    characters = theater_manager.theater(theater_id).characters()
+    target_character: Optional[TheaterCharacter] = None
+    req_name = payload.name.strip().lower()
+    req_id = (payload.character_id or "").strip()
+    for c in characters:
+        if req_id and c["id"] == req_id:
+            target_character = c
+            break
+        if req_name and (c["name"].strip().lower() == req_name or c["name"].replace("_", " ").strip().lower() == req_name):
+            target_character = c
+            break
+
+    if target_character is None:
+        raise HTTPException(status_code=404, detail=f"Character '{payload.name}' not found.")
+    if not target_character["path"]:
+        raise HTTPException(status_code=400, detail=f"Character '{target_character['name']}' has no image to display.")
+
+    state = canvas_states.get(theater_id)
+    update_res = state.visual.update_image(
+        path=target_character["path"],
+        display_path=None,
+        allow_pinned=True,
+        transition="crossfade",
+        effect="gleam3",
+        prompt=target_character["description"] or target_character["personality"] or target_character["quirk"] or target_character["name"],
+        source="show_image",
+        url_for_path=theater_manager.theater(theater_id).get_url_for_path,
+    )
+    state.persist()
+
+    session = live_agent_manager.get_session(theater_id)
+    if session is not None and session.is_alive:
+        session.send_content(
+            types.Content(
+                role="system",
+                parts=[
+                    types.Part(
+                        text=f"[Orator Action] The active orator showed character '{target_character['name']}'."
+                    )
+                ],
+            ),
+            partial=True,
+        )
+
+    return {
+        "status": "ok",
+        "character_name": target_character["name"],
+        "character_id": target_character["id"],
+        "url": target_character["url"],
         "message": update_res["message"],
     }
 

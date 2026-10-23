@@ -6680,6 +6680,7 @@
         let isFetchingTheaterScenes = false;
         let isFetchingTheaterCharacters = false;
         let isPushingScene = false;
+        let isPushingCharacter = false;
         let stampLoadError = '';
         let isFetchingUserStamps = false;
         let isTheaterStampOwner = false;
@@ -7365,7 +7366,16 @@
                 if (card !== currentElement) {
                     card.classList.remove('pushing');
                     const badge = card.querySelector('.scene-card-push-badge');
-                    if (badge && (badge.textContent === 'Pushed!' || badge.textContent === 'Pushing...')) {
+                    if (badge && (badge.textContent === 'Pushed!' || badge.textContent === 'Pushing...' || badge.textContent === 'Pushing…')) {
+                        badge.textContent = 'Push';
+                    }
+                }
+            });
+            document.querySelectorAll('.character-card').forEach(card => {
+                if (card !== currentElement) {
+                    card.classList.remove('pushing');
+                    const badge = card.querySelector('.character-card-push-badge');
+                    if (badge && (badge.textContent === 'Pushed!' || badge.textContent === 'Pushing...' || badge.textContent === 'Pushing…')) {
                         badge.textContent = 'Push';
                     }
                 }
@@ -7961,6 +7971,9 @@
             characters.forEach(char => {
                 const card = document.createElement('div');
                 card.className = 'character-card';
+                card.setAttribute('role', 'button');
+                card.setAttribute('tabindex', '0');
+                card.setAttribute('title', `Click to push "${char.name}"`);
                 card.dataset.characterName = char.name;
                 if (char.id) card.dataset.characterId = char.id;
 
@@ -7992,6 +8005,15 @@
                     placeholder.textContent = '👤';
                     thumbContainer.appendChild(placeholder);
                 }
+
+                const overlay = document.createElement('div');
+                overlay.className = 'character-card-overlay';
+                const badge = document.createElement('span');
+                badge.className = 'character-card-push-badge';
+                badge.textContent = 'Push';
+                overlay.appendChild(badge);
+                thumbContainer.appendChild(overlay);
+
                 card.appendChild(thumbContainer);
 
                 const nameEl = document.createElement('div');
@@ -8007,8 +8029,81 @@
                     card.appendChild(descEl);
                 }
 
+                card.addEventListener('click', () => pushCharacterToCanvas(char, card));
+                card.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        pushCharacterToCanvas(char, card);
+                    }
+                });
+
                 charactersManagerGrid.appendChild(card);
             });
+        }
+
+        async function pushCharacterToCanvas(character, cardEl) {
+            const tid = (typeof theaterId !== 'undefined' && theaterId) || (typeof currenttheaterId !== 'undefined' && currenttheaterId) || new URLSearchParams(window.location.search).get('theater_id');
+            if (!tid || isPushingCharacter) return;
+            const isOrator = typeof isCurrentOrator === 'function' && isCurrentOrator();
+            if (!isOrator) {
+                if (typeof showShareToast === 'function') {
+                    showShareToast('Only the active orator can push characters.');
+                }
+                return;
+            }
+
+            revertAllOtherPushItems(cardEl);
+            isPushingCharacter = true;
+            if (cardEl) {
+                cardEl.classList.add('pushing');
+                const badge = cardEl.querySelector('.character-card-push-badge');
+                if (badge) badge.textContent = 'Pushing...';
+            }
+
+            try {
+                const res = await fetch(`/api/theaters/${encodeURIComponent(tid)}/characters/push`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name: character.name, character_id: character.id || '' })
+                });
+                const data = await res.json();
+                if (!res.ok) {
+                    throw new Error(typeof data.detail === 'string' ? data.detail : 'Failed to push character.');
+                }
+                revertAllOtherPushItems(cardEl);
+                if (cardEl) {
+                    const badge = cardEl.querySelector('.character-card-push-badge');
+                    if (badge) badge.textContent = 'Pushed!';
+                    setTimeout(() => {
+                        if (badge && badge.textContent === 'Pushed!') badge.textContent = 'Push';
+                    }, 2000);
+                }
+                if (typeof showShareToast === 'function') {
+                    showShareToast(`Pushed "${character.name}".`);
+                }
+                if (typeof fetchLatestImage === 'function') {
+                    fetchLatestImage();
+                } else if (typeof refreshCanvasState === 'function') {
+                    refreshCanvasState(['latest']);
+                }
+            } catch (err) {
+                console.error('Error pushing character to canvas:', err);
+                if (typeof showShareToast === 'function') {
+                    showShareToast(err.message || 'Error pushing character.');
+                }
+                if (cardEl) {
+                    const badge = cardEl.querySelector('.character-card-push-badge');
+                    if (badge) badge.textContent = 'Failed';
+                    setTimeout(() => {
+                        if (badge) badge.textContent = 'Push';
+                    }, 2000);
+                }
+            } finally {
+                isPushingCharacter = false;
+                if (cardEl) {
+                    cardEl.classList.remove('pushing');
+                }
+            }
         }
 
         // ========================================

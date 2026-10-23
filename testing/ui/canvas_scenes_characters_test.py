@@ -101,6 +101,7 @@ def scenes_chars_page() -> Iterator[Page]:
             let isFetchingTheaterScenes = false;
             let isFetchingTheaterCharacters = false;
             let isPushingScene = false;
+            let isPushingCharacter = false;
 
             function renderStampManagerGrid(stamps) {
                 if (stampManagerCount && activeStampManagerTab === 'stamps') {
@@ -156,6 +157,8 @@ def test_canvas_html_and_css_scenes_characters_wiring() -> None:
     assert ".scene-card-push-badge" in chat_css
     assert ".characters-grid" in chat_css
     assert ".character-card" in chat_css
+    assert ".character-card-thumb-container" in chat_css
+    assert ".character-card-push-badge" in chat_css
 
     # JavaScript tab switching and scene push functions
     assert "updateStampTabsVisibility" in canvas_html
@@ -165,6 +168,7 @@ def test_canvas_html_and_css_scenes_characters_wiring() -> None:
     assert "pushSceneToCanvas" in canvas_html
     assert "loadTheaterCharacters" in canvas_html
     assert "renderCharactersManagerGrid" in canvas_html
+    assert "pushCharacterToCanvas" in canvas_html
 
 
 def test_playlist_headers_push_entire_playlist_or_selected_track(scenes_chars_page: Page) -> None:
@@ -438,6 +442,46 @@ def test_scenes_tab_push_to_canvas(scenes_chars_page: Page) -> None:
     assert scenes_chars_page.evaluate("window._imageRefreshed") is True
 
 
+def test_characters_tab_push_to_canvas(scenes_chars_page: Page) -> None:
+    pushed_requests: list[dict[str, str]] = []
+
+    def handle_push_character(route: Route) -> None:
+        pushed_requests.append(route.request.post_data_json)
+        route.fulfill(
+            status=200,
+            content_type="application/json",
+            body='{"status": "ok", "character_name": "Elena Vance"}',
+        )
+
+    scenes_chars_page.route("**/api/theaters/*/characters/push", handle_push_character)
+
+    scenes_chars_page.evaluate("""
+        window._isActiveOratorState = true;
+        window._imageRefreshed = false;
+        applyRoleUI(true);
+        setStampManagerOpen(true);
+        cachedTheaterCharacters = [
+            { id: 'elena', name: 'Elena Vance', description: 'A daring archaeologist', image_url: '/img/elena.png' },
+            { id: 'marcus', name: 'Marcus Gray', description: 'A grumpy tavern keeper', image_url: null }
+        ];
+        switchStampManagerTab('characters');
+    """)
+
+    assert scenes_chars_page.locator(".character-card").count() == 2
+    assert scenes_chars_page.locator(".character-card-name").all_text_contents() == ["Elena Vance", "Marcus Gray"]
+    assert scenes_chars_page.locator("#stamp-manager-count").text_content() == "2"
+    assert scenes_chars_page.locator(".character-card-push-badge").all_text_contents() == ["Push", "Push"]
+
+    # Click first character card to push to canvas
+    with scenes_chars_page.expect_response("**/api/theaters/*/characters/push"):
+        scenes_chars_page.locator('.character-card[data-character-id="elena"]').click()
+
+    assert len(pushed_requests) == 1
+    assert pushed_requests[0]["name"] == "Elena Vance"
+    assert pushed_requests[0]["character_id"] == "elena"
+    assert scenes_chars_page.evaluate("window._imageRefreshed") is True
+
+
 def test_characters_tab_renders_descriptions_without_gender_or_voice_tags(scenes_chars_page: Page) -> None:
     scenes_chars_page.evaluate("""
         window._isActiveOratorState = true;
@@ -614,6 +658,37 @@ def test_non_recent_push_items_revert_properly(scenes_chars_page: Page) -> None:
     anim_btn2.click()
     expect(anim_btn2.locator("small")).to_have_text("Pushed!")
     expect(anim_btn1.locator("small")).to_have_text("Push")
+
+    # Switch to Characters tab: push a character
+    def handle_push_char(route: Route) -> None:
+        route.fulfill(json={"status": "ok", "character_name": "Char"})
+
+    page.route("**/api/theaters/*/characters/push", handle_push_char)
+    page.evaluate("""
+        cachedTheaterCharacters = [
+            { id: 'c1', name: 'Char One', description: 'First char', image_url: null },
+            { id: 'c2', name: 'Char Two', description: 'Second char', image_url: null }
+        ];
+        switchStampManagerTab('characters');
+    """)
+
+    char_card1 = page.locator('.character-card[data-character-id="c1"]')
+    char_card2 = page.locator('.character-card[data-character-id="c2"]')
+    char_badge1 = char_card1.locator(".character-card-push-badge")
+    char_badge2 = char_card2.locator(".character-card-push-badge")
+
+    expect(char_badge1).to_have_text("Push")
+    expect(char_badge2).to_have_text("Push")
+
+    # Push Character 1: badge becomes 'Pushed!'
+    char_card1.click()
+    expect(char_badge1).to_have_text("Pushed!")
+    expect(char_badge2).to_have_text("Push")
+
+    # Push Character 2: Character 1 immediately reverts to 'Push', Character 2 becomes 'Pushed!'
+    char_card2.click()
+    expect(char_badge2).to_have_text("Pushed!")
+    expect(char_badge1).to_have_text("Push")
 
 
 def test_asset_manager_tabs_scroll_properly(scenes_chars_page: Page) -> None:

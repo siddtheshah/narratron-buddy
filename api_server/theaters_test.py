@@ -1781,6 +1781,66 @@ async def test_theater_push_subsequent_scenes_with_shared_stem_succeeds(tmp_path
             assert state.visual.shown_image_prompt == "Sparkling crystal chandeliers."
 
 
+@pytest.mark.asyncio
+async def test_theater_push_character_to_canvas(tmp_path: Path) -> None:
+    from starlette.requests import Request
+    from components.theater_manager import TheaterManager
+    from api_server.theaters import PushCharacterRequest
+
+    manager = TheaterManager(base_theaters_dir=tmp_path)
+    manager.create_theater("Stage", "char-push-stage", reference_files=[
+        ("references/characters/Elena Vance/1.png", png_bytes()),
+        ("references/characters/Elena Vance/character.yaml", b"description: A daring archaeologist.\n"),
+        ("references/characters/Ghost Without Portrait/character.yaml", b"description: Invisible presence.\n"),
+    ])
+    request = Request({"type": "http", "headers": []})
+    access = AsyncMock()
+    user_orator = {"id": 10, "username": "orator"}
+    user_viewer = {"id": 20, "username": "viewer"}
+    deployment = {"theater_id": "char-push-stage", "user_id": 10, "active_orator_id": 10}
+
+    with patch.object(theaters, "_require_canvas_access_async", access), \
+         patch.object(theaters, "theater_manager", manager), \
+         patch.object(theaters.db, "get_deployment", return_value=deployment):
+
+        # Non-orator cannot push character
+        with patch.object(theaters, "get_current_user_async", return_value=user_viewer):
+            with pytest.raises(HTTPException) as exc_push:
+                await theaters.push_theater_character(PushCharacterRequest(name="Elena Vance"), request, "char-push-stage")
+            assert exc_push.value.status_code == 403
+
+        # Active orator can push character
+        mock_session = MagicMock()
+        mock_session.is_alive = True
+        with patch.object(theaters, "get_current_user_async", return_value=user_orator), \
+             patch.object(theaters.live_agent_manager, "get_session", return_value=mock_session):
+            result = await theaters.push_theater_character(PushCharacterRequest(name="Elena Vance"), request, "char-push-stage")
+            assert result["status"] == "ok"
+            assert result["character_name"] == "Elena Vance"
+            mock_session.send_content.assert_called_once()
+            call_content, = mock_session.send_content.call_args.args
+            assert call_content.role == "system"
+            assert "[Orator Action] The active orator showed character 'Elena Vance'." in call_content.parts[0].text
+            assert mock_session.send_content.call_args.kwargs.get("partial") is True
+
+            # Canvas visual state should have the character
+            state = theaters.canvas_states.get("char-push-stage")
+            assert state.visual.shown_image_path is not None
+            assert state.visual.shown_image_prompt == "A daring archaeologist."
+            assert state.visual.shown_image_path.endswith("1.webp") or "1" in state.visual.shown_image_path
+
+            # Missing character raises 404
+            with pytest.raises(HTTPException) as exc_missing:
+                await theaters.push_theater_character(PushCharacterRequest(name="Nonexistent Character"), request, "char-push-stage")
+            assert exc_missing.value.status_code == 404
+
+            # Character without image raises 400
+            with pytest.raises(HTTPException) as exc_no_img:
+                await theaters.push_theater_character(PushCharacterRequest(name="Ghost Without Portrait"), request, "char-push-stage")
+            assert exc_no_img.value.status_code == 400
+            assert "has no image to display" in exc_no_img.value.detail
+
+
 @pytest.mark.parametrize(
     ("field", "filename", "payload"),
     [
