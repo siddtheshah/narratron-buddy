@@ -143,7 +143,9 @@ def editor_page() -> Iterator[Page]:
                     }
                     const isStamp = body.kind === 'stamp';
                     const path = isStamp ? `stamps/${body.name || 'goblin'}.png` : `references/${body.name || 'harbor'}.png`;
-                    draft.files.push({path, kind: 'image'});
+                    if (!draft.files.some(file => file.path === path)) {
+                        draft.files.push({path, kind: 'image'});
+                    }
                     draft.draft.revision++;
                     window.accountCredits -= 4;
                     return {ok: true, json: async () => ({state: structuredClone(draft),
@@ -309,7 +311,7 @@ def test_nested_assets_preview_and_new_files_join_the_tree(editor_page: Page) ->
     page.locator('.file-button[title="playlists/Boss fight/chapter 1/theme#1.aac"]').click()
     expect(page.locator("#media-preview audio")).to_have_attribute("controls", "")
     expect(page.locator("#download-file")).to_have_attribute(
-        "href", "/api/theater-editor/theater_tree/file?path=playlists%2FBoss%20fight%2Fchapter%201%2Ftheme%231.aac",
+        "href", "/api/theater-editor/theater_tree/file?path=playlists%2FBoss%20fight%2Fchapter%201%2Ftheme%231.aac&revision=0",
     )
     page.locator("#new-file").click()
     page.locator("#new-file-path").fill("lore/locations/harbor.txt")
@@ -320,6 +322,36 @@ def test_nested_assets_preview_and_new_files_join_the_tree(editor_page: Page) ->
     page.locator('details[data-path="lore/locations"] > summary').click()
     page.locator('.file-button[title="lore/locations/harbor.txt"]').click()
     expect(page.locator("#file-editor")).to_have_value("")
+
+
+@pytest.mark.parametrize("kind", ["reference", "scene", "character", "stamp"])
+def test_regenerating_selected_asset_refreshes_preview(editor_page: Page, kind: str) -> None:
+    page = editor_page
+    path = "stamps/harbor.png" if kind == "stamp" else "references/harbor.png"
+    page.locator(".manual-generation > summary").click()
+    page.locator("#generation-kind").select_option(kind)
+    page.locator("#generation-name").fill("harbor")
+    page.locator("#generation-prompt").fill("A misty harbor.")
+    page.locator("#generation-submit").click()
+    expect(page.locator("#builder-status")).to_have_text(f"Saved {path} to your draft.")
+    page.get_by_role("button", name=f"Open {path}", exact=True).click()
+    preview = page.locator("#media-preview img")
+    first_url = preview.get_attribute("src")
+    assert first_url is not None
+    assert first_url.endswith("&revision=1")
+
+    # Keep the image open while replacing it under the same name twice.
+    for revision in (2, 3):
+        page.locator("#generation-prompt").fill(f"A harbor variation {revision}.")
+        page.locator("#generation-submit").click()
+        expect(preview).to_have_attribute("src", re.compile(rf"&revision={revision}$"))
+        expect(page.locator("#builder-status")).to_have_text(f"Saved {path} to your draft.")
+        assert preview.get_attribute("src") != first_url
+        expect(page.locator("#download-file")).to_have_attribute("href", preview.get_attribute("src"))
+
+    # Opening an older chat link must also show the current revision.
+    page.get_by_role("button", name=f"Open {path}", exact=True).first.click()
+    expect(preview).to_have_attribute("src", re.compile(r"&revision=3$"))
 
 
 @pytest.mark.parametrize("width", [1280, 390])

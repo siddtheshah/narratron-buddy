@@ -184,7 +184,9 @@
       toggleSource.hidden = !isSvg;
       toggleSource.textContent = 'Source';
     }
-    const url = `${endpoint('/file')}?path=${encodeURIComponent(file.path)}`;
+    // Regeneration can replace bytes at the same path. Give each draft revision
+    // a distinct URL so previews cannot reuse the previous image from memory.
+    const url = `${endpoint('/file')}?path=${encodeURIComponent(file.path)}&revision=${state.draft.revision}`;
     el('download-file').href = url; el('download-file').hidden = false;
     const isProtected = file.path === 'theater.yaml';
     el('delete-file').hidden = isProtected;
@@ -556,6 +558,7 @@
     try {
       const result = await post('/generate', { ...request, revision });
       render(result.state);
+      if (selected?.path === result.path) await openAsset(result.path);
       // A generated asset adds a new file, so the same proposal remains applicable.
       if (proposalRevision !== null) proposalRevision = state.draft.revision;
       if (request.kind && request.name && proposal?.generations) {
