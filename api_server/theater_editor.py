@@ -18,7 +18,7 @@ from fastapi.responses import FileResponse, HTMLResponse, Response
 from pydantic import BaseModel, Field, JsonValue, TypeAdapter
 import yaml
 
-from api_server.dependencies import live_agent_manager, pricing_controller
+from api_server.dependencies import canvas_states, live_agent_manager, pricing_controller
 from api_server.pages import SeoMetadata, render_page_template
 from api_server.shared import app, config, db, get_current_user_async, theater_manager, theater_repository
 from api_server.theater_access_cache import theater_access_cache
@@ -35,7 +35,7 @@ from services.generation_billing import (
 from services.google_asset_importer import find_google_urls, import_google_link
 from services.theater_builder import (
     BuilderFile, BuilderProposal, ChatMessage, DraftInfo, FileWrite, GenerationRequest, IneligibleAssetError,
-    MAX_DRAFT_BYTES, MAX_FILE_BYTES, MAX_FILES, TheaterBuilderStore,
+    IMAGE_EXTENSIONS, MAX_DRAFT_BYTES, MAX_FILE_BYTES, MAX_FILES, TheaterBuilderStore,
     asset_mime, encode_text_writes, safe_asset_path, upload_path, validate_text,
 )
 from storage.storage_limits import check_user_theaters_storage_allowance
@@ -627,6 +627,13 @@ def _remove_files(files: list[Path]) -> int:
     return removed
 
 
+def _remove_reference_updates(root: Path) -> None:
+    for image in root.rglob("*"):
+        if (image.is_file() and image.suffix.lower() in IMAGE_EXTENSIONS
+                and image.stem.isdecimal() and int(image.stem) > 1):
+            image.unlink()
+
+
 @app.post("/api/theater-editor/{theater_id}/reset")
 async def reset_theater_draft(theater_id: str, request: Request, body: ResetTheaterRequest | None = None) -> DraftResponse:
     async with _draft_locks.setdefault(theater_id, asyncio.Lock()):
@@ -634,36 +641,27 @@ async def reset_theater_draft(theater_id: str, request: Request, body: ResetThea
         if body is not None and body.revision is not None:
             check_revision(info, body.revision)
 
-        output_targets: list[Path] = [
-            theater_manager.theater(info.theater_id).output_dir(),
-            store().directory(info.theater_id) / "output",
-            theater_repository.theater_path(info.theater_id) / "output",
-        ]
-        theater_json_targets: list[Path] = [
-            theater_manager.theater(info.theater_id).directory() / "theater.json",
-            theater_manager.theater(info.theater_id).directory() / "theater_state.json",
-            store().directory(info.theater_id) / "theater.json",
-            theater_repository.theater_path(info.theater_id) / "theater.json",
-        ]
-        if info.source_id is not None:
-            output_targets.append(theater_manager.theater(info.source_id).output_dir())
-            output_targets.append(theater_repository.theater_path(info.source_id) / "output")
-            theater_json_targets.append(theater_manager.theater(info.source_id).directory() / "theater.json")
-            theater_json_targets.append(theater_manager.theater(info.source_id).directory() / "theater_state.json")
-            theater_json_targets.append(theater_repository.theater_path(info.source_id) / "theater.json")
+        theater_ids = [info.theater_id]
+        if info.source_id is not None and info.source_id != info.theater_id:
+            theater_ids.append(info.source_id)
+        for identifier in theater_ids:
+            live_agent_manager.stop_session(identifier)
 
-        seen_targets: set[Path] = set()
-        for target in output_targets:
-            resolved = target.resolve()
-            if resolved not in seen_targets:
-                seen_targets.add(resolved)
-                await asyncio.to_thread(_clear_directory_contents, target)
+        roots = {store().directory(info.theater_id).resolve()}
+        for identifier in theater_ids:
+            roots.add(theater_manager.theater(identifier).directory().resolve())
+            roots.add(theater_repository.theater_path(identifier).resolve())
+        for root in roots:
+            await asyncio.to_thread(_remove_reference_updates, root / "references")
 
+        for root in roots:
+            await asyncio.to_thread(_clear_directory_contents, root / "output")
+
+        theater_json_targets = [root / filename for root in roots for filename in ("theater.json", "theater_state.json")]
         await asyncio.to_thread(_remove_files, theater_json_targets)
 
-        live_agent_manager.stop_session(info.theater_id)
-        if info.source_id is not None:
-            live_agent_manager.stop_session(info.source_id)
+        for identifier in theater_ids:
+            canvas_states.reset(identifier)
         theater_access_cache.invalidate_theater(info.theater_id)
         if info.source_id is not None:
             theater_access_cache.invalidate_theater(info.source_id)

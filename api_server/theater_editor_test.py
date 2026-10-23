@@ -1,6 +1,7 @@
 """Integration coverage for authorization, imports, billing, and publishing drafts."""
 
 import asyncio
+import json
 from io import BytesIO
 import zipfile
 from collections.abc import Iterator
@@ -1058,4 +1059,82 @@ def test_reset_theater_removes_output_and_theater_json(builder: BuilderHarness) 
     deploy_result = builder.client.post(f"{base}/deploy", json={"revision": data["draft"]["revision"]})
     assert deploy_result.status_code == 200
     assert (theater_dir / "theater.json").is_file()
+
+
+@pytest.mark.parametrize("with_source", [False, True])
+def test_reset_removes_image_updates_and_cached_canvas_history(builder: BuilderHarness, with_source: bool) -> None:
+    data = builder.create()
+    identifier = data["draft"]["theater_id"]
+    base = f"/api/theater-editor/{identifier}"
+    store = TheaterBuilderStore(builder.repository.base_dir)
+    identifiers = [identifier]
+    if with_source:
+        info = store.load(identifier)
+        assert info is not None
+        info.source_id = "source_theater"
+        store.save_info(info)
+        identifiers.append(info.source_id)
+        builder.database.get_deployment.return_value = {"user_id": 7}
+    roots = [store.directory(identifier)]
+    for theater_id in identifiers:
+        roots.extend([builder.manager.theater(theater_id).directory(), builder.repository.theater_path(theater_id)])
+    for root in roots:
+        for folder in ("characters/Hero", "scenes/Harbor", "props/Boat"):
+            reference = root / "references" / folder
+            reference.mkdir(parents=True, exist_ok=True)
+            for filename in ("1.webp", "1.png", "2.webp", "10.webp", "3.png", "portrait.webp", "scene.yaml"):
+                (reference / filename).write_bytes(b"original")
+        (root / "theater.yaml").write_text("starting_image: references/scenes/Harbor/1.webp\nlive_agent: {}\n", encoding="utf-8")
+        (root / "theater_state.json").write_text('{"canvas_state": {"narration": "old history"}}', encoding="utf-8")
+        output = root / "output" / "artifacts" / "updated_references" / "scenes" / "Harbor"
+        output.mkdir(parents=True, exist_ok=True)
+        (output / "2.webp").write_bytes(b"updated")
+
+    service = CanvasStateService(builder.manager)
+    states = [service.get(theater_id) for theater_id in identifiers]
+    for state in states:
+        state.visual.shown_images_history = ["old.webp"]
+        state.chat.messages = [{"text": "old chat"}]
+        state.persist()
+    connections = [state.connections for state in states]
+
+    def stop_session(theater_id: str) -> bool:
+        service.get(theater_id).persist()
+        return True
+
+    with patch.object(object_registry, "canvas_states", service), patch.object(object_registry.live_agent_manager, "stop_session", side_effect=stop_session):
+        conflict = builder.client.post(f"{base}/reset", json={"revision": data["draft"]["revision"] + 1})
+        assert conflict.status_code == 409
+        assert (roots[0] / "references/scenes/Harbor/2.webp").is_file()
+        result = builder.client.post(f"{base}/reset", json={"revision": data["draft"]["revision"]})
+    assert result.status_code == 200, result.text
+    for root in roots:
+        for folder in ("characters/Hero", "scenes/Harbor", "props/Boat"):
+            reference = root / "references" / folder
+            assert {item.name for item in reference.iterdir()} == {"1.webp", "1.png", "portrait.webp", "scene.yaml"}
+            assert (reference / "1.webp").read_bytes() == b"original"
+        assert not (root / "theater.json").exists()
+        assert not (root / "theater_state.json").exists()
+        assert list((root / "output").iterdir()) == []
+    for state, connection in zip(states, connections):
+        assert service.get(state.theater_id) is state
+        assert state.connections is connection
+        assert state.serialized_state()["shown_images_history"] == []
+        assert state.serialized_state()["chat_messages"] == []
+        assert state.serialized_state()["narration"] == ""
+        state.persist()
+        saved = json.loads((state.theater.directory() / "theater.json").read_text(encoding="utf-8"))
+        assert saved["canvas_state"]["shown_images_history"] == []
+        assert saved["canvas_state"]["chat_messages"] == []
+        assert saved["canvas_state"]["narration"] == ""
+
+    deploy_result = builder.client.post(f"{base}/deploy", json={"revision": data["draft"]["revision"]})
+    assert deploy_result.status_code == 200, deploy_result.text
+    builder.database.get_deployment.return_value = {"user_id": 7}
+    reopened = builder.client.get(base)
+    assert reopened.status_code == 200, reopened.text
+    paths = {item["path"] for item in reopened.json()["files"]}
+    assert "references/scenes/Harbor/1.webp" in paths
+    assert "references/scenes/Harbor/2.webp" not in paths
+    assert "references/characters/Hero/10.webp" not in paths
 

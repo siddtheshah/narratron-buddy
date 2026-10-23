@@ -20,3 +20,8 @@ class CanvasStateService:
         if resolved_id not in self.states:
             self.states[resolved_id] = CanvasStateManager(self.theater_manager.theater(resolved_id))
         return self.states[resolved_id]
+
+    def reset(self, theater_id: str) -> None:
+        state = self.states.get(theater_id)
+        if state is not None:
+            state.reset()

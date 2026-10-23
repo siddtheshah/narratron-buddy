@@ -838,7 +838,7 @@
       if (!state) return;
       if (resetDialog && typeof resetDialog.showModal === 'function') {
         resetDialog.showModal();
-      } else if (confirm('Are you sure you want to reset this theater? All generated output and theater state will be permanently deleted.')) {
+      } else if (confirm('Are you sure you want to reset this theater? All generated output, canvas history, theater state, and reference and scene image versions after the first image (1.webp) will be permanently deleted.')) {
         performResetTheater();
       }
     });

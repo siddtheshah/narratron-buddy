@@ -41,6 +41,12 @@ class CanvasStateManager:
         self.theater_id = theater.theater_id
         self.theater_manager = getattr(theater, "manager", None)
         self.connections = ConnectionState()
+        self._initialize_state()
+        self.load_state_from_disk()
+        self.visual.initialize_starting_image()
+
+    def _initialize_state(self) -> None:
+        theater = self.theater
         self.visual = VisualState(
             self.theater,
             notify_changed_fn=self.notify_changed,
@@ -66,8 +72,13 @@ class CanvasStateManager:
             canvas_manager=self,
             enforce_structured=enforce_structured,
         )
-        self.load_state_from_disk()
+
+    def reset(self) -> None:
+        """Clear session state in place so connected clients cannot retain history."""
+        self._initialize_state()
         self.visual.initialize_starting_image()
+        self.visual.shown_images_history.clear()
+        self.notify_changed()
 
     def _on_visual_changed(self, changed: bool = True) -> None:
         if changed:
