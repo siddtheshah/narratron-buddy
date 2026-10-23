@@ -237,7 +237,7 @@ async def test_import_preserves_private_role_guide_filename(name: str) -> None:
 async def test_download_google_drive_rejects_oversized_file() -> None:
     mock_response = MagicMock(spec=httpx.Response)
     mock_response.status_code = 200
-    mock_response.content = b"X" * (5 * 1024 * 1024 + 1)
+    mock_response.content = b"X" * (10 * 1024 * 1024 + 1)
     mock_response.url = httpx.URL("https://drive.usercontent.google.com/download?id=BIG")
     mock_response.headers = httpx.Headers({})
 
@@ -255,7 +255,7 @@ async def test_download_google_drive_rejects_oversized_content_length() -> None:
     mock_response.status_code = 200
     mock_response.content = b"header_only"
     mock_response.url = httpx.URL("https://drive.usercontent.google.com/download?id=HEADER_BIG")
-    mock_response.headers = httpx.Headers({"content-length": str(10 * 1024 * 1024)})
+    mock_response.headers = httpx.Headers({"content-length": str(10 * 1024 * 1024 + 1)})
 
     client = AsyncMock(spec=httpx.AsyncClient)
     client.get.return_value = mock_response
@@ -276,7 +276,7 @@ async def test_download_google_drive_rejects_oversized_confirmation_download() -
 
     confirmed_resp = MagicMock(spec=httpx.Response)
     confirmed_resp.status_code = 200
-    confirmed_resp.content = b"Y" * (5 * 1024 * 1024 + 1)
+    confirmed_resp.content = b"Y" * (10 * 1024 * 1024 + 1)
     confirmed_resp.url = httpx.URL("https://drive.usercontent.google.com/download?id=CONFIRM_BIG&confirm=token123")
     confirmed_resp.headers = httpx.Headers({})
 
@@ -298,7 +298,7 @@ async def test_download_google_drive_rejects_oversized_confirmation_download() -
 async def test_download_google_doc_text_rejects_oversized() -> None:
     mock_response = MagicMock(spec=httpx.Response)
     mock_response.status_code = 200
-    mock_response.content = b"Z" * (5 * 1024 * 1024 + 1)
+    mock_response.content = b"Z" * (10 * 1024 * 1024 + 1)
     mock_response.url = httpx.URL("https://docs.google.com/document/d/DOC_BIG/export?format=txt")
     mock_response.headers = httpx.Headers({})
 

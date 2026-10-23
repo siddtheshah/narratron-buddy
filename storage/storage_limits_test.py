@@ -29,7 +29,7 @@ class TestStorageLimits(unittest.TestCase):
         self.temp_dir.cleanup()
 
     def test_constants(self) -> None:
-        self.assertEqual(MAX_FILE_UPLOAD_BYTES, 5 * 1024 * 1024)
+        self.assertEqual(MAX_FILE_UPLOAD_BYTES, 10 * 1024 * 1024)
         self.assertEqual(MAX_USER_THEATER_STORAGE_BYTES, 500 * 1024 * 1024)
 
     def test_get_directory_size_bytes(self) -> None:

@@ -715,6 +715,7 @@ class AdventureSession:
             animation_enabled=bool(self.config.get("animation", {}).get("enabled", False)),
             image_generation_enabled=image_generation_enabled,
             use_generated_music=bool(self.config.get("music", {}).get("use_generated_music", False)),
+            game_enabled=False,
             adventure_mode=adventure_mode,
             interactive_canvas_enabled=bool(self.config.get("interactive_canvas", {}).get("enabled", False)),
             user_help_enabled=bool(user_help_config.get("enabled", True)),

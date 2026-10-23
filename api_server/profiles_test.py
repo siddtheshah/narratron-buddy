@@ -197,7 +197,7 @@ async def test_upload_stamp_rejects_empty_file() -> None:
 
 @pytest.mark.asyncio
 async def test_upload_stamp_rejects_oversized_file() -> None:
-    dummy_file = DummyUploadFile("huge.png", b"x" * (5 * 1024 * 1024 + 10))
+    dummy_file = DummyUploadFile("huge.png", b"x" * (10 * 1024 * 1024 + 10))
     registry_db = MagicMock()
     registry_db.count_user_stamps.return_value = 2
     with patch.object(object_registry, "db", registry_db), \
@@ -205,7 +205,7 @@ async def test_upload_stamp_rejects_oversized_file() -> None:
          pytest.raises(HTTPException) as err:
         await profiles.upload_stamp(request(), dummy_file, "Huge")
     assert err.value.status_code == 400
-    assert "exceeds 5MB" in str(err.value.detail)
+    assert "exceeds 10MB" in str(err.value.detail)
 
 
 @pytest.mark.asyncio

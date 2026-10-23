@@ -30,7 +30,7 @@ FLAGS = flags.FLAGS
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_BUCKET = "narratron-buddy-app-storage"
 MAX_STAMPS_PER_USER: int = 10
-MAX_STAMP_BYTES: int = 5 * 1024 * 1024
+MAX_STAMP_BYTES: int = 10 * 1024 * 1024
 MAX_STAMP_DIMENSION: int = 256
 
 logger = logging.getLogger(__name__)

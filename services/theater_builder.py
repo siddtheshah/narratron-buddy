@@ -24,7 +24,7 @@ from storage.storage_limits import (
     check_user_theaters_storage_allowance,
 )
 
-MAX_FILE_BYTES = 5 * 1024 * 1024
+MAX_FILE_BYTES = 10 * 1024 * 1024
 MAX_DRAFT_BYTES = 100 * 1024 * 1024
 MAX_FILES = 500
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
@@ -403,7 +403,7 @@ class TheaterBuilderStore:
                 current[move.destination] = size
         for name, content in files.items():
             if len(content) > MAX_FILE_BYTES:
-                raise ValueError("Each asset must be at most 5MB.")
+                raise ValueError("Each asset must be at most 10MB.")
             if targets[name].suffix.lower() in TEXT_EXTENSIONS:
                 validate_text(name, content.decode("utf-8"))
             current[name] = len(content)

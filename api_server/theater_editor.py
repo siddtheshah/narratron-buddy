@@ -188,7 +188,7 @@ async def read_uploads(files: list[UploadFile], folder: bool, root: Path, existi
             raise ValueError(f"{relative} already exists. Rename the asset before uploading.")
         content = await upload.read(MAX_FILE_BYTES + 1)
         if len(content) > MAX_FILE_BYTES:
-            raise ValueError("Each asset must be at most 5MB.")
+            raise ValueError("Each asset must be at most 10MB.")
         total += len(content)
         if total > MAX_DRAFT_BYTES:
             raise ValueError("Upload must be at most 100MB.")

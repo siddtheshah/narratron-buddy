@@ -178,7 +178,7 @@ async def upload_stamp(
     if not file_bytes:
         raise HTTPException(status_code=400, detail="Uploaded image file is empty.")
     if len(file_bytes) > MAX_FILE_UPLOAD_BYTES:
-        raise HTTPException(status_code=400, detail="Uploaded file exceeds 5MB limit.")
+        raise HTTPException(status_code=400, detail="Uploaded file exceeds 10MB limit.")
 
     try:
         processed_bytes, content_type = process_stamp_image(file_bytes)

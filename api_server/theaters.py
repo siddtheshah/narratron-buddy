@@ -1056,7 +1056,7 @@ async def create_and_deploy_theater(request: Request):
                 if len(content) > MAX_FILE_UPLOAD_BYTES:
                     raise HTTPException(
                         status_code=400,
-                        detail=f"File '{filename}' exceeds maximum allowed size of 5MB.",
+                        detail=f"File '{filename}' exceeds maximum allowed size of 10MB.",
                     )
                 if not content:
                     continue

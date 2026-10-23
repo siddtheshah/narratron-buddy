@@ -138,7 +138,7 @@ def upload_transcoded_draft(request: Request, clip: UploadFile = File(...)):
             while chunk := clip.file.read(1024 * 1024):
                 total_read += len(chunk)
                 if total_read > MAX_FILE_UPLOAD_BYTES:
-                    raise HTTPException(status_code=400, detail="Clip exceeds maximum allowed size of 5MB.")
+                    raise HTTPException(status_code=400, detail="Clip exceeds maximum allowed size of 10MB.")
                 target.write(chunk)
         if total_read == 0:
             raise HTTPException(status_code=400, detail="Uploaded clip is empty.")
@@ -161,7 +161,7 @@ def upload_transcoded_draft(request: Request, clip: UploadFile = File(...)):
 
         size = os.path.getsize(converted)
         if size > MAX_FILE_UPLOAD_BYTES:
-            raise HTTPException(status_code=400, detail="Converted video exceeds maximum allowed size of 5MB.")
+            raise HTTPException(status_code=400, detail="Converted video exceeds maximum allowed size of 10MB.")
         body = json.dumps({"source_info": {"source": "FILE_UPLOAD", "video_size": size, "chunk_size": size, "total_chunk_count": 1}}).encode("utf-8")
         upstream = UrlRequest(_UPLOAD_INIT_URL, data=body, headers={"Authorization": f"Bearer {token['access_token']}", "Content-Type": "application/json"})
         try:

@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from storage.database import _DatabaseManagerBase
 
-MAX_FILE_UPLOAD_BYTES: int = 5 * 1024 * 1024  # 5 MB
+MAX_FILE_UPLOAD_BYTES: int = 10 * 1024 * 1024  # 10 MB
 MAX_USER_THEATER_STORAGE_BYTES: int = 500 * 1024 * 1024  # 500 MB
 
 

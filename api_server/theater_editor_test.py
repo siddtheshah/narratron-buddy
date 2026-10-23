@@ -211,17 +211,17 @@ def test_flat_dump_upload_is_organized_and_invalid_batch_is_rejected(builder: Bu
     assert duplicate.status_code == 400
 
 
-def test_upload_assets_rejects_file_over_5mb(builder: BuilderHarness) -> None:
+def test_upload_assets_rejects_file_over_10mb(builder: BuilderHarness) -> None:
     data = builder.create()
     base = f"/api/theater-editor/{data['draft']['theater_id']}"
-    oversized = b"X" * (5 * 1024 * 1024 + 10)
+    oversized = b"X" * (10 * 1024 * 1024 + 10)
     result = builder.client.post(
         f"{base}/upload",
         data={"revision": data["draft"]["revision"]},
         files={"files": ("large.png", oversized)},
     )
     assert result.status_code == 400
-    assert "at most 5MB" in result.text
+    assert "at most 10MB" in result.text
 
 
 def test_example_adventure_folder_survives_editor_upload_and_download(builder: BuilderHarness) -> None:

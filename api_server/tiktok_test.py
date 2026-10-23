@@ -108,11 +108,11 @@ def test_upload_transcoded_draft_rejects_oversized_clip():
     with patch.object(tiktok, "get_current_user", return_value={"id": 42}), \
          patch.dict(tiktok._TOKENS, {42: {"access_token": "tok_123", "expires_at": time.time() + 3600}}), \
          patch("shutil.which", return_value="/usr/bin/ffmpeg"):
-        clip = UploadFile(io.BytesIO(b"X" * (5 * 1024 * 1024 + 10)), filename="clip.webm")
+        clip = UploadFile(io.BytesIO(b"X" * (10 * 1024 * 1024 + 10)), filename="clip.webm")
         with pytest.raises(HTTPException) as exc:
             tiktok.upload_transcoded_draft(_request(), clip)
         assert exc.value.status_code == 400
-        assert "exceeds maximum allowed size of 5MB" in exc.value.detail
+        assert "exceeds maximum allowed size of 10MB" in exc.value.detail
 
 
 def test_upload_transcoded_draft_rejects_empty_clip():
