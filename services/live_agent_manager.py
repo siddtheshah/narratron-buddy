@@ -14,6 +14,9 @@ from fastapi import WebSocket, WebSocketDisconnect
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
 from google.genai import types
+from pydantic import JsonValue
+
+from components.canvas.game_runtime import GameAction
 
 from providers import LiveAgentProvider, LiveAgentRunRequest, get_live_agent_provider, get_speech_provider
 
@@ -189,6 +192,7 @@ class LiveAgentSession:
             self.agent,
             "update_interactive_canvas",
         )
+        self.game_tool = get_bound_tool_instance(self.agent, "take_game_action")
 
         self._setup_tool_callbacks()
 
@@ -206,6 +210,8 @@ class LiveAgentSession:
         self.last_collaboration_observability_sent: Optional[float] = None
         self.state_lock = threading.Lock()
         self._event_loop: Optional[asyncio.AbstractEventLoop] = None
+        self._game_action_lock = threading.Lock()
+        self._queued_game_action_ids: set[str] = set()
         self._doodle_snapshot_task: Optional[asyncio.Task] = None
         self._auto_begin_started = False
         self._has_connected = False
@@ -788,6 +794,10 @@ class LiveAgentSession:
     def start_background_tasks(self) -> None:
         """Start the live runner plus independent refresh and notification loops."""
         self._event_loop = asyncio.get_running_loop()
+        if self.game_tool is not None:
+            self.game_tool.game.on_player_action = self._handle_player_game_action
+            for action, receipt in self.game_tool.game.pending_story_actions():
+                self._handle_player_game_action(action, receipt)
         if self.downstream_task is None or self.downstream_task.done():
             self.downstream_task = asyncio.create_task(self._run_downstream())
 
@@ -810,6 +820,39 @@ class LiveAgentSession:
         # Canvas observability begins after the configured startup delay.
         self.send_canvas_state()
 
+
+    def _handle_player_game_action(self, action: GameAction, receipt: dict[str, JsonValue]) -> None:
+        """Deliver committed player moves as complete input turns on the Live event loop."""
+        event_id = str(receipt["story_event_id"])
+        with self._game_action_lock:
+            if event_id in self._queued_game_action_ids:
+                return
+            self._queued_game_action_ids.add(event_id)
+        message = (
+            "[Player Game Action]\n"
+            "This move has already been applied. Respond to the player and play as Narratron "
+            "when the game rules permit. Do not repeat the player's move.\n"
+            + json.dumps({"action": action.model_dump(mode="json"), "receipt": receipt}, ensure_ascii=False)
+        )
+
+        def enqueue() -> None:
+            sent = False
+            try:
+                sent = self.send_user_content(types.Content(role="user", parts=[types.Part(text=message)]))
+                if not sent:
+                    return
+                self.game_tool.game.acknowledge_story_action(event_id)
+            except Exception:
+                logger.exception("Failed to deliver game action %s to Live", event_id)
+            finally:
+                if not sent:
+                    with self._game_action_lock:
+                        self._queued_game_action_ids.discard(event_id)
+
+        if self._event_loop is not None and self._event_loop.is_running():
+            self._event_loop.call_soon_threadsafe(enqueue)
+        else:
+            enqueue()
 
     async def _run_downstream(self) -> None:
         """Consume backend events and broadcast them to attached WebSockets."""
@@ -1326,6 +1369,10 @@ class LiveAgentSession:
             self._doodle_snapshot_task.cancel()
         if self.story_planning_tools is not None:
             self.story_planning_tools.close()
+        if self.game_tool is not None:
+            game = self.game_tool.game
+            if game.on_player_action == self._handle_player_game_action:
+                game.on_player_action = None
         try:
             self.live_request_queue.close()
         except Exception as e:

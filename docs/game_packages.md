@@ -63,6 +63,35 @@ existing `game/game.json` format are also supported everywhere, including import
 the theater editor, Adventure Runner and Game Testing Lab. Keep exactly one game
 declaration in the `game/` folder; multiple declarations are rejected.
 
+### Live-agent play outside Adventure Mode
+
+Live-agent game play is an advanced feature and is **off by default**, including
+when a game package is present. Build the game's rules, state, actions, and view
+in the theater editor or an IDE, then explicitly enable it in `theater.yaml`
+alongside the valid `game/game.yaml` package:
+
+```yaml
+story_planning:
+  adventure_mode: false
+game_tool:
+  enabled: true
+```
+
+The live agent receives `view_game_instructions`, `view_game_state`,
+`get_available_actions`, and `take_game_action`. State reads respect the package's
+`model_state` projection. Available actions include only `actor: narratron`
+transitions whose `available` expression is true, with their argument schemas.
+`take_game_action(name, arguments_json, revision)` submits JSON arguments against
+the observed revision; the runtime validates actor permissions, inputs, guards,
+and state invariants before committing and updating the canvas.
+
+Committed player and contributor actions with `triggering: true` are sent to the
+live agent as complete input turns, prompting it to respond and play when allowed.
+Exploratory actions with `triggering: false` do not interrupt it. Pending triggering
+actions made while the agent is stopped are delivered when an enabled session
+starts. Narratron's own moves return their results directly without triggering
+another input turn. Adventure Mode keeps its existing recorder-owned game flow.
+
 ```yaml
 version: 2
 initial:

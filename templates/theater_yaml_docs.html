@@ -327,7 +327,7 @@
             href="#starting-image"><code>starting_image</code></a><a
             href="#observability-tool"><code>observability_tool</code></a><a href="#visuals"><code>visuals</code></a><a
             href="#image-generation"><code>image_generation</code></a><a href="#animation"><code>animation</code></a><a
-            href="#interactive-canvas"><code>interactive_canvas</code></a><a href="#music"><code>music</code></a><a
+            href="#interactive-canvas"><code>interactive_canvas</code></a><a href="#game-tool"><code>game_tool</code></a><a href="#music"><code>music</code></a><a
             href="#story-planning"><code>story_planning</code></a><a href="#speech"><code>speech</code></a><a href="#chat"><code>chat</code></a>
         </aside>
         <article class="content">
@@ -504,6 +504,21 @@ story_planning:
             </dl>
             <div class="callout">In Adventure Mode, each completed story-planner turn unlocks one image or
               interactive-canvas mutation.</div>
+          </section>
+
+          <section class="section" id="game-tool">
+            <h2><code>game_tool</code></h2>
+            <p>This advanced feature is off by default. Build a game package in the theater editor or an IDE,
+              then explicitly enable live-agent play outside Adventure Mode with a valid <code>game/game.yaml</code>.
+              The existing <code>game.yml</code> and <code>game.json</code> alternatives are supported.</p>
+            <dl class="options">
+              <dt><code>enabled</code> <span class="type">boolean</span></dt>
+              <dd>Adds <code>view_game_instructions</code>, <code>view_game_state</code>,
+                <code>get_available_actions</code>, and <code>take_game_action</code> when a playable package is loaded.
+                Default: <code>false</code>.</dd>
+            </dl>
+            <p>Triggering player actions prompt a live-agent response. The agent uses the package's Narratron actions
+              and current revision. See <a href="/docs/game-packages">Game Packages</a> for the authoring contract.</p>
           </section>
 
           <section class="section" id="music">

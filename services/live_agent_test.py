@@ -16,6 +16,7 @@ from services.live_agent import (
     create_agent,
     create_tool_bundle_for_session,
 )
+from testing.game_fixtures import exchange_definition
 
 
 def make_test_theater(theater_id: str, config: dict, tmp_path: Optional[Path] = None) -> MagicMock:
@@ -41,6 +42,41 @@ def make_test_theater(theater_id: str, config: dict, tmp_path: Optional[Path] = 
 
 
 class TestCreateAgent(unittest.TestCase):
+    @patch("services.live_agent.get_text_response_provider")
+    @patch("services.live_agent.StoryTool")
+    def test_game_tools_require_opt_in_valid_package_and_non_adventure_mode(
+        self, mock_story_tool: MagicMock, mock_text_provider: MagicMock,
+    ) -> None:
+        from components.canvas_state import CanvasStateManager
+
+        game_names = {"view_game_instructions", "view_game_state", "get_available_actions", "take_game_action"}
+        for enabled, package, adventure in (
+            (True, "valid", False), (False, "valid", False),
+            (True, "absent", False), (True, "invalid", False), (True, "valid", True),
+        ):
+            with self.subTest(enabled=enabled, package=package, adventure=adventure), TemporaryDirectory() as directory:
+                config = {
+                    "game_tool": {"enabled": enabled},
+                    "story_planning": {"adventure_mode": adventure},
+                    "visuals": {"model": "hybrid-flux-gemini"},
+                    "music": {"provider": "lyria"},
+                }
+                theater = make_test_theater("game_tools", config, Path(directory))
+                if package != "absent":
+                    game_dir = theater.directory() / "game"
+                    game_dir.mkdir(parents=True)
+                    content = exchange_definition().model_dump_json() if package == "valid" else "invalid game"
+                    (game_dir / "game.yaml").write_text(content, encoding="utf-8")
+                canvas = CanvasStateManager(theater)
+                bundle = create_tool_bundle_for_session(theater, canvas_manager=canvas)
+                names = {tool.name for tool in bundle.tools}
+                expected = enabled and package == "valid" and not adventure
+                self.assertEqual(names & game_names, game_names if expected else set())
+                with patch("services.live_agent.Agent") as agent:
+                    create_agent(theater, bundle)
+                instruction = agent.call_args.kwargs["instruction"]
+                self.assertEqual("## Game Play" in instruction, expected)
+
     def setUp(self) -> None:
         catalog_patch = patch("services.live_agent.MusicCatalog.from_config")
         catalog_patch.start()

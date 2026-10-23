@@ -13,6 +13,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from components.theater_manager import TheaterManager
 from components.notepad import Notepad
 from components.reference_manager import ReferenceManager
+from components.canvas.game_runtime import GameAction
+from components.canvas.game_state import GameState
 from google.adk.events import Event
 from google.genai import types
 from providers import LiveAgentProvider
@@ -24,6 +26,9 @@ from services.live_agent_manager import (
 )
 from tools.observability_tool import ObservabilityTools
 from tools.image import ImageTools
+from tools.game_tool import GameTool
+from tools.tool_bundle import ToolBundle
+from testing.game_fixtures import exchange_definition, make_game
 from services.priority_live_request_queue import PriorityLiveRequestQueue
 
 
@@ -1849,6 +1854,90 @@ class TestLiveAgentSessionManager(unittest.TestCase):
                     session.canvas_state_manager,
                     mock_manager,
                 )
+
+
+def make_live_game_session(game: GameState) -> LiveAgentSession:
+    tool = GameTool(game)
+    bundle = ToolBundle([tool.take_game_action])
+    provider = GeminiLiveAgentProvider()
+    runner = MagicMock(agent=SimpleNamespace(tools=bundle.tools), session_service=MagicMock())
+    session = LiveAgentSession("game", runner, bundle, provider=provider)
+    session.send_canvas_state = MagicMock()
+    session.flush_usage_to_db = MagicMock()
+    return session
+
+
+def test_player_game_action_wakes_live_after_notification_budget_expires(tmp_path: Path) -> None:
+    async def run() -> None:
+        game = make_game(tmp_path, exchange_definition())
+        session = make_live_game_session(game)
+        blocker = asyncio.Event()
+        with patch.object(session, "_run_downstream", side_effect=blocker.wait), \
+                patch.object(session, "_run_canvas_refresh", side_effect=blocker.wait), \
+                patch.object(session, "_run_viewer_suggestion_loop", side_effect=blocker.wait):
+            session.start_background_tasks()
+        try:
+            session.live_request_queue.send_user_input(types.Content(parts=[types.Part(text="earlier input")]))
+            await session.live_request_queue.get()
+            session.live_request_queue.record_model_tool_calls(3)
+            # The HTTP endpoint applies actions from its worker thread.
+            await asyncio.to_thread(game.act, GameAction(name="player_place", arguments={"item": "red"}, revision=0))
+            request = await asyncio.wait_for(session.live_request_queue.get(), timeout=1)
+            text = request.content.parts[0].text
+            assert request.content.role == "user"
+            assert "[Player Game Action]" in text
+            event = json.loads(text.split("\n")[-1])
+            assert event["action"]["name"] == "player_place"
+            assert event["receipt"]["revision"] == 1
+            assert event["receipt"]["state"]["table"]["player"] == ["red"]
+            assert not game.pending_story_actions()
+            assert session.live_request_queue.live_tool_window_active
+        finally:
+            session.close()
+            await asyncio.sleep(0)
+        assert game.on_player_action is None
+
+    asyncio.run(run())
+
+
+def test_pending_game_actions_are_replayed_when_session_starts(tmp_path: Path) -> None:
+    async def run() -> None:
+        game = make_game(tmp_path, exchange_definition())
+        game.act(GameAction(name="player_place", arguments={"item": "red"}, revision=0))
+        assert len(game.pending_story_actions()) == 1
+        session = make_live_game_session(game)
+        blocker = asyncio.Event()
+        with patch.object(session, "_run_downstream", side_effect=blocker.wait), \
+                patch.object(session, "_run_canvas_refresh", side_effect=blocker.wait), \
+                patch.object(session, "_run_viewer_suggestion_loop", side_effect=blocker.wait):
+            session.start_background_tasks()
+            # Starting again before replay dispatch must not queue the move twice.
+            session.start_background_tasks()
+        try:
+            request = await asyncio.wait_for(session.live_request_queue.get(), timeout=1)
+            assert "[Player Game Action]" in request.content.parts[0].text
+            assert not game.pending_story_actions()
+            assert session.live_request_queue._current_user_input_queue.empty()
+        finally:
+            session.close()
+            await asyncio.sleep(0)
+        game.act(GameAction(name="player_finalize", revision=1))
+        assert len(game.pending_story_actions()) == 1
+
+    asyncio.run(run())
+
+
+def test_exploratory_actions_do_not_wake_live(tmp_path: Path) -> None:
+    definition = exchange_definition()
+    definition.transitions["player_place"].triggering = False
+    game = make_game(tmp_path, definition)
+    session = make_live_game_session(game)
+    game.on_player_action = session._handle_player_game_action
+    session.send_user_content = MagicMock(return_value=True)
+    game.act(GameAction(name="player_place", arguments={"item": "red"}, revision=0))
+    session.send_user_content.assert_not_called()
+    assert not game.pending_story_actions()
+    session.close()
 
 
 if __name__ == "__main__":

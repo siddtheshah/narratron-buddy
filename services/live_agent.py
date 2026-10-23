@@ -26,6 +26,7 @@ from tools.reference_tool import ReferenceTool
 from tools.interactive_canvas_tool import InteractiveCanvasTools
 from tools.tool_bundle import ToolBundle
 from tools.user_help_tool import UserHelpTool
+from tools.game_tool import GameTool
 from services.user_help_service import DEFAULT_USER_HELP_MODEL
 from providers import (
     LiveAgentConfig,
@@ -59,6 +60,18 @@ Silence is the default. If an audio acknowledgement is necessary, use at most on
 Execute relevant tools promptly after completed input. Request independent staging actions together when their arguments are known. Follow through on actionable results; once staging is complete, wait for new input or a relevant completion notification. Do not poll tools repeatedly.
 Tools on cooldown will still allow input, but will simply change what will be run in the next tool cycle. Retry errors or act on cooldown expiry only if the action still fits current input and scene.
 `show_image` and `create_image` share one cooldown and one pending request. A newer call to either tool replaces that pending request. Submit the desired visual once and continue with other relevant tools; image generation runs in the background. Ready images and animations take turns on the canvas after the current visual has had its minimum screen time. Each source keeps only its newest waiting visual. Do not retry merely because a visual is queued.
+
+{% if game_enabled %}
+## Game Play
+You can play this theater's game as Narratron. Read `view_game_instructions` before playing,
+then use `view_game_state` and `get_available_actions` to choose a permitted action.
+Submit `take_game_action` with the observed revision and JSON arguments matching its schema.
+The runtime owns game outcomes; never invent moves, change state through notes, or act for the player.
+`[Player Game Action]` reports an already committed move. Respond to it and take your turn
+when the rules permit; do not repeat the player's action. Check current state if newer moves
+may have occurred. Stop when waiting for the player or when no action is needed; do not poll.
+Use `send_chat_message` for concise game commentary when useful.
+{% endif %}
 
 {% if adventure_mode %}
 ## Adventure Mode
@@ -372,6 +385,21 @@ def create_tool_bundle_for_session(
             reference_tools.clear_characters,
         ])
 
+    game_config = config.get("game_tool") or {}
+    if (
+        not adventure_mode
+        and game_config.get("enabled", False)
+        and canvas_manager.game is not None
+        and canvas_manager.game.program is not None
+    ):
+        game_tool = GameTool(canvas_manager.game)
+        tools.extend([
+            game_tool.view_game_instructions,
+            game_tool.view_game_state,
+            game_tool.get_available_actions,
+            game_tool.take_game_action,
+        ])
+
     interactive_canvas_config = config.get("interactive_canvas", {})
     if interactive_canvas_config.get("enabled", False):
         app_interactive_canvas_config = get_app_config().get("interactive_canvas", {})
@@ -486,6 +514,7 @@ def create_agent(
         image_generation_enabled=bool(config.get("image_generation", {}).get("enabled", True)),
         use_generated_music=bool(config.get("music", {}).get("use_generated_music", False)),
         adventure_mode=adventure_mode,
+        game_enabled=any(tool.name == "take_game_action" for tool in tool_bundle.tools),
         interactive_canvas_enabled=bool(config.get("interactive_canvas", {}).get("enabled", False)),
         user_help_enabled=bool(user_help_config.get("enabled", True)),
         observability_enabled=bool((config.get("observability_tool") or {}).get("enabled", False)),

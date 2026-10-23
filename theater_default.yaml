@@ -44,6 +44,11 @@ interactive_canvas:
     max_surfaces: 5
     cooldown_duration: 10
 
+# Advanced feature, off by default. Author game/game.yaml in the theater editor
+# or an IDE, then explicitly enable live-agent game play outside Adventure Mode.
+game_tool:
+    enabled: false
+
 music:
     use_generated_music: false
     generation_cooldown: 90
