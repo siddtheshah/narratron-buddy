@@ -33,6 +33,10 @@ TEXT_EXTENSIONS = {".txt", ".md", ".yaml", ".yml", ".json", ".svg"}
 ROOT_FILES = {"theater.yaml", "planning.yaml", "metadata.json", "README.md"}
 
 
+class IneligibleAssetError(ValueError):
+    """A file is outside the supported theater package layout."""
+
+
 class DraftInfo(BaseModel):
     theater_id: str
     owner_id: int
@@ -133,7 +137,7 @@ def safe_asset_path(root: Path, relative: str) -> Path:
     allowed |= len(parts) == 3 and parts[0] == "playlists" and parts[-1] == "description.txt"
     allowed |= len(parts) >= 2 and parts[0] == "lore" and suffix in {".txt", ".md"}
     if not allowed:
-        raise ValueError("Use theater.yaml, planning.yaml, metadata.json, README.md, lore/*.txt or *.md, references/images, references/characters/<Name>/images or character.yaml, references/scenes/<Name>/images or scene.yaml, stamps/images, playlists/<Name>/audio or description.txt, or game/game.yaml (game.yml/game.json) with game/*.svg and companion game/*.json.")
+        raise IneligibleAssetError("Use theater.yaml, planning.yaml, metadata.json, README.md, lore/*.txt or *.md, references/images, references/characters/<Name>/images or character.yaml, references/scenes/<Name>/images or scene.yaml, stamps/images, playlists/<Name>/audio or description.txt, or game/game.yaml (game.yml/game.json) with game/*.svg and companion game/*.json.")
     target = root.joinpath(*parts).resolve()
     if root.resolve() not in target.parents:
         raise ValueError("Asset path escapes the theater draft.")
@@ -159,7 +163,7 @@ def upload_path(filename: str, folder: bool) -> str:
     if relative in ROOT_FILES or parts[0] in {"references", "stamps", "playlists", "lore", "game"}:
         return relative
     if parts[0] in {"characters", "scenes"}:
-        raise ValueError("Use references/characters/<Name>/ or references/scenes/<Name>/.")
+        raise IneligibleAssetError("Use references/characters/<Name>/ or references/scenes/<Name>/.")
     name = parts[-1]
     suffix = PurePosixPath(name).suffix.lower()
     if name.upper() in {"RESPONDER.MD", "PLANNER.MD", "RECORDER.MD"}:
@@ -174,7 +178,7 @@ def upload_path(filename: str, folder: bool) -> str:
         return f"playlists/default/{name}"
     if suffix in {".txt", ".md"}:
         return f"lore/{PurePosixPath(name).stem}.txt"
-    raise ValueError(f"Unsupported theater asset: {name}")
+    raise IneligibleAssetError(f"Unsupported theater asset: {name}")
 
 
 class TheaterBuilderStore:
@@ -204,12 +208,9 @@ class TheaterBuilderStore:
             for item in source_chars.rglob("*"):
                 if item.is_file() and (item.suffix.lower() in IMAGE_EXTENSIONS or item.name == "character.yaml"):
                     relative = item.relative_to(source).as_posix()
-                    parts = relative.split("/")
-                    if len(parts) == 3:
-                        raise ValueError("Character references require references/characters/<Name>/.")
                     try:
                         target_file = safe_asset_path(root, relative)
-                    except ValueError:
+                    except IneligibleAssetError:
                         continue
                     if not target_file.exists():
                         target_file.parent.mkdir(parents=True, exist_ok=True)
@@ -222,7 +223,7 @@ class TheaterBuilderStore:
                     char_rel = f"references/characters/{rel}"
                     try:
                         target_file = safe_asset_path(root, char_rel)
-                    except ValueError:
+                    except IneligibleAssetError:
                         continue
                     if not target_file.exists():
                         target_file.parent.mkdir(parents=True, exist_ok=True)
@@ -237,12 +238,9 @@ class TheaterBuilderStore:
             for item in source_scenes.rglob("*"):
                 if item.is_file() and (item.suffix.lower() in IMAGE_EXTENSIONS or item.name == "scene.yaml"):
                     relative = item.relative_to(source).as_posix()
-                    parts = relative.split("/")
-                    if len(parts) == 3:
-                        raise ValueError("Scene references require references/scenes/<Name>/.")
                     try:
                         target_file = safe_asset_path(root, relative)
-                    except ValueError:
+                    except IneligibleAssetError:
                         continue
                     if not target_file.exists():
                         target_file.parent.mkdir(parents=True, exist_ok=True)
@@ -255,7 +253,7 @@ class TheaterBuilderStore:
                     scene_rel = f"references/scenes/{rel}"
                     try:
                         target_file = safe_asset_path(root, scene_rel)
-                    except ValueError:
+                    except IneligibleAssetError:
                         continue
                     if not target_file.exists():
                         target_file.parent.mkdir(parents=True, exist_ok=True)
@@ -272,22 +270,20 @@ class TheaterBuilderStore:
         temporary.write_text(info.model_dump_json(), encoding="utf-8")
         temporary.replace(folder / "editor.json")
 
-    def create(self, owner_id: int, name: str, default_yaml: str, theater_id: str | None = None, source: Path | None = None, populate_default: bool = True) -> DraftInfo:
+    def create(self, owner_id: int, name: str, default_yaml: str, theater_id: str | None = None, source: Path | None = None, populate_default: bool = True, initial_files: dict[str, bytes] | None = None) -> DraftInfo:
         identifier = theater_id or f"theater_{uuid.uuid4().hex}"
         info = DraftInfo(theater_id=identifier, owner_id=owner_id, name=name, source_id=theater_id)
         root = self.directory(identifier)
-        self.ensure_directories(identifier)
-        files: dict[str, bytes] = {}
+        files: dict[str, bytes] = dict(initial_files or {})
         if source is not None:
+            if not source.is_dir():
+                raise ValueError("Theater import source directory not found.")
             for item in source.rglob("*"):
                 if item.is_file():
                     relative = item.relative_to(source).as_posix()
-                    parts = relative.split("/")
-                    if len(parts) == 3 and parts[0] == "references" and parts[1] in {"characters", "scenes"}:
-                        raise ValueError("Character and scene references require references/<characters or scenes>/<Name>/.")
                     try:
                         safe_asset_path(root, relative)
-                    except ValueError:
+                    except IneligibleAssetError:
                         continue
                     files[relative] = item.read_bytes()
             session_chars = source / "output" / "artifacts" / "updated_references" / "characters"
@@ -300,7 +296,7 @@ class TheaterBuilderStore:
                             try:
                                 safe_asset_path(root, char_rel)
                                 files[char_rel] = item.read_bytes()
-                            except ValueError:
+                            except IneligibleAssetError:
                                 continue
             session_scenes = source / "output" / "artifacts" / "updated_references" / "scenes"
             if session_scenes.is_dir():
@@ -312,10 +308,13 @@ class TheaterBuilderStore:
                             try:
                                 safe_asset_path(root, scene_rel)
                                 files[scene_rel] = item.read_bytes()
-                            except ValueError:
+                            except IneligibleAssetError:
                                 continue
-        files.setdefault("theater.yaml", default_yaml.encode("utf-8"))
-        if source is None and populate_default:
+        importing = source is not None or initial_files is not None
+        if importing and not files:
+            raise ValueError("No eligible theater files were found to import.")
+        files.setdefault("theater.yaml", b"live_agent: {}\n" if importing else default_yaml.encode("utf-8"))
+        if not importing and populate_default:
             defaults = Path(__file__).with_name("theater_builder_defaults")
             for template in defaults.rglob("*"):
                 if template.is_file():

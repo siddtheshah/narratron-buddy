@@ -31,7 +31,7 @@
       <label class="name-label" for="new-name">Theater name</label><input id="new-name" value="My Theater" maxlength="120">
       <div class="start-options">
         <button id="start-default" type="button"><b>✧ Populate default</b><span>Role guides, planning notes, and sample assets</span></button>
-        <button id="start-folder" type="button"><b>▤ Upload a folder</b><span>Bring your theater, planning, lore, references, playlists, and game</span></button>
+        <button id="start-folder" type="button"><b>▤ Upload a folder</b><span>Bring any theater files or assets; incomplete folders are welcome</span></button>
       </div>
       <button id="resume-draft" class="text-button" type="button" hidden>Resume your last saved draft →</button>
     </section>
@@ -51,7 +51,7 @@
         <aside class="files-panel panel" aria-label="Theater files">
           <div class="panel-heading"><h2>Your theater</h2><span id="file-count"></span></div>
           <div class="upload-actions"><button class="secondary" id="upload-assets" type="button">＋ Assets</button><button class="secondary" id="upload-folder" type="button">＋ Folder</button><button class="secondary gdrive-btn" id="import-google-link" type="button"><svg class="gdrive-icon" viewBox="0 0 87.3 78" width="13" height="13" aria-hidden="true" focusable="false"><path d="m6.6 66.85 3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8h-27.5c0 1.55.4 3.1 1.2 4.5z" fill="#0066da"/><path d="m43.65 25-13.75-23.8c-1.35.8-2.5 1.9-3.3 3.3l-25.4 44c-.8 1.4-1.2 2.95-1.2 4.5h27.5z" fill="#00ac47"/><path d="m73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75 7.65-13.25c.8-1.4 1.2-2.95 1.2-4.5h-27.502l5.852 11.5z" fill="#ea4335"/><path d="m43.65 25 13.75-23.8c-1.35-.8-2.9-1.2-4.5-1.2h-18.5c-1.6 0-3.15.45-4.5 1.2z" fill="#00832d"/><path d="m59.8 53h-32.3l-13.75 23.8c1.35.8 2.9 1.2 4.5 1.2h50.8c1.6 0 3.15-.45 4.5-1.2z" fill="#2684fc"/><path d="m73.4 26.5-12.7-22c-.8-1.4-1.95-2.5-3.3-3.3l-13.75 23.8 16.15 28h27.45c0-1.55-.4-3.1-1.2-4.5z" fill="#ffba00"/></svg><span>Google Link</span></button></div>
-          <p class="hint">Loose images, audio, and text are sorted automatically. Ask the assistant to organize them further.</p>
+          <p class="hint">Loose images, audio, and text are sorted automatically. Ineligible files are discarded from imports.</p>
           <nav id="file-list" aria-label="Files"></nav>
           <button class="text-button" id="new-file" type="button">＋ Create a text file</button>
         </aside>

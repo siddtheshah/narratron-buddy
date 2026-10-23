@@ -34,7 +34,7 @@ from services.generation_billing import (
 )
 from services.google_asset_importer import find_google_urls, import_google_link
 from services.theater_builder import (
-    BuilderFile, BuilderProposal, ChatMessage, DraftInfo, FileWrite, GenerationRequest,
+    BuilderFile, BuilderProposal, ChatMessage, DraftInfo, FileWrite, GenerationRequest, IneligibleAssetError,
     MAX_DRAFT_BYTES, MAX_FILE_BYTES, MAX_FILES, TheaterBuilderStore,
     asset_mime, encode_text_writes, safe_asset_path, upload_path, validate_text,
 )
@@ -102,6 +102,11 @@ class DraftResponse(BaseModel):
     rates: dict[str, float]
 
 
+class ImportDraftResponse(DraftResponse):
+    imported_files: int
+    discarded_files: list[str]
+
+
 def store() -> TheaterBuilderStore:
     return TheaterBuilderStore(Path(theater_repository.base_dir))
 
@@ -163,6 +168,47 @@ async def create_draft(body: CreateDraftRequest, request: Request) -> DraftRespo
     return await asyncio.to_thread(response, info)
 
 
+async def read_uploads(files: list[UploadFile], folder: bool, root: Path, existing: set[str]) -> tuple[dict[str, bytes], list[str]]:
+    if len(files) > MAX_FILES:
+        raise ValueError("Upload supports at most 500 files.")
+    uploaded: dict[str, bytes] = {}
+    discarded: list[str] = []
+    total = 0
+    for upload in files:
+        filename = upload.filename or ""
+        try:
+            relative = upload_path(filename, folder)
+            safe_asset_path(root, relative)
+        except IneligibleAssetError:
+            discarded.append(filename)
+            continue
+        if relative in uploaded:
+            raise ValueError(f"Duplicate upload destination: {relative}")
+        if relative in existing and not folder:
+            raise ValueError(f"{relative} already exists. Rename the asset before uploading.")
+        content = await upload.read(MAX_FILE_BYTES + 1)
+        if len(content) > MAX_FILE_BYTES:
+            raise ValueError("Each asset must be at most 5MB.")
+        total += len(content)
+        if total > MAX_DRAFT_BYTES:
+            raise ValueError("Upload must be at most 100MB.")
+        uploaded[relative] = content
+    if not uploaded:
+        raise ValueError("No eligible theater files were found to import.")
+    return uploaded, discarded
+
+
+@app.post("/api/theater-editor/drafts/import")
+async def import_draft(request: Request, files: list[UploadFile] = File(...), name: str = Form("My Theater", min_length=1, max_length=120), folder: bool = Form(False)) -> ImportDraftResponse:
+    owner_id = await require_user(request)
+    builder = store()
+    with invalid_input():
+        uploaded, discarded = await read_uploads(files, folder, builder.root / "_import", set())
+        info = await asyncio.to_thread(builder.create, owner_id, name, "live_agent: {}\n", initial_files=uploaded, populate_default=False)
+    result = await asyncio.to_thread(response, info)
+    return ImportDraftResponse(**result.model_dump(), imported_files=len(uploaded), discarded_files=discarded)
+
+
 @app.get("/api/theater-editor/{theater_id}")
 async def open_draft(theater_id: str, request: Request) -> DraftResponse:
     owner_id = await require_user(request)
@@ -182,7 +228,7 @@ async def open_draft(theater_id: str, request: Request) -> DraftResponse:
                     raise HTTPException(status_code=404, detail="Theater package not found.")
             metadata = await asyncio.to_thread(theater_manager.get_theater, theater_id)
             with invalid_input():
-                await asyncio.to_thread(store().create, owner_id, metadata.name, yaml.safe_dump(get_theater_default_config()), theater_id, source)
+                await asyncio.to_thread(store().create, owner_id, metadata.name, "live_agent: {}\n", theater_id, source)
         else:
             source = theater_manager.theater(theater_id).directory()
             if source.is_dir():
@@ -217,36 +263,16 @@ async def save_draft(theater_id: str, body: SaveDraftRequest, request: Request) 
 
 
 @app.post("/api/theater-editor/{theater_id}/upload")
-async def upload_assets(theater_id: str, request: Request, files: list[UploadFile] = File(...), revision: int = Form(...), folder: bool = Form(False)) -> DraftResponse:
+async def upload_assets(theater_id: str, request: Request, files: list[UploadFile] = File(...), revision: int = Form(...), folder: bool = Form(False)) -> ImportDraftResponse:
     async with _draft_locks.setdefault(theater_id, asyncio.Lock()):
         info = await require_draft(request, theater_id)
         with invalid_input():
             check_revision(info, revision)
-            if len(files) > MAX_FILES:
-                raise ValueError("Upload supports at most 500 files.")
-            uploaded: dict[str, bytes] = {}
-            total = 0
             existing = {item.path for item in await asyncio.to_thread(store().files, theater_id)}
-            for upload in files:
-                filename = upload.filename or ""
-                relative = upload_path(filename, folder)
-                safe_asset_path(store().directory(theater_id), relative)
-                if relative in uploaded:
-                    raise ValueError(f"Duplicate upload destination: {relative}")
-                # Folder import can replace configuration; individual uploads never silently overwrite.
-                if relative in existing and not folder:
-                    raise ValueError(f"{relative} already exists. Rename the asset before uploading.")
-                content = await upload.read(MAX_FILE_BYTES + 1)
-                if len(content) > MAX_FILE_BYTES:
-                    raise ValueError("Each asset must be at most 5MB.")
-                total += len(content)
-                if total > MAX_DRAFT_BYTES:
-                    raise ValueError("Upload must be at most 100MB.")
-                uploaded[relative] = content
-            if not uploaded:
-                raise ValueError("Choose a folder or assets to upload.")
+            uploaded, discarded = await read_uploads(files, folder, store().directory(theater_id), existing)
             await asyncio.to_thread(store().write_files, info, uploaded)
-        return await asyncio.to_thread(response, info)
+        result = await asyncio.to_thread(response, info)
+        return ImportDraftResponse(**result.model_dump(), imported_files=len(uploaded), discarded_files=discarded)
 
 
 @app.post("/api/theater-editor/{theater_id}/google-link")
@@ -318,18 +344,26 @@ async def ask_assistant(theater_id: str, body: AssistantRequest, request: Reques
         # Detect any Google links in the user prompt and resolve them before asking the assistant
         harvest_docs: list[dict[str, str]] = []
         downloaded_assets: list[str] = []
+        imported_files: dict[str, bytes] = {}
         for link in find_google_urls(body.prompt):
             try:
-                imported = await import_google_link(link.original_url)
+                with invalid_input():
+                    imported = await import_google_link(link.original_url)
                 if imported.kind == "doc":
                     harvest_docs.append({"title": imported.title, "content": imported.text_content[:50_000]})
                 elif imported.kind in {"image", "audio", "text"}:
                     content = imported.content_bytes if imported.kind != "text" else imported.text_content.encode("utf-8")
-                    with invalid_input():
-                        await asyncio.to_thread(store().write_files, info, {imported.suggested_path: content})
+                    imported_files[imported.suggested_path] = content
                     downloaded_assets.append(imported.suggested_path)
+            except HTTPException:
+                raise
             except Exception as import_err:
-                logger.warning("Could not auto-import Google link %s: %s", link.original_url, import_err)
+                logger.exception("Could not auto-import Google link %s", link.original_url)
+                raise HTTPException(status_code=502, detail="Could not import the Google link. No assistant credits were charged. Check the link and its sharing permissions.") from import_err
+
+        if imported_files:
+            with invalid_input():
+                await asyncio.to_thread(store().write_files, info, imported_files)
 
         augmented_prompt = body.prompt
         if downloaded_assets:

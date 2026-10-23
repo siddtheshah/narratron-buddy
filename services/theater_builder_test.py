@@ -69,17 +69,36 @@ def test_upload_rejects_outdated_layouts_instead_of_rewriting_paths(tmp_path: Pa
 
 
 @pytest.mark.parametrize("kind", ["characters", "scenes"])
-def test_source_reference_import_rejects_loose_images(tmp_path: Path, kind: str) -> None:
+def test_source_reference_import_discards_loose_images(tmp_path: Path, kind: str) -> None:
     source = tmp_path / "source"
     directory = source / "references" / kind
     directory.mkdir(parents=True)
     (directory / "Loose.webp").write_bytes(b"image")
+    (source / "theater.yaml").write_text("live_agent: {}\n", encoding="utf-8")
     store = TheaterBuilderStore(tmp_path / "repository")
-    with pytest.raises(ValueError, match="references"):
+    info = store.create(7, "World", "live_agent: {}\n", source=source)
+    store.sync_source_characters(info, source)
+    assert {item.path for item in store.files(info.theater_id)} == {"theater.yaml"}
+    assert (directory / "Loose.webp").read_bytes() == b"image"
+
+
+@pytest.mark.parametrize("contents", [{}, {"notes.py": b"ignored"}, {"theater.yaml": b"live_agent: ["}])
+def test_failed_source_import_does_not_create_a_draft(tmp_path: Path, contents: dict[str, bytes]) -> None:
+    source = tmp_path / "source"
+    source.mkdir()
+    for name, content in contents.items():
+        (source / name).write_bytes(content)
+    store = TheaterBuilderStore(tmp_path / "repository")
+    with pytest.raises((ValueError, yaml.YAMLError)):
         store.create(7, "World", "live_agent: {}\n", source=source)
-    info = store.create(7, "World", "live_agent: {}\n", populate_default=False)
-    with pytest.raises(ValueError, match="references"):
-        store.sync_source_characters(info, source)
+    assert not store.root.exists()
+
+
+def test_missing_source_import_does_not_create_a_default_draft(tmp_path: Path) -> None:
+    store = TheaterBuilderStore(tmp_path / "repository")
+    with pytest.raises(ValueError, match="source directory not found"):
+        store.create(7, "World", "live_agent: {}\n", source=tmp_path / "missing")
+    assert not store.root.exists()
 
 
 def test_default_draft_has_separate_role_guides_and_preserves_them_on_publish(tmp_path: Path) -> None:

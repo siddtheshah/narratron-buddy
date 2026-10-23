@@ -125,6 +125,7 @@ def editor_page() -> Iterator[Page]:
                     return {ok: true, json: async () => structuredClone(draft)};
                 }
                 if (request.pathname.endsWith('/drafts')) {
+                    window.createdDefaultDraft = true;
                     draft.draft.theater_id = 'theater_new';
                     draft.files = [...initialFiles];
                 }
@@ -185,17 +186,28 @@ def editor_page() -> Iterator[Page]:
                     window.downloadedDraft = true;
                     return {ok: true, blob: async () => new Blob(['mock zip'], {type: 'application/zip'})};
                 }
-                if (request.pathname.endsWith('/upload')) {
+                if (request.pathname.endsWith('/upload') || request.pathname.endsWith('/drafts/import')) {
+                    window.lastUploadEndpoint = request.pathname;
+                    if (window.uploadError) {
+                        return {ok: false, status: 400, json: async () => ({detail: window.uploadError})};
+                    }
+                    if (request.pathname.endsWith('/drafts/import')) {
+                        draft.draft.theater_id = 'theater_imported';
+                        draft.draft.name = options.body.get('name');
+                        draft.files = [{path: 'theater.yaml', kind: 'text'}];
+                    }
                     const uploadedFiles = options.body.getAll('files');
                     window.lastUploadedFilenames = uploadedFiles.map(f => f.name);
-                    for (const f of uploadedFiles) {
+                    const discarded = window.discardedFiles || [];
+                    for (const f of uploadedFiles.filter(f => !discarded.includes(f.name))) {
                         const path = f.name.includes('/') ? f.name : `references/${f.name}`;
                         if (!draft.files.some(file => file.path === path)) {
                             draft.files.push({path, kind: path.endsWith('.txt') ? 'text' : 'image'});
                         }
                     }
                     draft.draft.revision++;
-                    return {ok: true, json: async () => structuredClone(draft)};
+                    return {ok: true, json: async () => ({...structuredClone(draft),
+                        imported_files: uploadedFiles.length - discarded.length, discarded_files: discarded})};
                 }
                 return {ok: true, json: async () => structuredClone(draft)};
             };
@@ -851,6 +863,70 @@ def test_reset_theater_button_dialog_flow(editor_page: Page) -> None:
     expect(dialog).not_to_be_visible()
     expect(page.locator("#builder-status")).to_have_text("Theater reset.")
     assert page.evaluate("() => window.resetTheater")
+
+
+def test_partial_folder_import_creates_theater_without_populating_defaults(editor_page: Page, tmp_path: Path) -> None:
+    page = editor_page
+    source = tmp_path / "partial"
+    source.mkdir()
+    (source / "guide.txt").write_text("Harbor guide", encoding="utf-8")
+    page.locator("#new-draft").click()
+    page.locator("#new-name").fill("Imported Harbor")
+    page.locator("#folder-input").set_input_files(str(source))
+    expect(page.locator("#workspace")).to_be_visible()
+    expect(page.locator("#draft-name")).to_have_value("Imported Harbor")
+    expect(page.locator("#builder-status")).to_contain_text("Uploaded 1 files.")
+    assert page.evaluate("window.createdDefaultDraft === undefined")
+    assert page.evaluate("window.lastUploadEndpoint") == "/api/theater-editor/drafts/import"
+    assert page.evaluate("window.lastUploadedFilenames") == ["partial/guide.txt"]
+
+
+def test_failed_import_keeps_start_panel_without_creating_default_theater(editor_page: Page) -> None:
+    page = editor_page
+    page.locator("#new-draft").click()
+    page.evaluate("window.uploadError = 'Invalid theater configuration.'")
+    page.locator("#assets-input").set_input_files([
+        {"name": "theater.yaml", "mimeType": "text/yaml", "buffer": b"live_agent: ["},
+    ])
+    expect(page.locator("#builder-status")).to_have_text("Invalid theater configuration.")
+    expect(page.locator("#builder-status")).to_have_class("error")
+    expect(page.locator("#start-panel")).to_be_visible()
+    expect(page.locator("#workspace")).not_to_be_visible()
+    assert page.evaluate("window.createdDefaultDraft === undefined")
+    assert page.evaluate("window.lastUploadEndpoint") == "/api/theater-editor/drafts/import"
+    assert page.url == "http://narratron.test/theater-editor"
+    page.evaluate("window.uploadError = null")
+    page.locator("#assets-input").set_input_files([
+        {"name": "guide.txt", "mimeType": "text/plain", "buffer": b"guide"},
+    ])
+    expect(page.locator("#workspace")).to_be_visible()
+    expect(page.locator("#builder-status")).to_contain_text("Uploaded 1 files.")
+    assert "theater_id=theater_imported" in page.url
+    assert page.evaluate("window.createdDefaultDraft === undefined")
+
+
+def test_upload_reports_discarded_ineligible_files(editor_page: Page) -> None:
+    page = editor_page
+    page.evaluate("window.discardedFiles = ['helper.py']")
+    page.locator("#assets-input").set_input_files([
+        {"name": "guide.txt", "mimeType": "text/plain", "buffer": b"guide"},
+        {"name": "helper.py", "mimeType": "text/plain", "buffer": b"ignored"},
+    ])
+    expect(page.locator("#builder-status")).to_contain_text("Uploaded 1 files. Discarded 1 ineligible files: helper.py.")
+    expect(page.locator('.file-button[data-path="references/helper.py"]')).to_have_count(0)
+
+
+def test_failed_upload_preserves_existing_draft(editor_page: Page) -> None:
+    page = editor_page
+    page.evaluate("window.uploadError = 'No eligible theater files were found to import.'")
+    page.locator("#assets-input").set_input_files([
+        {"name": "helper.py", "mimeType": "text/plain", "buffer": b"ignored"},
+    ])
+    expect(page.locator("#builder-status")).to_have_text("No eligible theater files were found to import.")
+    expect(page.locator("#workspace")).to_be_visible()
+    expect(page.locator("#file-count")).to_have_text("7 files")
+    assert "theater_id=theater_tree" in page.url
+    assert page.evaluate("window.createdDefaultDraft === undefined")
 
 
 def test_upload_non_png_files_does_not_open_png_dialog(editor_page: Page) -> None:

@@ -354,14 +354,25 @@
   async function upload(files, folder) {
     if (!files.length) return;
     await run(async () => {
-      if (!state) await create(!folder);
-      await save();
       const form = new FormData();
-      form.append('revision', state.draft.revision); form.append('folder', folder);
+      form.append('folder', folder);
       for (const file of files) form.append('files', file, folder ? (file.webkitRelativePath || file._customRelativePath || file.name) : file.name);
-      render(await api(endpoint('/upload'), { method: 'POST', body: form }));
+      let result;
+      if (state) {
+        await save();
+        form.append('revision', state.draft.revision);
+        result = await api(endpoint('/upload'), { method: 'POST', body: form });
+      } else {
+        form.append('name', el('new-name').value.trim() || 'My Theater');
+        result = await api('/api/theater-editor/drafts/import', { method: 'POST', body: form });
+        history.length = 0; proposal = null;
+        el('assistant-proposal').hidden = true;
+      }
+      render(result);
       clearPreview();
-      status(`Uploaded ${files.length} files. Ask the assistant to organize them or develop your world.`);
+      const discarded = result.discarded_files || [];
+      const summary = discarded.length ? ` Discarded ${discarded.length} ineligible files: ${discarded.join(', ')}.` : '';
+      status(`Uploaded ${result.imported_files ?? files.length} files.${summary} Ask the assistant to organize them or develop your world.`);
     }, 'Uploading theater assets…');
   }
   function makeOpenLink(path, text = 'Open asset →') {

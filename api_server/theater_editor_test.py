@@ -123,6 +123,77 @@ def test_folder_import_preserves_config_planning_lore_and_playlist(builder: Buil
     assert builder.client.get(f"/api/theater-editor/{identifier}/file?path=theater.yaml").text == "live_agent:\n  special_instructions: Harbor mystery\n"
 
 
+@pytest.mark.parametrize(("filename", "content", "expected_path"), [
+    ("world/theater.yaml", b"live_agent:\n  special_instructions: Imported world\n", "theater.yaml"),
+    ("world/lore/guide.md", b"A world guide", "lore/guide.md"),
+    ("world/references/harbor.webp", b"image", "references/harbor.webp"),
+])
+def test_new_folder_import_accepts_partial_packages_and_discards_ineligible_files(builder: BuilderHarness, filename: str, content: bytes, expected_path: str) -> None:
+    result = builder.client.post("/api/theater-editor/drafts/import", data={"name": "Imported", "folder": "true"}, files=[
+        ("files", (filename, content)),
+        ("files", ("world/helper.py", b"ignored")),
+        ("files", ("world/references/characters/Loose.webp", b"ignored")),
+    ])
+    assert result.status_code == 200, result.text
+    data = result.json()
+    assert data["draft"]["name"] == "Imported"
+    assert data["imported_files"] == 1
+    assert data["discarded_files"] == ["world/helper.py", "world/references/characters/Loose.webp"]
+    assert {item["path"] for item in data["files"]} == {"theater.yaml", expected_path}
+    root = TheaterBuilderStore(builder.repository.base_dir).directory(data["draft"]["theater_id"])
+    assert (root / expected_path).read_bytes() == content
+    if expected_path != "theater.yaml":
+        assert (root / "theater.yaml").read_bytes() == b"live_agent: {}\n"
+    assert not (root / "helper.py").exists()
+    assert not (root / "references/characters/Loose.webp").exists()
+
+
+@pytest.mark.parametrize("files", [
+    [("files", ("world/helper.py", b"ignored"))],
+    [("files", ("world/lore/guide.txt", b"guide")), ("files", ("world/theater.yaml", b"live_agent: ["))],
+    [("files", ("world/lore/guide.txt", b"guide")), ("files", ("world/../secret.webp", b"image"))],
+])
+def test_failed_new_import_returns_an_error_without_creating_a_draft(builder: BuilderHarness, files: list[tuple[str, tuple[str, bytes]]]) -> None:
+    result = builder.client.post("/api/theater-editor/drafts/import", data={"folder": "true"}, files=files)
+    assert result.status_code == 400, result.text
+    assert not list(builder.repository.base_dir.glob("_builder/*/editor.json"))
+    assert not list(builder.repository.base_dir.glob("_builder/*/theater.yaml"))
+
+
+def test_new_import_requires_authentication(builder: BuilderHarness) -> None:
+    builder.client.headers.pop("x-test-user")
+    result = builder.client.post("/api/theater-editor/drafts/import", files={"files": ("hero.webp", b"image")})
+    assert result.status_code == 401
+
+
+def test_new_import_storage_failure_does_not_leave_a_draft(builder: BuilderHarness) -> None:
+    with patch("services.theater_builder.check_user_theaters_storage_allowance", side_effect=ValueError("User theater storage limit exceeded")):
+        result = builder.client.post("/api/theater-editor/drafts/import", files={"files": ("hero.webp", b"image")})
+    assert result.status_code == 400
+    assert "storage limit" in result.json()["detail"]
+    assert not list(builder.repository.base_dir.glob("_builder/*"))
+
+
+def test_existing_draft_import_discards_ineligible_files(builder: BuilderHarness) -> None:
+    data = builder.create()
+    identifier = data["draft"]["theater_id"]
+    base = f"/api/theater-editor/{identifier}"
+    result = builder.client.post(f"{base}/upload", data={"folder": "true", "revision": data["draft"]["revision"]}, files=[
+        ("files", ("world/lore/guide.txt", b"guide")),
+        ("files", ("world/helper.py", b"ignored")),
+    ])
+    assert result.status_code == 200, result.text
+    assert result.json()["discarded_files"] == ["world/helper.py"]
+    revision = result.json()["draft"]["revision"]
+    bad = builder.client.post(f"{base}/upload", data={"folder": "true", "revision": revision}, files=[
+        ("files", ("world/lore/new.txt", b"new")),
+        ("files", ("world/theater.yaml", b"live_agent: [")),
+    ])
+    assert bad.status_code == 400
+    assert builder.client.get(base).json()["draft"]["revision"] == revision
+    assert builder.client.get(f"{base}/file?path=lore/new.txt").status_code == 404
+
+
 def test_flat_dump_upload_is_organized_and_invalid_batch_is_rejected(builder: BuilderHarness) -> None:
     data = builder.create()
     base = f"/api/theater-editor/{data['draft']['theater_id']}"
@@ -172,15 +243,15 @@ def test_example_adventure_folder_survives_editor_upload_and_download(builder: B
             assert archive.read(path) == content
 
 
-def test_reopen_rejects_outdated_reference_layout_with_an_actionable_error(builder: BuilderHarness) -> None:
+def test_reopen_discards_ineligible_source_references(builder: BuilderHarness) -> None:
     data = builder.create()
     identifier = data["draft"]["theater_id"]
     directory = builder.manager.theater(identifier).directory() / "references/characters"
     directory.mkdir(parents=True)
     (directory / "Loose.webp").write_bytes(b"image")
     result = builder.client.get(f"/api/theater-editor/{identifier}")
-    assert result.status_code == 400
-    assert "references/characters/<Name>/" in result.json()["detail"]
+    assert result.status_code == 200, result.text
+    assert "references/characters/Loose.webp" not in {item["path"] for item in result.json()["files"]}
 
 
 def test_upload_assets_rejects_when_user_storage_cap_exceeded(builder: BuilderHarness) -> None:
@@ -769,6 +840,31 @@ def test_assistant_auto_imports_google_image_in_prompt(builder: BuilderHarness) 
     assert result.status_code == 200, result.text
     assert builder.client.get(f"{base}/file?path=references/captain.png").content == b"captain_image"
     propose_mock.assert_called_once()
+
+
+@pytest.mark.parametrize("import_error", [ValueError("The Google file is not shared publicly."), RuntimeError("Download failed")])
+def test_assistant_returns_google_import_errors_without_charging_or_proposing(builder: BuilderHarness, import_error: Exception) -> None:
+    data = builder.create()
+    base = f"/api/theater-editor/{data['draft']['theater_id']}"
+    with patch("api_server.theater_editor.import_google_link", new=AsyncMock(side_effect=import_error)), patch.object(TheaterBuilderStore, "propose") as propose:
+        result = builder.client.post(f"{base}/assistant", json={"prompt": "Use https://drive.google.com/file/d/asset_id_123/view"})
+    assert result.status_code in {400, 502}
+    assert "detail" in result.json()
+    propose.assert_not_called()
+    builder.database.record_user_usage.assert_not_called()
+    assert builder.client.get(base).json()["draft"]["revision"] == data["draft"]["revision"]
+
+
+def test_assistant_imports_multiple_links_atomically(builder: BuilderHarness) -> None:
+    data = builder.create()
+    base = f"/api/theater-editor/{data['draft']['theater_id']}"
+    image = GoogleImportResult(kind="image", title="Captain", suggested_path="references/captain.png", content_bytes=b"image")
+    with patch("api_server.theater_editor.import_google_link", new=AsyncMock(side_effect=[image, ValueError("Unavailable file")])), patch.object(TheaterBuilderStore, "propose") as propose:
+        result = builder.client.post(f"{base}/assistant", json={"prompt": "Use https://drive.google.com/file/d/first_asset_123/view and https://drive.google.com/file/d/second_asset_456/view"})
+    assert result.status_code == 400, result.text
+    assert builder.client.get(f"{base}/file?path=references/captain.png").status_code == 404
+    propose.assert_not_called()
+    builder.database.record_user_usage.assert_not_called()
 
 
 def test_delete_endpoint_validates_and_removes_asset(builder: BuilderHarness) -> None:
