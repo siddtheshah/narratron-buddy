@@ -353,7 +353,7 @@ class TheaterBuilderStore:
             except ValueError:
                 continue
             suffix = item.suffix.lower()
-            kind: Literal["text", "image", "audio"] = "image" if suffix in IMAGE_EXTENSIONS else "audio" if suffix in AUDIO_EXTENSIONS else "text"
+            kind: Literal["text", "image", "audio"] = "image" if suffix in IMAGE_EXTENSIONS or suffix == ".svg" else "audio" if suffix in AUDIO_EXTENSIONS else "text"
             result.append(BuilderFile(path=relative, size=item.stat().st_size, kind=kind))
         return result
 

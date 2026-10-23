@@ -30,7 +30,7 @@
     el('file-save-state').textContent = dirty() ? 'Save your edits to keep them in this draft.' : 'Changes stay in your draft until you deploy.';
   }
   function captureText() {
-    if (selected?.kind === 'text' && textDirty) pendingWrites.set(selected.path, el('file-editor').value);
+    if ((selected?.kind === 'text' || selected?.path.toLowerCase().endsWith('.svg')) && textDirty) pendingWrites.set(selected.path, el('file-editor').value);
     textDirty = false;
   }
   async function api(path, options = {}) {
@@ -116,7 +116,7 @@
         button.dataset.path = file.path;
         button.classList.toggle('active', selected?.path === file.path);
         if (selected?.path === file.path) button.setAttribute('aria-current', 'true');
-        button.textContent = `${file.path.startsWith('stamps/') ? '🏷️' : (file.path.startsWith('references/characters/') ? '👤' : (file.path.startsWith('references/scenes/') ? '🏞️' : (file.kind === 'image' ? '▧' : file.kind === 'audio' ? '♫' : '≡')))} ${file.path.split('/').pop()}`;
+        button.textContent = `${file.path.startsWith('stamps/') ? '🏷️' : (file.path.startsWith('references/characters/') ? '👤' : (file.path.startsWith('references/scenes/') ? '🏞️' : (file.kind === 'image' || file.path.toLowerCase().endsWith('.svg') ? '▧' : file.kind === 'audio' ? '♫' : '≡')))} ${file.path.split('/').pop()}`;
         button.title = file.path; button.addEventListener('click', () => selectFile(file)); parent.append(button);
       }
     }
@@ -178,12 +178,33 @@
     el('empty-preview').hidden = true;
     el('file-editor').hidden = true;
     el('media-preview').hidden = true;
+    const isSvg = file.path.toLowerCase().endsWith('.svg');
+    const toggleSource = el('toggle-source');
+    if (toggleSource) {
+      toggleSource.hidden = !isSvg;
+      toggleSource.textContent = 'Source';
+    }
     const url = `${endpoint('/file')}?path=${encodeURIComponent(file.path)}`;
     el('download-file').href = url; el('download-file').hidden = false;
     const isProtected = file.path === 'theater.yaml';
     el('delete-file').hidden = isProtected;
     el('delete-file').disabled = isProtected || (activeGenerations > 0);
-    if (file.kind === 'text') {
+    if (isSvg) {
+      try {
+        let content = pendingWrites.get(file.path);
+        if (content === undefined) {
+          const res = await fetch(url);
+          if (!res.ok) throw new Error('Could not load this file.');
+          content = await res.text();
+        }
+        if (sequence !== previewSequence) return;
+        el('file-editor').value = content;
+        renderSvgPreview(file, content, url);
+      } catch (error) {
+        if (sequence !== previewSequence) return;
+        renderSvgPreview(file, null, url);
+      }
+    } else if (file.kind === 'text') {
       try {
         let content = pendingWrites.get(file.path);
         if (content === undefined) {
@@ -203,6 +224,20 @@
     }
     updateSaveState();
   }
+  function renderSvgPreview(file, content, url) {
+    const media = document.createElement('img');
+    media.className = 'svg-graphic';
+    media.alt = file.path;
+    const currentContent = content ?? pendingWrites.get(file.path);
+    if (currentContent && typeof currentContent === 'string' && currentContent.trim().startsWith('<')) {
+      media.src = `data:image/svg+xml;utf8,${encodeURIComponent(currentContent)}`;
+    } else {
+      media.src = url;
+    }
+    el('media-preview').replaceChildren(media);
+    el('media-preview').hidden = false;
+    el('file-editor').hidden = true;
+  }
   async function save() {
     captureText();
     if (!dirty()) return;
@@ -215,6 +250,7 @@
     el('selected-path').textContent = 'Explore your theater'; el('empty-preview').hidden = false;
     el('file-editor').hidden = true; el('media-preview').hidden = true; el('download-file').hidden = true;
     el('delete-file').hidden = true;
+    if (el('toggle-source')) el('toggle-source').hidden = true;
     el('media-preview').replaceChildren();
   }
   async function load(identifier) {
@@ -664,6 +700,35 @@
   el('folder-input').addEventListener('change', event => { const files = [...event.target.files]; event.target.value = ''; handleUploadRequest(files, true); });
   el('assets-input').addEventListener('change', event => { const files = [...event.target.files]; event.target.value = ''; handleUploadRequest(files, false); });
   el('file-editor').addEventListener('input', () => { textDirty = true; updateSaveState(); });
+  if (el('toggle-source')) {
+    el('toggle-source').addEventListener('click', async () => {
+      if (!selected || !selected.path.toLowerCase().endsWith('.svg')) return;
+      const viewingSource = !el('file-editor').hidden;
+      if (viewingSource) {
+        captureText();
+        const url = `${endpoint('/file')}?path=${encodeURIComponent(selected.path)}`;
+        renderSvgPreview(selected, el('file-editor').value, url);
+        el('toggle-source').textContent = 'Source';
+      } else {
+        let content = pendingWrites.get(selected.path);
+        if (content === undefined) {
+          const url = `${endpoint('/file')}?path=${encodeURIComponent(selected.path)}`;
+          try {
+            const res = await fetch(url);
+            if (!res.ok) throw new Error('Could not load this file.');
+            content = await res.text();
+          } catch (error) {
+            status(error.message, true);
+            return;
+          }
+        }
+        el('file-editor').value = content;
+        el('file-editor').hidden = false;
+        el('media-preview').hidden = true;
+        el('toggle-source').textContent = 'Preview';
+      }
+    });
+  }
   el('draft-name').addEventListener('input', () => { nameDirty = true; updateSaveState(); });
   el('save-draft').addEventListener('click', () => run(async () => { await save(); status('Draft saved.'); }, 'Saving draft…'));
   el('download-draft').addEventListener('click', () => run(async () => {

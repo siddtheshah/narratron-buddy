@@ -1,5 +1,6 @@
 """Verify folder navigation and editing in the theater builder."""
 
+import re
 import sys
 from collections.abc import Iterator
 from pathlib import Path
@@ -1087,6 +1088,69 @@ def test_upload_png_file_remember_skip_choice_prevents_future_popup(editor_page:
     expect(dialog).not_to_be_visible()
     expect(page.locator("#builder-status")).to_contain_text("Uploaded 1 files.")
     assert page.evaluate("() => window.lastUploadedFilenames") == ["raw2.png"]
+
+
+def test_svg_rendering_and_source_toggle_in_theater_editor(editor_page: Page) -> None:
+    page = editor_page
+    expect(page.locator("#workspace")).to_be_visible()
+
+    # Create an SVG file using the Create a text file dialog
+    page.locator("#new-file").click()
+    page.locator("#new-file-path").fill("game/crest.svg")
+    page.locator('#new-file-dialog button[value="create"]').click()
+
+    # Preload content for crest.svg in mock savedFiles
+    page.evaluate("""() => {
+        window.savedFiles['game/crest.svg'] = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="40" fill="#6366f1"/></svg>';
+    }""")
+
+    # Open the game folder and click the SVG file button in the file list
+    page.locator(".folder-button", has_text="game").click()
+    svg_button = page.locator("#file-list button", has_text="crest.svg")
+    expect(svg_button).to_be_visible()
+    btn_text = svg_button.text_content()
+    assert btn_text is not None and "▧" in btn_text
+    svg_button.click()
+
+    # Verify SVG is rendered in #media-preview
+    expect(page.locator("#media-preview")).to_be_visible()
+    img = page.locator("#media-preview img")
+    expect(img).to_be_visible()
+    expect(img).to_have_attribute("alt", "game/crest.svg")
+    expect(page.locator("#file-editor")).to_be_hidden()
+
+    # Verify toggle-source button is visible and in 'Source' state
+    toggle_btn = page.locator("#toggle-source")
+    expect(toggle_btn).to_be_visible()
+    expect(toggle_btn).to_have_text("Source")
+
+    # Toggle to Source mode
+    toggle_btn.click()
+    expect(page.locator("#file-editor")).to_be_visible()
+    expect(page.locator("#media-preview")).to_be_hidden()
+    expect(toggle_btn).to_have_text("Preview")
+
+    # Enter SVG source code in the editor
+    svg_code = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="40" fill="#6366f1"/></svg>'
+    page.locator("#file-editor").fill(svg_code)
+
+    # Toggle to Preview mode - verify rendered image displays updated SVG
+    toggle_btn.click()
+    expect(page.locator("#media-preview")).to_be_visible()
+    expect(page.locator("#file-editor")).to_be_hidden()
+    expect(toggle_btn).to_have_text("Source")
+    expect(page.locator("#media-preview img")).to_have_attribute("src", re.compile(r"^data:image/svg\+xml"))
+
+    # Toggle back to Source mode - verify edited code remains in textarea
+    toggle_btn.click()
+    expect(page.locator("#file-editor")).to_be_visible()
+    expect(page.locator("#file-editor")).to_have_value(svg_code)
+
+    # Select another file to verify toggle-source hides for non-SVG files
+    page.locator("#file-list button", has_text="theater.yaml").click()
+    expect(toggle_btn).to_be_hidden()
+    expect(page.locator("#file-editor")).to_be_visible()
+
 
 
 
