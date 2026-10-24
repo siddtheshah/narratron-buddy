@@ -622,6 +622,35 @@
             transform: translateX(4px);
         }
 
+        .mic-mode-switch {
+            appearance: none;
+            width: 40px;
+            height: 22px;
+            flex: 0 0 40px;
+            margin: 0;
+            border-radius: 11px;
+            background: #475569;
+            cursor: pointer;
+            position: relative;
+            transition: background 0.2s ease;
+        }
+
+        .mic-mode-switch::before {
+            content: '';
+            position: absolute;
+            top: 3px;
+            left: 3px;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: #fff;
+            transition: transform 0.2s ease;
+        }
+
+        .mic-mode-switch:checked { background: #6366f1; }
+        .mic-mode-switch:checked::before { transform: translateX(18px); }
+        .mic-mode-switch:focus-visible { outline: 2px solid #c7d2fe; outline-offset: 3px; }
+
         .pullout-item-icon {
             font-size: 1.2rem;
             width: 24px;
@@ -3033,7 +3062,7 @@
                     style="background: #10b981; border: none; color: #fff; border-radius: 20px; padding: 6px 14px; font-size: 0.8rem; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 5px; transition: all 0.2s;">
                     🚀 Summon
                 </button>
-                <button id="agent-connect-btn"
+                <button id="agent-connect-btn" type="button" aria-pressed="false"
                     style="background: #3b82f6; border: none; color: #fff; border-radius: 20px; padding: 6px 14px; font-size: 0.8rem; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 5px; transition: all 0.2s;">
                     🎙️ Mic On
                 </button>
@@ -8176,6 +8205,10 @@
         let micStream = null;
         let isRecording = false;
         let isMicAwaiting = false;
+        let micMode = localStorage.getItem('narratron_mic_mode') === 'push-to-talk' ? 'push-to-talk' : 'toggle';
+        let micPressHeld = false;
+        let micPressSource = null;
+        let micRequestId = 0;
         let isAgentStarted = false;
         let agentReconnectTimer = null;
 
@@ -8260,7 +8293,7 @@
                 if (collabSection) collabSection.style.display = 'none';
                 if (hideSuggestionsBtn) hideSuggestionsBtn.style.display = 'none';
 
-                if (isRecording) stopMicStream();
+                if (isRecording || isMicAwaiting || micPressHeld) releaseMicPress();
                 statusIndicator.classList.remove('disconnected');
             }
 
@@ -8815,14 +8848,15 @@
 
         function updateMicToggleUI() {
             if (!agentConnectBtn) return;
-            agentConnectBtn.textContent = isRecording
-                ? '🎙️ Mic Off'
-                : isMicAwaiting
-                    ? '🎙️ Awaiting'
-                    : '🎙️ Mic On';
+            agentConnectBtn.textContent = isMicAwaiting
+                ? '🎙️ Awaiting'
+                : micMode === 'push-to-talk'
+                    ? isRecording ? '🎙️ Talking' : '🎙️ Hold to Talk'
+                    : isRecording ? '🎙️ Mic Off' : '🎙️ Mic On';
             agentConnectBtn.style.background = isRecording ? '#ef4444' : isMicAwaiting ? '#eab308' : '#3b82f6';
-            agentConnectBtn.disabled = isMicAwaiting;
+            agentConnectBtn.disabled = isMicAwaiting && micMode === 'toggle';
             agentConnectBtn.setAttribute('aria-pressed', String(isRecording));
+            agentConnectBtn.title = micMode === 'push-to-talk' ? 'Hold this button or the mic hotkey to speak' : 'Click or press the mic hotkey to toggle the microphone';
         }
 
         function ensureAgentConnectionWhenActive() {
@@ -9003,9 +9037,7 @@
 
         // Disconnect and cleanup
         function cleanupAgentConnection() {
-            if (isRecording) {
-                stopMicStream();
-            }
+            if (isRecording || isMicAwaiting || micPressHeld) releaseMicPress();
             if (window.agentPingInterval) {
                 clearInterval(window.agentPingInterval);
                 window.agentPingInterval = null;
@@ -9028,32 +9060,32 @@
         }
 
         // Start mic recording
-        async function startMicStream() {
-            try {
-                if (!agentWs || agentWs.readyState !== WebSocket.OPEN) {
-                    console.log("Agent WebSocket not open yet; connecting before starting microphone capture.");
-                    await connectAgent();
-                }
-
-                if (!agentWs || agentWs.readyState !== WebSocket.OPEN) {
-                    throw new Error("Agent WebSocket is not ready for audio forwarding.");
-                }
-
-                await refreshMicrophoneDevices(true);
-                const [node, context, stream, started] = await startAudioRecorderWorklet(audioRecorderHandler);
-                if (!started) return;
-                audioRecorderNode = node;
-                audioRecorderContext = context;
-                micStream = stream;
-                isRecording = true;
-                isMicAwaiting = false;
-                updateMicToggleUI();
-            } catch (err) {
-                isMicAwaiting = false;
-                updateMicToggleUI();
-                console.error("Failed to start mic recording:", err);
-                alert("Could not access microphone: " + err.message);
+        async function startMicStream(requestId) {
+            if (requestId !== micRequestId) return;
+            if (!agentWs || agentWs.readyState !== WebSocket.OPEN) {
+                console.log("Agent WebSocket not open yet; connecting before starting microphone capture.");
+                await connectAgent();
             }
+
+            if (requestId !== micRequestId) return;
+            if (!agentWs || agentWs.readyState !== WebSocket.OPEN) {
+                throw new Error("Agent WebSocket is not ready for audio forwarding.");
+            }
+
+            await refreshMicrophoneDevices(true);
+            if (requestId !== micRequestId) return;
+            const [node, context, stream, started] = await startAudioRecorderWorklet(audioRecorderHandler);
+            if (!started) {
+                isMicAwaiting = false;
+                updateMicToggleUI();
+                return;
+            }
+            audioRecorderNode = node;
+            audioRecorderContext = context;
+            micStream = stream;
+            isRecording = true;
+            isMicAwaiting = false;
+            updateMicToggleUI();
         }
 
         // Stop mic recording
@@ -9079,23 +9111,64 @@
 
         // The agent socket follows agent lifecycle and tab focus. Enabling the mic
         // summons an inactive agent first, then only controls audio forwarding.
-        agentConnectBtn.addEventListener('click', async () => {
-            if (isRecording) {
-                stopMicStream();
-            } else {
-                try {
-                    isMicAwaiting = true;
-                    updateMicToggleUI();
-                    if (!isAgentStarted) await startAgentTheater();
-                    await connectAgent();
-                    await startMicStream();
-                } catch (err) {
-                    isMicAwaiting = false;
-                    console.error("Failed to enable microphone audio:", err);
-                    alert(err.message || 'Could not enable microphone audio.');
-                    updateMicToggleUI();
-                }
+        async function enableMic() {
+            if (isRecording || isMicAwaiting) return;
+            const requestId = ++micRequestId;
+            try {
+                isMicAwaiting = true;
+                updateMicToggleUI();
+                if (!isAgentStarted) await startAgentTheater();
+                if (requestId !== micRequestId) return;
+                await connectAgent();
+                if (requestId !== micRequestId) return;
+                await startMicStream(requestId);
+                if (requestId !== micRequestId) return;
+                if (micMode === 'push-to-talk' && !micPressHeld) stopMicStream();
+            } catch (err) {
+                if (requestId !== micRequestId) return;
+                isMicAwaiting = false;
+                console.error("Failed to enable microphone audio:", err);
+                alert(err.message || 'Could not enable microphone audio.');
+                updateMicToggleUI();
             }
+        }
+
+        function releaseMicPress() {
+            micPressHeld = false;
+            micPressSource = null;
+            micRequestId += 1;
+            if (isRecording || isMicAwaiting) stopMicStream();
+        }
+
+        function beginMicPress(source) {
+            if (micMode !== 'push-to-talk' || micPressHeld || !isCurrentOrator()) return;
+            micPressHeld = true;
+            micPressSource = source;
+            enableMic();
+        }
+
+        agentConnectBtn.addEventListener('click', () => {
+            if (micMode === 'push-to-talk') return;
+            if (isRecording) releaseMicPress();
+            else enableMic();
+        });
+        agentConnectBtn.addEventListener('pointerdown', (event) => {
+            if (micMode !== 'push-to-talk' || event.button !== 0) return;
+            event.preventDefault();
+            agentConnectBtn.setPointerCapture(event.pointerId);
+            beginMicPress('pointer');
+        });
+        agentConnectBtn.addEventListener('pointerup', () => {
+            if (micPressSource === 'pointer') releaseMicPress();
+        });
+        agentConnectBtn.addEventListener('pointercancel', () => {
+            if (micPressSource === 'pointer') releaseMicPress();
+        });
+        window.addEventListener('blur', () => {
+            if (micMode === 'push-to-talk' && micPressHeld) releaseMicPress();
+        });
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden && micMode === 'push-to-talk' && micPressHeld) releaseMicPress();
         });
 
         // ========================================
@@ -9123,7 +9196,7 @@
         } catch (e) { }
 
         // ========================================
-        // Configurable Text Input Hotkey Logic
+        // Configurable Text Hotkey Logic
         // ========================================
         const menuItemTextHotkey = document.getElementById('menu-item-text-hotkey');
         let isRebindingTextHotkey = false;
@@ -9205,7 +9278,7 @@
         }
 
         function updateTextHotkeyUI() {
-            const label = `Text Input Hotkey: ${formatHotkeyLabel(currentTextHotkey)}`;
+            const label = `Text Hotkey: ${formatHotkeyLabel(currentTextHotkey)}`;
             const menuTextHotkeyDisplay = document.getElementById('menu-text-hotkey-display');
             if (menuTextHotkeyDisplay) {
                 menuTextHotkeyDisplay.textContent = label;
@@ -9295,6 +9368,11 @@
         // Global Keydown Listener for Hotkey
         window.addEventListener('keydown', (e) => {
             if (!isCurrentOrator()) return;
+            if (micMode === 'push-to-talk' && document.activeElement === agentConnectBtn && ['Space', 'Enter'].includes(e.code)) {
+                e.preventDefault();
+                if (!e.repeat) beginMicPress('button-key');
+                return;
+            }
 
             // Rebinding text hotkey state
             if (isRebindingTextHotkey) {
@@ -9447,9 +9525,21 @@
             if (matchCode && matchAlt && matchCtrl && matchShift) {
                 e.preventDefault();
 
-                if (agentConnectBtn && !agentConnectBtn.disabled) {
-                    agentConnectBtn.click();
-                }
+                if (micMode === 'push-to-talk') beginMicPress('hotkey');
+                else if (agentConnectBtn && !agentConnectBtn.disabled) agentConnectBtn.click();
+            }
+        });
+        window.addEventListener('keyup', (e) => {
+            if (micPressSource === 'button-key' && ['Space', 'Enter'].includes(e.code)) {
+                e.preventDefault();
+                releaseMicPress();
+            } else if (micPressSource === 'hotkey' && (
+                e.code === currentHotkey.code
+                || !!e.altKey !== !!currentHotkey.altKey
+                || !!e.ctrlKey !== !!currentHotkey.ctrlKey
+                || !!e.shiftKey !== !!currentHotkey.shiftKey
+            )) {
+                releaseMicPress();
             }
         });
 
@@ -9835,6 +9925,17 @@
         }
 
         // Microphone device selection
+        const micModeToggle = document.getElementById('menu-mic-mode-toggle');
+        if (micModeToggle) {
+            micModeToggle.checked = micMode === 'push-to-talk';
+            micModeToggle.addEventListener('change', () => {
+                releaseMicPress();
+                micMode = micModeToggle.checked ? 'push-to-talk' : 'toggle';
+                localStorage.setItem('narratron_mic_mode', micMode);
+                updateMicToggleUI();
+            });
+        }
+        updateMicToggleUI();
         const micDeviceSelect = document.getElementById('menu-mic-device-select');
         const micDeviceRefresh = document.getElementById('menu-mic-device-refresh');
         const micDeviceHint = document.getElementById('menu-mic-device-hint');
@@ -10601,6 +10702,8 @@
                                 style="background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 4px; color: #a5b4fc;"
                                 id="howto-mic-hotkey-display">Ctrl+Shift+[</code>)
                             to begin real-time microphone streaming, then click <strong>Mic Off</strong> to stop it.
+                            In Input Configuration, choose <strong>Push to talk</strong> to speak only while holding
+                            the mic button or hotkey.
                         </div>
                     </div>
                 </div>
@@ -10613,8 +10716,9 @@
                             <span class="step-badge mic-badge">🔌 Connect ➔ 🎙️ Disconnect</span>
                         </div>
                         <div class="step-desc">
-                            Speak to the agent in real time while using the bottom toolbar to doodle on canvas. Press
-                            the hotkey again (or click <strong>Disconnect</strong>) to end the session.
+                            Speak to the agent in real time while using the bottom toolbar to doodle on canvas. In
+                            Mic on / off mode, press the hotkey again or click <strong>Mic Off</strong> to stop speaking.
+                            In Push to talk mode, release the button or hotkey.
                         </div>
                     </div>
                 </div>
@@ -10646,7 +10750,7 @@
                             • Use the bottom toolbar to doodle live on canvas.<br>
                             • Press <code id="howto-tip-text-hotkey" style="color:#c7d2fe;">Shift+Space</code> to type a
                             direct command to Narratron without speaking.<br>
-                            • Open ✨ menu ➔ <strong>Input Configuration</strong> to customize your mic toggle and
+                            • Open ✨ menu ➔ <strong>Input Configuration</strong> to choose mic mode and customize your mic and
                             text input shortcuts.
                         </div>
                     </div>
@@ -10919,16 +11023,18 @@
                         <span id="action-wheel-2-binding-label">Action Wheel 2: Left + Right mouse</span>
                     </button>
                 </div>
-                <button id="menu-item-text-hotkey" class="pullout-menu-item"
-                    title="Click to rebind Orator text input hotkey">
-                    <span class="pullout-item-icon">💬</span>
-                    <span id="menu-text-hotkey-display">Text Input Hotkey: Shift + Space</span>
-                </button>
-                <button id="menu-item-hotkey" class="pullout-menu-item"
-                    title="Click to rebind Orator mic toggle hotkey">
-                    <span class="pullout-item-icon">⌨️</span>
-                    <span id="menu-hotkey-display">Mic Hotkey: Ctrl + Shift + [</span>
-                </button>
+                <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px;">
+                    <button id="menu-item-text-hotkey" type="button" class="pullout-menu-item" style="min-width: 0;"
+                        title="Click to rebind Orator text hotkey">
+                        <span class="pullout-item-icon">💬</span>
+                        <span id="menu-text-hotkey-display">Text Hotkey: Shift + Space</span>
+                    </button>
+                    <button id="menu-item-hotkey" type="button" class="pullout-menu-item" style="min-width: 0;"
+                        title="Click to rebind the Orator mic hotkey">
+                        <span class="pullout-item-icon">⌨️</span>
+                        <span id="menu-hotkey-display">Mic Hotkey: Ctrl + Shift + [</span>
+                    </button>
+                </div>
 
                 <div class="pullout-menu-item"
                     style="cursor: default; flex-direction: column; align-items: stretch; gap: 8px;">
@@ -10943,6 +11049,11 @@
                     </select>
                     <span id="menu-mic-device-hint" style="font-size: .7rem; color: #94a3b8;">Choose the microphone to
                         use when connecting.</span>
+                    <label for="menu-mic-mode-toggle"
+                        style="display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; cursor: pointer; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 10px;">
+                        <span>Push to talk <small style="display: block; color: #94a3b8; font-weight: 400;">Hold the mic button or hotkey to speak</small></span>
+                        <input id="menu-mic-mode-toggle" class="mic-mode-switch" type="checkbox" role="switch">
+                    </label>
                 </div>
 
                 <div class="pullout-menu-item"
