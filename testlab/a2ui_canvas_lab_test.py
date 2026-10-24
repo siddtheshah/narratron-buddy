@@ -34,7 +34,7 @@ def test_health_bars_lab_creates_and_validates_surface():
     assert len(result["surfaces"]) == 2
     request = provider.generate.call_args.args[0]
     assert request.response_schema is not None
-    assert request.model == "gemini-3.7-flash"
+    assert request.model == "gemini-3.8-flash"
 
 
 def test_a2ui_canvas_server_accepts_flexible_configuration(monkeypatch):
@@ -66,7 +66,7 @@ def test_a2ui_canvas_server_accepts_flexible_configuration(monkeypatch):
     assert "expected_progress" not in defaults.json()
 
     response = client.post("/api/a2ui-canvas/runs", json={
-        "model": "gemini-3.7-flash",
+        "model": "gemini-3.8-flash",
         "request": "Create a status panel.",
         "expected_surface_count": 1,
         "expected_persistent": False,

@@ -283,7 +283,7 @@ def create_tool_bundle_for_session(
 
     story_planning_text_provider = get_text_response_provider(
         str(story_planning_config.get("text_provider", "gemini-3")),
-        {"model": str(story_planning_config.get("planner_model", "gemini-3.7-flash"))},
+        {"model": str(story_planning_config.get("planner_model", "gemini-3.8-flash"))},
     )
     visuals_config = config.get("visuals", {})
     visuals_config = visuals_config if type(visuals_config) is dict else {}
@@ -408,9 +408,9 @@ def create_tool_bundle_for_session(
             canvas_manager=canvas_manager,
             text_response_provider=get_text_response_provider(
                 str(story_planning_config.get("text_provider", "gemini-3")),
-                {"model": str(story_planning_config.get("planner_model", "gemini-3.7-flash"))},
+                {"model": str(story_planning_config.get("planner_model", "gemini-3.8-flash"))},
             ),
-            model=str(app_interactive_canvas_config.get("model", "gemini-3.7-flash")),
+            model=str(app_interactive_canvas_config.get("model", "gemini-3.8-flash")),
             adventure_mode=adventure_mode,
         )
         tools.extend([

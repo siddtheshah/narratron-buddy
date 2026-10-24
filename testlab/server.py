@@ -433,7 +433,7 @@ def get_a2ui_canvas_run(run_id: str):
 @app.post("/api/story-planner/sessions")
 def create_story_planner_session(body: dict[str, Any]):
     """Create an isolated in-memory planner session for interactive diagnosis."""
-    model = str(body.get("planner_model") or "gemini-3.7-flash").strip()
+    model = str(body.get("planner_model") or "gemini-3.8-flash").strip()
     if not model:
         raise HTTPException(status_code=400, detail="A planner model is required.")
     nodes_ahead = body.get("nodes_ahead", 3)

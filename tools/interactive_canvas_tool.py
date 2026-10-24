@@ -305,7 +305,7 @@ class InteractiveCanvasTools(BaseTools):
         self.text_response_provider = text_response_provider
         # Model selection is application-owned. Theater YAML controls behavior
         # and enablement, and any theater-level model value is ignored.
-        self.model = str(model or "gemini-3.7-flash")
+        self.model = str(model or "gemini-3.8-flash")
         self.catalog = CANVAS_CATALOG
         self.response_schema = CANVAS_DRAFT_SCHEMA
         self.max_surfaces = max(1, min(MAX_SURFACES, int(self.config.get("max_surfaces", 5))))

@@ -24,7 +24,7 @@ from testlab.server import app  # noqa: E402
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Smoke-test a real Story Planner ADK turn.")
-    parser.add_argument("--model", default="gemini-3.7-flash")
+    parser.add_argument("--model", default="gemini-3.8-flash")
     parser.add_argument("--nodes", type=int, default=3, choices=range(1, 9))
     parser.add_argument("--timeout", type=float, default=45.0)
     args = parser.parse_args()

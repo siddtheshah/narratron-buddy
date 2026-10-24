@@ -394,7 +394,7 @@ class StoryResponseModule:
         self.responder_model: str = str(
             self.config.get("responder_model")
             or self.config.get("model")
-            or "gemini-3.7-flash"
+            or "gemini-3.8-flash"
         )
         if "thinking_budget" in self.config:
             raw_budget = self.config.get("thinking_budget")

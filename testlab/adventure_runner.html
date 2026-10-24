@@ -1,5 +1,6 @@
 <!doctype html>
 <html lang="en">
+
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -24,13 +25,18 @@
       --pink: #f472b6;
     }
 
-    * { box-sizing: border-box; }
-    html, body {
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
       height: 100%;
       margin: 0;
       padding: 0;
       overflow: hidden;
     }
+
     body {
       font: 15px/1.5 Inter, system-ui, -apple-system, sans-serif;
       background: var(--bg);
@@ -44,13 +50,16 @@
       width: 7px;
       height: 7px;
     }
+
     ::-webkit-scrollbar-track {
       background: rgba(4, 7, 18, 0.4);
     }
+
     ::-webkit-scrollbar-thumb {
       background: var(--border);
       border-radius: 4px;
     }
+
     ::-webkit-scrollbar-thumb:hover {
       background: var(--border-light);
     }
@@ -151,7 +160,10 @@
       color: var(--muted);
     }
 
-    select, input, textarea, button {
+    select,
+    input,
+    textarea,
+    button {
       font: inherit;
       border-radius: 0.5rem;
       border: 1px solid var(--border);
@@ -162,7 +174,9 @@
       transition: border-color 0.15s;
     }
 
-    select:focus, input:focus, textarea:focus {
+    select:focus,
+    input:focus,
+    textarea:focus {
       border-color: var(--accent);
       box-shadow: 0 0 0 2px var(--accent-glow);
     }
@@ -211,20 +225,26 @@
     }
 
     @media (max-width: 1024px) {
-      html, body {
+
+      html,
+      body {
         overflow: auto;
         height: auto;
       }
+
       .workspace {
         grid-template-columns: 1fr;
         height: auto;
         min-height: auto;
         overflow: visible;
       }
-      .chat-pane, .inspector-pane {
+
+      .chat-pane,
+      .inspector-pane {
         height: auto;
         overflow: visible;
       }
+
       .chat-stream {
         max-height: 65vh;
       }
@@ -262,8 +282,15 @@
     }
 
     @keyframes fadeIn {
-      from { opacity: 0; transform: translateY(4px); }
-      to { opacity: 1; transform: translateY(0); }
+      from {
+        opacity: 0;
+        transform: translateY(4px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
     }
 
     .message-card.user {
@@ -338,11 +365,30 @@
       transform: translateY(-1px);
     }
 
-    .tool-chip.planner { border-color: rgba(56, 189, 248, 0.4); color: var(--cyan); }
-    .tool-chip.image { border-color: rgba(244, 114, 182, 0.4); color: var(--pink); }
-    .tool-chip.music { border-color: rgba(74, 222, 128, 0.4); color: var(--success); }
-    .tool-chip.canvas { border-color: rgba(250, 204, 21, 0.4); color: var(--warning); }
-    .tool-chip.lore { border-color: rgba(192, 132, 252, 0.45); color: #c084fc; }
+    .tool-chip.planner {
+      border-color: rgba(56, 189, 248, 0.4);
+      color: var(--cyan);
+    }
+
+    .tool-chip.image {
+      border-color: rgba(244, 114, 182, 0.4);
+      color: var(--pink);
+    }
+
+    .tool-chip.music {
+      border-color: rgba(74, 222, 128, 0.4);
+      color: var(--success);
+    }
+
+    .tool-chip.canvas {
+      border-color: rgba(250, 204, 21, 0.4);
+      color: var(--warning);
+    }
+
+    .tool-chip.lore {
+      border-color: rgba(192, 132, 252, 0.45);
+      color: #c084fc;
+    }
 
     .tool-chip.active {
       border-color: var(--accent);
@@ -350,26 +396,31 @@
       color: #ffffff;
       box-shadow: 0 0 0 1px var(--accent), 0 2px 8px rgba(155, 135, 245, 0.35);
     }
+
     .tool-chip.planner.active {
       border-color: var(--cyan);
       background: rgba(56, 189, 248, 0.2);
       box-shadow: 0 0 0 1px var(--cyan), 0 2px 8px rgba(56, 189, 248, 0.35);
     }
+
     .tool-chip.image.active {
       border-color: var(--pink);
       background: rgba(244, 114, 182, 0.2);
       box-shadow: 0 0 0 1px var(--pink), 0 2px 8px rgba(244, 114, 182, 0.35);
     }
+
     .tool-chip.music.active {
       border-color: var(--success);
       background: rgba(74, 222, 128, 0.2);
       box-shadow: 0 0 0 1px var(--success), 0 2px 8px rgba(74, 222, 128, 0.35);
     }
+
     .tool-chip.canvas.active {
       border-color: var(--warning);
       background: rgba(250, 204, 21, 0.2);
       box-shadow: 0 0 0 1px var(--warning), 0 2px 8px rgba(250, 204, 21, 0.35);
     }
+
     .tool-chip.lore.active {
       border-color: #c084fc;
       background: rgba(192, 132, 252, 0.2);
@@ -530,11 +581,27 @@
       border-radius: 0.35rem;
     }
 
-    .json-key { color: #93c5fd; font-weight: 600; }
-    .json-string { color: #86efac; }
-    .json-number { color: #fde047; }
-    .json-boolean { color: #f472b6; }
-    .json-null { color: #94a3b8; font-style: italic; }
+    .json-key {
+      color: #93c5fd;
+      font-weight: 600;
+    }
+
+    .json-string {
+      color: #86efac;
+    }
+
+    .json-number {
+      color: #fde047;
+    }
+
+    .json-boolean {
+      color: #f472b6;
+    }
+
+    .json-null {
+      color: #94a3b8;
+      font-style: italic;
+    }
 
     /* Lore items & badges */
     .lore-list {
@@ -583,11 +650,35 @@
       flex-shrink: 0;
     }
 
-    .lore-tag.preloaded { background: rgba(56, 189, 248, 0.15); color: var(--cyan); border: 1px solid rgba(56, 189, 248, 0.3); }
-    .lore-tag.read { background: rgba(192, 132, 252, 0.15); color: #c084fc; border: 1px solid rgba(192, 132, 252, 0.3); }
-    .lore-tag.search { background: rgba(250, 204, 21, 0.15); color: var(--warning); border: 1px solid rgba(250, 204, 21, 0.3); }
-    .lore-tag.available { background: rgba(170, 180, 204, 0.15); color: var(--muted); border: 1px solid var(--border); }
-    .lore-tag.browsed { background: rgba(74, 222, 128, 0.15); color: var(--success); border: 1px solid rgba(74, 222, 128, 0.3); }
+    .lore-tag.preloaded {
+      background: rgba(56, 189, 248, 0.15);
+      color: var(--cyan);
+      border: 1px solid rgba(56, 189, 248, 0.3);
+    }
+
+    .lore-tag.read {
+      background: rgba(192, 132, 252, 0.15);
+      color: #c084fc;
+      border: 1px solid rgba(192, 132, 252, 0.3);
+    }
+
+    .lore-tag.search {
+      background: rgba(250, 204, 21, 0.15);
+      color: var(--warning);
+      border: 1px solid rgba(250, 204, 21, 0.3);
+    }
+
+    .lore-tag.available {
+      background: rgba(170, 180, 204, 0.15);
+      color: var(--muted);
+      border: 1px solid var(--border);
+    }
+
+    .lore-tag.browsed {
+      background: rgba(74, 222, 128, 0.15);
+      color: var(--success);
+      border: 1px solid rgba(74, 222, 128, 0.3);
+    }
 
     .lore-doc-name {
       font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
@@ -607,7 +698,10 @@
     /* Modal for Lore Preview */
     .modal-backdrop {
       position: fixed;
-      top: 0; left: 0; right: 0; bottom: 0;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
       background: rgba(4, 7, 18, 0.8);
       backdrop-filter: blur(8px);
       z-index: 200;
@@ -812,7 +906,8 @@
       border-radius: 0.5rem;
     }
 
-    .sticky-list, .char-list {
+    .sticky-list,
+    .char-list {
       display: flex;
       flex-direction: column;
       gap: 0.5rem;
@@ -937,6 +1032,7 @@
     }
   </style>
 </head>
+
 <body>
   <header>
     <div class="brand">
@@ -960,18 +1056,18 @@
     <div class="field">
       <label for="agent-model">Agent Model</label>
       <select id="agent-model">
-        <option value="gemini-3.7-flash" selected>gemini-3.7-flash</option>
+        <option value="gemini-3.8-flash" selected>gemini-3.8-flash</option>
         <option value="gemini-3.5-flash-lite">gemini-3.5-flash-lite</option>
-        <option value="gemini-3.6-flash">gemini-3.6-flash</option>
+        <option value="gemini-3.8-flash">gemini-3.8-flash</option>
       </select>
     </div>
 
     <div class="field">
       <label for="planner-model">Story Planner Model</label>
       <select id="planner-model">
-        <option value="gemini-3.7-flash" selected>gemini-3.7-flash</option>
+        <option value="gemini-3.8-flash" selected>gemini-3.8-flash</option>
         <option value="gemini-3.5-flash-lite">gemini-3.5-flash-lite</option>
-        <option value="gemini-3.6-flash">gemini-3.6-flash</option>
+        <option value="gemini-3.8-flash">gemini-3.8-flash</option>
       </select>
     </div>
 
@@ -997,14 +1093,19 @@
 
       <div class="input-bar">
         <div class="quick-actions" id="quick-actions" style="display: none;">
-          <span class="quick-pill" onclick="setQuickAction('I look around the room and inspect the surroundings.')">Inspect Area</span>
-          <span class="quick-pill" onclick="setQuickAction('I introduce myself and ask what is happening here.')">Talk to NPC</span>
-          <span class="quick-pill" onclick="setQuickAction('I activate my active Groove and prepare my rig.')">Power Up Groove</span>
-          <span class="quick-pill" onclick="setQuickAction('I roll to see if I can hack the transducer console.')">Hack Console</span>
+          <span class="quick-pill"
+            onclick="setQuickAction('I look around the room and inspect the surroundings.')">Inspect Area</span>
+          <span class="quick-pill" onclick="setQuickAction('I introduce myself and ask what is happening here.')">Talk
+            to NPC</span>
+          <span class="quick-pill" onclick="setQuickAction('I activate my active Groove and prepare my rig.')">Power Up
+            Groove</span>
+          <span class="quick-pill" onclick="setQuickAction('I roll to see if I can hack the transducer console.')">Hack
+            Console</span>
         </div>
 
         <div class="input-row">
-          <textarea id="user-input" placeholder="Type your action, speech, or choice to advance the story…" disabled></textarea>
+          <textarea id="user-input" placeholder="Type your action, speech, or choice to advance the story…"
+            disabled></textarea>
           <button id="btn-send" class="primary" disabled style="height: 58px; padding: 0 1.5rem;">Send</button>
         </div>
       </div>
@@ -1016,8 +1117,10 @@
         <button class="tab-btn active" onclick="switchTab('tab-narrative', this)">Narrative State</button>
         <button class="tab-btn" onclick="switchTab('tab-canvas', this)">Mock Canvas</button>
         <button class="tab-btn" onclick="switchTab('tab-game', this)">Game</button>
-        <button class="tab-btn" onclick="switchTab('tab-lore', this)">Lore Docs (<span id="lore-count">0</span>)</button>
-        <button class="tab-btn" onclick="switchTab('tab-logs', this)">Tool Activity (<span id="log-count">0</span>)</button>
+        <button class="tab-btn" onclick="switchTab('tab-lore', this)">Lore Docs (<span
+            id="lore-count">0</span>)</button>
+        <button class="tab-btn" onclick="switchTab('tab-logs', this)">Tool Activity (<span
+            id="log-count">0</span>)</button>
       </div>
 
       <!-- Tab: Narrative State -->
@@ -1092,7 +1195,8 @@
             <span class="badge-count" id="lore-total-count">0</span>
           </div>
           <div style="font-size: 0.76rem; color: var(--muted); margin-bottom: 0.5rem; line-height: 1.4;">
-            Inspect any lore document in the active adventure. Highlighted tags show documents browsed or searched by the Story Planner during this session.
+            Inspect any lore document in the active adventure. Highlighted tags show documents browsed or searched by
+            the Story Planner during this session.
           </div>
           <div id="lore-docs-list" class="lore-list">
             <div class="empty-state">No lore documents loaded.</div>
@@ -1130,9 +1234,19 @@
   </div>
 
   <style>
-    #game-preview .game-panel { position: relative; transform: none; left: auto !important;
-      top: auto !important; width: 100%; max-height: none; margin-top: 16px; }
-    #game-preview .game-panel-controls { display: none; }
+    #game-preview .game-panel {
+      position: relative;
+      transform: none;
+      left: auto !important;
+      top: auto !important;
+      width: 100%;
+      max-height: none;
+      margin-top: 16px;
+    }
+
+    #game-preview .game-panel-controls {
+      display: none;
+    }
   </style>
   <script>
     let currentSessionId = null;
@@ -1474,8 +1588,8 @@
 
       const resultHtml = (tc.result !== undefined && tc.result !== null)
         ? (typeof tc.result === 'object'
-            ? `<pre class="tool-json-box"><code>${formatJsonHtml(tc.result)}</code></pre>`
-            : `<pre class="tool-json-box"><code>${escapeHtml(String(tc.result))}</code></pre>`)
+          ? `<pre class="tool-json-box"><code>${formatJsonHtml(tc.result)}</code></pre>`
+          : `<pre class="tool-json-box"><code>${escapeHtml(String(tc.result))}</code></pre>`)
         : '<div class="tool-json-empty">No return value recorded</div>';
 
       // If this is process_user_action, check if lore was browsed
@@ -1670,7 +1784,7 @@
           btn.innerHTML = orig;
           btn.classList.remove('copied');
         }, 1500);
-      }).catch(() => {});
+      }).catch(() => { });
     }
 
     function renderLoreTab(documents = []) {
@@ -1725,7 +1839,7 @@
           btn.innerHTML = orig;
           btn.classList.remove('copied');
         }, 1500);
-      }).catch(() => {});
+      }).catch(() => { });
     }
 
     function copyToolResult(turnId, toolIdx, btn) {
@@ -1740,7 +1854,7 @@
           btn.innerHTML = orig;
           btn.classList.remove('copied');
         }, 1500);
-      }).catch(() => {});
+      }).catch(() => { });
     }
 
     function formatJsonHtml(obj) {
@@ -1879,7 +1993,7 @@
         } else {
           logContainer.innerHTML = '<div class="empty-state">No tool activity logged yet.</div>';
         }
-      } catch (err) {}
+      } catch (err) { }
     }
 
     function escapeHtml(str) {
@@ -1891,4 +2005,5 @@
     loadAdventures();
   </script>
 </body>
+
 </html>

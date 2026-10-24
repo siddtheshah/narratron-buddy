@@ -1,33 +1,173 @@
 <!doctype html>
 <html lang="en">
+
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Story Planner Lab · Narratron</title>
   <style>
-    :root { color-scheme: dark; --panel: #151b2e; --border: #303c60; --accent: #9b87f5; --muted: #aab4cc; }
-    * { box-sizing: border-box; } body { margin: 0; font: 16px/1.45 Inter, system-ui, sans-serif; background: #0b1020; color: #f4f5fb; }
-    main { max-width: 1200px; margin: auto; padding: 2rem; } h1 { margin: 0; } .lede, label { color: var(--muted); }
-    .controls { display: flex; gap: .75rem; align-items: end; flex-wrap: wrap; margin: 1.5rem 0; }
-    .action-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1.5rem 0 .75rem; }
-    .action-grid label { width: 100%; display: grid; gap: .35rem; font-size: .85rem; }
-    .action-grid textarea { width: 100%; min-height: 85px; }
-    .action-bar { display: flex; justify-content: flex-end; margin-bottom: 1.5rem; }
-    label { display: grid; gap: .35rem; font-size: .85rem; } input, textarea, button { font: inherit; border-radius: .5rem; border: 1px solid var(--border); }
-    input, textarea { background: #090d1a; color: inherit; padding: .65rem; }
-    button { background: var(--accent); color: #160f38; font-weight: 750; padding: .65rem 1rem; cursor: pointer; } button:disabled { opacity: .5; cursor: wait; }
-    #ack { min-height: 1.5rem; color: #d6ceff; margin-bottom: 1rem; } .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
-    section { background: var(--panel); border: 1px solid var(--border); border-radius: .75rem; padding: 1rem; min-width: 0; }
-    section.wide { grid-column: 1 / -1; } h2 { margin: 0 0 .7rem; font-size: 1rem; } pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; color: #dce5ff; }
-    .empty { color: var(--muted); font-style: italic; } @media (max-width: 700px) { main { padding: 1rem; } .grid, .action-grid { grid-template-columns: 1fr; } }
+    :root {
+      color-scheme: dark;
+      --panel: #151b2e;
+      --border: #303c60;
+      --accent: #9b87f5;
+      --muted: #aab4cc;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font: 16px/1.45 Inter, system-ui, sans-serif;
+      background: #0b1020;
+      color: #f4f5fb;
+    }
+
+    main {
+      max-width: 1200px;
+      margin: auto;
+      padding: 2rem;
+    }
+
+    h1 {
+      margin: 0;
+    }
+
+    .lede,
+    label {
+      color: var(--muted);
+    }
+
+    .controls {
+      display: flex;
+      gap: .75rem;
+      align-items: end;
+      flex-wrap: wrap;
+      margin: 1.5rem 0;
+    }
+
+    .action-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+      margin: 1.5rem 0 .75rem;
+    }
+
+    .action-grid label {
+      width: 100%;
+      display: grid;
+      gap: .35rem;
+      font-size: .85rem;
+    }
+
+    .action-grid textarea {
+      width: 100%;
+      min-height: 85px;
+    }
+
+    .action-bar {
+      display: flex;
+      justify-content: flex-end;
+      margin-bottom: 1.5rem;
+    }
+
+    label {
+      display: grid;
+      gap: .35rem;
+      font-size: .85rem;
+    }
+
+    input,
+    textarea,
+    button {
+      font: inherit;
+      border-radius: .5rem;
+      border: 1px solid var(--border);
+    }
+
+    input,
+    textarea {
+      background: #090d1a;
+      color: inherit;
+      padding: .65rem;
+    }
+
+    button {
+      background: var(--accent);
+      color: #160f38;
+      font-weight: 750;
+      padding: .65rem 1rem;
+      cursor: pointer;
+    }
+
+    button:disabled {
+      opacity: .5;
+      cursor: wait;
+    }
+
+    #ack {
+      min-height: 1.5rem;
+      color: #d6ceff;
+      margin-bottom: 1rem;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 1rem;
+    }
+
+    section {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: .75rem;
+      padding: 1rem;
+      min-width: 0;
+    }
+
+    section.wide {
+      grid-column: 1 / -1;
+    }
+
+    h2 {
+      margin: 0 0 .7rem;
+      font-size: 1rem;
+    }
+
+    pre {
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      margin: 0;
+      color: #dce5ff;
+    }
+
+    .empty {
+      color: var(--muted);
+      font-style: italic;
+    }
+
+    @media (max-width: 700px) {
+      main {
+        padding: 1rem;
+      }
+
+      .grid,
+      .action-grid {
+        grid-template-columns: 1fr;
+      }
+    }
   </style>
 </head>
+
 <body>
   <main>
     <h1>Story Planner Lab</h1>
-    <p class="lede">Exercise the nonblocking planner bridge. Each action returns immediately; the final reaction arrives through the simulated live-agent callback queue.</p>
+    <p class="lede">Exercise the nonblocking planner bridge. Each action returns immediately; the final reaction arrives
+      through the simulated live-agent callback queue.</p>
     <div class="controls">
-      <label>Planner model<input id="model" value="gemini-3.7-flash"></label>
+      <label>Planner model<input id="model" value="gemini-3.8-flash"></label>
       <label>Nodes ahead<input id="nodes" type="number" min="1" max="8" value="3"></label>
       <button id="new-session">New isolated session</button>
     </div>
@@ -36,7 +176,8 @@
         <textarea id="action" placeholder="The player/orator's action or speech…" disabled></textarea>
       </label>
       <label>Live agent nudge (optional)
-        <textarea id="nudge" placeholder="Creative suggestion or event for the planner to accommodate…" disabled></textarea>
+        <textarea id="nudge" placeholder="Creative suggestion or event for the planner to accommodate…"
+          disabled></textarea>
       </label>
     </div>
     <div class="action-bar">
@@ -44,9 +185,18 @@
     </div>
     <div id="ack" aria-live="polite">Create a session to begin.</div>
     <div class="grid">
-      <section><h2>Characters</h2><pre id="characters" class="empty">—</pre></section>
-      <section><h2>Notepad / Sticky notes</h2><pre id="notepad" class="empty">—</pre></section>
-      <section class="wide"><h2>Callback queue / final scene reactions</h2><pre id="events" class="empty">No completed planner turns yet.</pre></section>
+      <section>
+        <h2>Characters</h2>
+        <pre id="characters" class="empty">—</pre>
+      </section>
+      <section>
+        <h2>Notepad / Sticky notes</h2>
+        <pre id="notepad" class="empty">—</pre>
+      </section>
+      <section class="wide">
+        <h2>Callback queue / final scene reactions</h2>
+        <pre id="events" class="empty">No completed planner turns yet.</pre>
+      </section>
     </div>
   </main>
   <script>
@@ -70,7 +220,7 @@
     $('new-session').onclick = async () => {
       $('new-session').disabled = true;
       try {
-        const response = await fetch('/api/story-planner/sessions', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({planner_model: $('model').value, nodes_ahead: Number($('nodes').value)}) });
+        const response = await fetch('/api/story-planner/sessions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ planner_model: $('model').value, nodes_ahead: Number($('nodes').value) }) });
         const payload = await response.json(); if (!response.ok) throw new Error(payload.detail || 'Could not create session.');
         sessionId = payload.id; lastEventCount = 0; render(payload);
         $('action').disabled = $('nudge').disabled = $('submit').disabled = false;
@@ -86,8 +236,8 @@
       try {
         const response = await fetch(`/api/story-planner/sessions/${sessionId}/actions`, {
           method: 'POST',
-          headers: {'Content-Type':'application/json'},
-          body: JSON.stringify({action, nudge}),
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action, nudge }),
         });
         const payload = await response.json();
         if (!response.ok) throw new Error(payload.detail || 'Could not submit action.');
@@ -103,4 +253,5 @@
     };
   </script>
 </body>
+
 </html>

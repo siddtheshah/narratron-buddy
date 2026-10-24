@@ -654,7 +654,7 @@ class TestCreateAgent(unittest.TestCase):
                 "story_planning": {
                     "adventure_mode": True,
                     "text_provider": "gemini-3",
-                    "planner_model": "gemini-3.7-flash",
+                    "planner_model": "gemini-3.8-flash",
                 },
                 "animation": {"enabled": True},
             },

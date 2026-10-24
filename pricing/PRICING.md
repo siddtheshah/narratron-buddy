@@ -27,7 +27,7 @@
 | **2) Images Generated** | **Gemini Image / Imagen 3 Fast** (`gemini-3.1-flash-lite-image`) | ~$0.020 – $0.030 / image | $0.05 / image | **1.0 Credit per image** <br>*(0.5 Cr for standard draft, 1.0 Cr for HD/ref)* |
 | **3) Music Generated** | **Lyria Music API** (`gemini-2.5-flash-lyria`) | ~$0.030 – $0.050 / track | $0.10 / track | **2.0 Credits per music track** |
 | **4) Animations** | **Animation tool providers** | Varies by technique | $0.325 / animation | **6.5 Credits per successful animation** |
-| **5) Adventure Mode / Story Planning** | **Gemini 3.7 Flash API** (`gemini-3.7-flash`) <br>*(4k tokens/call, ~5 calls/min = 20k tokens/min)* | ~$0.0006 – $0.0012 / action <br>*(~$0.003 – $0.006 / min)* | $0.025 / action <br>*(~$0.125 / min at 5 calls/min)* | **0.5 Credits per action / plan turn** <br>*(~2.5 Cr / min at 5 calls/min)* |
+| **5) Adventure Mode / Story Planning** | **Gemini 3.7 Flash API** (`gemini-3.8-flash`) <br>*(4k tokens/call, ~5 calls/min = 20k tokens/min)* | ~$0.0006 – $0.0012 / action <br>*(~$0.003 – $0.006 / min)* | $0.025 / action <br>*(~$0.125 / min at 5 calls/min)* | **0.5 Credits per action / plan turn** <br>*(~2.5 Cr / min at 5 calls/min)* |
 | **6) Storage Used** | **Google Cloud Storage (GCS) / S3** *(Persistent assets, audio, snapshots)* | ~$0.023 / GB / month <br>*(~$0.00077 / GB / day)* | $0.05 / GB / month | **1.0 Credit per GB per month** <br>*(or ~0.033 Credits / GB / day)* |
 
 ---
@@ -80,7 +80,7 @@ This code change does not apply migrations to a live database or deploy the app.
 
 ### 4. Adventure Mode / Story Planning (Gemini 3.7 Flash API)
 * **Usage Pattern & Parameters:**
-  * Model: `gemini-3.7-flash`
+  * Model: `gemini-3.8-flash`
   * Token Consumption: ~4,000 tokens per user action call (~4k tokens/call).
   * Call Frequency: ~5 calls per minute (300 calls per hour, or ~20,000 tokens per minute).
 * **Raw API Pricing:**

@@ -135,7 +135,7 @@ def test_text_response_provider_registry(monkeypatch):
     assert provider.id == "gemini-2-5"
 
     provider_3 = get_text_response_provider("gemini-3")
-    assert provider_3.model == "gemini-3.6-flash"
+    assert provider_3.model == "gemini-3.8-flash"
     assert provider_3.id == "gemini-3"
 
 
@@ -193,20 +193,20 @@ def test_gemini_text_provider_supports_catalog_json_schema_attachments_and_model
 
     result = provider.generate(TextResponseRequest(
         prompt="Describe this image",
-        model="gemini-3.7-flash",
+        model="gemini-3.8-flash",
         response_json_schema=schema,
         attachments=(TextResponseAttachment(data=b"image-bytes", mime_type="image/png"),),
     ))
 
     kwargs = client.models.last_kwargs
-    assert kwargs["model"] == "gemini-3.7-flash"
+    assert kwargs["model"] == "gemini-3.8-flash"
     assert kwargs["contents"][0] == "Describe this image"
     assert kwargs["contents"][1].inline_data.mime_type == "image/png"
     assert kwargs["contents"][1].inline_data.data == b"image-bytes"
     config = kwargs["config"]
     assert config.response_json_schema == schema
     assert config.response_schema is None
-    assert result.model == "gemini-3.7-flash"
+    assert result.model == "gemini-3.8-flash"
     assert result.parsed == {"answer": "look at the image"}
 
 

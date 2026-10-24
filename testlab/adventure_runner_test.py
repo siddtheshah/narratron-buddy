@@ -760,9 +760,9 @@ def test_autoplay_logger_incremental_markdown_and_summary(tmp_path):
         adventure_title="Test Adventure",
         session_id="test_session_123",
         instructions="Be zany and try to break the game",
-        agent_model="gemini-3.7-flash",
-        planner_model="gemini-3.7-flash",
-        autoplay_model="gemini-3.7-flash",
+        agent_model="gemini-3.8-flash",
+        planner_model="gemini-3.8-flash",
+        autoplay_model="gemini-3.8-flash",
         max_turns=2,
         log_path=log_file,
     )

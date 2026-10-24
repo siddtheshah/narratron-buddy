@@ -27,7 +27,7 @@ class TestReferenceTool(unittest.TestCase):
             "story_planning": {
                 "adventure_mode": False,
                 "text_provider": "gemini-3",
-                "planner_model": "gemini-3.7-flash",
+                "planner_model": "gemini-3.8-flash",
             },
             "visuals": {
                 "model": "hybrid-flux-gemini",

@@ -315,7 +315,7 @@ class StoryPlanningModule:
         self.deep_planning_enabled: bool = bool(
             self.deep_planning_config.get("enabled", self.adventure_mode)
         )
-        self.planner_model: str = str(self.config.get("planner_model") or "gemini-3.7-flash")
+        self.planner_model: str = str(self.config.get("planner_model") or "gemini-3.8-flash")
         self.deep_planner_model: str = str(
             self.deep_planning_config.get("model")
             or self.config.get("deep_planner_model")

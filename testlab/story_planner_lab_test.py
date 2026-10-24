@@ -34,7 +34,7 @@ def test_story_planner_lab_routes_create_isolated_session() -> None:
 
     created = client.post(
         "/api/story-planner/sessions",
-        json={"planner_model": "gemini-3.7-flash", "nodes_ahead": 2},
+        json={"planner_model": "gemini-3.8-flash", "nodes_ahead": 2},
     )
     assert created.status_code == 200
     payload = created.json()
@@ -53,7 +53,7 @@ def test_story_planner_lab_submits_action_and_records_event() -> None:
     client = TestClient(app)
     created = client.post(
         "/api/story-planner/sessions",
-        json={"planner_model": "gemini-3.7-flash", "nodes_ahead": 2},
+        json={"planner_model": "gemini-3.8-flash", "nodes_ahead": 2},
     )
     assert created.status_code == 200
     session_id = created.json()["id"]

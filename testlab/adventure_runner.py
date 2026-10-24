@@ -488,7 +488,7 @@ class AdventureSession:
         planner_model_name = str(
             sp_config.get("responder_model")
             or sp_config.get("model")
-            or "gemini-3.7-flash"
+            or "gemini-3.8-flash"
         )
         story_planning_text_provider = get_text_response_provider(
             str(sp_config.get("text_provider", "gemini-3")),
@@ -732,7 +732,7 @@ class AdventureSession:
         model_id = (
             self.config.get("live_agent", {}).get("model_id")
             or app_internal.get("model_id")
-            or app_internal.get("model", "gemini-3.7-flash")
+            or app_internal.get("model", "gemini-3.8-flash")
         )
 
         vertex_project = (
@@ -1003,7 +1003,7 @@ class AutoPlayer:
         adventure_title: str = "",
         adventure_description: str = "",
         instructions: str = "",
-        model: str = "gemini-3.7-flash",
+        model: str = "gemini-3.8-flash",
         provider_id: str = "gemini-3",
         text_provider: TextResponseProvider | None = None,
         include_stickies: bool = False,
@@ -1437,7 +1437,7 @@ def run_autoplay(
     session: AdventureSession,
     instructions: str = "",
     max_turns: int = 10,
-    autoplay_model: str = "gemini-3.7-flash",
+    autoplay_model: str = "gemini-3.8-flash",
     log_path: Optional[str | Path] = None,
     delay: float = 0.0,
     player: Optional[AutoPlayer] = None,
@@ -1466,12 +1466,12 @@ def run_autoplay(
         )
 
     agent_model_name = str(
-        session.agent_model_override or session.config.get("live_agent", {}).get("model_id") or "gemini-3.7-flash"
+        session.agent_model_override or session.config.get("live_agent", {}).get("model_id") or "gemini-3.8-flash"
     )
     planner_model_name = str(
         session.planner_model_override
         or session.config.get("story_planning", {}).get("planner_model")
-        or "gemini-3.7-flash"
+        or "gemini-3.8-flash"
     )
 
     logger_inst = AutoplayLogger(
@@ -1596,8 +1596,8 @@ def run_autoplay(
 def main() -> int:
     parser = argparse.ArgumentParser(description="Local Adventure Runner for narrative consistency testing.")
     parser.add_argument("--adventure", default="example_adventure", help="Adventure folder name or path.")
-    parser.add_argument("--agent-model", default="gemini-3.7-flash", help="Model ID for text agent.")
-    parser.add_argument("--planner-model", default="gemini-3.7-flash", help="Model ID for story planner.")
+    parser.add_argument("--agent-model", default="gemini-3.8-flash", help="Model ID for text agent.")
+    parser.add_argument("--planner-model", default="gemini-3.8-flash", help="Model ID for story planner.")
     parser.add_argument("--nodes", type=int, default=3, help="Nodes ahead buffer.")
     parser.add_argument("--smoke", action="store_true", help="Run a single automated smoke action and exit.")
     parser.add_argument("--action", default="", help="Optional single action to execute.")
@@ -1625,8 +1625,8 @@ def main() -> int:
         "--autoplay-model",
         "--autoplay_model",
         dest="autoplay_model",
-        default="gemini-3.7-flash",
-        help="Model ID for the autoplay player agent (default: gemini-3.7-flash).",
+        default="gemini-3.8-flash",
+        help="Model ID for the autoplay player agent (default: gemini-3.8-flash).",
     )
     parser.add_argument(
         "--autoplay-log",

@@ -27,7 +27,7 @@ class A2UICanvasTestConfig:
 
     name: str = "a2ui-canvas-test"
     request: str = DEFAULT_CANVAS_REQUEST
-    model: str = "gemini-3.7-flash"
+    model: str = "gemini-3.8-flash"
     image_path: Path | None = None
     expected_surface_count: int = 1
     expected_persistent: bool | None = None
@@ -56,7 +56,7 @@ def health_bars_smoke_config(**overrides: Any) -> A2UICanvasTestConfig:
 def build_canvas_tool(
     provider: TextResponseProvider,
     *,
-    model: str = "gemini-3.7-flash",
+    model: str = "gemini-3.8-flash",
     theater_root: Path,
     image_path: Path | None = None,
 ) -> tuple[InteractiveCanvasTools, CanvasStateService, str]:
@@ -133,7 +133,7 @@ def run_canvas_test(
 def run_health_bars_smoke(
     provider: TextResponseProvider,
     *,
-    model: str = "gemini-3.7-flash",
+    model: str = "gemini-3.8-flash",
     image_path: Path | None = None,
 ) -> dict[str, Any]:
     """Backward-compatible shortcut for the default two-knight fixture."""

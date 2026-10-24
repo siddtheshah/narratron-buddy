@@ -424,7 +424,7 @@ Direct the player's behavior, tactical focus, and personality using `--autoplay-
 | `--autoplay` | — | `False` | Enables autonomous player mode. |
 | `--autoplay-instructions` | `--autoplay_instructions` | Default explorer | Directives, persona, or behavioral constraints for the player agent. |
 | `--turns` | `-n`, `--autoplay-turns` | `10` | Maximum number of turns to execute in the session. |
-| `--autoplay-model` | `--autoplay_model` | `gemini-3.7-flash` | Gemini model ID driving the autonomous player agent. |
+| `--autoplay-model` | `--autoplay_model` | `gemini-3.8-flash` | Gemini model ID driving the autonomous player agent. |
 | `--autoplay-log` | `--autoplay_log`, `--log-file` | `evaluation_result/autoplay_<id>_<timestamp>.md` | Destination path for the session log file (supports `.md` and `.json`). |
 | `--autoplay-delay` | `--autoplay_delay` | `0.0` | Pause in seconds between turns to pace API requests. |
 | `--action` | — | `""` | Optional custom starting action to override turn 1. |

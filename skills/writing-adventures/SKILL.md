@@ -433,7 +433,7 @@ uv run python testlab/adventure_runner.py --adventure <adventure-folder-name> \
   - `--autoplay`: Flag to activate autonomous play.
   - `--autoplay-instructions` / `--autoplay_instructions`: Custom persona, tactical directives, or behavioral constraints.
   - `--turns` / `-n` / `--autoplay-turns`: Turn count limit (default: 10).
-  - `--autoplay-model`: Model driving player agent (default: `gemini-3.7-flash`).
+  - `--autoplay-model`: Model driving player agent (default: `gemini-3.8-flash`).
   - `--autoplay-delay`: Pause between turns in seconds to pace API requests.
 
 ### 7.4. Browser Diagnostic Harness (Test Lab)

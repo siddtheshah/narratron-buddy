@@ -25,7 +25,7 @@ from testlab.a2ui_canvas_lab import run_health_bars_smoke  # noqa: E402
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Smoke-test real A2UI Canvas health-bar generation.")
-    parser.add_argument("--model", default="gemini-3.7-flash")
+    parser.add_argument("--model", default="gemini-3.8-flash")
     parser.add_argument("--image", type=Path, help="Optional image to supply with the canvas request.")
     parser.add_argument("--debug", action="store_true", help="Print generated drafts and provider diagnostics.")
     args = parser.parse_args()
