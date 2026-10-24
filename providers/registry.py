@@ -93,10 +93,20 @@ _IMAGE_SPECS = (
 
 _MUSIC_SPECS = (
     {
+        "id": "lyria-3.5",
+        "name": "Google Lyria 3.5",
+        "model": "lyria-3.5",
+        "model_options": ["lyria-3.5", "lyria-3-clip-preview"],
+        "estimated_cost_usd_per_generation": 0.080,
+        "estimated_cost_usd_30s": 0.080,
+        "status": "unconfigured",
+        "notes": "Google DeepMind Lyria 3.5. High-fidelity audio, full song structures, and rich instrumentation at $0.08 per generation.",
+    },
+    {
         "id": "lyria",
         "name": "Google Lyria 3 Pro Preview",
         "model": "lyria-3-pro-preview",
-        "model_options": ["lyria-3-pro-preview", "lyria-3-pro", "lyria-3"],
+        "model_options": ["lyria-3.5", "lyria-3-pro-preview", "lyria-3-pro", "lyria-3", "lyria-3-clip-preview"],
         "estimated_cost_usd_per_generation": 0.080,
         "estimated_cost_usd_30s": 0.080,
         "status": "unconfigured",
@@ -242,7 +252,7 @@ def list_music_provider_specs() -> list[dict[str, Any]]:
     specs = [dict(spec) for spec in _MUSIC_SPECS]
     has_gemini = bool(os.getenv("LYRIA_API_KEY") or os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY"))
     for spec in specs:
-        if spec["id"] == "lyria":
+        if spec["id"] in ("lyria", "lyria-3.5"):
             spec["status"] = "available" if has_gemini else "unconfigured"
     has_base_provider = any(spec["id"] != "test-base-plus-adapter" and spec["status"] == "available" for spec in specs)
     for spec in specs:
@@ -277,8 +287,13 @@ def get_music_adapter(adapter_id: str, options: dict[str, Any] | None = None) ->
 
 def get_music_provider(provider_id: str, options: dict[str, Any] | None = None) -> MusicProvider:
     options = options or {}
+    if provider_id in ("lyria-3.5", "lyria-3-5", "Google Lyria 3.5"):
+        model = str(options.get("model") or "lyria-3.5")
+        return LyriaMusicProvider(model=model, provider_id="lyria-3.5", display_name="Google Lyria 3.5")
     if provider_id == "lyria":
-        return LyriaMusicProvider(model=str(options.get("model") or "lyria-3-pro-preview"))
+        model = str(options.get("model") or "lyria-3-pro-preview")
+        display_name = "Google Lyria 3.5" if "3.5" in model else "Google Lyria 3 Pro Preview"
+        return LyriaMusicProvider(model=model, provider_id="lyria", display_name=display_name)
     if provider_id == "test-base-plus-adapter":
         base_provider_id = str(options.get("base_provider") or "lyria")
         adapter_id = str(options.get("adapter") or "fal-stable-audio-3-base-a2a")

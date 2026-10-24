@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
 import os
-from typing import Any
+from typing import Protocol
 
 from google import genai
+from pydantic import JsonValue
 
 from providers.music_provider import (
     MusicGenerationRequest,
@@ -15,6 +18,37 @@ from providers.music_provider import (
 )
 
 
+class LyriaAudio(Protocol):
+    """The documented convenience audio field on a Lyria interaction."""
+
+    data: bytes | str
+    mime_type: str | None
+
+
+class LyriaUsage(Protocol):
+    """Usage metadata returned by the Google GenAI SDK."""
+
+    def model_dump(self, *, exclude_none: bool = False) -> dict[str, JsonValue]: ...
+
+
+class LyriaInteraction(Protocol):
+    """The portion of an Interactions API result used by this provider."""
+
+    id: str | None
+    output_audio: LyriaAudio | None
+    usage: LyriaUsage | None
+
+
+class LyriaInteractions(Protocol):
+    """Shared music-generation endpoint for every supported Lyria model."""
+
+    def create(self, *, model: str, input: str) -> LyriaInteraction: ...
+
+
+class LyriaClient(Protocol):
+    interactions: LyriaInteractions
+
+
 class LyriaMusicProvider(MusicProvider):
     id = "lyria"
     display_name = "Google Lyria 3 Pro Preview"
@@ -22,9 +56,27 @@ class LyriaMusicProvider(MusicProvider):
     def __init__(
         self,
         model: str = "lyria-3-pro-preview",
-        client: Any = None,
-    ):
+        client: LyriaClient | None = None,
+        provider_id: str | None = None,
+        display_name: str | None = None,
+    ) -> None:
         self.model = model
+        if provider_id is not None:
+            self.id = provider_id
+        elif "3.5" in model:
+            self.id = "lyria-3.5"
+        else:
+            self.id = "lyria"
+
+        if display_name is not None:
+            self.display_name = display_name
+        elif "3.5" in model:
+            self.display_name = "Google Lyria 3.5"
+        elif "clip" in model:
+            self.display_name = "Google Lyria 3 Clip Preview"
+        else:
+            self.display_name = "Google Lyria 3 Pro Preview"
+
         if client is None:
             api_key = (
                 os.getenv("LYRIA_API_KEY")
@@ -37,6 +89,27 @@ class LyriaMusicProvider(MusicProvider):
         self.client = client
 
     def generate(self, request: MusicGenerationRequest) -> MusicGenerationResult:
+        prompt = self._build_prompt(request)
+        try:
+            interaction = self.client.interactions.create(model=self.model, input=prompt)
+        except Exception as exc:
+            raise MusicProviderError(f"Lyria request failed: {exc}") from exc
+
+        audio = interaction.output_audio
+        if audio is None:
+            raise MusicProviderError("Lyria returned no binary audio data.")
+
+        return MusicGenerationResult(
+            audio_bytes=self._decode_audio(audio.data),
+            mime_type=audio.mime_type or "audio/mp3",
+            provider=self.id,
+            model=self.model,
+            request_id=interaction.id,
+            usage=interaction.usage.model_dump(exclude_none=True) if interaction.usage else {},
+        )
+
+    @staticmethod
+    def _build_prompt(request: MusicGenerationRequest) -> str:
         prompt_parts: list[str] = [request.prompt]
         if request.genre:
             prompt_parts.append(f"Genre: {request.genre}")
@@ -44,84 +117,13 @@ class LyriaMusicProvider(MusicProvider):
             prompt_parts.append(f"Tempo: {request.tempo}")
         if request.duration_seconds:
             prompt_parts.append(f"Target duration: {request.duration_seconds} seconds")
+        return ". ".join(prompt_parts)
 
-        full_prompt = ". ".join(prompt_parts)
-
+    @staticmethod
+    def _decode_audio(data: bytes | str) -> bytes:
+        if type(data) is bytes:
+            return data
         try:
-            # Google GenAI music / audio generation API endpoint call
-            if hasattr(self.client, "generate_audio"):
-                response = self.client.generate_audio(model=self.model, prompt=full_prompt)
-            elif hasattr(self.client, "models") and hasattr(self.client.models, "generate_audio"):
-                response = self.client.models.generate_audio(model=self.model, prompt=full_prompt)
-            elif hasattr(self.client, "models") and hasattr(self.client.models, "generate_content"):
-                response = self.client.models.generate_content(model=self.model, contents=[full_prompt])
-            elif callable(self.client):
-                response = self.client(model=self.model, prompt=full_prompt)
-            else:
-                raise MusicProviderError(f"Client instance {type(self.client)} does not support music generation.")
-        except MusicProviderError:
-            raise
-        except Exception as exc:
-            raise MusicProviderError(f"Lyria request failed: {exc}") from exc
-
-        audio_bytes, mime_type = self._extract_audio(response)
-        if not audio_bytes:
-            raise MusicProviderError(self._failure_message(response))
-
-        usage = self._extract_usage(response)
-        request_id = getattr(response, "request_id", None) or getattr(response, "response_id", None)
-
-        return MusicGenerationResult(
-            audio_bytes=audio_bytes,
-            mime_type=mime_type or "audio/mp3",
-            provider=self.id,
-            model=self.model,
-            request_id=request_id,
-            usage=usage,
-        )
-
-    @staticmethod
-    def _extract_audio(response: Any) -> tuple[bytes | None, str | None]:
-        if isinstance(response, bytes):
-            return response, "audio/mp3"
-        if isinstance(response, dict):
-            audio_bytes = response.get("audio_bytes") or response.get("audio") or response.get("data")
-            mime_type = response.get("mime_type", "audio/mp3")
-            return audio_bytes, mime_type
-        audio_bytes = getattr(response, "audio_bytes", None) or getattr(response, "audio", None)
-        mime_type = getattr(response, "mime_type", None) or "audio/mp3"
-        if audio_bytes:
-            return audio_bytes, mime_type
-
-        # Check candidates for inline data or audio parts
-        candidates = getattr(response, "candidates", None) or []
-        if candidates:
-            candidate = candidates[0]
-            content = candidate.get("content") if isinstance(candidate, dict) else getattr(candidate, "content", None)
-            parts = content.get("parts") if isinstance(content, dict) else getattr(content, "parts", None)
-            for part in parts or []:
-                inline_data = part.get("inline_data") if isinstance(part, dict) else getattr(part, "inline_data", None)
-                if inline_data:
-                    data = inline_data.get("data") if isinstance(inline_data, dict) else getattr(inline_data, "data", None)
-                    mtype = inline_data.get("mime_type") if isinstance(inline_data, dict) else getattr(inline_data, "mime_type", None)
-                    if data:
-                        return data, mtype or "audio/mp3"
-
-        return None, None
-
-    @staticmethod
-    def _failure_message(response: Any) -> str:
-        if hasattr(response, "error_message") and response.error_message:
-            return f"Lyria returned no audio: {response.error_message}"
-        return "Lyria 3 returned no binary audio data."
-
-    @staticmethod
-    def _extract_usage(response: Any) -> dict[str, Any]:
-        metadata = getattr(response, "usage_metadata", None)
-        if metadata is None:
-            return {}
-        if hasattr(metadata, "model_dump"):
-            return metadata.model_dump(exclude_none=True)
-        if isinstance(metadata, dict):
-            return dict(metadata)
-        return {key: value for key, value in vars(metadata).items() if not key.startswith("_")}
+            return base64.b64decode(data, validate=True)
+        except (binascii.Error, ValueError) as exc:
+            raise MusicProviderError("Lyria returned invalid base64 audio data.") from exc

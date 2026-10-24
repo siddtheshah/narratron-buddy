@@ -213,7 +213,7 @@ class StoryRecorderModule:
             self.agent = Agent(
                 name="story_recorder",
                 model=VertexGemini(
-                    model=str(config.get("recorder_model") or config.get("responder_model") or "gemini-3.7-flash"),
+                    model=str(config.get("recorder_model") or config.get("responder_model") or "gemini-3.5-flash-lite"),
                     project_id=config.get("vertex_project"),
                     location=str(config.get("vertex_location") or "global"),
                 ),
