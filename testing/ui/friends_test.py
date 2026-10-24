@@ -167,7 +167,12 @@ def test_profile_requests_and_friend_join_menu() -> None:
         assert joins == ['/api/friend-theaters/bob-stage/join']
         theaters[:] = [theater for theater in theaters if not theater['online']]
         page.goto('http://narratron.test/join')
-        expect(page.locator('#friend-theaters-list')).to_contain_text('No friends have active theaters right now.')
+        expect(page.locator('#friend-theaters-list')).to_contain_text('You do not have any friends yet.')
+        gift_link = page.get_by_role('link', name='Create a gift link', exact=True)
+        expect(gift_link).to_have_attribute('href', '/users/Alice#gifts')
+        gift_link.click()
+        expect(page).to_have_url('http://narratron.test/users/Alice#gifts')
+        expect(page.get_by_role('heading', name='Gift credits', exact=True)).to_be_visible()
         expect(groups).to_have_count(0)
         assert errors == []
         browser.close()

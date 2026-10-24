@@ -151,7 +151,13 @@
         const theatersScroll = list.querySelector('#friend-active-theaters')?.scrollTop || 0;
         list.replaceChildren();
         if (!theaters.length) {
-          list.innerHTML = `<p>No friends have active theaters right now. Manage <a href="${profileLink(auth.user.username)}">your friends</a>.</p>`;
+          const friendshipsResponse = await fetch('/api/friends', {cache: 'no-store'});
+          if (!friendshipsResponse.ok) throw new Error('Could not load friends.');
+          const friendships = await friendshipsResponse.json();
+          const hasAcceptedFriend = friendships.some(friend => friend.status === 'accepted');
+          list.innerHTML = hasAcceptedFriend
+            ? `<p>No friends have active theaters right now. Manage <a href="${profileLink(auth.user.username)}">your friends</a>.</p>`
+            : `<p>You do not have any friends yet. <a href="${profileLink(auth.user.username)}#gifts">Create a gift link</a> to invite someone.</p>`;
         } else {
           list.innerHTML = '<div class="friend-theaters-browser"><nav class="friend-usernames" aria-label="Friends with active theaters"></nav><div id="friend-active-theaters" class="friend-active-theaters" role="region" aria-label="Active theaters"></div></div>';
           document.getElementById('friend-theater-join').onclick = async event => {
