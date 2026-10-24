@@ -211,11 +211,18 @@ class StoryTool(BaseTools):
             payload=turn.game_payload if turn.ingress == "game_action" else (turn.response or {}),
         )
 
+    def _set_user_action_processing(self, active: bool) -> None:
+        """Publish foreground story-turn activity to the canvas."""
+        tool_response = self.canvas_manager.tool_response
+        if tool_response is not None:
+            tool_response.set_activity("user_action", active=active)
+
     def _run_turn(
         self, turn_id: str, *, retry_earlier: bool = False, release_cycle: bool = True,
     ) -> dict[str, JsonValue]:
         turn = self.turn_journal.get(turn_id)
         assert turn is not None
+        self._set_user_action_processing(True)
         try:
             with self._state_lock:
                 if retry_earlier:
@@ -282,6 +289,7 @@ class StoryTool(BaseTools):
                 self._on_scene_reaction(result)
             return result
         finally:
+            self._set_user_action_processing(False)
             if release_cycle and turn.ingress == "communicated_action":
                 self._on_cycle_tool_completed("process_user_action")
 

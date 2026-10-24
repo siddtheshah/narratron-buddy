@@ -463,6 +463,48 @@ def test_public_tool_uses_production_scheduler(harness: TurnHarness) -> None:
     assert harness.calls == ["responder", "recorder", "planner"]
 
 
+def test_story_turn_publishes_processing_activity_until_foreground_work_completes(
+    harness: TurnHarness,
+) -> None:
+    tool = harness.new_tool()
+    started, release = Event(), Event()
+    resolve = tool.response_module._resolve_user_action
+
+    def block_resolver(
+        action: str,
+        nudge: str = "",
+        *,
+        publish: bool = True,
+        game_entry: bool = False,
+        stage_id: str = "",
+    ) -> dict[str, JsonValue]:
+        started.set()
+        assert release.wait(5)
+        return resolve(
+            action,
+            nudge=nudge,
+            publish=publish,
+            game_entry=game_entry,
+            stage_id=stage_id,
+        )
+
+    tool.response_module._resolve_user_action = block_resolver
+    result = tool.process_user_action("Turn the key")
+
+    assert type(result) is dict
+    assert started.wait(5)
+    tool.canvas_manager.tool_response.set_activity.assert_called_once_with(
+        "user_action", active=True,
+    )
+
+    release.set()
+    assert tool.wait_for_pending_events(5)
+    assert tool.canvas_manager.tool_response.set_activity.call_args_list == [
+        (("user_action",), {"active": True}),
+        (("user_action",), {"active": False}),
+    ]
+
+
 def test_callbacks_and_sticky_publication_cannot_open_turns(harness: TurnHarness) -> None:
     tool = harness.new_tool()
     tool.resolve_action("Turn the key", drain=True)

@@ -2,6 +2,10 @@ live_agent:
     special_instructions: |-
         Be quirky, mysterious, and playful. For viewer suggestions,
         call out each suggestion you have accepted and whose it was.
+
+        Be highly proactive in creating images as the user speaks. Do not
+        wait for specific instructions to create images. Respect sentence
+        completion and pauses, but be proactive.
     enable_regular_observability: true
 
 # Optional reference image filename or alias to show when a new canvas initializes.
