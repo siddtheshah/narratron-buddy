@@ -28,11 +28,16 @@ class AssertNoCallTextProvider:
         raise AssertionError("routing must not call a remote text provider")
 
 
-def test_hybrid_routes_interaction_to_fallback_and_records_decision():
+def test_hybrid_routes_complex_reference_guided_images_to_fallback_and_records_decision():
     primary, fallback = FakeProvider("flux"), FakeProvider("gemini")
     provider = HybridImageProvider(primary, fallback)
 
-    result = provider.generate(ImageGenerationRequest(prompt="dog carries a bag"))
+    result = provider.generate(
+        ImageGenerationRequest(
+            prompt="dog carries a bag",
+            references=[ImageReference(name="dog.png", data=b"reference", mime_type="image/png")],
+        )
+    )
 
     assert not primary.calls and len(fallback.calls) == 1
     assert result.usage["routing"]["reasons"] == ["creature_object_interaction"]
@@ -48,7 +53,7 @@ def test_hybrid_uses_flux_only_for_an_eligible_simple_scene():
     assert len(primary.calls) == 1 and not fallback.calls
 
 
-def test_hybrid_routes_reference_guided_images_to_gemini_without_classifying():
+def test_hybrid_routes_simple_reference_guided_images_to_flux_after_classifying():
     primary, fallback = FakeProvider("flux"), FakeProvider("gemini")
     provider = HybridImageProvider(primary, fallback, text_provider=AssertNoCallTextProvider())
 
@@ -59,8 +64,8 @@ def test_hybrid_routes_reference_guided_images_to_gemini_without_classifying():
         )
     )
 
-    assert not primary.calls and len(fallback.calls) == 1
-    assert result.usage["routing"]["reasons"] == ["reference_images"]
+    assert len(primary.calls) == 1 and not fallback.calls
+    assert result.usage["routing"]["reasons"] == []
 
 
 def test_hybrid_allows_context_sensitive_words_without_a_primary_signal():

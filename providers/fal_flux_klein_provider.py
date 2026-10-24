@@ -1,4 +1,4 @@
-"""FAL implementation for FLUX.2 Klein image generation and editing."""
+"""FAL implementation for FLUX.3 Klein image generation and editing."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from providers.image_provider import ImageGenerationRequest, ImageGenerationResu
 
 
 class FalFluxKleinProvider(ImageProvider):
-    """Use FAL's synchronous FLUX.2 Klein 9B endpoints.
+    """Use FAL's synchronous FLUX.3 Klein endpoints.
 
     FAL exposes separate text-to-image and image-edit endpoints.  References
     are sent as data URIs to keep the benchmark self-contained and avoid
@@ -21,9 +21,9 @@ class FalFluxKleinProvider(ImageProvider):
     """
 
     id = "flux-klein"
-    display_name = "FLUX.2 Klein 9B (FAL)"
-    model = "fal-ai/flux-2/klein/9b"
-    edit_model = "fal-ai/flux-2/klein/9b/edit"
+    display_name = "FLUX.3 Klein (FAL)"
+    model = "blackforestlabs/flux-3/klein/text-to-image"
+    edit_model = "blackforestlabs/flux-3/klein/edit-image"
 
     def __init__(
         self,
@@ -38,8 +38,8 @@ class FalFluxKleinProvider(ImageProvider):
         self._download = download or self._download_image
 
     def _generate(self, request: ImageGenerationRequest) -> ImageGenerationResult:
-        if len(request.references) > 4:
-            raise ImageProviderError("FLUX.2 Klein 9B on FAL accepts at most four reference images.")
+        if len(request.references) > 10:
+            raise ImageProviderError("FLUX.3 Klein on FAL accepts at most ten reference images.")
         endpoint = self.edit_model if request.references else self.model
         payload: dict[str, Any] = {
             "prompt": request.prompt,

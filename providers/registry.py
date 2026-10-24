@@ -62,22 +62,22 @@ _IMAGE_SPECS = (
     },
     {
         "id": "flux-klein",
-        "name": "FLUX.2 Klein 9B (FAL)",
-        "model": "fal-ai/flux-2/klein/9b",
-        "estimated_cost_usd_1mp": 0.006,
-        "reference_limit": 4,
+        "name": "FLUX.3 Klein (FAL)",
+        "model": "blackforestlabs/flux-3/klein/text-to-image",
+        "estimated_cost_usd_1mp": 0.009,
+        "reference_limit": 10,
         "status": "unconfigured",
-        "notes": "Higher-capability Klein endpoint. $0.006/MP text-to-image; use the FAL edit endpoint for references."
+        "notes": "FAL FLUX.3 Klein. Estimated $0.009 per 1K image; its edit endpoint accepts up to ten reference images."
     },
     {
         "id": "hybrid-flux-gemini",
-        "name": "FLUX Klein + Gemini router",
-        "model": "FLUX.2 Klein 9B / Gemini 3.1 Flash-Lite Image",
+        "name": "FLUX.3 Klein + Gemini router",
+        "model": "FLUX.3 Klein / Gemini 3.1 Flash-Lite Image",
         "classifier_model_options": ["gemini-2.5-flash-lite", "gemini-2.5-flash"],
         "estimated_cost_usd_1mp": None,
-        "reference_limit": 4,
+        "reference_limit": 10,
         "status": "unconfigured",
-        "notes": "FLUX is used only for pure environments and simple single-character scenes. Gemini handles reference-guided, multi-subject, and complex scenes.",
+        "notes": "FLUX.3 Klein handles references as well as pure environments and simple single-character scenes. Gemini handles multi-subject and other complex scenes.",
     },
     {
         "id": "qwen-image-2",

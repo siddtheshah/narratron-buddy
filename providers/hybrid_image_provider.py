@@ -1,4 +1,4 @@
-"""Prompt-aware image provider with a narrow FLUX fast path."""
+"""Prompt-aware image provider with a narrow FLUX.3 Klein fast path."""
 
 from __future__ import annotations
 
@@ -51,10 +51,10 @@ scene_type="complex". You MUST set a reason if rerouting.
 
 
 class HybridImageProvider(ImageProvider):
-    """Use FLUX only for simple scenes; send everything else to Gemini."""
+    """Use FAL FLUX.3 Klein for simple scenes; send complex scenes to Gemini."""
 
     id = "hybrid-flux-gemini"
-    display_name = "FLUX Klein 9B + Gemini router"
+    display_name = "FLUX.3 Klein + Gemini router"
 
     def __init__(
         self,
@@ -86,7 +86,9 @@ class HybridImageProvider(ImageProvider):
             len(request.references) if request.references else 0,
             request.aspect_ratio,
         )
-        decision = self._reference_decision() if request.references else self._classify(request.prompt)
+        # FLUX.3 Klein's FAL edit endpoint accepts reference images, so they
+        # must not bypass the normal complexity-based routing policy.
+        decision = self._classify(request.prompt)
         selected = self.fallback if decision["route_to_fallback"] else self.primary
         logger.info(
             "%s Routing decision: selected='%s' (fallback=%s, scene_type=%s, reasons=%s, ambiguous_terms=%s, classifier_failed=%s)",
@@ -133,16 +135,4 @@ class HybridImageProvider(ImageProvider):
         decision = self.classifier.classify(prompt)
         logger.debug("%s Local classifier decision: %s", LOG_PREFIX, decision)
         return decision
-
-    @staticmethod
-    def _reference_decision() -> dict[str, Any]:
-        """Reference-guided generation always uses Gemini for visual fidelity."""
-        logger.debug("%s Reference images present; bypassing classifier and routing to fallback", LOG_PREFIX)
-        return {
-            "route_to_fallback": True,
-            "reasons": ["reference_images"],
-            "ambiguous_terms": [],
-            "classifier_failed": False,
-            "scene_type": "complex",
-        }
 
