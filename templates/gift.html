@@ -9,7 +9,7 @@
 </head>
 <body>
   <!-- SHARED_TOPBAR -->
-  <main><div class="card"><h1>You've received a credit gift</h1><p id="message" class="muted">Checking your gift link…</p><button id="claim" type="button" style="display:none">Claim credits</button></div></main>
+  <main><div class="card"><h1>You've received a credit gift</h1><p class="muted">Claiming this gift also adds the sender as a friend.</p><p id="message" class="muted">Checking your gift link…</p><button id="claim" type="button" style="display:none">Claim credits</button></div></main>
   <script>
     const token = decodeURIComponent(location.pathname.split('/').pop());
     const message = document.getElementById('message'); const claim = document.getElementById('claim'); let gift = null;
@@ -19,7 +19,7 @@
       claim.disabled = true; show('Claiming your credits…');
       const res = await fetch(`/api/credit-gifts/${encodeURIComponent(token)}/claim`, {method:'POST'}); const data = await res.json().catch(() => ({}));
       if (!res.ok) { show(data.detail || 'This gift could not be claimed.', 'error'); claim.style.display = 'none'; return; }
-      show(`Success! ${Number(data.credits).toFixed(1)} credits were added to your account.`, 'success'); claim.style.display = 'none'; invalidateAuthState(); checkAuthStatus({refresh:true});
+      show(`Success! ${Number(data.credits).toFixed(1)} credits were added to your account. You and the sender are now friends.`, 'success'); claim.style.display = 'none'; invalidateAuthState(); checkAuthStatus({refresh:true});
     }
     async function loadGift() {
       const res = await fetch(`/api/credit-gifts/${encodeURIComponent(token)}`); const data = await res.json().catch(() => ({}));

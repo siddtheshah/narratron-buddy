@@ -926,8 +926,8 @@ class _DatabaseManagerBase:
             gift.pop("token", None)
             return gift
 
-    def claim_credit_gift(self, token: str, recipient_user_id: int) -> Dict[str, Any]:
-        """Transfer a valid gift once, while ensuring its sender remains non-negative."""
+    def claim_credit_gift(self, token: str, recipient_user_id: int) -> dict[str, JsonValue]:
+        """Transfer a valid gift once and make its sender and recipient friends atomically."""
         now = datetime.datetime.now(datetime.timezone.utc).isoformat()
         with self._get_connection() as conn:
             cursor = conn.cursor()
@@ -966,6 +966,13 @@ class _DatabaseManagerBase:
             cursor.execute("UPDATE users SET credits = credits + ? WHERE id = ?", (gift["credits"], recipient_user_id))
             if cursor.rowcount != 1:
                 raise ValueError("Recipient account not found.")
+            sender_user_id = int(gift["sender_user_id"])
+            cursor.execute(
+                "INSERT INTO friendships (user_low, user_high, requester_id, status) "
+                "VALUES (?, ?, ?, 'accepted') "
+                "ON CONFLICT (user_low, user_high) DO UPDATE SET status = 'accepted'",
+                (min(sender_user_id, recipient_user_id), max(sender_user_id, recipient_user_id), sender_user_id),
+            )
             return {
                 "credits": gift["credits"],
                 "expires_at": gift["expires_at"],
