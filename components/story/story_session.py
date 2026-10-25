@@ -35,16 +35,21 @@ ROLE_AUTHORS = {
 }
 
 
-def project_role_contents(events: list[Event], role: StoryRole) -> list[types.Content]:
-    """Keep entire own-role exchanges in order, including their tool call IDs.
+def project_role_contents(
+    events: list[Event], role: StoryRole, invocation_id: str | None = None,
+) -> list[types.Content]:
+    """Keep only the active invocation, including its complete tool exchanges.
 
-    Cross-role handoffs are application-built inputs in the recipient's invocation.
-    Unlabelled ingress, peer events, and session-wide summaries are never replayed.
+    Prior invocations, peer events, and session summaries are never replayed.
+    Historical context comes from the unified story journal's role view.
     """
     role_events = [
         event for event in events
         if event.invocation_id.startswith(f"{role}:")
     ]
+    if invocation_id is None:
+        invocation_id = role_events[-1].invocation_id if role_events else ""
+    role_events = [event for event in role_events if event.invocation_id == invocation_id]
     active_invocation_id = role_events[-1].invocation_id if role_events else ""
     failed_invocations = {
         event.invocation_id for event in role_events
@@ -96,7 +101,9 @@ def build_role_request(
 ) -> LlmResponse | None:
     """Replace ADK's current-turn content too, on every model continuation."""
     role = TypeAdapter(StoryRole).validate_python(callback_context.invocation_id.split(":", 1)[0])
-    llm_request.contents = project_role_contents(callback_context.session.events, role)
+    llm_request.contents = project_role_contents(
+        callback_context.session.events, role, callback_context.invocation_id,
+    )
     return None
 
 
@@ -142,8 +149,8 @@ class StorySessionService(DatabaseSessionService):
 class StorySession:
     """Coordinate shared ADK writes and keep its database on one event loop.
 
-    The full history is persisted; projections never edit that history. Automatic
-    mixed-history compaction and provider compression are deliberately disabled.
+    Full history remains an audit trail, never replayed into model requests.
+    Models see their active invocation and a frozen, chunked journal context.
     """
 
     def __init__(self, path: Path, session_id: str, *, max_attempts: int = 2) -> None:
@@ -156,6 +163,8 @@ class StorySession:
         self.runner: Runner | None = None
         self._closed = False
         self.planner_context: Callable[[], str] | None = None
+        self.history_context: Callable[[StoryRole], str] | None = None
+        self._history_snapshots: dict[str, str] = {}
         self._creation_lock = asyncio.Lock()
 
     async def _build_role_request(
@@ -168,7 +177,16 @@ class StorySession:
                     author="user", invocation_id=callback_context.invocation_id,
                     content=types.Content(role="user", parts=[types.Part(text=prompt)]),
                 ))
-        return build_role_request(callback_context, llm_request)
+        result = build_role_request(callback_context, llm_request)
+        if self.history_context is not None:
+            invocation_id = callback_context.invocation_id
+            if invocation_id not in self._history_snapshots:
+                role = TypeAdapter(StoryRole).validate_python(invocation_id.split(":", 1)[0])
+                self._history_snapshots[invocation_id] = self.history_context(role)
+            prompt = self._history_snapshots[invocation_id]
+            if prompt:
+                llm_request.contents.insert(0, types.Content(role="user", parts=[types.Part(text=prompt)]))
+        return result
 
     def bind(self, agents: list[Agent]) -> None:
         for agent in agents:
@@ -207,25 +225,29 @@ class StorySession:
             final_text = ""
             structured_args: dict[str, JsonValue] | None = None
             malformed = False
-            async for event in self.runner.run_async(
-                user_id=USER_ID,
-                session_id=self.session_id,
-                invocation_id=f"{role}:{stage_id}:{uuid4().hex}",
-                new_message=types.Content(role="user", parts=[types.Part(text=prompt)]),
-            ):
-                if (
-                    event.error_code == "MALFORMED_FUNCTION_CALL"
-                    or event.finish_reason == types.FinishReason.MALFORMED_FUNCTION_CALL
+            invocation_id = f"{role}:{stage_id}:{uuid4().hex}"
+            try:
+                async for event in self.runner.run_async(
+                    user_id=USER_ID,
+                    session_id=self.session_id,
+                    invocation_id=invocation_id,
+                    new_message=types.Content(role="user", parts=[types.Part(text=prompt)]),
                 ):
-                    malformed = True
-                if event.author == ROLE_AUTHORS[role] and event.content:
-                    for part in event.content.parts or []:
-                        if part.function_call is not None and part.function_call.name == "set_model_response":
-                            structured_args = TypeAdapter(dict[str, JsonValue]).validate_python(
-                                dict(part.function_call.args or {})
-                            )
-                    if event.is_final_response():
-                        final_text = "".join(part.text or "" for part in event.content.parts or [])
+                    if (
+                        event.error_code == "MALFORMED_FUNCTION_CALL"
+                        or event.finish_reason == types.FinishReason.MALFORMED_FUNCTION_CALL
+                    ):
+                        malformed = True
+                    if event.author == ROLE_AUTHORS[role] and event.content:
+                        for part in event.content.parts or []:
+                            if part.function_call is not None and part.function_call.name == "set_model_response":
+                                structured_args = TypeAdapter(dict[str, JsonValue]).validate_python(
+                                    dict(part.function_call.args or {})
+                                )
+                        if event.is_final_response():
+                            final_text = "".join(part.text or "" for part in event.content.parts or [])
+            finally:
+                self._history_snapshots.pop(invocation_id, None)
             if final_text.strip():
                 if structured_args is not None:
                     return json.dumps(structured_args, ensure_ascii=False)

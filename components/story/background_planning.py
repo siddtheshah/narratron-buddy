@@ -12,7 +12,7 @@ from pydantic import JsonValue
 
 from components.notepad import NoteSnapshot, Notepad, StaleNoteSnapshot
 from components.story.story_planning_module import StoryPlanningModule
-from components.story.story_recording_journal import RecordedNotes
+from components.story.story_recording_journal import DEFAULT_HISTORY_EVENT_LIMIT, RecordedNotes
 
 
 logger = logging.getLogger(__name__)
@@ -22,10 +22,12 @@ class BackgroundPlanning:
     def __init__(
         self, path: Path, planner: StoryPlanningModule, notepad: Notepad,
         game_snapshot: Callable[[], dict[str, JsonValue] | None],
+        *, context_event_limit: int = DEFAULT_HISTORY_EVENT_LIMIT,
     ) -> None:
         self.planner = planner
         self.notepad = notepad
         self.game_snapshot = game_snapshot
+        self.context_event_limit = max(1, context_event_limit)
         self._condition = Condition()
         self._connection = sqlite3.connect(path, check_same_thread=False)
         self._connection.execute("PRAGMA synchronous = FULL")
@@ -66,10 +68,14 @@ class BackgroundPlanning:
             self._start_locked()
 
     def _pending_locked(self, after: int = 0) -> list[tuple[int, str]]:
-        return self._connection.execute(
-            "SELECT position, payload FROM story_planning_updates WHERE completed = 0 AND position > ? ORDER BY position",
-            (after,),
+        # Coalesce an old backlog into its newest window. The current snapshot
+        # and completion journal supply established state, not a replay of every
+        # update missed while the planner was unavailable.
+        rows = self._connection.execute(
+            "SELECT position, payload FROM story_planning_updates WHERE completed = 0 AND position > ? ORDER BY position DESC LIMIT ?",
+            (after, self.context_event_limit),
         ).fetchall()
+        return list(reversed(rows))
 
     def _start_locked(self) -> None:
         if self._active or self._closed or not self._pending_locked():

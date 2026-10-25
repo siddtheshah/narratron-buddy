@@ -90,8 +90,8 @@ story_planning:
     # In Adventure Mode, apply dynamic visual text effects (vibrating,
     # glitch, flame, fonts) to high-energy spans using TextBeautifier.
     text_beautification: true
-    # The engine completes recording, one combined response, and planning
-    # before processing the next cycle. Game receipts retain their identities.
+    # The engine completes recording and one combined response before processing
+    # the next cycle. Planning runs independently; game receipts retain their identities.
     # Adventure-specific durable concepts belong in planning.yaml.
     deep_planning:
         enabled: true
@@ -108,6 +108,12 @@ story_planning:
     # response replaces the waiting slot, preserving originating input order.
     # Independent of input timing; zero displays every ready response immediately.
     output_cycle_length: 15
+    # Maximum combined history of completed player/game actions, story outputs,
+    # and foreground lore reads. Agent conversations are not replayed. Zero disables history.
+    history_event_limit: 20
+    # Drop this many oldest events on overflow; null uses half of history_event_limit.
+    # The resulting interleaved history stays frozen throughout each agent invocation.
+    history_chunk_size: null
     require_user_input: true
 
 chat:

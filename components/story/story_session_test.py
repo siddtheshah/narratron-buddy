@@ -6,6 +6,8 @@ from collections.abc import AsyncGenerator
 from pathlib import Path
 from threading import Event as ThreadEvent
 
+import pytest
+
 from google.adk.agents import Agent
 from google.adk.models.base_llm import BaseLlm
 from google.adk.models.llm_request import LlmRequest
@@ -15,7 +17,8 @@ from pydantic import Field, PrivateAttr
 from google.adk.events import Event
 
 from components.story.story_handoffs import GameControlDecision
-from components.story.story_session import APP_NAME, USER_ID, StorySession, project_role_contents
+from components.story.story_recording_journal import StoryHistoryEvent, StoryRecordingJournal
+from components.story.story_session import APP_NAME, USER_ID, StoryRole, StorySession, project_role_contents
 
 
 class CapturingModel(BaseLlm):
@@ -67,7 +70,7 @@ def request_text(request: LlmRequest) -> str:
     return str([content.model_dump(mode="json") for content in request.contents])
 
 
-def test_actual_requests_isolate_roles_and_preserve_tool_exchanges_on_restart(tmp_path: Path) -> None:
+def test_actual_requests_isolate_invocations_and_preserve_active_tool_exchanges(tmp_path: Path) -> None:
     recorder = CapturingModel(replies=[
         types.Content(role="model", parts=[types.Part(function_call=types.FunctionCall(name="private_tool", args={}, id="private-call"))]),
         final("PRIVATE RECORDER OUTPUT"),
@@ -112,7 +115,7 @@ def test_actual_requests_isolate_roles_and_preserve_tool_exchanges_on_restart(tm
     try:
         restarted.run("responder", "Next communicated action")
         context = request_text(responder_after_restart.requests[0])
-        assert "Public narration" in context
+        assert "Public narration" not in context
         assert "Next communicated action" in context
         assert "PRIVATE" not in context
         assert "private_tool" not in context
@@ -204,7 +207,9 @@ def test_planner_receives_new_content_during_tool_continuation_and_persists_it(t
         assert "New responder outcome" not in request_text(responder.requests[0])
         planner.replies.append(final("Next plan"))
         shared.run("planner", "Another update")
-        assert "New responder outcome while planning" in request_text(planner.requests[-1])
+        assert "New responder outcome while planning" not in request_text(planner.requests[-1])
+        assert "Initial player intention" not in request_text(planner.requests[-1])
+        assert "planner-call" not in request_text(planner.requests[-1])
     finally:
         planner._release.set()
         shared.close()
@@ -231,10 +236,132 @@ def test_projection_omits_aborted_invocations_after_tool_response_or_malformed_c
     ]
     view = project_role_contents(events, "recorder")
     assert [part.text for content in view for part in content.parts or []] == [
-        "Turn 1",
-        "Recorded turn 1",
         "Turn 2 retry",
     ]
+
+
+@pytest.mark.parametrize("role", ["recorder", "responder", "planner"])
+def test_model_requests_use_bounded_completions_without_prior_agent_history(
+    tmp_path: Path, role: StoryRole,
+) -> None:
+    journal = StoryRecordingJournal(tmp_path / "story.sqlite")
+    journal.complete_history([
+        StoryHistoryEvent(
+            event_id=f"output-{index}", action_id=f"action-{index}", kind="story_output",
+            payload={"narration": f"COMPLETION_{index}"},
+        )
+        for index in range(4)
+    ])
+    model = CapturingModel(replies=[final("OLD_AGENT_OUTPUT"), final("New completion")])
+    shared = StorySession(tmp_path / "session.sqlite", "bounded")
+    models = {name: CapturingModel() for name in ("recorder", "responder", "planner")}
+    models[role] = model
+    shared.bind(agents(models["recorder"], models["responder"], models["planner"]))
+
+    def history_context(recipient: StoryRole) -> str:
+        return journal.prompt_context(recipient, 2, 1)
+
+    shared.history_context = history_context
+    try:
+        shared.run(role, "OLD_AGENT_INPUT")
+        shared.run(role, "Current task")
+        context = request_text(model.requests[-1])
+        assert "COMPLETION_0" not in context
+        assert "COMPLETION_1" not in context
+        assert context.index("COMPLETION_2") < context.index("COMPLETION_3")
+        assert "OLD_AGENT_INPUT" not in context
+        assert "OLD_AGENT_OUTPUT" not in context
+        assert "Current task" in context
+        assert context.count("COMPLETION_2") == 1
+        shared.close()
+        restarted = StorySession(tmp_path / "session.sqlite", "bounded")
+        after_restart = CapturingModel(replies=[final("Restart completion")])
+        models[role] = after_restart
+        restarted.bind(agents(models["recorder"], models["responder"], models["planner"]))
+        restarted.history_context = history_context
+        try:
+            restarted.run(role, "Restart task")
+            context = request_text(after_restart.requests[0])
+            assert "COMPLETION_2" in context and "COMPLETION_3" in context
+            assert "COMPLETION_1" not in context
+            assert "OLD_AGENT_INPUT" not in context
+            assert "OLD_AGENT_OUTPUT" not in context
+            assert "Current task" not in context
+            assert "New completion" not in context
+        finally:
+            restarted.close()
+    finally:
+        shared.close()
+        journal.close()
+
+
+def test_projection_uses_explicit_active_invocation_when_roles_interleave() -> None:
+    events = [
+        Event(author="user", invocation_id="recorder:active", content=final("Active input")),
+        Event(author="user", invocation_id="recorder:other", content=final("Other input")),
+    ]
+    view = project_role_contents(events, "recorder", "recorder:active")
+    assert [part.text for content in view for part in content.parts or []] == ["Active input"]
+
+
+def test_tool_continuation_freezes_interleaved_history_until_next_invocation(tmp_path: Path) -> None:
+    journal = StoryRecordingJournal(tmp_path / "story.sqlite")
+
+    def complete(index: int) -> None:
+        journal.complete_history([StoryHistoryEvent(
+            event_id=f"completed-{index}", action_id=f"action-{index}", kind="story_output",
+            payload={"narration": f"OUTCOME_{index}"},
+        )])
+
+    for index in range(3):
+        complete(index)
+
+    def record_concurrent_outcome() -> str:
+        """Record another outcome while this model invocation is active."""
+        journal.record_lore_read("responder", "rules.txt", "Lore document: rules.txt\n\nFRESH_LORE")
+        complete(3)
+        return "Another outcome committed."
+
+    model = CapturingModel(replies=[
+        types.Content(role="model", parts=[types.Part(function_call=types.FunctionCall(
+            name="record_concurrent_outcome", args={}, id="current-tool-call",
+        ))]),
+        final("Done"),
+    ])
+    shared = StorySession(tmp_path / "session.sqlite", "refresh")
+    shared.bind([
+        Agent(name="story_recorder", model=model, tools=[record_concurrent_outcome]),
+        Agent(name="story_responder", model=CapturingModel()),
+        Agent(name="story_deep_planner", model=CapturingModel()),
+    ])
+
+    def history_context(role: StoryRole) -> str:
+        return journal.prompt_context(role, 4, 2)
+
+    shared.history_context = history_context
+    try:
+        shared.run("recorder", "Current task")
+        initial = request_text(model.requests[0])
+        continuation = request_text(model.requests[1])
+        assert "OUTCOME_0" in initial and "OUTCOME_2" in initial
+        assert model.requests[0].contents[0] == model.requests[1].contents[0]
+        assert "OUTCOME_0" in continuation and "OUTCOME_2" in continuation
+        assert "OUTCOME_3" not in continuation
+        assert "FRESH_LORE" not in continuation
+        assert continuation.count("# Story History") == 1
+        assert "current-tool-call" in continuation
+        assert "Another outcome committed" in continuation
+        assert shared._history_snapshots == {}
+        model.replies.append(final("Next invocation"))
+        shared.run("recorder", "Next task")
+        next_request = request_text(model.requests[-1])
+        assert "OUTCOME_0" not in next_request and "OUTCOME_1" not in next_request
+        assert "OUTCOME_2" in next_request and "OUTCOME_3" in next_request
+        assert "FRESH_LORE" in next_request
+        assert "current-tool-call" not in next_request
+    finally:
+        shared.close()
+        journal.close()
 
 
 class MalformedOnceModel(BaseLlm):

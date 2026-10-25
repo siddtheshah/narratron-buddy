@@ -488,7 +488,9 @@ class StoryRecorderModule:
             MAX_RECORDER_READ_LORE_CALLS_PER_RUN,
             document,
         )
-        return self.lore_library.read_lore(document, role="recorder")
+        result = self.lore_library.read_lore(document, role="recorder")
+        self.journal.record_lore_read("recorder", document, result)
+        return result
 
     def search_lore(self, query: str) -> str:
         if self.lore_library is None:

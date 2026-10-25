@@ -577,6 +577,18 @@ story_planning:
                 in reverse input order. Zero shows every ready response immediately.</dd>
               <dt><code>adventure_mode</code> <span class="type">boolean</span></dt>
               <dd>Enables player-action resolution through the story planner. Default: <code>false</code>.</dd>
+              <dt><code>history_event_limit</code> <span class="type">nonnegative integer</span></dt>
+              <dd>Maximum combined history of completed player/game actions, story outputs, and successful
+                foreground lore reads for the responder, recorder, and planner. Default: 20 events; zero
+                disables history. Inputs, outputs, and lore reads count separately. The unified story journal supplies
+                one chronological view. Previous agent conversations are not replayed; current tasks,
+                state, and active tool exchanges remain available. Role documents stay private.</dd>
+              <dt><code>history_chunk_size</code> <span class="type">positive integer or null</span></dt>
+              <dd>Number of oldest history events discarded when the combined stream exceeds
+                <code>history_event_limit</code>. Omitted or null uses half the maximum, at least one;
+                an explicit value cannot exceed the maximum. With defaults, history grows to 20 events,
+                drops 10 on overflow, then grows again. Each agent invocation keeps a frozen history
+                prefix through tool continuations to preserve cache reuse.</dd>
               <dt><code>enable_dice</code> <span class="type">boolean</span></dt>
               <dd>Allows player-action and hidden procedural dice rolls. Default: <code>true</code> when omitted.
                 Set to <code>false</code> to resolve outcomes without dice.</dd>
@@ -603,6 +615,8 @@ story_planning:
   enforce_structured: true
   input_cycle_length: 5
   output_cycle_length: 15
+  history_event_limit: 20
+  history_chunk_size: 10
   style: "Tense science-fiction mystery; setbacks are fair and consequential."
   require_user_input: true</pre>
             <p>Keep sticky contracts in a separate <code>planning.yaml</code>. Every topic has one owner:

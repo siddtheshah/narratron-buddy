@@ -32,8 +32,11 @@ from components.story.story_planning_module import StoryPlanningModule
 from components.story.story_response_module import GameEntryNarrationRejected, StoryResponseModule
 from components.story.story_handoffs import ProposedFactChange
 from components.story.story_recorder_module import StoryRecorderModule
-from components.story.story_recording_journal import RecordingEvent, StoryRecordingJournal
-from components.story.story_session import StorySession
+from components.story.story_recording_journal import (
+    DEFAULT_HISTORY_EVENT_LIMIT, RecordingEvent, StoryHistoryEvent, StoryRecordingJournal,
+    default_history_chunk_size,
+)
+from components.story.story_session import StoryRole, StorySession
 from components.story.story_turn_journal import StoryTurn, StoryTurnJournal
 from components.story.input_gathering_cycle import StoryInputGatheringCycle, story_input_cycle_length
 from components.story.output_display_cycle import story_output_cycle_length
@@ -96,6 +99,18 @@ class StoryEngine:
 
         raw_config = theater.config() or {}
         self.config = raw_config.get("story_planning", raw_config)
+        self.history_event_limit = TypeAdapter(int).validate_python(
+            self.config.get("history_event_limit", DEFAULT_HISTORY_EVENT_LIMIT),
+        )
+        if self.history_event_limit < 0:
+            raise ValueError("story_planning.history_event_limit cannot be negative.")
+        configured_chunk_size = self.config.get("history_chunk_size")
+        self.history_chunk_size = (
+            default_history_chunk_size(self.history_event_limit)
+            if configured_chunk_size is None else TypeAdapter(int).validate_python(configured_chunk_size)
+        )
+        if self.history_chunk_size < 1 or (self.history_event_limit and self.history_chunk_size > self.history_event_limit):
+            raise ValueError("story_planning.history_chunk_size must be between one and history_event_limit.")
         self.notepad = canvas_manager.notepad or Notepad(
             theater, canvas_manager=canvas_manager,
         )
@@ -111,15 +126,18 @@ class StoryEngine:
         journal_path = theater.output_dir() / "story.sqlite"
         self.recording_journal = StoryRecordingJournal(journal_path)
         self.turn_journal = StoryTurnJournal(journal_path)
+        self._restore_history()
         self.story_session = StorySession(
             theater.output_dir() / "story_adk.sqlite",
             str(self.config.get("session_id") or f"story_{theater.theater_id}"),
         )
+        self.story_session.history_context = self._story_history_context
         self.response_module = StoryResponseModule(
             theater=theater, canvas_manager=canvas_manager, lore_library=self.lore_library,
             reference_manager=self.reference_manager,
             session_service=self.story_session.session_service,
             session_id=self.story_session.session_id, story_session=self.story_session,
+            recording_journal=self.recording_journal,
         )
         self.planning_module = StoryPlanningModule(
             theater=theater, canvas_manager=canvas_manager, lore_library=self.lore_library,
@@ -141,6 +159,7 @@ class StoryEngine:
         ])
         self.background_planning = BackgroundPlanning(
             journal_path, self.planning_module, self.notepad, self._planning_game_snapshot,
+            context_event_limit=max(1, self.history_event_limit),
         )
         self.input_cycle = story.input_cycle
         self.output_cycle = story.output_cycle
@@ -239,6 +258,68 @@ class StoryEngine:
             payload=turn.game_payload if turn.ingress == "game_action" else (turn.response or {}),
         )
 
+    def _story_history_context(self, role: StoryRole) -> str:
+        return self.recording_journal.prompt_context(role, self.history_event_limit, self.history_chunk_size)
+
+    @staticmethod
+    def _history_input_id(turn: StoryTurn) -> str:
+        return f"{turn.turn_id}:recording" if turn.ingress == "game_action" else f"{turn.turn_id}:input"
+
+    def _completed_receipts(self, turn: StoryTurn) -> list[StoryHistoryEvent]:
+        return [
+            StoryHistoryEvent(
+                event_id=receipt.event_id, action_id=turn.turn_id, kind="game_action",
+                source_event_ids=(self._history_input_id(turn),),
+                payload=self.recording_journal.receipt_recording_event(receipt).payload,
+            )
+            for receipt in self.recording_journal.narratron_receipts(f"{turn.turn_id}:recording")
+        ]
+
+    def _game_completion_events(self, turn: StoryTurn) -> list[StoryHistoryEvent]:
+        return [
+            StoryHistoryEvent(
+                event_id=self._history_input_id(turn), action_id=turn.turn_id, kind="game_action",
+                payload=turn.game_payload, narrative_brief=turn.narrative_brief,
+            ),
+            *self._completed_receipts(turn),
+        ]
+
+    def _response_completion_events(self, turns: list[StoryTurn], owner: StoryTurn) -> list[StoryHistoryEvent]:
+        assert owner.response is not None
+        output_id = f"{owner.turn_id}:recording" if owner.ingress == "communicated_action" else f"{owner.turn_id}:output"
+        events = [
+            StoryHistoryEvent(
+                event_id=f"{turn.turn_id}:input", action_id=turn.turn_id, kind="player_action",
+                source_event_ids=(output_id,), payload={"action": turn.action},
+            )
+            for turn in turns if turn.ingress == "communicated_action"
+        ]
+        if owner.ingress == "communicated_action":
+            events.extend(self._completed_receipts(owner))
+        events.append(StoryHistoryEvent(
+            event_id=output_id, action_id=owner.turn_id, kind="story_output",
+            source_event_ids=tuple(self._history_input_id(turn) for turn in turns), payload=owner.response,
+        ))
+        return events
+
+    def _restore_history(self) -> None:
+        """Seed existing saves from successful checkpoints, never from ADK prose."""
+        if self.recording_journal.recent_history(1, kinds=("player_action", "game_action", "story_output")):
+            return
+        turns = self.turn_journal.turns()
+        groups: dict[str, list[StoryTurn]] = {}
+        for turn in turns:
+            groups.setdefault(turn.cycle_id or turn.turn_id, []).append(turn)
+        events: list[StoryHistoryEvent] = []
+        for members in groups.values():
+            for turn in members:
+                if turn.ingress == "game_action" and turn.recorder_completed:
+                    events.extend(self._game_completion_events(turn))
+            for turn in members:
+                if turn.response is not None and turn.recorder_completed:
+                    events.extend(self._response_completion_events(members, turn))
+        self.recording_journal.complete_history(events)
+
     def _set_user_action_processing(self, active: bool) -> None:
         try:
             if self.canvas_manager.tool_response is not None:
@@ -309,6 +390,7 @@ class StoryEngine:
                 turn.narration_reason = decision.reason
                 turn.responder_skipped = outcome.narration_request is None
                 turn.narrative_brief = outcome.narration_request.brief if outcome.narration_request is not None else None
+                self.recording_journal.complete_history(self._game_completion_events(turn))
                 self.turn_journal.save(turn)
                 self._queue_planning_progress(turn)
 
@@ -333,9 +415,12 @@ class StoryEngine:
                     self._queue_planning_progress(owner)
                 if spoken and not owner.recorder_completed:
                     self.recorder_module.record(self._recording_event(owner))
+                    self.recording_journal.complete_history(self._response_completion_events(turns, owner))
                     owner.recorder_completed = True
                     self.turn_journal.save(owner)
                     self._queue_planning_progress(owner)
+                if not spoken:
+                    self.recording_journal.complete_history(self._response_completion_events(turns, owner))
                 for turn in turns:
                     if turn.turn_id != owner.turn_id:
                         turn.response_owner_id = owner.turn_id

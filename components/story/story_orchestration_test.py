@@ -23,7 +23,7 @@ from components.story.story_handoffs import GameControlDecision, NarrationReques
 from components.story.story_recording_journal import RecordingEvent
 from components.story.story_response_module import MAX_GAME_ENTRY_RESPONSE_ATTEMPTS
 from components.story.story_session import StoryRole, StorySession
-from components.story.story_turn_journal import StoryTurn
+from components.story.story_turn_journal import StoryTurn, StoryTurnJournal
 from tools.story.story_tool import StoryTool
 from testing.game_fixtures import exchange_definition, make_game
 
@@ -108,6 +108,180 @@ def test_communicated_turn_records_and_plans_without_request(harness: TurnHarnes
     assert tool.recording_journal.pending() == []
 
 
+def test_completion_history_excludes_failed_recording_and_retries_without_duplicate_output(
+    harness: TurnHarness,
+) -> None:
+    tool = harness.new_tool()
+    harness.fail_recording = True
+    assert "error" in tool.resolve_action("Turn the key")
+    assert tool.recording_journal.recent_history() == []
+    harness.fail_recording = False
+    tool.retry_pending_turns()
+    assert tool.wait_for_pending_events(5)
+    events = tool.recording_journal.recent_history()
+    assert [event.kind for event in events] == ["player_action", "story_output"]
+    assert events[0].payload == {"action": "Turn the key"}
+    assert events[1].payload["narration"] == "The key breaks."
+    assert events[1].source_event_ids == (events[0].event_id,)
+    assert events[0].source_event_ids == (events[1].event_id,)
+    tool.retry_pending_turns()
+    assert tool.wait_for_pending_events(5)
+    assert tool.recording_journal.recent_history() == events
+    assert harness.calls.count("responder") == 1
+
+
+def test_completion_write_failure_reuses_recorded_result_on_retry(harness: TurnHarness) -> None:
+    tool = harness.new_tool()
+    with patch.object(tool.recording_journal, "complete_history", side_effect=OSError("journal offline")):
+        assert "error" in tool.resolve_action("Turn the key")
+    assert tool.recording_journal.recent_history() == []
+    assert tool.recording_journal.pending() == []
+    tool.retry_pending_turns()
+    assert tool.wait_for_pending_events(5)
+    assert [event.kind for event in tool.recording_journal.recent_history()] == ["player_action", "story_output"]
+    assert_foreground_calls(harness, ["responder", "recorder"])
+
+
+def test_completion_context_window_survives_restart(harness: TurnHarness) -> None:
+    harness.theater.config.return_value["story_planning"]["history_event_limit"] = 2
+    tool = harness.new_tool()
+    tool.resolve_action("OLDER_PLAYER_ACTION", drain=True)
+    tool.resolve_action("LATEST_PLAYER_ACTION", drain=True)
+    events = tool.recording_journal.recent_history(2)
+    assert len(events) == 2
+    tool.close()
+    harness.tools.remove(tool)
+    restarted = harness.new_tool()
+    assert restarted.wait_for_pending_events(5)
+    context = restarted.story_session.history_context
+    assert context is not None
+    for role in ("responder", "recorder", "planner"):
+        prompt = context(role)
+        assert "OLDER_PLAYER_ACTION" not in prompt
+        assert "LATEST_PLAYER_ACTION" in prompt
+    assert restarted.recording_journal.recent_history(2) == events
+
+
+def test_game_completion_is_retained_when_narration_fails(harness: TurnHarness) -> None:
+    harness.decision = GameControlDecision(
+        narration_request=NarrationRequest(user_action="A trade completed", brief="The merchant hands over the key."),
+        reason="A consequential trade.",
+    )
+    harness.fail_response = True
+    tool = harness.new_tool()
+    tool._handle_player_game_action(GameAction(name="trade", arguments={}, revision=0), {"revision": 1})
+    assert not tool.wait_for_pending_events(5)
+    assert [event.kind for event in tool.recording_journal.recent_history()] == ["game_action"]
+    harness.fail_response = False
+    tool.retry_pending_turns()
+    assert tool.wait_for_pending_events(5)
+    assert [event.kind for event in tool.recording_journal.recent_history()] == ["game_action", "story_output"]
+
+
+def test_existing_save_seeds_completed_history_without_pending_or_unrecorded_output(
+    harness: TurnHarness,
+) -> None:
+    journal = StoryTurnJournal(harness.theater.output_dir() / "story.sqlite")
+    try:
+        journal.accept(StoryTurn(
+            turn_id="legacy-completed", ingress="communicated_action", action="RESOLVED_ACTION",
+            response={"narration": "RECORDED_OUTPUT"}, recorder_completed=True, delivered=True,
+        ))
+        journal.accept(StoryTurn(
+            turn_id="legacy-pending", ingress="communicated_action", action="PENDING_ACTION",
+            response={"narration": "UNRECORDED_OUTPUT"},
+        ))
+    finally:
+        journal.close()
+    harness.fail_recording = True
+    tool = harness.new_tool()
+    assert not tool.wait_for_pending_events(5)
+    events = tool.recording_journal.recent_history()
+    assert [event.kind for event in events] == ["player_action", "story_output"]
+    context = tool.recording_journal.prompt_context("recorder", 20, 10)
+    assert "RESOLVED_ACTION" in context
+    assert "RECORDED_OUTPUT" in context
+    assert "PENDING_ACTION" not in context
+    assert "UNRECORDED_OUTPUT" not in context
+
+
+def test_planner_backlog_uses_latest_bounded_updates(harness: TurnHarness) -> None:
+    harness.theater.config.return_value["story_planning"]["history_event_limit"] = 2
+    harness.fail_planning = True
+    tool = harness.new_tool()
+    for action in ("OLDEST_ACTION", "MIDDLE_ACTION", "NEWEST_ACTION"):
+        tool.resolve_action(action)
+        assert tool.cycle.wait(5)
+        assert not tool.wait_for_deep_planning(5)
+    contexts: list[dict[str, JsonValue]] = []
+
+    def plan(handoff: dict[str, JsonValue], source: NoteSnapshot) -> dict[str, str]:
+        contexts.append(handoff)
+        return {"Ambush": "Plan from the newest established outcome"}
+
+    with patch.object(tool.planning_module, "plan_story_updates", side_effect=plan):
+        tool.retry_pending_turns()
+        assert tool.wait_for_pending_events(5)
+    assert len(contexts) == 1
+    updates = json.dumps(contexts[0]["story_updates"])
+    assert "responder_output" in updates
+    assert "recorded_outcome" in updates
+    assert "OLDEST_ACTION" not in updates
+    assert tool.notepad.snapshot().notes["Ambush"] == "Plan from the newest established outcome"
+    assert "NEWEST_ACTION" in tool.recording_journal.prompt_context("planner", 2, 1)
+
+
+def test_foreground_lore_tools_append_shared_reads_without_planner_reads_or_private_leaks(
+    harness: TurnHarness,
+) -> None:
+    documents = {
+        "rules.txt": "SHARED_RULES",
+        "items.txt": "SHARED_ITEMS",
+        "RESPONDER.md": "PRIVATE_RESPONDER",
+        "RECORDER.md": "PRIVATE_RECORDER",
+        "PLANNER.md": "PRIVATE_PLANNER",
+        "research.txt": "PLANNER_ONLY_RESEARCH",
+    }
+
+    def read_document(document: str) -> str:
+        return documents[document]
+
+    harness.theater.lore_documents.return_value = list(documents)
+    harness.theater.read_lore_document.side_effect = read_document
+    tool = harness.new_tool()
+    assert "SHARED_RULES" in tool.response_module.read_lore("rules.txt")
+    assert "SHARED_ITEMS" in tool.recorder_module.read_lore("items.txt")
+    assert "PRIVATE_RESPONDER" in tool.response_module.read_lore("RESPONDER.md")
+    assert "PRIVATE_RECORDER" in tool.recorder_module.read_lore("RECORDER.md")
+    context = tool.story_session.history_context
+    assert context is not None
+    for role in ("responder", "recorder", "planner"):
+        prompt = context(role)
+        assert prompt.index("SHARED_RULES") < prompt.index("SHARED_ITEMS")
+        assert prompt.count('"source": "lore_read"') == (2 if role == "planner" else 3)
+        if role != "responder":
+            assert "PRIVATE_RESPONDER" not in prompt
+        if role != "recorder":
+            assert "PRIVATE_RECORDER" not in prompt
+    before = context("planner")
+    assert "PLANNER_ONLY_RESEARCH" in tool.planning_module.deep_read_lore("research.txt")
+    assert context("planner") == before
+    tool.response_module.read_lore("")
+    assert context("planner") == before
+    tool.resolve_action("Turn the key", drain=True)
+    prompt = context("planner")
+    assert prompt.index("SHARED_ITEMS") < prompt.index('"kind": "player_action"') < prompt.index('"kind": "story_output"')
+
+
+@pytest.mark.parametrize(("limit", "chunk"), [(20, 10), (6, 3), (0, 1)])
+def test_history_chunk_defaults_follow_event_limit(harness: TurnHarness, limit: int, chunk: int) -> None:
+    harness.theater.config.return_value["story_planning"].update({
+        "history_event_limit": limit, "history_chunk_size": None,
+    })
+    tool = harness.new_tool()
+    assert tool.history_chunk_size == chunk
+
+
 @pytest.mark.parametrize("with_contract", [False, True])
 def test_unstructured_adventure_stages_freeform_notes_and_recovers_after_restart(
     harness: TurnHarness, with_contract: bool,
@@ -176,6 +350,11 @@ def test_response_recording_can_prepare_game_offer_awaiting_player_consent(
         event = tool._recording_event(turn)
         receipts = tool.recording_journal.narratron_receipts(event.event_id)
         assert len(receipts) == 2
+        completed_receipts = [
+            entry for entry in tool.recording_journal.recent_history()
+            if entry.kind == "game_action" and entry.payload.get("actor") == "narratron"
+        ]
+        assert [entry.event_id for entry in completed_receipts] == [receipt.event_id for receipt in receipts]
         assert all(tool.recording_journal.recorded_revision(receipt.event_id) is not None for receipt in receipts)
         assert tool.recording_journal.is_game_control_completed(event.event_id)
         assert tool.recording_journal.pending() == []
@@ -876,6 +1055,12 @@ def test_cycle_combines_game_receipts_and_all_spoken_actions(harness: TurnHarnes
     assert len({turn.cycle_id for turn in turns}) == 1
     assert sum(turn.response is not None for turn in turns) == 1
     assert all(turn.completed for turn in turns)
+
+    completions = tool.recording_journal.recent_history(20)
+    spoken = [event.payload["action"] for event in completions if event.kind == "player_action"]
+    assert spoken == ["Look around", "Ask about the merchant", "Examine the key"]
+    assert len([event for event in completions if event.kind == "game_action"]) == 1
+    assert len([event for event in completions if event.kind == "story_output"]) == 2
 
 
 def test_game_commit_during_speech_processing_queues_without_waiting(

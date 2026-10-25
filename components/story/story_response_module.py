@@ -37,6 +37,7 @@ from components.reference_manager import (
     normalize_voice_tags,
 )
 from components.lore_library import LoreLibrary
+from components.story.story_recording_journal import StoryRecordingJournal
 from components.notepad import NoteSnapshot
 from components.story.story_handoffs import PlanningRequest, ProposedFactChange
 from components.story.story_session import StorySession
@@ -315,6 +316,7 @@ class StoryResponseModule:
         session_id: str,
         game_state: GameState | None = None,
         story_session: StorySession | None = None,
+        recording_journal: StoryRecordingJournal | None = None,
     ) -> None:
         if canvas_manager is None:
             raise ValueError("canvas_manager is required.")
@@ -343,6 +345,7 @@ class StoryResponseModule:
         self._in_flight_lock = Lock()
 
         self.lore_library = lore_library
+        self.recording_journal = recording_journal
         self.reference_manager = reference_manager
         if self.reference_manager.story_state is None and self.canvas_manager is not None:
             self.reference_manager.story_state = self.canvas_manager.story
@@ -475,6 +478,8 @@ class StoryResponseModule:
             call_count = self._read_lore_calls_this_turn
 
         result = self.lore_library.read_lore(document, role="responder")
+        if self.recording_journal is not None:
+            self.recording_journal.record_lore_read("responder", document, result)
         self._record_read_lore_activity(document, result)
         if call_count == MAX_READ_LORE_CALLS_PER_TURN:
             result += (
