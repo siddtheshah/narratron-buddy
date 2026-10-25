@@ -80,9 +80,8 @@ until a whole chunk rolls over. The responder receives narrative game summaries
 rather than raw game receipts. Current role tasks, sticky notes, lore, and game
 state retain their existing permissions. Tool calls and results remain available
 within the active invocation; ADK history is retained only for auditing. Existing
-saves seed history from successful turn checkpoints. Former completion/lore
-tables migrate into canonical recording rows, preserving their ordering and
-chunk boundaries, then are removed. Old ADK conversations are never replayed.
+saves seed history from successful turn checkpoints. Old ADK conversations are
+never replayed.
 
 `BackgroundPlanning` independently consumes a durable stream of accepted player
 intentions, committed game actions, generated responses, and recorded outcomes.

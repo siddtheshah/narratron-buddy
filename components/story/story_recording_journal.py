@@ -143,16 +143,12 @@ class StoryRecordingJournal:
                     position INTEGER PRIMARY KEY AUTOINCREMENT,
                     event_id TEXT NOT NULL UNIQUE,
                     event_json TEXT NOT NULL,
-                    recorded_revision INTEGER
+                    recorded_revision INTEGER,
+                    recording_required INTEGER NOT NULL DEFAULT 1,
+                    history_position INTEGER,
+                    history_metadata_json TEXT
                 )"""
             )
-            columns = {row[1] for row in self._connection.execute("PRAGMA table_info(recording_events)")}
-            if "recording_required" not in columns:
-                self._connection.execute("ALTER TABLE recording_events ADD COLUMN recording_required INTEGER NOT NULL DEFAULT 1")
-            if "history_position" not in columns:
-                self._connection.execute("ALTER TABLE recording_events ADD COLUMN history_position INTEGER")
-            if "history_metadata_json" not in columns:
-                self._connection.execute("ALTER TABLE recording_events ADD COLUMN history_metadata_json TEXT")
             self._connection.execute(
                 "CREATE UNIQUE INDEX IF NOT EXISTS recording_history_position ON recording_events(history_position)"
             )
@@ -179,53 +175,6 @@ class StoryRecordingJournal:
                     completed INTEGER NOT NULL DEFAULT 0
                 )"""
             )
-            self._migrate_history()
-
-    def _migrate_history(self) -> None:
-        """Fold the former completion/lore copies into canonical recording rows."""
-        tables = {row[0] for row in self._connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
-        legacy: list[tuple[int, StoryHistoryEvent]] = []
-        if "story_context_events" in tables:
-            rows = self._connection.execute(
-                """SELECT s.position, s.source, c.event_json, l.event_json
-                   FROM story_context_events s
-                   LEFT JOIN story_completions c ON s.source = 'completion' AND c.event_id = s.event_id
-                   LEFT JOIN story_lore_reads l ON s.source = 'lore_read' AND l.event_id = s.event_id
-                   ORDER BY s.position"""
-            ).fetchall()
-            for position, source, completion_json, lore_json in rows:
-                if source == "completion":
-                    legacy.append((position, StoryHistoryEvent.model_validate_json(completion_json)))
-                else:
-                    read = LoreReadRecord.model_validate_json(lore_json)
-                    legacy.append((position, StoryHistoryEvent(
-                        event_id=read.event_id, action_id=read.event_id, kind="lore_read",
-                        payload=read.model_dump(mode="json", exclude={"event_id"}),
-                    )))
-        elif "story_completions" in tables:
-            rows = self._connection.execute("SELECT event_json FROM story_completions ORDER BY position").fetchall()
-            legacy = [(index, StoryHistoryEvent.model_validate_json(row[0])) for index, row in enumerate(rows, 1)]
-        aliases: dict[str, str] = {}
-        for _, event in legacy:
-            if event.kind in ("story_output", "game_action") and event.event_id.endswith((":input", ":output")):
-                candidate = event.event_id.rsplit(":", 1)[0] + ":recording"
-                row = self._connection.execute("SELECT event_json FROM recording_events WHERE event_id = ?", (candidate,)).fetchone()
-                if row is not None and HISTORY_KINDS[RecordingEvent.model_validate_json(row[0]).kind] == event.kind:
-                    aliases[event.event_id] = candidate
-        for position, event in legacy:
-            payload = event.payload
-            brief = event.narrative_brief
-            if event.kind == "game_action":
-                brief = TypeAdapter(str | None).validate_python(payload.get("narrative_brief"))
-                payload = {key: value for key, value in payload.items() if key not in ("narrative_brief", "action_name")}
-            self._store_history_event(event.model_copy(update={
-                "event_id": aliases.get(event.event_id, event.event_id),
-                "source_event_ids": tuple(aliases.get(source, source) for source in event.source_event_ids),
-                "payload": payload, "narrative_brief": brief,
-            }), position=position)
-        self._connection.execute("DROP TABLE IF EXISTS story_context_events")
-        self._connection.execute("DROP TABLE IF EXISTS story_completions")
-        self._connection.execute("DROP TABLE IF EXISTS story_lore_reads")
 
     @staticmethod
     def _history_event(event_json: str, metadata_json: str) -> StoryHistoryEvent:
@@ -237,7 +186,7 @@ class StoryRecordingJournal:
             narrative_brief=metadata.narrative_brief,
         )
 
-    def _store_history_event(self, event: StoryHistoryEvent, *, position: int | None = None) -> None:
+    def _store_history_event(self, event: StoryHistoryEvent) -> None:
         row = self._connection.execute(
             """SELECT event_json, recording_required, recorded_revision, history_position, history_metadata_json
                FROM recording_events WHERE event_id = ?""", (event.event_id,),
@@ -264,10 +213,9 @@ class StoryRecordingJournal:
                     source_event_ids=event.source_event_ids, payload=event.payload,
                 ).model_dump_json()),
             )
-        if position is None:
-            position = self._connection.execute(
-                "SELECT COALESCE(MAX(history_position), 0) + 1 FROM recording_events",
-            ).fetchone()[0]
+        position = self._connection.execute(
+            "SELECT COALESCE(MAX(history_position), 0) + 1 FROM recording_events",
+        ).fetchone()[0]
         self._connection.execute(
             "UPDATE recording_events SET history_position = ?, history_metadata_json = ? WHERE event_id = ?",
             (position, HistoryMetadata(

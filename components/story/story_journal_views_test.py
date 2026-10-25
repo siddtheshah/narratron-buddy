@@ -118,22 +118,11 @@ def test_event_views_and_chunk_boundary_survive_restart(tmp_path: Path) -> None:
         restored.close()
 
 
-def test_existing_completions_migrate_once_before_new_lore(tmp_path: Path) -> None:
+def test_existing_history_ordered_before_new_lore(tmp_path: Path) -> None:
     path = tmp_path / "story.sqlite"
-    with sqlite3.connect(path) as connection:
-        connection.execute(
-            """CREATE TABLE story_completions (
-                position INTEGER PRIMARY KEY AUTOINCREMENT, event_id TEXT UNIQUE, event_json TEXT
-            )"""
-        )
-        for index in range(2):
-            event = output(index)
-            connection.execute(
-                "INSERT INTO story_completions (event_id, event_json) VALUES (?, ?)",
-                (event.event_id, event.model_dump_json()),
-            )
     journal = StoryRecordingJournal(path)
     try:
+        journal.complete_history([output(0), output(1)])
         journal.record_lore_read("responder", "rules.txt", "Lore document: rules.txt\n\nNEW_LORE")
         prompt = journal.prompt_context("planner", 20, 10)
         assert prompt.index("OUTCOME_0") < prompt.index("OUTCOME_1") < prompt.index("NEW_LORE")
