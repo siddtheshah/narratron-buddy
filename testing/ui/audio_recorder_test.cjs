@@ -106,6 +106,47 @@ test('microphone restart drains old capture before starting another', async () =
   await finalStop;
 });
 
+test('push to talk mutes delivery while retaining the capture for the next press', async () => {
+  const h = harness();
+  await h.context.startAudioRecorderWorklet(h.handler, false);
+  const capture = h.captures[0];
+  capture.onSpeechStart();
+  capture.onData(pcm());
+  await tick();
+  assert.deepEqual(h.wire, []);
+
+  h.context.setMicrophoneTransmissionEnabled(true);
+  // The VAD is already speaking, so no second onSpeechStart is required.
+  capture.onData(pcm());
+  await tick();
+  assert.deepEqual(types(h.wire), ['activity_start']);
+  assert.equal(h.encoders[0].encoded.length, 1);
+
+  h.context.setMicrophoneTransmissionEnabled(false);
+  capture.onData(pcm());
+  await tick();
+  h.encoders[0].output();
+  h.encoders[0].flushes.shift()();
+  await tick();
+  assert.deepEqual(types(h.wire), ['activity_start', 'audio', 'activity_end']);
+  assert.equal(h.encoders[0].encoded.length, 1);
+  assert.equal(h.captures.length, 1);
+  assert.equal(h.encoders[0].state, 'configured');
+
+  h.context.setMicrophoneTransmissionEnabled(true);
+  capture.onData(pcm());
+  await tick();
+  assert.deepEqual(types(h.wire), ['activity_start', 'audio', 'activity_end', 'activity_start']);
+  assert.equal(h.encoders[0].encoded.length, 2);
+  capture.onSpeechEnd();
+  await tick();
+  h.encoders[0].output();
+  h.encoders[0].flushes.shift()();
+  await tick();
+  assert.deepEqual(types(h.wire), ['activity_start', 'audio', 'activity_end', 'activity_start', 'audio', 'activity_end']);
+  await h.context.stopMicrophone();
+});
+
 test('old capture cannot deliver packets or end into replacement socket', async () => {
   const h = harness();
   await h.context.startAudioRecorderWorklet(h.handler);

@@ -9,6 +9,7 @@ const DEFAULT_MIN_SPEECH_MS = 250;
 let activeCapture = null;
 let captureGeneration = 0;
 let pendingStop = Promise.resolve();
+let transmissionEnabled = true;
 
 function vadThreshold() {
   const threshold = Number(window.MIC_DETECT_THRESHOLD);
@@ -35,6 +36,7 @@ function emitSpeechActivity(phase) {
 
 function createCapture(handler, socket) {
   let accepting = true;
+  let transmitting = transmissionEnabled;
   let closed = false;
   let speaking = false;
   let timestampUs = 0;
@@ -84,6 +86,11 @@ function createCapture(handler, socket) {
   };
 
   return {
+    setTransmissionEnabled(enabled) {
+      if (transmitting === enabled) return;
+      transmitting = enabled;
+      if (!enabled) enqueue(finishSpeech);
+    },
     options: {
       deviceId: window.NARRATRON_MIC_DEVICE_ID || undefined,
       sampleRate: SAMPLE_RATE,
@@ -92,7 +99,7 @@ function createCapture(handler, socket) {
       vadMinRecordingTime: DEFAULT_MIN_SPEECH_MS,
       continuous: true,
       onSpeechStart: () => {
-        if (!accepting) return;
+        if (!accepting || !transmitting) return;
         enqueue(() => {
           if (speaking) return;
           speaking = true;
@@ -101,9 +108,15 @@ function createCapture(handler, socket) {
         });
       },
       onData: ({ float32 }) => {
-        if (!accepting || !float32) return;
+        if (!accepting || !transmitting || !float32) return;
         enqueue(() => {
-          if (!speaking || encoder.state !== "configured") return;
+          if (encoder.state !== "configured") return;
+          // The VAD may already be speaking when push-to-talk is pressed.
+          if (!speaking) {
+            speaking = true;
+            emitVadEvent(socket, "start", "speech_start");
+            emitSpeechActivity("start");
+          }
           const audioData = new AudioData({
             format: "f32-planar",
             sampleRate: SAMPLE_RATE,
@@ -121,7 +134,7 @@ function createCapture(handler, socket) {
         });
       },
       onSpeechEnd: () => {
-        if (accepting) enqueue(finishSpeech);
+        if (accepting && transmitting) enqueue(finishSpeech);
       },
       onError: (error) => {
         if (!accepting) return;
@@ -147,8 +160,9 @@ function createCapture(handler, socket) {
 }
 
 /** Starts microphone capture gated by RMS VAD and encoded to Opus packets. */
-export async function startAudioRecorderWorklet(handler) {
+export async function startAudioRecorderWorklet(handler, initiallyEnabled = true) {
   const stopping = stopMicrophone();
+  transmissionEnabled = initiallyEnabled;
   const generation = ++captureGeneration;
   await stopping;
   if (generation !== captureGeneration) return [null, null, null, false];
@@ -167,6 +181,12 @@ export async function startAudioRecorderWorklet(handler) {
   }
   if (generation !== captureGeneration) return [null, null, null, false];
   return [null, null, null, true];
+}
+
+/** Mutes delivery without closing the device or its audio worklet. */
+export function setMicrophoneTransmissionEnabled(enabled) {
+  transmissionEnabled = enabled;
+  activeCapture?.setTransmissionEnabled(enabled);
 }
 
 /** Stops capture immediately, then drains its encoder before another capture starts. */

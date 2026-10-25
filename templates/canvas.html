@@ -4258,12 +4258,13 @@
         })();
 
         let startAudioRecorderWorklet;
-
+        let setMicrophoneTransmissionEnabled;
         let stopMicrophone;
         let listenForSpeech;
         import(`/static/js/audio-recorder.js?cache_bust=${Date.now()}`)
             .then((module) => {
                 startAudioRecorderWorklet = module.startAudioRecorderWorklet;
+                setMicrophoneTransmissionEnabled = module.setMicrophoneTransmissionEnabled;
                 stopMicrophone = module.stopMicrophone;
             })
             .catch((err) => {
@@ -8205,6 +8206,7 @@
         let micStream = null;
         let isRecording = false;
         let isMicAwaiting = false;
+        let micCaptureReady = false;
         let micMode = localStorage.getItem('narratron_mic_mode') === 'push-to-talk' ? 'push-to-talk' : 'toggle';
         let micPressHeld = false;
         let micPressSource = null;
@@ -8293,7 +8295,7 @@
                 if (collabSection) collabSection.style.display = 'none';
                 if (hideSuggestionsBtn) hideSuggestionsBtn.style.display = 'none';
 
-                if (isRecording || isMicAwaiting || micPressHeld) releaseMicPress();
+                if (micCaptureReady || isMicAwaiting || micPressHeld) cancelMicCapture();
                 statusIndicator.classList.remove('disconnected');
             }
 
@@ -9037,7 +9039,7 @@
 
         // Disconnect and cleanup
         function cleanupAgentConnection() {
-            if (isRecording || isMicAwaiting || micPressHeld) releaseMicPress();
+            if (micCaptureReady || isMicAwaiting || micPressHeld) cancelMicCapture();
             if (window.agentPingInterval) {
                 clearInterval(window.agentPingInterval);
                 window.agentPingInterval = null;
@@ -9074,7 +9076,9 @@
 
             await refreshMicrophoneDevices(true);
             if (requestId !== micRequestId) return;
-            const [node, context, stream, started] = await startAudioRecorderWorklet(audioRecorderHandler);
+            const [node, context, stream, started] = await startAudioRecorderWorklet(
+                audioRecorderHandler, micMode !== 'push-to-talk' || micPressHeld
+            );
             if (!started) {
                 isMicAwaiting = false;
                 updateMicToggleUI();
@@ -9083,7 +9087,9 @@
             audioRecorderNode = node;
             audioRecorderContext = context;
             micStream = stream;
-            isRecording = true;
+            micCaptureReady = true;
+            isRecording = micMode !== 'push-to-talk' || micPressHeld;
+            setMicrophoneTransmissionEnabled(isRecording);
             isMicAwaiting = false;
             updateMicToggleUI();
         }
@@ -9103,6 +9109,7 @@
                 audioRecorderContext = null;
             }
             audioRecorderNode = null;
+            micCaptureReady = false;
             isRecording = false;
             isMicAwaiting = false;
             setPcmBroadcasting(false);
@@ -9112,7 +9119,7 @@
         // The agent socket follows agent lifecycle and tab focus. Enabling the mic
         // summons an inactive agent first, then only controls audio forwarding.
         async function enableMic() {
-            if (isRecording || isMicAwaiting) return;
+            if (micCaptureReady || isMicAwaiting) return;
             const requestId = ++micRequestId;
             try {
                 isMicAwaiting = true;
@@ -9123,7 +9130,6 @@
                 if (requestId !== micRequestId) return;
                 await startMicStream(requestId);
                 if (requestId !== micRequestId) return;
-                if (micMode === 'push-to-talk' && !micPressHeld) stopMicStream();
             } catch (err) {
                 if (requestId !== micRequestId) return;
                 isMicAwaiting = false;
@@ -9136,20 +9142,37 @@
         function releaseMicPress() {
             micPressHeld = false;
             micPressSource = null;
+            if (micMode === 'push-to-talk') {
+                if (setMicrophoneTransmissionEnabled) setMicrophoneTransmissionEnabled(false);
+                isRecording = false;
+                setPcmBroadcasting(false);
+                updateMicToggleUI();
+            }
+        }
+
+        function cancelMicCapture() {
+            micPressHeld = false;
+            micPressSource = null;
             micRequestId += 1;
-            if (isRecording || isMicAwaiting) stopMicStream();
+            if (micCaptureReady || isMicAwaiting) stopMicStream();
         }
 
         function beginMicPress(source) {
             if (micMode !== 'push-to-talk' || micPressHeld || !isCurrentOrator()) return;
             micPressHeld = true;
             micPressSource = source;
-            enableMic();
+            if (micCaptureReady) {
+                setMicrophoneTransmissionEnabled(true);
+                isRecording = true;
+                updateMicToggleUI();
+            } else {
+                enableMic();
+            }
         }
 
         agentConnectBtn.addEventListener('click', () => {
             if (micMode === 'push-to-talk') return;
-            if (isRecording) releaseMicPress();
+            if (isRecording) cancelMicCapture();
             else enableMic();
         });
         agentConnectBtn.addEventListener('pointerdown', (event) => {
@@ -9929,7 +9952,7 @@
         if (micModeToggle) {
             micModeToggle.checked = micMode === 'push-to-talk';
             micModeToggle.addEventListener('change', () => {
-                releaseMicPress();
+                cancelMicCapture();
                 micMode = micModeToggle.checked ? 'push-to-talk' : 'toggle';
                 localStorage.setItem('narratron_mic_mode', micMode);
                 updateMicToggleUI();
