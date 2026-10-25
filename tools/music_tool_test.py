@@ -93,7 +93,6 @@ class TestMusicTools(BaseTestCase):
         self.theater_manager = TheaterManager(base_theaters_dir=self.temp_dir)
         self.config = {
             "music": {
-                "playlists_folder": self.temp_dir,
                 "generation_cooldown": 0.0,
                 "switch_cooldown": 0.0,
                 "provider": "lyria",
@@ -117,7 +116,6 @@ class TestMusicTools(BaseTestCase):
             f.write("dummy audio")
 
         self.music_tools = self.make_tools(self.config)
-        self.music_tools.playlists_folder = os.path.join(self.temp_dir, "test_theater", "playlists")
         self.music_tools.cooldown_duration = 0.0
         self.music_tools._last_call_times.clear()
 

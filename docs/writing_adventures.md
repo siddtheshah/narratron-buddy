@@ -163,7 +163,6 @@ image_generation:
     cooldown_duration: 6
 
 music:
-    playlists_folder: "playlists"
     style: "orchestral fantasy ambiance, haunting cello melodies, distant percussion, loopable background"
 
 # Adventure Mode & Persistent State

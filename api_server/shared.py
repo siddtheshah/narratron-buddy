@@ -24,7 +24,6 @@ from storage.stamp_storage import ensure_stamps_root
 PROJECT_ROOT = object_registry.PROJECT_ROOT
 
 logger = logging.getLogger(__name__)
-config = object_registry.config
 app = object_registry.app
 
 
@@ -53,8 +52,8 @@ app.mount("/static", StaticFiles(directory=static_dir), name="static")
 # Screenshots and diagrams embedded in the public documentation.
 app.mount("/docs/images", StaticFiles(directory=PROJECT_ROOT / "docs" / "images"), name="docs-images")
 
-# Playlists folder from config (absolute path resolution)
-playlists_folder = str((PROJECT_ROOT / config.get("music", {}).get("playlists_folder", "playlists")).resolve())
+# Public playlists always live in the project's fixed playlists directory.
+playlists_folder = str((PROJECT_ROOT / "playlists").resolve())
 os.makedirs(playlists_folder, exist_ok=True)
 app.mount("/playlists", StaticFiles(directory=playlists_folder), name="playlists")
 

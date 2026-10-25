@@ -104,14 +104,6 @@ class MusicTools(BaseTools):
                 duration = self.switch_cooldown
         super().record_tool_call(tool_name, duration)
 
-    @property
-    def playlists_folder(self) -> str:
-        return self.theater_playlists_dir
-
-    @playlists_folder.setter
-    def playlists_folder(self, val: str) -> None:
-        self.theater_playlists_dir = str(val)
-
     def _get_music_provider(self):
         """Build the configured music provider once per session."""
         if self._music_provider is None:

@@ -124,7 +124,6 @@ image_generation:
 
 music:
     use_generated_music: true
-    playlists_folder: "playlists"
     generation_cooldown: 90
     switch_cooldown: 15
     style: "orchestral fantasy ambiance, haunting cello melodies, distant percussion, loopable background"
