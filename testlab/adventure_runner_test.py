@@ -248,8 +248,6 @@ interactive_canvas:
   enabled: true
 story_planning:
   adventure_mode: true
-  deep_planning:
-    enabled: false
   enforce_structured: true
 """
     (adv_dir / "theater.yaml").write_text(theater_yaml.strip(), encoding="utf-8")

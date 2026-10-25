@@ -19,7 +19,7 @@ def test_adventure_lab_game_moves_and_reset(monkeypatch: MonkeyPatch, tmp_path: 
     (adventure / "game").mkdir(parents=True)
     (adventure / "game/game.json").write_text(counter_definition().model_dump_json(), encoding="utf-8")
     (adventure / "theater.yaml").write_text(
-        "story_planning:\n  adventure_mode: true\n  deep_planning:\n    enabled: false\n", encoding="utf-8",
+        "story_planning:\n  adventure_mode: true\n", encoding="utf-8",
     )
     (adventure / "planning.yaml").write_text(
         "Current Scene:\n  owner: recorder\n  initial: Counter room\n", encoding="utf-8",

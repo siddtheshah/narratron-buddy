@@ -108,6 +108,39 @@ def test_communicated_turn_records_and_plans_without_request(harness: TurnHarnes
     assert tool.recording_journal.pending() == []
 
 
+def test_zero_planning_budget_preserves_foreground_processing(harness: TurnHarness) -> None:
+    harness.theater.config.return_value["story_planning"]["deep_planning"] = {"token_budget_per_event": 0}
+    tool = harness.new_tool()
+    assert tool.resolve_action("Turn the key", drain=True)["narration"] == "The key breaks."
+    tool.retry_pending_turns()
+    assert tool.wait_for_pending_events(5)
+    assert tool.wait_for_deep_planning(0)
+    assert harness.calls == ["responder", "recorder"]
+    assert tool.turn_journal.turns()[0].completed
+    assert tool.notepad.snapshot().notes["Inventory"] == "Broken key"
+
+
+def test_zero_planning_budget_skips_pending_work_on_restart(harness: TurnHarness) -> None:
+    harness.fail_planning = True
+    tool = harness.new_tool()
+    tool.resolve_action("Turn the key")
+    assert tool.cycle.wait(5)
+    assert not tool.wait_for_deep_planning(5)
+    tool.close()
+    harness.calls.clear()
+    harness.fail_planning = False
+    harness.theater.config.return_value["story_planning"]["deep_planning"] = {"token_budget_per_event": 0}
+    disabled = harness.new_tool()
+    disabled.retry_pending_turns()
+    assert disabled.wait_for_pending_events(5)
+    assert harness.calls == []
+    disabled.close()
+    harness.theater.config.return_value["story_planning"]["deep_planning"] = {"token_budget_per_event": 10}
+    resumed = harness.new_tool()
+    assert resumed.wait_for_pending_events(5)
+    assert harness.calls == ["planner"]
+
+
 def test_completion_history_excludes_failed_recording_and_retries_without_duplicate_output(
     harness: TurnHarness,
 ) -> None:
@@ -940,7 +973,7 @@ def test_active_planner_assimilates_new_context_and_replenishes_budget(harness: 
         context = tool.story_session.planner_context
         assert context is not None
         contexts.append(context())
-        assert tool.planning_module._story_tokens_remaining == tool.planning_module.story_token_budget
+        assert tool.planning_module._story_tokens_remaining == tool.planning_module.token_budget_per_event
         return {"Ambush": "Reconciled with the latest outcome"}
 
     with patch.object(tool.planning_module, "plan_story_updates", side_effect=plan) as planning:

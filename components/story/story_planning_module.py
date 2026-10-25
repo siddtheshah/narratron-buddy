@@ -56,11 +56,9 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_DEEP_THINKING_BUDGET = 2048
 DEFAULT_DEEP_MAX_OUTPUT_TOKENS = 6144
-DEFAULT_STORY_TOKEN_BUDGET = 16384
+DEFAULT_TOKEN_BUDGET_PER_EVENT = 16384
 DEFAULT_DEEP_PLANNER_TIMEOUT_SECONDS = 45.0
 DEFAULT_DEEP_HEARTBEAT_SECONDS = 1.0
-DEFAULT_DEEP_MAX_EVENTS_PER_TURN = 4
-DEFAULT_DEEP_IDLE_REFINEMENT_TURNS = 0
 DEFAULT_DEEP_HEARTBEAT_FAILURE_RETRIES = 2
 STORY_LOG_CONTEXT_LINES = 200
 MAX_DEEP_READ_LORE_CALLS_PER_RUN = 8
@@ -316,9 +314,6 @@ class StoryPlanningModule:
         # Configuration for deep planner
         raw_deep_config = self.config.get("deep_planning") or {}
         self.deep_planning_config: dict[str, object] = dict(raw_deep_config)
-        self.deep_planning_enabled: bool = bool(
-            self.deep_planning_config.get("enabled", self.adventure_mode)
-        )
         self.planner_model: str = str(self.config.get("planner_model") or "gemini-3.8-flash")
         self.deep_planner_model: str = str(
             self.deep_planning_config.get("model")
@@ -327,19 +322,18 @@ class StoryPlanningModule:
         )
         self.deep_planner_timeout_seconds: float = DEFAULT_DEEP_PLANNER_TIMEOUT_SECONDS
         self.deep_heartbeat_seconds: float = DEFAULT_DEEP_HEARTBEAT_SECONDS
-        self.deep_max_events_per_turn: int = max(
-            1,
-            int(self.deep_planning_config.get("max_events_per_turn", DEFAULT_DEEP_MAX_EVENTS_PER_TURN)),
-        )
-        self.deep_idle_refinement_turns: int = DEFAULT_DEEP_IDLE_REFINEMENT_TURNS
         self.deep_heartbeat_failure_retries: int = DEFAULT_DEEP_HEARTBEAT_FAILURE_RETRIES
         raw_deep_budget = DEFAULT_DEEP_THINKING_BUDGET
         self.deep_thinking_budget: Optional[int] = (
             int(raw_deep_budget) if raw_deep_budget is not None else None
         )
         self.deep_max_output_tokens: int = DEFAULT_DEEP_MAX_OUTPUT_TOKENS
-        self.story_token_budget = max(1, int(self.deep_planning_config.get("token_budget", DEFAULT_STORY_TOKEN_BUDGET)))
-        self._story_tokens_remaining = self.story_token_budget
+        self.token_budget_per_event: int = TypeAdapter(int).validate_python(
+            self.deep_planning_config.get("token_budget_per_event", DEFAULT_TOKEN_BUDGET_PER_EVENT),
+        )
+        if self.token_budget_per_event < 0:
+            raise ValueError("story_planning.deep_planning.token_budget_per_event cannot be negative.")
+        self._story_tokens_remaining: int = self.token_budget_per_event
         raw_gcloud = self.config.get("gcloud") or {}
         gcloud_dict: dict[str, object] = dict(raw_gcloud)
         self.vertex_project: Optional[str] = (
@@ -590,12 +584,12 @@ class StoryPlanningModule:
             output_key="story_planner_output",
             include_contents="none" if self.story_session is not None else "default",
             generate_content_config=generate_content_config,
-            before_model_callback=self._limit_story_budget if self.story_session is not None else None,
-            after_model_callback=self._count_story_tokens if self.story_session is not None else None,
+            before_model_callback=self._limit_story_budget,
+            after_model_callback=self._count_story_tokens,
         )
 
     def reset_story_budget(self) -> None:
-        self._story_tokens_remaining = self.story_token_budget
+        self._story_tokens_remaining = self.token_budget_per_event
 
     def _limit_story_budget(
         self, callback_context: CallbackContext, llm_request: LlmRequest,
@@ -625,6 +619,8 @@ class StoryPlanningModule:
 
     def plan_story_updates(self, handoff: dict[str, JsonValue], source: NoteSnapshot) -> dict[str, str]:
         """Assimilate incoming story content without waiting for a cycle boundary."""
+        if self.token_budget_per_event == 0:
+            return {}
         if self.story_session is None:
             raise RuntimeError("A shared story session is required for turn planning.")
         self.reset_deep_lore_call_counts()
@@ -670,7 +666,7 @@ class StoryPlanningModule:
     def wait_for_deep_planning(
         self, timeout: float = 5.0, target_turn_id: Optional[int] = None
     ) -> bool:
-        if not self.deep_planning_enabled:
+        if self.token_budget_per_event == 0:
             return True
         if target_turn_id is None:
             return self.wait_for_pending_events(timeout)
@@ -757,12 +753,12 @@ class StoryPlanningModule:
     def queue_deep_planning(
         self, turn_id: int, action: str, result: dict[str, object]
     ) -> threading.Thread:
-        if self.story_session is not None:
-            raise RuntimeError("StoryTool owns per-turn planner scheduling.")
-        if not self.deep_planning_enabled:
+        if self.token_budget_per_event == 0:
             thread = threading.Thread(target=lambda: None, daemon=True)
             thread.start()
             return thread
+        if self.story_session is not None:
+            raise RuntimeError("StoryTool owns per-turn planner scheduling.")
 
         with self._deep_planning_queue_lock:
             self._deep_planning_queue.append((turn_id, action, dict(result)))
@@ -770,11 +766,10 @@ class StoryPlanningModule:
                 return self._deep_planning_worker
 
             def _worker() -> None:
-                idle_refinements_remaining = self.deep_idle_refinement_turns
                 consecutive_failures = 0
                 while True:
                     with self._deep_planning_queue_lock:
-                        batch = list(self._deep_planning_queue)[: self.deep_max_events_per_turn]
+                        batch = list(self._deep_planning_queue)
 
                     if batch:
                         update = self._run_deep_planner_agent(batch)
@@ -802,21 +797,7 @@ class StoryPlanningModule:
                                     and self._deep_planning_queue[0][0] == expected[0]
                                 ):
                                     self._deep_planning_queue.popleft()
-                        idle_refinements_remaining = self.deep_idle_refinement_turns
                         consecutive_failures = 0
-                        continue
-
-                    if idle_refinements_remaining > 0:
-                        with self._planning_progress_lock:
-                            through_turn_id = self._planned_through_turn_id
-                        update = self._run_deep_planner_agent([])
-                        try:
-                            self._complete_planning_heartbeat(through_turn_id, update)
-                        except Exception:
-                            logger.exception(
-                                "[StoryPlanningModule] Failed to complete idle planning refinement"
-                            )
-                        idle_refinements_remaining -= 1
                         continue
 
                     with self._deep_planning_queue_lock:
@@ -860,7 +841,10 @@ class StoryPlanningModule:
         self,
         turn_events: list[tuple[int, str, dict[str, object]]],
     ) -> dict[str, JsonValue]:
+        if self.token_budget_per_event == 0:
+            return {"tool_updates": True}
         self.reset_deep_lore_call_counts()
+        self.reset_story_budget()
         has_game_action: bool = False
         latest_game_action: Optional[dict[str, JsonValue]] = None
         for _, _, reaction in turn_events:

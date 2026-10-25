@@ -61,7 +61,7 @@ class BudgetLoopModel(BaseLlm):
 
 class TestStoryPlanningModuleDependencies(unittest.TestCase):
     def test_story_budget_ends_an_agent_that_keeps_calling_tools(self) -> None:
-        module = self._make_module(MagicMock(spec=LoreLibrary), {"deep_planning": {"token_budget": 10}})
+        module = self._make_module(MagicMock(spec=LoreLibrary), {"deep_planning": {"token_budget_per_event": 10}})
         model = BudgetLoopModel()
         with tempfile.TemporaryDirectory() as directory:
             session = StorySession(Path(directory) / "session.sqlite", "budget")
@@ -77,7 +77,7 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
                 session.close()
 
     def test_story_budget_counts_generation_across_tools_and_resets_for_new_content(self) -> None:
-        module = self._make_module(MagicMock(spec=LoreLibrary), {"deep_planning": {"token_budget": 10}})
+        module = self._make_module(MagicMock(spec=LoreLibrary), {"deep_planning": {"token_budget_per_event": 10}})
         context = MagicMock(spec=CallbackContext)
         request = LlmRequest()
         assert module._limit_story_budget(context, request) is None
@@ -98,12 +98,42 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
         assert module._limit_story_budget(context, LlmRequest()) is None
 
     def test_story_budget_is_finite_without_provider_usage(self) -> None:
-        module = self._make_module(MagicMock(spec=LoreLibrary), {"deep_planning": {"token_budget": 10}})
+        module = self._make_module(MagicMock(spec=LoreLibrary), {"deep_planning": {"token_budget_per_event": 10}})
         context = MagicMock(spec=CallbackContext)
         module._count_story_tokens(context, LlmResponse(partial=True))
         assert module._limit_story_budget(context, LlmRequest()) is None
         module._count_story_tokens(context, LlmResponse())
         assert module._limit_story_budget(context, LlmRequest()) is not None
+
+    def test_multiple_events_refill_budget_without_exceeding_cap(self) -> None:
+        module = self._make_module(MagicMock(spec=LoreLibrary), {"deep_planning": {"token_budget_per_event": 10}})
+        module.story_session = MagicMock(spec=StorySession)
+        module.plan_story_updates({"story_updates": [{"action": "Look"}, {"action": "Listen"}]}, module.notepad.snapshot())
+        assert module._story_tokens_remaining == 10
+        module._count_story_tokens(MagicMock(spec=CallbackContext), LlmResponse(
+            usage_metadata=types.GenerateContentResponseUsageMetadata(candidates_token_count=7),
+        ))
+        assert module._story_tokens_remaining == 3
+        module.plan_story_updates({"story_updates": [{"action": "Wait"}, {"action": "Listen"}]}, module.notepad.snapshot())
+        assert module._story_tokens_remaining == 10
+        module.reset_story_budget()
+        module.reset_story_budget()
+        assert module._story_tokens_remaining == 10
+
+    def test_zero_budget_skips_both_planner_entry_points(self) -> None:
+        module = self._make_module(MagicMock(spec=LoreLibrary), {"deep_planning": {"token_budget_per_event": 0}})
+        module.story_session = MagicMock(spec=StorySession)
+        assert module.plan_story_updates({"story_updates": [{"action": "Look"}]}, module.notepad.snapshot()) == {}
+        module.story_session.run.assert_not_called()
+        with patch.object(module, "_run_deep_planner_agent") as plan:
+            module.queue_deep_planning(1, "Look", {}).join(1)
+        plan.assert_not_called()
+        assert module.wait_for_deep_planning(timeout=0, target_turn_id=1)
+        assert module.wait_for_pending_events(timeout=0)
+
+    def test_negative_planning_budget_is_rejected(self) -> None:
+        with self.assertRaisesRegex(ValueError, "token_budget_per_event cannot be negative"):
+            self._make_module(MagicMock(spec=LoreLibrary), {"deep_planning": {"token_budget_per_event": -1}})
 
     def test_vertex_gemini_initializes_and_reuses_client_cache(self) -> None:
         model = VertexGemini(
@@ -383,15 +413,17 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
                 worker = module.queue_deep_planning(0, "Open the door", {"source": "user_action"})
                 self.assertTrue(started.wait(timeout=1.0))
                 self.assertFalse(module.wait_for_deep_planning(timeout=0, target_turn_id=1))
-                same_worker = module.queue_deep_planning(1, "Open the door", {"narration": "The door opens."})
-                self.assertIs(same_worker, worker)
+                for turn_id in range(1, 7):
+                    same_worker = module.queue_deep_planning(turn_id, "Open the door", {"narration": "The door opens."})
+                    self.assertIs(same_worker, worker)
             finally:
                 finish_action.set()
                 self.assertTrue(module.wait_for_pending_events(timeout=3.0))
         self.assertEqual(len(batches), 2)
         self.assertEqual(batches[0][0][2], {"source": "user_action"})
         self.assertEqual(batches[1][0][2], {"narration": "The door opens."})
-        self.assertTrue(module.wait_for_deep_planning(timeout=0, target_turn_id=1))
+        self.assertEqual(len(batches[1]), 6)
+        self.assertTrue(module.wait_for_deep_planning(timeout=0, target_turn_id=6))
 
     def test_exposes_image_name_lookup_to_deep_planner(self) -> None:
         library = MagicMock(spec=ReferenceManager)

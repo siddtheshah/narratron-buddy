@@ -16,6 +16,10 @@ visuals:
 story_planning:
     responder_model: "gemini-3.5-flash-lite"
     planner_model: "gemini-3.5-flash-lite"
+    deep_planning:
+        # Maximum generated and thinking tokens across planning continuations.
+        # Each incoming update refills this capped allowance; zero disables planning.
+        token_budget_per_event: 16384
     # Maximum combined history of completed player/game actions, story outputs,
     # and foreground lore reads. Agent conversations are not replayed. Zero disables history.
     history_event_limit: 20

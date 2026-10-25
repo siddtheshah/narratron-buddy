@@ -90,12 +90,6 @@ story_planning:
     # In Adventure Mode, apply dynamic visual text effects (vibrating,
     # glitch, flame, fonts) to high-energy spans using TextBeautifier.
     text_beautification: true
-    # The engine completes recording and one combined response before processing
-    # the next cycle. Planning runs independently; game receipts retain their identities.
-    # Adventure-specific durable concepts belong in planning.yaml.
-    deep_planning:
-        enabled: true
-        max_events_per_turn: 4
     # Guidance for the Adventure Mode story planner. Theater creators can
     # override this with a voice, tone, or consequence philosophy (for
     # example: "harsh and unforgiving, but never arbitrary").

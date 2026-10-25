@@ -50,7 +50,7 @@ class BackgroundPlanning:
 
     def enqueue(self, event_id: str, payload: dict[str, JsonValue]) -> None:
         with self._condition:
-            if self._closed:
+            if self._closed or self.planner.token_budget_per_event == 0:
                 return
             try:
                 with self._connection:
@@ -78,7 +78,7 @@ class BackgroundPlanning:
         return list(reversed(rows))
 
     def _start_locked(self) -> None:
-        if self._active or self._closed or not self._pending_locked():
+        if self._active or self._closed or self.planner.token_budget_per_event == 0 or not self._pending_locked():
             return
         self._active = True
         self._executor.submit(self._run)
@@ -147,6 +147,8 @@ class BackgroundPlanning:
                 self._condition.notify_all()
 
     def wait(self, timeout: float) -> bool:
+        if self.planner.token_budget_per_event == 0:
+            return True
         with self._condition:
             return self._condition.wait_for(lambda: not self._active, timeout) and not self._pending_locked()
 

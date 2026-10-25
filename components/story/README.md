@@ -97,9 +97,12 @@ newest updates; successful publication acknowledges older updates together with
 the current checkpoint. The planner receives the latest state and the bounded
 interleaved journal history rather than replaying every missed update.
 
-`story_planning.deep_planning.token_budget` bounds generated and thinking tokens
-across model/tool continuations since the latest assimilated update (default
-16384). New content replenishes this allowance. Without new content, the planner
+`story_planning.deep_planning.token_budget_per_event` in `app.yaml` caps generated
+and thinking tokens across model/tool continuations (default 16384). Zero
+disables planning, including pending work recovered on restart; foreground
+recording and responses continue. New updates refill the allowance to this cap;
+unused tokens never accumulate, and batches never multiply the allowance.
+Planning has no event-count batch cap or enable flag. Without new content, the planner
 finishes naturally or stops at the budget; there are no idle refinement passes.
 Per-request output/thinking limits, lore-call limits, and the invocation timeout
 also remain in place. Planner note publication and update acknowledgements commit
