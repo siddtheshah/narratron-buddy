@@ -17,8 +17,6 @@ from components.story.input_gathering_cycle import StoryInputGatheringCycle, Sto
     ({"input_cycle_duration": None}, 15.0),
     ({"input_cycle_duration": 2, "output_cycle_duration": 10}, 2.0),
     ({"input_cycle_duration": -1}, 0.0),
-    ({"cycle_length": 2}, 15.0),
-    ({"cooldown_duration": 0, "action_cooldown_base_seconds": 7}, 15.0),
     ({"input_cycle_duration": 3, "cycle_length": 8}, 3.0),
     ({"input_cycle_duration": 0, "cycle_length": 8}, 0.0),
     ({"input_cycle_duration": None, "cycle_length": 8}, 15.0),

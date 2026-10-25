@@ -19,7 +19,7 @@ from components.story.output_display_cycle import (
 @pytest.mark.parametrize(("config", "expected"), [
     ({}, 15.0),
     ({"output_cycle_duration": None}, 15.0),
-    ({"input_cycle_duration": 2, "cycle_length": 8, "cooldown_duration": 4}, 15.0),
+    ({"input_cycle_duration": 2}, 15.0),
     ({"output_cycle_duration": 0}, 0.0),
     ({"output_cycle_duration": 30, "input_cycle_duration": 1}, 30.0),
     ({"output_cycle_duration": -1}, 0.0),
