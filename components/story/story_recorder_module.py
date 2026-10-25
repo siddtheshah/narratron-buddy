@@ -293,12 +293,16 @@ class StoryRecorderModule:
             finally:
                 self._submit_game_action = None
             if decision.narration_request is not None:
-                raise ValueError("Response recording cannot request another responder stage.")
+                logger.warning(
+                    "[StoryRecorderModule] Ignoring narration request during factual recording for event %s (kind=%s)",
+                    event.event_id, event.kind,
+                )
+                decision = decision.model_copy(update={"narration_request": None})
             self.journal.save_game_control_decision(event.event_id, decision)
         else:
             logger.debug("[StoryRecorderModule] Reusing saved game control decision for event %s", event.event_id)
-        if decision.narration_request is not None:
-            raise ValueError("Response recording cannot request another responder stage.")
+        # Recording consumes only facts, including when replaying a saved decision.
+        # Narration handoffs are consumed exclusively by control_game().
         return decision.factual_updates
 
     def _apply_reference_updates(self, event_id: str) -> None:

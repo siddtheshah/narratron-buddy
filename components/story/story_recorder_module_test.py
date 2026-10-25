@@ -2,7 +2,7 @@
 
 from pathlib import Path
 import sqlite3
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 import pytest
 
@@ -144,6 +144,44 @@ def test_no_change_recording_persists_progress_at_revision_zero(pad: Notepad, tm
         assert journal.recorded_revision("response-1") == 0
         assert journal.pending() == []
         reconcile.assert_called_once()
+    finally:
+        journal.close()
+
+
+@pytest.mark.parametrize("saved", [False, True])
+@pytest.mark.parametrize("receipt", [False, True])
+def test_recording_ignores_narration_request_and_commits_facts(
+    pad: Notepad, tmp_path: Path, saved: bool, receipt: bool,
+) -> None:
+    journal = StoryRecordingJournal(tmp_path / "recording.sqlite")
+    event = response()
+    if receipt:
+        event = RecordingEvent(
+            event_id="game-1:narratron:1", action_id="player-1",
+            source_event_ids=("game-1",), kind="committed_game_action",
+            payload={"actor": "narratron", "receipt": {"revision": 2}},
+        )
+    decision = GameControlDecision(
+        factual_updates={"Inventory": "Broken key"},
+        narration_request=NarrationRequest(user_action="Narrate again", brief="The key breaks."),
+    )
+    recorder = StoryRecorderModule(pad, journal)
+    try:
+        if saved:
+            journal.enqueue(event)
+            journal.save_game_control_decision(event.event_id, decision)
+        with patch.object(recorder, "_run_model", return_value=decision) as run_model:
+            assert recorder.record(event) == 1
+            assert recorder.record(event) == 1
+            assert run_model.call_count == (0 if saved else 1)
+        assert pad.snapshot().notes["Inventory"] == "Broken key"
+        assert journal.pending() == []
+        assert journal.recorded_revision(event.event_id) == 1
+        stored = journal.game_control_decision(event.event_id)
+        assert stored is not None
+        assert stored.factual_updates == decision.factual_updates
+        if not saved:
+            assert stored.narration_request is None
     finally:
         journal.close()
 

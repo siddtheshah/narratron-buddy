@@ -36,7 +36,8 @@ story_planning:
     style: "thoughtful mystery exploring abandoned story drafts and unfinished worlds"
     cooldown_duration: 8
     require_user_input: true
-
+    input_cycle_duration: 15
+    output_cycle_duration: 15
     # Sticky definitions, initial values, and hidden flags live in planning.yaml.
     enforce_structured: true
 

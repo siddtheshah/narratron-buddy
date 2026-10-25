@@ -351,9 +351,14 @@ def test_unstructured_adventure_stages_freeform_notes_and_recovers_after_restart
     assert restarted.notepad.snapshot() == snapshot
 
 
+@pytest.mark.parametrize("request_narration", [False, True])
 def test_response_recording_can_prepare_game_offer_awaiting_player_consent(
-    harness: TurnHarness, tmp_path: Path,
+    harness: TurnHarness, tmp_path: Path, request_narration: bool,
 ) -> None:
+    if request_narration:
+        harness.decision = harness.decision.model_copy(update={
+            "narration_request": NarrationRequest(user_action="Narrate the offer", brief="The offer is ready."),
+        })
     tool = harness.new_tool()
     game = make_game(tmp_path / "story-offer", exchange_definition())
     tool.canvas_manager.game = game
@@ -381,6 +386,10 @@ def test_response_recording_can_prepare_game_offer_awaiting_player_consent(
         turn = tool.turn_journal.turns()[0]
         assert turn.completed
         event = tool._recording_event(turn)
+        decision = tool.recording_journal.game_control_decision(event.event_id)
+        assert decision is not None
+        assert decision.narration_request is None
+        assert tool.notepad.snapshot().notes["Inventory"] == "Broken key"
         receipts = tool.recording_journal.narratron_receipts(event.event_id)
         assert len(receipts) == 2
         completed_receipts = [
