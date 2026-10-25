@@ -79,7 +79,7 @@ def test_set_scene_preserves_long_narration_for_the_canvas() -> None:
 
 
 def test_waiting_scenes_do_not_cancel_visible_speech_or_run_beautification() -> None:
-    state = StoryState(output_cycle_length=60)
+    state = StoryState(output_cycle_duration=60)
     state.enable_scene_speech(MagicMock(spec=SpeechProvider))
     state.text_beautifier = Mock()
     state.text_beautifier.beautify_scene.return_value = {"narration_spans": [], "dialogue": []}

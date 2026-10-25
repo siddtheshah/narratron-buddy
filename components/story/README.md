@@ -7,7 +7,7 @@ ADK session to a theater. `tools/story/story_tool.py` is the live-agent adapter.
 `canvas_state_manager.story.input_cycle` before foreground story roles run (`story.cycle`
 remains an alias). It appends waiting input so every accepted action is retained.
 
-`story_planning.input_cycle_length` controls the minimum interval between batch
+`story_planning.input_cycle_duration` controls the minimum interval between batch
 starts in seconds (default 15 when absent or null; zero means immediate serialized
 execution). The first input starts immediately, like `with_cycle_cooldown`.
 Subsequent inputs are retained in one batch until both the active batch and its
@@ -19,7 +19,7 @@ and harnesses, including the latest pending output and background planning.
 `StoryOutputDisplayCycle` in `output_display_cycle.py` independently controls
 canvas narration and dialogue through `story.output_cycle`. It replaces waiting
 output so only the newest scene becomes the next cycle's content.
-`story_planning.output_cycle_length` sets the minimum display time in seconds
+`story_planning.output_cycle_duration` sets the minimum display time in seconds
 (default 15; zero presents every ready output immediately). The first output
 appears immediately. During its dwell, newer outputs replace the single waiting
 slot without extending the current dwell. After the dwell expires, the latest

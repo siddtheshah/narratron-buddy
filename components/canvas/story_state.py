@@ -101,10 +101,10 @@ class StoryState:
         *,
         adventure_mode: bool = False,
         cycle_length: float = 15.0,
-        output_cycle_length: float = 15.0,
+        output_cycle_duration: float = 15.0,
     ) -> None:
         self.cycle = StoryInputGatheringCycle(cycle_length)
-        self.output_cycle = StoryOutputDisplayCycle(self._present_scene, self._output_changed, output_cycle_length)
+        self.output_cycle = StoryOutputDisplayCycle(self._present_scene, self._output_changed, output_cycle_duration)
         self.adventure_mode: bool = adventure_mode
         self._persist = persist
         self._notify_changed = notify_changed

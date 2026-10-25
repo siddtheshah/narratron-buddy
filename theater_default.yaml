@@ -103,17 +103,12 @@ story_planning:
     # Minimum interval between input batch starts. The first input starts
     # immediately; later inputs accumulate until the active batch and interval finish.
     # Set to zero for immediate serialized processing. Defaults to 15 seconds.
-    input_cycle_length: 15
+    input_cycle_duration: 15
     # Minimum time each narration/dialogue scene stays on the canvas. A newer
     # response replaces the waiting slot, preserving originating input order.
     # Independent of input timing; zero displays every ready response immediately.
-    output_cycle_length: 15
-    # Maximum combined history of completed player/game actions, story outputs,
-    # and foreground lore reads. Agent conversations are not replayed. Zero disables history.
-    history_event_limit: 20
-    # Drop this many oldest events on overflow; null uses half of history_event_limit.
-    # The resulting interleaved history stays frozen throughout each agent invocation.
-    history_chunk_size: null
+    output_cycle_duration: 15
+
     require_user_input: true
 
 chat:

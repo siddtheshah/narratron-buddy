@@ -38,8 +38,8 @@ from components.story.story_recording_journal import (
 )
 from components.story.story_session import StoryRole, StorySession
 from components.story.story_turn_journal import StoryTurn, StoryTurnJournal
-from components.story.input_gathering_cycle import StoryInputGatheringCycle, story_input_cycle_length
-from components.story.output_display_cycle import story_output_cycle_length
+from components.story.input_gathering_cycle import StoryInputGatheringCycle, story_input_cycle_duration
+from components.story.output_display_cycle import story_output_cycle_duration
 
 
 logger = logging.getLogger(__name__)
@@ -164,8 +164,8 @@ class StoryEngine:
         self.input_cycle = story.input_cycle
         self.output_cycle = story.output_cycle
         self.cycle = self.input_cycle
-        self.input_cycle.cycle_length = story_input_cycle_length(self.config)
-        self.output_cycle.cycle_length = story_output_cycle_length(self.config)
+        self.input_cycle.cycle_length = story_input_cycle_duration(self.config)
+        self.output_cycle.cycle_length = story_output_cycle_duration(self.config)
         self._closed = False
         self.notepad.on_change = self.response_module.save_to_session_state
         self.sync_character_bindings()

@@ -11,9 +11,9 @@ from pydantic import BaseModel, Field, JsonValue, TypeAdapter
 logger = logging.getLogger(__name__)
 
 
-def story_output_cycle_length(config: Mapping[str, JsonValue]) -> float:
+def story_output_cycle_duration(config: Mapping[str, JsonValue]) -> float:
     """Read output display time independently of input gathering."""
-    value = config.get("output_cycle_length")
+    value = config.get("output_cycle_duration")
     return max(0.0, TypeAdapter(float).validate_python(15.0 if value is None else value))
 
 

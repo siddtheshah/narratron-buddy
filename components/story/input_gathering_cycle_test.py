@@ -9,22 +9,22 @@ import pytest
 
 from pydantic import JsonValue
 
-from components.story.input_gathering_cycle import StoryInputGatheringCycle, StoryResult, story_input_cycle_length
+from components.story.input_gathering_cycle import StoryInputGatheringCycle, StoryResult, story_input_cycle_duration
 
 
 @pytest.mark.parametrize(("config", "expected"), [
     ({}, 15.0),
-    ({"input_cycle_length": None}, 15.0),
-    ({"input_cycle_length": 2, "output_cycle_length": 10}, 2.0),
-    ({"input_cycle_length": -1}, 0.0),
+    ({"input_cycle_duration": None}, 15.0),
+    ({"input_cycle_duration": 2, "output_cycle_duration": 10}, 2.0),
+    ({"input_cycle_duration": -1}, 0.0),
     ({"cycle_length": 2}, 15.0),
     ({"cooldown_duration": 0, "action_cooldown_base_seconds": 7}, 15.0),
-    ({"input_cycle_length": 3, "cycle_length": 8}, 3.0),
-    ({"input_cycle_length": 0, "cycle_length": 8}, 0.0),
-    ({"input_cycle_length": None, "cycle_length": 8}, 15.0),
+    ({"input_cycle_duration": 3, "cycle_length": 8}, 3.0),
+    ({"input_cycle_duration": 0, "cycle_length": 8}, 0.0),
+    ({"input_cycle_duration": None, "cycle_length": 8}, 15.0),
 ])
 def test_input_timing_uses_only_input_configuration(config: dict[str, JsonValue], expected: float) -> None:
-    assert story_input_cycle_length(config) == expected
+    assert story_input_cycle_duration(config) == expected
 
 
 def test_inputs_accepted_before_binding_form_one_batch_and_deduplicate_ids() -> None:

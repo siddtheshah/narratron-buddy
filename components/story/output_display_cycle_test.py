@@ -12,20 +12,20 @@ from components.story.output_display_cycle import (
     OutputCheckpoint,
     StoryOutput,
     StoryOutputDisplayCycle,
-    story_output_cycle_length,
+    story_output_cycle_duration,
 )
 
 
 @pytest.mark.parametrize(("config", "expected"), [
     ({}, 15.0),
-    ({"output_cycle_length": None}, 15.0),
-    ({"input_cycle_length": 2, "cycle_length": 8, "cooldown_duration": 4}, 15.0),
-    ({"output_cycle_length": 0}, 0.0),
-    ({"output_cycle_length": 30, "input_cycle_length": 1}, 30.0),
-    ({"output_cycle_length": -1}, 0.0),
+    ({"output_cycle_duration": None}, 15.0),
+    ({"input_cycle_duration": 2, "cycle_length": 8, "cooldown_duration": 4}, 15.0),
+    ({"output_cycle_duration": 0}, 0.0),
+    ({"output_cycle_duration": 30, "input_cycle_duration": 1}, 30.0),
+    ({"output_cycle_duration": -1}, 0.0),
 ])
 def test_output_timing_is_independent(config: dict[str, JsonValue], expected: float) -> None:
-    assert story_output_cycle_length(config) == expected
+    assert story_output_cycle_duration(config) == expected
 
 
 @pytest.fixture

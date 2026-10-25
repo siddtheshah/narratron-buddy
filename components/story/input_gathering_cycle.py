@@ -12,9 +12,9 @@ StoryResult = dict[str, JsonValue]
 CycleHandler = Callable[[list[str]], dict[str, StoryResult]]
 
 
-def story_input_cycle_length(config: Mapping[str, JsonValue]) -> float:
+def story_input_cycle_duration(config: Mapping[str, JsonValue]) -> float:
     """Read input dispatch spacing independently of output presentation."""
-    value = config.get("input_cycle_length")
+    value = config.get("input_cycle_duration")
     return max(0.0, TypeAdapter(float).validate_python(15.0 if value is None else value))
 
 

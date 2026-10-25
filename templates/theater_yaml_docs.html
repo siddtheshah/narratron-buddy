@@ -327,8 +327,10 @@
             href="#starting-image"><code>starting_image</code></a><a
             href="#observability-tool"><code>observability_tool</code></a><a href="#visuals"><code>visuals</code></a><a
             href="#image-generation"><code>image_generation</code></a><a href="#animation"><code>animation</code></a><a
-            href="#interactive-canvas"><code>interactive_canvas</code></a><a href="#game-tool"><code>game_tool</code></a><a href="#music"><code>music</code></a><a
-            href="#notepad"><code>notepad</code></a><a href="#story-planning"><code>story_planning</code></a><a href="#speech"><code>speech</code></a><a href="#chat"><code>chat</code></a>
+            href="#interactive-canvas"><code>interactive_canvas</code></a><a
+            href="#game-tool"><code>game_tool</code></a><a href="#music"><code>music</code></a><a
+            href="#notepad"><code>notepad</code></a><a href="#story-planning"><code>story_planning</code></a><a
+            href="#speech"><code>speech</code></a><a href="#chat"><code>chat</code></a>
         </aside>
         <article class="content">
           <section class="section" id="loading">
@@ -384,11 +386,13 @@ story_planning:
           <section class="section" id="visuals">
             <h2><code>visuals</code></h2>
             <p>Shared rendering direction for images and animations. The image model is selected globally in
-              <code>app.yaml</code>; theaters customize the style and canvas pacing.</p>
+              <code>app.yaml</code>; theaters customize the style and canvas pacing.
+            </p>
             <dl class="options">
               <dt><code>model</code> <span class="type">string</span></dt>
               <dd>Image-provider model identifier. This application-controlled setting is normally supplied from
-                <code>app.yaml</code>.</dd>
+                <code>app.yaml</code>.
+              </dd>
               <dt><code>style</code> <span class="type">string</span></dt>
               <dd>Appended to generated-image and animation prompts unless the prompt supplies its own style. Leave
                 blank for no extra direction.</dd>
@@ -428,7 +432,8 @@ story_planning:
               visual's remaining screen time and any sources ahead of it in the queue. Long tool cooldowns
               therefore often allow immediate display, without a fixed cycle tick adding latency. Reduce
               <code>cycle_length</code> to shorten screen time during bursts; reduce the shared cooldown to
-              admit fresh requests sooner, at the cost of more generation.</p>
+              admit fresh requests sooner, at the cost of more generation.
+            </p>
           </section>
 
           <section class="section" id="animation">
@@ -479,7 +484,8 @@ story_planning:
                 <code>animations/</code> folder alongside a <code>video.json</code> manifest, and registered under image
                 aliases (<code>&lt;animation_id&gt;_video</code> and <code>&lt;animation_id&gt;</code>). The canvas and
                 OBS overlay display them as auto-looping, muted HTML5 video elements with smooth crossfades into
-                subsequent scenes.</li>
+                subsequent scenes.
+              </li>
             </ul>
             <h3>Example: video animation configuration</h3>
             <pre>animation:
@@ -498,7 +504,8 @@ story_planning:
               <dd>Adds interactive-canvas tools. Default: <code>false</code>.</dd>
               <dt><code>max_surfaces</code> <span class="type">integer</span></dt>
               <dd>Maximum simultaneously active surfaces. The implementation clamps the value from <code>1</code> to
-                <code>5</code>. Default: <code>5</code>.</dd>
+                <code>5</code>. Default: <code>5</code>.
+              </dd>
               <dt><code>cooldown_duration</code> <span class="type">number, seconds</span></dt>
               <dd>Minimum delay between canvas mutations. Default: <code>10</code>.</dd>
             </dl>
@@ -515,7 +522,8 @@ story_planning:
               <dt><code>enabled</code> <span class="type">boolean</span></dt>
               <dd>Adds <code>view_game_instructions</code>, <code>view_game_state</code>,
                 <code>get_available_actions</code>, and <code>take_game_action</code> when a playable package is loaded.
-                Default: <code>false</code>.</dd>
+                Default: <code>false</code>.
+              </dd>
             </dl>
             <p>Triggering player actions prompt a live-agent response. The agent uses the package's Narratron actions
               and current revision. See <a href="/docs/game-packages">Game Packages</a> for the authoring contract.</p>
@@ -539,7 +547,8 @@ story_planning:
           <section class="section" id="notepad">
             <h2><code>notepad</code></h2>
             <p>Configures <code>notepad_tool</code> for normal narration. Adventure Mode uses
-              <code>planning.yaml</code> and ignores this section.</p>
+              <code>planning.yaml</code> and ignores this section.
+            </p>
             <dl class="options">
               <dt><code>max_stickies</code> <span class="type">integer</span></dt>
               <dd>Maximum sticky notes, clamped from 1 to 10 and raised to retain every required topic. Default: 5.</dd>
@@ -565,12 +574,12 @@ story_planning:
             <h2><code>story_planning</code></h2>
             <p>Defines the Adventure Mode planner: its durable story context, pacing, and optional NPC speech.</p>
             <dl class="options">
-              <dt><code>input_cycle_length</code> <span class="type">number, seconds</span></dt>
+              <dt><code>input_cycle_duration</code> <span class="type">number, seconds</span></dt>
               <dd>Minimum interval between input batch starts. The first input starts immediately.
                 Subsequent spoken actions and game updates accumulate in order until both the active batch
                 and its interval finish. Zero processes inputs immediately in one serialized worker.
                 Defaults to 15 seconds when omitted or null.</dd>
-              <dt><code>output_cycle_length</code> <span class="type">number, seconds</span></dt>
+              <dt><code>output_cycle_duration</code> <span class="type">number, seconds</span></dt>
               <dd>Minimum display time for each narration/dialogue scene, independent of input collection.
                 Default: 15 seconds. The first output appears immediately; newer responses replace the waiting
                 output without extending the current display time. Outputs may be skipped but never shown
@@ -588,7 +597,8 @@ story_planning:
                 <code>history_event_limit</code>. Omitted or null uses half the maximum, at least one;
                 an explicit value cannot exceed the maximum. With defaults, history grows to 20 events,
                 drops 10 on overflow, then grows again. Each agent invocation keeps a frozen history
-                prefix through tool continuations to preserve cache reuse.</dd>
+                prefix through tool continuations to preserve cache reuse.
+              </dd>
               <dt><code>enable_dice</code> <span class="type">boolean</span></dt>
               <dd>Allows player-action and hidden procedural dice rolls. Default: <code>true</code> when omitted.
                 Set to <code>false</code> to resolve outcomes without dice.</dd>
@@ -601,7 +611,8 @@ story_planning:
               <dt><code>style</code> <span class="type">string</span></dt>
               <dd>Guidance for the planner’s pacing, consequences, and narrative tone. Limited to 500 characters.</dd>
               <dt><code>enforce_structured</code> <span class="type">boolean</span></dt>
-              <dd>Requires a nonempty <code>planning.yaml</code> contract and validates sticky updates in Adventure Mode.
+              <dd>Requires a nonempty <code>planning.yaml</code> contract and validates sticky updates in Adventure
+                Mode.
                 Default: <code>true</code>. All declared topics are required and pinned in contract order;
                 capacity includes every topic. Set to <code>false</code> to let recorder and planner create
                 and update shared freeform topics without a contract. Declared topics retain ownership and
@@ -613,15 +624,16 @@ story_planning:
   adventure_mode: true
   auto_begin: true
   enforce_structured: true
-  input_cycle_length: 5
-  output_cycle_length: 15
+  input_cycle_duration: 5
+  output_cycle_duration: 15
   history_event_limit: 20
   history_chunk_size: 10
   style: "Tense science-fiction mystery; setbacks are fair and consequential."
   require_user_input: true</pre>
             <p>Keep sticky contracts in a separate <code>planning.yaml</code>. Every topic has one owner:
               <code>recorder</code> for established facts or <code>planner</code> for contingent future developments.
-              Fields and initial values are strings; quote numeric and boolean values.</p>
+              Fields and initial values are strings; quote numeric and boolean values.
+            </p>
             <pre>"Current Location":
   owner: recorder
   description: "Established location of the player."
@@ -643,7 +655,8 @@ story_planning:
             <p>Author three independent pinned guides: <code>lore/RESPONDER.md</code> for narration and action
               resolution, <code>lore/RECORDER.md</code> for factual notes and validated game actions, and
               <code>lore/PLANNER.md</code> for future plans. Each role can read only its own guide. Put shared
-              facts and mechanics in separate lore documents, with a roadmap in each guide.</p>
+              facts and mechanics in separate lore documents, with a roadmap in each guide.
+            </p>
           </section>
 
           <section class="section" id="speech">
@@ -654,12 +667,14 @@ story_planning:
             <dl class="options">
               <dt><code>voice_language_code</code> <span class="type">string</span></dt>
               <dd>Language and locale code used to select matching character voices from the voice library (for example,
-                <code>en-US</code> or <code>en-GB</code>). Default: <code>en-US</code>.</dd>
+                <code>en-US</code> or <code>en-GB</code>). Default: <code>en-US</code>.
+              </dd>
               <dt><code>accent_augmentation</code> <span class="type">boolean</span></dt>
               <dd>When enabled, any character accent voice tags (such as <code>accent=British</code> or
                 <code>accent=Scottish</code>) are automatically duplicated into structured delivery direction and style
                 instructions for the speech synthesizer so subtle accents are clearly pronounced throughout delivery.
-                Default: <code>true</code>.</dd>
+                Default: <code>true</code>.
+              </dd>
             </dl>
             <h3>Example: character speech delivery</h3>
             <pre>speech:
