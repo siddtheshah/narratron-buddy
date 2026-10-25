@@ -8,7 +8,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
 from components.notepad import NoteSnapshot
-from tools.story.story_handoffs import CommittedGameReceipt, GameControlDecision
+from components.story.story_handoffs import CommittedGameReceipt, GameControlDecision
 
 
 class RecordingEvent(BaseModel):

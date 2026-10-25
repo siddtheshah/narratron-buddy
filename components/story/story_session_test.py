@@ -14,8 +14,8 @@ from google.genai import types
 from pydantic import Field, PrivateAttr
 from google.adk.events import Event
 
-from tools.story.story_handoffs import GameControlDecision
-from tools.story.story_session import APP_NAME, USER_ID, StorySession, project_role_contents
+from components.story.story_handoffs import GameControlDecision
+from components.story.story_session import APP_NAME, USER_ID, StorySession, project_role_contents
 
 
 class CapturingModel(BaseLlm):

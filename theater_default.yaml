@@ -81,8 +81,8 @@ story_planning:
     adventure_mode: false
     # Allow player-action and hidden procedural dice rolls. Defaults to true.
     enable_dice: true
-    # Immediately generate and publish an opening scene through the story
-    # planner when the user connects to an Adventure Mode session.
+    # Queue an opening scene through the story cycle when the user connects
+    # to an Adventure Mode session.
     auto_begin: false
     # When Adventure Mode NPC dialogue is enabled, synthesize each spoken line
     # with a stable, automatically assigned application-level speech voice.
@@ -90,9 +90,8 @@ story_planning:
     # In Adventure Mode, apply dynamic visual text effects (vibrating,
     # glitch, flame, fonts) to high-energy spans using TextBeautifier.
     text_beautification: true
-    # Adventure Mode uses a shallow background planning heartbeat. Completed
-    # responder turns enter an ordered queue; each heartbeat assimilates a
-    # bounded batch and publishes typed sticky state.
+    # The engine completes recording, one combined response, and planning
+    # before processing the next cycle. Game receipts retain their identities.
     # Adventure-specific durable concepts belong in planning.yaml.
     deep_planning:
         enabled: true
@@ -101,7 +100,11 @@ story_planning:
     # override this with a voice, tone, or consequence philosophy (for
     # example: "harsh and unforgiving, but never arbitrary").
     style: "balanced, consequence-driven, and player-agency-first"
-    cooldown_duration: 15
+    # Collect game updates and spoken actions for this many seconds. Inputs
+    # arriving while the engine works are retained for the next cycle.
+    # Set to zero for immediate serialized processing. Null retains legacy
+    # cooldown_duration/action_cooldown_base_seconds values, or 15 by default.
+    cycle_length: null
     require_user_input: true
 
 chat:

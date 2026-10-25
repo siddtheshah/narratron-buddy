@@ -25,7 +25,7 @@ initialize_test_registry()
 import object_registry  # noqa: E402
 from providers.text_response_provider import TextResponseProvider  # noqa: E402
 from pydantic import JsonValue  # noqa: E402
-from tools.story.story_planning_module import StoryPlanningModule  # noqa: E402
+from components.story.story_planning_module import StoryPlanningModule  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
@@ -187,7 +187,7 @@ def mock_story_deep_planner_runner() -> Generator[None, None, None]:
 
     with (
         patch(
-            "tools.story.story_planning_module.StoryPlanningModule._get_or_create_deep_planner_runner",
+            "components.story.story_planning_module.StoryPlanningModule._get_or_create_deep_planner_runner",
             side_effect=_create_mock_deep_planner_runner,
         ),
         patch.object(StoryPlanningModule, "queue_deep_planning", track_planning),

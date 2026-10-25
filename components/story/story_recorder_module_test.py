@@ -12,14 +12,14 @@ from components.canvas_state import CanvasStateManager
 from components.lore_library import LoreLibrary
 from components.notepad import Notepad, NoteSnapshot
 from components.theater_manager import Theater
-from tools.story.story_handoffs import GameControlDecision, NarrationRequest
-from tools.story.story_recorder_module import (
+from components.story.story_handoffs import GameControlDecision, NarrationRequest
+from components.story.story_recorder_module import (
     MAX_RECORDER_READ_LORE_CALLS_PER_RUN,
     MAX_RECORDER_SEARCH_LORE_CALLS_PER_RUN,
     StoryRecorderModule,
     SubmitGameAction,
 )
-from tools.story.story_recording_journal import RecordingEvent, StoryRecordingJournal
+from components.story.story_recording_journal import RecordingEvent, StoryRecordingJournal
 
 
 @pytest.fixture

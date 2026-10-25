@@ -16,6 +16,7 @@ from components.canvas import AudioState, ChatManager, ConnectionState, DoodleSt
 from components.theater_manager import Theater
 from components.canvas.game_state import GameState
 from components.notepad import Notepad
+from components.story.cycle import story_cycle_length
 
 logger = logging.getLogger("components.canvas_state")
 MAX_AGENT_THOUGHT_LENGTH = 360
@@ -63,6 +64,7 @@ class CanvasStateManager:
             self.notify_changed,
             publish_audio_fn=self.connections.broadcast,
             adventure_mode=adventure_mode,
+            cycle_length=story_cycle_length(story_planning_config),
         )
         self.chat = ChatManager(self.theater)
         self.game = GameState(self.theater.directory(), self.persist, self.notify_changed)

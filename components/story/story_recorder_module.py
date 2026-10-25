@@ -17,15 +17,15 @@ from components.canvas.game_state import GameState
 from components.lore_library import LoreLibrary
 from components.notepad import Notepad, NoteSnapshot
 from components.reference_manager import ReferenceManager
-from tools.story.story_handoffs import (
+from components.story.story_handoffs import (
     CommittedGameReceipt,
     GameControlDecision,
     GameControlOutcome,
 )
-from tools.story.story_models import DEFAULT_STORY_PLANNING_STYLE, VertexGemini
-from tools.story.story_session import StorySession
-from tools.story.story_staged_notes import StagedStoryNotes
-from tools.story.story_recording_journal import RecordingEvent, StoryRecordingJournal
+from components.story.story_models import DEFAULT_STORY_PLANNING_STYLE, VertexGemini
+from components.story.story_session import StorySession
+from components.story.story_staged_notes import StagedStoryNotes
+from components.story.story_recording_journal import RecordingEvent, StoryRecordingJournal
 
 logger = logging.getLogger(__name__)
 

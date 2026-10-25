@@ -28,7 +28,7 @@ from components.canvas.story_state import (
     PlayerCharacterState,
     StoryState,
 )
-from tools.story.story_snapshot import (
+from components.story.story_snapshot import (
     StoryStateDiff,
     StoryStateSnapshot,
     create_snapshot,
@@ -40,9 +40,9 @@ from components.theater_manager import Theater
 from components.reference_manager import CharacterLookupResult, ReferenceManager, PlayerCharacter
 from components.lore_library import LoreLibrary
 from components.notepad import NoteSnapshot
-from tools.story.story_session import StorySession
-from tools.story.story_staged_notes import StagedStoryNotes
-from tools.story.story_models import (
+from components.story.story_session import StorySession
+from components.story.story_staged_notes import StagedStoryNotes
+from components.story.story_models import (
     DEFAULT_COMPACTION_TARGET_TOKENS,
     DEFAULT_COMPACTION_TRIGGER_TOKENS,
     DEFAULT_STORY_PLANNING_STYLE,

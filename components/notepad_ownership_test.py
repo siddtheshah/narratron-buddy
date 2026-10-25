@@ -10,7 +10,7 @@ from pydantic import JsonValue
 from components.canvas_state import CanvasStateManager
 from components.notepad import Notepad, StaleNoteSnapshot, parse_planning_schema
 from components.theater_manager import Theater
-from tools.story.story_staged_notes import StagedStoryNotes
+from components.story.story_staged_notes import StagedStoryNotes
 
 
 @pytest.fixture

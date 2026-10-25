@@ -71,7 +71,6 @@ class GameState:
         self._persist = persist
         self._notify = notify
         self.on_player_action: Callable[[GameAction, dict[str, JsonValue]], None] | None = None
-        self.before_player_action: Callable[[], None] | None = None
         self.program: GameProgram | None = None
         self.state: dict[str, JsonValue] = {}
         self.revision = 0
@@ -263,8 +262,6 @@ class GameState:
         self, action: GameAction, actor: Literal["player", "contributor", "narratron"] = "player",
         *, story_event_id: str = "",
     ) -> dict[str, JsonValue] | None:
-        if actor in ("player", "contributor") and self.before_player_action is not None:
-            self.before_player_action()
         with self._lock:
             if self.program is None:
                 logger.debug("[GameState] Act rejected: no playable game")
@@ -354,17 +351,16 @@ class GameState:
                 raise ValueError(message) from exc
             self.error = ""
             self._notify_safely()
-            if actor in ("player", "contributor") and transition.triggering and self.on_player_action is not None:
-                try:
-                    logger.debug(
-                        "[GameState] Invoking on_player_action callback for action '%s' at revision=%d",
-                        action.name,
-                        self.revision,
-                    )
-                    self.on_player_action(action, snapshot)
-                except Exception:
-                    logger.exception("Player game action callback failed at revision %s", self.revision)
-            return self.payload()
+            callback = self.on_player_action if actor in ("player", "contributor") and transition.triggering else None
+            result = self.payload()
+        # Story intake may acquire journal/note locks. Never invoke it while
+        # holding the game lock: story stages can also read or mutate the game.
+        if callback is not None:
+            try:
+                callback(action, snapshot)
+            except Exception:
+                logger.exception("Player game action callback failed at revision %s", snapshot["revision"])
+        return result
 
     def _apply_step(
         self, step: GameStep, actor: Literal["player", "contributor", "narratron"],

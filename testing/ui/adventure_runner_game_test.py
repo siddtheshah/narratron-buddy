@@ -8,8 +8,8 @@ import pytest
 
 from testing.game_fixtures import counter_definition
 from testlab import adventure_runner, server
-from tools.story.story_handoffs import GameControlDecision
-from tools.story.story_session import StoryRole, StorySession
+from components.story.story_handoffs import GameControlDecision
+from components.story.story_session import StoryRole, StorySession
 
 
 @pytest.mark.usefixtures("offline_lab_text_providers")

@@ -141,6 +141,19 @@ def test_local_draft_replays_as_one_durable_player_event(tmp_path: Path) -> None
     callback.assert_called_once()
 
 
+def test_story_callback_runs_without_holding_game_lock(tmp_path: Path) -> None:
+    game = make_game(tmp_path)
+    snapshots: list[dict[str, JsonValue] | None] = []
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        def callback(action: GameAction, receipt: dict[str, JsonValue]) -> None:
+            snapshots.append(pool.submit(game.story_snapshot, "narratron").result(timeout=2))
+
+        game.on_player_action = callback
+        game.act(GameAction(name="add", arguments={"amount": 1}, revision=0))
+    assert len(snapshots) == 1
+    assert snapshots[0]["revision"] == 1
+
+
 @pytest.mark.parametrize('invalid', [
     GameStep(name='add', arguments={'amount': 10}),
     GameStep(name='add', arguments={'amount': '2'}),

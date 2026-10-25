@@ -132,6 +132,7 @@ class TestStoryToolStateIntegration(unittest.TestCase):
             image_provider=self.image_provider,
             speech_provider=self.speech_provider,
         )
+        self.tool.close()
         reloaded_tool = StoryTool(
             theater=self.theater,
             canvas_manager=self.canvas,

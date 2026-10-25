@@ -10,7 +10,7 @@ from components.canvas.story_state import (
 from components.canvas_state import CanvasStateManager
 from components.notepad import Notepad
 from components.theater_manager import Theater
-from tools.story.story_snapshot import (
+from components.story.story_snapshot import (
     create_snapshot,
     diff,
 )

@@ -13,6 +13,8 @@ from typing import Any, Optional
 
 from pydantic import BaseModel
 
+from components.story.cycle import StoryCycle
+
 from providers import (
     SpeechProvider,
     SpeechProviderError,
@@ -97,7 +99,9 @@ class StoryState:
         publish_audio_fn: Callable[[dict[str, Any]], None] | None = None,
         *,
         adventure_mode: bool = False,
+        cycle_length: float = 15.0,
     ) -> None:
+        self.cycle = StoryCycle(cycle_length)
         self.adventure_mode: bool = adventure_mode
         self._persist = persist
         self._notify_changed = notify_changed
@@ -218,6 +222,7 @@ class StoryState:
 
     def serialize(self) -> dict[str, object]:
         result: dict[str, object] = {
+            "story_cycle": self.cycle.payload(),
             "story_planning_state": self.story_planning_state,
             "scene_dialogue": self.scene_dialogue,
             "narration": self.narration,

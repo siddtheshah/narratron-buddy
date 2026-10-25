@@ -18,7 +18,7 @@ from providers import ImageProvider, SpeechProvider, TextResponseProvider
 from components.reference_manager import Character, ReferenceManager, PlayerCharacter
 from components.lore_library import LoreLibrary
 from components.notepad import Notepad
-from tools.story.story_response_module import (
+from components.story.story_response_module import (
     ResponseCharacter,
     ResponseDialogue,
     SceneReaction,
@@ -61,8 +61,8 @@ class TestStoryResponseModuleDependencies(unittest.TestCase):
         with (
             patch.object(StoryResponseModule, "_create_responder_agent"),
             patch.object(StoryResponseModule, "reload_from_session_state"),
-            patch("tools.story.story_response_module.App"),
-            patch("tools.story.story_response_module.Runner"),
+            patch("components.story.story_response_module.App"),
+            patch("components.story.story_response_module.Runner"),
         ):
             module = StoryResponseModule(
                 theater=self.theater,
@@ -83,8 +83,8 @@ class TestStoryResponseModuleDependencies(unittest.TestCase):
         with (
             patch.object(StoryResponseModule, "_create_responder_agent"),
             patch.object(StoryResponseModule, "reload_from_session_state"),
-            patch("tools.story.story_response_module.App") as mock_app_class,
-            patch("tools.story.story_response_module.Runner"),
+            patch("components.story.story_response_module.App") as mock_app_class,
+            patch("components.story.story_response_module.Runner"),
         ):
             module = StoryResponseModule(
                 theater=self.theater,
@@ -109,8 +109,8 @@ class TestStoryResponseModuleDependencies(unittest.TestCase):
         with (
             patch.object(StoryResponseModule, "_create_responder_agent"),
             patch.object(StoryResponseModule, "reload_from_session_state"),
-            patch("tools.story.story_response_module.App") as mock_app_class,
-            patch("tools.story.story_response_module.Runner"),
+            patch("components.story.story_response_module.App") as mock_app_class,
+            patch("components.story.story_response_module.Runner"),
         ):
             module = StoryResponseModule(
                 theater=self.theater,
@@ -132,8 +132,8 @@ class TestStoryResponseModuleDependencies(unittest.TestCase):
         with (
             patch.object(StoryResponseModule, "_create_responder_agent"),
             patch.object(StoryResponseModule, "reload_from_session_state"),
-            patch("tools.story.story_response_module.App"),
-            patch("tools.story.story_response_module.Runner"),
+            patch("components.story.story_response_module.App"),
+            patch("components.story.story_response_module.Runner"),
         ):
             module = StoryResponseModule(
                 theater=self.theater,
@@ -151,8 +151,8 @@ class TestStoryResponseModuleDependencies(unittest.TestCase):
     def test_can_disable_enterprise_with_app_flag(self) -> None:
         with (
             patch.object(StoryResponseModule, "reload_from_session_state"),
-            patch("tools.story.story_response_module.App"),
-            patch("tools.story.story_response_module.Runner"),
+            patch("components.story.story_response_module.App"),
+            patch("components.story.story_response_module.Runner"),
         ):
             module = StoryResponseModule(
                 theater=self.theater,
@@ -169,8 +169,8 @@ class TestStoryResponseModuleDependencies(unittest.TestCase):
     def test_configures_agent_and_model_with_priority_paygo(self) -> None:
         with (
             patch.object(StoryResponseModule, "reload_from_session_state"),
-            patch("tools.story.story_response_module.App"),
-            patch("tools.story.story_response_module.Runner"),
+            patch("components.story.story_response_module.App"),
+            patch("components.story.story_response_module.Runner"),
         ):
             module = StoryResponseModule(
                 theater=self.theater,
@@ -293,7 +293,7 @@ class TestStoryResponseModuleBehavior(unittest.TestCase):
         )
 
     def test_planning_cues_do_not_expose_peer_trigger_tools(self) -> None:
-        with patch("tools.story.story_response_module.Agent") as agent:
+        with patch("components.story.story_response_module.Agent") as agent:
             self.module._create_responder_agent()
         self.assertNotIn(self.module.trigger_story_planning, agent.call_args.kwargs["tools"])
         self.assertIn("planning_request is advisory", self.module._build_responder_instruction())
@@ -422,7 +422,7 @@ class TestStoryResponseModuleBehavior(unittest.TestCase):
                     session_service=InMemorySessionService(),
                     session_id="dice-config-test",
                 )
-                with patch("tools.story.story_response_module.Agent") as agent:
+                with patch("components.story.story_response_module.Agent") as agent:
                     module._create_responder_agent()
                 self.assertEqual(module.roll_dice in agent.call_args.kwargs["tools"], enabled)
                 instruction = module._build_responder_instruction()

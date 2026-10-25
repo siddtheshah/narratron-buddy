@@ -1,9 +1,9 @@
 from fastapi.testclient import TestClient
 import pytest
 
-from testlab.server import app
-from tools.story.story_handoffs import GameControlDecision
-from tools.story.story_session import StoryRole, StorySession
+from testlab.server import _story_planner_runs, app
+from components.story.story_handoffs import GameControlDecision
+from components.story.story_session import StoryRole, StorySession
 
 pytestmark = pytest.mark.usefixtures("offline_lab_text_providers")
 
@@ -47,7 +47,6 @@ def test_story_planner_lab_routes_create_isolated_session() -> None:
 
 
 def test_story_planner_lab_submits_action_and_records_event() -> None:
-    import time
     from unittest.mock import patch
 
     client = TestClient(app)
@@ -70,7 +69,7 @@ def test_story_planner_lab_submits_action_and_records_event() -> None:
 
     with (
         patch(
-            "tools.story.story_response_module.StoryResponseModule._run_responder_agent",
+            "components.story.story_response_module.StoryResponseModule._run_responder_agent",
             return_value=mock_reaction,
         ) as mock_run,
         patch.object(StorySession, "run", offline_recorder_and_planner),
@@ -82,16 +81,14 @@ def test_story_planner_lab_submits_action_and_records_event() -> None:
         assert submitted.status_code == 200
         assert submitted.json()["acknowledgement"]["status"] == "processing"
 
-        # Wait for background thread callback
-        deadline = time.monotonic() + 3.0
-        while time.monotonic() < deadline:
-            res = client.get(f"/api/story-planner/sessions/{session_id}")
-            assert res.status_code == 200
-            data = res.json()
-            if data["events"]:
-                break
-            time.sleep(0.05)
+        # Deterministically release the production collection window.
+        tools = _story_planner_runs[session_id]["tools"]
+        assert tools.wait_for_pending_events(3)
+        res = client.get(f"/api/story-planner/sessions/{session_id}")
+        assert res.status_code == 200
+        data = res.json()
 
         assert len(data["events"]) == 1
         assert data["events"][0]["result"]["narration"] == mock_reaction["narration"]
         mock_run.assert_called_once_with("I step into the hallway.", nudge="An ominous chill fills the air")
+        tools.close()

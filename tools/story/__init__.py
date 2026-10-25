@@ -26,7 +26,7 @@ from components.notepad import (
     parse_sticky_definitions,
     render_structured_sticky,
 )
-from tools.story.story_planning_module import (
+from components.story.story_planning_module import (
     StoryPlanningModule,
     VertexGemini,
     DEFAULT_COMPACTION_TRIGGER_TOKENS,
@@ -43,7 +43,7 @@ from tools.story.story_planning_module import (
     MAX_DEEP_READ_LORE_CALLS_PER_RUN,
     MAX_DEEP_SEARCH_LORE_CALLS_PER_RUN,
 )
-from tools.story.story_response_module import (
+from components.story.story_response_module import (
     StoryResponseModule,
     ResponseDialogue,
     ResponseCharacter,
@@ -63,7 +63,7 @@ from tools.story.story_response_module import (
     MAX_READ_LORE_CALLS_PER_TURN,
     MAX_SEARCH_LORE_CALLS_PER_TURN,
 )
-from tools.story.story_snapshot import (
+from components.story.story_snapshot import (
     StorySnapshot,
     StorySnapshotDiff,
     StoryStateDiff,

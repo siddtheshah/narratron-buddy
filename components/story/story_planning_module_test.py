@@ -19,7 +19,7 @@ from components.reference_manager import Character, CharacterLookupResult, Refer
 from components.lore_library import LoreLibrary
 from components.notepad import Notepad
 from testing.game_fixtures import make_game, exchange_definition
-from tools.story.story_planning_module import (
+from components.story.story_planning_module import (
     StoryPlanningModule,
     VertexGemini,
     _DEEP_PLANNING_INSTRUCTION_TEMPLATE,
@@ -39,7 +39,7 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
         )
         client = MagicMock()
         with patch(
-            "tools.story.story_models.genai.Client",
+            "components.story.story_models.genai.Client",
             return_value=client,
         ) as create_client:
             self.assertIs(model.api_client, client)
@@ -65,7 +65,7 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
         )
         client = MagicMock()
         with patch(
-            "tools.story.story_models.genai.Client",
+            "components.story.story_models.genai.Client",
             return_value=client,
         ) as create_client:
             self.assertIs(model.api_client, client)
@@ -84,7 +84,7 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
             location="global",
             enterprise=True,
         )
-        with patch("tools.story.story_models.genai.Client") as create_client:
+        with patch("components.story.story_models.genai.Client") as create_client:
             model.api_client
 
         create_client.assert_called_once_with(
@@ -104,8 +104,8 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
         theater.read_planning_schema.return_value = None
         with (
             patch.object(StoryPlanningModule, "_create_deep_planner_agent"),
-            patch("tools.story.story_planning_module.App"),
-            patch("tools.story.story_planning_module.Runner"),
+            patch("components.story.story_planning_module.App"),
+            patch("components.story.story_planning_module.Runner"),
         ):
             canvas = MagicMock(spec=CanvasStateManager)
             canvas.story = StoryState()
@@ -135,8 +135,8 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
 
         with (
             patch.object(StoryPlanningModule, "_create_deep_planner_agent") as create_agent,
-            patch("tools.story.story_planning_module.App"),
-            patch("tools.story.story_planning_module.Runner"),
+            patch("components.story.story_planning_module.App"),
+            patch("components.story.story_planning_module.Runner"),
         ):
             module = StoryPlanningModule(
                 theater=theater,
@@ -219,8 +219,8 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
         canvas.notepad = Notepad(theater, canvas_manager=canvas)
         with (
             patch.object(StoryPlanningModule, "_create_deep_planner_agent"),
-            patch("tools.story.story_planning_module.App") as mock_app_class,
-            patch("tools.story.story_planning_module.Runner"),
+            patch("components.story.story_planning_module.App") as mock_app_class,
+            patch("components.story.story_planning_module.Runner"),
         ):
             module = StoryPlanningModule(
                 theater=theater,
@@ -253,8 +253,8 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
 
         with (
             patch.object(StoryPlanningModule, "_create_deep_planner_agent"),
-            patch("tools.story.story_planning_module.App") as mock_app_class,
-            patch("tools.story.story_planning_module.Runner"),
+            patch("components.story.story_planning_module.App") as mock_app_class,
+            patch("components.story.story_planning_module.Runner"),
         ):
             module = StoryPlanningModule(
                 theater=theater,
@@ -388,7 +388,7 @@ class TestStoryPlanningModuleDependencies(unittest.TestCase):
     def test_deep_planner_agent_includes_image_name_lookup_tool(self) -> None:
         module = self._make_module(MagicMock(spec=LoreLibrary))
 
-        with patch("tools.story.story_planning_module.Agent") as agent_type:
+        with patch("components.story.story_planning_module.Agent") as agent_type:
             module._create_deep_planner_agent()
 
         self.assertIn(module.find_image_names, agent_type.call_args.kwargs["tools"])
@@ -838,8 +838,8 @@ class TestDeepPlanningPromptTemplate(unittest.TestCase):
 
         with (
             patch.object(StoryPlanningModule, "_create_deep_planner_agent"),
-            patch("tools.story.story_planning_module.App"),
-            patch("tools.story.story_planning_module.Runner"),
+            patch("components.story.story_planning_module.App"),
+            patch("components.story.story_planning_module.Runner"),
         ):
             module = StoryPlanningModule(
                 theater=theater,

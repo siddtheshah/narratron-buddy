@@ -8,7 +8,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
 from components.notepad import NoteSnapshot
-from tools.story.story_recording_journal import RecordedNotes
+from components.story.story_recording_journal import RecordedNotes
 
 
 class StoryTurn(BaseModel):
@@ -19,6 +19,7 @@ class StoryTurn(BaseModel):
     ingress: Literal["communicated_action", "game_action"]
     entry_role: Literal["recorder", "responder"] | None = None
     action: str
+    action_logged: bool = False
     nudge: str = ""
     source_revision: int = 0
     game_payload: dict[str, JsonValue] = Field(default_factory=dict)
@@ -29,6 +30,8 @@ class StoryTurn(BaseModel):
     narrative_brief: str | None = None
     planner_completed: bool = False
     delivered: bool = False
+    cycle_id: str | None = None
+    response_owner_id: str | None = None
 
     @model_validator(mode="after")
     def validate_entry_role(self) -> "StoryTurn":
@@ -40,7 +43,7 @@ class StoryTurn(BaseModel):
 
     @property
     def foreground_ready(self) -> bool:
-        return self.recorder_completed and (self.response is not None or self.responder_skipped)
+        return self.recorder_completed and (self.response is not None or self.responder_skipped or self.response_owner_id is not None)
 
     @property
     def completed(self) -> bool:
@@ -99,9 +102,24 @@ class StoryTurnJournal:
             rows = self._connection.execute("SELECT turn_json FROM story_turns ORDER BY position").fetchall()
         return [StoryTurn.model_validate_json(row[0]) for row in rows]
 
+    def bind_cycle(self, turn_ids: list[str]) -> None:
+        """Freeze membership before any model runs, including across restarts."""
+        with self._lock, self._connection:
+            for turn_id in turn_ids:
+                turn = self.get(turn_id)
+                assert turn is not None
+                if turn.cycle_id is None:
+                    turn.cycle_id = turn_ids[0]
+                    self._connection.execute(
+                        "UPDATE story_turns SET turn_json = ? WHERE turn_id = ?",
+                        (turn.model_dump_json(), turn.turn_id),
+                    )
+
     def commit_planning(self, turn: StoryTurn, snapshot: NoteSnapshot) -> None:
+        self.commit_cycle_planning([turn], snapshot)
+
+    def commit_cycle_planning(self, turns: list[StoryTurn], snapshot: NoteSnapshot) -> None:
         """Publish planning progress and the latest mixed-owner checkpoint together."""
-        completed = turn.model_copy(update={"planner_completed": True})
         with self._lock, self._connection:
             self._connection.execute("BEGIN IMMEDIATE")
             self._connection.execute(
@@ -109,10 +127,12 @@ class StoryTurnJournal:
                    ON CONFLICT(singleton) DO UPDATE SET snapshot_json = excluded.snapshot_json""",
                 (RecordedNotes.from_snapshot(snapshot).model_dump_json(),),
             )
-            self._connection.execute(
-                "UPDATE story_turns SET turn_json = ? WHERE turn_id = ?",
-                (completed.model_dump_json(), turn.turn_id),
-            )
+            for turn in turns:
+                completed = turn.model_copy(update={"planner_completed": True})
+                self._connection.execute(
+                    "UPDATE story_turns SET turn_json = ? WHERE turn_id = ?",
+                    (completed.model_dump_json(), turn.turn_id),
+                )
 
     def close(self) -> None:
         with self._lock:

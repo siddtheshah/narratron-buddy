@@ -4,8 +4,8 @@ import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 from pydantic import JsonValue
-from tools.story.story_handoffs import GameControlDecision, NarrationRequest
-from tools.story.story_session import StoryRole, StorySession
+from components.story.story_handoffs import GameControlDecision, NarrationRequest
+from components.story.story_session import StoryRole, StorySession
 from components.canvas.game_runtime import GameAction
 from components.reference_manager import Character
 from testing.game_fixtures import exchange_definition
@@ -171,7 +171,7 @@ def test_game_narration_finishes_before_return_and_state_serializes(sample_adven
     try:
         with (
             patch.object(session.story_tool.response_module, "_resolve_user_action", return_value=reaction) as resolve,
-            patch.object(session.story_tool, "_handle_scene_reaction") as handle,
+            patch.object(session.story_tool.engine, "_handle_scene_reaction") as handle,
         ):
             decision = GameControlDecision(narration_request=NarrationRequest(user_action="Red moves.", brief="Ivory replies."))
             with patch.object(session.story_tool.recorder_module, "_run_model", return_value=decision):

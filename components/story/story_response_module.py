@@ -38,9 +38,9 @@ from components.reference_manager import (
 )
 from components.lore_library import LoreLibrary
 from components.notepad import NoteSnapshot
-from tools.story.story_handoffs import PlanningRequest, ProposedFactChange
-from tools.story.story_session import StorySession
-from tools.story.story_models import (
+from components.story.story_handoffs import PlanningRequest, ProposedFactChange
+from components.story.story_session import StorySession
+from components.story.story_models import (
     VertexGemini,
     DEFAULT_COMPACTION_TRIGGER_TOKENS,
     DEFAULT_COMPACTION_TARGET_TOKENS,
