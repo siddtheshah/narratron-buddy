@@ -37,6 +37,7 @@ from google.genai import types
 from api_server.dependencies import live_agent_manager, suggestion_service, adventure_service, pricing_controller
 from api_server.canvas import broadcast_baton_update, _broadcast_doodle
 from services.theater_image_generation import generate_theater_image
+from services.theater_checkout import checkout_locks, save_theater_checkout
 from services.theater_assets import Playlist, AnimationAsset, playlists, animations
 from services.generation_billing import (
     billing_locks as _billing_locks,
@@ -172,12 +173,18 @@ def _session_notepad(session: object) -> object | None:
 
 async def _export_canvas_theater_async(theater_id: str) -> bool:
     """Export theater canvas data to repository asynchronously."""
-    def _export():
+    def _export() -> bool:
         theater_dir = theater_manager.theater(theater_id).directory()
         canvas_states.get(theater_id).save_local_theater_data(theater_dir=theater_dir)
-        return theater_repository.export_theater(theater_id, theater_dir)
+        saved = save_theater_checkout(theater_id, theater_manager, theater_repository)
+        if saved:
+            metadata = theater_manager.get_theater(theater_id)
+            if metadata is not None:
+                db.update_theater_name(theater_id, metadata.name)
+        return saved
     try:
-        return await asyncio.to_thread(_export)
+        async with checkout_locks.setdefault(theater_id, asyncio.Lock()):
+            return await asyncio.to_thread(_export)
     except Exception:
         logger.exception("Failed to export theater '%s' to repository", theater_id)
         return False

@@ -58,7 +58,7 @@ def editor_page() -> Iterator[Page]:
                 {path: 'lore/characters/captain.txt', kind: 'text'},
             ];
             const draft = {
-                draft: {theater_id: 'theater_tree', name: 'Harbor', revision: 0},
+                draft: {theater_id: 'theater_tree', name: 'Harbor', revision: 0, saved_revision: 0},
                 files: [...initialFiles], rates: {image_credit_rate: 4, music_credit_rate: 6, theater_editor_assistant_credit_rate: 0.1},
             };
             window.savedFiles = {};
@@ -89,8 +89,10 @@ def editor_page() -> Iterator[Page]:
                 }
                 if (request.pathname.endsWith('/save')) {
                     const body = JSON.parse(options.body);
+                    window.lastSaveRequest = body;
                     draft.draft.name = body.name;
                     draft.draft.revision++;
+                    if (body.persist) draft.draft.saved_revision = draft.draft.revision;
                     for (const write of body.writes) {
                         window.savedFiles[write.path] = write.content;
                         if (!draft.files.some(file => file.path === write.path)) {
@@ -280,7 +282,7 @@ def test_edits_and_folder_choices_survive_save_and_reload(editor_page: Page) -> 
     expect(page.locator("#file-editor")).to_have_value("An experienced harbor captain.")
     page.locator('details[data-path="lore"] > summary').click()
     page.locator("#save-draft").click()
-    expect(page.locator("#builder-status")).to_have_text("Draft saved.")
+    expect(page.locator("#builder-status")).to_have_text("Theater saved.")
     expect(captain).not_to_be_visible()
     page.locator('details[data-path="lore"] > summary').click()
     expect(captain).to_be_visible()
@@ -288,7 +290,7 @@ def test_edits_and_folder_choices_survive_save_and_reload(editor_page: Page) -> 
     saved: dict[str, str] = page.evaluate("window.savedFiles")
     assert saved == {"lore/characters/captain.txt": "An experienced harbor captain."}
     page.locator("#reload-draft").click()
-    expect(page.locator("#builder-status")).to_have_text("Draft loaded. Select a file or ask your assistant to begin.")
+    expect(page.locator("#builder-status")).to_have_text("Theater loaded. Select a file or ask your assistant to begin.")
     expect(captain).to_be_visible()
     captain.click()
     expect(page.locator("#file-editor")).to_have_value("An experienced harbor captain.")
@@ -333,7 +335,7 @@ def test_regenerating_selected_asset_refreshes_preview(editor_page: Page, kind: 
     page.locator("#generation-name").fill("harbor")
     page.locator("#generation-prompt").fill("A misty harbor.")
     page.locator("#generation-submit").click()
-    expect(page.locator("#builder-status")).to_have_text(f"Saved {path} to your draft.")
+    expect(page.locator("#builder-status")).to_have_text(f"Added {path} to your working theater.")
     page.get_by_role("button", name=f"Open {path}", exact=True).click()
     preview = page.locator("#media-preview img")
     first_url = preview.get_attribute("src")
@@ -345,7 +347,7 @@ def test_regenerating_selected_asset_refreshes_preview(editor_page: Page, kind: 
         page.locator("#generation-prompt").fill(f"A harbor variation {revision}.")
         page.locator("#generation-submit").click()
         expect(preview).to_have_attribute("src", re.compile(rf"&revision={revision}$"))
-        expect(page.locator("#builder-status")).to_have_text(f"Saved {path} to your draft.")
+        expect(page.locator("#builder-status")).to_have_text(f"Added {path} to your working theater.")
         assert preview.get_attribute("src") != first_url
         expect(page.locator("#download-file")).to_have_attribute("href", preview.get_attribute("src"))
 
@@ -377,7 +379,7 @@ def test_topbar_shows_credits_and_refreshes_after_generation(editor_page: Page, 
     page.locator("#generation-name").fill("harbor")
     page.locator("#generation-prompt").fill("A misty harbor.")
     page.locator("#generation-submit").click()
-    expect(page.locator("#builder-status")).to_have_text("Saved references/harbor.png to your draft.")
+    expect(page.locator("#builder-status")).to_have_text("Added references/harbor.png to your working theater.")
     expect(badge).to_have_text("⚡ 96.0 + Buy")
 
 
@@ -467,7 +469,29 @@ def test_credit_purchase_saves_edits_and_refreshes_the_balance(editor_page: Page
     assert payload == {"package_id": "starter", "payment_method": "stripe_checkout", "checkout_mode": True}
     expect(page.locator("#buyCreditsModalSuccess")).to_contain_text("Added +100.0 Credits")
     expect(page.locator("#buyCreditsCurrentBalance")).to_have_text("Balance: 200.0 Cr")
-    expect(page.locator("#draft-state")).to_have_text("Saved draft")
+    expect(page.locator("#draft-state")).to_have_text("Unsaved changes")
+
+
+def test_applied_changes_warn_on_navigation_until_theater_is_saved(editor_page: Page) -> None:
+    page = editor_page
+    page.evaluate("window.assistantProposal = {message: 'Add lore', writes: [{path: 'lore/new.txt', content: 'Harbor'}], moves: [], generations: []}")
+    page.locator("#assistant-input").fill("Develop the harbor")
+    page.locator("#assistant-send").click()
+    page.get_by_role("button", name="Apply file changes").click()
+    expect(page.locator("#draft-state")).to_have_text("Unsaved changes")
+    assert page.evaluate("""() => {
+        const event = new Event('beforeunload', {cancelable: true});
+        window.dispatchEvent(event);
+        return event.defaultPrevented;
+    }""")
+    page.locator("#save-draft").click()
+    expect(page.locator("#draft-state")).to_have_text("Saved theater")
+    assert page.evaluate("window.lastSaveRequest.persist") is True
+    assert not page.evaluate("""() => {
+        const event = new Event('beforeunload', {cancelable: true});
+        window.dispatchEvent(event);
+        return event.defaultPrevented;
+    }""")
 
 
 def test_credit_checkout_failure_can_be_retried(editor_page: Page) -> None:
@@ -543,7 +567,7 @@ def test_assistant_proposes_and_generates_stamp_ui(editor_page: Page) -> None:
 
     # Click generate on the proposed stamp card
     card.locator("button").click()
-    expect(page.locator("#builder-status")).to_have_text("Saved stamps/goblin.png to your draft.")
+    expect(page.locator("#builder-status")).to_have_text("Added stamps/goblin.png to your working theater.")
     expect(card.locator("button")).to_have_text("Generated")
     expect(card.locator(".open-asset-link")).to_have_text("Open asset →")
     expect(page.locator("#assistant-messages .open-asset-link")).to_have_text("Open asset →")
@@ -597,7 +621,7 @@ def test_starting_proposal_does_not_block_exploring_theater_and_links_to_open_as
     page.evaluate("window.releaseGenerate()")
 
     # When generation finishes, status updates and card shows Generated
-    expect(page.locator("#builder-status")).to_have_text("Saved references/harbor.png to your draft.")
+    expect(page.locator("#builder-status")).to_have_text("Added references/harbor.png to your working theater.")
     expect(card.locator("button")).to_have_text("Generated")
 
     # Active exploration view (lore/guide.txt) was not clobbered
@@ -670,11 +694,11 @@ def test_assistant_proposes_deletions_ui(editor_page: Page) -> None:
     expect(page.locator("#assistant-proposal")).to_contain_text("Review proposed changes")
     expect(page.locator(".proposal-deletion")).to_contain_text("Delete lore/guide.txt")
 
-    apply_btn = page.locator("#assistant-proposal button", has_text="Apply file changes to draft")
+    apply_btn = page.locator("#assistant-proposal button", has_text="Apply file changes")
     expect(apply_btn).to_be_visible()
     apply_btn.click()
 
-    expect(page.locator("#builder-status")).to_have_text("File changes applied and saved to your draft.")
+    expect(page.locator("#builder-status")).to_have_text("File changes applied to your working theater.")
     expect(page.locator("#file-count")).to_have_text("6 files")
     expect(page.locator('.file-button[title="lore/guide.txt"]')).not_to_be_visible()
 
@@ -861,9 +885,9 @@ def test_download_draft_button_triggers_download(editor_page: Page) -> None:
     page = editor_page
     download_btn = page.locator("#download-draft")
     expect(download_btn).to_be_visible()
-    expect(download_btn).to_have_text("Download draft")
+    expect(download_btn).to_have_text("Download theater")
     download_btn.click()
-    expect(page.locator("#builder-status")).to_have_text("Draft theater downloaded.")
+    expect(page.locator("#builder-status")).to_have_text("Theater downloaded.")
 
 
 def test_reset_theater_button_dialog_flow(editor_page: Page) -> None:

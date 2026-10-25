@@ -25,3 +25,14 @@ class CanvasStateService:
         state = self.states.get(theater_id)
         if state is not None:
             state.reset()
+
+    def reload_package(self, theater_id: str) -> None:
+        state = self.states.get(theater_id)
+        if state is not None:
+            state.reload_package()
+
+    def persist(self, theater_id: str) -> None:
+        """Flush an active canvas without starting a session for an unfinished package."""
+        state = self.states.get(theater_id)
+        if state is not None:
+            state.persist()

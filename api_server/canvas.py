@@ -15,7 +15,6 @@ from google.genai import types
 
 from api_server.shared import (
     app,
-    config,
     canvas_states,
     db,
     theater_manager,
@@ -707,13 +706,6 @@ async def trigger_orator_mic_toggle(request: Request, theater_id: str):
             _unregister_doodle_websocket(state, websocket)
     return {"status": "ok", "broadcasted_to": count}
 
-
-@app.get("/api/orator/config")
-def get_orator_config():
-    return config.get("orator", {
-        "hotkey": "<ctrl>+<shift>+[",
-        "server_url": "http://127.0.0.1:8000/api/orator/toggle_mic"
-    })
 
 @app.get("/api/latest")
 def get_latest_image(

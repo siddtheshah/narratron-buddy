@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 import tempfile
 import unittest
@@ -43,7 +42,7 @@ class TestStorageLimits(unittest.TestCase):
         self.assertEqual(get_directory_size_bytes(sub), 16)
         self.assertEqual(get_directory_size_bytes(self.theaters_root / "nonexistent"), 0)
 
-    def test_calculate_user_theaters_storage_deployed_and_drafts(self) -> None:
+    def test_calculate_user_theaters_storage_includes_checkout_growth_once(self) -> None:
         # Initially empty
         self.assertEqual(
             calculate_user_theaters_storage_bytes(self.user_id, db=self.db, theaters_root=self.theaters_root),
@@ -76,31 +75,24 @@ class TestStorageLimits(unittest.TestCase):
             1000,
         )
 
-        # Active editor draft owned by user
-        builder_root = self.theaters_root / "_builder"
-        draft1_dir = builder_root / "draft_1"
-        draft1_dir.mkdir(parents=True)
-        manifest_bytes = json.dumps({"theater_id": "draft_1", "owner_id": self.user_id, "name": "Draft 1"}).encode("utf-8")
-        (draft1_dir / "editor.json").write_bytes(manifest_bytes)
-        (draft1_dir / "audio.mp3").write_bytes(b"Z" * 2000)
+        # The editor and canvas share a checkout of the same owned theater.
+        checkouts_root = self.theaters_root / "runtime"
+        checkout = checkouts_root / tid1
+        checkout.mkdir(parents=True)
+        (checkout / "audio.mp3").write_bytes(b"Z" * 2000)
 
         self.assertEqual(
-            calculate_user_theaters_storage_bytes(self.user_id, db=self.db, theaters_root=self.theaters_root),
-            1000 + 2000 + len(manifest_bytes),
+            calculate_user_theaters_storage_bytes(self.user_id, db=self.db, theaters_root=self.theaters_root, checkouts_root=checkouts_root),
+            2000,
         )
 
-        # Active editor draft owned by another user is ignored
-        draft2_dir = builder_root / "draft_2"
-        draft2_dir.mkdir(parents=True)
-        (draft2_dir / "editor.json").write_text(
-            json.dumps({"theater_id": "draft_2", "owner_id": other_uid, "name": "Draft 2"}),
-            encoding="utf-8",
-        )
-        (draft2_dir / "big.mp3").write_bytes(b"W" * 10000)
+        other_checkout = checkouts_root / tid2
+        other_checkout.mkdir(parents=True)
+        (other_checkout / "big.mp3").write_bytes(b"W" * 10000)
 
         self.assertEqual(
-            calculate_user_theaters_storage_bytes(self.user_id, db=self.db, theaters_root=self.theaters_root),
-            1000 + 2000 + len(manifest_bytes),
+            calculate_user_theaters_storage_bytes(self.user_id, db=self.db, theaters_root=self.theaters_root, checkouts_root=checkouts_root),
+            2000,
         )
 
     def test_check_user_theaters_storage_allowance_limits(self) -> None:

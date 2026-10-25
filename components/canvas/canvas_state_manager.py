@@ -8,9 +8,8 @@ from __future__ import annotations
 
 import json
 import logging
-import asyncio
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 
 from components.canvas import AudioState, ChatManager, ConnectionState, DoodleState, StoryState, ToolResponseState, UIState, VisualState
 from components.theater_manager import Theater
@@ -83,6 +82,15 @@ class CanvasStateManager:
         self._initialize_state()
         self.visual.initialize_starting_image()
         self.visual.shown_images_history.clear()
+        self.notify_changed()
+
+    def reload_package(self) -> None:
+        """Refresh editor-changed configuration while retaining canvas history and sockets."""
+        self.persist()
+        self.story.output_cycle.close()
+        self._initialize_state()
+        self.load_state_from_disk()
+        self.visual.initialize_starting_image()
         self.notify_changed()
 
     def _on_visual_changed(self, changed: bool = True) -> None:

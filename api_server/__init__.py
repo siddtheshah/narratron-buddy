@@ -3,7 +3,6 @@
 from api_server.shared import (  # noqa: F401
     app,
     FLAGS,
-    config,
     db,
     theater_manager,
     canvas_states,

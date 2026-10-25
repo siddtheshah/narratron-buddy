@@ -33,18 +33,18 @@
         <button id="start-default" type="button"><b>✧ Populate default</b><span>Role guides, planning notes, and sample assets</span></button>
         <button id="start-folder" type="button"><b>▤ Upload a folder</b><span>Bring any theater files or assets; incomplete folders are welcome</span></button>
       </div>
-      <button id="resume-draft" class="text-button" type="button" hidden>Resume your last saved draft →</button>
+      <button id="resume-draft" class="text-button" type="button" hidden>Resume your last theater →</button>
     </section>
     <section id="workspace" hidden>
       <div class="draft-toolbar">
         <label for="draft-name" class="sr-only">Theater name</label><input id="draft-name" maxlength="120">
-        <span class="draft-badge" id="draft-state">Draft</span><div class="toolbar-actions">
+        <span class="draft-badge" id="draft-state">Theater</span><div class="toolbar-actions">
           <button class="secondary" id="new-draft" type="button">New theater</button>
           <button class="secondary" id="reload-draft" type="button">Reload</button>
-          <button class="secondary" id="save-draft" type="button">Save draft</button>
-          <button class="secondary" id="download-draft" type="button">Download draft</button>
+          <button class="secondary" id="save-draft" type="button">Save theater</button>
+          <button class="secondary" id="download-draft" type="button">Download theater</button>
           <button class="secondary danger-btn" id="reset-theater" type="button">Reset Theater</button>
-          <button id="deploy-draft" type="button">Deploy & test →</button>
+          <button id="deploy-draft" type="button">Save & test →</button>
         </div>
       </div>
       <div class="builder-grid">
@@ -60,7 +60,7 @@
           <div id="empty-preview" class="empty-preview"><span aria-hidden="true">✧</span><h3>A world, in the making.</h3><p>Select a file to edit its text or preview an asset.<br>Your assistant can help fill in the details.</p></div>
           <label for="file-editor" class="sr-only">File contents</label><textarea id="file-editor" spellcheck="false" hidden></textarea>
           <div id="media-preview" hidden></div>
-          <div class="preview-footer"><span id="file-save-state">Changes stay in your draft until you deploy.</span><a href="/docs/theater-yaml" target="_blank" rel="noopener">Configuration guide ↗</a></div>
+          <div class="preview-footer"><span id="file-save-state">Editor and canvas share your working theater.</span><a href="/docs/theater-yaml" target="_blank" rel="noopener">Configuration guide ↗</a></div>
         </section>
         <aside class="assistant-panel panel" aria-label="AI theater assistant">
           <div class="panel-heading">

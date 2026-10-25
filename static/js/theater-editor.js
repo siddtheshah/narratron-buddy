@@ -1,4 +1,4 @@
-/* Theater drafts are server owned. Keep previews and paid generation explicit. */
+/* Editor and canvas share a server checkout. Keep durable saves and paid generation explicit. */
 (() => {
   'use strict';
   const el = id => document.getElementById(id);
@@ -25,9 +25,11 @@
     el('builder-status').classList.toggle('error', error);
   }
   function dirty() { return textDirty || nameDirty || pendingWrites.size > 0; }
+  function unsaved() { return dirty() || (state && state.draft.revision !== state.draft.saved_revision); }
   function updateSaveState() {
-    el('draft-state').textContent = dirty() ? 'Unsaved changes' : 'Saved draft';
-    el('file-save-state').textContent = dirty() ? 'Save your edits to keep them in this draft.' : 'Changes stay in your draft until you deploy.';
+    el('draft-state').textContent = unsaved() ? 'Unsaved changes' : 'Saved theater';
+    el('file-save-state').textContent = dirty() ? 'Save your edits before leaving.' : unsaved()
+      ? 'Changes are in your working theater. Save theater to keep them.' : 'Theater saved. Editor and canvas share the same working copy.';
   }
   function captureText() {
     if ((selected?.kind === 'text' || selected?.path.toLowerCase().endsWith('.svg')) && textDirty) pendingWrites.set(selected.path, el('file-editor').value);
@@ -240,10 +242,10 @@
     el('media-preview').hidden = false;
     el('file-editor').hidden = true;
   }
-  async function save() {
+  async function save(persist = false) {
     captureText();
-    if (!dirty()) return;
-    const next = await post('/save', { revision: state.draft.revision, name: el('draft-name').value.trim(), writes: [...pendingWrites].map(([path, content]) => ({ path, content })) });
+    if (!dirty() && !persist) return;
+    const next = await post('/save', { revision: state.draft.revision, name: el('draft-name').value.trim(), writes: [...pendingWrites].map(([path, content]) => ({ path, content })), persist });
     pendingWrites.clear(); nameDirty = false; textDirty = false;
     render(next);
   }
@@ -259,7 +261,7 @@
     const next = await api(`/api/theater-editor/${encodeURIComponent(identifier)}`);
     pendingWrites.clear(); textDirty = false; nameDirty = false; proposal = null;
     el('assistant-proposal').hidden = true; clearPreview(); render(next);
-    status('Draft loaded. Select a file or ask your assistant to begin.');
+    status('Theater loaded. Select a file or ask your assistant to begin.');
   }
   async function create(populateDefault = true) {
     clearPreview(); history.length = 0; proposal = null;
@@ -436,7 +438,7 @@
     if (file) {
       await selectFile(file);
     } else {
-      status(`Could not find ${path} in this draft.`, true);
+      status(`Could not find ${path} in this theater.`, true);
     }
   }
   function message(role, text, assetPath = null) {
@@ -490,7 +492,7 @@
       text.textContent = `🗑 Delete ${deletion}`; container.append(text);
     }
     if (proposal.writes.length || proposal.moves.length || (proposal.deletions && proposal.deletions.length)) {
-      const button = document.createElement('button'); button.textContent = 'Apply file changes to draft'; button.type = 'button';
+      const button = document.createElement('button'); button.textContent = 'Apply file changes'; button.type = 'button';
       button.addEventListener('click', () => {
         if (activeGenerations > 0) { status('Please wait for asset generation to finish before applying changes.', true); return; }
         run(async () => {
@@ -500,7 +502,7 @@
             generation.references = generation.references.map(path => proposal.moves.find(move => move.source === path)?.destination || path);
           }
           clearPreview(); button.disabled = true; button.dataset.done = 'true';
-          status('File changes applied and saved to your draft.');
+          status('File changes applied to your working theater.');
         }, 'Applying changes…');
       });
       container.append(button);
@@ -581,7 +583,7 @@
       await checkAuthStatus({ refresh: true });
       message('assistant', `Created ${result.path}. Charged ${result.credits_charged} credits.`, result.path);
       history.push({ role: 'assistant', content: `Created asset: ${result.path}` });
-      status(`Saved ${result.path} to your draft.`);
+      status(`Added ${result.path} to your working theater.`);
     } catch (error) {
       status(error.message, true);
       if (button) {
@@ -666,7 +668,7 @@
         message('assistant', proposal.message);
         renderProposal();
         await checkAuthStatus({ refresh: true });
-        status(`Harvested Google Doc into your theater draft. Charged ${res.credits_charged} credits.`);
+        status(`Prepared Google Doc changes for review. Charged ${res.credits_charged} credits.`);
       } else {
         importedFile = state.files.find(f => f.path === res.path);
         status(res.message || `Imported ${res.path} from Google.`);
@@ -696,7 +698,7 @@
     finally { opening = false; }
   }
   el('start-default').addEventListener('click', () => run(async () => { await create(); status('Default theater ready. Make it your own.'); }, 'Preparing your theater…'));
-  el('resume-draft').addEventListener('click', () => run(() => load(el('resume-draft').dataset.identifier), 'Opening your last saved draft…'));
+  el('resume-draft').addEventListener('click', () => run(() => load(el('resume-draft').dataset.identifier), 'Opening your last theater…'));
   el('start-folder').addEventListener('click', () => el('folder-input').click());
   el('upload-folder').addEventListener('click', () => el('folder-input').click());
   el('upload-assets').addEventListener('click', () => el('assets-input').click());
@@ -733,7 +735,7 @@
     });
   }
   el('draft-name').addEventListener('input', () => { nameDirty = true; updateSaveState(); });
-  el('save-draft').addEventListener('click', () => run(async () => { await save(); status('Draft saved.'); }, 'Saving draft…'));
+  el('save-draft').addEventListener('click', () => run(async () => { await save(true); status('Theater saved.'); }, 'Saving theater…'));
   el('download-draft').addEventListener('click', () => run(async () => {
     await save();
     const link = document.createElement('a');
@@ -742,15 +744,15 @@
     document.body.appendChild(link);
     link.click();
     link.remove();
-    status('Draft theater downloaded.');
-  }, 'Preparing draft theater download…'));
-  el('reload-draft').addEventListener('click', () => { if (!dirty() || confirm('Discard unsaved edits and reload the saved draft?')) run(() => load(state.draft.theater_id), 'Reloading draft…'); });
+    status('Theater downloaded.');
+  }, 'Preparing theater download…'));
+  el('reload-draft').addEventListener('click', () => { if (!dirty() || confirm('Discard unsubmitted edits and reload the working theater?')) run(() => load(state.draft.theater_id), 'Reloading theater…'); });
   el('deploy-draft').addEventListener('click', () => run(async () => {
-    await save(); const result = await post('/deploy', { revision: state.draft.revision });
+    await save(true); const result = await post('/deploy', { revision: state.draft.revision });
     status('Deployed. Opening your canvas…'); location.assign(result.canvas_url);
   }, 'Deploying your theater…'));
   el('new-draft').addEventListener('click', () => {
-    if (dirty() && !confirm('Leave unsaved edits and start another theater?')) return;
+    if (unsaved() && !confirm('Leave without saving this theater and start another?')) return;
     state = null; pendingWrites.clear(); textDirty = false; nameDirty = false;
     el('workspace').hidden = true; el('start-panel').hidden = false;
     window.history.replaceState(null, '', '/theater-editor'); status('');
@@ -814,7 +816,7 @@
   }
   el('delete-file').addEventListener('click', () => {
     if (!selected || selected.path === 'theater.yaml') return;
-    el('delete-file-prompt').textContent = `Are you sure you want to delete "${selected.path}" from this draft? This cannot be undone.`;
+    el('delete-file-prompt').textContent = `Are you sure you want to delete "${selected.path}" from this theater? This cannot be undone.`;
     el('delete-file-dialog').showModal();
   });
   el('delete-file-cancel').addEventListener('click', () => el('delete-file-dialog').close());
@@ -917,7 +919,7 @@
       upload(processedFiles, isFolder);
     });
   }
-  window.addEventListener('beforeunload', event => { if (dirty()) { event.preventDefault(); event.returnValue = ''; } });
+  window.addEventListener('beforeunload', event => { if (unsaved() || activeGenerations > 0) { event.preventDefault(); event.returnValue = ''; } });
   window.addEventListener('narratron:auth-changed', event => {
     if (!event.detail.authenticated) { state = null; lastDraftKey = null; activeGenerations = 0; generatingKeys.clear(); asking = false; pendingWrites.clear(); textDirty = false; nameDirty = false; clearPreview(); history.length = 0; el('assistant-messages').replaceChildren(); el('assistant-proposal').replaceChildren(); el('workspace').hidden = true; el('start-panel').hidden = true; el('login-gate').hidden = false; }
   });

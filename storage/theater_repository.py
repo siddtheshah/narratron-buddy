@@ -12,6 +12,7 @@ import shutil
 from typing import Any, Dict, List, Optional
 
 from components.theater_manager import validate_theater_id
+from components.theater_package import safe_asset_path
 
 from absl import flags
 
@@ -98,11 +99,26 @@ class TheaterRepository:
             (target / "references" / "characters").mkdir(parents=True, exist_ok=True)
             (target / "references" / "scenes").mkdir(parents=True, exist_ok=True)
             for item in source_dir.iterdir():
+                if item.name in {"editor.json", "editor.tmp"}:
+                    continue
                 dest = target / item.name
                 if item.is_dir():
                     shutil.copytree(item, dest, dirs_exist_ok=True)
                 else:
                     shutil.copy2(item, dest)
+            # Package saves replace the authored file set, while runtime output
+            # and canvas state retain the repository's existing merge behavior.
+            for item in target.rglob("*"):
+                if not item.is_file():
+                    continue
+                relative = item.relative_to(target).as_posix()
+                try:
+                    source_file = safe_asset_path(source_dir, relative)
+                    safe_asset_path(target, relative)
+                except ValueError:
+                    continue
+                if not source_file.is_file():
+                    item.unlink()
             return True
         except Exception as e:
             logger.warning("Failed to export theater %s to %s: %s", theater_id, target, e)

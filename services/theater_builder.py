@@ -1,4 +1,4 @@
-"""Persistent, owner-scoped theater drafts and reviewable assistant changes."""
+"""Edit the shared theater checkout with reviewable assistant changes."""
 
 from __future__ import annotations
 
@@ -8,7 +8,6 @@ import mimetypes
 import os
 from pathlib import Path, PurePosixPath
 import re
-import shutil
 from typing import Literal
 import uuid
 
@@ -20,6 +19,10 @@ import yaml
 
 from components.game_source import GAME_FILES, GAME_FILENAMES
 from components.theater_manager import MAX_LORE_DOCUMENT_BYTES
+from components.theater_package import (
+    AUDIO_EXTENSIONS, IMAGE_EXTENSIONS, ROOT_FILES, TEXT_EXTENSIONS,
+    IneligibleAssetError, safe_asset_path,
+)
 from storage.storage_limits import (
     check_user_theaters_storage_allowance,
 )
@@ -27,22 +30,14 @@ from storage.storage_limits import (
 MAX_FILE_BYTES = 10 * 1024 * 1024
 MAX_DRAFT_BYTES = 100 * 1024 * 1024
 MAX_FILES = 500
-IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
-AUDIO_EXTENSIONS = {".mp3", ".wav", ".ogg", ".flac", ".m4a", ".aac"}
-TEXT_EXTENSIONS = {".txt", ".md", ".yaml", ".yml", ".json", ".svg"}
-ROOT_FILES = {"theater.yaml", "planning.yaml", "metadata.json", "README.md"}
-
-
-class IneligibleAssetError(ValueError):
-    """A file is outside the supported theater package layout."""
 
 
 class DraftInfo(BaseModel):
     theater_id: str
     owner_id: int
     name: str = Field(min_length=1, max_length=120)
-    source_id: str | None = None
     revision: int = 0
+    saved_revision: int = 0
 
 
 class BuilderFile(BaseModel):
@@ -116,34 +111,6 @@ def encode_text_writes(writes: list[FileWrite]) -> dict[str, bytes]:
     return files
 
 
-def safe_asset_path(root: Path, relative: str) -> Path:
-    """Only package files are addressable; never internal metadata or runtime output."""
-    normalized = relative.replace("\\", "/")
-    parts = normalized.split("/")
-    if not normalized or any(not part or part in {".", ".."} or re.search(r'[<>:"|?*\x00-\x1f]', part) or part.endswith((".", " ")) for part in parts):
-        raise ValueError("Invalid asset path.")
-    if any(re.fullmatch(r"(?i)(con|prn|aux|nul|com[0-9]|lpt[0-9])(?:\..*)?", part) for part in parts):
-        raise ValueError("Reserved asset filename.")
-    suffix = PurePosixPath(normalized).suffix.lower()
-    allowed = normalized in ROOT_FILES or normalized in GAME_FILES
-    allowed |= len(parts) >= 2 and parts[0] == "game" and suffix in {".svg", ".json"}
-    allowed |= len(parts) >= 2 and parts[0] == "references" and suffix in IMAGE_EXTENSIONS
-    allowed |= len(parts) >= 2 and parts[0] == "stamps" and suffix in IMAGE_EXTENSIONS
-    if parts[:2] == ["references", "characters"]:
-        allowed = len(parts) >= 4 and (suffix in IMAGE_EXTENSIONS or (len(parts) == 4 and parts[-1] == "character.yaml"))
-    if parts[:2] == ["references", "scenes"]:
-        allowed = len(parts) >= 4 and (suffix in IMAGE_EXTENSIONS or (len(parts) == 4 and parts[-1] == "scene.yaml"))
-    allowed |= len(parts) >= 3 and parts[0] == "playlists" and suffix in AUDIO_EXTENSIONS
-    allowed |= len(parts) == 3 and parts[0] == "playlists" and parts[-1] == "description.txt"
-    allowed |= len(parts) >= 2 and parts[0] == "lore" and suffix in {".txt", ".md"}
-    if not allowed:
-        raise IneligibleAssetError("Use theater.yaml, planning.yaml, metadata.json, README.md, lore/*.txt or *.md, references/images, references/characters/<Name>/images or character.yaml, references/scenes/<Name>/images or scene.yaml, stamps/images, playlists/<Name>/audio or description.txt, or game/game.yaml (game.yml/game.json) with game/*.svg and companion game/*.json.")
-    target = root.joinpath(*parts).resolve()
-    if root.resolve() not in target.parents:
-        raise ValueError("Asset path escapes the theater draft.")
-    return target
-
-
 def upload_path(filename: str, folder: bool) -> str:
     """Preserve folder layouts and classify a flat asset dump by media type."""
     normalized = filename.replace("\\", "/")
@@ -182,8 +149,8 @@ def upload_path(filename: str, folder: bool) -> str:
 
 
 class TheaterBuilderStore:
-    def __init__(self, repository_root: Path) -> None:
-        self.root = repository_root / "_builder"
+    def __init__(self, checkout_root: Path) -> None:
+        self.root = checkout_root
 
     def directory(self, theater_id: str) -> Path:
         if not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9_-]*", theater_id):
@@ -200,64 +167,24 @@ class TheaterBuilderStore:
         (root / "lore").mkdir(parents=True, exist_ok=True)
         (root / "stamps").mkdir(parents=True, exist_ok=True)
 
-    def sync_source_characters(self, info: DraftInfo, source: Path) -> None:
+    def import_session_references(self, info: DraftInfo) -> None:
+        """Expose runtime-created character and scene assets in the package editor."""
         root = self.directory(info.theater_id)
-        self.ensure_directories(info.theater_id)
-        source_chars = source / "references" / "characters"
-        if source_chars.is_dir():
-            for item in source_chars.rglob("*"):
-                if item.is_file() and (item.suffix.lower() in IMAGE_EXTENSIONS or item.name == "character.yaml"):
-                    relative = item.relative_to(source).as_posix()
-                    try:
-                        target_file = safe_asset_path(root, relative)
-                    except IneligibleAssetError:
-                        continue
-                    if not target_file.exists():
-                        target_file.parent.mkdir(parents=True, exist_ok=True)
-                        shutil.copy2(item, target_file)
-        session_chars = source / "output" / "artifacts" / "updated_references" / "characters"
-        if session_chars.is_dir():
-            for item in session_chars.rglob("*"):
-                if item.is_file() and (item.suffix.lower() in IMAGE_EXTENSIONS or item.name == "character.yaml"):
-                    rel = item.relative_to(session_chars).as_posix()
-                    char_rel = f"references/characters/{rel}"
-                    try:
-                        target_file = safe_asset_path(root, char_rel)
-                    except IneligibleAssetError:
-                        continue
-                    if not target_file.exists():
-                        target_file.parent.mkdir(parents=True, exist_ok=True)
-                        shutil.copy2(item, target_file)
-        self.sync_source_scenes(info, source)
-
-    def sync_source_scenes(self, info: DraftInfo, source: Path) -> None:
-        root = self.directory(info.theater_id)
-        self.ensure_directories(info.theater_id)
-        source_scenes = source / "references" / "scenes"
-        if source_scenes.is_dir():
-            for item in source_scenes.rglob("*"):
-                if item.is_file() and (item.suffix.lower() in IMAGE_EXTENSIONS or item.name == "scene.yaml"):
-                    relative = item.relative_to(source).as_posix()
-                    try:
-                        target_file = safe_asset_path(root, relative)
-                    except IneligibleAssetError:
-                        continue
-                    if not target_file.exists():
-                        target_file.parent.mkdir(parents=True, exist_ok=True)
-                        shutil.copy2(item, target_file)
-        session_scenes = source / "output" / "artifacts" / "updated_references" / "scenes"
-        if session_scenes.is_dir():
-            for item in session_scenes.rglob("*"):
-                if item.is_file() and (item.suffix.lower() in IMAGE_EXTENSIONS or item.name == "scene.yaml"):
-                    rel = item.relative_to(session_scenes).as_posix()
-                    scene_rel = f"references/scenes/{rel}"
-                    try:
-                        target_file = safe_asset_path(root, scene_rel)
-                    except IneligibleAssetError:
-                        continue
-                    if not target_file.exists():
-                        target_file.parent.mkdir(parents=True, exist_ok=True)
-                        shutil.copy2(item, target_file)
+        files: dict[str, bytes] = {}
+        updates = root / "output" / "artifacts" / "updated_references"
+        for kind in ("characters", "scenes"):
+            for item in (updates / kind).rglob("*"):
+                if not item.is_file():
+                    continue
+                relative = f"references/{kind}/{item.relative_to(updates / kind).as_posix()}"
+                try:
+                    target = safe_asset_path(root, relative)
+                except IneligibleAssetError:
+                    continue
+                if not target.exists():
+                    files[relative] = item.read_bytes()
+        if files:
+            self.write_files(info, files)
 
     def load(self, theater_id: str) -> DraftInfo | None:
         manifest = self.directory(theater_id) / "editor.json"
@@ -270,47 +197,11 @@ class TheaterBuilderStore:
         temporary.write_text(info.model_dump_json(), encoding="utf-8")
         temporary.replace(folder / "editor.json")
 
-    def create(self, owner_id: int, name: str, default_yaml: str, theater_id: str | None = None, source: Path | None = None, populate_default: bool = True, initial_files: dict[str, bytes] | None = None) -> DraftInfo:
+    def create(self, owner_id: int, name: str, default_yaml: str, theater_id: str | None = None, populate_default: bool = True, initial_files: dict[str, bytes] | None = None) -> DraftInfo:
         identifier = theater_id or f"theater_{uuid.uuid4().hex}"
-        info = DraftInfo(theater_id=identifier, owner_id=owner_id, name=name, source_id=theater_id)
-        root = self.directory(identifier)
+        info = DraftInfo(theater_id=identifier, owner_id=owner_id, name=name)
         files: dict[str, bytes] = dict(initial_files or {})
-        if source is not None:
-            if not source.is_dir():
-                raise ValueError("Theater import source directory not found.")
-            for item in source.rglob("*"):
-                if item.is_file():
-                    relative = item.relative_to(source).as_posix()
-                    try:
-                        safe_asset_path(root, relative)
-                    except IneligibleAssetError:
-                        continue
-                    files[relative] = item.read_bytes()
-            session_chars = source / "output" / "artifacts" / "updated_references" / "characters"
-            if session_chars.is_dir():
-                for item in session_chars.rglob("*"):
-                    if item.is_file() and (item.suffix.lower() in IMAGE_EXTENSIONS or item.name == "character.yaml"):
-                        rel = item.relative_to(session_chars).as_posix()
-                        char_rel = f"references/characters/{rel}"
-                        if char_rel not in files:
-                            try:
-                                safe_asset_path(root, char_rel)
-                                files[char_rel] = item.read_bytes()
-                            except IneligibleAssetError:
-                                continue
-            session_scenes = source / "output" / "artifacts" / "updated_references" / "scenes"
-            if session_scenes.is_dir():
-                for item in session_scenes.rglob("*"):
-                    if item.is_file() and (item.suffix.lower() in IMAGE_EXTENSIONS or item.name == "scene.yaml"):
-                        rel = item.relative_to(session_scenes).as_posix()
-                        scene_rel = f"references/scenes/{rel}"
-                        if scene_rel not in files:
-                            try:
-                                safe_asset_path(root, scene_rel)
-                                files[scene_rel] = item.read_bytes()
-                            except IneligibleAssetError:
-                                continue
-        importing = source is not None or initial_files is not None
+        importing = initial_files is not None
         if importing and not files:
             raise ValueError("No eligible theater files were found to import.")
         files.setdefault("theater.yaml", b"live_agent: {}\n" if importing else default_yaml.encode("utf-8"))
@@ -429,31 +320,6 @@ class TheaterBuilderStore:
 
     def delete_files(self, info: DraftInfo, paths: list[str]) -> None:
         self.write_files(info, {}, deletions=paths)
-
-    def copy_to(self, info: DraftInfo, target: Path) -> None:
-        """Publish the draft's package files; preserve runtime output and canvas state."""
-        root = self.directory(info.theater_id)
-        draft_files = {item.path for item in self.files(info.theater_id)}
-        (target / "references" / "characters").mkdir(parents=True, exist_ok=True)
-        (target / "references" / "scenes").mkdir(parents=True, exist_ok=True)
-        (target / "references").mkdir(parents=True, exist_ok=True)
-        (target / "playlists").mkdir(parents=True, exist_ok=True)
-        (target / "lore").mkdir(parents=True, exist_ok=True)
-        (target / "stamps").mkdir(parents=True, exist_ok=True)
-        # Remove package files absent from the draft, including assets moved by the assistant.
-        for item in list(target.rglob("*")):
-            if item.is_file():
-                relative = item.relative_to(target).as_posix()
-                try:
-                    safe_asset_path(target, relative)
-                except ValueError:
-                    continue
-                if relative not in draft_files:
-                    item.unlink()
-        for relative in draft_files:
-            destination = safe_asset_path(target, relative)
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(safe_asset_path(root, relative), destination)
 
     def propose(self, info: DraftInfo, prompt: str, history: list[ChatMessage], app_config: dict[str, JsonValue], harvest_docs: list[dict[str, str]] | None = None) -> BuilderProposal:
         root = self.directory(info.theater_id)

@@ -40,8 +40,8 @@ class DraftInfoPayload(TypedDict):
     theater_id: str
     owner_id: int
     name: str
-    source_id: str | None
     revision: int
+    saved_revision: int
 
 
 class FilePayload(TypedDict):
@@ -74,7 +74,19 @@ def builder(tmp_path: Path) -> Iterator[BuilderHarness]:
     manager = TheaterManager(tmp_path / "runtime")
     repository = TheaterRepository(tmp_path / "repository")
     database = MagicMock()
+    deployments: dict[str, dict[str, JsonValue]] = {}
     database.get_deployment.return_value = None
+
+    def get_deployment(theater_id: str) -> dict[str, JsonValue] | None:
+        return database.get_deployment.return_value or deployments.get(theater_id)
+
+    database.get_deployment.side_effect = get_deployment
+
+    def record_deployment(theater_id: str, user_id: int, join_key: str, *, cost: float, name: str) -> bool:
+        deployments[theater_id] = {"user_id": user_id, "join_key": join_key, "name": name}
+        return True
+
+    database.record_deployment.side_effect = record_deployment
     database.get_user_by_id.return_value = {"id": 7, "credits": 30.0}
     database.record_user_usage.return_value = {"credits": 26.0}
     pricing = PricingController(image_credit_rate=4.0, music_credit_rate=6.0)
@@ -83,7 +95,7 @@ def builder(tmp_path: Path) -> Iterator[BuilderHarness]:
         identifier = request.headers.get("x-test-user")
         return {"id": int(identifier)} if identifier else None
 
-    with patch.object(object_registry, "db", database), patch.object(object_registry, "theater_manager", manager), patch.object(object_registry, "theater_repository", repository), patch.object(object_registry, "pricing_controller", pricing), patch.object(object_registry, "live_agent_manager", MagicMock()), patch("api_server.theater_editor.get_current_user_async", new=AsyncMock(side_effect=authenticate)), TestClient(app, headers={"x-test-user": "7"}) as client:
+    with patch.object(object_registry, "db", database), patch.object(object_registry, "theater_manager", manager), patch.object(object_registry, "theater_repository", repository), patch.object(object_registry, "pricing_controller", pricing), patch.object(object_registry, "canvas_states", CanvasStateService(manager)), patch.object(object_registry, "live_agent_manager", MagicMock()), patch("api_server.theater_editor.get_current_user_async", new=AsyncMock(side_effect=authenticate)), TestClient(app, headers={"x-test-user": "7"}) as client:
         yield BuilderHarness(client, manager, repository, database)
 
 
@@ -106,6 +118,98 @@ def test_drafts_require_login_and_owner_for_every_action(builder: BuilderHarness
     assert builder.client.get(f"{base}/download").status_code == 403
     assert builder.client.post(f"{base}/reset", json={"revision": 1}).status_code == 403
     builder.database.record_user_usage.assert_not_called()
+
+
+@pytest.mark.parametrize(("active_orator_id", "pending"), [(8, False), (8, True), (7, True)])
+def test_entering_editor_takes_back_baton_and_cancels_pending_handoffs(builder: BuilderHarness, active_orator_id: int, pending: bool) -> None:
+    data = builder.create()
+    identifier = data["draft"]["theater_id"]
+    deployment: dict[str, JsonValue] = {
+        "user_id": 7, "active_orator_id": active_orator_id,
+        "baton_request": '{"target_user_id": 8}' if pending else None,
+    }
+    builder.database.get_deployment.return_value = deployment
+    baton_state = {"active_orator": {"id": 7, "username": "owner"}, "baton_request": None}
+
+    async def take_back(theater_id: str, *, owner_id: int) -> dict[str, JsonValue]:
+        deployment["active_orator_id"] = owner_id
+        deployment["baton_request"] = None
+        return baton_state
+
+    builder.database.take_back_baton_async = AsyncMock(side_effect=take_back)
+    with patch("api_server.theater_editor.broadcast_baton_update", new_callable=AsyncMock) as broadcast, \
+         patch("api_server.theater_editor.theater_access_cache.invalidate_theater") as invalidate:
+        opened = builder.client.get(f"/api/theater-editor/{identifier}")
+    assert opened.status_code == 200, opened.text
+    builder.database.take_back_baton_async.assert_awaited_once_with(identifier, owner_id=7)
+    object_registry.live_agent_manager.set_active_controller.assert_called_once_with(identifier, 7)
+    broadcast.assert_awaited_once_with(identifier, baton_state)
+    invalidate.assert_called_once_with(identifier)
+    assert deployment["active_orator_id"] == 7
+    assert deployment["baton_request"] is None
+
+
+@pytest.mark.parametrize("active_orator_id", [None, 7])
+def test_entering_editor_keeps_owner_controller_when_baton_is_already_held(builder: BuilderHarness, active_orator_id: int | None) -> None:
+    data = builder.create()
+    identifier = data["draft"]["theater_id"]
+    builder.database.get_deployment.return_value = {"user_id": 7, "active_orator_id": active_orator_id}
+    opened = builder.client.get(f"/api/theater-editor/{identifier}")
+    assert opened.status_code == 200, opened.text
+    builder.database.take_back_baton_async.assert_not_called()
+    object_registry.live_agent_manager.set_active_controller.assert_not_called()
+
+
+def test_nonowner_cannot_reclaim_baton_by_opening_editor(builder: BuilderHarness) -> None:
+    data = builder.create()
+    identifier = data["draft"]["theater_id"]
+    builder.database.get_deployment.return_value = {"user_id": 7, "active_orator_id": 8}
+    builder.client.headers["x-test-user"] = "8"
+    opened = builder.client.get(f"/api/theater-editor/{identifier}")
+    assert opened.status_code == 403
+    builder.database.take_back_baton_async.assert_not_called()
+    object_registry.live_agent_manager.set_active_controller.assert_not_called()
+
+
+@pytest.mark.parametrize(("action", "body"), [
+    ("save", {"name": "Changed", "writes": [{"path": "lore/new.txt", "content": "New"}], "persist": True}),
+    ("apply", {"proposal": {"message": "New lore", "writes": [{"path": "lore/new.txt", "content": "New"}]}}),
+    ("assistant", {"prompt": "Develop the harbor"}),
+    ("generate", {"kind": "reference", "name": "hero", "prompt": "Hero"}),
+    ("delete", {"path": "lore/new.txt"}),
+    ("google-link", {"url": "https://drive.google.com/file/d/example/view"}),
+    ("deploy", {}),
+    ("reset", {}),
+])
+def test_open_editor_cannot_write_after_owner_passes_baton(builder: BuilderHarness, action: str, body: dict[str, JsonValue]) -> None:
+    data = builder.create()
+    identifier = data["draft"]["theater_id"]
+    builder.database.get_deployment.return_value = {"user_id": 7, "active_orator_id": 8}
+    before = (builder.manager.theater(identifier).directory() / "theater.json").read_bytes()
+    result = builder.client.post(f"/api/theater-editor/{identifier}/{action}", json={**body, "revision": data["draft"]["revision"]})
+    assert result.status_code == 409, result.text
+    assert "Reopen the theater editor" in result.json()["detail"]
+    assert (builder.manager.theater(identifier).directory() / "theater.json").read_bytes() == before
+    builder.database.take_back_baton_async.assert_not_called()
+    builder.database.record_user_usage.assert_not_called()
+
+
+def test_inflight_generation_is_not_saved_or_charged_after_baton_handoff(builder: BuilderHarness) -> None:
+    data = builder.create()
+    identifier = data["draft"]["theater_id"]
+
+    def generate(info: DraftInfo, body: GenerationRequest) -> tuple[str, bytes]:
+        builder.database.get_deployment.return_value = {"user_id": 7, "active_orator_id": 8}
+        return "references/new.webp", b"image"
+
+    with patch("api_server.theater_editor.generate_asset", side_effect=generate):
+        result = builder.client.post(f"/api/theater-editor/{identifier}/generate", json={
+            "revision": data["draft"]["revision"], "kind": "reference", "name": "hero", "prompt": "Hero",
+        })
+    assert result.status_code == 409, result.text
+    assert not (builder.manager.theater(identifier).directory() / "references/new.webp").exists()
+    builder.database.record_user_usage.assert_not_called()
+    builder.database.release_generation_slot.assert_called_once()
 
 
 def test_folder_import_preserves_config_planning_lore_and_playlist(builder: BuilderHarness) -> None:
@@ -141,7 +245,7 @@ def test_new_folder_import_accepts_partial_packages_and_discards_ineligible_file
     assert data["imported_files"] == 1
     assert data["discarded_files"] == ["world/helper.py", "world/references/characters/Loose.webp"]
     assert {item["path"] for item in data["files"]} == {"theater.yaml", expected_path}
-    root = TheaterBuilderStore(builder.repository.base_dir).directory(data["draft"]["theater_id"])
+    root = TheaterBuilderStore(builder.manager.base_dir).directory(data["draft"]["theater_id"])
     assert (root / expected_path).read_bytes() == content
     if expected_path != "theater.yaml":
         assert (root / "theater.yaml").read_bytes() == b"live_agent: {}\n"
@@ -157,8 +261,8 @@ def test_new_folder_import_accepts_partial_packages_and_discards_ineligible_file
 def test_failed_new_import_returns_an_error_without_creating_a_draft(builder: BuilderHarness, files: list[tuple[str, tuple[str, bytes]]]) -> None:
     result = builder.client.post("/api/theater-editor/drafts/import", data={"folder": "true"}, files=files)
     assert result.status_code == 400, result.text
-    assert not list(builder.repository.base_dir.glob("_builder/*/editor.json"))
-    assert not list(builder.repository.base_dir.glob("_builder/*/theater.yaml"))
+    assert not list(builder.manager.base_dir.glob("*/editor.json"))
+    assert not list(builder.manager.base_dir.glob("*/theater.yaml"))
 
 
 def test_new_import_requires_authentication(builder: BuilderHarness) -> None:
@@ -172,7 +276,29 @@ def test_new_import_storage_failure_does_not_leave_a_draft(builder: BuilderHarne
         result = builder.client.post("/api/theater-editor/drafts/import", files={"files": ("hero.webp", b"image")})
     assert result.status_code == 400
     assert "storage limit" in result.json()["detail"]
-    assert not list(builder.repository.base_dir.glob("_builder/*"))
+    assert not list(builder.manager.base_dir.glob("*"))
+
+
+def test_new_theater_export_failure_does_not_leave_an_unowned_package(builder: BuilderHarness) -> None:
+    with patch.object(builder.repository, "export_theater", return_value=False):
+        result = builder.client.post("/api/theater-editor/drafts", json={"name": "Harbor", "populate_default": False})
+    assert result.status_code == 503
+    assert not list(builder.manager.base_dir.iterdir())
+    assert not list(builder.repository.base_dir.iterdir())
+    builder.database.record_deployment.assert_not_called()
+
+
+def test_unfinished_adventure_can_be_saved_without_initializing_a_canvas(builder: BuilderHarness) -> None:
+    imported = builder.client.post("/api/theater-editor/drafts/import", files={
+        "files": ("theater.yaml", b"story_planning:\n  adventure_mode: true\n  enforce_structured: true\n"),
+    })
+    assert imported.status_code == 200, imported.text
+    info = imported.json()["draft"]
+    saved = builder.client.post(f"/api/theater-editor/{info['theater_id']}/save", json={
+        "revision": info["revision"], "name": info["name"], "persist": True,
+    })
+    assert saved.status_code == 200, saved.text
+    assert info["theater_id"] not in object_registry.canvas_states.states
 
 
 def test_existing_draft_import_discards_ineligible_files(builder: BuilderHarness) -> None:
@@ -248,7 +374,7 @@ def test_reopen_discards_ineligible_source_references(builder: BuilderHarness) -
     data = builder.create()
     identifier = data["draft"]["theater_id"]
     directory = builder.manager.theater(identifier).directory() / "references/characters"
-    directory.mkdir(parents=True)
+    directory.mkdir(parents=True, exist_ok=True)
     (directory / "Loose.webp").write_bytes(b"image")
     result = builder.client.get(f"/api/theater-editor/{identifier}")
     assert result.status_code == 200, result.text
@@ -495,7 +621,7 @@ def test_failed_or_unaffordable_generation_does_not_charge(builder: BuilderHarne
     builder.database.record_user_usage.assert_not_called()
 
 
-def test_assistant_proposes_then_applies_without_modifying_runtime(builder: BuilderHarness) -> None:
+def test_assistant_proposes_then_applies_to_shared_checkout_without_saving(builder: BuilderHarness) -> None:
     data = builder.create()
     base = f"/api/theater-editor/{data['draft']['theater_id']}"
     proposal = BuilderProposal(message="Add a guide", writes=[{"path": "lore/guide.txt", "content": "Harbor guide"}])
@@ -515,7 +641,8 @@ def test_assistant_proposes_then_applies_without_modifying_runtime(builder: Buil
     applied = builder.client.post(f"{base}/apply", json=result.json())
     assert applied.status_code == 200, applied.text
     assert builder.client.get(f"{base}/file?path=lore/guide.txt").text == "Harbor guide"
-    assert not builder.manager.theater(data["draft"]["theater_id"]).directory().exists()
+    assert (builder.manager.theater(data["draft"]["theater_id"]).directory() / "lore/guide.txt").read_text(encoding="utf-8") == "Harbor guide"
+    assert not (builder.repository.theater_path(data["draft"]["theater_id"]) / "lore/guide.txt").exists()
     builder.database.record_user_usage.assert_called_once()
 
 
@@ -626,7 +753,7 @@ def test_existing_theater_requires_owner_before_reconstruction(builder: BuilderH
     reconstruct.assert_not_called()
 
 
-def test_editing_existing_theater_preserves_live_assets_until_deployed(builder: BuilderHarness) -> None:
+def test_editing_existing_theater_updates_shared_checkout_before_saving(builder: BuilderHarness) -> None:
     identifier = "theater_existing"
     image = png_bytes()
     metadata = builder.manager.create_theater(name="Old world", theater_id=identifier,
@@ -643,14 +770,99 @@ def test_editing_existing_theater_preserves_live_assets_until_deployed(builder: 
     }})
     assert result.status_code == 200, result.text
     target = builder.manager.theater(identifier).directory()
-    assert (target / "references/hero.png").exists()
-    assert not (target / "references/people/hero.png").exists()
+    assert not (target / "references/hero.png").exists()
+    assert (target / "references/people/hero.png").exists()
+    assert (builder.repository.theater_path(identifier) / "references/hero.png").exists()
     deployed = builder.client.post(f"{base}/deploy", json={"revision": result.json()["draft"]["revision"]})
     assert deployed.status_code == 200, deployed.text
     assert not (target / "references/hero.png").exists()
     assert (target / "references/people/hero.png").read_bytes() == image
     assert not (builder.repository.theater_path(identifier) / "references/hero.png").exists()
     assert builder.manager.get_theater(identifier).join_key == metadata.join_key
+
+
+def test_new_editor_theater_is_saved_and_can_be_restored_after_checkout_loss(builder: BuilderHarness) -> None:
+    data = builder.create()
+    identifier = data["draft"]["theater_id"]
+    root = builder.manager.theater(identifier).directory()
+    canonical = builder.repository.theater_path(identifier)
+    assert (root / "theater.json").is_file()
+    assert (canonical / "theater.yaml").read_bytes() == (root / "theater.yaml").read_bytes()
+    assert not (canonical / "editor.json").exists()
+    assert data["draft"]["saved_revision"] == data["draft"]["revision"]
+    join_key = builder.manager.get_theater(identifier).join_key
+    base = f"/api/theater-editor/{identifier}"
+    changed = builder.client.post(f"{base}/save", json={
+        "revision": data["draft"]["revision"], "name": "Harbor", "writes": [{"path": "lore/unsaved.txt", "content": "temporary"}],
+    })
+    assert changed.status_code == 200, changed.text
+    assert not (canonical / "lore/unsaved.txt").exists()
+    builder.manager.destroy_theater(identifier)
+    reopened = builder.client.get(base)
+    assert reopened.status_code == 200, reopened.text
+    assert not (root / "lore/unsaved.txt").exists()
+    assert builder.manager.get_theater(identifier).join_key == join_key
+    assert reopened.json()["draft"]["saved_revision"] == reopened.json()["draft"]["revision"]
+
+
+def test_canvas_save_commits_editor_changes_and_removals_from_shared_checkout(builder: BuilderHarness) -> None:
+    from api_server.theaters import _export_canvas_theater_async
+
+    data = builder.create()
+    identifier = data["draft"]["theater_id"]
+    base = f"/api/theater-editor/{identifier}"
+    service = object_registry.canvas_states
+    state = service.get(identifier)
+    connections = state.connections
+    state.chat.messages = [{"text": "Keep this canvas history"}]
+    state.persist()
+    original_key = builder.manager.get_theater(identifier).join_key
+    # Seed an asset in both places, then move it only in the working copy.
+    uploaded = builder.client.post(f"{base}/upload", data={"revision": data["draft"]["revision"]}, files={"files": ("hero.png", png_bytes())})
+    assert uploaded.status_code == 200, uploaded.text
+    assert asyncio.run(_export_canvas_theater_async(identifier))
+    revision = uploaded.json()["draft"]["revision"]
+    changed = builder.client.post(f"{base}/apply", json={"revision": revision, "proposal": {
+        "message": "Update the world", "writes": [{"path": "theater.yaml", "content": "live_agent:\n  special_instructions: Changed world\n"}],
+        "moves": [{"source": "references/hero.png", "destination": "references/people/hero.png"}],
+    }})
+    assert changed.status_code == 200, changed.text
+    # Canvas reads the edit immediately, without the editor's deploy endpoint.
+    assert builder.manager.theater(identifier).config()["live_agent"]["special_instructions"] == "Changed world"
+    assert service.get(identifier) is state
+    assert state.connections is connections
+    assert state.chat.messages == [{"text": "Keep this canvas history"}]
+    canonical = builder.repository.theater_path(identifier)
+    assert (canonical / "references/hero.png").exists()
+    assert asyncio.run(_export_canvas_theater_async(identifier))
+    assert not (canonical / "references/hero.png").exists()
+    assert (canonical / "references/people/hero.png").read_bytes() == png_bytes()
+    saved = builder.client.get(base).json()["draft"]
+    assert saved["saved_revision"] == saved["revision"]
+    assert builder.manager.get_theater(identifier).join_key == original_key
+    assert json.loads((canonical / "theater.json").read_text(encoding="utf-8"))["canvas_state"]["chat_messages"] == state.chat.messages
+
+
+def test_editor_explicit_save_commits_checkout_and_reports_export_failure(builder: BuilderHarness) -> None:
+    data = builder.create()
+    identifier = data["draft"]["theater_id"]
+    base = f"/api/theater-editor/{identifier}"
+    body = {"revision": data["draft"]["revision"], "name": "Saved Harbor", "persist": True,
+            "writes": [{"path": "lore/guide.txt", "content": "Keep this"}]}
+    saved = builder.client.post(f"{base}/save", json=body)
+    assert saved.status_code == 200, saved.text
+    info = saved.json()["draft"]
+    assert info["saved_revision"] == info["revision"]
+    assert (builder.repository.theater_path(identifier) / "lore/guide.txt").read_text(encoding="utf-8") == "Keep this"
+    body["revision"] = info["revision"]
+    body["writes"] = [{"path": "lore/guide.txt", "content": "Still working"}]
+    with patch.object(builder.repository, "export_theater", return_value=False):
+        failed = builder.client.post(f"{base}/save", json=body)
+    assert failed.status_code == 503
+    assert (builder.repository.theater_path(identifier) / "lore/guide.txt").read_text(encoding="utf-8") == "Keep this"
+    reopened = builder.client.get(base).json()["draft"]
+    assert reopened["saved_revision"] < reopened["revision"]
+    assert (builder.manager.theater(identifier).directory() / "lore/guide.txt").read_text(encoding="utf-8") == "Still working"
 
 
 def test_opening_existing_theater_preserves_characters_folder_and_portraits(builder: BuilderHarness) -> None:
@@ -1032,7 +1244,9 @@ def test_reset_theater_removes_output_and_theater_json(builder: BuilderHarness) 
     (images_dir / "scene.png").write_bytes(b"scene_data")
     (output_dir / "story_log.jsonl").write_text('{"event": "start"}', encoding="utf-8")
 
-    (theater_dir / "theater.json").write_text('{"theater_id": "test", "canvas_state": {"scene": 1}}', encoding="utf-8")
+    metadata = builder.manager.get_theater(identifier)
+    metadata.canvas_state = {"scene": 1}
+    builder.manager._save_metadata(metadata)
     repo_theater_json = builder.repository.theater_path(identifier) / "theater.json"
     repo_theater_json.parent.mkdir(parents=True, exist_ok=True)
     repo_theater_json.write_text('{"theater_id": "test", "canvas_state": {"scene": 1}}', encoding="utf-8")
@@ -1050,8 +1264,8 @@ def test_reset_theater_removes_output_and_theater_json(builder: BuilderHarness) 
     assert not (images_dir / "scene.png").exists()
     assert not (output_dir / "story_log.jsonl").exists()
     assert list(output_dir.iterdir()) == []
-    assert not (theater_dir / "theater.json").exists()
-    assert not repo_theater_json.exists()
+    assert builder.manager.get_theater(identifier).canvas_state == {}
+    assert json.loads(repo_theater_json.read_text(encoding="utf-8"))["canvas_state"] == {}
 
     file_result = builder.client.get(f"{base}/file?path=theater.yaml")
     assert file_result.status_code == 200
@@ -1061,21 +1275,12 @@ def test_reset_theater_removes_output_and_theater_json(builder: BuilderHarness) 
     assert (theater_dir / "theater.json").is_file()
 
 
-@pytest.mark.parametrize("with_source", [False, True])
-def test_reset_removes_image_updates_and_cached_canvas_history(builder: BuilderHarness, with_source: bool) -> None:
+def test_reset_removes_image_updates_and_cached_canvas_history(builder: BuilderHarness) -> None:
     data = builder.create()
     identifier = data["draft"]["theater_id"]
     base = f"/api/theater-editor/{identifier}"
-    store = TheaterBuilderStore(builder.repository.base_dir)
     identifiers = [identifier]
-    if with_source:
-        info = store.load(identifier)
-        assert info is not None
-        info.source_id = "source_theater"
-        store.save_info(info)
-        identifiers.append(info.source_id)
-        builder.database.get_deployment.return_value = {"user_id": 7}
-    roots = [store.directory(identifier)]
+    roots = []
     for theater_id in identifiers:
         roots.extend([builder.manager.theater(theater_id).directory(), builder.repository.theater_path(theater_id)])
     for root in roots:
@@ -1113,7 +1318,7 @@ def test_reset_removes_image_updates_and_cached_canvas_history(builder: BuilderH
             reference = root / "references" / folder
             assert {item.name for item in reference.iterdir()} == {"1.webp", "1.png", "portrait.webp", "scene.yaml"}
             assert (reference / "1.webp").read_bytes() == b"original"
-        assert not (root / "theater.json").exists()
+        assert json.loads((root / "theater.json").read_text(encoding="utf-8"))["canvas_state"] == {}
         assert not (root / "theater_state.json").exists()
         assert list((root / "output").iterdir()) == []
     for state, connection in zip(states, connections):

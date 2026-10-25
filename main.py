@@ -6,7 +6,6 @@ import warnings
 import uvicorn
 
 # Importing the API package registers every HTTP and WebSocket route on the shared app.
-import api_server.app  # noqa: F401
 from api_server.app import LogFilter, suppress_noisy_loggers
 from object_registry import FLAGS, app
 

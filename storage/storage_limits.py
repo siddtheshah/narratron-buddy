@@ -1,8 +1,7 @@
-"""Storage limits and accounting for user theaters and drafts."""
+"""Storage limits for theaters and their shared working copies."""
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -28,8 +27,9 @@ def calculate_user_theaters_storage_bytes(
     user_id: int,
     db: _DatabaseManagerBase | None = None,
     theaters_root: Path | None = None,
+    checkouts_root: Path | None = None,
 ) -> int:
-    """Calculate the total bytes of all deployed theaters and active editor drafts for user_id."""
+    """Count each owned theater once, reserving space for unsaved checkout growth."""
     if db is None:
         import object_registry
         resolved_db = object_registry.db
@@ -42,38 +42,11 @@ def calculate_user_theaters_storage_bytes(
     else:
         root = theaters_root
 
-    seen_dirs: set[Path] = set()
-    total_bytes = 0
-
-    # 1. Deployed theaters owned by user
-    theater_ids = resolved_db.get_user_theater_ids(user_id)
-    for tid in theater_ids:
-        theater_path = (root / tid).resolve()
-        if theater_path.is_dir() and theater_path not in seen_dirs:
-            seen_dirs.add(theater_path)
-            total_bytes += get_directory_size_bytes(theater_path)
-
-    # 2. Active editor drafts owned by user
-    builder_root = (root / "_builder").resolve()
-    if builder_root.is_dir():
-        for draft_entry in builder_root.iterdir():
-            if not draft_entry.is_dir():
-                continue
-            resolved_draft = draft_entry.resolve()
-            if resolved_draft in seen_dirs:
-                continue
-            editor_json_path = draft_entry / "editor.json"
-            if not editor_json_path.is_file():
-                continue
-            try:
-                manifest_data = json.loads(editor_json_path.read_text(encoding="utf-8"))
-            except (OSError, ValueError):
-                continue
-            if manifest_data.get("owner_id") == user_id:
-                seen_dirs.add(resolved_draft)
-                total_bytes += get_directory_size_bytes(draft_entry)
-
-    return total_bytes
+    if checkouts_root is None:
+        from components.theater_manager import get_ephemeral_root
+        checkouts_root = get_ephemeral_root()
+    return sum(max(get_directory_size_bytes(root / tid), get_directory_size_bytes(checkouts_root / tid))
+               for tid in resolved_db.get_user_theater_ids(user_id))
 
 
 def check_user_theaters_storage_allowance(

@@ -37,5 +37,7 @@ Games need turn limits or explicit acceptance at shared transaction boundaries.
 The game owns its state; sticky notes should not duplicate it. Outside Adventure
 Mode, live-agent play additionally requires `game_tool.enabled: true`.
 
-Edit and save files here, download the draft to keep a package copy, and use
-Deploy & test when ready. Add `metadata.json` when preparing a catalog adventure.
+Editor and canvas use the same working theater. Use Save theater to keep your
+changes, download the theater to keep a package copy, or Save & test to open the
+canvas. Unsaved changes can be lost if the working copy is cleared.
+Add `metadata.json` when preparing a catalog adventure.

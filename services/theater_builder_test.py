@@ -10,11 +10,20 @@ import json
 import yaml
 
 from components.notepad import parse_planning_schema
+from storage.theater_repository import TheaterRepository
 
 from services.theater_builder import (
-    BuilderProposal, FileMove, FileWrite, GenerationRequest, TheaterBuilderStore,
+    BuilderProposal, DraftInfo, FileMove, FileWrite, GenerationRequest, TheaterBuilderStore,
     safe_asset_path, upload_path,
 )
+
+
+def attach_checkout(source: Path) -> tuple[TheaterBuilderStore, DraftInfo]:
+    store = TheaterBuilderStore(source.parent)
+    info = DraftInfo(theater_id=source.name, owner_id=7, name="World")
+    store.save_info(info)
+    store.import_session_references(info)
+    return store, info
 
 
 @pytest.mark.parametrize("path", ["../secret.txt", "references/../../secret.png", "/references/a.png", "references/C:/a.png", "references/CON.png", "references/a.png.", "editor.json", "output/file.txt", "lore/script.py", "references/characters/hero.png", "references/scenes/harbor.png"])
@@ -68,45 +77,12 @@ def test_upload_rejects_outdated_layouts_instead_of_rewriting_paths(tmp_path: Pa
         safe_asset_path(tmp_path, upload_path(filename, False))
 
 
-@pytest.mark.parametrize("kind", ["characters", "scenes"])
-def test_source_reference_import_discards_loose_images(tmp_path: Path, kind: str) -> None:
-    source = tmp_path / "source"
-    directory = source / "references" / kind
-    directory.mkdir(parents=True)
-    (directory / "Loose.webp").write_bytes(b"image")
-    (source / "theater.yaml").write_text("live_agent: {}\n", encoding="utf-8")
-    store = TheaterBuilderStore(tmp_path / "repository")
-    info = store.create(7, "World", "live_agent: {}\n", source=source)
-    store.sync_source_characters(info, source)
-    assert {item.path for item in store.files(info.theater_id)} == {"theater.yaml"}
-    assert (directory / "Loose.webp").read_bytes() == b"image"
-
-
-@pytest.mark.parametrize("contents", [{}, {"notes.py": b"ignored"}, {"theater.yaml": b"live_agent: ["}])
-def test_failed_source_import_does_not_create_a_draft(tmp_path: Path, contents: dict[str, bytes]) -> None:
-    source = tmp_path / "source"
-    source.mkdir()
-    for name, content in contents.items():
-        (source / name).write_bytes(content)
-    store = TheaterBuilderStore(tmp_path / "repository")
-    with pytest.raises((ValueError, yaml.YAMLError)):
-        store.create(7, "World", "live_agent: {}\n", source=source)
-    assert not store.root.exists()
-
-
-def test_missing_source_import_does_not_create_a_default_draft(tmp_path: Path) -> None:
-    store = TheaterBuilderStore(tmp_path / "repository")
-    with pytest.raises(ValueError, match="source directory not found"):
-        store.create(7, "World", "live_agent: {}\n", source=tmp_path / "missing")
-    assert not store.root.exists()
-
-
 def test_default_draft_has_separate_role_guides_and_preserves_them_on_publish(tmp_path: Path) -> None:
     store = TheaterBuilderStore(tmp_path / "repository")
     info = store.create(7, "World", "live_agent: {}\n")
     target = tmp_path / "runtime"
     target.mkdir()
-    store.copy_to(info, target)
+    assert TheaterRepository(target.parent).export_theater(target.name, store.directory(info.theater_id))
     assert "immediate scene" in (target / "lore/RESPONDER.md").read_text(encoding="utf-8")
     assert "conditional off-screen intentions" in (target / "lore/PLANNER.md").read_text(encoding="utf-8")
     assert "Reconcile established facts" in (target / "lore/RECORDER.md").read_text(encoding="utf-8")
@@ -138,7 +114,7 @@ def test_game_format_replacement_is_atomic_and_multiple_declarations_are_rejecte
     assert (store.directory(info.theater_id) / "game/game.yml").read_bytes() == game
     assert not (store.directory(info.theater_id) / "game/game.yaml").exists()
     target = tmp_path / "published"
-    store.copy_to(info, target)
+    assert TheaterRepository(target.parent).export_theater(target.name, store.directory(info.theater_id))
     assert (target / "game/entity_schema.json").read_bytes() == b'{"type": "object"}'
 
 
@@ -178,11 +154,11 @@ def test_draft_publish_removes_moved_assets_but_preserves_runtime_output(tmp_pat
     store.write_files(info, {"references/hero.png": b"image"})
     target = tmp_path / "runtime"
     target.mkdir()
-    store.copy_to(info, target)
+    assert TheaterRepository(target.parent).export_theater(target.name, store.directory(info.theater_id))
     (target / "output").mkdir()
     (target / "output/session.txt").write_text("runtime", encoding="utf-8")
     store.write_files(info, {}, [FileMove(source="references/hero.png", destination="references/people/hero.png")])
-    store.copy_to(info, target)
+    assert TheaterRepository(target.parent).export_theater(target.name, store.directory(info.theater_id))
     assert not (target / "references/hero.png").exists()
     assert (target / "references/people/hero.png").read_bytes() == b"image"
     assert (target / "output/session.txt").read_text(encoding="utf-8") == "runtime"
@@ -195,10 +171,9 @@ def test_existing_package_keeps_planning_and_nested_assets_in_draft(tmp_path: Pa
     (source / "planning.yaml").write_text("Player:\n  initial: Explorer\n", encoding="utf-8")
     (source / "theater.yaml").write_text("live_agent: {}\n", encoding="utf-8")
     (source / "theater.json").write_text("{}", encoding="utf-8")
-    store = TheaterBuilderStore(tmp_path / "repository")
-    info = store.create(7, "World", "live_agent: {}\n", "theater_existing", source)
+    store, info = attach_checkout(source)
     assert {item.path for item in store.files(info.theater_id)} == {"lore/characters/hero.txt", "theater.yaml", "planning.yaml"}
-    assert store.load(info.theater_id).source_id == "theater_existing"
+    assert store.directory(info.theater_id) == source
 
 
 def test_assistant_returns_validated_proposals_without_mutating_draft(tmp_path: Path) -> None:
@@ -368,8 +343,7 @@ def test_loading_theater_into_editor_preserves_characters_folder_and_assets(tmp_
     (source / "output" / "artifacts" / "updated_references" / "characters" / "Lyra").mkdir(parents=True)
     (source / "output" / "artifacts" / "updated_references" / "characters" / "Lyra" / "1.png").write_bytes(b"lyra_png")
 
-    store = TheaterBuilderStore(tmp_path / "storage")
-    info = store.create(7, "Preserved", "live_agent: {}\n", theater_id="theater_char", source=source)
+    store, info = attach_checkout(source)
     draft_dir = store.directory(info.theater_id)
 
     assert (draft_dir / "references" / "characters").is_dir()
@@ -384,21 +358,21 @@ def test_loading_theater_into_editor_preserves_characters_folder_and_assets(tmp_
     # Test copy_to also keeps characters directory
     target = tmp_path / "target_theater"
     target.mkdir()
-    store.copy_to(info, target)
+    assert TheaterRepository(target.parent).export_theater(target.name, store.directory(info.theater_id))
     assert (target / "references" / "characters").is_dir()
     assert (target / "references" / "characters" / "Arthur Modella" / "1.png").read_bytes() == b"arthur_png"
 
 
-def test_existing_draft_syncs_characters_from_source_on_reopen(tmp_path: Path) -> None:
+def test_editor_sees_new_characters_in_shared_checkout(tmp_path: Path) -> None:
     store = TheaterBuilderStore(tmp_path / "storage")
-    info = store.create(7, "Draft", "live_agent: {}\n", theater_id="theater_reopen", source=None, populate_default=False)
+    info = store.create(7, "Draft", "live_agent: {}\n", theater_id="theater_reopen", populate_default=False)
     # Draft created without characters
-    source = tmp_path / "source_theater"
-    source.mkdir()
+    source = store.directory(info.theater_id)
+    source.mkdir(exist_ok=True)
     (source / "references" / "characters" / "Grim Vallos").mkdir(parents=True)
     (source / "references" / "characters" / "Grim Vallos" / "1.png").write_bytes(b"grim_png")
 
-    store.sync_source_characters(info, source)
+    store.import_session_references(info)
     draft_dir = store.directory(info.theater_id)
     assert (draft_dir / "references" / "characters").is_dir()
     assert (draft_dir / "references" / "characters" / "Grim Vallos" / "1.png").read_bytes() == b"grim_png"
@@ -418,8 +392,7 @@ def test_loading_theater_into_editor_preserves_scenes_folder_and_assets(tmp_path
     (source / "output" / "artifacts" / "updated_references" / "scenes" / "Sunken Crypt").mkdir(parents=True)
     (source / "output" / "artifacts" / "updated_references" / "scenes" / "Sunken Crypt" / "1.png").write_bytes(b"crypt_png")
 
-    store = TheaterBuilderStore(tmp_path / "storage")
-    info = store.create(7, "Preserved", "live_agent: {}\n", theater_id="theater_scene", source=source)
+    store, info = attach_checkout(source)
     draft_dir = store.directory(info.theater_id)
 
     assert (draft_dir / "references" / "scenes").is_dir()
@@ -435,20 +408,20 @@ def test_loading_theater_into_editor_preserves_scenes_folder_and_assets(tmp_path
     # Test copy_to also keeps scenes directory
     target = tmp_path / "target_theater"
     target.mkdir()
-    store.copy_to(info, target)
+    assert TheaterRepository(target.parent).export_theater(target.name, store.directory(info.theater_id))
     assert (target / "references" / "scenes").is_dir()
     assert (target / "references" / "scenes" / "Old Harbor" / "1.png").read_bytes() == b"harbor_png"
 
 
-def test_existing_draft_syncs_scenes_from_source_on_reopen(tmp_path: Path) -> None:
+def test_editor_sees_new_scenes_in_shared_checkout(tmp_path: Path) -> None:
     store = TheaterBuilderStore(tmp_path / "storage")
-    info = store.create(7, "Draft", "live_agent: {}\n", theater_id="theater_reopen_scene", source=None, populate_default=False)
-    source = tmp_path / "source_theater"
-    source.mkdir()
+    info = store.create(7, "Draft", "live_agent: {}\n", theater_id="theater_reopen_scene", populate_default=False)
+    source = store.directory(info.theater_id)
+    source.mkdir(exist_ok=True)
     (source / "references" / "scenes" / "Old Harbor").mkdir(parents=True)
     (source / "references" / "scenes" / "Old Harbor" / "1.png").write_bytes(b"harbor_png")
 
-    store.sync_source_scenes(info, source)
+    store.import_session_references(info)
     draft_dir = store.directory(info.theater_id)
     assert (draft_dir / "references" / "scenes").is_dir()
     assert (draft_dir / "references" / "scenes" / "Old Harbor" / "1.png").read_bytes() == b"harbor_png"
@@ -456,35 +429,33 @@ def test_existing_draft_syncs_scenes_from_source_on_reopen(tmp_path: Path) -> No
 
 
 
-def test_character_traits_survive_builder_source_copy_edit_and_publish(tmp_path: Path) -> None:
+def test_character_traits_are_edited_in_shared_checkout(tmp_path: Path) -> None:
     source = tmp_path / "source"
     character = source / "references/characters/Arthur Modella/character.yaml"
     character.parent.mkdir(parents=True)
     character.write_text("personality: Patient\n", encoding="utf-8")
-    store = TheaterBuilderStore(tmp_path / "repository")
-    info = store.create(7, "World", "live_agent: {}\n", source=source, populate_default=False)
+    store, info = attach_checkout(source)
     relative = "references/characters/Arthur Modella/character.yaml"
     assert store.directory(info.theater_id).joinpath(relative).read_text(encoding="utf-8") == "personality: Patient\n"
     store.write_files(info, {relative: b"personality: Bold\n"})
     target = tmp_path / "runtime"
     target.mkdir()
-    store.copy_to(info, target)
+    assert TheaterRepository(target.parent).export_theater(target.name, store.directory(info.theater_id))
     assert target.joinpath(relative).read_bytes() == b"personality: Bold\n"
-    assert character.read_text(encoding="utf-8") == "personality: Patient\n"
+    assert character.read_text(encoding="utf-8") == "personality: Bold\n"
 
 
-def test_scene_yaml_survives_builder_copy_edit_and_publish(tmp_path: Path) -> None:
+def test_scene_profile_is_edited_in_shared_checkout(tmp_path: Path) -> None:
     source = tmp_path / "source"
     relative = "references/scenes/Old Harbor/scene.yaml"
     profile = source / relative
     profile.parent.mkdir(parents=True)
     profile.write_text("description: A harbor at dawn\n", encoding="utf-8")
-    store = TheaterBuilderStore(tmp_path / "repository")
-    info = store.create(7, "World", "live_agent: {}\n", source=source, populate_default=False)
+    store, info = attach_checkout(source)
     assert (store.directory(info.theater_id) / relative).read_bytes() == profile.read_bytes()
     store.write_files(info, {relative: b"description: A harbor at sunset\n"})
     target = tmp_path / "runtime"
     target.mkdir()
-    store.copy_to(info, target)
+    assert TheaterRepository(target.parent).export_theater(target.name, store.directory(info.theater_id))
     assert (target / relative).read_bytes() == b"description: A harbor at sunset\n"
-    assert profile.read_text(encoding="utf-8") == "description: A harbor at dawn\n"
+    assert profile.read_text(encoding="utf-8") == "description: A harbor at sunset\n"
