@@ -157,7 +157,7 @@
           const hasAcceptedFriend = friendships.some(friend => friend.status === 'accepted');
           list.innerHTML = hasAcceptedFriend
             ? `<p>No friends have active theaters right now. Manage <a href="${profileLink(auth.user.username)}">your friends</a>.</p>`
-            : `<p>You do not have any friends yet. <a href="${profileLink(auth.user.username)}#gifts">Create a gift link</a> to invite someone.</p>`;
+            : `<p>You do not have any friends yet.</p><a href="${profileLink(auth.user.username)}#gifts" class="join-btn">Create a gift link</a>`;
         } else {
           list.innerHTML = '<div class="friend-theaters-browser"><nav class="friend-usernames" aria-label="Friends with active theaters"></nav><div id="friend-active-theaters" class="friend-active-theaters" role="region" aria-label="Active theaters"></div></div>';
           document.getElementById('friend-theater-join').onclick = async event => {

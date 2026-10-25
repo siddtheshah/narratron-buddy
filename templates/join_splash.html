@@ -448,6 +448,10 @@
     }
 
     .join-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      text-decoration: none;
       background: linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%);
       border: none;
       color: #ffffff;
@@ -459,9 +463,16 @@
       transition: all 0.2s ease;
     }
 
+    .join-btn,
+    .join-btn:visited {
+      color: #ffffff;
+    }
+
     .join-btn:hover {
       opacity: 0.9;
       transform: translateY(-1px);
+      color: #ffffff;
+      text-decoration: none;
     }
 
     .error-msg {
