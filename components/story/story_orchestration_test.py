@@ -32,7 +32,7 @@ class TurnHarness:
     def __init__(self, root: Path) -> None:
         self.theater = MagicMock(spec=Theater, wraps=TheaterManager(root).theater("turns"))
         self.theater.theater_id = "turns"
-        self.theater.config.return_value = {"story_planning": {"adventure_mode": True, "cooldown_duration": 0}}
+        self.theater.config.return_value = {"story_planning": {"adventure_mode": True, "input_cycle_length": 0}}
         self.theater.read_planning_schema.return_value = {
             "Inventory": {"owner": "recorder", "initial": "Key"},
             "Ambush": {"owner": "planner", "initial": "Wait"},
@@ -46,10 +46,10 @@ class TurnHarness:
         self.fail_response = False
         self.tools: list[StoryTool] = []
 
-    def new_tool(self, game: GameState | None = None) -> StoryTool:
+    def new_tool(self, game: GameState | None = None, *, story: StoryState | None = None) -> StoryTool:
         canvas = MagicMock(spec=CanvasStateManager)
         canvas.notepad = None
-        canvas.story = StoryState()
+        canvas.story = StoryState() if story is None else story
         canvas.game = game
         references = MagicMock(spec=ReferenceManager)
         references.export_characters.return_value = []
@@ -713,12 +713,16 @@ def test_process_user_action_rejects_internal_game_entry_narration_prompt(harnes
 
 
 def test_cycle_combines_game_receipts_and_all_spoken_actions(harness: TurnHarness) -> None:
-    harness.theater.config.return_value["story_planning"]["cycle_length"] = 60
+    harness.theater.config.return_value["story_planning"]["input_cycle_length"] = 60
+    tool = harness.new_tool()
+    tool.resolve_action("Look around", drain=True)
+    harness.calls.clear()
+    harness.prompts.clear()
+    tool._story_log.clear()
     harness.decision = GameControlDecision(
         factual_updates={"Inventory": "Broken key"},
         narration_request=NarrationRequest(user_action="Trade", brief="The merchant trades the key."),
     )
-    tool = harness.new_tool()
     delivered = MagicMock()
     tool.on_scene_reaction = delivered
     tool.process_user_action("Ask about the merchant")
@@ -742,7 +746,7 @@ def test_cycle_combines_game_receipts_and_all_spoken_actions(harness: TurnHarnes
     assert "The merchant trades the key." in prompt
     assert "Do not resolve those game actions again" in prompt
     delivered.assert_called_once()
-    turns = tool.turn_journal.turns()
+    turns = tool.turn_journal.turns()[1:]
     assert len(turns) == 3
     assert len({turn.cycle_id for turn in turns}) == 1
     assert sum(turn.response is not None for turn in turns) == 1
@@ -791,8 +795,10 @@ def test_game_commit_during_speech_processing_queues_without_waiting(
 def test_combined_cycle_recovers_frozen_membership_after_restart(
     harness: TurnHarness, stage: str, restart_cycle_length: float,
 ) -> None:
-    harness.theater.config.return_value["story_planning"]["cycle_length"] = 60
+    harness.theater.config.return_value["story_planning"]["input_cycle_length"] = 60
     tool = harness.new_tool()
+    tool.resolve_action("Look around", drain=True)
+    harness.calls.clear()
     tool.process_user_action("Turn the key")
     tool.process_user_action("Examine the broken key")
     harness.fail_response = stage == "response"
@@ -803,17 +809,17 @@ def test_combined_cycle_recovers_frozen_membership_after_restart(
     tool.close()
     harness.tools.remove(tool)
     harness.fail_response = harness.fail_recording = harness.fail_planning = False
-    harness.theater.config.return_value["story_planning"]["cycle_length"] = restart_cycle_length
+    harness.theater.config.return_value["story_planning"]["input_cycle_length"] = restart_cycle_length
     recovered = harness.new_tool()
     assert recovered.wait_for_pending_events(5)
     turns = recovered.turn_journal.turns()
     assert [turn.turn_id for turn in turns] == original_ids
-    assert len({turn.cycle_id for turn in turns}) == 1
+    assert len({turn.cycle_id for turn in turns[1:]}) == 1
     assert all(turn.completed for turn in turns)
     assert harness.calls.count("responder") == (2 if stage == "response" else 1)
     assert harness.calls.count("recorder") == (2 if stage == "recording" else 1)
     assert harness.calls.count("planner") == (2 if stage == "planning" else 1)
-    assert len([entry for entry in recovered._story_log if entry["type"] == "story_response"]) == 1
+    assert len([entry for entry in recovered._story_log if entry["type"] == "story_response"]) == 2
 
 
 def test_failing_delivery_callback_cannot_hold_cycle_gate(harness: TurnHarness) -> None:
@@ -829,29 +835,57 @@ def test_failing_delivery_callback_cannot_hold_cycle_gate(harness: TurnHarness) 
 
 
 def test_system_opening_uses_canvas_cycle(harness: TurnHarness) -> None:
-    harness.theater.config.return_value["story_planning"]["cycle_length"] = 60
+    harness.theater.config.return_value["story_planning"]["input_cycle_length"] = 60
     tool = harness.new_tool()
-    result = tool.process_system_action("Begin the adventure", "Opening")
-    assert result["status"] == "processing"
-    assert harness.calls == []
-    assert tool.canvas_manager.story.cycle.is_active
-    assert tool.wait_for_pending_events(5)
+    started, release = Event(), Event()
+    original = tool.response_module._resolve_user_action
+
+    def resolve(action: str, **kwargs: JsonValue) -> dict[str, JsonValue]:
+        started.set()
+        assert release.wait(5)
+        return original(action, **kwargs)
+
+    with patch.object(tool.response_module, "_resolve_user_action", side_effect=resolve):
+        try:
+            result = tool.process_system_action("Begin the adventure", "Opening")
+            assert result["status"] == "processing"
+            assert started.wait(5)
+            assert tool.canvas_manager.story.input_cycle.is_active
+        finally:
+            release.set()
+        assert tool.wait_for_pending_events(5)
     assert harness.calls == ["responder", "recorder", "planner"]
 
 
 def test_component_action_api_cannot_bypass_canvas_cycle(harness: TurnHarness) -> None:
-    harness.theater.config.return_value["story_planning"]["cycle_length"] = 60
+    harness.theater.config.return_value["story_planning"]["input_cycle_length"] = 60
     tool = harness.new_tool()
-    assert tool.engine.process_user_action("Turn the key")["status"] == "processing"
-    assert harness.calls == []
-    assert tool.wait_for_pending_events(5)
+    started, release = Event(), Event()
+    original = tool.response_module._resolve_user_action
+
+    def resolve(action: str, **kwargs: JsonValue) -> dict[str, JsonValue]:
+        started.set()
+        assert release.wait(5)
+        return original(action, **kwargs)
+
+    with patch.object(tool.response_module, "_resolve_user_action", side_effect=resolve):
+        try:
+            assert tool.engine.process_user_action("Turn the key")["status"] == "processing"
+            assert started.wait(5)
+            assert tool.canvas_manager.story.input_cycle.is_active
+        finally:
+            release.set()
+        assert tool.wait_for_pending_events(5)
     assert harness.calls == ["responder", "recorder", "planner"]
 
 
 def test_game_only_cycle_records_each_receipt_and_narrates_once(harness: TurnHarness) -> None:
-    harness.theater.config.return_value["story_planning"]["cycle_length"] = 60
-    harness.decision = GameControlDecision(narration_request=NarrationRequest(user_action="Move", brief="A piece moves."))
+    harness.theater.config.return_value["story_planning"]["input_cycle_length"] = 60
     tool = harness.new_tool()
+    tool.resolve_action("Look around", drain=True)
+    harness.calls.clear()
+    tool._story_log.clear()
+    harness.decision = GameControlDecision(narration_request=NarrationRequest(user_action="Move", brief="A piece moves."))
     tool._handle_player_game_action(GameAction(name="move", revision=0), {"revision": 1})
     tool._handle_player_game_action(GameAction(name="move", revision=1), {"revision": 2})
     assert tool.wait_for_pending_events(5)
@@ -863,7 +897,7 @@ def test_game_only_cycle_records_each_receipt_and_narrates_once(harness: TurnHar
 def test_out_of_order_callbacks_drain_durable_game_receipts_in_revision_order(
     harness: TurnHarness, tmp_path: Path,
 ) -> None:
-    harness.theater.config.return_value["story_planning"]["cycle_length"] = 60
+    harness.theater.config.return_value["story_planning"]["input_cycle_length"] = 60
     game = make_game(tmp_path / "outbox")
     game.act(GameAction(name="add", arguments={"amount": 1}, revision=0))
     game.act(GameAction(name="add", arguments={"amount": 1}, revision=1))
@@ -881,8 +915,10 @@ def test_out_of_order_callbacks_drain_durable_game_receipts_in_revision_order(
 
 
 def test_accepting_same_action_concurrently_creates_one_durable_input(harness: TurnHarness) -> None:
-    harness.theater.config.return_value["story_planning"]["cycle_length"] = 60
+    harness.theater.config.return_value["story_planning"]["input_cycle_length"] = 60
     tool = harness.new_tool()
+    tool.resolve_action("Look around", drain=True)
+    harness.calls.clear()
     with ThreadPoolExecutor(max_workers=4) as pool:
         results = list(pool.map(tool.process_user_action, ["Turn the key"] * 4))
     assert len({result["story_turn_id"] for result in results}) == 1
@@ -891,7 +927,7 @@ def test_accepting_same_action_concurrently_creates_one_durable_input(harness: T
 
 
 def test_legacy_partially_recorded_turns_keep_separate_saved_responses(harness: TurnHarness) -> None:
-    harness.theater.config.return_value["story_planning"]["cycle_length"] = 60
+    harness.theater.config.return_value["story_planning"]["input_cycle_length"] = 60
     tool = harness.new_tool()
     for index in range(2):
         tool.turn_journal.accept(StoryTurn(
@@ -930,3 +966,55 @@ def test_story_log_write_failure_does_not_repeat_delivery(harness: TurnHarness) 
     assert tool.wait_for_pending_events(5)
     delivered.assert_called_once()
     assert harness.calls == ["responder", "recorder", "planner"]
+
+
+def test_input_processing_continues_while_latest_output_waits_for_canvas(harness: TurnHarness) -> None:
+    harness.theater.config.return_value["story_planning"].update({
+        "input_cycle_length": 0, "output_cycle_length": 60,
+    })
+    with patch("components.story.output_display_cycle.Timer"):
+        tool = harness.new_tool()
+        story = tool.canvas_manager.story
+
+        def resolve(action: str, **kwargs: JsonValue) -> dict[str, JsonValue]:
+            return {"narration": action, "dialogue": [{"speaker": "Mara", "text": action}]}
+
+        with patch.object(tool.response_module, "_resolve_user_action", side_effect=resolve):
+            for action in ("first", "second", "third"):
+                assert tool.resolve_action(action)["narration"] == action
+        assert story.narration == "first"
+        assert story.scene_dialogue[0]["text"] == "first"
+        assert story.input_cycle.wait(5)
+        turns = tool.turn_journal.turns()
+        assert all(turn.completed and turn.delivered for turn in turns)
+        assert story.output_cycle.payload()["displayed_sequence"] == turns[0].position
+        assert story.output_cycle.payload()["accepted_sequence"] == turns[2].position
+        assert tool.wait_for_pending_events(5)
+        assert story.narration == "third"
+        assert story.scene_dialogue[0]["text"] == "third"
+        assert story.output_cycle.payload()["displayed_sequence"] == turns[2].position
+
+
+def test_pending_output_survives_restart_after_turn_is_acknowledged(harness: TurnHarness) -> None:
+    harness.theater.config.return_value["story_planning"].update({
+        "input_cycle_length": 0, "output_cycle_length": 60,
+    })
+    with patch("components.story.output_display_cycle.Timer"):
+        tool = harness.new_tool()
+        with patch.object(tool.response_module, "_resolve_user_action", side_effect=[
+            {"narration": "first"}, {"narration": "second"}, {"narration": "third"},
+        ]):
+            for action in ("first", "second", "third"):
+                tool.resolve_action(action)
+        assert tool.cycle.wait(5)
+        assert all(turn.delivered for turn in tool.turn_journal.turns())
+        saved = tool.canvas_manager.story.serialize()
+        tool.close()
+        restored = StoryState()
+        restored.load(saved)
+        restarted = harness.new_tool(story=restored)
+        assert restored.narration == "first"
+        assert restarted.wait_for_pending_events(5)
+        assert restored.narration == "third"
+        assert restored.output_cycle.payload()["displayed_sequence"] == 3
+        assert harness.calls == ["recorder", "planner"] * 3

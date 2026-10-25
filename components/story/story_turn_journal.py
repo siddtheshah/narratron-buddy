@@ -29,6 +29,7 @@ class StoryTurn(BaseModel):
     narration_reason: str | None = None
     narrative_brief: str | None = None
     planner_completed: bool = False
+    # Acknowledges durable staging; the output cycle may still defer or supersede it.
     delivered: bool = False
     cycle_id: str | None = None
     response_owner_id: str | None = None

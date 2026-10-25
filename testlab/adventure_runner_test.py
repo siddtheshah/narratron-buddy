@@ -180,7 +180,8 @@ def test_game_narration_finishes_before_return_and_state_serializes(sample_adven
             assert resolve.call_count == 1
             assert resolve.call_args.kwargs["game_entry"] is True
             assert resolve.call_args.kwargs["nudge"] == "Ivory replies."
-            handle.assert_called_once_with(reaction)
+            turn = session.story_tool.turn_journal.turns()[0]
+            handle.assert_called_once_with(reaction, sequence=turn.position)
         with patch.object(session.story_tool, "get_present_characters", return_value=[character]):
             state = json.loads(json.dumps(session.get_state()))
             assert state["characters"][0]["name"] == "The Caretaker"

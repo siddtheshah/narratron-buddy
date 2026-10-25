@@ -11,9 +11,10 @@ import threading
 from dataclasses import dataclass
 from typing import Any, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, JsonValue, TypeAdapter
 
-from components.story.cycle import StoryCycle
+from components.story.input_gathering_cycle import StoryInputGatheringCycle
+from components.story.output_display_cycle import OutputCheckpoint, StoryOutput, StoryOutputDisplayCycle
 
 from providers import (
     SpeechProvider,
@@ -100,8 +101,10 @@ class StoryState:
         *,
         adventure_mode: bool = False,
         cycle_length: float = 15.0,
+        output_cycle_length: float = 15.0,
     ) -> None:
-        self.cycle = StoryCycle(cycle_length)
+        self.cycle = StoryInputGatheringCycle(cycle_length)
+        self.output_cycle = StoryOutputDisplayCycle(self._present_scene, self._output_changed, output_cycle_length)
         self.adventure_mode: bool = adventure_mode
         self._persist = persist
         self._notify_changed = notify_changed
@@ -128,6 +131,18 @@ class StoryState:
         self.player_character: Optional[PlayerCharacterState] = None
         self.characters: dict[str, CharacterState] = {}
         self.character_references: list[str] = []
+
+    @property
+    def input_cycle(self) -> StoryInputGatheringCycle:
+        """Explicit name for the input cycle; ``cycle`` remains a compatibility alias."""
+        return self.cycle
+
+    def _output_changed(self) -> None:
+        if self._persist:
+            self._persist()
+        if self._notify_changed:
+            self._notify_changed("latest")
+
     @property
     def text_beautifier(self) -> Any:
         if self._text_beautifier is not None:
@@ -220,9 +235,16 @@ class StoryState:
         if "character_references" in data and isinstance(data["character_references"], list):
             self.character_references = [str(r) for r in data["character_references"]]
 
-    def serialize(self) -> dict[str, object]:
-        result: dict[str, object] = {
+        output_state = data.get("story_output_state")
+        if output_state is not None:
+            self.output_cycle.restore(OutputCheckpoint.model_validate(output_state))
+
+    def serialize(self) -> dict[str, JsonValue]:
+        result: dict[str, JsonValue] = {
             "story_cycle": self.cycle.payload(),
+            "story_input_cycle": self.input_cycle.payload(),
+            "story_output_cycle": self.output_cycle.payload(),
+            "story_output_state": self.output_cycle.snapshot(),
             "story_planning_state": self.story_planning_state,
             "scene_dialogue": self.scene_dialogue,
             "narration": self.narration,
@@ -251,16 +273,26 @@ class StoryState:
         if self.character_references:
             result["character_references"] = list(self.character_references)
         return result
-    payload = serialize
-    def set_scene(self, narration: str, dialogue: list[dict[str, Any]]) -> None:
-        """Commit a fully beautified scene and notify canvas clients once.
+    def payload(self) -> dict[str, JsonValue]:
+        result = self.serialize()
+        result.pop("story_output_state")
+        return result
+
+    def set_scene(
+        self, narration: str, dialogue: list[dict[str, JsonValue]], *, sequence: int | None = None,
+    ) -> None:
+        """Stage narration and dialogue together, ordered by their originating input."""
+        self.output_cycle.submit(narration, dialogue, sequence)
+
+    def _present_scene(self, output: StoryOutput) -> None:
+        """Prepare and commit a promoted scene before its checkpoint is published.
 
         Keeping beautification ahead of the state mutation prevents clients from
         rendering the plain scene and then restarting it when styled spans arrive.
         """
-        scene_narration = str(narration or "").strip()[:MAX_SCENE_NARRATION_CHARS]
-        scene_dialogue = [dict(item) for item in (dialogue or []) if isinstance(item, dict)][:3]
-        narration_spans: list[dict[str, Any]] = []
+        scene_narration = output.narration.strip()[:MAX_SCENE_NARRATION_CHARS]
+        scene_dialogue = [dict(item) for item in output.dialogue][:3]
+        narration_spans: list[dict[str, JsonValue]] = []
         beautifier = self.text_beautifier
 
         logger.info("[StoryState] New scene: %s", scene_narration)
@@ -281,20 +313,12 @@ class StoryState:
                 len(scene_dialogue),
             )
             try:
-                beautified = beautifier.beautify_scene(scene_narration, scene_dialogue)
-                if not isinstance(beautified, dict):
-                    raise TypeError("scene beautifier returned a non-dictionary result")
-                narration_spans = [
-                    dict(span)
-                    for span in beautified.get("narration_spans", [])
-                    if isinstance(span, dict)
-                ]
-                beautified_dialogue = beautified.get("dialogue", scene_dialogue)
-                if not isinstance(beautified_dialogue, list):
-                    raise TypeError("scene beautifier returned non-list dialogue")
-                scene_dialogue = [
-                    dict(item) for item in beautified_dialogue if isinstance(item, dict)
-                ][:3]
+                beautified = TypeAdapter(dict[str, JsonValue]).validate_python(
+                    beautifier.beautify_scene(scene_narration, scene_dialogue),
+                )
+                records = TypeAdapter(list[dict[str, JsonValue]])
+                narration_spans = records.validate_python(beautified.get("narration_spans", []))
+                scene_dialogue = records.validate_python(beautified.get("dialogue", scene_dialogue))[:3]
                 logger.info(
                     "Scene beautification produced %d narration span(s) and %d dialogue line(s)",
                     len(narration_spans),
@@ -307,10 +331,6 @@ class StoryState:
         self.narration_spans = narration_spans
         self.scene_dialogue = scene_dialogue
         self.committed_scene_speech_generation = generation
-        if self._persist:
-            self._persist()
-        if self._notify_changed:
-            self._notify_changed("latest")
     def record_die_roll(self, roll: dict[str, Any]) -> None:
         """Record the latest die roll in story state and notify canvas clients."""
         self.last_die_roll = dict(roll) if isinstance(roll, dict) else None

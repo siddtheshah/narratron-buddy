@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from concurrent.futures import Future
 from threading import Lock
+import time
 from uuid import uuid4
 from datetime import datetime, timezone
 import logging
@@ -33,7 +34,8 @@ from components.story.story_recorder_module import StoryRecorderModule
 from components.story.story_recording_journal import RecordingEvent, StoryRecordingJournal
 from components.story.story_session import StorySession
 from components.story.story_turn_journal import StoryTurn, StoryTurnJournal
-from components.story.cycle import StoryCycle, story_cycle_length
+from components.story.input_gathering_cycle import StoryInputGatheringCycle, story_input_cycle_length
+from components.story.output_display_cycle import story_output_cycle_length
 
 
 logger = logging.getLogger(__name__)
@@ -82,7 +84,7 @@ class StoryEngine:
         if story is None:
             raise ValueError("StoryEngine requires canvas story state.")
         if story.cycle.is_closed:
-            story.cycle = StoryCycle()
+            story.cycle = StoryInputGatheringCycle()
         if story.cycle.is_bound:
             raise ValueError("Canvas story cycle already has an engine.")
 
@@ -136,11 +138,15 @@ class StoryEngine:
             self.recorder_module.agent,
             self.planning_module._deep_planner_agent,
         ])
-        self.cycle = story.cycle
-        self.cycle.cycle_length = story_cycle_length(self.config)
+        self.input_cycle = story.input_cycle
+        self.output_cycle = story.output_cycle
+        self.cycle = self.input_cycle
+        self.input_cycle.cycle_length = story_input_cycle_length(self.config)
+        self.output_cycle.cycle_length = story_output_cycle_length(self.config)
         self._closed = False
         self.notepad.on_change = self.response_module.save_to_session_state
         self.sync_character_bindings()
+        self.output_cycle.start()
         self.cycle.bind(self._process_cycle)
         if canvas_manager.game is not None:
             canvas_manager.game.on_player_action = self._handle_player_game_action
@@ -306,7 +312,7 @@ class StoryEngine:
                             turn.recorder_completed = True
                         self.turn_journal.save(turn)
                 if not owner.delivered:
-                    self._handle_scene_reaction(owner.response)
+                    self._handle_scene_reaction(owner.response, sequence=turns[0].position)
                     owner.delivered = True
                     self.turn_journal.save(owner)
             self.sync_character_bindings()
@@ -361,8 +367,8 @@ class StoryEngine:
             except Exception:
                 logger.exception("Story result notification failed")
 
-    def _handle_scene_reaction(self, result: dict[str, JsonValue]) -> None:
-        self.response_module.deliver_response(result)
+    def _handle_scene_reaction(self, result: dict[str, JsonValue], *, sequence: int | None = None) -> None:
+        self.response_module.deliver_response(result, sequence=sequence)
         self.append_story_log_entry({"type": "story_response", "output": result})
         self._notify_scene_reaction(result)
 
@@ -452,7 +458,10 @@ class StoryEngine:
         return {"status": "processing", "story_turn_id": turn_id, "message": message_type}
 
     def wait_for_pending_events(self, timeout: float = 5.0) -> bool:
-        return self.cycle.wait(timeout) and all(
+        deadline = time.monotonic() + timeout
+        return self.input_cycle.wait(timeout) and self.output_cycle.flush(
+            max(0.0, deadline - time.monotonic()),
+        ) and all(
             turn.completed and (turn.response is None or turn.delivered) for turn in self.turn_journal.turns()
         )
 
@@ -472,6 +481,7 @@ class StoryEngine:
         if game is not None and game.on_player_action == self._handle_player_game_action:
             game.on_player_action = None
         self.cycle.close()
+        self.output_cycle.close()
         self.notepad.on_change = None
         self.story_session.close()
         self.turn_journal.close()

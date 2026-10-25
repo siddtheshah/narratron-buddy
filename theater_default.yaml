@@ -100,11 +100,14 @@ story_planning:
     # override this with a voice, tone, or consequence philosophy (for
     # example: "harsh and unforgiving, but never arbitrary").
     style: "balanced, consequence-driven, and player-agency-first"
-    # Collect game updates and spoken actions for this many seconds. Inputs
-    # arriving while the engine works are retained for the next cycle.
-    # Set to zero for immediate serialized processing. Null retains legacy
-    # cooldown_duration/action_cooldown_base_seconds values, or 15 by default.
-    cycle_length: null
+    # Minimum interval between input batch starts. The first input starts
+    # immediately; later inputs accumulate until the active batch and interval finish.
+    # Set to zero for immediate serialized processing. Defaults to 15 seconds.
+    input_cycle_length: 15
+    # Minimum time each narration/dialogue scene stays on the canvas. A newer
+    # response replaces the waiting slot, preserving originating input order.
+    # Independent of input timing; zero displays every ready response immediately.
+    output_cycle_length: 15
     require_user_input: true
 
 chat:

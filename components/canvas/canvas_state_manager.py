@@ -16,7 +16,8 @@ from components.canvas import AudioState, ChatManager, ConnectionState, DoodleSt
 from components.theater_manager import Theater
 from components.canvas.game_state import GameState
 from components.notepad import Notepad
-from components.story.cycle import story_cycle_length
+from components.story.input_gathering_cycle import story_input_cycle_length
+from components.story.output_display_cycle import story_output_cycle_length
 
 logger = logging.getLogger("components.canvas_state")
 MAX_AGENT_THOUGHT_LENGTH = 360
@@ -64,7 +65,8 @@ class CanvasStateManager:
             self.notify_changed,
             publish_audio_fn=self.connections.broadcast,
             adventure_mode=adventure_mode,
-            cycle_length=story_cycle_length(story_planning_config),
+            cycle_length=story_input_cycle_length(story_planning_config),
+            output_cycle_length=story_output_cycle_length(story_planning_config),
         )
         self.chat = ChatManager(self.theater)
         self.game = GameState(self.theater.directory(), self.persist, self.notify_changed)
@@ -77,6 +79,7 @@ class CanvasStateManager:
 
     def reset(self) -> None:
         """Clear session state in place so connected clients cannot retain history."""
+        self.story.output_cycle.close()
         self._initialize_state()
         self.visual.initialize_starting_image()
         self.visual.shown_images_history.clear()

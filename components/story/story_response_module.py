@@ -1162,12 +1162,14 @@ class StoryResponseModule:
             })
         return cleaned
 
-    def _publish_scene(self, narration: str, dialogue: List[Dict[str, str]]) -> None:
-        try:
-            if self.canvas_manager is not None and self.canvas_manager.story is not None:
+    def _publish_scene(
+        self, narration: str, dialogue: list[dict[str, str]], *, sequence: int | None = None,
+    ) -> None:
+        if self.canvas_manager is not None and self.canvas_manager.story is not None:
+            if sequence is None:
                 self.canvas_manager.story.set_scene(narration, dialogue)
-        except Exception as exc:
-            logger.warning("[StoryResponseModule] Failed to publish scene: %s", exc)
+            else:
+                self.canvas_manager.story.set_scene(narration, dialogue, sequence=sequence)
 
 
 
@@ -1359,12 +1361,17 @@ class StoryResponseModule:
             self.deliver_response(result)
         return result
 
-    def deliver_response(self, result: dict[str, JsonValue]) -> None:
+    def deliver_response(self, result: dict[str, JsonValue], *, sequence: int | None = None) -> None:
         """Deliver only an application-persisted response, separately from model execution."""
         self._last_scene_reaction = result
         self._last_action_response_word_count = self._count_response_words(result)
         self.save_to_session_state()
-        self._publish_scene(str(result.get("narration") or ""), self._clean_dialogue(result.get("dialogue")))
+        narration = str(result.get("narration") or "")
+        dialogue = self._clean_dialogue(result.get("dialogue"))
+        if sequence is None:
+            self._publish_scene(narration, dialogue)
+        else:
+            self._publish_scene(narration, dialogue, sequence=sequence)
         callback = self.on_story_response_completed
         if callback:
             try:

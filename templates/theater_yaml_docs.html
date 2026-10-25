@@ -565,6 +565,16 @@ story_planning:
             <h2><code>story_planning</code></h2>
             <p>Defines the Adventure Mode planner: its durable story context, pacing, and optional NPC speech.</p>
             <dl class="options">
+              <dt><code>input_cycle_length</code> <span class="type">number, seconds</span></dt>
+              <dd>Minimum interval between input batch starts. The first input starts immediately.
+                Subsequent spoken actions and game updates accumulate in order until both the active batch
+                and its interval finish. Zero processes inputs immediately in one serialized worker.
+                Defaults to 15 seconds when omitted or null.</dd>
+              <dt><code>output_cycle_length</code> <span class="type">number, seconds</span></dt>
+              <dd>Minimum display time for each narration/dialogue scene, independent of input collection.
+                Default: 15 seconds. The first output appears immediately; newer responses replace the waiting
+                output without extending the current display time. Outputs may be skipped but never shown
+                in reverse input order. Zero shows every ready response immediately.</dd>
               <dt><code>adventure_mode</code> <span class="type">boolean</span></dt>
               <dd>Enables player-action resolution through the story planner. Default: <code>false</code>.</dd>
               <dt><code>enable_dice</code> <span class="type">boolean</span></dt>
@@ -591,6 +601,8 @@ story_planning:
   adventure_mode: true
   auto_begin: true
   enforce_structured: true
+  input_cycle_length: 5
+  output_cycle_length: 15
   style: "Tense science-fiction mystery; setbacks are fair and consequential."
   require_user_input: true</pre>
             <p>Keep sticky contracts in a separate <code>planning.yaml</code>. Every topic has one owner:

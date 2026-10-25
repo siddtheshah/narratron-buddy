@@ -1,4 +1,4 @@
-"""Canvas-owned, lossless intake with timed batching and one active consumer."""
+"""Gather story input into lossless batches with one active consumer."""
 
 from collections.abc import Callable, Mapping
 from concurrent.futures import Future, ThreadPoolExecutor
@@ -12,27 +12,26 @@ StoryResult = dict[str, JsonValue]
 CycleHandler = Callable[[list[str]], dict[str, StoryResult]]
 
 
-def story_cycle_length(config: Mapping[str, JsonValue]) -> float:
-    """Honor explicit cycle timing and saved theaters' legacy timing options."""
-    value = config.get("cycle_length")
-    if value is None:
-        value = config.get("cooldown_duration", config.get("action_cooldown_base_seconds", 15.0))
-    return max(0.0, TypeAdapter(float).validate_python(value))
+def story_input_cycle_length(config: Mapping[str, JsonValue]) -> float:
+    """Read input dispatch spacing independently of output presentation."""
+    value = config.get("input_cycle_length")
+    return max(0.0, TypeAdapter(float).validate_python(15.0 if value is None else value))
 
 
-class StoryCycle:
-    """Collect durable input IDs; never call the engine while holding our lock.
+class StoryInputGatheringCycle:
+    """Append durable input IDs into the next batch while gathering is busy.
 
-    The first pending input opens a collection window. Inputs arriving during
-    execution belong to the next window. Completion, including failure, always
-    releases the consumer so subsequent input can attempt recovery.
+    The first input starts immediately. Each dispatch opens a cooldown window;
+    subsequent inputs run together after both the active batch and its cooldown
+    finish. Completion, including failure, always releases the consumer so
+    subsequent input can attempt recovery. Engine work runs outside our lock.
     """
 
     def __init__(self, cycle_length: float = 15.0) -> None:
         self.cycle_length = max(0.0, cycle_length)
         self._condition = Condition()
         self._handler: CycleHandler | None = None
-        self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="story-cycle")
+        self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="story-input-gathering")
         self._pending: dict[str, Future[StoryResult]] = {}
         self._active: dict[str, Future[StoryResult]] = {}
         self._timer: Timer | None = None
@@ -56,8 +55,6 @@ class StoryCycle:
             existing = self._pending.get(turn_id) or self._active.get(turn_id)
             if existing is not None:
                 return existing
-            if not self._pending:
-                self._deadline = time.monotonic() + self.cycle_length
             future: Future[StoryResult] = Future()
             self._pending[turn_id] = future
             self._schedule_locked()
@@ -91,6 +88,7 @@ class StoryCycle:
         delay = max(0.0, self._deadline - time.monotonic())
         if self._draining or self._closed or delay == 0:
             self._active, self._pending = self._pending, {}
+            self._deadline = time.monotonic() + self.cycle_length
             self._executor.submit(self._run, self._handler, self._active)
         else:
             self._timer = Timer(delay, self._tick)
@@ -119,13 +117,14 @@ class StoryCycle:
                 self._condition.notify_all()
 
     def flush(self) -> None:
-        """Release the current collection window without waiting for execution."""
+        """Release waiting input without changing an otherwise empty interval."""
         with self._condition:
-            self._deadline = 0.0
-            self._schedule_locked()
+            if self._pending:
+                self._deadline = 0.0
+                self._schedule_locked()
 
     def wait(self, timeout: float = 5.0) -> bool:
-        """Drain collection windows for deterministic harnesses and shutdown."""
+        """Drain pending batches for deterministic harnesses and shutdown."""
         with self._condition:
             self._draining = True
             try:

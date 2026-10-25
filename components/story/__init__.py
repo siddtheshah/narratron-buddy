@@ -1,1 +1,1 @@
-"""Theater-bound story engine and canvas-owned input cycle."""
+"""Theater-bound story engine with input gathering and output display cycles."""

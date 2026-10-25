@@ -1,5 +1,5 @@
 import threading
-from unittest.mock import MagicMock, Mock
+from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 
@@ -76,6 +76,29 @@ def test_set_scene_preserves_long_narration_for_the_canvas() -> None:
 
     assert state.narration == narration
     assert state.serialize()["narration"] == narration
+
+
+def test_waiting_scenes_do_not_cancel_visible_speech_or_run_beautification() -> None:
+    state = StoryState(output_cycle_length=60)
+    state.enable_scene_speech(MagicMock(spec=SpeechProvider))
+    state.text_beautifier = Mock()
+    state.text_beautifier.beautify_scene.return_value = {"narration_spans": [], "dialogue": []}
+    with patch("components.story.output_display_cycle.Timer"), patch.object(state, "dispatch", side_effect=[1, 2]) as dispatch:
+        state.set_scene("first", [{"speaker": "Mara", "text": "First"}], sequence=1)
+        state.set_scene("second", [{"speaker": "Mara", "text": "Second"}], sequence=2)
+        state.set_scene("third", [{"speaker": "Mara", "text": "Third"}], sequence=3)
+        assert state.narration == "first"
+        assert state.committed_scene_speech_generation == 1
+        assert dispatch.call_count == 1
+        assert state.text_beautifier.beautify_scene.call_count == 1
+        assert "story_output_state" not in state.payload()
+        assert state.output_cycle.flush()
+        assert state.narration == "third"
+        assert state.committed_scene_speech_generation == 2
+        assert dispatch.call_count == 2
+        assert dispatch.call_args.args[0][0]["text"] == "Third"
+        assert state.text_beautifier.beautify_scene.call_count == 2
+    state.output_cycle.close()
 
 
 def test_character_voice_assignment_is_normalized_and_serialized() -> None:
@@ -304,7 +327,7 @@ def test_load_and_serialize_round_trip() -> None:
     assert serialized["narration_spans"] == [{"text": "rises", "effect": "glow"}]
     assert serialized["character_voice_assignments"] == {"hero": "voice_1"}
     assert serialized["committed_scene_speech_generation"] == 4
-    assert state.payload() == serialized
+    assert state.payload() == {key: value for key, value in serialized.items() if key != "story_output_state"}
 
 
 def test_get_character_voice_tags_filters_to_binary_gender_and_handles_single_string() -> None:
