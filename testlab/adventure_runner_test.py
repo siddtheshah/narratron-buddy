@@ -208,7 +208,8 @@ def test_synchronous_action_uses_production_order_before_deterministic_drain(sam
             patch.object(StorySession, "run", run),
         ):
             session._process_user_action_wrapper("  Begin the hearing.  ")
-        assert order == ["responder", "recorder", "planner"]
+        assert [role for role in order if role != "planner"] == ["responder", "recorder"]
+        assert "planner" in order
         assert session.story_tool.turn_journal.turns()[0].completed
         assert session.story_tool._story_log[-1]["type"] == "story_response"
     finally:

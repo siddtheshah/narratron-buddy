@@ -165,6 +165,51 @@ def test_projection_omits_interrupted_unpaired_tool_invocations() -> None:
     assert view[0].parts[0].text == "Retry intention"
 
 
+def test_planner_receives_new_content_during_tool_continuation_and_persists_it(tmp_path: Path) -> None:
+    planner = BlockingModel(replies=[
+        types.Content(role="model", parts=[types.Part(function_call=types.FunctionCall(
+            name="private_tool", args={}, id="planner-call",
+        ))]),
+        final("Updated plan"),
+    ])
+    responder = CapturingModel(replies=[final("Public response")])
+    shared = StorySession(tmp_path / "sessions.sqlite", "live-planner")
+    shared.bind([
+        Agent(name="story_recorder", model=CapturingModel(), output_key="recorder_output"),
+        Agent(name="story_responder", model=responder, output_key="responder_output"),
+        Agent(name="story_deep_planner", model=planner, tools=[private_tool], output_key="planner_output"),
+    ])
+    incoming: list[str] = []
+
+    def context() -> str:
+        return incoming.pop(0) if incoming else ""
+
+    shared.planner_context = context
+    try:
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            planning = executor.submit(shared.run, "planner", "Initial player intention")
+            try:
+                assert planner._started.wait(5)
+                # Simultaneous first invocations must also share session creation.
+                shared.run("responder", "New spoken action")
+                incoming.append("New responder outcome while planning")
+            finally:
+                planner._release.set()
+            assert planning.result(5) == "Updated plan"
+        assert len(planner.requests) == 2
+        continuation = request_text(planner.requests[-1])
+        assert "Initial player intention" in continuation
+        assert "New responder outcome while planning" in continuation
+        assert "planner-call" in continuation
+        assert "New responder outcome" not in request_text(responder.requests[0])
+        planner.replies.append(final("Next plan"))
+        shared.run("planner", "Another update")
+        assert "New responder outcome while planning" in request_text(planner.requests[-1])
+    finally:
+        planner._release.set()
+        shared.close()
+
+
 def test_projection_omits_aborted_invocations_after_tool_response_or_malformed_call() -> None:
     events = [
         Event(author="user", invocation_id="recorder:ok", content=types.Content(role="user", parts=[types.Part(text="Turn 1")])),

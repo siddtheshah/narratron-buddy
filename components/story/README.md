@@ -4,7 +4,7 @@
 ADK session to a theater. `tools/story/story_tool.py` is the live-agent adapter.
 `StoryInputGatheringCycle` in `input_gathering_cycle.py` gathers spoken actions
 (including auto-begin) and committed game receipts through
-`canvas_state_manager.story.input_cycle` before any story role runs (`story.cycle`
+`canvas_state_manager.story.input_cycle` before foreground story roles run (`story.cycle`
 remains an alias). It appends waiting input so every accepted action is retained.
 
 `story_planning.input_cycle_length` controls the minimum interval between batch
@@ -14,7 +14,7 @@ Subsequent inputs are retained in one batch until both the active batch and its
 interval finish; they never replace one another or extend the interval. If the
 active batch takes longer than the interval, waiting input starts as soon as it
 finishes. `wait_for_pending_events()` drains intervals for deterministic tests
-and harnesses, including the latest pending output.
+and harnesses, including the latest pending output and background planning.
 
 `StoryOutputDisplayCycle` in `output_display_cycle.py` independently controls
 canvas narration and dialogue through `story.output_cycle`. It replaces waiting
@@ -39,19 +39,40 @@ cancels output timers while retaining that checkpoint.
 
 At dispatch, the turn journal atomically freezes cycle membership. The sole
 cycle worker records each game receipt, resolves all spoken actions and game
-narrative briefs in one response, records that response, stages it once, and
-runs one planning pass. Game-only cycles honor the recorder's explicit decision
-to skip narration. Planner checkpoints commit progress for every member in one
-transaction. Planning and foreground roles share the same flight.
+narrative briefs in one response, records that response, and stages it once.
+Game-only cycles honor the recorder's explicit decision to skip narration.
+
+`BackgroundPlanning` independently consumes a durable stream of accepted player
+intentions, committed game actions, generated responses, and recorded outcomes.
+Input gathering and output display intervals never gate planning, and planner
+work or failure never holds the foreground cycle. Updates arriving during a
+planning invocation enter its next model request, preserving tool exchanges and
+role isolation in the shared ADK session. Inputs remain intentions until an
+output or recorded outcome establishes what happened. Responses enter planning
+even while they wait for display or are superseded on the canvas.
+
+`story_planning.deep_planning.token_budget` bounds generated and thinking tokens
+across model/tool continuations since the latest assimilated update (default
+16384). New content replenishes this allowance. Without new content, the planner
+finishes naturally or stops at the budget; there are no idle refinement passes.
+Per-request output/thinking limits, lore-call limits, and the invocation timeout
+also remain in place. Planner note publication and update acknowledgements commit
+atomically. Foreground roles can use older planning guidance: planner-only
+changes never invalidate recorder work. Publication preserves the newest planner
+notes while still enforcing sticky ownership, schema validation, and freshness
+of factual notes and shared topics being written. The planner reconciles against
+fresh state before publishing stale work.
 
 Failures retain committed stage progress and the original cycle membership.
 The next input, explicit retry, or engine restart resumes the missing stages.
 A failed factual stage blocks dependent story processing while leaving intake
-available; a failed planning stage can be retried without repeating recording
-or narration. There is no automatic endless retry loop.
+available. Pending planner updates recover independently on new input, explicit
+retry, or restart, without repeating recording or narration. There is no automatic
+endless retry loop.
 Partially processed saves from the earlier scheduler resume as separate cycles
 so their existing responses and receipts cannot be merged or discarded. Queued
-actions enter recent-story context only when their cycle starts.
+actions enter the responder's recent-story context only when their cycle starts;
+the planner receives them immediately.
 
 The cycle lock covers queue bookkeeping only. Engine execution, game access,
 notifications, and future completion happen outside that lock. No engine state
@@ -60,7 +81,7 @@ their story callbacks execute outside the game lock. The engine drains the game
 outbox in revision order so concurrent post-commit callbacks preserve causality.
 Result callbacks are isolated from stage completion. Every worker exit releases
 the flight, including exceptions before role execution. Shutdown drains accepted
-input before closing the executor, session, and journals.
+input and joins the planner before closing the session and journals.
 
 The earlier design and role contracts are recorded in
 [`adr-001-recorder-planner-responder.md`](../../tools/story/adr/adr-001-recorder-planner-responder.md).

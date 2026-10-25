@@ -154,6 +154,37 @@ def test_unchanged_batch_preserves_revision(pad: Notepad) -> None:
     assert pad.snapshot() == source
 
 
+def test_recorder_ignores_planning_freshness_and_preserves_latest_guidance(pad: Notepad) -> None:
+    pad.configure_schema({
+        "Location": {"owner": "recorder", "initial": "Gate"},
+        "Ambush": {"owner": "planner", "fields": {"when": "Timing"}, "initial": {"when": "Night"}},
+    })
+    source = pad.snapshot()
+    pad.publish_role_updates("planner", {"Ambush": '{"when":"Dawn"}', "Clue": "A possible ambush"}, source=source)
+    persist = Mock()
+    pad.publish_role_updates("recorder", {"Location": "Courtyard"}, source=source, persist=persist)
+    assert pad.snapshot().notes["Location"] == "Courtyard"
+    assert pad.snapshot().structured_notes["Ambush"] == {"when": "Dawn"}
+    assert pad.snapshot().notes["Clue"] == "A possible ambush"
+    assert persist.call_args.args[0] == pad.snapshot()
+
+
+@pytest.mark.parametrize("topic", ["Location", "Shared"])
+def test_recorder_still_rejects_stale_factual_or_targeted_shared_notes(pad: Notepad, topic: str) -> None:
+    source = pad.snapshot()
+    pad.publish_role_updates("recorder", {topic: "Changed concurrently"}, source=source)
+    with pytest.raises(StaleNoteSnapshot):
+        pad.publish_role_updates("recorder", {topic: "Overwrite"}, source=source)
+
+
+def test_stale_planning_guidance_does_not_grant_peer_write_permission(pad: Notepad) -> None:
+    source = pad.snapshot()
+    pad.publish_role_updates("planner", {"Ambush": "At dawn"}, source=source)
+    with pytest.raises(ValueError, match="cannot write"):
+        pad.publish_role_updates("recorder", {"Ambush": "At noon"}, source=source)
+    assert pad.snapshot().notes["Ambush"] == "At dawn"
+
+
 def test_consume_responder_snapshot_captures_notes_revision_and_changed_topics_atomically(
     pad: Notepad,
 ) -> None:
@@ -240,14 +271,15 @@ def test_freeform_creation_has_room_when_contract_fills_default_limit(pad: Notep
     assert pad.snapshot().notes["Next"] == "Next plan"
 
 
-def test_freeform_persistence_failure_is_atomic_and_stale_publication_is_rejected(pad: Notepad) -> None:
+def test_freeform_persistence_is_atomic_without_waiting_for_latest_planning(pad: Notepad) -> None:
     before = pad.snapshot()
     with pytest.raises(OSError, match="offline"):
         pad.publish_role_updates("recorder", {"New": "Fact"}, source=before, persist=Mock(side_effect=OSError("offline")))
     assert pad.snapshot() == before
     pad.publish_role_updates("planner", {"Plan": "Wait"}, source=before)
-    with pytest.raises(StaleNoteSnapshot):
-        pad.publish_role_updates("recorder", {"New": "Fact"}, source=before)
+    pad.publish_role_updates("recorder", {"New": "Fact"}, source=before)
+    assert pad.snapshot().notes["Plan"] == "Wait"
+    assert pad.snapshot().notes["New"] == "Fact"
     latest = pad.snapshot()
     pad.restore_recorded_snapshot(before)
     assert pad.snapshot().notes == latest.notes

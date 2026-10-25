@@ -7,9 +7,6 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
-from components.notepad import NoteSnapshot
-from components.story.story_recording_journal import RecordedNotes
-
 
 class StoryTurn(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -28,7 +25,7 @@ class StoryTurn(BaseModel):
     responder_skipped: bool = False
     narration_reason: str | None = None
     narrative_brief: str | None = None
-    planner_completed: bool = False
+    planner_completed: bool = False  # Legacy save marker; planning now has its own journal.
     # Acknowledges durable staging; the output cycle may still defer or supersede it.
     delivered: bool = False
     cycle_id: str | None = None
@@ -48,7 +45,7 @@ class StoryTurn(BaseModel):
 
     @property
     def completed(self) -> bool:
-        return self.foreground_ready and self.planner_completed
+        return self.foreground_ready
 
 
 class StoryTurnJournal:
@@ -115,25 +112,6 @@ class StoryTurnJournal:
                         "UPDATE story_turns SET turn_json = ? WHERE turn_id = ?",
                         (turn.model_dump_json(), turn.turn_id),
                     )
-
-    def commit_planning(self, turn: StoryTurn, snapshot: NoteSnapshot) -> None:
-        self.commit_cycle_planning([turn], snapshot)
-
-    def commit_cycle_planning(self, turns: list[StoryTurn], snapshot: NoteSnapshot) -> None:
-        """Publish planning progress and the latest mixed-owner checkpoint together."""
-        with self._lock, self._connection:
-            self._connection.execute("BEGIN IMMEDIATE")
-            self._connection.execute(
-                """INSERT INTO recorded_notes (singleton, snapshot_json) VALUES (1, ?)
-                   ON CONFLICT(singleton) DO UPDATE SET snapshot_json = excluded.snapshot_json""",
-                (RecordedNotes.from_snapshot(snapshot).model_dump_json(),),
-            )
-            for turn in turns:
-                completed = turn.model_copy(update={"planner_completed": True})
-                self._connection.execute(
-                    "UPDATE story_turns SET turn_json = ? WHERE turn_id = ?",
-                    (completed.model_dump_json(), turn.turn_id),
-                )
 
     def close(self) -> None:
         with self._lock:

@@ -15,6 +15,9 @@ from typing import Callable, Optional
 from jinja2 import Template
 from google.adk.agents import Agent
 from google.adk.agents.readonly_context import ReadonlyContext
+from google.adk.agents.callback_context import CallbackContext
+from google.adk.models.llm_request import LlmRequest
+from google.adk.models.llm_response import LlmResponse
 from google.adk.apps.app import App, EventsCompactionConfig
 from google.adk.plugins import ReflectAndRetryToolPlugin
 from google.adk.plugins.base_plugin import BasePlugin
@@ -53,6 +56,7 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_DEEP_THINKING_BUDGET = 2048
 DEFAULT_DEEP_MAX_OUTPUT_TOKENS = 6144
+DEFAULT_STORY_TOKEN_BUDGET = 16384
 DEFAULT_DEEP_PLANNER_TIMEOUT_SECONDS = 45.0
 DEFAULT_DEEP_HEARTBEAT_SECONDS = 1.0
 DEFAULT_DEEP_MAX_EVENTS_PER_TURN = 4
@@ -67,7 +71,7 @@ _DEEP_PLANNING_INSTRUCTION_TEMPLATE = Template(
 """# Role & Mission
 You are the deep planner for an interactive adventure. You do not narrate the current scene and you never choose actions, speech, thoughts, or feelings for the player. Take a broad view of the player's accumulated actions, established lore, unresolved setups, off-screen actors, deadlines, and world consequences.
 
-You own only `planner`-owned sticky notes. Assimilate the committed turn by deciding which planner-owned notes, if any, need an update. Use `check_schema(topic)` before updating a schema-backed sticky note and `update_sticky_note(topic, info)` once per changed note; never attempt to write `recorder`-owned sticky notes or restate notes that did not change.
+You own only `planner`-owned sticky notes. Assimilate incoming story updates by deciding which planner-owned notes, if any, need an update. Planning runs in the background, independently of input gathering and output display cycles. New player intentions, responder outputs, and recorded outcomes may arrive while you work; reconcile your staged plans with the latest context. Finish when there is nothing useful left to plan within your remaining token budget. Use `check_schema(topic)` before updating a schema-backed sticky note and `update_sticky_note(topic, info)` once per changed note; never attempt to write `recorder`-owned sticky notes or restate notes that did not change.
 {% if allow_freeform -%}
 Freeform sticky creation is enabled. You may also create and update shared freeform topics with `update_sticky_note(topic, info)`, using a descriptive topic and a concise plain string for contingent plans. No planning.yaml entry is needed for a new topic. Shared freeform notes can be updated by either recorder or planner; preserve established facts and avoid duplicating existing topics. Declared topics still require their owner's schema. Notes have a bounded capacity; older freeform topics may be evicted.
 {% endif -%}
@@ -334,6 +338,8 @@ class StoryPlanningModule:
             int(raw_deep_budget) if raw_deep_budget is not None else None
         )
         self.deep_max_output_tokens: int = DEFAULT_DEEP_MAX_OUTPUT_TOKENS
+        self.story_token_budget = max(1, int(self.deep_planning_config.get("token_budget", DEFAULT_STORY_TOKEN_BUDGET)))
+        self._story_tokens_remaining = self.story_token_budget
         raw_gcloud = self.config.get("gcloud") or {}
         gcloud_dict: dict[str, object] = dict(raw_gcloud)
         self.vertex_project: Optional[str] = (
@@ -584,21 +590,53 @@ class StoryPlanningModule:
             output_key="story_planner_output",
             include_contents="none" if self.story_session is not None else "default",
             generate_content_config=generate_content_config,
+            before_model_callback=self._limit_story_budget if self.story_session is not None else None,
+            after_model_callback=self._count_story_tokens if self.story_session is not None else None,
         )
 
-    def plan_recorded_turn(self, handoff: dict[str, JsonValue], source: NoteSnapshot) -> dict[str, str]:
-        """Plan exactly one committed turn; publishing cannot schedule a peer."""
+    def reset_story_budget(self) -> None:
+        self._story_tokens_remaining = self.story_token_budget
+
+    def _limit_story_budget(
+        self, callback_context: CallbackContext, llm_request: LlmRequest,
+    ) -> LlmResponse | None:
+        if self._story_tokens_remaining <= 0:
+            return LlmResponse(content=types.Content(role="model", parts=[
+                types.Part(text="Planning token budget reached; current planning pass is complete."),
+            ]))
+        llm_request.config.max_output_tokens = min(self.deep_max_output_tokens, self._story_tokens_remaining)
+        thinking = llm_request.config.thinking_config
+        if thinking is not None and thinking.thinking_budget is not None:
+            thinking.thinking_budget = min(thinking.thinking_budget, self._story_tokens_remaining)
+        return None
+
+    def _count_story_tokens(
+        self, callback_context: CallbackContext, llm_response: LlmResponse,
+    ) -> LlmResponse | None:
+        if not llm_response.partial:
+            usage = llm_response.usage_metadata
+            used = (
+                (usage.candidates_token_count or 0) + (usage.thoughts_token_count or 0)
+                if usage is not None else 0
+            )
+            # Keep a finite bound even for providers that omit usage metadata.
+            self._story_tokens_remaining -= used or self.deep_max_output_tokens
+        return None
+
+    def plan_story_updates(self, handoff: dict[str, JsonValue], source: NoteSnapshot) -> dict[str, str]:
+        """Assimilate incoming story content without waiting for a cycle boundary."""
         if self.story_session is None:
             raise RuntimeError("A shared story session is required for turn planning.")
         self.reset_deep_lore_call_counts()
+        self.reset_story_budget()
         self.staged_notes.updates.clear()
         prompt = json.dumps({
-            "recorded_turn": handoff,
+            "story_context": handoff,
             "source_revision": source.revision,
             "sticky_notes": source.notes,
             "game_state": handoff.get("game_state"),
         }, ensure_ascii=False)
-        self.story_session.run("planner", prompt, timeout=self.deep_planner_timeout_seconds, stage_id=str(handoff["turn_id"]))
+        self.story_session.run("planner", prompt, timeout=self.deep_planner_timeout_seconds)
         return dict(self.staged_notes.updates)
 
     def restart_deep_planner_agent(self) -> None:

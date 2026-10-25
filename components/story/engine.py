@@ -26,7 +26,8 @@ from components.theater_manager import Theater
 from providers import SpeechProvider, TextResponseProvider
 from components.reference_manager import ReferenceManager
 from components.lore_library import LoreLibrary
-from components.notepad import Notepad, NoteSnapshot, StaleNoteSnapshot
+from components.notepad import Notepad
+from components.story.background_planning import BackgroundPlanning
 from components.story.story_planning_module import StoryPlanningModule
 from components.story.story_response_module import GameEntryNarrationRejected, StoryResponseModule
 from components.story.story_handoffs import ProposedFactChange
@@ -138,6 +139,9 @@ class StoryEngine:
             self.recorder_module.agent,
             self.planning_module._deep_planner_agent,
         ])
+        self.background_planning = BackgroundPlanning(
+            journal_path, self.planning_module, self.notepad, self._planning_game_snapshot,
+        )
         self.input_cycle = story.input_cycle
         self.output_cycle = story.output_cycle
         self.cycle = self.input_cycle
@@ -200,7 +204,31 @@ class StoryEngine:
         return "\n".join(lines)
 
     def _schedule_turn(self, turn: StoryTurn) -> Future[dict[str, JsonValue]]:
+        self._queue_planning_input(turn)
         return self.cycle.submit(turn.turn_id)
+
+    def _planning_game_snapshot(self) -> dict[str, JsonValue] | None:
+        game = self.canvas_manager.game
+        return game.story_snapshot("narratron") if game is not None else None
+
+    def _queue_planning_input(self, turn: StoryTurn) -> None:
+        self.background_planning.enqueue(f"{turn.turn_id}:input", {
+            "kind": "committed_game_action" if turn.ingress == "game_action" else "player_intention",
+            "turn_id": turn.turn_id, "action": turn.action, "nudge": turn.nudge,
+            "game_payload": turn.game_payload,
+        })
+
+    def _queue_planning_progress(self, turn: StoryTurn) -> None:
+        if turn.response is not None:
+            self.background_planning.enqueue(f"{turn.turn_id}:output", {
+                "kind": "responder_output", "turn_id": turn.turn_id, "response": turn.response,
+            })
+        if turn.recorder_completed:
+            self.background_planning.enqueue(f"{turn.turn_id}:recorded", {
+                "kind": "recorded_outcome", "turn_id": turn.turn_id,
+                "game_payload": turn.game_payload, "narration_reason": turn.narration_reason,
+                "sticky_notes": self.notepad.snapshot().notes,
+            })
 
     def _recording_event(self, turn: StoryTurn) -> RecordingEvent:
         return RecordingEvent(
@@ -263,7 +291,7 @@ class StoryEngine:
         self._set_user_action_processing(True)
         try:
             # Pending windows must not leak future player actions into the
-            # current responder/planner's recent-story context.
+            # current responder's recent-story context.
             for turn in turns:
                 if turn.ingress == "communicated_action" and not turn.action_logged:
                     turn.action_logged = True
@@ -282,6 +310,7 @@ class StoryEngine:
                 turn.responder_skipped = outcome.narration_request is None
                 turn.narrative_brief = outcome.narration_request.brief if outcome.narration_request is not None else None
                 self.turn_journal.save(turn)
+                self._queue_planning_progress(turn)
 
             spoken = [turn for turn in turns if turn.ingress == "communicated_action"]
             narrated = [turn for turn in turns if turn.ingress == "game_action" and not turn.responder_skipped]
@@ -301,22 +330,24 @@ class StoryEngine:
                         raise RuntimeError(str(result["error"]))
                     owner.response = TypeAdapter(dict[str, JsonValue]).validate_python(result)
                     self.turn_journal.save(owner)
+                    self._queue_planning_progress(owner)
                 if spoken and not owner.recorder_completed:
                     self.recorder_module.record(self._recording_event(owner))
                     owner.recorder_completed = True
                     self.turn_journal.save(owner)
+                    self._queue_planning_progress(owner)
                 for turn in turns:
                     if turn.turn_id != owner.turn_id:
                         turn.response_owner_id = owner.turn_id
                         if turn.ingress == "communicated_action":
                             turn.recorder_completed = True
                         self.turn_journal.save(turn)
+                        self._queue_planning_progress(turn)
                 if not owner.delivered:
                     self._handle_scene_reaction(owner.response, sequence=turns[0].position)
                     owner.delivered = True
                     self.turn_journal.save(owner)
             self.sync_character_bindings()
-            self._plan_batch(turns, owner or turns[0])
             return owner.response if owner is not None and owner.response is not None else {
                 "status": "completed", "narration_skipped": True, "reason": turns[0].narration_reason,
             }
@@ -330,35 +361,6 @@ class StoryEngine:
             return result
         finally:
             self._set_user_action_processing(False)
-
-    def _plan_batch(self, turns: list[StoryTurn], owner: StoryTurn) -> None:
-        if all(turn.planner_completed for turn in turns):
-            return
-        try:
-            for attempt in range(3):
-                source = self.notepad.snapshot()
-                handoff = owner.model_dump(mode="json")
-                handoff["cycle_inputs"] = [turn.model_dump(mode="json") for turn in turns]
-                handoff["source_event_ids"] = [f"{turn.turn_id}:recording" for turn in turns if turn.response_owner_id is None or turn.ingress == "game_action"]
-                handoff["audience"] = ["planner"]
-                game = self.canvas_manager.game
-                game_snapshot = game.story_snapshot("narratron") if game is not None else None
-                handoff["game_state"] = game_snapshot
-                updates = self.planning_module.plan_recorded_turn(handoff, source)
-
-                def persist(snapshot: NoteSnapshot) -> None:
-                    self.turn_journal.commit_cycle_planning(turns, snapshot)
-
-                try:
-                    if game is not None and game.story_snapshot("narratron") != game_snapshot:
-                        raise StaleNoteSnapshot("Game state changed during planning; recheck the guidance.")
-                    self.notepad.publish_role_updates("planner", updates, source=source, persist=persist)
-                    return
-                except StaleNoteSnapshot:
-                    if attempt == 2:
-                        raise
-        except Exception:
-            logger.exception("Story cycle planner %s remains pending", owner.turn_id)
 
     def _notify_scene_reaction(self, result: dict[str, JsonValue]) -> None:
         if self._on_scene_reaction is not None:
@@ -399,8 +401,12 @@ class StoryEngine:
 
     def retry_pending_turns(self) -> None:
         for turn in self.turn_journal.turns():
+            if not turn.planner_completed:
+                self._queue_planning_input(turn)
+                self._queue_planning_progress(turn)
             if not turn.completed or (turn.response is not None and not turn.delivered):
                 self._schedule_turn(turn)
+        self.background_planning.retry()
 
     def submit_action(self, user_action: str, nudge: str = "", *, require_input: bool = True) -> tuple[str, Future[dict[str, JsonValue]]]:
         with self._intake_lock:
@@ -459,14 +465,17 @@ class StoryEngine:
 
     def wait_for_pending_events(self, timeout: float = 5.0) -> bool:
         deadline = time.monotonic() + timeout
-        return self.input_cycle.wait(timeout) and self.output_cycle.flush(
+        input_done = self.input_cycle.wait(timeout)
+        output_done = self.output_cycle.flush(
             max(0.0, deadline - time.monotonic()),
-        ) and all(
+        )
+        planning_done = self.background_planning.wait(max(0.0, deadline - time.monotonic()))
+        return input_done and output_done and planning_done and all(
             turn.completed and (turn.response is None or turn.delivered) for turn in self.turn_journal.turns()
         )
 
     def wait_for_deep_planning(self, timeout: float = 5.0, target_turn_id: int | None = None) -> bool:
-        return self.wait_for_pending_events(timeout)
+        return self.background_planning.wait(timeout)
 
     @property
     def is_action_in_flight(self) -> bool:
@@ -482,6 +491,7 @@ class StoryEngine:
             game.on_player_action = None
         self.cycle.close()
         self.output_cycle.close()
+        self.background_planning.close()
         self.notepad.on_change = None
         self.story_session.close()
         self.turn_journal.close()

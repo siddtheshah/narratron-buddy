@@ -80,6 +80,11 @@ class TurnHarness:
             tool.close()
 
 
+def assert_foreground_calls(harness: TurnHarness, expected: list[str]) -> None:
+    """Background planner calls may interleave with any foreground stage."""
+    assert [role for role in harness.calls if role != "planner"] == expected
+
+
 @pytest.fixture
 def harness(tmp_path: Path) -> Iterator[TurnHarness]:
     harness = TurnHarness(tmp_path)
@@ -92,11 +97,11 @@ def harness(tmp_path: Path) -> Iterator[TurnHarness]:
         harness.close()
 
 
-def test_communicated_turn_records_then_plans_without_request(harness: TurnHarness) -> None:
+def test_communicated_turn_records_and_plans_without_request(harness: TurnHarness) -> None:
     tool = harness.new_tool()
     result = tool.resolve_action("Turn the key", drain=True)
     assert result["narration"] == "The key breaks."
-    assert harness.calls == ["responder", "recorder", "planner"]
+    assert_foreground_calls(harness, ["responder", "recorder"])
     assert tool.notepad.snapshot().notes["Inventory"] == "Broken key"
     assert tool.turn_journal.turns()[0].completed
     assert tool.turn_journal.turns()[0].entry_role == "responder"
@@ -122,14 +127,13 @@ def test_unstructured_adventure_stages_freeform_notes_and_recovers_after_restart
             assert tool.recorder_module.staged_notes.update_sticky_note("Discovery", "Found a key").endswith("staged.")
             assert "Discovery" not in tool.notepad.snapshot().notes
         elif role == "planner":
-            assert "Found a key" in prompt
             assert tool.planning_module.staged_notes.update_sticky_note("Possibility", "A guard may investigate").endswith("staged.")
             assert "Possibility" not in tool.notepad.snapshot().notes
         return harness.model_run(role, prompt)
 
     with patch.object(StorySession, "run", run):
         assert "error" not in tool.resolve_action("Inspect the courtyard", drain=True)
-    assert harness.calls == ["responder", "recorder", "planner"]
+    assert_foreground_calls(harness, ["responder", "recorder"])
     assert tool.notepad.snapshot().notes["Discovery"] == "Found a key"
     assert tool.notepad.snapshot().notes["Possibility"] == "A guard may investigate"
     snapshot = tool.notepad.snapshot()
@@ -160,7 +164,7 @@ def test_response_recording_can_prepare_game_offer_awaiting_player_consent(
     with patch.object(StorySession, "run", model):
         result = tool.resolve_action("Show me your offer", drain=True)
         assert "error" not in result
-        assert harness.calls == ["responder", "recorder", "planner"]
+        assert_foreground_calls(harness, ["responder", "recorder"])
         assert game.revision == 2
         assert game.state["narratron_offer"] == ["green"]
         assert game.state["narratron_done"] is True
@@ -177,7 +181,7 @@ def test_response_recording_can_prepare_game_offer_awaiting_player_consent(
         assert tool.recording_journal.pending() == []
         tool.recorder_module.record(event)
         assert game.revision == 2
-        assert harness.calls == ["responder", "recorder", "planner"]
+        assert_foreground_calls(harness, ["responder", "recorder"])
         assert "Error:" in tool.recorder_module.take_game_action("narratron_finalize", "{}", game.revision)
 
 
@@ -247,11 +251,11 @@ def test_response_recording_retries_receipt_completion_without_repeating_models(
         with failure:
             assert "error" in tool.resolve_action("Show me your offer")
         assert game.revision == 1
-        assert harness.calls == ["responder", "recorder"]
+        assert_foreground_calls(harness, ["responder", "recorder"])
         tool.retry_pending_turns()
         assert tool.wait_for_pending_events(5)
     assert game.revision == 1
-    assert harness.calls == ["responder", "recorder", "planner"]
+    assert_foreground_calls(harness, ["responder", "recorder"])
     turn = tool.turn_journal.turns()[0]
     assert turn.completed
     assert tool.recording_journal.is_game_control_completed(tool._recording_event(turn).event_id)
@@ -279,17 +283,17 @@ def test_recording_narratron_receipt_cannot_submit_more_actions(
         tool.recorder_module.record(event)
     assert len(errors) == 1 and "active story-response or game-entry recording stage" in errors[0]
     assert game.revision == 0
-    assert harness.calls == ["recorder"]
+    assert_foreground_calls(harness, ["recorder"])
     assert tool.recording_journal.pending() == []
 
 
-def test_game_turn_skip_is_explicit_and_planning_is_mandatory(harness: TurnHarness) -> None:
+def test_game_turn_skip_is_explicit_and_planning_runs_in_background(harness: TurnHarness) -> None:
     tool = harness.new_tool()
     action = GameAction(name="move", arguments={}, revision=0)
     receipt = {"revision": 1, "state": {"secret": "raw game secret"}}
     tool._handle_player_game_action(action, receipt)
     assert tool.wait_for_pending_events(5)
-    assert harness.calls == ["recorder", "planner"]
+    assert_foreground_calls(harness, ["recorder"])
     turn = tool.turn_journal.turns()[0]
     assert turn.entry_role == "recorder"
     assert turn.responder_skipped
@@ -297,7 +301,7 @@ def test_game_turn_skip_is_explicit_and_planning_is_mandatory(harness: TurnHarne
     assert turn.completed
     tool._handle_player_game_action(action, receipt)
     assert tool.wait_for_pending_events(5)
-    assert harness.calls == ["recorder", "planner"]
+    assert_foreground_calls(harness, ["recorder"])
 
 
 def test_significant_game_turn_narrates_brief_without_recording_again(harness: TurnHarness) -> None:
@@ -310,7 +314,7 @@ def test_significant_game_turn_narrates_brief_without_recording_again(harness: T
         "revision": 1, "state": {"raw_game_secret": 42}, "instructions": "private mechanics",
     })
     assert tool.wait_for_pending_events(5)
-    assert harness.calls == ["recorder", "responder", "planner"]
+    assert_foreground_calls(harness, ["recorder", "responder"])
     responder_prompt = next(prompt for role, prompt in harness.prompts if role == "responder")
     assert "The merchant hands over the key" in responder_prompt
     assert "raw_game_secret" not in responder_prompt
@@ -353,7 +357,7 @@ def test_game_entry_rejection_is_returned_to_responder_and_only_correction_is_pu
         })
         assert tool.wait_for_pending_events(5)
         failure.assert_not_called()
-    assert harness.calls == ["recorder", "responder", "responder", "planner"]
+    assert_foreground_calls(harness, ["recorder", "responder", "responder"])
     assert stages == [tool.turn_journal.turns()[0].turn_id] * 2
     delivered.assert_called_once()
     assert delivered.call_args.args[0]["narration"] == "The merchant hands over the key."
@@ -390,7 +394,7 @@ def test_game_entry_repeated_rejections_stay_pending_without_live_agent_error(
         assert not tool.wait_for_pending_events(5)
         failure.assert_not_called()
     delivered.assert_not_called()
-    assert harness.calls == ["recorder"] + ["responder"] * MAX_GAME_ENTRY_RESPONSE_ATTEMPTS
+    assert_foreground_calls(harness, ["recorder"] + ["responder"] * MAX_GAME_ENTRY_RESPONSE_ATTEMPTS)
     turn = tool.turn_journal.turns()[0]
     assert not tool.is_action_in_flight
     assert turn.recorder_completed
@@ -408,7 +412,7 @@ def test_game_entry_repeated_rejections_stay_pending_without_live_agent_error(
     else:
         tool.retry_pending_turns()
     assert tool.wait_for_pending_events(5)
-    assert harness.calls == ["recorder"] + ["responder"] * (MAX_GAME_ENTRY_RESPONSE_ATTEMPTS + 1) + ["planner"]
+    assert_foreground_calls(harness, ["recorder"] + ["responder"] * (MAX_GAME_ENTRY_RESPONSE_ATTEMPTS + 1))
     assert tool.turn_journal.turns()[0].completed
 
 
@@ -417,14 +421,14 @@ def test_failed_recording_blocks_dependent_action_and_retries_saved_response(har
     tool = harness.new_tool()
     assert "error" in tool.resolve_action("Turn the key")
     assert "error" in tool.resolve_action("Use the broken key")
-    assert harness.calls == ["responder", "recorder", "recorder"]
+    assert_foreground_calls(harness, ["responder", "recorder", "recorder"])
     assert tool.notepad.snapshot().notes["Inventory"] == "Key"
     harness.fail_recording = False
     tool.retry_pending_turns()
     assert tool.wait_for_pending_events(5)
     assert harness.calls.count("responder") == 2
     assert harness.calls.count("recorder") == 4
-    assert harness.calls.count("planner") == 2
+    assert harness.calls.count("planner") >= 1
 
 
 def test_planner_failure_does_not_undo_recording_or_repeat_foreground(harness: TurnHarness) -> None:
@@ -453,7 +457,7 @@ def test_restart_resumes_skipped_game_planning_without_narration(harness: TurnHa
     harness.fail_planning = False
     restarted = harness.new_tool()
     assert restarted.wait_for_pending_events(5)
-    assert harness.calls == ["planner"]
+    assert_foreground_calls(harness, [])
     assert restarted.turn_journal.turns()[0].responder_skipped
 
 
@@ -463,7 +467,7 @@ def test_public_tool_uses_production_scheduler(harness: TurnHarness) -> None:
     assert type(result) is dict
     assert result["status"] == "processing"
     assert tool.wait_for_pending_events(5)
-    assert harness.calls == ["responder", "recorder", "planner"]
+    assert_foreground_calls(harness, ["responder", "recorder"])
 
 
 def test_story_turn_publishes_processing_activity_until_foreground_work_completes(
@@ -534,7 +538,7 @@ def test_next_action_waits_for_recording_commit(harness: TurnHarness) -> None:
     assert type(first) is dict
     assert started.wait(5)
     tool.process_user_action("Use the broken key")
-    assert harness.calls == ["responder"]
+    assert_foreground_calls(harness, ["responder"])
     release.set()
     assert tool.wait_for_pending_events(5)
 
@@ -565,20 +569,20 @@ def test_restart_resumes_pending_narration_without_another_recorder(harness: Tur
     first = harness.new_tool()
     first._handle_player_game_action(GameAction(name="move", arguments={}, revision=0), {"revision": 1})
     assert not first.wait_for_pending_events(5)
-    assert harness.calls == ["recorder", "responder"]
+    assert_foreground_calls(harness, ["recorder", "responder"])
     first.close()
     harness.tools.remove(first)
     harness.calls.clear()
     harness.fail_response = False
     restarted = harness.new_tool()
     assert restarted.wait_for_pending_events(5)
-    assert harness.calls == ["responder", "planner"]
+    assert_foreground_calls(harness, ["responder"])
     assert restarted.turn_journal.turns()[0].completed
 
 
 def test_restart_preserves_latest_planner_checkpoint(harness: TurnHarness) -> None:
     first = harness.new_tool()
-    with patch.object(first.planning_module, "plan_recorded_turn", return_value={"Ambush": "Investigate only if discovered."}):
+    with patch.object(first.planning_module, "plan_story_updates", return_value={"Ambush": "Investigate only if discovered."}):
         first.resolve_action("Turn the key", drain=True)
     revision = first.notepad.revision
     first.close()
@@ -629,7 +633,7 @@ def test_failed_receipt_write_recovers_from_game_commit_without_reexecuting(
     assert tool.turn_journal.turns()[0].completed
 
 
-def test_planning_and_next_action_share_one_engine_flight(harness: TurnHarness) -> None:
+def test_planning_does_not_hold_the_next_action_or_cycle(harness: TurnHarness) -> None:
     tool = harness.new_tool()
     started, release = Event(), Event()
     sources: list[int] = []
@@ -641,19 +645,140 @@ def test_planning_and_next_action_share_one_engine_flight(harness: TurnHarness) 
             assert release.wait(5)
         return {"Ambush": f"Investigate after revision {source.revision}."}
 
-    with patch.object(tool.planning_module, "plan_recorded_turn", side_effect=plan):
+    with patch.object(tool.planning_module, "plan_story_updates", side_effect=plan):
         tool.process_user_action("Turn the key")
         try:
             assert started.wait(5)
             harness.decision = GameControlDecision(factual_updates={"Inventory": "Second key"})
             tool.process_user_action("Find another key")
-            assert harness.calls == ["responder", "recorder"]
+            assert tool.cycle.wait(2)
+            assert_foreground_calls(harness, ["responder", "recorder"] * 2)
+            assert tool.notepad.snapshot().notes["Inventory"] == "Second key"
+            assert all(turn.completed for turn in tool.turn_journal.turns())
+            assert not tool.is_action_in_flight
         finally:
             release.set()
         assert tool.wait_for_pending_events(5)
-    assert sources[1] > sources[0]
+    assert max(sources) > sources[0]
     assert len(tool.turn_journal.turns()) == 2
     assert all(turn.completed for turn in tool.turn_journal.turns())
+
+
+def test_planner_receives_input_during_gathering_and_output_during_display_dwell(harness: TurnHarness) -> None:
+    harness.theater.config.return_value["story_planning"].update({
+        "input_cycle_length": 60, "output_cycle_length": 60,
+    })
+    with patch("components.story.output_display_cycle.Timer"):
+        tool = harness.new_tool()
+        tool.resolve_action("Turn the key", drain=True)
+        harness.prompts.clear()
+        tool.process_user_action("Look behind the door")
+        assert tool.wait_for_deep_planning(5)
+        assert tool.cycle.payload()["pending"] == 1
+        inputs = [prompt for role, prompt in harness.prompts if role == "planner"]
+        assert any('"kind": "player_intention"' in prompt and "Look behind the door" in prompt for prompt in inputs)
+        assert not any(role == "responder" for role, _ in harness.prompts)
+        tool.cycle.flush()
+        assert tool.cycle.wait(5)
+        assert tool.wait_for_deep_planning(5)
+        assert tool.output_cycle.payload()["accepted_sequence"] > tool.output_cycle.payload()["displayed_sequence"]
+        outputs = [prompt for role, prompt in harness.prompts if role == "planner"]
+        assert any('"kind": "responder_output"' in prompt for prompt in outputs)
+
+
+def test_planner_failure_leaves_cycles_free_and_retries_durable_updates(harness: TurnHarness) -> None:
+    harness.fail_planning = True
+    tool = harness.new_tool()
+    assert "error" not in tool.resolve_action("Turn the key")
+    assert tool.cycle.wait(5)
+    assert tool.turn_journal.turns()[0].completed
+    assert not tool.is_action_in_flight
+    assert not tool.wait_for_deep_planning(5)
+    assert "error" not in tool.resolve_action("Look behind the door")
+    assert tool.cycle.wait(5)
+    assert not tool.wait_for_deep_planning(5)
+    harness.fail_planning = False
+    tool.retry_pending_turns()
+    assert tool.wait_for_deep_planning(5)
+    assert_foreground_calls(harness, ["responder", "recorder"] * 2)
+    context = [prompt for role, prompt in harness.prompts if role == "planner"][-1]
+    assert "Turn the key" in context and "Look behind the door" in context
+
+
+def test_concurrent_planner_publication_does_not_hold_foreground_work(harness: TurnHarness) -> None:
+    tool = harness.new_tool()
+    assert tool.wait_for_deep_planning(5)
+    reconcile = tool.recorder_module._reconcile
+
+    def record(event: RecordingEvent, source: NoteSnapshot) -> dict[str, str]:
+        updates = reconcile(event, source)
+        tool.notepad.publish_role_updates("planner", {"Ambush": "Guard the door"}, source=tool.notepad.snapshot())
+        return updates
+
+    with patch.object(tool.recorder_module, "_reconcile", side_effect=record):
+        assert "error" not in tool.resolve_action("Turn the key", drain=True)
+    assert harness.calls.count("recorder") == 1
+    assert tool.notepad.snapshot().notes == {"Inventory": "Broken key", "Ambush": "Guard the door"}
+
+
+def test_response_can_complete_using_older_planning_guidance(harness: TurnHarness) -> None:
+    tool = harness.new_tool()
+    revision = tool.notepad.revision
+
+    def respond(action: str, nudge: str = "") -> dict[str, JsonValue]:
+        tool.notepad.publish_role_updates("planner", {"Ambush": "Guard the door"}, source=tool.notepad.snapshot())
+        return {"narration": "The key breaks.", "proposed_factual_changes": []}
+
+    with patch.object(tool.response_module, "_run_responder_agent", side_effect=respond):
+        response = tool.resolve_action("Turn the key", drain=True)
+    assert response["notepad_revision_used"] == revision
+    assert "error" not in response
+    assert tool.turn_journal.turns()[0].completed
+    assert tool.notepad.snapshot().notes["Ambush"] == "Guard the door"
+
+
+def test_background_planner_cannot_publish_recorder_owned_notes(harness: TurnHarness) -> None:
+    tool = harness.new_tool()
+    with patch.object(tool.planning_module, "plan_story_updates", return_value={"Inventory": "Stolen by planner"}):
+        assert "error" not in tool.resolve_action("Turn the key")
+        assert tool.cycle.wait(5)
+        assert not tool.wait_for_deep_planning(5)
+    assert tool.turn_journal.turns()[0].completed
+    assert tool.notepad.snapshot().notes == {"Inventory": "Broken key", "Ambush": "Wait"}
+    tool.retry_pending_turns()
+    assert tool.wait_for_pending_events(5)
+
+
+def test_active_planner_assimilates_new_context_and_replenishes_budget(harness: TurnHarness) -> None:
+    tool = harness.new_tool()
+    started, release = Event(), Event()
+    contexts: list[str] = []
+
+    def plan(handoff: dict[str, JsonValue], source: NoteSnapshot) -> dict[str, str]:
+        tool.planning_module._story_tokens_remaining = 0
+        started.set()
+        assert release.wait(5)
+        context = tool.story_session.planner_context
+        assert context is not None
+        contexts.append(context())
+        assert tool.planning_module._story_tokens_remaining == tool.planning_module.story_token_budget
+        return {"Ambush": "Reconciled with the latest outcome"}
+
+    with patch.object(tool.planning_module, "plan_story_updates", side_effect=plan) as planning:
+        tool.process_user_action("Turn the key")
+        try:
+            assert started.wait(5)
+            tool.process_user_action("Inspect the door")
+            assert tool.cycle.wait(5)
+        finally:
+            release.set()
+        assert tool.wait_for_pending_events(5)
+        assert planning.call_count == 1
+        tool.retry_pending_turns()
+        assert tool.wait_for_pending_events(5)
+        assert planning.call_count == 1
+    assert '"kind": "responder_output"' in contexts[0]
+    assert "Inspect the door" in contexts[0]
 
 
 def test_failed_turn_recovers_on_subsequent_player_game_action(
@@ -728,7 +853,7 @@ def test_cycle_combines_game_receipts_and_all_spoken_actions(harness: TurnHarnes
     tool.process_user_action("Ask about the merchant")
     tool._handle_player_game_action(GameAction(name="trade", revision=0), {"revision": 1})
     tool.process_user_action("Examine the key")
-    assert harness.calls == []
+    assert_foreground_calls(harness, [])
     assert tool._story_log == []
 
     def model(session: StorySession, role: StoryRole, prompt: str, *, timeout: float = 60.0, stage_id: str = "") -> str:
@@ -739,7 +864,7 @@ def test_cycle_combines_game_receipts_and_all_spoken_actions(harness: TurnHarnes
 
     with patch.object(StorySession, "run", model):
         assert tool.wait_for_pending_events(5)
-    assert harness.calls == ["recorder", "responder", "recorder", "planner"]
+    assert_foreground_calls(harness, ["recorder", "responder", "recorder"])
     prompt = next(prompt for role, prompt in harness.prompts if role == "responder")
     assert "Ask about the merchant" in prompt
     assert "Examine the key" in prompt
@@ -779,7 +904,7 @@ def test_game_commit_during_speech_processing_queues_without_waiting(
                 try:
                     assert commit.result(timeout=2)["revision"] == 1
                     tool.process_user_action("Inspect the red item")
-                    assert harness.calls == []
+                    assert_foreground_calls(harness, [])
                 finally:
                     release.set()
         finally:
@@ -818,7 +943,7 @@ def test_combined_cycle_recovers_frozen_membership_after_restart(
     assert all(turn.completed for turn in turns)
     assert harness.calls.count("responder") == (2 if stage == "response" else 1)
     assert harness.calls.count("recorder") == (2 if stage == "recording" else 1)
-    assert harness.calls.count("planner") == (2 if stage == "planning" else 1)
+    assert harness.calls.count("planner") >= 1
     assert len([entry for entry in recovered._story_log if entry["type"] == "story_response"]) == 2
 
 
@@ -854,7 +979,7 @@ def test_system_opening_uses_canvas_cycle(harness: TurnHarness) -> None:
         finally:
             release.set()
         assert tool.wait_for_pending_events(5)
-    assert harness.calls == ["responder", "recorder", "planner"]
+    assert_foreground_calls(harness, ["responder", "recorder"])
 
 
 def test_component_action_api_cannot_bypass_canvas_cycle(harness: TurnHarness) -> None:
@@ -876,7 +1001,7 @@ def test_component_action_api_cannot_bypass_canvas_cycle(harness: TurnHarness) -
         finally:
             release.set()
         assert tool.wait_for_pending_events(5)
-    assert harness.calls == ["responder", "recorder", "planner"]
+    assert_foreground_calls(harness, ["responder", "recorder"])
 
 
 def test_game_only_cycle_records_each_receipt_and_narrates_once(harness: TurnHarness) -> None:
@@ -889,7 +1014,7 @@ def test_game_only_cycle_records_each_receipt_and_narrates_once(harness: TurnHar
     tool._handle_player_game_action(GameAction(name="move", revision=0), {"revision": 1})
     tool._handle_player_game_action(GameAction(name="move", revision=1), {"revision": 2})
     assert tool.wait_for_pending_events(5)
-    assert harness.calls == ["recorder", "recorder", "responder", "planner"]
+    assert_foreground_calls(harness, ["recorder", "recorder", "responder"])
     assert all(turn.completed for turn in tool.turn_journal.turns())
     assert len([entry for entry in tool._story_log if entry["type"] == "story_response"]) == 1
 
@@ -923,7 +1048,7 @@ def test_accepting_same_action_concurrently_creates_one_durable_input(harness: T
         results = list(pool.map(tool.process_user_action, ["Turn the key"] * 4))
     assert len({result["story_turn_id"] for result in results}) == 1
     assert tool.wait_for_pending_events(5)
-    assert harness.calls == ["responder", "recorder", "planner"]
+    assert_foreground_calls(harness, ["responder", "recorder"])
 
 
 def test_legacy_partially_recorded_turns_keep_separate_saved_responses(harness: TurnHarness) -> None:
@@ -938,7 +1063,7 @@ def test_legacy_partially_recorded_turns_keep_separate_saved_responses(harness: 
     assert tool.wait_for_pending_events(5)
     turns = tool.turn_journal.turns()
     assert len({turn.cycle_id for turn in turns}) == 2
-    assert harness.calls == ["recorder", "planner", "recorder", "planner"]
+    assert_foreground_calls(harness, ["recorder", "recorder"])
     assert all(turn.completed and turn.delivered for turn in turns)
 
 
@@ -965,7 +1090,7 @@ def test_story_log_write_failure_does_not_repeat_delivery(harness: TurnHarness) 
     tool.retry_pending_turns()
     assert tool.wait_for_pending_events(5)
     delivered.assert_called_once()
-    assert harness.calls == ["responder", "recorder", "planner"]
+    assert_foreground_calls(harness, ["responder", "recorder"])
 
 
 def test_input_processing_continues_while_latest_output_waits_for_canvas(harness: TurnHarness) -> None:
@@ -1017,4 +1142,4 @@ def test_pending_output_survives_restart_after_turn_is_acknowledged(harness: Tur
         assert restarted.wait_for_pending_events(5)
         assert restored.narration == "third"
         assert restored.output_cycle.payload()["displayed_sequence"] == 3
-        assert harness.calls == ["recorder", "planner"] * 3
+        assert_foreground_calls(harness, ["recorder"] * 3)

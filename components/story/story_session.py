@@ -2,9 +2,11 @@
 
 import asyncio
 from collections.abc import AsyncGenerator
+from collections.abc import Callable
 import json
 from pathlib import Path
 from threading import RLock, Thread
+import time
 from typing import Literal
 from uuid import uuid4
 
@@ -127,6 +129,9 @@ class StorySessionService(DatabaseSessionService):
             latest = await self.get_session(app_name=session.app_name, user_id=session.user_id, session_id=session.id)
             if latest is None:
                 raise ValueError("Story session disappeared during an invocation.")
+            # ADK can construct a model event before its before-model callbacks.
+            # Preserve append order when a callback inserts new planner input.
+            event.timestamp = max(time.time(), latest.events[-1].timestamp + 0.000001 if latest.events else 0.0)
             result = await super().append_event(latest, event)
             session.events = latest.events
             session.state.update(latest.state)
@@ -150,11 +155,25 @@ class StorySession:
         self._thread: Thread | None = None
         self.runner: Runner | None = None
         self._closed = False
+        self.planner_context: Callable[[], str] | None = None
+        self._creation_lock = asyncio.Lock()
+
+    async def _build_role_request(
+        self, callback_context: CallbackContext, llm_request: LlmRequest,
+    ) -> LlmResponse | None:
+        if callback_context.invocation_id.startswith("planner:") and self.planner_context is not None:
+            prompt = self.planner_context()
+            if prompt:
+                await self.session_service.append_event(callback_context.session, Event(
+                    author="user", invocation_id=callback_context.invocation_id,
+                    content=types.Content(role="user", parts=[types.Part(text=prompt)]),
+                ))
+        return build_role_request(callback_context, llm_request)
 
     def bind(self, agents: list[Agent]) -> None:
         for agent in agents:
             agent.include_contents = "none"
-            agent.before_model_callback = build_role_request
+            agent.before_model_callback = [self._build_role_request, *agent.canonical_before_model_callbacks]
         self.runner = Runner(
             app=App(
                 name=APP_NAME,
@@ -180,6 +199,10 @@ class StorySession:
     async def _run(self, role: StoryRole, prompt: str, stage_id: str) -> str:
         if self.runner is None:
             raise RuntimeError("Story roles have not been bound.")
+        async with self._creation_lock:
+            session = await self.session_service.get_session(app_name=APP_NAME, user_id=USER_ID, session_id=self.session_id)
+            if session is None:
+                await self.session_service.create_session(app_name=APP_NAME, user_id=USER_ID, session_id=self.session_id)
         for attempt in range(self.max_attempts):
             final_text = ""
             structured_args: dict[str, JsonValue] | None = None

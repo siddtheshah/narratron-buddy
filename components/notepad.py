@@ -480,15 +480,27 @@ class Notepad:
 
         When supplied, persist commits the candidate snapshot and recording
         progress before live state changes. A failed commit leaves notes intact.
+        Recorder writes validate factual state, not the freshness of planning
+        guidance. Planner writes still reconcile against the complete snapshot.
         """
         with self._sticky_notes_lock:
             if owner not in ("recorder", "planner"):
                 raise ValueError("Unknown sticky writer role.")
-            if (
-                self._revision != source.revision
-                or json.dumps(self._sticky_definitions, sort_keys=True) != source.schema_token
-            ):
+            if json.dumps(self._sticky_definitions, sort_keys=True) != source.schema_token:
                 raise StaleNoteSnapshot("Notes or ownership changed; reconcile against a fresh snapshot.")
+            if owner == "planner" and self._revision != source.revision:
+                raise StaleNoteSnapshot("Notes changed; reconcile planning against a fresh snapshot.")
+            if owner == "recorder":
+                factual_topics = {
+                    topic for topic, definition in self._sticky_definitions.items()
+                    if definition.get("owner") == "recorder"
+                } | {topic.strip() for topic in updates if topic.strip() not in self._sticky_definitions}
+                if any(
+                    source.notes.get(topic) != self._sticky_notes.get(topic)
+                    or source.structured_notes.get(topic) != self._structured_sticky_notes.get(topic)
+                    for topic in factual_topics
+                ):
+                    raise StaleNoteSnapshot("Factual notes changed; reconcile against a fresh snapshot.")
             staged: dict[str, tuple[str, str | dict[str, str] | None]] = {}
             for topic, info in updates.items():
                 clean_topic, clean_info = topic.strip(), info.strip()
@@ -496,7 +508,7 @@ class Notepad:
                     raise ValueError(f"Duplicate sticky topic '{clean_topic}'.")
                 staged[clean_topic] = self._validate_role_value(owner, clean_topic, clean_info)
             next_notes = OrderedDict(self._sticky_notes)
-            next_structured = dict(source.structured_notes)
+            next_structured = dict(self._structured_sticky_notes)
             for topic, (rendered, value) in staged.items():
                 if self._sticky_notes.get(topic) == rendered and self._structured_sticky_notes.get(topic) == value:
                     continue

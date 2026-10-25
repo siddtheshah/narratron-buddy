@@ -1,6 +1,6 @@
 """Dependency-boundary tests for ``StoryPlanningModule``."""
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator
 from pathlib import Path
 import tempfile
 import unittest
@@ -13,8 +13,14 @@ from components.theater_manager import Theater
 from google.adk.plugins import ReflectAndRetryToolPlugin
 from google.adk.sessions import InMemorySessionService
 from google.adk.agents.run_config import RunConfig
+from google.adk.agents import Agent
+from google.adk.models.base_llm import BaseLlm
+from google.adk.agents.callback_context import CallbackContext
+from google.adk.models.llm_request import LlmRequest
+from google.adk.models.llm_response import LlmResponse
 from google.genai import types
-from pydantic import JsonValue
+from pydantic import Field, JsonValue
+from components.story.story_session import StorySession
 from components.reference_manager import Character, CharacterLookupResult, ReferenceManager, PlayerCharacter
 from components.lore_library import LoreLibrary
 from components.notepad import Notepad
@@ -30,7 +36,75 @@ from components.story.story_planning_module import (
 )
 
 
+def read_planning_hint() -> str:
+    """Read another detail for planning."""
+    return "A guard may investigate."
+
+
+class BudgetLoopModel(BaseLlm):
+    model: str = "budget-loop"
+    requests: list[LlmRequest] = Field(default_factory=list)
+
+    async def generate_content_async(
+        self, llm_request: LlmRequest, stream: bool = False,
+    ) -> AsyncGenerator[LlmResponse, None]:
+        self.requests.append(llm_request.model_copy(deep=True))
+        yield LlmResponse(
+            content=types.Content(role="model", parts=[types.Part(function_call=types.FunctionCall(
+                name="read_planning_hint", args={}, id=f"hint-{len(self.requests)}",
+            ))]),
+            usage_metadata=types.GenerateContentResponseUsageMetadata(
+                candidates_token_count=min(4, llm_request.config.max_output_tokens or 4),
+            ),
+        )
+
+
 class TestStoryPlanningModuleDependencies(unittest.TestCase):
+    def test_story_budget_ends_an_agent_that_keeps_calling_tools(self) -> None:
+        module = self._make_module(MagicMock(spec=LoreLibrary), {"deep_planning": {"token_budget": 10}})
+        model = BudgetLoopModel()
+        with tempfile.TemporaryDirectory() as directory:
+            session = StorySession(Path(directory) / "session.sqlite", "budget")
+            session.bind([Agent(
+                name="story_deep_planner", model=model, tools=[read_planning_hint],
+                before_model_callback=module._limit_story_budget,
+                after_model_callback=module._count_story_tokens,
+            )])
+            try:
+                assert "budget reached" in session.run("planner", "Plan around the guard.")
+                assert [request.config.max_output_tokens for request in model.requests] == [10, 6, 2]
+            finally:
+                session.close()
+
+    def test_story_budget_counts_generation_across_tools_and_resets_for_new_content(self) -> None:
+        module = self._make_module(MagicMock(spec=LoreLibrary), {"deep_planning": {"token_budget": 10}})
+        context = MagicMock(spec=CallbackContext)
+        request = LlmRequest()
+        assert module._limit_story_budget(context, request) is None
+        assert request.config.max_output_tokens == 10
+        response = LlmResponse(usage_metadata=types.GenerateContentResponseUsageMetadata(
+            prompt_token_count=500, candidates_token_count=3, thoughts_token_count=4,
+        ))
+        module._count_story_tokens(context, response)
+        request = LlmRequest()
+        assert module._limit_story_budget(context, request) is None
+        assert request.config.max_output_tokens == 3
+        module._count_story_tokens(context, response)
+        completion = module._limit_story_budget(context, LlmRequest())
+        assert completion is not None
+        assert completion.content is not None
+        assert "budget reached" in completion.content.parts[0].text
+        module.reset_story_budget()
+        assert module._limit_story_budget(context, LlmRequest()) is None
+
+    def test_story_budget_is_finite_without_provider_usage(self) -> None:
+        module = self._make_module(MagicMock(spec=LoreLibrary), {"deep_planning": {"token_budget": 10}})
+        context = MagicMock(spec=CallbackContext)
+        module._count_story_tokens(context, LlmResponse(partial=True))
+        assert module._limit_story_budget(context, LlmRequest()) is None
+        module._count_story_tokens(context, LlmResponse())
+        assert module._limit_story_budget(context, LlmRequest()) is not None
+
     def test_vertex_gemini_initializes_and_reuses_client_cache(self) -> None:
         model = VertexGemini(
             model="gemini-test",
