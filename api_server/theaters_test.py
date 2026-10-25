@@ -214,12 +214,12 @@ class TestTheaterAPI(BaseTestCase):
         db.db_path = self._original_db_path
         shutil.rmtree(self.test_dir, ignore_errors=True)
 
-    def test_root_and_join_serves_splash_page(self):
+    def test_root_and_join_serves_splash_page(self) -> None:
         response = self.client.get("/")
         self.assertEqual(response.status_code, 200)
         self.assertIn("Join a Live Story Theater", response.text)
         self.assertIn("Narratron", response.text)
-        self.assertIn("Adventure Mode is here", response.text)
+        self.assertIn("Start an adventure", response.text)
 
         join_response = self.client.get("/join")
         self.assertEqual(join_response.status_code, 200)

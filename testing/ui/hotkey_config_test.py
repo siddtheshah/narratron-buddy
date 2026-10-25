@@ -9,8 +9,8 @@ def test_canvas_contains_configurable_text_hotkey_controls() -> None:
     # Check button and display elements exist under microphone controls modal
     assert 'id="menu-item-text-hotkey"' in content
     assert 'id="menu-text-hotkey-display"' in content
-    assert "Text Input Hotkey: Shift + Space" in content
-    assert "Click to rebind Orator text input hotkey" in content
+    assert "Text Hotkey: Shift + Space" in content
+    assert "Click to rebind Orator text hotkey" in content
 
     # Verify menu-item-text-hotkey is in mic-config-modal alongside menu-item-hotkey
     mic_modal_snippet = content.split('id="mic-config-modal"', 1)[1].split('id="mic-config-done-btn"', 1)[0]

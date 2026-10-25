@@ -78,7 +78,7 @@ def test_visitor_help_is_free_and_displays_errors() -> None:
     styles = re.search(r"<style>(.*?)</style>", template, re.DOTALL)
     assert styles is not None
     start = template.index('    <section class="visitor-help"')
-    end = template.index('    <aside class="host-theater-card"', start)
+    end = template.index('    <section class="features-carousel', start)
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(channel="msedge" if sys.platform == "win32" else None)
         page = browser.new_page(viewport={"width": 390, "height": 780})

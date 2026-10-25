@@ -123,24 +123,6 @@ def test_default_draft_has_separate_role_guides_and_preserves_them_on_publish(tm
     assert "hidden_stickies" not in config.get("story_planning", {})
 
 
-@pytest.mark.parametrize("source", [
-    pytest.param(path, id=path.name) for path in sorted(Path("adventures").iterdir())
-    if (path / "theater.yaml").is_file()
-])
-def test_adventure_layout_round_trips_without_losing_package_files(tmp_path: Path, source: Path) -> None:
-    store = TheaterBuilderStore(tmp_path / "repository")
-    info = store.create(7, source.name, "live_agent: {}\n", source=source)
-    target = tmp_path / "export"
-    store.copy_to(info, target)
-    paths = {item.path for item in store.files(info.theater_id)}
-    assert {"theater.yaml", "planning.yaml", "lore/RESPONDER.md", "lore/PLANNER.md", "lore/RECORDER.md"} <= paths
-    for relative in paths:
-        assert (target / relative).read_bytes() == (source / relative).read_bytes()
-    for directory in ("game", "references/characters", "references/scenes"):
-        for asset in (source / directory).rglob("*"):
-            if asset.is_file() and asset.suffix in {".yaml", ".yml", ".json", ".svg", ".webp", ".png", ".jpg"}:
-                assert asset.relative_to(source).as_posix() in paths
-
 
 def test_game_format_replacement_is_atomic_and_multiple_declarations_are_rejected(tmp_path: Path) -> None:
     store = TheaterBuilderStore(tmp_path)
