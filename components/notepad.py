@@ -11,7 +11,7 @@ from threading import RLock
 from typing import Any, Callable, Dict, Literal, Optional
 
 from jinja2 import Template
-from pydantic import AliasChoices, BaseModel, Field, JsonValue, TypeAdapter, create_model
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, create_model
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
@@ -62,6 +62,15 @@ class DeepPlanUpdate(BaseModel):
     sticky_notes: list[StickyNoteItem] = Field(default_factory=list)
 
 
+class PlanningField(BaseModel):
+    """An authored field's instructions and starting value."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    description: str
+    initial: str = ""
+
+
 def _safe_model_name(value: str) -> str:
     cleaned = re.sub(r"[^a-zA-Z0-9_]", "_", value).strip("_")
     if not cleaned or not cleaned[0].isalpha():
@@ -103,20 +112,16 @@ def build_deep_plan_update_model(definitions: Dict[str, Any]) -> type[BaseModel]
     )
 
 
-def parse_planning_schema(schema: Dict[str, Any]) -> OrderedDict[str, Dict[str, Any]]:
-    if not isinstance(schema, dict) or not schema:
+def parse_planning_schema(schema: dict[str, JsonValue] | None) -> OrderedDict[str, Dict[str, JsonValue]]:
+    if not schema:
         return OrderedDict()
-    raw_definitions = (
-        schema.get("stickies")
-        if isinstance(schema.get("stickies"), dict)
-        else schema
-    )
-    parsed: OrderedDict[str, Dict[str, Any]] = OrderedDict()
+    raw_definitions = TypeAdapter(dict[str, dict[str, JsonValue]]).validate_python(schema.get("stickies", schema))
+    parsed: OrderedDict[str, Dict[str, JsonValue]] = OrderedDict()
     for raw_topic, raw_entry in raw_definitions.items():
         topic = str(raw_topic).strip()[:MAX_STICKY_NOTE_TOPIC_CHARS]
         if not topic:
             continue
-        entry = raw_entry if isinstance(raw_entry, dict) else {"description": str(raw_entry)}
+        entry = raw_entry
         owner = entry.get("owner")
         if "owner" in entry and owner not in ("recorder", "planner"):
             raise ValueError(
@@ -124,25 +129,20 @@ def parse_planning_schema(schema: Dict[str, Any]) -> OrderedDict[str, Dict[str, 
             )
         raw_fields = entry.get("fields")
         fields: Optional[Dict[str, str]] = None
-        if isinstance(raw_fields, dict) and raw_fields:
-            fields = {str(key).strip(): str(value).strip() for key, value in raw_fields.items() if str(key).strip()}
-        elif isinstance(raw_fields, (list, tuple, set)):
-            fields = {str(key).strip(): str(key).strip() for key in raw_fields if str(key).strip()}
-        initial = entry.get("initial")
-        if isinstance(initial, dict):
-            initial = {str(key): str(value) for key, value in initial.items()}
-        elif initial is not None:
-            initial = str(initial)
-        elif fields:
-            initial = {key: "" for key in fields}
+        if raw_fields:
+            if "initial" in entry:
+                raise ValueError(f"Sticky note '{topic}' must put initial values inside each field.")
+            field_definitions = TypeAdapter(dict[str, PlanningField]).validate_python(raw_fields)
+            fields = {key.strip(): value.description.strip() for key, value in field_definitions.items() if key.strip()}
+            initial = {key.strip(): value.initial for key, value in field_definitions.items() if key.strip()}
         else:
-            initial = ""
+            initial = TypeAdapter(str).validate_python(entry.get("initial", ""))
         parsed[topic] = {
             "topic": topic,
             "description": str(entry.get("description", "")).strip(),
             "required": True,
             "hidden": TypeAdapter(bool).validate_python(entry.get("hidden", False)),
-            "render": str(entry.get("render", entry.get("display_template", entry.get("template", "")))).strip(),
+            "render": TypeAdapter(str).validate_python(entry.get("render", "")).strip(),
             "fields": fields,
             "initial": initial,
             "owner": owner,

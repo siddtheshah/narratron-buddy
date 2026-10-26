@@ -1,29 +1,30 @@
 # Deep Planner Schema: planning.yaml
-# All fields and sticky values are strictly strings. No arrays, numbers, or complex JSON Schema objects.
+# All field descriptions, initial values, and sticky values are strictly strings. No arrays, numbers, or complex JSON Schema objects.
 
 "Player Character":
   owner: recorder
   description: "Established player identity, objective, and physical condition."
-  render: "Name: {name} | Goal: {goal} | Status: {status}"
   fields:
-    name: "Character name"
-    goal: "Current objective in the Library"
-    status: "Physical and mental status"
-  initial:
-    name: "Curious Wanderer"
-    goal: "Explore the discarded story ideas"
-    status: "Intrigued"
+    name:
+      description: "Character name"
+      initial: "Curious Wanderer"
+    goal:
+      description: "Current objective in the Library"
+      initial: "Explore the discarded story ideas"
+    status:
+      description: "Physical and mental status"
+      initial: "Intrigued"
 
 "Library Exploration":
   owner: recorder
   description: "Current wing and anomalous narrative phenomenon observed."
-  render: "Chamber: {chamber} | Discovery: {discovery}"
   fields:
-    chamber: "Current location in the Library"
-    discovery: "Key abandoned concept or anomaly nearby"
-  initial:
-    chamber: "The Hall of Discarded Drafts"
-    discovery: "Whispering inkwells and drifting blank manuscripts"
+    chamber:
+      description: "Current location in the Library"
+      initial: "The Hall of Discarded Drafts"
+    discovery:
+      description: "Key abandoned concept or anomaly nearby"
+      initial: "Whispering inkwells and drifting blank manuscripts"
 
 "Discarded Notes & Echoes":
   owner: recorder
@@ -34,13 +35,14 @@
   owner: planner
   hidden: true
   description: "Upcoming narrative dilemma, forgotten concept, or character echo prepared by the story planner."
-  render: "Encounter: {encounter} | Story Goal: {story_goal} | Dramatic Tension: {drama}"
   fields:
-    encounter: "Upcoming situation, discarded character, or metaphysical anomaly"
-    story_goal: "Underlying narrative objective or creative choice for the player"
-    drama: "Dramatic stakes, emotional resonance, or lingering question"
-  initial:
-    encounter: "Echo of a Scrapped Protagonist in the margin shadows"
-    story_goal: "Uncover why this character was abandoned before their final chapter"
-    drama: "The forgotten protagonist fears being read again, fearing it will erase their hard-won peace"
+    encounter:
+      description: "Upcoming situation, discarded character, or metaphysical anomaly"
+      initial: "Echo of a Scrapped Protagonist in the margin shadows"
+    story_goal:
+      description: "Underlying narrative objective or creative choice for the player"
+      initial: "Uncover why this character was abandoned before their final chapter"
+    drama:
+      description: "Dramatic stakes, emotional resonance, or lingering question"
+      initial: "The forgotten protagonist fears being read again, fearing it will erase their hard-won peace"
 

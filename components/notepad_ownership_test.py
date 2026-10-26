@@ -22,8 +22,9 @@ def pad(tmp_path: Path) -> Notepad:
         "Location": {"owner": "recorder", "initial": "Gate"},
         "Stats": {
             "owner": "recorder",
-            "fields": {"hp": "Hit points"},
-            "initial": {"hp": "10"},
+            "fields": {
+                "hp": {"description": "Hit points", "initial": "10"},
+            },
         },
         "Ambush": {"owner": "planner", "initial": "Wait for darkness"},
     }
@@ -157,7 +158,9 @@ def test_unchanged_batch_preserves_revision(pad: Notepad) -> None:
 def test_recorder_ignores_planning_freshness_and_preserves_latest_guidance(pad: Notepad) -> None:
     pad.configure_schema({
         "Location": {"owner": "recorder", "initial": "Gate"},
-        "Ambush": {"owner": "planner", "fields": {"when": "Timing"}, "initial": {"when": "Night"}},
+        "Ambush": {"owner": "planner", "fields": {
+                                           "when": {"description": "Timing", "initial": "Night"},
+                                       }, },
     })
     source = pad.snapshot()
     pad.publish_role_updates("planner", {"Ambush": '{"when":"Dawn"}', "Clue": "A possible ambush"}, source=source)

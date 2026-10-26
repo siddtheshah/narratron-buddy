@@ -194,28 +194,30 @@ Sticky notes and persistent story planning contracts are configured in `planning
 "Player Character":
   owner: recorder
   description: "Established player identity, objective, and condition."
-  render: "Name: {name} | Objective: {objective} | Inventory: {inventory} | Condition: {condition}"
   fields:
-    name: "Character name"
-    objective: "Current primary goal"
-    inventory: "Key items carried"
-    condition: "Physical and mental status"
-  initial:
-    name: "Unnamed Explorer"
-    objective: "Reach the Spire's apex"
-    inventory: "Crystal lodestone"
-    condition: "Healthy"
+    name:
+      description: "Character name"
+      initial: "Unnamed Explorer"
+    objective:
+      description: "Current primary goal"
+      initial: "Reach the Spire's apex"
+    inventory:
+      description: "Key items carried"
+      initial: "Crystal lodestone"
+    condition:
+      description: "Physical and mental status"
+      initial: "Healthy"
 
 "Spire Security Level":
   owner: recorder
   description: "Alert tier and automaton activity."
-  render: "Alert: {alert} | Automatons: {automatons}"
   fields:
-    alert: "Current alert level"
-    automatons: "Automaton activity"
-  initial:
-    alert: "Green (Unnoticed)"
-    automatons: "Dormant"
+    alert:
+      description: "Current alert level"
+      initial: "Green (Unnoticed)"
+    automatons:
+      description: "Automaton activity"
+      initial: "Dormant"
 
 "Known Clues":
   owner: recorder
@@ -223,6 +225,15 @@ Sticky notes and persistent story planning contracts are configured in `planning
   description: "Discovered clues and hints."
   initial: "The Spire activates only when three harmonic keys are aligned."
 ```
+
+Each structured entry under `fields` contains a string `description` and a string
+`initial` value (defaulting to `""` when omitted). Structured topics have no
+top-level `initial`; topics without fields use a top-level string `initial`.
+`render` is optional: by default, nonempty values appear as
+`field_name: value | next_field: value` in field declaration order. To customize
+labels or layout, add a template such as `render: "Name: {name} | Objective: {objective}"`
+using that topic's field names.
+
 
 For full details on every field, default values, and advanced features (such as `character_voicing`, `require_voice_input`, interactive canvas surfaces, and video animation techniques), see the **[canonical theater.yaml reference](/docs/theater-yaml)**.
 

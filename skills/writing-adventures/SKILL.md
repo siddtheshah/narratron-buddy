@@ -167,33 +167,35 @@ handled by the deep story planner.
 
 ```yaml
 # Deep Planner Schema: planning.yaml
-# All fields and sticky values are strictly strings. No arrays, numbers, or complex JSON Schema objects.
+# All field descriptions, initial values, and sticky values are strictly strings. No arrays, numbers, or complex JSON Schema objects.
 
 "Player Character":
   owner: recorder
   description: "Established player identity, objective, and physical condition."
-  render: "Name: {name} | Objective: {objective} | Inventory: {inventory} | Condition: {condition}"
   fields:
-    name: "Character name"
-    objective: "Current primary goal"
-    inventory: "Key items carried"
-    condition: "Physical and mental status"
-  initial:
-    name: "Unnamed Explorer"
-    objective: "Reach the Spire's apex"
-    inventory: "Crystal lodestone"
-    condition: "Healthy"
+    name:
+      description: "Character name"
+      initial: "Unnamed Explorer"
+    objective:
+      description: "Current primary goal"
+      initial: "Reach the Spire's apex"
+    inventory:
+      description: "Key items carried"
+      initial: "Crystal lodestone"
+    condition:
+      description: "Physical and mental status"
+      initial: "Healthy"
 
 "Spire Security Level":
   owner: recorder
   description: "Alert level and defense automaton activity."
-  render: "Alert: {alert} | Automatons: {automatons}"
   fields:
-    alert: "Current alert level"
-    automatons: "Automaton patrol status"
-  initial:
-    alert: "Green (Unnoticed)"
-    automatons: "Dormant"
+    alert:
+      description: "Current alert level"
+      initial: "Green (Unnoticed)"
+    automatons:
+      description: "Automaton patrol status"
+      initial: "Dormant"
 
 "Known Clues":
   owner: recorder
@@ -202,10 +204,19 @@ handled by the deep story planner.
   initial: "The Spire activates only when three harmonic keys are aligned."
 ```
 
+Each structured entry under `fields` contains a string `description` and a string
+`initial` value (defaulting to `""` when omitted). Structured topics have no
+top-level `initial`; topics without fields use a top-level string `initial`.
+`render` is optional: by default, nonempty values appear as
+`field_name: value | next_field: value` in field declaration order. To customize
+labels or layout, add a template such as `render: "Name: {name} | Objective: {objective}"`
+using that topic's field names.
+
+
 ### Critical Rules for `theater.yaml` & `planning.yaml`
 1. **Use `live_agent` for live-agent settings**: Put persona flags and `special_instructions` under `live_agent`; the former `agent` and `agent_internal` section names are no longer used.
 2. **`adventure_mode: true` is mandatory**: Without this flag, Narratron operates in passive storytelling mode rather than interactive adventure mode.
-3. **Move stickies to `planning.yaml`**: Define initial notes, field schemas, and rendering strings in `planning.yaml`. All entries are assumed required and pinned in order.
+3. **Move stickies to `planning.yaml`**: Define initial notes, field schemas, and optional rendering strings in `planning.yaml`. All entries are assumed required and pinned in order.
 4. **Sticky visibility**: Set `hidden: true` on each hidden topic in `planning.yaml`. The `notepad.hidden_stickies` list applies only to normal narration.
 5. **`starting_image` must exist**: Ensure the file referenced by `starting_image` is present in your adventure folder (usually under `references/`).
 6. **`speech` settings**: Configure `voice_language_code` and `accent_augmentation` to shape NPC voice generation; backend speech provider and model are application-level operational settings defined in `app.yaml`, which override corresponding fields.

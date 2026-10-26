@@ -632,7 +632,8 @@ story_planning:
   require_user_input: true</pre>
             <p>Keep sticky contracts in a separate <code>planning.yaml</code>. Every topic has one owner:
               <code>recorder</code> for established facts or <code>planner</code> for contingent future developments.
-              Fields and initial values are strings; quote numeric and boolean values.
+              Each <code>fields</code> entry contains string <code>description</code> and <code>initial</code> values; quote numeric and boolean values.
+              Omit <code>render</code> to display <code>field: value | field: value</code> in field order, or provide a custom template.
             </p>
             <pre>"Current Location":
   owner: recorder
@@ -643,15 +644,16 @@ story_planning:
   owner: planner
   hidden: true
   description: "One contingent obstacle or opportunity."
-  render: "Encounter: {encounter} | Goal: {story_goal} | Tension: {drama}"
   fields:
-    encounter: "Next possible encounter"
-    story_goal: "Meaningful choice for the player"
-    drama: "Stakes grounded in established facts"
-  initial:
-    encounter: "A distress signal near the comet"
-    story_goal: "Choose whether to investigate"
-    drama: "The ship is low on fuel"</pre>
+    encounter:
+      description: "Next possible encounter"
+      initial: "A distress signal near the comet"
+    story_goal:
+      description: "Meaningful choice for the player"
+      initial: "Choose whether to investigate"
+    drama:
+      description: "Stakes grounded in established facts"
+      initial: "The ship is low on fuel"</pre>
             <p>Author three independent pinned guides: <code>lore/RESPONDER.md</code> for narration and action
               resolution, <code>lore/RECORDER.md</code> for factual notes and validated game actions, and
               <code>lore/PLANNER.md</code> for future plans. Each role can read only its own guide. Put shared

@@ -11,7 +11,7 @@ from pydantic import JsonValue
 from components.canvas.story_state import StoryState
 from components.canvas_state import CanvasStateManager
 from components.theater_manager import Theater
-from components.notepad import Notepad
+from components.notepad import Notepad, parse_planning_schema
 
 
 class TestNotepad(unittest.TestCase):
@@ -86,9 +86,11 @@ class TestNotepad(unittest.TestCase):
         pad = self._make_notepad(
             {"enforce_structured": True},
             {"Stats": {
-                "fields": {"hp": "Hit points", "secret": "Hidden score"},
+                "fields": {
+                    "hp": {"description": "Hit points", "initial": "10"},
+                    "secret": {"description": "Hidden score", "initial": "0"},
+                },
                 "render": "HP: {hp}",
-                "initial": {"hp": "10", "secret": "0"},
             }},
         )
         pad.update_sticky_note("Stats", '{"hp":"10","secret":"1"}')
@@ -98,6 +100,25 @@ class TestNotepad(unittest.TestCase):
         self.assertEqual(pad.revision, 1)
         self.assertIn("Error", pad.update_sticky_note("Stats", '{"hp":"9"}'))
         self.assertEqual(pad.revision, 1)
+
+    def test_nested_fields_initialize_and_render_in_declaration_order(self) -> None:
+        pad = self._make_notepad(
+            {"enforce_structured": True},
+            {"Stats": {"fields": {
+                "hp": {"description": "Hit points", "initial": "10"},
+                "mp": {"description": "Magic points", "initial": "5"},
+                "condition": {"description": "Current condition"},
+            }}},
+        )
+        self.assertEqual(pad.get_present_sticky_notes()[0]["info"], "hp: 10 | mp: 5")
+        self.assertEqual(
+            pad.get_present_structured_sticky_notes(),
+            {"Stats": {"hp": "10", "mp": "5", "condition": ""}},
+        )
+        schema = pad.deep_plan_update_model.model_json_schema()
+        self.assertEqual(schema["$defs"]["Sticky_Stats"]["properties"]["hp"]["description"], "Hit points")
+        pad.update_sticky_note("Stats", '{"mp":"4","condition":"","hp":"9"}')
+        self.assertEqual(pad.get_present_sticky_notes()[0]["info"], "hp: 9 | mp: 4")
 
     def test_revision_round_trip_and_legacy_migration(self) -> None:
         pad = self._make_notepad({})
@@ -209,8 +230,10 @@ class TestNotepad(unittest.TestCase):
         schema = {
                 "Stats": {
                     "required": True,
-                    "fields": {"hp": "Hit points", "mp": "Magic points"},
-                    "initial": {"hp": "10", "mp": "5"},
+                    "fields": {
+                        "hp": {"description": "Hit points", "initial": "10"},
+                        "mp": {"description": "Magic points", "initial": "5"},
+                    },
                     "render": "HP: {hp} | MP: {mp}",
                 },
                 "Secret": {"required": False, "initial": "The gate is trapped"},
@@ -238,8 +261,10 @@ class TestNotepad(unittest.TestCase):
     def test_enforced_structured_updates_expose_schema_and_preserve_other_notes(self) -> None:
         schema = {
             "Stats": {
-                "fields": {"hp": "Hit points", "mp": "Magic points"},
-                "initial": {"hp": "10", "mp": "5"},
+                "fields": {
+                    "hp": {"description": "Hit points", "initial": "10"},
+                    "mp": {"description": "Magic points", "initial": "5"},
+                },
                 "render": "HP: {hp} | MP: {mp}",
             },
             "Location": {"initial": "Observatory"},
@@ -338,13 +363,16 @@ class TestNotepad(unittest.TestCase):
     def test_schema_fields_are_assumed_required_and_pinned_in_order(self) -> None:
         schema = {
             "Player Character": {
-                "fields": {"name": "Name", "charm": "Charm"},
-                "initial": {"name": "Unnamed", "charm": "Novice"},
+                "fields": {
+                    "name": {"description": "Name", "initial": "Unnamed"},
+                    "charm": {"description": "Charm", "initial": "Novice"},
+                },
                 "render": "Name: {name} | Charm: {charm}",
             },
             "Affection Tracker": {
-                "fields": {"mood": "Mood"},
-                "initial": {"mood": "Curious"},
+                "fields": {
+                    "mood": {"description": "Mood", "initial": "Curious"},
+                },
                 "render": "Mood: {mood}",
             },
             "Activity Log": {
@@ -529,6 +557,18 @@ def test_adventure_reads_contract_visibility_and_retains_all_topics(tmp_path: Pa
     with pytest.raises(ValueError, match="requires a nonempty planning.yaml"):
         pad.configure_schema({})
     assert pad.export_state() == before
+
+
+@pytest.mark.parametrize("entry", [
+    {"fields": {"hp": "Hit points"}},
+    {"fields": ["hp"]},
+    {"fields": {"hp": {"description": "Hit points", "initial": 10}}},
+    {"fields": {"hp": {"description": False, "initial": "10"}}},
+    {"fields": {"hp": {"description": "Hit points"}}, "initial": {"hp": "10"}},
+])
+def test_planning_schema_rejects_old_fields_and_non_string_values(entry: dict[str, JsonValue]) -> None:
+    with pytest.raises(ValueError):
+        parse_planning_schema({"Stats": entry})
 
 
 if __name__ == "__main__":

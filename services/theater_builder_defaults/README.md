@@ -6,7 +6,8 @@ choose whether `auto_begin` should open the scene automatically.
 
 `planning.yaml` defines persistent sticky topics. Every topic has exactly one
 owner (`recorder` for established facts or `planner` for contingent developments).
-Use string fields and initial values. Set `hidden: true` on
+Each `fields` entry contains string `description` and `initial` values.
+Omit `render` to display `field: value | field: value`, or provide a custom template. Set `hidden: true` on
 `Upcoming Encounter Suggestion` in `planning.yaml`. Every topic is required and
 pinned in contract order. With `story_planning.enforce_structured: true` (the
 default), Adventure Mode requires a nonempty `planning.yaml`.

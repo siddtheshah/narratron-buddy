@@ -714,10 +714,9 @@ class TestStoryPlanningModuleState(unittest.TestCase):
                 "owner": "recorder",
                 "required": True,
                 "fields": {
-                    "hp": "Hit points",
-                    "level": "Player level",
+                    "hp": {"description": "Hit points", "initial": "100"},
+                    "level": {"description": "Player level", "initial": "1"},
                 },
-                "initial": {"hp": "100", "level": "1"},
                 "render": "HP: {hp} | LVL: {level}",
             },
             "Inventory": {
@@ -752,10 +751,9 @@ class TestStoryPlanningModuleState(unittest.TestCase):
                     "owner": "recorder",
                 "required": True,
                 "fields": {
-                    "time": "Current time",
-                    "deadline": "Summit deadline",
+                    "time": {"description": "Current time", "initial": "9:00 AM"},
+                    "deadline": {"description": "Summit deadline", "initial": "3:00 PM"},
                 },
-                "initial": {"time": "9:00 AM", "deadline": "3:00 PM"},
                 "render": "Time: {time} | Deadline: {deadline}",
             },
             "Contraband": {
