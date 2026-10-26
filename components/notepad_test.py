@@ -110,15 +110,38 @@ class TestNotepad(unittest.TestCase):
                 "condition": {"description": "Current condition"},
             }}},
         )
-        self.assertEqual(pad.get_present_sticky_notes()[0]["info"], "hp: 10 | mp: 5")
+        self.assertEqual(pad.get_present_sticky_notes()[0]["info"], "hp: 10 | mp: 5 | condition: undefined")
         self.assertEqual(
             pad.get_present_structured_sticky_notes(),
-            {"Stats": {"hp": "10", "mp": "5", "condition": ""}},
+            {"Stats": {"hp": "10", "mp": "5", "condition": "undefined"}},
         )
         schema = pad.deep_plan_update_model.model_json_schema()
         self.assertEqual(schema["$defs"]["Sticky_Stats"]["properties"]["hp"]["description"], "Hit points")
-        pad.update_sticky_note("Stats", '{"mp":"4","condition":"","hp":"9"}')
-        self.assertEqual(pad.get_present_sticky_notes()[0]["info"], "hp: 9 | mp: 4")
+        pad.update_sticky_note("Stats", '{"mp":"4","condition":"Healthy","hp":"9"}')
+        self.assertEqual(pad.get_present_sticky_notes()[0]["info"], "hp: 9 | mp: 4 | condition: Healthy")
+
+    def test_initial_defaults_preserve_explicit_values_for_plain_and_structured_notes(self) -> None:
+        pad = self._make_notepad(
+            {"enforce_structured": True},
+            {
+                "Unknown": {"owner": "recorder", "description": "Not established yet"},
+                "Empty": {"owner": "recorder", "initial": ""},
+                "Known": {"owner": "recorder", "initial": "Established"},
+                "Stats": {"owner": "recorder", "fields": {
+                    "unknown": {"description": "Not established yet"},
+                    "empty": {"description": "Intentionally empty", "initial": ""},
+                    "known": {"description": "Established fact", "initial": "Established"},
+                }},
+            },
+        )
+        self.assertEqual(pad.get_present_structured_sticky_notes(), {
+            "Unknown": "undefined",
+            "Empty": "",
+            "Known": "Established",
+            "Stats": {"unknown": "undefined", "empty": "", "known": "Established"},
+        })
+        self.assertEqual(pad.snapshot().notes["Unknown"], "undefined")
+        self.assertEqual(pad.snapshot().notes["Stats"], "unknown: undefined | known: Established")
 
     def test_revision_round_trip_and_legacy_migration(self) -> None:
         pad = self._make_notepad({})

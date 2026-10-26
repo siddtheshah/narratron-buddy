@@ -68,7 +68,7 @@ class PlanningField(BaseModel):
     model_config = ConfigDict(strict=True, extra="forbid")
 
     description: str
-    initial: str = ""
+    initial: str = "undefined"
 
 
 def _safe_model_name(value: str) -> str:
@@ -136,7 +136,7 @@ def parse_planning_schema(schema: dict[str, JsonValue] | None) -> OrderedDict[st
             fields = {key.strip(): value.description.strip() for key, value in field_definitions.items() if key.strip()}
             initial = {key.strip(): value.initial for key, value in field_definitions.items() if key.strip()}
         else:
-            initial = TypeAdapter(str).validate_python(entry.get("initial", ""))
+            initial = TypeAdapter(str).validate_python(entry.get("initial", "undefined"))
         parsed[topic] = {
             "topic": topic,
             "description": str(entry.get("description", "")).strip(),

@@ -6,7 +6,9 @@ choose whether `auto_begin` should open the scene automatically.
 
 `planning.yaml` defines persistent sticky topics. Every topic has exactly one
 owner (`recorder` for established facts or `planner` for contingent developments).
-Each `fields` entry contains string `description` and `initial` values.
+Each `fields` entry contains a string `description` and an optional string `initial`.
+Omitted `initial` values default to `"undefined"`, including on topics without fields.
+Explicit empty strings are preserved.
 Omit `render` to display `field: value | field: value`, or provide a custom template. Set `hidden: true` on
 `Upcoming Encounter Suggestion` in `planning.yaml`. Every topic is required and
 pinned in contract order. With `story_planning.enforce_structured: true` (the

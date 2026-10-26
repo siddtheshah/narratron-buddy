@@ -205,8 +205,9 @@ handled by the deep story planner.
 ```
 
 Each structured entry under `fields` contains a string `description` and a string
-`initial` value (defaulting to `""` when omitted). Structured topics have no
-top-level `initial`; topics without fields use a top-level string `initial`.
+`initial` value (defaulting to `"undefined"` when omitted). Structured topics have no
+top-level `initial`; topics without fields use an optional top-level string `initial`,
+also defaulting to `"undefined"` when omitted. Explicit empty strings are preserved.
 `render` is optional: by default, nonempty values appear as
 `field_name: value | next_field: value` in field declaration order. To customize
 labels or layout, add a template such as `render: "Name: {name} | Objective: {objective}"`

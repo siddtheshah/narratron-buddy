@@ -1,4 +1,5 @@
 # Sticky contracts: every topic has exactly one writer.
+# Omitted initial values default to "undefined".
 # Field descriptions and initial values are strings; quote numbers and booleans.
 # render is optional; defaults to field: value | field: value.
 "Player Character":
@@ -7,13 +8,10 @@
   fields:
     name:
       description: "Player-provided character name"
-      initial: "Not established"
     goal:
       description: "Established current objective"
-      initial: "Not established"
     condition:
       description: "Established physical and mental condition"
-      initial: "Not established"
 
 "Current Scene":
   owner: recorder
@@ -21,10 +19,8 @@
   fields:
     location:
       description: "Current canonical location name"
-      initial: "Not established"
     characters:
       description: "Canonical names of characters present"
-      initial: "Not established"
 
 "Upcoming Encounter Suggestion":
   owner: planner
@@ -39,4 +35,3 @@
       initial: "Offer a meaningful player choice"
     drama:
       description: "Stakes grounded in established facts"
-      initial: "To be established through play"
