@@ -35,7 +35,7 @@ model-visible event projection for each role.
 | --- | --- | --- |
 | Recorder / game controller | Reconcile committed events, maintain factual state, and choose and execute permitted game responses | Recorder-owned stickies and game-state mutations through the validated game runtime |
 | Responder | Resolve communicated user actions, narrate the immediate scene, speak for NPCs, and roll permitted dice; narrate recorder-established outcomes on game-entry turns | Structured response and proposed factual changes; no direct sticky or game-state writes |
-| Planner | Develop contingent future events, faction intentions, setups, and pacing from committed facts | Planner-owned stickies; no game-state writes or peer triggers |
+| Planner | Develop contingent future events, faction intentions, setups, and pacing from committed facts; use permitted hidden procedural dice to randomize planning choices | Planner-owned stickies; no game-state writes or peer triggers |
 
 The recorder has two ingress-dependent modes: recording a completed response on
 a communicated-action turn, or controlling and recording game developments on a

@@ -7,6 +7,7 @@ from collections import deque
 import json
 import logging
 import os
+import random
 import threading
 from threading import Lock
 import time
@@ -96,7 +97,12 @@ Follow your pinned PLANNER.md for adventure-specific priorities. The responder (
 
 # Character, Lore, and Image Tools
 Use get_player_character_info and lookup_character for read-only reference context. The recorder owns canonical character and scene changes.
-Use `deep_search_lore` and `deep_read_lore` to close concrete lore gaps, with up to eight searches and eight reads per run. Use `find_image_names` when a sticky needs the name of an available reference image. Store the returned `alias` (preferred) or `name`, never a guessed filename or absolute path. Prefer established lore over invention. Do not roll dice; you are planning, not resolving an uncertain action.
+Use `deep_search_lore` and `deep_read_lore` to close concrete lore gaps, with up to eight searches and eight reads per run. Use `find_image_names` when a sticky needs the name of an available reference image. Store the returned `alias` (preferred) or `name`, never a guessed filename or absolute path. Prefer established lore over invention.
+{% if enable_dice -%}
+Use `roll_dice` when randomness helps choose among plausible future developments, encounter tables, NPC intentions, or other procedural planning choices. Rolls are hidden from the player canvas. Use the returned results; never fabricate rolls or reroll to force a preferred plan. Preserve committed facts and lore constraints. Do not resolve pending player actions or turn contingent plans into established outcomes; immediate action resolution belongs to the responder.
+{% else -%}
+Dice rolling is disabled. Plan from established lore and causal consequences without rolling dice or inventing roll results.
+{% endif -%}
 
 # Completion
 After tool calls, respond with a brief confirmation. Do not include a sticky-notes JSON payload in the final response.
@@ -436,6 +442,53 @@ class StoryPlanningModule:
             self._deep_read_lore_calls_this_run = 0
             self._deep_search_lore_calls_this_run = 0
 
+    def roll_dice(
+        self,
+        sides: int = 20,
+        count: int = 1,
+        modifier: int = 0,
+        reason: str = "",
+    ) -> dict[str, JsonValue]:
+        """Roll hidden procedural dice to choose among plausible story plans.
+
+        Args:
+            sides: Number of sides per die (2-100, default 20).
+            count: Number of dice to roll (1-10, default 1).
+            modifier: Integer added to the total (-100 to 100, default 0).
+            reason: Short description of the planning choice being randomized.
+
+        Returns individual rolls, total, and a low/middle/high tier based on
+        thirds of the maximum unmodified total. Never changes canvas or game state.
+        """
+        if self.config.get("enable_dice", True) is False:
+            return {"error": "Dice rolling is disabled."}
+        safe_sides = max(2, min(100, int(sides)))
+        safe_count = max(1, min(10, int(count)))
+        safe_modifier = max(-100, min(100, int(modifier)))
+        rolls: list[JsonValue] = []
+        total = safe_modifier
+        for _ in range(safe_count):
+            roll = random.randint(1, safe_sides)
+            rolls.append(roll)
+            total += roll
+        maximum_total = safe_count * safe_sides
+        tier = (
+            "low" if total * 3 <= maximum_total
+            else "middle" if total * 3 <= maximum_total * 2
+            else "high"
+        )
+        return {
+            "notation": f"{safe_count}d{safe_sides}" + (f"{safe_modifier:+d}" if safe_modifier else ""),
+            "tier": tier,
+            "sides": safe_sides,
+            "count": safe_count,
+            "rolls": rolls,
+            "modifier": safe_modifier,
+            "total": total,
+            "reason": reason.strip()[:100],
+            "procedural": True,
+        }
+
     def lookup_character(self, query: str = "") -> CharacterLookupResult:
         """List all session characters or search by name or trait."""
         return self.reference_manager.lookup_character(query).for_model_context()
@@ -538,6 +591,7 @@ class StoryPlanningModule:
             lore_context=lore_context or "",
             has_game=self.game_state is not None and self.game_state.program is not None,
             allow_freeform=not self.notepad.enforce_structured,
+            enable_dice=self.config.get("enable_dice", True) is not False,
         ).strip()
 
     def take_game_action(self, name: str, arguments_json: str, revision: int) -> str:
@@ -576,6 +630,7 @@ class StoryPlanningModule:
                 self.lookup_character,
                 self.get_player_character_info,
                 self.find_image_names,
+                *([self.roll_dice] if self.config.get("enable_dice", True) is not False else []),
                 self.staged_notes.check_schema,
                 self.staged_notes.update_sticky_note,
             ],

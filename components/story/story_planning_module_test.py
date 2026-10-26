@@ -9,6 +9,7 @@ from unittest.mock import MagicMock, patch
 
 from components.canvas import StoryState
 from components.canvas_state import CanvasStateManager
+from components.canvas.tool_response_state import ToolResponseState
 from components.theater_manager import Theater
 from google.adk.plugins import ReflectAndRetryToolPlugin
 from google.adk.sessions import InMemorySessionService
@@ -60,6 +61,64 @@ class BudgetLoopModel(BaseLlm):
 
 
 class TestStoryPlanningModuleDependencies(unittest.TestCase):
+    def test_dice_configuration_controls_planner_tools_and_instructions(self) -> None:
+        for settings, enabled in [({}, True), ({"enable_dice": True}, True), ({"enable_dice": False}, False)]:
+            with self.subTest(settings=settings):
+                module = self._make_module(MagicMock(spec=LoreLibrary), settings)
+                with patch("components.story.story_planning_module.Agent") as agent:
+                    module._create_deep_planner_agent()
+                self.assertEqual(module.roll_dice in agent.call_args.kwargs["tools"], enabled)
+                instruction = module._build_deep_planner_instruction()
+                self.assertEqual("`roll_dice`" in instruction, enabled)
+                self.assertNotIn("Do not roll dice;", instruction)
+                if not enabled:
+                    with patch("components.story.story_planning_module.random.randint") as randint:
+                        self.assertEqual(module.roll_dice(), {"error": "Dice rolling is disabled."})
+                    randint.assert_not_called()
+
+    def test_planning_roll_returns_random_results_without_canvas_mutations(self) -> None:
+        module = self._make_module(MagicMock(spec=LoreLibrary))
+        notify_changed = MagicMock()
+        module.canvas_manager.tool_response = ToolResponseState(notify_changed)
+        before = module.canvas_manager.story.serialize()
+        module.canvas_manager.reset_mock()
+        with patch("components.story.story_planning_module.random.randint", side_effect=[2, 5]) as randint:
+            result = module.roll_dice(sides=6, count=2, modifier=-1, reason=" Choose an encounter ")
+        self.assertEqual(randint.call_count, 2)
+        randint.assert_called_with(1, 6)
+        self.assertEqual(result, {
+            "notation": "2d6-1", "tier": "middle", "sides": 6, "count": 2,
+            "rolls": [2, 5], "modifier": -1, "total": 6,
+            "reason": "Choose an encounter", "procedural": True,
+        })
+        self.assertEqual(module.canvas_manager.mock_calls, [])
+        notify_changed.assert_not_called()
+        activity = module.canvas_manager.tool_response.activity_payload()
+        self.assertFalse(activity["dice_rolling"])
+        self.assertIsNone(activity["dice_result"])
+        self.assertIsNone(module.canvas_manager.story.last_die_roll)
+        self.assertEqual(module.canvas_manager.story.serialize(), before)
+
+    def test_planning_dice_bounds_and_tiers(self) -> None:
+        module = self._make_module(MagicMock(spec=LoreLibrary))
+        for sides, count, modifier, natural, expected_sides, expected_count, expected_modifier, tier in [
+            (1, 0, -101, 1, 2, 1, -100, "low"),
+            (101, 11, 101, 100, 100, 10, 100, "high"),
+            (20, 1, 0, 6, 20, 1, 0, "low"),
+            (20, 1, 0, 7, 20, 1, 0, "middle"),
+            (20, 1, 0, 13, 20, 1, 0, "middle"),
+            (20, 1, 0, 14, 20, 1, 0, "high"),
+        ]:
+            with self.subTest(sides=sides, count=count, modifier=modifier, natural=natural):
+                with patch("components.story.story_planning_module.random.randint", return_value=natural) as randint:
+                    result = module.roll_dice(sides, count, modifier, "x" * 120)
+                self.assertEqual(randint.call_count, expected_count)
+                randint.assert_called_with(1, expected_sides)
+                self.assertEqual(result["modifier"], expected_modifier)
+                self.assertEqual(result["total"], expected_count * natural + expected_modifier)
+                self.assertEqual(result["tier"], tier)
+                self.assertEqual(result["reason"], "x" * 100)
+
     def test_story_budget_ends_an_agent_that_keeps_calling_tools(self) -> None:
         module = self._make_module(MagicMock(spec=LoreLibrary), {"deep_planning": {"token_budget_per_event": 10}})
         model = BudgetLoopModel()

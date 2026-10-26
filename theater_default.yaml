@@ -79,7 +79,7 @@ story_planning:
     # Declared topics retain their ownership and field contracts.
     enforce_structured: true
     adventure_mode: false
-    # Allow player-action and hidden procedural dice rolls. Defaults to true.
+    # Allow responder dice and hidden procedural planning rolls. Defaults to true.
     enable_dice: true
     # Queue an opening scene through the story cycle when the user connects
     # to an Adventure Mode session.
