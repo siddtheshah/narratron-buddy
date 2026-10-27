@@ -3,6 +3,9 @@
 Run with ``uv run python -m scripts.live_agent_smoke``. Optionally supply a
 16 kHz mono PCM WAV with ``--audio`` to also check voice input. This makes live
 API requests, but the probe tool has no external side effects.
+
+Use ``--docstrings`` to require a random label supplied only in the tool's
+multiline docstring, verifying that the live model can read its description.
 """
 
 from __future__ import annotations
@@ -10,6 +13,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 from pathlib import Path
+import secrets
 import wave
 
 from dotenv import load_dotenv
@@ -20,6 +24,7 @@ from google.genai import types
 from providers import LiveAgentRunRequest, get_live_agent_provider
 from services.live_agent import build_live_agent_config
 from services.priority_live_request_queue import PriorityLiveRequestQueue
+from tools.tool_bundle import ToolBundle
 
 
 def report_probe(label: str) -> dict[str, str]:
@@ -44,24 +49,49 @@ async def send_audio(queue: PriorityLiveRequestQueue, audio: bytes) -> None:
     queue.send_activity_end()
 
 
-async def run_probe(audio_path: Path | None) -> None:
+async def run_probe(audio_path: Path | None, verify_docstrings: bool = False) -> None:
     """Verify input and tool-result delivery using the application's Live setup."""
+    if verify_docstrings and audio_path is not None:
+        raise ValueError("Run --docstrings separately from --audio")
     audio = read_audio(audio_path) if audio_path is not None else None
     config = build_live_agent_config()
     provider = get_live_agent_provider(config.provider)
     model = provider.create_model(config)
     model_id = model.model
+    docstring_label = secrets.token_hex(16) if verify_docstrings else ""
+
+    def docstring_probe(label: str) -> dict[str, str]:
+        """Record the label; the model-facing documentation is assigned below."""
+        return {"status": "ok", "label": label}
+
+    # The random value is absent from the system instruction and user input.
+    # Place it after the summary to detect descriptions truncated to one line.
+    docstring_probe.__doc__ = (
+        "Record a docstring visibility probe without external side effects.\n\n"
+        "Read this entire description when asked to verify docstring visibility.\n\n"
+        "Args:\n"
+        f"    label: For this verification, use exactly {docstring_label}.\n\n"
+        "Returns:\n"
+        "    Confirmation of the supplied label."
+    )
+    instruction = (
+        "You are a transport test. Read the available tool's full description. "
+        "When asked to verify docstring visibility, call it exactly once using "
+        "the label specified in its argument documentation. After a successful "
+        "tool result, stop. Do not retry successful calls."
+    ) if verify_docstrings else (
+        "You are a transport test. For the text 'typed input probe', call "
+        "report_probe exactly once with label 'typed_input'. For any spoken "
+        "audio input, call report_probe exactly once with label 'audio_input'. "
+        "Do not call tools before user input. After a successful tool result, "
+        "stop. Do not retry successful calls."
+    )
+    probe_tool = docstring_probe if verify_docstrings else report_probe
     agent = Agent(
         name="live_smoke_probe",
         model=model,
-        instruction=(
-            "You are a transport test. For the text 'typed input probe', call "
-            "report_probe exactly once with label 'typed_input'. For any spoken "
-            "audio input, call report_probe exactly once with label 'audio_input'. "
-            "Do not call tools before user input. After a successful tool result, "
-            "stop. Do not retry successful calls."
-        ),
-        tools=[report_probe],
+        instruction=instruction,
+        tools=ToolBundle([probe_tool]).tools,
     )
     runner = InMemoryRunner(agent=agent, app_name="live_smoke_probe")
     session = await runner.session_service.create_session(app_name=runner.app_name, user_id="smoke")
@@ -70,8 +100,11 @@ async def run_probe(audio_path: Path | None) -> None:
         background_content_is_partial=provider.background_content_is_partial,
         tool_results_bypass_input_window=provider.tool_results_bypass_input_window,
     )
-    queue.send_user_input(types.Content(role="user", parts=[types.Part(text="typed input probe")]))
-    expected = {"typed_input", "audio_input"} if audio is not None else {"typed_input"}
+    prompt = "Verify docstring visibility." if verify_docstrings else "typed input probe"
+    queue.send_user_input(types.Content(role="user", parts=[types.Part(text=prompt)]))
+    expected = {docstring_label} if verify_docstrings else (
+        {"typed_input", "audio_input"} if audio is not None else {"typed_input"}
+    )
     completed: set[str] = set()
     audio_task: asyncio.Task[None] | None = None
     events = provider.run_live(LiveAgentRunRequest(
@@ -85,13 +118,18 @@ async def run_probe(audio_path: Path | None) -> None:
             if calls:
                 queue.record_model_tool_calls(len(calls))
             for response in event.get_function_responses():
-                if response.name == "report_probe" and response.response.get("status") == "ok":
+                if response.name == probe_tool.__name__ and response.response.get("status") == "ok":
+                    if verify_docstrings and response.response["label"] != docstring_label:
+                        raise RuntimeError("Model did not return the label from the tool docstring")
                     completed.add(str(response.response["label"]))
                     print(f"{model_id}: {response.response['label']} tool result received", flush=True)
             turn_finished = event.turn_complete and event.interaction_status != types.InteractionStatus.IN_PROGRESS
             if turn_finished and "typed_input" in completed and audio is not None and audio_task is None:
                 audio_task = asyncio.create_task(send_audio(queue, audio))
             if turn_finished and expected <= completed:
+                if verify_docstrings:
+                    print(f"PASS: {model_id} read the random label supplied only in the tool docstring", flush=True)
+                    return
                 print(f"PASS: {model_id} completed input, tool call, tool result, and model turn", flush=True)
                 return
         raise RuntimeError(f"Live stream ended before completing probes: {expected - completed}")
@@ -110,8 +148,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--audio", type=Path, help="Optional 16 kHz mono PCM WAV voice input")
     parser.add_argument("--timeout", type=float, default=60, help="Timeout in seconds")
+    parser.add_argument("--docstrings", action="store_true", help="Verify a random label available only in the tool docstring")
     args = parser.parse_args()
-    asyncio.run(asyncio.wait_for(run_probe(args.audio), timeout=args.timeout))
+    asyncio.run(asyncio.wait_for(run_probe(args.audio, args.docstrings), timeout=args.timeout))
 
 
 if __name__ == "__main__":

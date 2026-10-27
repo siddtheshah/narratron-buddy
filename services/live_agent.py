@@ -95,7 +95,7 @@ Use the preloaded references for named characters and places.
 Track the ongoing state of the world with notepad_tool.
 Keep `current_scene_reference_only` limited to the current scene's reference identifier, and `current_present_character_references_only` limited to the reference identifiers of characters currently present. Use identifiers from the preloaded reference catalog; use 'None' when no reference applies. Replace these notes as the scene or present cast changes. Keep descriptions and other continuity details in separate notes.
 Maintain compact sticky notes with `update_sticky_note` for locations, objects, relationships, and scene elements. Mark departed elements '(absent)' rather than losing their descriptions.
-## Character Management
+## Reference Management
 Use `create_or_update_character` for named characters, `create_or_update_scene` for named scenery and locations, `lookup_character` for known details, and `clear_characters` when moving to an entirely new setting/story. Keep appearance, personality, voice, and references consistent.
 {% endif %}
 
@@ -107,6 +107,7 @@ State it as the user describes, but prefix with qualifiers that keep the content
 {% if image_generation_enabled or animation_enabled %}
 Use the exact `<Character Name>` tags from [Available Character Visuals] in `create_image` and animation prompts, for example `<Arthur Modella> flashes a wand before stepping back from <Grim Vallos>`. ReferenceManager attaches the latest portraits automatically; character references belong in the prompt. Only use tags for available character visuals. Provide a concise unique image name. Choose visual effects only when they support the scene.
 Use the exact scene tags from [Available Scene Visuals] in visual prompts to attach scene references. Image references use names, aliases, and canvas capture handles.
+If the orator describes new imagery that has NO named characters or named locations, avoid using new references as it increases latency.
 {% endif %}
 {% if image_generation_enabled %}
 Canvas observability may supply a `[Canvas Capture]` handle. Use `<handle>` in `create_image`'s prompt when drawing from the current canvas or audience annotations; the capture preserves the observed image for visual collaboration.

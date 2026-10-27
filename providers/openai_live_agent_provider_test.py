@@ -3,6 +3,7 @@
 import asyncio
 from contextlib import aclosing
 import json
+from inspect import cleandoc
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from google.adk.agents import Agent
@@ -28,6 +29,7 @@ from providers.openai_live_agent_provider import (
 )
 from providers.openai_realtime_connection_test import make_socket, response_event
 from tools.tool_metadata import annotated_function_tool, terminal
+from tools.tool_bundle import ToolBundle
 from services.priority_live_request_queue import PriorityLiveRequestQueue
 
 
@@ -181,6 +183,16 @@ async def test_adk_executes_tool_and_sends_matching_result_before_next_response(
     tool_arguments: list[str] = []
 
     def report_probe(label: str) -> dict[str, str]:
+        """Record a transport probe without external side effects.
+
+        Read the entire description before choosing arguments.
+
+        Args:
+            label: The probe label from completed user input.
+
+        Returns:
+            Confirmation that the probe was recorded.
+        """
         tool_arguments.append(label)
         return {"status": "ok", "label": label}
 
@@ -241,7 +253,7 @@ async def test_adk_executes_tool_and_sends_matching_result_before_next_response(
         name="test_agent",
         model=provider.create_model(config),
         instruction="Call report_probe.",
-        tools=[annotated_function_tool(report_probe)],
+        tools=ToolBundle([report_probe]).tools,
     )
     runner = InMemoryRunner(agent=agent, app_name="openai_adapter_test")
     session = await runner.session_service.create_session(
@@ -323,6 +335,10 @@ async def test_adk_executes_tool_and_sends_matching_result_before_next_response(
     sent_session = socket.session.update.call_args.kwargs["session"]
     assert sent_session["instructions"].startswith("Call report_probe.")
     assert sent_session["tools"][0]["name"] == "report_probe"
+    assert report_probe.__doc__ is not None
+    assert sent_session["tools"][0]["description"] == cleandoc(report_probe.__doc__)
+    assert "label: The probe label" in sent_session["tools"][0]["description"]
+    assert "Confirmation that the probe was recorded." in sent_session["tools"][0]["description"]
 
 
 @pytest.mark.asyncio

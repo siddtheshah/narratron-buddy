@@ -70,9 +70,9 @@ live_agent:
         target_tokens: 8000
     # OpenAI uses truncation rather than Gemini's context compression.
     openai:
-        max_output_tokens: 1024
+        max_output_tokens: 2048
         max_response_turns: 6
-        post_instructions_token_limit: 4000
+        post_instructions_token_limit: 5000
         retention_ratio: 0.5
 
 text_beautifier_model: "gemini-3.5-flash-lite"

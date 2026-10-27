@@ -27,9 +27,12 @@
       initial: "Whispering inkwells and drifting blank manuscripts"
 
 "Discarded Notes & Echoes":
-  owner: recorder
+  owner: planner
   description: "Fragments of forgotten plots, erased characters, and incomplete endings found by the player."
-  initial: "Found: A compass with a missing protagonist's name; fragments of an unwritten finale."
+  fields:
+    discovery:
+      description: "Key abandoned concept or anomaly nearby"
+      initial: "Whispering inkwells and drifting blank manuscripts"
 
 "Upcoming Encounter Suggestion":
   owner: planner
