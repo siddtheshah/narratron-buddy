@@ -39,6 +39,7 @@ def agent_game_page() -> Iterator[Page]:
     const connectAgent = async () => {};
     const cleanupAgentConnection = () => {};
     const showInsufficientCreditsModal = message => { window.creditMessage = message; };
+    const showShareToast = message => { window.startErrorMessage = message; };
     """ + renderer_setup + lifecycle + """
     window.checkAgentStatus = checkAgentStatus;
     window.gameRenderer = gameRenderer;
@@ -118,6 +119,27 @@ def test_game_stays_closed_when_summoning_fails(agent_game_page: Page) -> None:
     expect(page.locator("#game-state-layer")).to_be_hidden()
     expect(toggle).to_have_attribute("aria-expanded", "false")
     expect(page.get_by_role("button", name="Summon")).to_be_visible()
+
+
+@pytest.mark.parametrize(
+    ("status", "detail"),
+    [(401, "Authentication required."), (403, "Only the active orator can start the agent."),
+     (500, "Could not start Narratron (500). Please try again.")],
+)
+def test_failed_start_does_not_label_other_errors_as_insufficient_credits(
+    agent_game_page: Page, status: int, detail: str,
+) -> None:
+    page = agent_game_page
+
+    def reject_start(route: Route) -> None:
+        route.fulfill(status=status, json={"detail": detail} if status != 500 else {})
+
+    page.route("**/agent/start", reject_start)
+    page.get_by_role("button", name="Toggle game").click()
+    expect(page.get_by_role("button", name="Summon")).to_be_visible()
+    assert page.evaluate("window.creditMessage === undefined")
+    assert page.evaluate("window.startErrorMessage") == detail
+    expect(page.locator("#game-state-layer")).to_be_hidden()
 
 
 def test_viewer_can_open_game_without_summoning(agent_game_page: Page) -> None:

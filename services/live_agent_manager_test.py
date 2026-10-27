@@ -6,9 +6,11 @@ from pathlib import Path
 import tempfile
 import time
 import unittest
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Iterator
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 from components.theater_manager import TheaterManager
 from components.notepad import Notepad
@@ -30,6 +32,136 @@ from tools.game_tool import GameTool
 from tools.tool_bundle import ToolBundle
 from testing.game_fixtures import exchange_definition, make_game
 from services.priority_live_request_queue import PriorityLiveRequestQueue
+from storage.database import LocalDatabaseManager
+
+
+@pytest.fixture
+def billing_theater(tmp_path: Path) -> Iterator[tuple[LocalDatabaseManager, int, int]]:
+    database = LocalDatabaseManager(str(tmp_path / "billing.db"))
+    try:
+        owner = database.register_user("billing_owner", "owner@example.com", "password")
+        orator = database.register_user("billing_orator", "orator@example.com", "password")
+        owner_id, orator_id = int(owner["id"]), int(orator["id"])
+        database.add_user_credits(owner_id, 50.0, 1.0)
+        database.record_deployment("billing_stage", owner_id, "KEY")
+        database.add_contributor("billing_stage", owner_id, orator_id)
+        yield database, owner_id, orator_id
+    finally:
+        database.close()
+
+
+@pytest.mark.parametrize("bill_before_handoff", [False, True])
+@pytest.mark.parametrize("orator_credits", [0.0, 100.0])
+def test_usage_debits_only_owner_across_baton_handoff(
+    billing_theater: tuple[LocalDatabaseManager, int, int],
+    bill_before_handoff: bool,
+    orator_credits: float,
+) -> None:
+    database, owner_id, orator_id = billing_theater
+    if orator_credits > 0:
+        database.add_user_credits(orator_id, orator_credits, 1.0)
+    orator_before = database.get_user_by_id(orator_id)
+    runner = MagicMock()
+    runner.agent.tools = []
+    session = LiveAgentSession(
+        theater_id="billing_stage", runner=runner, tool_bundle=MagicMock(),
+        database_manager=database,
+        config={"story_planning": {"adventure_mode": True, "character_voicing": True}},
+    )
+    session.set_active_controller(owner_id)
+    if bill_before_handoff:
+        session.record_live_agent_tool_calls(1)
+        assert session.owner_user_id == owner_id
+
+    database.request_baton("billing_stage", owner_id, orator_id)
+    database.accept_baton("billing_stage", orator_id)
+    session.set_active_controller(orator_id)
+    session.record_live_agent_tool_calls(2)
+    session.record_image_created("image.webp")
+    session.record_music_created("music.mp3")
+    session.record_story_plan_completed()
+    session.record_interactive_canvas_used()
+    session.record_layered_animation_created("animation")
+
+    owner_after = database.get_user_by_id(owner_id)
+    tool_calls = 3 if bill_before_handoff else 2
+    expected_cost = database.pricing_controller.calculate_usage_cost(
+        live_agent_tool_calls=tool_calls, images_created=1, music_created=1, story_plans=1,
+        character_voiced_turns=1, interactive_canvas_used=1, layered_animations_created=1,
+    )
+    assert owner_after["credits"] == pytest.approx(50.0 - expected_cost)
+    assert owner_after["total_live_agent_tool_calls"] == tool_calls
+    assert owner_after["total_images_created"] == 1
+    assert owner_after["total_music_created"] == 1
+    assert owner_after["total_story_plans"] == 1
+    assert owner_after["total_character_voiced_turns"] == 1
+    assert owner_after["total_interactive_canvas_used"] == 1
+    assert database.get_user_by_id(orator_id) == orator_before
+    assert session.get_usage()["owner_user_id"] == owner_id
+    assert session.active_controller_user_id == orator_id
+    session.close()
+
+
+@pytest.mark.parametrize(
+    ("owner_credits", "orator_credits"), [(5.0, 0.0), (0.0, 100.0), (-1.0, 100.0)],
+)
+def test_periodic_credit_check_uses_owner_while_another_user_holds_baton(
+    owner_credits: float, orator_credits: float,
+) -> None:
+    accounts = {
+        11: {"id": 11, "credits": owner_credits},
+        99: {"id": 99, "credits": orator_credits},
+    }
+    database = MagicMock()
+    database.get_deployment.return_value = {"user_id": 11, "active_orator_id": 99}
+    database.get_user_by_id.side_effect = accounts.__getitem__
+    runner = MagicMock()
+    runner.agent.tools = []
+    session = LiveAgentSession(
+        theater_id="stage", runner=runner, tool_bundle=MagicMock(), database_manager=database,
+    )
+    session.set_active_controller(99)
+    session.send_canvas_state = MagicMock()
+    session.broadcast_text = AsyncMock()
+    session.close = MagicMock()
+    with patch("services.live_agent_manager.asyncio.sleep", AsyncMock(side_effect=asyncio.CancelledError)):
+        asyncio.run(session._run_canvas_refresh())
+
+    database.get_user_by_id.assert_called_once_with(11)
+    if owner_credits <= 0:
+        session.close.assert_called_once_with()
+        session.send_canvas_state.assert_not_called()
+        message = json.loads(session.broadcast_text.call_args.args[0])
+        assert message["type"] == "insufficient_credits"
+        assert message["credits"] == owner_credits
+        assert "theater owner's credit balance" in message["detail"]
+    else:
+        session.close.assert_not_called()
+        session.broadcast_text.assert_not_awaited()
+        session.send_canvas_state.assert_called_once_with()
+
+
+def test_billing_stops_when_owner_exhausts_credits_despite_funded_baton_holder(
+    billing_theater: tuple[LocalDatabaseManager, int, int],
+) -> None:
+    database, owner_id, orator_id = billing_theater
+    database.add_user_credits(orator_id, 100.0, 1.0)
+    cost = database.pricing_controller.calculate_usage_cost(live_agent_tool_calls=1)
+    assert cost > 0
+    database.record_user_usage(owner_id, credit_cost=50.0 - cost)
+    database.request_baton("billing_stage", owner_id, orator_id)
+    database.accept_baton("billing_stage", orator_id)
+    runner = MagicMock()
+    runner.agent.tools = []
+    session = LiveAgentSession(
+        theater_id="billing_stage", runner=runner, tool_bundle=MagicMock(), database_manager=database,
+    )
+    session.set_active_controller(orator_id)
+    session.record_live_agent_tool_calls(1)
+
+    assert database.get_user_by_id(owner_id)["credits"] == pytest.approx(0.0)
+    assert database.get_user_by_id(orator_id)["credits"] == 100.0
+    assert session.status == "stopped"
 
 
 def canvas_observability_fixture(image_path=None, collaboration_enabled=False, doodles=None):

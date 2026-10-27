@@ -1220,7 +1220,7 @@
                     const data = JSON.parse(event.data);
                     if (data.type === 'insufficient_credits') {
                         void stopMicrophone('insufficient_credits');
-                        showToast(data.detail || 'Insufficient credits.', 'error');
+                        showToast(data.detail || "The theater owner has insufficient credits.", 'error');
                     } else if (data.type === 'agent_failed') {
                         void stopMicrophone('agent_failed');
                         showToast('Agent session failed.', 'error');

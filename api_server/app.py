@@ -169,7 +169,7 @@ async def start_agent_endpoint(
             status_code=402,
             content={
                 "status": "error",
-                "detail": "Insufficient credits (0 or fewer). Please top up credits on the deploy page.",
+                "detail": "The theater owner's credit balance is 0 or less. The owner must top up credits on the deploy page.",
                 "insufficient_credits": True,
                 "credits": credits_bal,
                 "theater_id": theater_id,

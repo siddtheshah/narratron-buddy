@@ -8908,8 +8908,15 @@
                 const data = await res.json();
                 if (!res.ok || data.insufficient_credits) {
                     setAgentStartedUI(false);
-                    const msg = data.detail || "Your agent has been stopped because your account credit balance is 0 or less. Please top up your credits on the Deploy page.";
-                    showInsufficientCreditsModal(msg);
+                    const insufficientCredits = res.status === 402 || data.insufficient_credits === true;
+                    const msg = data.detail || (insufficientCredits
+                        ? "The theater owner's credit balance is 0 or less. The owner must top up credits on the Deploy page."
+                        : `Could not start Narratron (${res.status}). Please try again.`);
+                    if (insufficientCredits) {
+                        showInsufficientCreditsModal(msg);
+                    } else {
+                        showShareToast(msg);
+                    }
                     throw new Error(msg);
                 }
                 setAgentStartedUI(true);
@@ -9011,7 +9018,7 @@
                         if (data.type === 'insufficient_credits') {
                             cleanupAgentConnection();
                             setAgentStartedUI(false);
-                            showInsufficientCreditsModal(data.detail || "Your agent was stopped because your credit balance is 0 or less.");
+                            showInsufficientCreditsModal(data.detail || "Agent stopped because the theater owner's credit balance is 0 or less.");
                         } else if (data.type === 'agent_failed') {
                             updateAgentThought({ text: 'wandering' });
                             cleanupAgentConnection();
@@ -11136,7 +11143,7 @@
                 Insufficient Credits</h3>
             <div id="credits-modal-message"
                 style="font-size: 0.95rem; color: #cbd5e1; margin-bottom: 1.25rem; line-height: 1.5;">
-                Your agent has been stopped because your account credit balance is 0 or less. Please top up your credits
+                Agent stopped because the theater owner's credit balance is 0 or less. The owner must top up credits
                 on the Deploy page to resume agent features.
             </div>
 

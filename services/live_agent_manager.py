@@ -928,7 +928,7 @@ class LiveAgentSession:
                             logger.warning(f"[LiveAgentSession] Owner user {owner_id} credit balance <= 0. Auto-stopping agent session for {self.theater_id}.")
                             await self.broadcast_text(json.dumps({
                                 "type": "insufficient_credits",
-                                "detail": "Agent stopped because your credit balance reached 0 or less.",
+                                "detail": "Agent stopped because the theater owner's credit balance reached 0 or less.",
                                 "credits": owner.get("credits", 0.0),
                             }))
                             self.close()
@@ -1272,7 +1272,7 @@ class LiveAgentSession:
                             loop = asyncio.get_running_loop()
                             loop.create_task(self.broadcast_text(json.dumps({
                                 "type": "insufficient_credits",
-                                "detail": "Agent stopped because your credit balance reached 0 or less.",
+                                "detail": "Agent stopped because the theater owner's credit balance reached 0 or less.",
                                 "credits": credits_remaining,
                             })))
                         except RuntimeError:

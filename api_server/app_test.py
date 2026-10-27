@@ -6,7 +6,8 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from fastapi import HTTPException
+from fastapi import HTTPException, WebSocket
+from fastapi.testclient import TestClient
 import pytest
 
 import object_registry
@@ -188,6 +189,96 @@ def test_start_agent_allows_transferred_active_orator() -> None:
     ):
         result = asyncio.run(app_module.start_agent_endpoint("stage", req))
     assert result["agent_running"] is True
+
+
+@pytest.mark.parametrize("endpoint", ["start", "status"])
+@pytest.mark.parametrize(
+    ("owner_credits", "orator_credits"), [(5.0, 0.0), (5.0, 100.0), (0.0, 100.0), (-1.0, 100.0)],
+)
+def test_agent_credit_checks_use_owner_after_baton_handoff(
+    endpoint: str, owner_credits: float, orator_credits: float,
+) -> None:
+    accounts = {
+        11: {"id": 11, "credits": owner_credits},
+        99: {"id": 99, "credits": orator_credits},
+    }
+    registry_db = MagicMock()
+    registry_db.get_deployment.return_value = {"user_id": 11, "active_orator_id": 99}
+    registry_db.get_user_by_id.side_effect = accounts.__getitem__
+    manager = MagicMock()
+    session = SimpleNamespace(
+        status="active", websocket_connected=True, created_at="now", last_active_at="later",
+        summon=MagicMock(),
+    )
+    manager.get_session.return_value = session
+    manager.get_or_create_session.return_value = session
+    client = TestClient(app_module.app)
+
+    with (
+        patch.object(object_registry, "db", registry_db),
+        patch.object(object_registry, "live_agent_manager", manager),
+        patch.object(app_module, "get_current_user_async", AsyncMock(return_value=accounts[99])),
+    ):
+        url = f"/api/theaters/stage/agent/{endpoint}"
+        response = client.post(url) if endpoint == "start" else client.get(url)
+
+    assert response.status_code == (402 if endpoint == "start" and owner_credits <= 0 else 200)
+    assert response.json()["credits"] == owner_credits
+    assert response.json()["insufficient_credits"] == (owner_credits <= 0)
+    assert response.json()["agent_running"] == (owner_credits > 0)
+    registry_db.get_user_by_id.assert_called_once_with(11)
+    if owner_credits <= 0:
+        if endpoint == "start":
+            assert "theater owner's credit balance" in response.json()["detail"]
+        manager.stop_session.assert_called_once_with(theater_id="stage")
+        manager.get_or_create_session.assert_not_called()
+    else:
+        manager.stop_session.assert_not_called()
+        if endpoint == "start":
+            session.summon.assert_called_once_with()
+
+
+@pytest.mark.parametrize(
+    ("owner_credits", "orator_credits"), [(5.0, 0.0), (5.0, 100.0), (0.0, 100.0), (-1.0, 100.0)],
+)
+def test_agent_websocket_checks_owner_credits_after_baton_handoff(
+    owner_credits: float, orator_credits: float,
+) -> None:
+    accounts = {
+        11: {"id": 11, "credits": owner_credits},
+        99: {"id": 99, "credits": orator_credits},
+    }
+    registry_db = MagicMock()
+    registry_db.get_deployment.return_value = {"user_id": 11, "active_orator_id": 99}
+    registry_db.get_user_by_id.side_effect = accounts.__getitem__
+    manager = MagicMock()
+    websocket = MagicMock(spec=WebSocket)
+    handler = AsyncMock()
+
+    with (
+        patch.object(object_registry, "db", registry_db),
+        patch.object(object_registry, "live_agent_manager", manager),
+        patch.object(app_module, "get_current_user_async", AsyncMock(return_value=accounts[99])),
+        patch.object(app_module, "handle_live_websocket_connection", handler),
+    ):
+        asyncio.run(app_module.agent_websocket_endpoint(websocket, "stage"))
+
+    registry_db.get_user_by_id.assert_called_once_with(11)
+    if owner_credits <= 0:
+        manager.stop_session.assert_called_once_with(theater_id="stage")
+        handler.assert_not_awaited()
+        websocket.accept.assert_awaited_once_with()
+        message = websocket.send_json.call_args.args[0]
+        assert message["type"] == "insufficient_credits"
+        assert message["credits"] == owner_credits
+        websocket.close.assert_awaited_once_with(code=1008)
+    else:
+        manager.stop_session.assert_not_called()
+        websocket.close.assert_not_awaited()
+        handler.assert_awaited_once_with(
+            websocket=websocket, theater_id="stage", live_agent_manager=app_module.live_agent_manager,
+            user_id=99, canvas_state_service=app_module.canvas_states,
+        )
 
 
 def test_stop_agent_rejects_unauthenticated_request() -> None:
