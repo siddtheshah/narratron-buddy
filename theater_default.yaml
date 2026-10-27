@@ -77,7 +77,7 @@ story_planning:
     # Require a nonempty planning.yaml contract and validate sticky updates.
     # When false, recorder and planner can also create shared freeform topics.
     # Declared topics retain their ownership and field contracts.
-    enforce_structured: true
+    enforce_structured: false
     adventure_mode: false
     # Allow responder dice and hidden procedural planning rolls. Defaults to true.
     enable_dice: true

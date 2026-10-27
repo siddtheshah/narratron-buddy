@@ -3,7 +3,7 @@
 from types import SimpleNamespace
 import unittest
 from pathlib import Path
-from unittest.mock import MagicMock, Mock
+from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 from pydantic import JsonValue
@@ -178,7 +178,7 @@ class TestNotepad(unittest.TestCase):
                 self.assertEqual(pad.revision, 0)
 
     def test_schema_reset_advances_revision_when_note_contents_change(self) -> None:
-        pad = self._make_notepad({})
+        pad = self._make_notepad({}, schema={})
         schema = {"Location": {"initial": "Observatory"}}
         pad.configure_schema(schema)
         self.assertEqual(pad.revision, 1)
@@ -487,7 +487,13 @@ class TestNotepad(unittest.TestCase):
         )
 
 
-def test_normal_narration_uses_only_notepad_settings(tmp_path: Path) -> None:
+@pytest.mark.parametrize("adventure_settings", [{}, {"adventure_mode": False}])
+@pytest.mark.parametrize("enforce_structured", [None, False, True])
+def test_normal_narration_uses_only_notepad_settings(
+    tmp_path: Path,
+    adventure_settings: dict[str, bool],
+    enforce_structured: bool | None,
+) -> None:
     theater = Mock(spec=Theater)
     theater.config.return_value = {
         "notepad": {
@@ -497,6 +503,7 @@ def test_normal_narration_uses_only_notepad_settings(tmp_path: Path) -> None:
             "hidden_stickies": ["Scene"],
         },
         "story_planning": {
+            **adventure_settings,
             "enforce_structured": True,
             "initial_elements": {"Legacy": "Ignored"},
             "required_stickies": ["Legacy"],
@@ -507,7 +514,22 @@ def test_normal_narration_uses_only_notepad_settings(tmp_path: Path) -> None:
     }
     theater.directory.return_value = tmp_path
     theater.read_planning_schema.side_effect = AssertionError("Normal narration must not read planning.yaml")
-    pad = Notepad(theater, canvas_manager=Mock(spec=CanvasStateManager))
+    with patch(
+        "components.notepad.parse_planning_schema",
+        side_effect=AssertionError("Normal narration must not parse a planning schema"),
+    ) as parse_schema:
+        pad = Notepad(
+            theater,
+            canvas_manager=Mock(spec=CanvasStateManager),
+            enforce_structured=enforce_structured,
+        )
+        pad.configure_schema({
+            "Player Info": {
+                "fields": {"origin": "Legacy field description"},
+                "initial": {"origin": "Pilot"},
+            },
+        })
+        parse_schema.assert_not_called()
 
     assert pad.enforce_structured is False
     assert pad.max_stickies == 2
@@ -558,7 +580,7 @@ def test_adventure_reads_contract_visibility_and_retains_all_topics(tmp_path: Pa
     theater = TheaterManager(tmp_path).theater("contract")
     theater.directory().mkdir(parents=True, exist_ok=True)
     (theater.directory() / "theater.yaml").write_text(
-        "story_planning:\n  adventure_mode: true\nnotepad:\n  max_stickies: 1\n"
+        "story_planning:\n  adventure_mode: true\n  enforce_structured: true\nnotepad:\n  max_stickies: 1\n"
         "  required_stickies: [Normal]\n  hidden_stickies: [Visible]\n"
         "  initial_stickies: {Normal: Ignored}\n", encoding="utf-8",
     )

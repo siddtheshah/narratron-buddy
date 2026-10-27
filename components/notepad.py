@@ -207,8 +207,8 @@ class Notepad:
         )
         # Normal narration accepts free-form notes. Adventure planning opts in
         # so its agent must satisfy the per-sticky contracts.
-        self.enforce_structured = (
-            self.adventure_mode and bool(story_config.get("enforce_structured", True))
+        self.enforce_structured = self.adventure_mode and (
+            bool(story_config.get("enforce_structured", True))
             if enforce_structured is None
             else bool(enforce_structured)
         )
@@ -244,7 +244,7 @@ class Notepad:
 
     def configure_schema(self, schema: dict[str, JsonValue] | None) -> None:
         """Apply the Theater's planning schema before either story module uses the pad."""
-        definitions = parse_planning_schema(schema)
+        definitions = parse_planning_schema(schema) if self.adventure_mode else OrderedDict()
         if self.enforce_structured and not definitions:
             raise ValueError("Adventure Mode with enforce_structured: true requires a nonempty planning.yaml sticky contract.")
         with self._sticky_notes_lock:
