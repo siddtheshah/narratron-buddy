@@ -1,9 +1,10 @@
 import logging
 import os
 import smtplib
+import ssl
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from typing import Any, Dict
+from typing import Literal, TypedDict
 
 from absl import flags
 from dotenv import load_dotenv
@@ -25,19 +26,49 @@ if "send_emails" not in flags.FLAGS:
 FLAGS = flags.FLAGS
 
 
-def send_password_reset_email(to_email: str, username: str, reset_link: str) -> Dict[str, Any]:
-    """Send a password reset email via SMTP if enabled via abseil flag, or log the reset link if disabled/unconfigured.
+class EmailSendResult(TypedDict):
+    sent: bool
+    method: Literal["smtp", "simulated", "failed"]
 
-    Returns a dictionary containing execution status and debug details.
-    """
+
+def send_password_reset_email(to_email: str, username: str, reset_link: str) -> EmailSendResult:
+    """Send a reset email, reporting failures without logging recovery credentials."""
+    try:
+        should_send = bool(FLAGS.send_emails)
+    except flags.UnparsedFlagAccessError:
+        logger.error("Password reset email failed: send_emails flag has not been parsed.")
+        return {"sent": False, "method": "failed"}
+
+    if not should_send:
+        logger.info("Password reset email simulated: --send_emails is disabled; no email sent.")
+        return {"sent": False, "method": "simulated"}
+
     config = get_app_config()
     smtp_cfg = config.get("smtp", {})
 
     smtp_host = smtp_cfg.get("host", "")
-    smtp_port = int(smtp_cfg.get("port", 587))
+    try:
+        smtp_port = int(smtp_cfg.get("port", 587))
+        if not 1 <= smtp_port <= 65535:
+            raise ValueError("SMTP port is outside the valid range")
+    except (TypeError, ValueError):
+        logger.error("Password reset email failed: invalid SMTP port configuration.")
+        return {"sent": False, "method": "failed"}
     smtp_user = os.getenv("SMTP_USERNAME") or os.getenv("STMP_USERNAME") or ""
     smtp_password = os.getenv("SMTP_PASSWORD", "")
     smtp_from = smtp_cfg.get("from_email", "noreply@narratron.io")
+
+    missing = [
+        name for name, value in (
+            ("host", smtp_host),
+            ("SMTP_USERNAME", smtp_user),
+            ("SMTP_PASSWORD", smtp_password),
+            ("from_email", smtp_from),
+        ) if not value
+    ]
+    if missing:
+        logger.error("Password reset email failed: missing SMTP configuration: %s.", ", ".join(missing))
+        return {"sent": False, "method": "failed"}
 
     subject = "Narratron Buddy - Password Reset Request"
     text_content = (
@@ -78,37 +109,40 @@ def send_password_reset_email(to_email: str, username: str, reset_link: str) -> 
     </html>
     """
 
+    stage = "message construction"
     try:
-        should_send = bool(FLAGS.send_emails)
-    except Exception:
-        should_send = False
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = subject
+        msg["From"] = smtp_from
+        msg["To"] = to_email
 
-    if should_send and smtp_host:
-        try:
-            msg = MIMEMultipart("alternative")
-            msg["Subject"] = subject
-            msg["From"] = smtp_from
-            msg["To"] = to_email
+        msg.attach(MIMEText(text_content, "plain"))
+        msg.attach(MIMEText(html_content, "html"))
 
-            msg.attach(MIMEText(text_content, "plain"))
-            msg.attach(MIMEText(html_content, "html"))
+        stage = "connection"
+        with smtplib.SMTP(smtp_host, smtp_port, timeout=10) as server:
+            stage = "STARTTLS"
+            server.starttls(context=ssl.create_default_context())
+            stage = "authentication"
+            server.login(smtp_user, smtp_password)
+            stage = "message submission"
+            refused = server.sendmail(smtp_from, [to_email], msg.as_string())
+            if refused:
+                logger.error("Password reset email failed during message submission: recipient refused.")
+                return {"sent": False, "method": "failed"}
+            stage = "connection close"
 
-            with smtplib.SMTP(smtp_host, smtp_port, timeout=10) as server:
-                server.starttls()
-                if smtp_user and smtp_password:
-                    server.login(smtp_user, smtp_password)
-                server.sendmail(smtp_from, [to_email], msg.as_string())
+    except smtplib.SMTPResponseException as error:
+        # SMTP response text can echo credentials or message content. Log only
+        # the numeric status and exception class, without a traceback.
+        logger.error(
+            "Password reset email failed during %s: %s (SMTP status %d).",
+            stage, type(error).__name__, error.smtp_code,
+        )
+        return {"sent": False, "method": "failed"}
+    except (smtplib.SMTPException, OSError, ValueError) as error:
+        logger.error("Password reset email failed during %s: %s.", stage, type(error).__name__)
+        return {"sent": False, "method": "failed"}
 
-            logger.info(f"Password reset email sent via SMTP to {to_email}")
-            return {"sent": True, "method": "smtp", "reset_link": reset_link}
-        except Exception as e:
-            logger.error(f"Failed to send email via SMTP to {to_email}: {e}")
-
-    # Fallback/Development mode: Log the link
-    logger.info(f"[DEV/MOCK EMAIL] Password reset link for {username} ({to_email}): {reset_link}")
-    print("\n==========================================")
-    print(f"PASSWORD RESET LINK FOR {to_email}:")
-    print(f"{reset_link}")
-    print("==========================================\n")
-
-    return {"sent": True, "method": "simulated", "reset_link": reset_link}
+    logger.info("Password reset email accepted by SMTP server.")
+    return {"sent": True, "method": "smtp"}

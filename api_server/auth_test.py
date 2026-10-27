@@ -12,6 +12,7 @@ from pydantic import JsonValue
 import object_registry
 from api_server import auth
 from storage.database import DatabaseConnectionTimeout
+from utils.email_service import EmailSendResult
 
 
 def request(*, cookies=None, base_url="http://testserver/"):
@@ -194,3 +195,79 @@ def test_reset_password_rejects_blank_and_delegates_valid_request():
         result = auth.reset_password(auth.ResetPasswordRequest(token="token", new_password="new secret"))
     assert result["status"] == "ok"
     registry_db.reset_password_with_token.assert_called_once_with("token", "new secret")
+
+
+@pytest.mark.parametrize("delivery", [
+    {"sent": False, "method": "failed"},
+    {"sent": False, "method": "simulated"},
+])
+def test_forgot_password_returns_retryable_error_when_email_not_sent(
+    delivery: EmailSendResult, caplog: pytest.LogCaptureFixture, capsys: pytest.CaptureFixture[str],
+) -> None:
+    registry_db = MagicMock()
+    registry_db.create_password_reset_token.return_value = (
+        "private-reset-token", {"email": "ada@example.test", "username": "ada"},
+    )
+    test_app = FastAPI()
+    test_app.post("/forgot-password")(auth.forgot_password)
+    with (
+        flagsaver.flagsaver(testing_use_local=False),
+        patch.object(object_registry, "db", registry_db),
+        patch.object(auth, "send_password_reset_email", return_value=delivery),
+        TestClient(test_app) as client,
+    ):
+        result = client.post("/forgot-password", json={"username_or_email": "ada"})
+
+    assert result.status_code == 503
+    assert result.json() == {"detail": "Password reset email could not be sent. Please try again later."}
+    assert "email was not sent" in caplog.text
+    assert "private-reset-token" not in result.text + caplog.text + capsys.readouterr().out
+
+
+@pytest.mark.parametrize(("local_mode", "delivery"), [
+    (False, {"sent": True, "method": "smtp"}),
+    (True, {"sent": False, "method": "simulated"}),
+])
+def test_forgot_password_accepts_delivery_or_explicit_local_simulation(
+    local_mode: bool, delivery: EmailSendResult,
+) -> None:
+    registry_db = MagicMock()
+    registry_db.create_password_reset_token.return_value = (
+        "private-reset-token", {"email": "ada@example.test", "username": "ada"},
+    )
+    test_app = FastAPI()
+    test_app.post("/forgot-password")(auth.forgot_password)
+    with (
+        flagsaver.flagsaver(testing_use_local=local_mode),
+        patch.object(object_registry, "db", registry_db),
+        patch.object(auth, "send_password_reset_email", return_value=delivery) as send_email,
+        TestClient(test_app) as client,
+    ):
+        result = client.post("/forgot-password", json={"username_or_email": "ada"})
+
+    assert result.status_code == 200
+    assert result.json()["status"] == "ok"
+    assert "private-reset-token" not in result.text
+    send_email.assert_called_once_with(
+        "ada@example.test", "ada", "http://testserver/deploy?reset_token=private-reset-token",
+    )
+
+
+def test_forgot_password_keeps_unknown_account_response_generic() -> None:
+    registry_db = MagicMock()
+    registry_db.create_password_reset_token.return_value = None
+    test_app = FastAPI()
+    test_app.post("/forgot-password")(auth.forgot_password)
+    with (
+        patch.object(object_registry, "db", registry_db),
+        patch.object(auth, "send_password_reset_email") as send_email,
+        TestClient(test_app) as client,
+    ):
+        result = client.post("/forgot-password", json={"username_or_email": "unknown"})
+
+    assert result.status_code == 200
+    assert result.json() == {
+        "status": "ok",
+        "message": "If an account with that email or username exists, a password reset link has been sent.",
+    }
+    send_email.assert_not_called()

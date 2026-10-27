@@ -133,7 +133,7 @@ def update_mic_sensitivity_endpoint(req: MicSensitivityRequest, request: Request
     return {"status": "ok", "authenticated": False, "mic_sensitivity": req.mic_sensitivity}
 
 @app.post("/api/auth/forgot-password")
-def forgot_password(req: ForgotPasswordRequest, request: Request):
+def forgot_password(req: ForgotPasswordRequest, request: Request) -> dict[str, str]:
     token_user = db.create_password_reset_token(req.username_or_email)
     if not token_user:
         return {
@@ -145,7 +145,14 @@ def forgot_password(req: ForgotPasswordRequest, request: Request):
     base_url = str(request.base_url).rstrip("/")
     reset_link = f"{base_url}/deploy?reset_token={token}"
 
-    send_password_reset_email(user["email"], user["username"], reset_link)
+    delivery = send_password_reset_email(user["email"], user["username"], reset_link)
+    simulated_locally = delivery["method"] == "simulated" and FLAGS.testing_use_local
+    if not delivery["sent"] and not simulated_locally:
+        logger.error("Password reset request failed: email was not sent (method=%s).", delivery["method"])
+        raise HTTPException(
+            status_code=503,
+            detail="Password reset email could not be sent. Please try again later.",
+        )
 
     return {
         "status": "ok",
