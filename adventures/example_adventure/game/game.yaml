@@ -241,9 +241,9 @@ functions:
   candidates:
     parameters: [board, side, forced]
     expr: |-
-      constants.edges.filter(m,
-        board[m.source] * side > 0 && board[m.target] == 0 &&
-        (forced < 0 || (m.source == forced && m.jump))
+      constants.edges.filter(m, board[m.source] * side > 0
+      ).filter(m, board[m.target] == 0
+      ).filter(m, forced < 0 || (m.source == forced && m.jump)
       ).filter(m,
         (board[m.source] == 2 || board[m.source] == -2 ||
           m.dr == (m.jump ? -2 * side : -side)) &&
@@ -266,6 +266,11 @@ functions:
 derived:
 - name: moves
   expr: 'state.winner != 0 || state.draw ? [] : legal(state.board, state.turn, state.forced)'
+# Compute board affordances once instead of scanning every move for every square.
+- name: sources
+  expr: moves.map(m, m.source)
+- name: targets
+  expr: moves.filter(m, m.source == state.selected).map(m, m.target)
 invariants: ['constants.indices.all(i, state.board[i] == 0 || (i / 8 + i % 8) % 2 == 1)']
 
 # Actions: parameters, legality checks, intermediate calculations, complete next state.
@@ -313,7 +318,8 @@ transitions:
       expr: |-
         constants.indices.map(i, i == action.source || (chosen.jump && i == chosen.middle) ? 0 : i == action.target ? (promoted ? 2 * state.turn : state.board[action.source]) : state.board[i])
     - name: continuing
-      expr: chosen.jump && !promoted && size(legal(board, state.turn, action.target)) > 0
+      # CEL && evaluates both sides; only search for another jump after a capture.
+      expr: 'chosen.jump && !promoted ? size(legal(board, state.turn, action.target)) > 0 : false'
     - name: nextTurn
       expr: 'continuing ? state.turn : -state.turn'
     - name: forced
@@ -362,7 +368,7 @@ transitions:
       expr: |-
         constants.indices.map(i, i == action.source || (chosen.jump && i == chosen.middle) ? 0 : i == action.target ? (promoted ? 2 * state.turn : state.board[action.source]) : state.board[i])
     - name: continuing
-      expr: chosen.jump && !promoted && size(legal(board, state.turn, action.target)) > 0
+      expr: 'chosen.jump && !promoted ? size(legal(board, state.turn, action.target)) > 0 : false'
     - name: nextTurn
       expr: 'continuing ? state.turn : -state.turn'
     - name: forced
@@ -427,12 +433,12 @@ view:
         aspectRatio: '"1"'
         padding: '"0px"'
         borderRadius: '"0px"'
-        disabled: '!moves.exists(m, m.source == cell || (m.source == state.selected && m.target == cell))'
+        disabled: '!(cell in sources || cell in targets)'
         pressed: cell == state.selected
       action:
-        name: 'moves.exists(m, m.source == state.selected && m.target == cell) ? "move" : "select"'
+        name: 'cell in targets ? "move" : "select"'
         arguments: |-
-          moves.exists(m, m.source == state.selected && m.target == cell) ? {"source": state.selected,
+          cell in targets ? {"source": state.selected,
           "target": cell} : {"index": cell}
       children:
       - kind: svg
@@ -444,7 +450,7 @@ view:
             cx: '50'
             cy: '50'
             r: |-
-              state.board[cell] != 0 ? 35 : moves.exists(m, m.source == state.selected && m.target == cell) ? 12 : 0
+              state.board[cell] != 0 ? 35 : cell in targets ? 12 : 0
             fill: 'state.board[cell] == 0 ? "#fde047" : state.board[cell] > 0 ? "#e05252" : "#d6bd8a"'
             stroke: '"#ffffff66"'
             stroke-width: '3'

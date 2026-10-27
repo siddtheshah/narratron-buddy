@@ -1,4 +1,5 @@
 """Game-agnostic contract tests: the same runtime also runs a counter."""
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 import json
@@ -12,6 +13,7 @@ from pydantic import JsonValue
 from components.canvas.game_runtime import (
     MAX_GAME_BYTES,
     Budget,
+    BudgetResult,
     Binding,
     GameDefinition,
     GameErrorRecovery,
@@ -602,9 +604,17 @@ def test_non_triggering_player_action_does_not_wake_story_callback(tmp_path: Pat
     assert game.revision == 1
 
 
-def test_example_adventure_checkers_narratron_interaction(tmp_path: Path) -> None:
+def test_example_adventure_checkers_narratron_interaction(monkeypatch: pytest.MonkeyPatch) -> None:
+    def evaluate_interactive(operation: Callable[[Budget], BudgetResult]) -> BudgetResult:
+        # Bound algorithmic work independently of host speed. The old per-square
+        # move scans exceeded this ceiling during initial rendering alone.
+        return operation(Budget(remaining=100_000, seconds=60))
+
+    monkeypatch.setattr("components.canvas.game_runtime.evaluate_with_recovery", evaluate_interactive)
+    monkeypatch.setattr("components.canvas.game_state.evaluate_with_recovery", evaluate_interactive)
     example_path = Path("adventures/example_adventure")
     game = GameState(example_path, Mock(), Mock())
+    assert game.error == ""
     callback = Mock()
     game.on_player_action = callback
 
