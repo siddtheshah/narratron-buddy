@@ -25,8 +25,11 @@ def remote_page() -> Iterator[Page]:
             files = {
                 "/remote": ("templates/remote.html", "text/html"),
                 "/static/js/remote.js": ("static/js/remote.js", "text/javascript"),
+                "/static/js/chat-controller.js": ("static/js/chat-controller.js", "text/javascript"),
+                "/static/js/chat-emotes.js": ("static/js/chat-emotes.js", "text/javascript"),
                 "/static/js/device-navigation.js": ("static/js/device-navigation.js", "text/javascript"),
                 "/static/css/remote.css": ("static/css/remote.css", "text/css"),
+                "/static/css/chat.css": ("static/css/chat.css", "text/css"),
             }
             if path in files:
                 filename, content_type = files[path]
@@ -35,7 +38,7 @@ def remote_page() -> Iterator[Page]:
                 route.fulfill(body=Path("static/narratron-avatar.png").read_bytes(), content_type="image/png")
             elif path == "/favicon.png":
                 route.fulfill(body=Path("templates/narratron favicon.png").read_bytes(), content_type="image/png")
-            elif path.endswith("/scenes") or path.endswith("/playlists"):
+            elif path.endswith("/scenes") or path.endswith("/playlists") or path in {"/api/chat", "/api/suggestions"}:
                 route.fulfill(json=[])
             elif path.endswith("/remote"):
                 route.fulfill(json={"agent_running": True, "pinned": False, "music_pinned": False,
@@ -78,6 +81,99 @@ def test_phone_remote_sends_actions_and_instructions(remote_page: Page) -> None:
     assert instruction.value.post_data_json == {"text": "A storm rolls in."}
     page.wait_for_function("document.getElementById('command').value === ''")
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+
+
+@pytest.mark.parametrize("is_orator", [True, False])
+def test_preview_chat_sends_emotes_suggestions_and_private_help(
+    remote_page: Page, is_orator: bool, tmp_path: Path,
+) -> None:
+    page = remote_page
+    errors: list[str] = []
+    page.on("pageerror", lambda error: errors.append(str(error)))
+    messages: list[dict[str, str]] = [{"author": "bob", "text": "Welcome to the theater!"}]
+    sent: list[dict[str, str]] = []
+    questions: list[dict[str, str]] = []
+
+    def chat(route: Route) -> None:
+        if route.request.method == "POST":
+            payload = json.loads(route.request.post_data or "{}")
+            sent.append(payload)
+            message_type = "suggestion" if payload["text"].startswith("/suggest ") else "chat"
+            messages.append({**payload, "type": message_type})
+            route.fulfill(json={"type": message_type})
+        else:
+            route.fulfill(json=messages)
+
+    def help_answer(route: Route) -> None:
+        questions.append(json.loads(route.request.post_data or "{}"))
+        route.fulfill(json={"type": "user_help", "text": "Use the Preview tab to chat.",
+                            "html": "<p>Use the <strong>Preview</strong> tab to chat.</p>"})
+
+    page.route("**/api/chat?theater_id=stage", chat)
+    page.route("**/api/user-help?theater_id=stage", help_answer)
+    if not is_orator:
+        page.route("**/api/theaters/stage/remote", lambda route: route.fulfill(json={
+            "agent_running": False, "is_owner": False, "is_orator": False,
+        }))
+        page.route("**/api/theaters/stage/baton", lambda route: route.fulfill(json={
+            "owner": {"id": 2, "username": "bob"},
+            "active_orator": {"id": 2, "username": "bob"},
+            "contributors": [], "active_viewers": [], "baton_request": None,
+        }))
+    page.goto("http://remote.test/remote?theater_id=stage#preview")
+    expect(page.get_by_role("log", name="Theater chat")).to_contain_text("Welcome to the theater!")
+    expect(page.locator("#chat-name-display")).to_have_text("owner")
+    chat_input = page.get_by_role("textbox", name="Chat message")
+    chat_input.fill("Hello ")
+    page.get_by_role("button", name="Emotes", exact=True).click()
+    page.get_by_role("button", name="Dragon", exact=True).click()
+    expect(chat_input).to_have_value("Hello 🐉")
+    page.get_by_role("button", name="Send", exact=True).click()
+    expect(page.get_by_role("log")).to_contain_text("Hello 🐉")
+    assert sent == [{"author": "owner", "text": "Hello 🐉"}]
+    expect(chat_input).to_have_value("")
+    chat_input.press("Escape")
+
+    chat_input.fill("Explore the castle")
+    page.get_by_role("button", name="Send suggestion").click()
+    expect(page.locator(".suggestion-message")).to_contain_text("Explore the castle")
+    assert sent[-1]["text"] == "/suggest Explore the castle"
+    expect(page.locator(".suggestion-upvote-btn")).to_be_disabled()
+    chat_input.fill("Follow the trail")
+    chat_input.press("Control+Enter")
+    expect(page.locator(".suggestion-message")).to_have_count(2)
+    assert sent[-1]["text"] == "/suggest Follow the trail"
+
+    chat_input.fill("How do I chat?")
+    page.get_by_role("button", name="Find basic help and documentation (free)").click()
+    expect(page.locator(".user-help-message strong")).to_have_text("Preview")
+    assert questions == [{"question": "How do I chat?"}]
+    assert len(sent) == 3
+    assert all("How do I chat?" not in message["text"] for message in messages)
+
+    chat_input.fill("First line")
+    chat_input.press("Shift+Enter")
+    chat_input.press_sequentially("Second line")
+    expect(chat_input).to_have_value("First line\nSecond line")
+    chat_input.press("Enter")
+    expect(page.get_by_role("log")).to_contain_text("Second line")
+    assert sent[-1]["text"] == "First line\nSecond line"
+    messages.append({"author": "bob", "text": "A new message from canvas"})
+    expect(page.get_by_role("log")).to_contain_text("A new message from canvas")
+    expect(page.locator(".user-help-message strong")).to_have_text("Preview")
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+    assert page.locator("#chat-form").evaluate("""form => {
+        const bounds = form.getBoundingClientRect();
+        return [...form.querySelectorAll('.chat-composer-actions > button, [data-chat-emotes-toggle]')].every(button => {
+            const rect = button.getBoundingClientRect();
+            return rect.left >= bounds.left && rect.right <= bounds.right && rect.height >= 44;
+        });
+    }""")
+    if not is_orator:
+        expect(page.get_by_role("tab", name="Inputs", exact=True)).to_be_hidden()
+        expect(chat_input).to_be_enabled()
+    page.screenshot(path=str(tmp_path / "remote-chat.png"), full_page=True)
+    assert errors == []
 
 
 @pytest.mark.parametrize("owner_credits", [8001.0, 0.0])

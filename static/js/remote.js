@@ -1,3 +1,5 @@
+import { initializeChatController } from './chat-controller.js';
+
 (() => {
     'use strict';
     const controls = document.getElementById('controls');
@@ -65,6 +67,7 @@
     let previewUrl = null;
     let previewLoaded = false;
     let currentUser = null;
+    let chatController = null;
     let currentBatonState = null;
     let batonTimerInterval = null;
     let doodleWs = null;
@@ -269,7 +272,10 @@
         });
         document.title = `${tabs[selected].textContent} · Narratron Remote`;
         if (focus && !tabs[selected].hidden) tabs[selected].focus();
-        if (tabs[selected].dataset.view === 'preview') updatePreview();
+        if (tabs[selected].dataset.view === 'preview') {
+            updatePreview();
+            void chatController?.fetchChat();
+        }
         if (tabs[selected].dataset.view === 'assets' && isOrator) void loadAssets();
     }
 
@@ -303,7 +309,7 @@
 
     let swipeStart = null;
     viewContainer.addEventListener('touchstart', event => {
-        const nested = event.target.closest('.asset-carousel, .asset-card, input, button');
+        const nested = event.target.closest('.asset-carousel, .asset-card, input, textarea, button, #chat-messages');
         swipeStart = event.touches.length === 1 && !nested
             ? {x: event.touches[0].clientX, y: event.touches[0].clientY} : null;
     }, {passive: true});
@@ -678,6 +684,7 @@
                 setTheaterKey(next.join_key);
             }
             updatePreview();
+            if (!previewView.hidden) void chatController?.fetchChat();
             status.dataset.connected = 'true';
             status.textContent = next.agent_running ? 'Connected · Agent on' : 'Connected · Agent off';
             await checkBatonState();
@@ -1511,7 +1518,21 @@
     });
     render();
     renderView();
-    void fetchCurrentUser().then(() => checkBatonState());
+    void fetchCurrentUser().then(() => {
+        if (theaterId && /^[a-zA-Z0-9_-]+$/.test(theaterId)) {
+            chatController = initializeChatController({
+                messagesContainer: document.getElementById('chat-messages'),
+                chatForm: document.getElementById('chat-form'),
+                chatInput: document.getElementById('chat-input'),
+                nameDisplay: document.getElementById('chat-name-display'),
+                theaterId,
+                getAuthState: async () => ({ authenticated: Boolean(currentUser), user: currentUser }),
+                isCurrentOrator: isOratorUser,
+                getAgentWs: () => agentWs,
+            });
+        }
+        return checkBatonState();
+    });
     connectViewerSocket();
     if (theaterId && /^[a-zA-Z0-9_-]+$/.test(theaterId)) {
         document.getElementById('theater-id').textContent = theaterId;
