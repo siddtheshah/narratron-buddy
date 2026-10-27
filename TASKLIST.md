@@ -8,27 +8,18 @@
 
 ## Game Performance Investigations
 
-Investigate both tracks independently and together. No architecture or runtime migration has been selected. Keep the optimized `example_adventure` as the baseline; the experimental 2-D board refactor was rolled back because it did not improve performance.
+Investigate both tracks independently and together. The native-runtime direction is persistent workers with parent-enforced wall-clock timeouts; the evaluator and production integration remain to be selected. Interpreter step counts were a proxy for elapsed time and do not need to be reproduced. Keep the optimized `example_adventure` as the baseline; the experimental 2-D board refactor was rolled back because it did not improve performance.
 
 ### 1. Native CEL runtime
 
-- [ ] Prototype replacing the pure-Python `cel-python` evaluator with a native implementation, starting with the C++ `cel-expr-python` bindings.
-- [ ] Compare an in-process native extension with a persistent CEL-Go worker if process isolation or resource-limit support favors a separate binary. Cache compiled programs and batch whole operations; avoid starting a process for every expression.
+- [x] Prototype a native alternative to the pure-Python `cel-python` evaluator. C++ and Rust bindings were evaluated and retired after the CEL-Go comparison; their experiment modules, dependencies and Docker options have been removed. Historical transaction measurements are retained in the [CEL-Go analysis](analysis/cel_go_worker_benchmark.md).
+- [x] Compare an in-process native extension with a persistent CEL-Go worker if process isolation or resource-limit support favors a separate binary. Cache compiled programs and batch whole operations; avoid starting a process for every expression.
+  - Retained offline CEL-Go v0.33.0 worker and Python/Go transaction harness: `game/cel_go_worker/`, `game/go_cel.py`, `testlab/benchmark_go_cel.py`, with the shared workload in `testlab/game_benchmark.py`. Seven-round checkers outputs matched, including browser payloads and rollback. Player turn median was about 22 ms for Go versus 94 ms for C++ and 879 ms for Python in the historical comparison; [results, reproduction and remaining boundaries](analysis/cel_go_worker_benchmark.md). Parent timeout/kill/replacement is tested. OS memory containment, recovery/contributor integration and broader semantic compatibility remain open; `string(2.0)` formatting differs.
 - [ ] Verify compatibility for package-defined functions, `random_int`, null comparisons, error masking, integer behavior, state transitions, and browser previews.
-- [ ] Preserve work budgets and deadlines across nested expressions and custom functions, plus existing input, intermediate-value, and output size limits. Confirm the binding exposes the required controls before adopting it.
+- [ ] Enforce wall-clock deadlines from a parent process across complete worker operations, including nested expressions, custom functions and conversion. Kill and replace timed-out workers, discard partial results, and keep persistence in the parent. Retain input/output size limits and add a worker memory boundary for native intermediate allocations; CEL termination does not imply small memory use. Matching the old interpreter step counter is not required.
 - [ ] Benchmark complete game loading, player submissions with selection drafts, Narratron replies, and expensive/error cases. Measure Python/native conversion and callback overhead as well as CEL evaluation.
 
-Initial local expression benchmark: `cel-python` 0.4.0 versus `cel-expr-python` 0.1.3 on Windows / CPython 3.13.14. Expressions were compiled once; evaluation timings include conversion to ordinary Python results. Seven timing rounds produced these medians, with matching results:
-
-| Checkers expression | Python | Native C++ | Speedup |
-| --- | ---: | ---: | ---: |
-| Candidate moves | 51.80 ms | 0.55 ms | 93x |
-| Board invariant | 28.49 ms | 0.32 ms | 89x |
-| Piece counts | 18.96 ms | 0.42 ms | 45x |
-
-These are expression-level results, not full-transaction speedups. The C++ binding loaded successfully from a prebuilt Windows wheel in an isolated `uv` environment; project dependencies were not changed. A native CEL runtime still evaluates the restricted expression language; it does not require allowing arbitrary user-authored JavaScript or native executables.
-
-References: [C++ Python bindings](https://github.com/cel-expr/cel-python), [wheel availability](https://pypi.org/project/cel-expr-python/), [CEL-Go cost limits and cancellable evaluation](https://pkg.go.dev/cel.dev/cel-go/cel).
+References: [CEL-Go evaluation and cancellation](https://pkg.go.dev/cel.dev/cel-go/cel).
 
 ### 2. Client-side declarative UI rendering
 

@@ -6,7 +6,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from components.canvas.game_runtime import GameAction
+from game.game_runtime import GameAction
 from testing.game_fixtures import exchange_definition, make_game
 from tools.game_tool import GameTool
 from tools.tool_bundle import ToolBundle

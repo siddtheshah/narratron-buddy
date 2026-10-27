@@ -12,9 +12,9 @@ from typing import Literal
 from jsonschema import ValidationError as SchemaValidationError
 from pydantic import Field, JsonValue, TypeAdapter
 
-from components.canvas.game_client import browser_compatible, browser_program
-from components.game_source import find_game_file
-from components.canvas.game_runtime import (
+from game.game_client import browser_compatible, browser_program
+from game.game_source import find_game_file
+from game.game_runtime import (
     Budget, GameAction, GameStep, GameModel, GameProgram, MAX_GAME_BYTES, MAX_VALUE_BYTES,
     GameWorkBudgetExceeded, evaluate_with_recovery, validate_game_package,
 )

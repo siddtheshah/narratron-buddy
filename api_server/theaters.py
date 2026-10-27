@@ -11,7 +11,7 @@ from typing import Any, Dict, Optional, Union
 import uuid
 import yaml
 
-from components.game_source import GAME_FILES
+from game.game_source import GAME_FILES
 from fastapi import Request, Response, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from starlette.staticfiles import NotModifiedResponse, StaticFiles

@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 from pydantic import JsonValue
 from components.story.story_handoffs import GameControlDecision, NarrationRequest
 from components.story.story_session import StoryRole, StorySession
-from components.canvas.game_runtime import GameAction
+from game.game_runtime import GameAction
 from components.reference_manager import Character
 from testing.game_fixtures import exchange_definition
 from fastapi.testclient import TestClient

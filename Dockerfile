@@ -39,6 +39,7 @@ COPY ABOUT.md .
 
 # Copy package directories
 COPY components/ components/
+COPY game/ game/
 COPY api_server/ api_server/
 COPY storage/ storage/
 COPY services/ services/

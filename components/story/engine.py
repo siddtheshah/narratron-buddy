@@ -13,7 +13,7 @@ from typing import Callable, Optional
 from pydantic import BaseModel, Field, JsonValue, TypeAdapter
 
 from components.canvas.story_state import CharacterState, PlayerCharacterState, StoryState
-from components.canvas.game_runtime import GameAction
+from game.game_runtime import GameAction
 from components.story.story_snapshot import (
     ImageRecord,
     StoryStateDiff,

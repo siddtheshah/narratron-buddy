@@ -5,7 +5,7 @@ from .chat_manager import ChatManager
 from .connection_state import ConnectionState
 from .doodle_state import DoodleState
 from .story_state import StoryState
-from .game_state import GameState
+from game.game_state import GameState
 from .tool_response_state import ToolResponseState
 from .ui_state import UIState
 from .visual_state import VisualState

@@ -3,9 +3,9 @@ from unittest.mock import Mock
 
 import pytest
 
-from components.canvas.game_client import browser_program
-from components.canvas.game_runtime import FunctionDefinition, GameAction, GameProgram
-from components.canvas.game_state import GameState
+from game.game_client import browser_program
+from game.game_runtime import FunctionDefinition, GameAction, GameProgram
+from game.game_state import GameState
 from testing.game_fixtures import counter_definition
 
 

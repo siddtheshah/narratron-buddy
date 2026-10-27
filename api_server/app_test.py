@@ -411,7 +411,7 @@ def test_game_package_loads_without_cel_tracing_under_app_debug_logging(
 ) -> None:
     import logging
 
-    from components.canvas.game_runtime import validate_game_package
+    from game.game_runtime import validate_game_package
     from testing.game_fixtures import counter_definition
 
     def reject_cel_trace(record: logging.LogRecord) -> bool:

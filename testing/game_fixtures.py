@@ -2,8 +2,8 @@
 from pathlib import Path
 from unittest.mock import Mock
 
-from components.canvas.game_runtime import GameDefinition
-from components.canvas.game_state import GameState
+from game.game_runtime import GameDefinition
+from game.game_state import GameState
 
 
 def counter_definition() -> GameDefinition:

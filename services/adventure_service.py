@@ -15,7 +15,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import yaml
 
 from absl import flags
-from components.game_source import GAME_FILES
+from game.game_source import GAME_FILES
 
 if "testing_use_local" not in flags.FLAGS:
     flags.DEFINE_boolean(

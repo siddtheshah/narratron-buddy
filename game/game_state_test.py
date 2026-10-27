@@ -10,7 +10,7 @@ from unittest.mock import Mock, patch
 import pytest
 from pydantic import JsonValue
 
-from components.canvas.game_runtime import (
+from game.game_runtime import (
     MAX_GAME_BYTES,
     Budget,
     BudgetResult,
@@ -25,7 +25,7 @@ from components.canvas.game_runtime import (
     validate_game_package,
     validate_game_svg,
 )
-from components.canvas.game_state import (
+from game.game_state import (
     GameAction,
     GameState,
     StaleGameAction,
@@ -42,7 +42,7 @@ def test_random_binding_is_drawn_once_and_persisted(tmp_path: Path) -> None:
     definition.transitions['clear'].bindings = [Binding(name='roll', expr='random_int(1, 5)')]
     definition.transitions['clear'].result = '{"count": roll + roll}'
     game = make_game(tmp_path, definition)
-    with patch('components.canvas.game_runtime.random.randint', return_value=5) as draw:
+    with patch('game.game_runtime.random.randint', return_value=5) as draw:
         result = game.act(GameAction(name='clear', revision=0))
         assert game.state == {'count': 10}
         assert result['view'][0]['children'][0]['props']['text'] == 'Count: 10'
@@ -62,7 +62,7 @@ def test_random_result_rejected_by_invariant_rolls_back(tmp_path: Path) -> None:
     definition.invariants = ['state.count == 0']
     game = make_game(tmp_path, definition)
     before = game.serialize()
-    with patch('components.canvas.game_runtime.random.randint', return_value=6):
+    with patch('game.game_runtime.random.randint', return_value=6):
         with pytest.raises(ValueError, match='undone'):
             game.act(GameAction(name='clear', revision=0))
     assert game.serialize() == before
@@ -401,7 +401,7 @@ def test_exhausted_recovery_retains_position_and_allows_later_action(tmp_path: P
     snapshot = game.story_snapshot('narratron')
     persist, callback = Mock(), Mock()
     game._persist, game.on_player_action = persist, callback
-    with patch('components.canvas.game_runtime.Budget', return_value=Budget(remaining=0)):
+    with patch('game.game_runtime.Budget', return_value=Budget(remaining=0)):
         with pytest.raises(GameWorkBudgetExceeded, match='previous position was retained'):
             game.act(GameAction(name='add', arguments={'amount': 1}, revision=0))
     assert game.serialize() == before
@@ -420,7 +420,7 @@ def test_saved_game_preparation_can_recover(tmp_path: Path) -> None:
     game = make_game(tmp_path)
     game.act(GameAction(name='add', arguments={'amount': 2}, revision=0))
     restored = make_game(tmp_path)
-    with patch('components.canvas.game_runtime.Budget', side_effect=partial(Budget, remaining=0)):
+    with patch('game.game_runtime.Budget', side_effect=partial(Budget, remaining=0)):
         restored.load(game.serialize()['game_state'])
     assert restored.payload() == game.payload()
 
@@ -439,7 +439,7 @@ def test_draft_actions_each_receive_a_fresh_budget(
     action = GameAction(name='clear', revision=0, draft=[
         GameStep(name='add', arguments={'amount': 1}) for _ in range(64 if no_op else 6)
     ])
-    with patch('components.canvas.game_runtime.Budget', side_effect=partial(Budget, remaining=1000)):
+    with patch('game.game_runtime.Budget', side_effect=partial(Budget, remaining=1000)):
         game.act(action)
     assert 'Retrying with' not in caplog.text
     assert game.state == {'count': 0 if no_op else 6} and game.revision == 1
@@ -501,7 +501,7 @@ def test_missing_invalid_and_changed_packages(tmp_path: Path) -> None:
 
 
 def test_schema_property_names_are_not_treated_as_schema_keywords() -> None:
-    from components.canvas.game_runtime import validate_schema
+    from game.game_runtime import validate_schema
 
     validator = validate_schema({"type": "object", "properties": {"pattern": {"type": "string"}, "$ref": {"type": "integer"}}})
     validator.validate({"pattern": "any game data", "$ref": 3})
@@ -569,7 +569,7 @@ def test_player_action_event_preserves_each_committed_state(tmp_path: Path) -> N
 
 
 def test_game_state_emits_debug_logs(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
-    with caplog.at_level(logging.DEBUG, logger="components.canvas.game_state"):
+    with caplog.at_level(logging.DEBUG, logger="game.game_state"):
         game = make_game(tmp_path)
         game.story_snapshot("responder")
         game.serialize()
@@ -610,8 +610,8 @@ def test_example_adventure_checkers_narratron_interaction(monkeypatch: pytest.Mo
         # move scans exceeded this ceiling during initial rendering alone.
         return operation(Budget(remaining=100_000, seconds=60))
 
-    monkeypatch.setattr("components.canvas.game_runtime.evaluate_with_recovery", evaluate_interactive)
-    monkeypatch.setattr("components.canvas.game_state.evaluate_with_recovery", evaluate_interactive)
+    monkeypatch.setattr("game.game_runtime.evaluate_with_recovery", evaluate_interactive)
+    monkeypatch.setattr("game.game_state.evaluate_with_recovery", evaluate_interactive)
     example_path = Path("adventures/example_adventure")
     game = GameState(example_path, Mock(), Mock())
     assert game.error == ""

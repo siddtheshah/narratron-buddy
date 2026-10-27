@@ -27,7 +27,7 @@ from google.adk.sessions import InMemorySessionService
 from google.genai import types
 
 from components.canvas_state import CanvasStateManager
-from components.canvas.game_state import GameState
+from game.game_state import GameState
 from components.theater_manager import Theater
 from components.reference_manager import (
     Character,

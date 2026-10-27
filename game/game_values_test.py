@@ -1,7 +1,7 @@
 import pytest
 from celpy import celtypes
 
-from components.canvas.game_values import checked_json
+from game.game_values import checked_json
 
 
 def test_json_conversion_preserves_boolean_and_native_string_results() -> None:

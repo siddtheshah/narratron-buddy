@@ -4,8 +4,8 @@ import json
 
 from pydantic import JsonValue, TypeAdapter
 
-from components.canvas.game_runtime import GameAction
-from components.canvas.game_state import GameState
+from game.game_runtime import GameAction
+from game.game_state import GameState
 
 
 class GameTool:

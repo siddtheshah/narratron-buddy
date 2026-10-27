@@ -3,7 +3,7 @@
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 from typing import Literal
 
-from components.canvas.game_runtime import GameAction
+from game.game_runtime import GameAction
 
 
 class ProposedFactChange(BaseModel):

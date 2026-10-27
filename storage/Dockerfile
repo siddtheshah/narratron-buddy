@@ -29,6 +29,7 @@ ENV PATH="/opt/venv/bin:$PATH"
 COPY app.yaml .
 COPY theater_default.yaml .
 COPY components/ components/
+COPY game/ game/
 COPY utils/ utils/
 COPY storage/ storage/
 COPY pricing/ pricing/
@@ -49,4 +50,4 @@ ENV USE_LIVE_DB=false
 ENV DB_PATH=deployer.db
 
 # Run the storage daemon on persistent schedule
-CMD ["uv", "run", "--no-project", "--python", "/opt/venv/bin/python", "-m", "storage.storage_daemon"]
+CMD ["uv", "run", "--no-project", "--python", "/opt/venv/bin/python", "python", "-m", "storage.storage_daemon"]

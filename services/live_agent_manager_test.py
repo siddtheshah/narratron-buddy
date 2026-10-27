@@ -15,8 +15,8 @@ import pytest
 from components.theater_manager import TheaterManager
 from components.notepad import Notepad
 from components.reference_manager import ReferenceManager
-from components.canvas.game_runtime import GameAction
-from components.canvas.game_state import GameState
+from game.game_runtime import GameAction
+from game.game_state import GameState
 from google.adk.events import Event
 from google.genai import types
 from providers import LiveAgentProvider

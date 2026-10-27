@@ -18,8 +18,8 @@ from celpy.evaluation import Activation, CELEvalError, Evaluator, Result, bool_e
 from jsonschema import Draft202012Validator
 from lark import Token, Tree
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, ValidationError
-from components.canvas.game_values import MAX_VALUE_BYTES, checked_json
-from components.game_source import game_source_json
+from game.game_values import MAX_VALUE_BYTES, checked_json
+from game.game_source import game_source_json
 
 MAX_GAME_BYTES = 131_072
 MAX_STEPS = 500_000

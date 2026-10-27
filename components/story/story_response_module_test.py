@@ -992,7 +992,7 @@ class TestResponderInstructionAndTurnPrompt(unittest.TestCase):
 
     def test_turn_prompt_excludes_game_state(self) -> None:
         from unittest.mock import Mock
-        from components.canvas.game_state import GameState
+        from game.game_state import GameState
 
         self.module.game_state = GameState(Path("adventures/example_adventure"), Mock(), Mock())
         self.reference_manager.count.return_value = 0

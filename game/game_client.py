@@ -6,8 +6,8 @@ import json
 from lark import Token, Tree
 from pydantic import JsonValue
 
-from components.canvas.game_runtime import GameProgram, ViewNode
-from components.canvas.game_values import checked_json
+from game.game_runtime import GameProgram, ViewNode
+from game.game_values import checked_json
 
 
 def _browser_integer(source: str) -> int:

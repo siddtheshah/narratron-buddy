@@ -460,7 +460,7 @@ The three-role runtime is now wired into `StoryTool`:
   decisions and reasons, staged role-scoped sticky writes, and atomic planner
   checkpoint commits (`commit_planning`), while `Notepad.restore_recorded_snapshot()`
   preserves newer planner-owned stickies across restarts.
-- `components/canvas/game_state.py` persists `StoryGameCommit` records at the
+- `game/game_state.py` persists `StoryGameCommit` records at the
   game commit boundary (`pending_story_actions`, `acknowledge_story_action`,
   `commit_story_action`, `story_action_commits`) and blocks new player game moves
   on unfinished foreground turns (`before_player_action`).

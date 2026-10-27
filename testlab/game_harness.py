@@ -13,8 +13,8 @@ from time import perf_counter
 from dotenv import load_dotenv
 from pydantic import Field, JsonValue
 
-from components.canvas.game_runtime import GameAction, GameModel, MAX_GAME_BYTES, validate_game_package
-from components.canvas.game_state import GameState
+from game.game_runtime import GameAction, GameModel, MAX_GAME_BYTES, validate_game_package
+from game.game_state import GameState
 from providers.text_response_provider import TextResponseProvider, TextResponseRequest
 
 DEFAULT_GAME_MODEL = "gemini-3.5-flash-lite"

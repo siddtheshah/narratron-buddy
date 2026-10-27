@@ -347,5 +347,5 @@ manager is recreated; in-place rule hot reload is not implemented.
 Run the contract, package and browser checks with:
 
 ```powershell
-uv run pytest -n 0 components/canvas/game_state_test.py components/game_package_test.py api_server/game_actions_test.py testing/ui/game_renderer_test.py
+uv run pytest -n 0 game/game_state_test.py components/game_package_test.py api_server/game_actions_test.py testing/ui/game_renderer_test.py
 ```

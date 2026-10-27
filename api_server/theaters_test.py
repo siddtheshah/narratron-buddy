@@ -54,7 +54,7 @@ def test_deployment_preserves_character_folders_and_game(tmp_path: Path, source:
     from PIL import Image
     from components.theater_manager import TheaterManager
     from services.adventure_service import AdventureService
-    from components.canvas.game_state import GameAction, GameState
+    from game.game_state import GameAction, GameState
     from testing.game_fixtures import counter_definition
 
     manager = TheaterManager(base_theaters_dir=tmp_path / "theaters")

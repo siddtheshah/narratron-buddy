@@ -6,9 +6,9 @@ from unittest.mock import Mock
 import pytest
 import yaml
 
-from components.canvas.game_runtime import MAX_GAME_BYTES, validate_game_package
-from components.canvas.game_state import GameAction, GameState
-from components.game_source import game_source_json
+from game.game_runtime import MAX_GAME_BYTES, validate_game_package
+from game.game_state import GameAction, GameState
+from game.game_source import game_source_json
 from testing.game_fixtures import counter_definition
 
 
