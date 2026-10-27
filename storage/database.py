@@ -1189,7 +1189,7 @@ class _DatabaseManagerBase:
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "INSERT INTO password_reset_tokens (token, user_id, created_at, expires_at, used) VALUES (?, ?, ?, ?, 0)",
+                "INSERT INTO password_reset_tokens (token, user_id, created_at, expires_at, used) VALUES (?, ?, ?, ?, FALSE)",
                 (token, user_dict["id"], now.isoformat(), expires.isoformat())
             )
             conn.commit()
@@ -1240,7 +1240,7 @@ class _DatabaseManagerBase:
                 "UPDATE users SET password_hash = ?, salt = ? WHERE id = ?",
                 (password_hash, salt, user["id"])
             )
-            cursor.execute("UPDATE password_reset_tokens SET used = 1 WHERE token = ?", (token,))
+            cursor.execute("UPDATE password_reset_tokens SET used = TRUE WHERE token = ?", (token,))
             cursor.execute("DELETE FROM auth_sessions WHERE user_id = ?", (user["id"],))
             conn.commit()
             return True

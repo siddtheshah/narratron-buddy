@@ -398,21 +398,22 @@ async function submitForgotPassword() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username_or_email: input })
     });
-    const data = await res.json();
-    if (res.ok) {
-      let msg = data.message || 'Password reset link sent!';
-      if (data.reset_link) {
-        msg += `<br><br><strong>Dev Mode Reset Link:</strong><br><a href="${data.reset_link}" style="color: #c084fc; word-break: break-all;">${data.reset_link}</a>`;
-      }
-      if (success) {
-        success.innerHTML = msg;
-        success.style.display = 'block';
-      }
-    } else {
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
       if (err) {
-        err.textContent = data.detail || 'Failed to request password reset.';
+        err.textContent = data.detail || 'Password reset request failed. Please try again later.';
         err.style.display = 'block';
       }
+      return;
+    }
+    const data = await res.json();
+    let msg = data.message || 'Password reset link sent!';
+    if (data.reset_link) {
+      msg += `<br><br><strong>Dev Mode Reset Link:</strong><br><a href="${data.reset_link}" style="color: #c084fc; word-break: break-all;">${data.reset_link}</a>`;
+    }
+    if (success) {
+      success.innerHTML = msg;
+      success.style.display = 'block';
     }
   } catch (e) {
     if (err) {
@@ -453,20 +454,21 @@ async function submitResetPassword() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ token: token, new_password: newPassword })
     });
-    const data = await res.json();
-    if (res.ok) {
-      invalidateAuthState();
-      switchAuthTab('login');
-      const loginSuccess = document.getElementById('modalSuccess');
-      if (loginSuccess) {
-        loginSuccess.textContent = data.message || 'Password updated successfully! Please log in.';
-        loginSuccess.style.display = 'block';
-      }
-    } else {
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
       if (err) {
-        err.textContent = data.detail || 'Failed to reset password.';
+        err.textContent = data.detail || 'Password reset failed. Please try again later.';
         err.style.display = 'block';
       }
+      return;
+    }
+    const data = await res.json();
+    invalidateAuthState();
+    switchAuthTab('login');
+    const loginSuccess = document.getElementById('modalSuccess');
+    if (loginSuccess) {
+      loginSuccess.textContent = data.message || 'Password updated successfully! Please log in.';
+      loginSuccess.style.display = 'block';
     }
   } catch (e) {
     if (err) {

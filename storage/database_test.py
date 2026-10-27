@@ -187,6 +187,39 @@ class TestLiveConnectionPool(unittest.TestCase):
         self.assertIs(self.db._live_pool.get_nowait(), raw_connection)
         raw_connection.commit.assert_called_once()
 
+    def test_reset_token_insert_uses_postgresql_boolean_literal(self) -> None:
+        raw_connection = MagicMock()
+        raw_cursor = raw_connection.cursor.return_value
+        raw_cursor.description = [("id",), ("username",), ("email",)]
+        raw_cursor.fetchone.return_value = (42, "resetuser", "reset@example.test")
+        self.db._live_pool.put_nowait(raw_connection)
+        self.db._live_pool_total = 1
+
+        result = self.db.create_password_reset_token("resetuser")
+
+        self.assertIsNotNone(result)
+        insert_sql, insert_params = raw_cursor.execute.call_args.args
+        # The SQLite-backed local database accepts 0 here, but PostgreSQL's
+        # password_reset_tokens.used column requires a boolean expression.
+        self.assertIn("VALUES (%s, %s, %s, %s, FALSE)", insert_sql)
+        self.assertEqual(insert_params[1], 42)
+
+    def test_reset_token_completion_uses_postgresql_boolean_literal(self) -> None:
+        raw_connection = MagicMock()
+        raw_cursor = raw_connection.cursor.return_value
+        raw_cursor.description = [("id",), ("username",), ("email",), ("expires_at",), ("used",)]
+        expires_at = (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(minutes=30)).isoformat()
+        raw_cursor.fetchone.return_value = (42, "resetuser", "reset@example.test", expires_at, False)
+        self.db._live_pool.put_nowait(raw_connection)
+        self.db._live_pool_total = 1
+
+        self.assertTrue(self.db.reset_password_with_token("reset-token", "NewPassword123"))
+
+        raw_cursor.execute.assert_any_call(
+            "UPDATE password_reset_tokens SET used = TRUE WHERE token = %s", ("reset-token",),
+        )
+        raw_cursor.execute.assert_any_call("DELETE FROM auth_sessions WHERE user_id = %s", (42,))
+
     def test_checkout_times_out_when_all_connections_are_leased(self):
         self.db._live_pool.put_nowait(MagicMock())
         self.db._live_pool_total = self.db._live_pool_size
