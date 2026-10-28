@@ -195,7 +195,9 @@
     </div>
 
     <script type="module">
-        import { createDoodleRenderer, createImageRenderer } from "/static/js/canvas-renderers.js?v=multi-stamp-delete-video-loop-silent-20261018-1";
+        import { createDoodleRenderer, createImageRenderer } from "/static/js/canvas-renderers.js?v=selection-overlay-20261028-1";
+        import { getAnimationSignature, playCanvasAnimation } from "/static/js/canvas-media.js";
+        import { createCanvasScene } from "/static/js/canvas-scene.js";
         import { createNarrationPane } from "/static/js/narration-pane.js";
         // Extract Theater ID from URL parameters or Path
         const urlParams = new URLSearchParams(window.location.search);
@@ -212,6 +214,7 @@
             if (!currentJoinKey || !url) return url;
             try {
                 const parsed = new URL(url, window.location.origin);
+                if (parsed.origin !== window.location.origin) return url;
                 if (!parsed.searchParams.has('join_key')) {
                     parsed.searchParams.set('join_key', currentJoinKey);
                 }
@@ -225,67 +228,12 @@
         const doodleCanvas = document.getElementById('doodle-canvas');
         const currentImage = document.getElementById('current-image');
         const narrationPane = await createNarrationPane(document.getElementById('narration-pane-mount'));
-        const sceneDialogueOverlay = narrationPane.element;
         narrationPane.setDrawingColorSelected(false);
-        let sceneDialogueSignature = '';
-        let sceneDialogueRenderId = 0;
-        const dialogueSpeakerColors = new Map();
-        const dialogueSpeakerPalette = ['#fbbf24', '#67e8f9', '#f9a8d4', '#a7f3d0', '#c4b5fd', '#fdba74', '#93c5fd', '#f0abfc'];
-        const sceneSpeechQueue = [];
-        let sceneSpeechPlaying = false;
-        let currentSceneAudio = null;
-
-        function stopSceneSpeech() {
-            sceneSpeechQueue.length = 0;
-            sceneSpeechPlaying = false;
-            if (currentSceneAudio) {
-                const audio = currentSceneAudio;
-                currentSceneAudio = null;
-                audio.onended = null;
-                audio.onerror = null;
-                try {
-                    audio.pause();
-                    audio.src = '';
-                } catch (_) {}
-            }
-        }
-
-        function enqueueSceneSpeech(audioUrl) {
-            if (!audioEnabled || !audioUrl) return;
-            sceneSpeechQueue.push(withJoinKey(audioUrl));
-            if (sceneSpeechPlaying) return;
-            const playNext = () => {
-                const next = sceneSpeechQueue.shift();
-                if (!next) {
-                    sceneSpeechPlaying = false;
-                    currentSceneAudio = null;
-                    return;
-                }
-                sceneSpeechPlaying = true;
-                const audio = new Audio(next);
-                currentSceneAudio = audio;
-                audio.onended = audio.onerror = () => {
-                    if (currentSceneAudio === audio) {
-                        currentSceneAudio = null;
-                    }
-                    playNext();
-                };
-                audio.play().catch(() => {
-                    if (currentSceneAudio === audio) {
-                        currentSceneAudio = null;
-                    }
-                    playNext();
-                });
-            };
-            playNext();
-        }
-
-        function getDialogueSpeakerColor(speaker) {
-            if (!dialogueSpeakerColors.has(speaker)) {
-                dialogueSpeakerColors.set(speaker, dialogueSpeakerPalette[dialogueSpeakerColors.size % dialogueSpeakerPalette.length]);
-            }
-            return dialogueSpeakerColors.get(speaker);
-        }
+        const { updateSceneDialogue, enqueueSceneSpeech } = createCanvasScene({
+            narrationPane,
+            resolveUrl: withJoinKey,
+            audioEnabled: () => audioEnabled,
+        });
         let lastTime = 0;
         let lastImageRawUrl = "";
         let lastImageEffect = null;
@@ -297,7 +245,7 @@
         // OBS Browser Sources capture audio produced by this page. Keep this
         // player deliberately headless so the visual output remains clean.
         const audioEnabled = urlParams.get('audio') !== '0';
-        const requestedVolume = Number(urlParams.get('audio_volume'));
+        const requestedVolume = Number(urlParams.get('audio_volume') ?? '0.8');
         const musicVolume = Number.isFinite(requestedVolume)
             ? Math.min(1, Math.max(0, requestedVolume))
             : 0.8;
@@ -403,145 +351,35 @@
             canvas: doodleCanvas,
             isVisible: () => doodlesEnabled,
             stampLayer: document.getElementById('canvas-stamp-layer'),
+            canSelectSegment: () => false,
         });
         const resizeRendererCanvas = imageRenderer.resize;
         const applyImageTransition = imageRenderer.applyTransition;
-        const playImageSequence = imageRenderer.playSequence;
-        const playLayeredAnimation = imageRenderer.playLayeredAnimation ? imageRenderer.playLayeredAnimation.bind(imageRenderer) : null;
-        const playVideoAnimation = imageRenderer.playVideoAnimation ? imageRenderer.playVideoAnimation.bind(imageRenderer) : null;
-        const stopImageAnimation = imageRenderer.stopSequence ? imageRenderer.stopSequence.bind(imageRenderer) : null;
         const resizeDoodleCanvas = () => doodleRenderer.resize(doodleActions);
         const redrawAllDoodles = () => doodleRenderer.redraw(doodleActions);
         const renderSegment = doodleRenderer.renderSegment;
         const renderTextAnnotation = doodleRenderer.renderText;
-
-        function createSpanElement(span) {
-            const el = document.createElement('span');
-            el.className = 'text-span';
-            if (span.effect && span.effect !== 'none') {
-                el.classList.add(`text-effect-${span.effect}`);
-            }
-            if (span.font && span.font !== 'default') {
-                el.classList.add(`text-font-${span.font}`);
-            }
-            if (span.color) {
-                el.style.color = span.color;
-            }
-            return el;
-        }
-
-        function applySplittingIfAvailable(element) {
-            if (typeof window.Splitting === 'function') {
-                try {
-                    window.Splitting({ target: element, by: 'chars' });
-                } catch (e) {
-                    console.warn('Splitting error:', e);
-                }
-            }
-        }
-
-        function updateSceneDialogue(dialogue, narration, narration_spans) {
-            if (!sceneDialogueOverlay) return;
-            const lines = (Array.isArray(dialogue) ? dialogue : [])
-                .filter(item => item && item.text)
-                .map(item => ({
-                    speaker: String(item.speaker || 'Narrator'),
-                    text: String(item.text),
-                    kind: item.kind === 'thought' ? 'thought' : 'speech',
-                    spans: Array.isArray(item.spans) ? item.spans : null,
-                }));
-            const description = String(narration || '').trim();
-            const nSpans = Array.isArray(narration_spans) ? narration_spans : null;
-            const signature = JSON.stringify({ lines, description, nSpans });
-            if (signature === sceneDialogueSignature) return;
-            sceneDialogueSignature = signature;
-            stopSceneSpeech();
-            const renderId = ++sceneDialogueRenderId;
-            sceneDialogueOverlay.replaceChildren();
-            const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-
-            if (description) {
-                const caption = document.createElement('div');
-                caption.className = 'narration scene-narration scene-description';
-                narrationPane.prepare(caption);
-                const spansToRender = nSpans && nSpans.length > 0
-                    ? nSpans
-                    : [{ text: description, effect: 'none', font: 'default' }];
-                for (const s of spansToRender) {
-                    const spanEl = createSpanElement(s);
-                    spanEl.textContent = s.text;
-                    caption.appendChild(spanEl);
-                    if (s.effect && s.effect !== 'none' && !reduceMotion) {
-                        applySplittingIfAvailable(spanEl);
-                    }
-                }
-                sceneDialogueOverlay.appendChild(caption);
-            }
-
-            (async () => {
-                for (const item of lines) {
-                    if (renderId !== sceneDialogueRenderId) return;
-                    const bubble = document.createElement('div');
-                    bubble.className = `scene-dialogue-bubble ${item.kind}`;
-                    const speaker = document.createElement('span');
-                    speaker.className = 'scene-dialogue-speaker';
-                    speaker.textContent = item.speaker;
-                    speaker.style.color = getDialogueSpeakerColor(item.speaker);
-                    const textContainer = document.createElement('span');
-                    textContainer.className = 'scene-dialogue-text';
-                    bubble.append(speaker, textContainer);
-                    sceneDialogueOverlay.appendChild(bubble);
-
-                    const lineSpans = item.spans && item.spans.length > 0
-                        ? item.spans
-                        : [{ text: item.text, effect: 'none', font: 'default' }];
-
-                    if (reduceMotion) {
-                        for (const s of lineSpans) {
-                            const spanEl = createSpanElement(s);
-                            spanEl.textContent = s.text;
-                            textContainer.appendChild(spanEl);
-                        }
-                        continue;
-                    }
-
-                    const wordCount = item.text.trim().split(/\s+/).filter(Boolean).length;
-                    const charCount = Math.max(Array.from(item.text).length, 1);
-                    const delay = Math.round((wordCount * 1000) / (4.5 * charCount));
-
-                    for (const s of lineSpans) {
-                        if (renderId !== sceneDialogueRenderId) return;
-                        const spanEl = createSpanElement(s);
-                        textContainer.appendChild(spanEl);
-                        const characters = Array.from(s.text);
-                        for (const character of characters) {
-                            if (renderId !== sceneDialogueRenderId) return;
-                            spanEl.textContent += character;
-                            await new Promise(resolve => window.setTimeout(resolve, delay));
-                        }
-                        if (s.effect && s.effect !== 'none') {
-                            applySplittingIfAvailable(spanEl);
-                        }
-                    }
-                }
-            })();
-        }
 
         window.addEventListener('resize', () => {
             resizeRendererCanvas();
             resizeDoodleCanvas();
         });
 
+        let latestStateRequestSequence = 0;
+
         async function fetchLatestImage() {
             if (!currenttheaterId) return;
+            const requestSequence = ++latestStateRequestSequence;
             try {
                 const apiParams = new URLSearchParams();
                 apiParams.set('theater_id', currenttheaterId);
                 if (currentJoinKey) apiParams.set('join_key', currentJoinKey);
                 const apiUrl = `/api/latest?${apiParams.toString()}`;
                 const response = await fetch(apiUrl);
+                if (!response.ok) throw new Error(`Unable to load canvas state (${response.status}).`);
                 const data = await response.json();
-                updateSceneDialogue(data.scene_dialogue, data.narration, data.narration_spans);
+                if (requestSequence !== latestStateRequestSequence) return;
+                updateSceneDialogue(data.scene_dialogue, data.narration, data.narration_spans, data.committed_scene_speech_generation);
 
                 if (data.music && (!hasReceivedMusicState || data.music.time > lastMusicTime)) {
                     lastMusicTime = data.music.time;
@@ -556,80 +394,32 @@
                 }
 
                 const currentImageEffect = data.effect || 'gleam3';
-                const animationSignature = data.animation?.type === 'triframe' && Array.isArray(data.animation.frames)
-                    ? data.animation.frames.join('|')
-                    : data.animation?.type === 'layered' && Array.isArray(data.animation.layers)
-                        ? data.animation.layers.map(layer => `${layer.url}:${layer.effect}`).join('|')
-                        : data.animation?.type === 'video' && (data.animation.video_url || data.animation.url)
-                            ? (data.animation.video_url || data.animation.url) : '';
-                const isNewImage = data.latest && (
+                const animationSignature = getAnimationSignature(data.animation);
+                const isNewImage = (data.latest || animationSignature) && (
                     data.time > lastTime
                     || data.latest !== lastImageRawUrl
                     || currentImageEffect !== lastImageEffect
                     || animationSignature !== lastAnimationSignature
                 );
+                const firstLoad = isFirstCanvasLoad;
+                isFirstCanvasLoad = false;
+                if (!isNewImage) return;
 
-                if (isFirstCanvasLoad) {
-                    isFirstCanvasLoad = false;
-                    if (data.latest) {
-                        lastTime = data.time;
-                        lastImageRawUrl = data.latest;
-                        lastImageEffect = currentImageEffect;
-                        lastAnimationSignature = animationSignature;
-                        if (animationSignature) {
-                            if (data.animation.type === 'layered' && typeof playLayeredAnimation === 'function') {
-                                const layersWithAuth = (data.animation.layers || []).map(layer => ({
-                                    ...layer,
-                                    url: withJoinKey(layer.url),
-                                }));
-                                playLayeredAnimation(layersWithAuth);
-                            } else if (data.animation.type === 'video' && typeof playVideoAnimation === 'function') {
-                                playVideoAnimation(withJoinKey(data.animation.video_url || data.animation.url), data.animation);
-                            } else {
-                                playImageSequence(data.animation.frames.map(f => withJoinKey(f)), {
-                                    frameDuration: data.animation.frame_duration_ms || 1400,
-                                    crossfadeDuration: data.animation.crossfade_duration_ms || 500,
-                                });
-                            }
-                        } else {
-                            const newImgUrl = withJoinKey(data.latest + "?t=" + new Date().getTime());
-                            applyImageTransition(newImgUrl, 'none', currentImageEffect);
-                        }
-                    }
-                } else if (isNewImage) {
-                    lastTime = data.time;
-                    lastImageRawUrl = data.latest;
-                    lastImageEffect = currentImageEffect;
-                    lastAnimationSignature = animationSignature;
-
-                    if (!doodlesPersistent) {
-                        doodleActions = [];
-                        redrawAllDoodles();
-                    }
-
-                    if (animationSignature) {
-                        if (data.animation.type === 'layered' && typeof playLayeredAnimation === 'function') {
-                            const layersWithAuth = (data.animation.layers || []).map(layer => ({
-                                ...layer,
-                                url: withJoinKey(layer.url),
-                            }));
-                            playLayeredAnimation(layersWithAuth);
-                        } else if (data.animation.type === 'video' && typeof playVideoAnimation === 'function') {
-                            playVideoAnimation(withJoinKey(data.animation.video_url || data.animation.url), data.animation);
-                        } else {
-                            playImageSequence(data.animation.frames.map(f => withJoinKey(f)), {
-                                frameDuration: data.animation.frame_duration_ms || 1400,
-                                crossfadeDuration: data.animation.crossfade_duration_ms || 500,
-                            });
-                        }
-                    } else {
-                        if (typeof stopImageAnimation === 'function') {
-                            stopImageAnimation();
-                        }
-                        const newImgUrl = withJoinKey(data.latest + "?t=" + new Date().getTime());
-                        const transition = (data.transition || 'crossfade').toLowerCase().trim();
-                        applyImageTransition(newImgUrl, transition, currentImageEffect);
-                    }
+                lastTime = data.time;
+                lastImageRawUrl = data.latest;
+                lastImageEffect = currentImageEffect;
+                lastAnimationSignature = animationSignature;
+                if (!firstLoad && !doodlesPersistent) {
+                    doodleActions = [];
+                    redrawAllDoodles();
+                }
+                if (animationSignature) {
+                    playCanvasAnimation(imageRenderer, data.animation, withJoinKey);
+                } else {
+                    imageRenderer.stopSequence();
+                    const newImgUrl = withJoinKey(data.latest + (data.latest.includes('?') ? '&t=' : '?t=') + Date.now());
+                    const transition = firstLoad ? 'none' : (data.transition || 'crossfade').toLowerCase().trim();
+                    applyImageTransition(newImgUrl, transition, currentImageEffect);
                 }
             } catch (err) {
                 console.error("OBS Canvas fetch error:", err);
@@ -647,77 +437,78 @@
             ws = new WebSocket(wsUrl);
 
             ws.onmessage = (event) => {
-            const data = JSON.parse(event.data);
-            if (data.type === 'doodles_toggle') {
-                doodlesEnabled = Boolean(data.enabled);
-                doodlesPersistent = doodlesEnabled && Boolean(data.persistent);
-                redrawAllDoodles();
-            } else if (data.type === 'clear') {
-                doodleActions = [];
-                redrawAllDoodles();
-            } else if (data.type === 'doodle_snapshot') {
-                doodleActions = [];
-                redrawAllDoodles();
-                (data.stamps || []).forEach((action) => {
-                    doodleActions.push(action);
-                });
-                (data.batches || []).forEach((batch) => {
-                    const points = batch.points || [];
+                const data = JSON.parse(event.data);
+                if (data.type === 'doodles_toggle') {
+                    doodlesEnabled = Boolean(data.enabled);
+                    doodlesPersistent = doodlesEnabled && Boolean(data.persistent);
+                    redrawAllDoodles();
+                } else if (data.type === 'clear') {
+                    doodleActions = [];
+                    redrawAllDoodles();
+                } else if (data.type === 'doodle_snapshot') {
+                    doodleActions = [];
+                    redrawAllDoodles();
+                    (data.stamps || []).forEach((action) => {
+                        doodleActions.push(action);
+                    });
+                    (data.batches || []).forEach((batch) => {
+                        const points = batch.points || [];
+                        const rect = doodleCanvas.getBoundingClientRect();
+                        for (let index = 0; index < points.length - 2; index += 2) {
+                            const action = { type: 'draw', x0: points[index], y0: points[index + 1], x1: points[index + 2], y1: points[index + 3], color: batch.color, size: batch.size || 3 };
+                            doodleActions.push(action);
+                            renderSegment(action.x0 * rect.width, action.y0 * rect.height, action.x1 * rect.width, action.y1 * rect.height, action.color, action.size);
+                        }
+                    });
+                    (data.annotations || []).forEach((action) => {
+                        doodleActions.push(action);
+                        renderTextAnnotation(action);
+                    });
+                    redrawAllDoodles();
+                } else if (data.type === 'draw_batch') {
+                    const points = data.points || [];
                     const rect = doodleCanvas.getBoundingClientRect();
                     for (let index = 0; index < points.length - 2; index += 2) {
-                        const action = { type: 'draw', x0: points[index], y0: points[index + 1], x1: points[index + 2], y1: points[index + 3], color: batch.color, size: batch.size || 3 };
+                        const action = { type: 'draw', x0: points[index], y0: points[index + 1], x1: points[index + 2], y1: points[index + 3], color: data.color, size: data.size || 3 };
                         doodleActions.push(action);
                         renderSegment(action.x0 * rect.width, action.y0 * rect.height, action.x1 * rect.width, action.y1 * rect.height, action.color, action.size);
                     }
-                });
-                (data.annotations || []).forEach((action) => {
-                    doodleActions.push(action);
-                    renderTextAnnotation(action);
-                });
-                redrawAllDoodles();
-            } else if (data.type === 'draw_batch') {
-                const points = data.points || [];
-                const rect = doodleCanvas.getBoundingClientRect();
-                for (let index = 0; index < points.length - 2; index += 2) {
-                    const action = { type: 'draw', x0: points[index], y0: points[index + 1], x1: points[index + 2], y1: points[index + 3], color: data.color, size: data.size || 3 };
-                    doodleActions.push(action);
-                    renderSegment(action.x0 * rect.width, action.y0 * rect.height, action.x1 * rect.width, action.y1 * rect.height, action.color, action.size);
-                }
-            } else if (data.type === 'draw') {
-                doodleActions.push(data);
-                if (doodleCanvas) {
-                    const rect = doodleCanvas.getBoundingClientRect();
-                    renderSegment(
-                        data.x0 * rect.width, data.y0 * rect.height,
-                        data.x1 * rect.width, data.y1 * rect.height,
-                        data.color, data.size || 3
-                    );
-                }
-            } else if (data.type === 'text') {
-                const index = doodleActions.findIndex(action => action.type === 'text' && action.id === data.id);
-                if (index >= 0) doodleActions[index] = data;
-                else doodleActions.push(data);
-                redrawAllDoodles();
-            } else if (data.type === 'stamp') {
-                const index = doodleActions.findIndex(action => action.type === 'stamp' && (
-                    (action.id && action.id === data.id) ||
-                    (String(action.stamp_id) === String(data.stamp_id) && String(action.user_id) === String(data.user_id))
-                ));
-                if (index >= 0) doodleActions.splice(index, 1);
-                const firstNonStamp = doodleActions.findIndex(action => action.type !== 'stamp');
-                if (firstNonStamp >= 0) doodleActions.splice(firstNonStamp, 0, data);
-                else doodleActions.push(data);
-                redrawAllDoodles();
-            } else if (data.type === 'select_stamp') {
-                bringStampToFront(data.id);
-            } else if (data.type === 'remove_stamp') {
-                const index = doodleActions.findIndex(action => action.type === 'stamp' && action.id === data.id);
-                if (index >= 0) {
-                    doodleActions.splice(index, 1);
+                } else if (data.type === 'draw') {
+                    doodleActions.push(data);
+                    if (doodleCanvas) {
+                        const rect = doodleCanvas.getBoundingClientRect();
+                        renderSegment(
+                            data.x0 * rect.width, data.y0 * rect.height,
+                            data.x1 * rect.width, data.y1 * rect.height,
+                            data.color, data.size || 3
+                        );
+                    }
+                } else if (data.type === 'text') {
+                    const index = doodleActions.findIndex(action => action.type === 'text' && action.id === data.id);
+                    if (index >= 0) doodleActions[index] = data;
+                    else doodleActions.push(data);
                     redrawAllDoodles();
+                } else if (data.type === 'stamp') {
+                    const index = doodleActions.findIndex(action => action.type === 'stamp' && (
+                        (action.id && action.id === data.id) ||
+                        (String(action.stamp_id) === String(data.stamp_id) && String(action.user_id) === String(data.user_id))
+                    ));
+                    if (index >= 0) doodleActions.splice(index, 1);
+                    const firstNonStamp = doodleActions.findIndex(action => action.type !== 'stamp');
+                    if (firstNonStamp >= 0) doodleActions.splice(firstNonStamp, 0, data);
+                    else doodleActions.push(data);
+                    redrawAllDoodles();
+                } else if (data.type === 'select_stamp') {
+                    bringStampToFront(data.id);
+                } else if (data.type === 'remove_stamp') {
+                    const index = doodleActions.findIndex(action => action.type === 'stamp' && action.id === data.id);
+                    if (index >= 0) {
+                        doodleActions.splice(index, 1);
+                        redrawAllDoodles();
+                    }
                 }
-            }
-        };
+            };
+        }
 
         function bringStampToFront(stampId) {
             const index = doodleActions.findIndex(
@@ -766,7 +557,7 @@
                         (message.type === 'state_changed' && message.domains?.includes('latest'))) {
                         fetchLatestImage();
                     } else if (message.type === 'scene_speech_ready') {
-                        enqueueSceneSpeech(message.audio_url);
+                        enqueueSceneSpeech(message.audio_url, message.speech_generation);
                     }
                 } catch (error) {
                     console.warn('Ignoring invalid canvas-state message.', error);

@@ -4291,6 +4291,8 @@
         import { createDoodleRenderer, createImageRenderer } from "/static/js/canvas-renderers.js?v=selection-overlay-20261028-1";
         import { createA2UICanvasRenderer } from "/static/js/a2ui-canvas-renderer.js?v=20261005-1";
         import { createGameRenderer } from "/static/js/game-renderer.js?v=12";
+        import { getAnimationSignature, playCanvasAnimation } from "/static/js/canvas-media.js";
+        import { createCanvasScene } from "/static/js/canvas-scene.js";
         import { createNarrationPane } from "/static/js/narration-pane.js";
 
         let lastTime = -1;
@@ -4327,7 +4329,6 @@
         const chatInput = document.getElementById('chat-input');
         const agentThoughtText = document.getElementById('agent-thought-text');
         const narrationPane = await createNarrationPane(document.getElementById('narration-pane-mount'));
-        const sceneDialogueOverlay = narrationPane.element;
         const a2uiCanvasLayer = document.getElementById('a2ui-canvas-layer');
         const gameRenderer = createGameRenderer({
             container: document.getElementById('game-state-layer'),
@@ -4347,99 +4348,7 @@
             surfaceUrl: surfaceId => `/api/a2ui/surfaces/${encodeURIComponent(surfaceId)}?theater_id=${encodeURIComponent(currenttheaterId || '')}`,
             canEdit: () => isCurrentOrator(),
         });
-        let sceneDialogueSignature = '';
-        let sceneDialogueRenderId = 0;
-        const dialogueSpeakerColors = new Map();
-        const dialogueSpeakerPalette = ['#fbbf24', '#67e8f9', '#f9a8d4', '#a7f3d0', '#c4b5fd', '#fdba74', '#93c5fd', '#f0abfc'];
-        const sceneSpeechQueue = [];
-        let sceneSpeechPlaying = false;
-        let currentSceneAudio = null;
-        let committedSceneSpeechGeneration = null;
-
-        function stopSceneSpeech() {
-            sceneSpeechQueue.length = 0;
-            sceneSpeechPlaying = false;
-            if (currentSceneAudio) {
-                const audio = currentSceneAudio;
-                currentSceneAudio = null;
-                audio.onended = null;
-                audio.onerror = null;
-                try {
-                    audio.pause();
-                    audio.src = '';
-                } catch (_) { }
-            }
-        }
-
-        function playQueuedSceneSpeech() {
-            if (sceneSpeechPlaying) return;
-            const playNext = () => {
-                // Keep audio from a future generation queued: synthesis can
-                // finish before its scene state is committed and rendered.
-                while (
-                    sceneSpeechQueue.length > 0
-                    && sceneSpeechQueue[0].speechGeneration < committedSceneSpeechGeneration
-                ) {
-                    sceneSpeechQueue.shift();
-                }
-                const nextIndex = sceneSpeechQueue.findIndex(
-                    item => item.speechGeneration === committedSceneSpeechGeneration,
-                );
-                if (nextIndex < 0) {
-                    sceneSpeechPlaying = false;
-                    currentSceneAudio = null;
-                    return;
-                }
-                const [next] = sceneSpeechQueue.splice(nextIndex, 1);
-                sceneSpeechPlaying = true;
-                const audio = new Audio(next.audioUrl);
-                currentSceneAudio = audio;
-                audio.onended = audio.onerror = () => {
-                    if (currentSceneAudio === audio) {
-                        currentSceneAudio = null;
-                    }
-                    playNext();
-                };
-                audio.play().catch(() => {
-                    if (currentSceneAudio === audio) {
-                        currentSceneAudio = null;
-                    }
-                    playNext();
-                });
-            };
-            playNext();
-        }
-
-        function enqueueSceneSpeech(audioUrl, speechGeneration) {
-            if (!audioUrl || !Number.isInteger(speechGeneration)) return;
-            if (committedSceneSpeechGeneration !== null && speechGeneration < committedSceneSpeechGeneration) return;
-            sceneSpeechQueue.push({ audioUrl, speechGeneration });
-            playQueuedSceneSpeech();
-        }
-
-        function setCommittedSceneSpeechGeneration(speechGeneration) {
-            if (!Number.isInteger(speechGeneration)) return;
-            if (speechGeneration === committedSceneSpeechGeneration) {
-                playQueuedSceneSpeech();
-                return;
-            }
-            if (committedSceneSpeechGeneration !== null && speechGeneration < committedSceneSpeechGeneration) return;
-
-            committedSceneSpeechGeneration = speechGeneration;
-            // A new rendered scene deliberately interrupts only speech from an
-            // older scene. Matching speech may have arrived before state did.
-            const matchingAudio = sceneSpeechQueue.filter(item => item.speechGeneration === speechGeneration);
-            stopSceneSpeech();
-            sceneSpeechQueue.push(...matchingAudio);
-            playQueuedSceneSpeech();
-        }
-
-        function getDialogueSpeakerColor(speaker) {
-            if (!dialogueSpeakerColors.has(speaker)) {
-                dialogueSpeakerColors.set(speaker, dialogueSpeakerPalette[dialogueSpeakerColors.size % dialogueSpeakerPalette.length]);
-            }
-            return dialogueSpeakerColors.get(speaker);
-        }
+        const { updateSceneDialogue, enqueueSceneSpeech } = createCanvasScene({ narrationPane });
 
         // Generate anonymous user ID and read theater context
         const myUserId = "Viewer_" + Math.floor(Math.random() * 10000);
@@ -5170,9 +5079,6 @@
         });
         const resizeRendererCanvas = imageRenderer.resize;
         const applyImageTransition = imageRenderer.applyTransition;
-        const playImageSequence = imageRenderer.playSequence;
-        const playLayeredAnimation = imageRenderer.playLayeredAnimation ? imageRenderer.playLayeredAnimation.bind(imageRenderer) : null;
-        const playVideoAnimation = imageRenderer.playVideoAnimation ? imageRenderer.playVideoAnimation.bind(imageRenderer) : null;
         const stopImageAnimation = imageRenderer.stopSequence ? imageRenderer.stopSequence.bind(imageRenderer) : null;
 
         function resolveWebpQualityUrl(rawUrl) {
@@ -5379,24 +5285,6 @@
 
         initializeStoryLogInspector(theaterId);
 
-        function getAnimationSignature(animation) {
-            if (!animation) return '';
-            if (animation.type === 'triframe' && Array.isArray(animation.frames)) return animation.frames.join('|');
-            if (animation.type === 'layered' && Array.isArray(animation.layers)) return animation.layers.map(layer => `${layer.url}:${layer.effect}`).join('|');
-            if (animation.type === 'video') return animation.video_url || animation.url || animation.id || '';
-            return '';
-        }
-
-        function playTriFrameAnimation(animation) {
-            playImageSequence(animation.frames.map((url) => {
-                const effective = resolveWebpQualityUrl(url);
-                return effective + (effective.includes('?') ? '&' : '?') + 't=' + new Date().getTime();
-            }), {
-                frameDuration: animation.frame_duration_ms || 1400,
-                crossfadeDuration: animation.crossfade_duration_ms || 500,
-            });
-        }
-
         function playAnimation(animation) {
             if (minimalMode) {
                 // Animated media defeats the point of Minimal Mode. Present a
@@ -5412,13 +5300,12 @@
                 }
                 return;
             }
-            if (animation.type === 'layered' && typeof playLayeredAnimation === 'function') {
-                playLayeredAnimation(animation.layers);
-            } else if (animation.type === 'video' && typeof playVideoAnimation === 'function') {
-                playVideoAnimation(animation.video_url || animation.url, animation);
-            } else {
-                playTriFrameAnimation(animation);
-            }
+            playCanvasAnimation(imageRenderer, animation, url => {
+                const effective = resolveWebpQualityUrl(url);
+                return animation.type === 'triframe'
+                    ? effective + (effective.includes('?') ? '&' : '?') + 't=' + Date.now()
+                    : effective;
+            });
         }
 
         function updatePagingControlsUI() {
@@ -5830,118 +5717,6 @@
                 disconnectedIndicator.setAttribute('aria-hidden', String(!isWandering));
             }
             lastAgentThought = text;
-        }
-
-        function createSpanElement(span) {
-            const el = document.createElement('span');
-            el.className = 'text-span';
-            if (span.effect && span.effect !== 'none') {
-                el.classList.add(`text-effect-${span.effect}`);
-            }
-            if (span.font && span.font !== 'default') {
-                el.classList.add(`text-font-${span.font}`);
-            }
-            if (span.color) {
-                el.style.color = span.color;
-            }
-            return el;
-        }
-
-        function applySplittingIfAvailable(element) {
-            if (typeof window.Splitting === 'function') {
-                try {
-                    window.Splitting({ target: element, by: 'chars' });
-                } catch (e) {
-                    console.warn('Splitting error:', e);
-                }
-            }
-        }
-
-        function updateSceneDialogue(dialogue, narration, narration_spans, sceneSpeechGeneration) {
-            if (!sceneDialogueOverlay) return;
-            setCommittedSceneSpeechGeneration(sceneSpeechGeneration);
-            const lines = (Array.isArray(dialogue) ? dialogue : [])
-                .filter(item => item && item.text)
-                .map(item => ({
-                    speaker: String(item.speaker || 'Narrator'),
-                    text: String(item.text),
-                    kind: item.kind === 'thought' ? 'thought' : 'speech',
-                    spans: Array.isArray(item.spans) ? item.spans : null,
-                }));
-            const description = String(narration || '').trim();
-            const nSpans = Array.isArray(narration_spans) ? narration_spans : null;
-            const signature = JSON.stringify({ lines, description, nSpans });
-            if (signature === sceneDialogueSignature) return;
-            sceneDialogueSignature = signature;
-            const renderId = ++sceneDialogueRenderId;
-            sceneDialogueOverlay.replaceChildren();
-            const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-
-            if (description) {
-                const caption = document.createElement('div');
-                caption.className = 'narration scene-narration scene-description';
-                narrationPane.prepare(caption);
-                const spansToRender = nSpans && nSpans.length > 0
-                    ? nSpans
-                    : [{ text: description, effect: 'none', font: 'default' }];
-                for (const s of spansToRender) {
-                    const spanEl = createSpanElement(s);
-                    spanEl.textContent = s.text;
-                    caption.appendChild(spanEl);
-                    if (s.effect && s.effect !== 'none' && !reduceMotion) {
-                        applySplittingIfAvailable(spanEl);
-                    }
-                }
-                sceneDialogueOverlay.appendChild(caption);
-            }
-
-            (async () => {
-                for (const item of lines) {
-                    if (renderId !== sceneDialogueRenderId) return;
-                    const bubble = document.createElement('div');
-                    bubble.className = `scene-dialogue-bubble ${item.kind}`;
-                    const speaker = document.createElement('span');
-                    speaker.className = 'scene-dialogue-speaker';
-                    speaker.textContent = item.speaker;
-                    speaker.style.color = getDialogueSpeakerColor(item.speaker);
-                    const textContainer = document.createElement('span');
-                    textContainer.className = 'scene-dialogue-text';
-                    bubble.append(speaker, textContainer);
-                    sceneDialogueOverlay.appendChild(bubble);
-
-                    const lineSpans = item.spans && item.spans.length > 0
-                        ? item.spans
-                        : [{ text: item.text, effect: 'none', font: 'default' }];
-
-                    if (reduceMotion) {
-                        for (const s of lineSpans) {
-                            const spanEl = createSpanElement(s);
-                            spanEl.textContent = s.text;
-                            textContainer.appendChild(spanEl);
-                        }
-                        continue;
-                    }
-
-                    const wordCount = item.text.trim().split(/\s+/).filter(Boolean).length;
-                    const charCount = Math.max(Array.from(item.text).length, 1);
-                    const delay = Math.round((wordCount * 1000) / (4.5 * charCount));
-
-                    for (const s of lineSpans) {
-                        if (renderId !== sceneDialogueRenderId) return;
-                        const spanEl = createSpanElement(s);
-                        textContainer.appendChild(spanEl);
-                        const characters = Array.from(s.text);
-                        for (const character of characters) {
-                            if (renderId !== sceneDialogueRenderId) return;
-                            spanEl.textContent += character;
-                            await new Promise(resolve => window.setTimeout(resolve, delay));
-                        }
-                        if (s.effect && s.effect !== 'none') {
-                            applySplittingIfAvailable(spanEl);
-                        }
-                    }
-                }
-            })();
         }
 
         // Doodle Logic with Full HiDPI Persistence & Replay

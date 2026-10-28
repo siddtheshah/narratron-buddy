@@ -6,7 +6,7 @@ from api_server.app import app
 
 
 class TestOBSCanvas(UITestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         super().setUp()
         access_patcher = patch(
             "api_server.pages._require_canvas_access_async",
@@ -17,7 +17,7 @@ class TestOBSCanvas(UITestCase):
         self.addCleanup(access_patcher.stop)
         self.client = TestClient(app)
 
-    def test_obs_route_omits_ui_chrome(self):
+    def test_obs_route_omits_ui_chrome(self) -> None:
         response = self.client.get("/obs?theater_id=test_theater")
         self.assertEqual(response.status_code, 200)
         html = response.text
@@ -42,18 +42,18 @@ class TestOBSCanvas(UITestCase):
         ):
             self.assertNotIn(element, html)
 
-    def test_obs_theater_path_route(self):
+    def test_obs_theater_path_route(self) -> None:
         response = self.client.get("/obs/test_theater_123")
         self.assertEqual(response.status_code, 200)
         self.assertIn("Narratron OBS Canvas", response.text)
 
-    def test_canvas_includes_disconnected_indicator(self):
+    def test_canvas_includes_disconnected_indicator(self) -> None:
         response = self.client.get("/canvas?theater_id=test_theater")
         self.assertEqual(response.status_code, 200)
         self.assertIn('id="agent-disconnected-indicator"', response.text)
         self.assertIn('agentDisconnectedPulse', response.text)
 
-    def test_obs_canvas_includes_narration_pane(self):
+    def test_obs_canvas_includes_narration_pane(self) -> None:
         response = self.client.get("/obs?theater_id=test_theater")
         self.assertEqual(response.status_code, 200)
         html = response.text
@@ -63,5 +63,6 @@ class TestOBSCanvas(UITestCase):
         self.assertIn('import { createNarrationPane } from "/static/js/narration-pane.js";', html)
         self.assertIn('const narrationPane = await createNarrationPane(', html)
         self.assertIn('narrationPane.setDrawingColorSelected(false);', html)
-        self.assertIn('narrationPane.prepare(caption);', html)
+        self.assertIn('createCanvasScene({', html)
+        self.assertIn('/static/js/canvas-scene.js', html)
         self.assertIn('.scene-description', html)
