@@ -857,7 +857,7 @@ class TestCreateAgent(unittest.TestCase):
         create_agent(theater=theater, tool_bundle=mock_bundle)
 
         instruction = mock_agent_cls.call_args.kwargs["instruction"]
-        self.assertIn("## Character Management", instruction)
+        self.assertIn("## Reference Management", instruction)
         self.assertIn("`create_or_update_character`", instruction)
         self.assertIn("`lookup_character`", instruction)
         self.assertIn("`clear_characters`", instruction)

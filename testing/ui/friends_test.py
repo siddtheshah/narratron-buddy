@@ -114,6 +114,7 @@ def test_profile_requests_and_friend_join_menu() -> None:
         page.get_by_role('button', name="Friends' theaters", exact=True).click()
         expect(page.locator('#join-adventure')).to_have_attribute('aria-hidden', 'true')
         page.wait_for_function("document.getElementById('friend-theaters').getBoundingClientRect().right <= window.innerWidth")
+        page.locator('.join-options-track').evaluate("el => Promise.all(el.getAnimations().map(a => a.finished))")
         expect(page.get_by_role('button', name='Join / adventure', exact=True)).to_be_focused()
         usernames_box = page.locator('.friend-usernames').bounding_box()
         theaters_box = page.locator('#friend-active-theaters').bounding_box()
