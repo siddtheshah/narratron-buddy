@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 import yaml
 
@@ -196,6 +197,76 @@ class TestAdventureService(unittest.TestCase):
             self.assertEqual(get_adventures_root().name, "adventures")
         finally:
             FLAGS["testing_use_local"].value = orig_local
+
+    def test_warm_listing_does_not_access_storage(self) -> None:
+        service = AdventureService(self.local_dir)
+        expected = service.list_adventures()
+        with patch.object(service, "_get_cache_key", side_effect=AssertionError("Unexpected storage scan")), \
+             patch.object(service, "_fetch_adventures", side_effect=AssertionError("Unexpected reload")):
+            self.assertEqual(service.list_adventures(), expected)
+
+    def test_unchanged_catalog_does_not_reload(self) -> None:
+        service = AdventureService(self.local_dir)
+        service.list_adventures()
+        with patch.object(service, "_fetch_adventures", wraps=service._fetch_adventures) as fetch:
+            self.assertFalse(service.refresh_if_changed())
+        fetch.assert_not_called()
+
+    def test_metadata_edit_refreshes_cards(self) -> None:
+        service = AdventureService(self.local_dir)
+        service.list_adventures()
+        path = self.adv1_dir / "metadata.json"
+        metadata = json.loads(path.read_text(encoding="utf-8"))
+        metadata["title"] = "Updated Adventure Title"
+        path.write_text(json.dumps(metadata), encoding="utf-8")
+        self.assertTrue(service.refresh_if_changed())
+        self.assertEqual(service.get_adventure("alpha-adventure")["title"], "Updated Adventure Title")
+
+    def test_asset_addition_and_removal_refresh_counts(self) -> None:
+        service = AdventureService(self.local_dir)
+        service.list_adventures()
+        path = self.adv1_dir / "lore" / "new.md"
+        path.write_text("New lore", encoding="utf-8")
+        self.assertTrue(service.refresh_if_changed())
+        self.assertEqual(service.get_adventure("alpha-adventure")["lore_count"], 2)
+        path.unlink()
+        self.assertTrue(service.refresh_if_changed())
+        self.assertEqual(service.get_adventure("alpha-adventure")["lore_count"], 1)
+
+    def test_added_and_removed_adventures_refresh_catalog(self) -> None:
+        service = AdventureService(self.local_dir)
+        service.list_adventures()
+        folder = self.local_dir / "New Adventure"
+        folder.mkdir()
+        self.assertTrue(service.refresh_if_changed())
+        self.assertEqual(len(service.list_adventures()), 4)
+        folder.rmdir()
+        self.assertTrue(service.refresh_if_changed())
+        self.assertEqual(len(service.list_adventures()), 3)
+
+    def test_failed_refresh_retains_snapshot_and_retries(self) -> None:
+        service = AdventureService(self.local_dir)
+        expected = service.list_adventures()
+        (self.adv1_dir / "lore" / "new.txt").write_text("New", encoding="utf-8")
+        with patch.object(service, "_fetch_adventures", side_effect=OSError("Storage unavailable")):
+            with self.assertRaises(OSError):
+                service.refresh_if_changed()
+        self.assertEqual(service.list_adventures(), expected)
+        self.assertTrue(service.refresh_if_changed())
+        self.assertEqual(service.get_adventure("alpha-adventure")["lore_count"], 2)
+
+    def test_refresh_serves_previous_snapshot_until_complete(self) -> None:
+        service = AdventureService(self.local_dir)
+        expected = service.list_adventures()
+        original_fetch = service._fetch_adventures
+
+        # Observe the request path from inside an in-progress background reload.
+        def fetch_during_refresh() -> list[dict]:
+            self.assertIs(service.list_adventures(), expected)
+            return original_fetch()
+
+        with patch.object(service, "_fetch_adventures", side_effect=fetch_during_refresh):
+            self.assertTrue(service.refresh_if_changed(force_refresh=True))
 
     def test_service_respects_constructor_overrides(self):
         custom_dir = self.local_dir / "custom_adv"

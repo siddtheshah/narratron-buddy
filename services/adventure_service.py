@@ -10,7 +10,7 @@ import json
 import logging
 import mimetypes
 from pathlib import Path
-import time
+from threading import Lock
 from typing import Any, Dict, List, Optional, Tuple
 import yaml
 
@@ -36,7 +36,7 @@ mimetypes.add_type("image/jpeg", ".jpg")
 mimetypes.add_type("image/jpeg", ".jpeg")
 mimetypes.add_type("image/webp", ".webp")
 
-CACHE_TTL_SECONDS = 60.0
+CACHE_CHECK_INTERVAL_SECONDS = 60.0
 
 
 def get_adventures_root() -> Path:
@@ -59,11 +59,12 @@ logger = logging.getLogger(__name__)
 class AdventureService:
     """Provides access to premade adventure packages on local or mounted storage."""
 
-    def __init__(self, base_dir: Path | str):
+    def __init__(self, base_dir: Path | str) -> None:
         self._base_dir = Path(base_dir).resolve()
 
         self._adventures_cache: Optional[List[Dict[str, Any]]] = None
-        self._cache_timestamp: float = 0.0
+        self._cache_key: Optional[tuple[tuple[str, int, int], ...]] = None
+        self._refresh_lock = Lock()
 
     @property
     def base_dir(self) -> Path:
@@ -83,30 +84,49 @@ class AdventureService:
 
     def invalidate_cache(self) -> None:
         """Clear cached adventure listings."""
-        self._adventures_cache = None
-        self._cache_timestamp = 0.0
+        with self._refresh_lock:
+            self._adventures_cache = None
+            self._cache_key = None
+
+    def _get_cache_key(self) -> tuple[tuple[str, int, int], ...]:
+        """Fingerprint package paths and file stats without reading asset contents.
+
+        This scan runs at startup or in the background, never on a warm listing.
+        Directory entries also detect added/removed empty adventure packages.
+        """
+        root = self.base_dir
+        if not root.exists():
+            return ()
+        entries: list[tuple[str, int, int]] = []
+        for folder in root.iterdir():
+            if not folder.is_dir() or folder.name.startswith("."):
+                continue
+            for path in [folder, *folder.rglob("*")]:
+                stat = path.stat()
+                entries.append((path.relative_to(root).as_posix(), stat.st_mtime_ns, stat.st_size))
+        return tuple(sorted(entries))
+
+    def refresh_if_changed(self, force_refresh: bool = False) -> bool:
+        """Atomically replace the snapshot only when its source fingerprint changes.
+
+        Failures leave the previous snapshot and key intact for the next retry.
+        A key taken before loading ensures edits during a scan are checked again.
+        """
+        with self._refresh_lock:
+            cache_key = self._get_cache_key()
+            if not force_refresh and self._adventures_cache is not None and cache_key == self._cache_key:
+                return False
+            adventures = self._fetch_adventures()
+            adventures.sort(key=lambda adventure: adventure.get("created_at") or "", reverse=True)
+            self._adventures_cache = adventures
+            self._cache_key = cache_key
+            return True
 
     def list_adventures(self, force_refresh: bool = False) -> List[Dict[str, Any]]:
         """List all premade adventures sorted by newest first (created_at desc)."""
-        now = time.time()
-        if (
-            not force_refresh
-            and self._adventures_cache is not None
-            and (now - self._cache_timestamp) < CACHE_TTL_SECONDS
-        ):
-            return self._adventures_cache
-
-        adventures = self._fetch_adventures()
-
-        # Sort newest first by created_at ISO timestamp (defaulting to empty string)
-        adventures.sort(
-            key=lambda a: a.get("created_at") or "",
-            reverse=True,
-        )
-
-        self._adventures_cache = adventures
-        self._cache_timestamp = now
-        return adventures
+        if force_refresh or self._adventures_cache is None:
+            self.refresh_if_changed(force_refresh=force_refresh)
+        return self._adventures_cache
 
     def get_adventure(self, adventure_id: str) -> Optional[Dict[str, Any]]:
         """Retrieve metadata for a specific adventure by ID."""

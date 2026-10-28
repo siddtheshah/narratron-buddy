@@ -347,6 +347,48 @@ def test_server_shutdown_closes_database_connection():
     mock_db.close.assert_called_once()
 
 
+def test_lifespan_preloads_adventure_cards_before_serving() -> None:
+    service = MagicMock(spec=object_registry.AdventureService)
+    database = MagicMock()
+
+    async def run_lifespan() -> None:
+        async with object_registry.lifespan(object_registry.app):
+            service.list_adventures.assert_called_once_with(force_refresh=True)
+            database.close.assert_not_called()
+
+    with (
+        patch.object(object_registry, "adventure_service", service),
+        patch.object(object_registry, "db", database),
+        patch("api_server.pages.rebuild_docs_search_index"),
+    ):
+        asyncio.run(run_lifespan())
+    database.close.assert_called_once()
+
+
+def test_adventure_monitor_retries_after_storage_failure() -> None:
+    service = MagicMock(spec=object_registry.AdventureService)
+
+    async def run_monitor() -> None:
+        stop = asyncio.Event()
+        loop = asyncio.get_running_loop()
+
+        def refresh() -> bool:
+            if service.refresh_if_changed.call_count == 1:
+                raise OSError("Temporary storage failure")
+            loop.call_soon_threadsafe(stop.set)
+            return False
+
+        service.refresh_if_changed.side_effect = refresh
+        await asyncio.wait_for(object_registry.monitor_adventure_catalog(stop), timeout=5)
+
+    with (
+        patch.object(object_registry, "adventure_service", service),
+        patch.object(object_registry, "CACHE_CHECK_INTERVAL_SECONDS", 0.001),
+    ):
+        asyncio.run(run_monitor())
+    assert service.refresh_if_changed.call_count == 2
+
+
 def test_generic_websocket_fallback_accepts_connection():
     from fastapi.testclient import TestClient
     client = TestClient(app_module.app)

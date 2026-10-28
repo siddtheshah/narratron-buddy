@@ -6,7 +6,10 @@ configuration all operate on the same instances.
 """
 
 import atexit
+import asyncio
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+import logging
 from pathlib import Path
 import sys
 import uuid
@@ -18,7 +21,7 @@ from fastapi import FastAPI
 from components.canvas.canvas_state_service import CanvasStateService
 from components.theater_manager import TheaterManager
 from pricing.pricing_controller import PricingController
-from services.adventure_service import AdventureService, ensure_adventures_root
+from services.adventure_service import AdventureService, CACHE_CHECK_INTERVAL_SECONDS, ensure_adventures_root
 from services.live_agent_manager import LiveAgentSessionManager
 from services.music_catalog import MusicCatalog
 from services.suggestion_service import SuggestionService
@@ -86,14 +89,37 @@ def shutdown_database_connection() -> None:
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Route modules are loaded by the time the ASGI lifespan begins. Rebuild
     # from rendered pages so search always reflects the deployed docs.
     from api_server.pages import rebuild_docs_search_index
 
     rebuild_docs_search_index()
-    yield
-    shutdown_database_connection()
+    # Finish the first load before accepting requests; subsequent checks never
+    # put filesystem scans on the card-listing request path.
+    await asyncio.to_thread(adventure_service.list_adventures, force_refresh=True)
+    stop = asyncio.Event()
+    monitor = asyncio.create_task(monitor_adventure_catalog(stop))
+    try:
+        yield
+    finally:
+        stop.set()
+        try:
+            await monitor
+        finally:
+            shutdown_database_connection()
+
+
+async def monitor_adventure_catalog(stop: asyncio.Event) -> None:
+    """Check shared adventure storage without blocking the server event loop."""
+    while not stop.is_set():
+        try:
+            await asyncio.wait_for(stop.wait(), timeout=CACHE_CHECK_INTERVAL_SECONDS)
+        except asyncio.TimeoutError:
+            try:
+                await asyncio.to_thread(adventure_service.refresh_if_changed)
+            except Exception:
+                logging.getLogger(__name__).exception("Adventure catalog refresh failed; retaining cached cards.")
 
 
 load_dotenv()
