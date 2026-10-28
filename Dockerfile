@@ -1,4 +1,13 @@
-# ---- Build stage: install dependencies with uv ----
+# ---- Build stage: compile CEL-Go worker ----
+FROM golang:1.23-bookworm AS go-builder
+
+WORKDIR /src/game/cel_go_worker
+COPY game/cel_go_worker/go.mod game/cel_go_worker/go.sum ./
+RUN go mod download
+COPY game/cel_go_worker/*.go ./
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/cel-go-worker .
+
+# ---- Build stage: install Python dependencies with uv ----
 FROM python:3.12-slim AS builder
 
 WORKDIR /app
@@ -25,7 +34,8 @@ WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/*
 
-# Copy virtual environment from builder
+# Copy compiled CEL-Go worker binary and Python virtual environment
+COPY --from=go-builder /out/cel-go-worker /usr/local/bin/cel-go-worker
 COPY --from=builder /opt/venv /opt/venv
 COPY --from=builder /bin/uv /bin/uv
 ENV PATH="/opt/venv/bin:$PATH"

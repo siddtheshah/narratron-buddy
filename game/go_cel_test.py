@@ -54,6 +54,7 @@ def expression(worker: GoWorker, source: str, context: dict[str, JsonValue]) -> 
     ('twice("bad") == 1 || true', {}),
     ("wrapped()", {}),
     ('constantScope({"answer": 1})', {}),
+    ('int("3") + int(true) + int(false)', {}),
 ])
 def test_go_results_match_python(worker: GoWorker, source: str, context: dict[str, JsonValue]) -> None:
     definition = counter_definition()
@@ -134,7 +135,7 @@ def test_go_counter_and_exchange_operations_match(worker: GoWorker, tmp_path: Pa
         directory = tmp_path / "game"
         directory.mkdir(exist_ok=True)
         (directory / "game.json").write_text(definition.model_dump_json(), encoding="utf-8")
-        expected = GameState(tmp_path, Mock(), Mock())
+        expected = GameState(tmp_path, Mock(), Mock(), backend="python")
         actual = GoGameState(tmp_path, Mock(), Mock(), worker=worker)
         assert actual.payload() == expected.payload()
         for name, arguments, actor in actions:
@@ -145,7 +146,12 @@ def test_go_counter_and_exchange_operations_match(worker: GoWorker, tmp_path: Pa
 
 
 def test_go_checkers_batches_draft_and_preserves_payloads(worker: GoWorker) -> None:
-    expected_times, expected = sample(Path("adventures/example_adventure"))
+    from game.game_state import GameState
+
+    def python_factory(directory: Path, persist: Callable[[], None], notify: Callable[..., None]) -> GameState:
+        return GameState(directory, persist, notify, backend="python")
+
+    expected_times, expected = sample(Path("adventures/example_adventure"), python_factory)
 
     def factory(directory: Path, persist: Callable[[], None], notify: Callable[..., None]) -> GoGameState:
         return GoGameState(directory, persist, notify, worker=worker)

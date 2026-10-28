@@ -5,9 +5,10 @@ from collections.abc import Callable
 from hashlib import sha256
 import json
 import logging
+import os
 from pathlib import Path
 from threading import RLock
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from jsonschema import ValidationError as SchemaValidationError
 from pydantic import Field, JsonValue, TypeAdapter
@@ -18,6 +19,9 @@ from game.game_runtime import (
     Budget, GameAction, GameStep, GameModel, GameProgram, MAX_GAME_BYTES, MAX_VALUE_BYTES,
     GameWorkBudgetExceeded, evaluate_with_recovery, validate_game_package,
 )
+
+if TYPE_CHECKING:
+    from game.go_cel import GoWorker
 
 logger = logging.getLogger(__name__)
 
@@ -66,7 +70,15 @@ def _view_nodes_allow_contributor(nodes: list[JsonValue], action: GameAction) ->
 
 
 class GameState:
-    def __init__(self, directory: Path, persist: Callable[[], None], notify: Callable[..., None]) -> None:
+    def __init__(
+        self,
+        directory: Path,
+        persist: Callable[[], None],
+        notify: Callable[..., None],
+        *,
+        worker: GoWorker | None = None,
+        backend: Literal["auto", "go", "python"] = "auto",
+    ) -> None:
         self._lock = RLock()
         self._persist = persist
         self._notify = notify
@@ -81,6 +93,20 @@ class GameState:
         self._narratron_actions: dict[str, JsonValue] = {}
         self._story_commits: dict[str, StoryGameCommit] = {}
         self._client: dict[str, JsonValue] | None = None
+        self._dedicated_worker = worker is not None
+        self._worker: GoWorker | None = worker
+        self._package_key = ""
+        self.operation_metrics: dict[str, int] = {}
+
+        if self._worker is None:
+            selected = backend if backend != "auto" else os.environ.get("NARRATRON_CEL_BACKEND", "auto").strip().lower()
+            if selected in ("auto", "go"):
+                from game.go_cel import shared_go_worker
+
+                self._worker = shared_go_worker()
+                if selected == "go" and self._worker is None:
+                    raise RuntimeError("CEL-Go worker binary is not available.")
+
         try:
             path = find_game_file(directory)
             if path is None:
@@ -89,9 +115,25 @@ class GameState:
             if not path.resolve().is_relative_to(directory.resolve()) or path.stat().st_size > MAX_GAME_BYTES:
                 raise ValueError("Game package path or size is invalid.")
             content = path.read_bytes()
-            self.program = validate_game_package(content, filename=path.name, game_dir=path.parent)
-            self._client = browser_program(self.program)
             self.definition_hash = sha256(content).hexdigest()
+            if self._worker is not None:
+                from game.go_cel import load_go_package
+
+                self._package_key = "" if self._dedicated_worker else self.definition_hash
+                self.program = load_go_package(
+                    self._worker,
+                    content,
+                    filename=path.name,
+                    game_dir=path.parent,
+                    package_key=self._package_key,
+                    auto_start=not self._dedicated_worker,
+                )
+                self.operation_metrics = dict(self._worker.last_metrics)
+            else:
+                self.definition_hash = ""
+                self.program = validate_game_package(content, filename=path.name, game_dir=path.parent)
+                self.definition_hash = sha256(content).hexdigest()
+            self._client = browser_program(self.program)
             self.state = json.loads(json.dumps(self.program.definition.initial))
             self._view = json.loads(json.dumps(self.program.initial_view))
             self._model_state = json.loads(json.dumps(self.program.initial_model_state))
@@ -105,11 +147,47 @@ class GameState:
             )
         except Exception as exc:
             logger.warning("Game package failed to load: %s", exc, exc_info=True)
+            self.definition_hash = ""
             self.error = "Game package could not be loaded. Check its declaration and CEL expressions."
             self.program = None
 
+    @property
+    def worker(self) -> GoWorker | None:
+        return self._worker
+
+    def _ensure_worker_loaded(self) -> None:
+        assert self._worker is not None and self.program is not None
+        if self._dedicated_worker:
+            return
+        with self._worker.lock:
+            self._worker.ensure_started()
+            if self._package_key and self._package_key not in self._worker.loaded_packages:
+                self._worker.load(self.program, package=self._package_key)
+
     def _prepare(self, state: dict[str, JsonValue], budget: Budget | None = None) -> list[JsonValue]:
         assert self.program is not None
+        if self._worker is not None:
+            from game.go_cel import Prepared, validate_prepared
+
+            logger.debug("[GameState] Preparing state (revision=%d): %s", self.revision, state)
+            self._ensure_worker_loaded()
+            message: dict[str, JsonValue] = {"op": "prepare", "state": state}
+            if self._package_key:
+                message["package"] = self._package_key
+            result = self._worker.request(message)
+            prepared = Prepared.model_validate(result)
+            view = validate_prepared(self.program, prepared)
+            self._view = view
+            self._model_state = prepared.model_state
+            self._narratron_actions = prepared.actions
+            self.operation_metrics = dict(self._worker.last_metrics)
+            logger.debug(
+                "[GameState] Prepared state successfully (nodes=%d, actions=%s)",
+                len(view),
+                list(prepared.actions.keys()),
+            )
+            return view
+
         if budget is None:
             def prepare(budget: Budget) -> list[JsonValue]:
                 return self._prepare(state, budget)
@@ -258,6 +336,92 @@ class GameState:
         except Exception:
             logger.exception("Game update notification failed at revision %s", self.revision)
 
+    def _act_go(
+        self,
+        action: GameAction,
+        actor: Literal["player", "contributor", "narratron"],
+    ) -> None:
+        from game.go_cel import Prepared, validate_prepared
+
+        assert self.program is not None and self._worker is not None
+        pending_steps = [*action.draft, GameStep(name=action.name, arguments=action.arguments)]
+        for index, candidate in enumerate(pending_steps):
+            transition = self.program.definition.transitions.get(candidate.name)
+            if transition is None:
+                raise InvalidGameInput("Unknown game action.")
+            if index < len(pending_steps) - 1 and (not transition.is_player_actor or transition.triggering):
+                raise InvalidGameInput("Only exploratory actions can precede a turn commitment.")
+            if (actor == "narratron") != (transition.actor == "narratron"):
+                raise InvalidGameInput("This actor cannot take that game action.")
+            if len(candidate.model_dump_json().encode("utf-8")) > 4096:
+                raise InvalidGameInput("Game action exceeds its size budget.")
+            try:
+                self.program.action_validators[candidate.name].validate(candidate.arguments)
+            except SchemaValidationError as exc:
+                raise InvalidGameInput(f"Invalid input: {exc.message[:200]}") from exc
+
+        self._ensure_worker_loaded()
+        try:
+            try:
+                message: dict[str, JsonValue] = {
+                    "op": "act",
+                    "state": self.state,
+                    "actor": actor,
+                    "steps": [candidate.model_dump(mode="json") for candidate in pending_steps],
+                }
+                if self._package_key:
+                    message["package"] = self._package_key
+                result = self._worker.request(message)
+            except ValueError as exc:
+                if str(exc) == "Only the active orator can take this game action.":
+                    raise UnauthorizedGameAction(str(exc)) from exc
+                if str(exc) == "This action is not permitted in the current game state.":
+                    raise InvalidGameInput(str(exc)) from exc
+                raise
+            logger.debug("[GameState] Preparing state (revision=%d): %s", self.revision, self.state)
+            proposal = Prepared.model_validate(result)
+            view = validate_prepared(self.program, proposal)
+            if len(proposal.candidates) != len(pending_steps):
+                raise ValueError("Worker returned an incorrect number of candidates")
+            if proposal.candidates[-1] != proposal.state:
+                raise ValueError("Worker prepared a different final state")
+        except (UnauthorizedGameAction, GameWorkBudgetExceeded):
+            raise
+        except Exception:
+            final_transition = self.program.definition.transitions.get(action.name)
+            if (
+                action.draft
+                or final_transition is None
+                or final_transition.on_error is None
+                or (actor == "contributor" and not final_transition.allows_contributor)
+            ):
+                raise
+            recovery = final_transition.on_error
+            recover_msg: dict[str, JsonValue] = {
+                "op": "recover",
+                "state": self.state,
+                "guard": recovery.guard,
+                "source": recovery.result,
+            }
+            if self._package_key:
+                recover_msg["package"] = self._package_key
+            recovered_result = self._worker.request(recover_msg)
+            proposal = Prepared.model_validate(recovered_result)
+            view = validate_prepared(self.program, proposal)
+            logger.warning("Game action %s failed; applied its declared recovery", action.name, exc_info=True)
+        finally:
+            self.operation_metrics = dict(self._worker.last_metrics)
+
+        self.state = proposal.state
+        self._view = view
+        self._model_state = proposal.model_state
+        self._narratron_actions = proposal.actions
+        logger.debug(
+            "[GameState] Prepared state successfully (nodes=%d, actions=%s)",
+            len(view),
+            list(proposal.actions.keys()),
+        )
+
     def act(
         self, action: GameAction, actor: Literal["player", "contributor", "narratron"] = "player",
         *, story_event_id: str = "",
@@ -271,7 +435,7 @@ class GameState:
                     "[GameState] Act rejected: stale revision (action_revision=%d, current_revision=%d)",
                     action.revision,
                     self.revision,
-                )
+                    )
                 raise StaleGameAction("The game changed. Review its current state and try again.")
             if len(action.model_dump_json().encode("utf-8")) > 32768:
                 logger.debug("[GameState] Act rejected: action exceeds size budget")
@@ -313,9 +477,12 @@ class GameState:
             event_id = story_event_id or f"player:{self.definition_hash}:{action.revision}"
 
             try:
-                for step in action.draft:
-                    self._apply_step(step, actor, exploratory=True)
-                self._apply_step(GameStep(name=action.name, arguments=action.arguments), actor)
+                if self._worker is not None:
+                    self._act_go(action, actor)
+                else:
+                    for step in action.draft:
+                        self._apply_step(step, actor, exploratory=True)
+                    self._apply_step(GameStep(name=action.name, arguments=action.arguments), actor)
                 self.revision += 1
                 snapshot = self.story_snapshot("narratron")
                 assert snapshot is not None

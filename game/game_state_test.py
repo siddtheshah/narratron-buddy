@@ -41,7 +41,7 @@ def test_random_binding_is_drawn_once_and_persisted(tmp_path: Path) -> None:
     definition = counter_definition()
     definition.transitions['clear'].bindings = [Binding(name='roll', expr='random_int(1, 5)')]
     definition.transitions['clear'].result = '{"count": roll + roll}'
-    game = make_game(tmp_path, definition)
+    game = make_game(tmp_path, definition, backend='python')
     with patch('game.game_runtime.random.randint', return_value=5) as draw:
         result = game.act(GameAction(name='clear', revision=0))
         assert game.state == {'count': 10}
@@ -60,7 +60,7 @@ def test_random_result_rejected_by_invariant_rolls_back(tmp_path: Path) -> None:
     definition = counter_definition()
     definition.transitions['clear'].result = '{"count": random_int(1, 6)}'
     definition.invariants = ['state.count == 0']
-    game = make_game(tmp_path, definition)
+    game = make_game(tmp_path, definition, backend='python')
     before = game.serialize()
     with patch('game.game_runtime.random.randint', return_value=6):
         with pytest.raises(ValueError, match='undone'):
@@ -364,7 +364,7 @@ def test_budget_recovery_retries_only_final_action_and_commits_once(tmp_path: Pa
     definition.local_preview = True
     definition.transitions['add'].triggering = False
     definition.transitions['clear'].result = '{"count": state.count}'
-    game = make_game(tmp_path, definition)
+    game = make_game(tmp_path, definition, backend='python')
     persist, notify, callback = Mock(), Mock(), Mock()
     game._persist, game._notify, game.on_player_action = persist, notify, callback
     prepare = game._prepare
@@ -395,7 +395,7 @@ def test_budget_recovery_retries_only_final_action_and_commits_once(tmp_path: Pa
 
 
 def test_exhausted_recovery_retains_position_and_allows_later_action(tmp_path: Path) -> None:
-    game = make_game(tmp_path)
+    game = make_game(tmp_path, backend='python')
     before = game.serialize()
     view = game.payload()['view']
     snapshot = game.story_snapshot('narratron')
@@ -419,7 +419,7 @@ def test_exhausted_recovery_retains_position_and_allows_later_action(tmp_path: P
 def test_saved_game_preparation_can_recover(tmp_path: Path) -> None:
     game = make_game(tmp_path)
     game.act(GameAction(name='add', arguments={'amount': 2}, revision=0))
-    restored = make_game(tmp_path)
+    restored = make_game(tmp_path, backend='python')
     with patch('game.game_runtime.Budget', side_effect=partial(Budget, remaining=0)):
         restored.load(game.serialize()['game_state'])
     assert restored.payload() == game.payload()
@@ -435,7 +435,7 @@ def test_draft_actions_each_receive_a_fresh_budget(
     definition.transitions['clear'].result = '{"count": state.count}'
     if no_op:
         definition.transitions['add'].result = '{"count": state.count}'
-    game = make_game(tmp_path, definition)
+    game = make_game(tmp_path, definition, backend='python')
     action = GameAction(name='clear', revision=0, draft=[
         GameStep(name='add', arguments={'amount': 1}) for _ in range(64 if no_op else 6)
     ])
@@ -450,7 +450,7 @@ def test_failed_final_action_rolls_back_all_draft_actions(tmp_path: Path) -> Non
     definition = counter_definition()
     definition.local_preview = True
     definition.transitions['add'].triggering = False
-    game = make_game(tmp_path, definition)
+    game = make_game(tmp_path, definition, backend='python')
     before = game.serialize()
     payload = game.payload()
     snapshot = game.story_snapshot('narratron')

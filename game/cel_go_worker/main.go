@@ -1,4 +1,4 @@
-// Offline CEL-Go experiment. Single request at a time; one compiled package.
+// CEL-Go game worker. Single request at a time; bounded package cache.
 package main
 
 import (
@@ -30,6 +30,7 @@ const maxValue = 131072
 const defaultCostLimit uint64 = 1_000_000
 const maxCostLimit uint64 = 100_000_000
 const goMemoryTarget = 64 * 1024 * 1024
+const maxCachedPackages = 32
 
 type binding struct{ Name, Expr string }
 type function struct {
@@ -75,23 +76,24 @@ type step struct {
 	Arguments map[string]interface{}
 }
 type request struct {
-	Op, Source, Actor string
-	Definition        definition
-	Sources           map[string][]string
-	Random            []string
-	Assets            map[string]rendered
-	State             map[string]interface{}
-	Steps             []step
-	Context           map[string]interface{}
-	TimeoutMS         int    `json:"timeout_ms"`
-	CostLimit         uint64 `json:"cost_limit"`
+	Op, Source, Guard, Actor, Package string
+	Definition                        definition
+	Sources                           map[string][]string
+	Random                            []string
+	Assets                            map[string]rendered
+	State                             map[string]interface{}
+	Steps                             []step
+	Context                           map[string]interface{}
+	TimeoutMS                         int    `json:"timeout_ms"`
+	CostLimit                         uint64 `json:"cost_limit"`
 }
 type prepared struct {
-	State      map[string]interface{}   `json:"state"`
-	View       []rendered               `json:"view"`
-	ModelState interface{}              `json:"model_state"`
-	Actions    map[string]interface{}   `json:"actions"`
-	Candidates []map[string]interface{} `json:"candidates"`
+	State            map[string]interface{}   `json:"state"`
+	View             []rendered               `json:"view"`
+	ModelState       interface{}              `json:"model_state"`
+	Actions          map[string]interface{}   `json:"actions"`
+	Candidates       []map[string]interface{} `json:"candidates"`
+	SVGExpandedBytes int                      `json:"svg_expanded_bytes"`
 }
 type metrics struct {
 	OperationNS  int64  `json:"operation_ns"`
@@ -111,14 +113,14 @@ type scope struct {
 	ids    map[string]int
 }
 type execution struct {
-	ctx           context.Context
-	pkg           *compiled
-	cache         map[string]ref.Val
-	nextID, nodes int
-	costLimit     uint64
-	callCost      uint64
-	exhausted     error
-	stats         metrics
+	ctx                     context.Context
+	pkg                     *compiled
+	cache                   map[string]ref.Val
+	nextID, nodes, svgBytes int
+	costLimit               uint64
+	callCost                uint64
+	exhausted               error
+	stats                   metrics
 }
 type compiled struct {
 	def          definition
@@ -126,6 +128,7 @@ type compiled struct {
 	dependencies map[string][]string
 	random       map[string]bool
 	assets       map[string]rendered
+	assetBytes   map[string]int
 	active       *execution
 }
 
@@ -220,13 +223,32 @@ func normalize(value interface{}) (interface{}, error) {
 }
 
 func compile(req request) (*compiled, error) {
-	p := &compiled{def: req.Definition, programs: map[string]cel.Program{}, dependencies: req.Sources, random: map[string]bool{}, assets: req.Assets}
+	p := &compiled{
+		def:          req.Definition,
+		programs:     map[string]cel.Program{},
+		dependencies: req.Sources,
+		random:       map[string]bool{},
+		assets:       req.Assets,
+		assetBytes:   map[string]int{},
+	}
+	for src, asset := range req.Assets {
+		if data, err := json.Marshal(asset.Children); err == nil {
+			p.assetBytes[src] = len(data)
+		}
+	}
 	for _, s := range req.Random {
 		p.random[s] = true
 	}
 	opts := []cel.EnvOption{
 		cel.ParserExpressionSizeLimit(4000),
 		cel.ExpressionNodeLimit(1000),
+		cel.Function("int", cel.Overload("bool_to_int", []*cel.Type{cel.BoolType}, cel.IntType,
+			cel.UnaryBinding(func(v ref.Val) ref.Val {
+				if v == types.True {
+					return types.Int(1)
+				}
+				return types.Int(0)
+			}))),
 	}
 	for name, f := range p.def.Functions {
 		name, f := name, f
@@ -649,6 +671,7 @@ func (e *execution) render(node view, s scope) ([]rendered, error) {
 					props["src"] = src
 					r.Props = props
 					r.Children = append(append([]rendered{}, asset.Children...), r.Children...)
+					e.svgBytes += e.pkg.assetBytes[src]
 				}
 				break
 			}
@@ -657,6 +680,33 @@ func (e *execution) render(node view, s scope) ([]rendered, error) {
 	}
 	return out, nil
 }
+
+func jsonEqual(a, b map[string]interface{}) bool {
+	if len(a) == 0 && len(b) == 0 {
+		return true
+	}
+	da, errA := json.Marshal(a)
+	db, errB := json.Marshal(b)
+	return errA == nil && errB == nil && bytes.Equal(da, db)
+}
+
+func viewNodesAllowContributor(nodes []rendered, actionName string, actionArgs map[string]interface{}) bool {
+	for _, node := range nodes {
+		if act, ok := node.Action.(map[string]interface{}); ok {
+			name, _ := act["name"].(string)
+			perm, _ := act["permission"].(string)
+			args, _ := act["arguments"].(map[string]interface{})
+			if name == actionName && perm == "contributor" && jsonEqual(args, actionArgs) {
+				return true
+			}
+		}
+		if viewNodesAllowContributor(node.Children, actionName, actionArgs) {
+			return true
+		}
+	}
+	return false
+}
+
 func (e *execution) prepare(state map[string]interface{}) (prepared, error) {
 	out := prepared{State: state, Actions: map[string]interface{}{}, Candidates: []map[string]interface{}{}}
 	s, err := e.stateScope(state)
@@ -667,10 +717,12 @@ func (e *execution) prepare(state map[string]interface{}) (prepared, error) {
 		return out, err
 	}
 	e.nodes = 0
+	e.svgBytes = 0
 	out.View, err = e.render(e.pkg.def.View, s)
 	if err != nil {
 		return out, err
 	}
+	out.SVGExpandedBytes = e.svgBytes
 	out.ModelState = state
 	if e.pkg.def.ModelState != nil {
 		out.ModelState, err = e.value(*e.pkg.def.ModelState, s)
@@ -698,6 +750,31 @@ func (e *execution) operate(req request) (interface{}, error) {
 	if req.Op == "eval" {
 		return e.value(req.Source, e.newScope(req.Context))
 	}
+	if req.Op == "recover" {
+		s := e.newScope(map[string]interface{}{
+			"state":     req.State,
+			"initial":   e.pkg.def.Initial,
+			"constants": e.pkg.def.Constants,
+		})
+		guard, err := e.eval(req.Guard, s)
+		if err != nil {
+			return nil, err
+		}
+		if guard != types.True {
+			return nil, fmt.Errorf("recovery guard not satisfied")
+		}
+		value, err := e.value(req.Source, s)
+		if err != nil {
+			return nil, err
+		}
+		candidate, ok := value.(map[string]interface{})
+		if !ok {
+			return nil, fmt.Errorf("recovery must return state map")
+		}
+		out, err := e.prepare(candidate)
+		out.Candidates = []map[string]interface{}{candidate}
+		return out, err
+	}
 	state := req.State
 	if req.Op == "load" {
 		state = e.pkg.def.Initial
@@ -711,6 +788,17 @@ func (e *execution) operate(req request) (interface{}, error) {
 		s, err := e.stateScope(state)
 		if err != nil {
 			return nil, err
+		}
+		if req.Actor == "contributor" && t.Actor != "contributor" && t.Permission != "contributor" {
+			e.nodes = 0
+			e.svgBytes = 0
+			viewNodes, err := e.render(e.pkg.def.View, s)
+			if err != nil {
+				return nil, err
+			}
+			if !viewNodesAllowContributor(viewNodes, action.Name, action.Arguments) {
+				return nil, fmt.Errorf("Only the active orator can take this game action.")
+			}
 		}
 		s = e.extend(s, "action", action.Arguments)
 		guard, err := e.eval(t.Guard, s)
@@ -751,7 +839,8 @@ func main() {
 	scanner := bufio.NewScanner(os.Stdin)
 	scanner.Buffer(make([]byte, 4096), maxFrame)
 	writer := bufio.NewWriter(os.Stdout)
-	var pkg *compiled
+	var currentPkg *compiled
+	packages := map[string]*compiled{}
 	for scanner.Scan() {
 		start := clockNS()
 		resp := response{}
@@ -789,8 +878,22 @@ func main() {
 			}
 			resp.Result = map[string]string{"go_version": runtime.Version(), "cel_go_version": version, "metrics_clock": metricsClock}
 		} else if err == nil {
+			var pkg *compiled
 			if req.Op == "load" {
 				pkg, err = compile(req)
+				if err == nil {
+					currentPkg = pkg
+					if req.Package != "" {
+						if len(packages) >= maxCachedPackages {
+							packages = map[string]*compiled{}
+						}
+						packages[req.Package] = pkg
+					}
+				}
+			} else if req.Package != "" {
+				pkg = packages[req.Package]
+			} else {
+				pkg = currentPkg
 			}
 			if err == nil && pkg == nil {
 				err = fmt.Errorf("no package loaded")

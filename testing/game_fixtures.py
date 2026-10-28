@@ -1,5 +1,6 @@
 """Small non-board game used to exercise the generic game contracts."""
 from pathlib import Path
+from typing import Literal
 from unittest.mock import Mock
 
 from game.game_runtime import GameDefinition
@@ -94,9 +95,12 @@ def exchange_definition() -> GameDefinition:
     })
 
 
-def make_game(directory: Path, definition: GameDefinition | None = None) -> GameState:
+def make_game(
+    directory: Path,
+    definition: GameDefinition | None = None,
+    *,
+    backend: Literal["auto", "go", "python"] = "auto",
+) -> GameState:
     (directory / 'game').mkdir(parents=True, exist_ok=True)
     (directory / 'game/game.json').write_text((definition or counter_definition()).model_dump_json(), encoding='utf-8')
-    return GameState(directory, Mock(), Mock())
-
-
+    return GameState(directory, Mock(), Mock(), backend=backend)

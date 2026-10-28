@@ -43,7 +43,10 @@ def main() -> None:
         # Rotate execution order to reduce a consistent warm-cache/order bias.
         for backend in backends[round_index % len(backends):] + backends[:round_index % len(backends)]:
             if backend != "go":
-                elapsed, result = sample(args.game)
+                def python_factory(directory: Path, persist: Callable[[], None], notify: Callable[..., None]) -> GameState:
+                    return GameState(directory, persist, notify, backend="python")
+
+                elapsed, result = sample(args.game, python_factory)
             else:
                 worker = GoWorker(args.worker)
                 try:
@@ -71,7 +74,7 @@ def main() -> None:
         "cel_python": version("cel-python"), "worker": runtime_info,
         "rounds": args.rounds, "parity": True, "payload_bytes": payload_bytes,
         "parent_timeout_seconds": 5, "os_memory_limit_enforced": False,
-        "declared_error_recovery_supported": False,
+        "declared_error_recovery_supported": True,
         "worker_startup_median_ms": median(startup),
         "median_ms": {backend: {name: median(row[name] for row in rows) for name in names} for backend, rows in timings.items()},
         "go_profile_medians": {
