@@ -29,6 +29,7 @@ from game.game_state import GameState, InvalidGameInput
 from game.game_source import game_source_json
 
 MAX_FRAME = 4 * 1024 * 1024
+DEFAULT_COST_LIMIT = 1_000_000
 
 
 class WorkerResponse(GameModel):
@@ -52,16 +53,17 @@ class Prepared(GameModel):
 
 
 class GoWorker:
-    """One bounded, serial stdio connection with parent-enforced deadlines.
+    """One bounded, serial stdio connection with parent-enforced deadlines and CEL cost limits.
 
     Timeouts kill and reap the worker and discard its response. The next explicit
-    start followed by load creates a replacement. There is no automatic retry or
-    deadline reset. This prototype has no OS memory boundary; trusted fixtures only.
+    start followed by load creates a replacement. In-process CEL CostLimit aborts
+    runaway expressions cleanly without killing the worker.
     """
 
-    def __init__(self, executable: Path, timeout: float = 5.0) -> None:
+    def __init__(self, executable: Path, timeout: float = 5.0, cost_limit: int = DEFAULT_COST_LIMIT) -> None:
         self.executable = executable.resolve()
         self.timeout = timeout
+        self.cost_limit = cost_limit
         self.process: subprocess.Popen[bytes] | None = None
         self.executor: ThreadPoolExecutor | None = None
         self.lock = Lock()
@@ -115,7 +117,11 @@ class GoWorker:
         try:
             if self.process is None or self.executor is None:
                 raise RuntimeError("Start and load a worker before evaluating")
-            message = {**message, "timeout_ms": max(1, int(self.timeout * 1000))}
+            message = {
+                "cost_limit": max(1, self.cost_limit),
+                **message,
+                "timeout_ms": max(1, int(self.timeout * 1000)),
+            }
             frame = json.dumps(message, allow_nan=False, separators=(",", ":")).encode("utf-8") + b"\n"
             if len(frame) >= MAX_FRAME:
                 raise ValueError("Worker request exceeds the frame limit")
@@ -134,6 +140,8 @@ class GoWorker:
             if perf_counter() - started > self.timeout or "context deadline exceeded" in response.error:
                 self.close()
                 raise GameWorkBudgetExceeded("CEL-Go operation exceeded its parent deadline")
+            if "actual cost limit exceeded" in response.error:
+                raise GameWorkBudgetExceeded("CEL-Go operation exceeded its cost limit")
             if response.error:
                 raise ValueError(response.error)
             return response.result

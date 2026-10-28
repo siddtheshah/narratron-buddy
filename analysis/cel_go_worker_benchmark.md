@@ -74,8 +74,8 @@ compilation during load, but excludes final response serialization.
 and results into bounded JSON values. Lazy input adaptation, interpreter work,
 helper dispatch and rendering are still combined in the remainder; this is not
 an isolated callback-versus-interpreter microbenchmark. Counters report actual
-evaluations, helper calls and cache hits. These metrics are instrumentation and
-their overhead is included in the result.
+evaluations, helper calls, cache hits and runtime CEL `cost` units. These
+metrics are instrumentation and their overhead is included in the result.
 
 Windows worker instrumentation uses `QueryPerformanceCounter`, matching the
 high-resolution clock underlying Python's `perf_counter`. Go's Windows
@@ -108,10 +108,13 @@ the speed of the language engines themselves.
 
 Player-operation profile medians were 10.19 ms for the RPC and 7.70 ms inside
 the worker, including 3.00 ms of bounded JSON conversion, 891 evaluations,
-124 package-helper calls and 953 result-cache hits. The rest of the parent
-operation includes proposal validation, view-model decoding, receipts, payload
-construction and temporary persistence. Independently computed medians should
-not be added or subtracted as exact per-request attribution.
+124 package-helper calls, 953 result-cache hits and 32,253 runtime CEL cost
+units (against a default operation budget of 1,000,000). Package load consumed
+12,803 cost units, Narratron reply consumed 24,874 cost units, and invalid move
+consumed 3,373 cost units. The rest of the parent operation includes proposal
+validation, view-model decoding, receipts, payload construction and temporary
+persistence. Independently computed medians should not be added or subtracted
+as exact per-request attribution.
 
 The historical raw report is stored locally at the ignored
 `testlab/benchmark_output/cel-go-windows.json`; the reproduction command writes
@@ -119,13 +122,15 @@ a separate Python/Go report. Results depend on system load,
 Python cache state, antivirus/process startup and filesystem behavior. These
 are local trusted-fixture measurements, not deployment latency predictions.
 
-## Compatibility and remaining work
+## Compatibility, cost tracking, and remaining work
 
 The Go probes cover null/map/list comparisons, missing values and CEL error
 masking (including nested helper errors), signed division/remainder, int64
 boundaries and overflow, uint callback behavior, random-bound validation,
-nested functions, random-cache exclusion, output limits, counter/exchange
-transactions, checkers/browser payload parity, and rollback. Direct
+nested functions, random-cache exclusion, output limits, runtime `cel.CostLimit`
+enforcement (CPU bombs, intermediate string/list memory amplification bombs, and
+boolean-masked helper cost exhaustion), counter/exchange transactions,
+checkers/browser payload parity, and rollback. Direct
 `random_int(1u, 6u)` is rejected. Passing an unsigned value through a package
 helper intentionally crosses the same signed JSON integer boundary as the
 Python implementation.
@@ -136,23 +141,49 @@ double remains a double on input and is correctly rejected by `random_int`.
 Broader language parity needs additional coverage and a deliberate compatibility
 policy for number-to-string formatting.
 
-The parent enforces a five-second deadline per worker request, including
-request encoding, stdio writes/reads, all nested worker work, worker result
-conversion/view preparation, response encoding and parent wire decoding. It
-kills and reaps a timed-out worker, discards its proposal and does not retry.
-The Go operation also shares one cooperative `ContextEval` deadline with an
-interrupt check frequency of 100 across nested expressions/helpers. Tests use a
-bounded-memory expensive comprehension and independently stalled stdio to
-verify forced termination, unchanged state/revision, no persistence callback,
-and explicit replacement/reload. Parent argument and candidate schema checks
-also reject invalid input/intermediate draft states before commit.
+The worker enforces multi-layer evaluation budgets inside Go:
+
+- **Parse-time AST limits**: `cel.ParserExpressionSizeLimit(4000)` and
+  `cel.ExpressionNodeLimit(1000)` bound source length and AST node count when
+  loading a package.
+- **Runtime `cel.CostLimit` and `cel.CostTracking`**: Every compiled program
+  enables `cel.CostTracking` with a custom `cost.ActualCostEstimator` and
+  `cel.CostLimit` (default `1,000,000` cost units per operation, capped at
+  `100,000,000`). Because dynamic JSON state uses parse-only ASTs where operator
+  overload IDs are unresolved at plan time, the custom `ActualCostEstimator`
+  inspects runtime operand types to charge size-proportional costs ($0.1 \times$
+  byte/element length) for string, bytes, and non-mutable list concatenation
+  (`_+_`), list membership (`@in`), and string comparisons, while keeping
+  mutable comprehension accumulators (`traits.MutableLister`) $O(1)$ per step.
+  Cost is accumulated across all expressions and nested helper calls in an
+  operation, and cost-limit exhaustion is latched so CEL boolean operators
+  (`burn() || true`, `burn() && false`) cannot mask budget exhaustion. When the
+  cost limit is exceeded, `cel-go` aborts evaluation cleanly via panic/recover
+  and returns `"operation cancelled: actual cost limit exceeded"`, which Python
+  maps to `GameWorkBudgetExceeded` while keeping the persistent worker process
+  alive and ready for subsequent operations.
+- **Go GC memory target**: The worker sets `debug.SetMemoryLimit(64 * 1024 * 1024)`
+  (64 MiB) so the Go garbage collector aggressively reclaims intermediate heap
+  allocations before growing the OS heap.
+- **Parent and cooperative deadlines**: The parent enforces a five-second
+  deadline per worker request, including request encoding, stdio writes/reads,
+  all nested worker work, worker result conversion/view preparation, response
+  encoding and parent wire decoding. It kills and reaps a timed-out worker,
+  discards its proposal and does not retry. The Go operation also shares one
+  cooperative `ContextEval` deadline with an interrupt check frequency of 100
+  across nested expressions/helpers. Tests use a bounded-memory expensive
+  comprehension and independently stalled stdio to verify forced termination,
+  unchanged state/revision, no persistence callback, and explicit
+  replacement/reload. Parent argument and candidate schema checks also reject
+  invalid input/intermediate draft states before commit.
 
 These are incomplete production boundaries:
 
-- There is **no worker-specific OS memory limit**. Only trusted, bounded fixtures
-  were run; no allocation-explosion stress test was attempted. A Go GC memory
-  target would not replace an OS/container limit. Validate a Windows Job Object
-  or a separate Linux cgroup/container boundary before untrusted execution.
+- `cel.CostLimit` and `debug.SetMemoryLimit(64 MiB)` bound CEL evaluation steps,
+  intermediate string/list amplification, and Go GC heap growth, but **do not
+  replace an OS-level process/container memory limit** (such as a Windows Job
+  Object or Linux cgroup `memory.max`) for full defense-in-depth against
+  non-CEL native allocations.
 - Parent proposal/model validation after wire decoding is outside the request
   timer. Production integration must establish an end-to-end operation deadline
   and revision validation at commit across asynchronous worker dispatch.
@@ -163,7 +194,6 @@ These are incomplete production boundaries:
   view repetition at 256 and dynamic rendered nodes at 1,024. Python checks
   candidate state, model facts, actions and view sizes. The offline adapter
   conservatively counts expanded SVGs toward the view limit, unlike production.
-  These accepted-result limits do not bound native intermediate allocations.
 - Worker replacement/reload is explicit; there is no production pool, crash
   supervisor or concurrency integration. Client-only rendering and the combined
   native/client-rendering comparison remain separate tasks.
@@ -172,10 +202,8 @@ The result supports prioritizing a contained CEL-Go worker for the next
 integration experiment. It does not establish production readiness or complete
 the resource-limit and recovery tasks in `TASKLIST.md`.
 
-Before cleanup, 245 tests passed across the Go, C++, Rust and existing game
-runtime/state/value/client suites, including 44 Go-specific probes. After
-cleanup, all 181 retained Go and game tests passed, Ruff passed, the dependency
-lock validated, and a two-round Python/Go benchmark preserved output parity.
+All 184 retained Go and game tests pass (including 47 Go-specific probes),
+Ruff passes, and the Python/Go benchmark preserves output parity.
 The retained Go and game suites can be run with:
 
 ```powershell

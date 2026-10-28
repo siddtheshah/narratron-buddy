@@ -18,6 +18,8 @@ import (
 	"time"
 
 	"cel.dev/cel-go/cel"
+	"cel.dev/cel-go/common/cost"
+	"cel.dev/cel-go/common/operators"
 	"cel.dev/cel-go/common/types"
 	"cel.dev/cel-go/common/types/ref"
 	"cel.dev/cel-go/common/types/traits"
@@ -25,6 +27,9 @@ import (
 
 const maxFrame = 4 * 1024 * 1024
 const maxValue = 131072
+const defaultCostLimit uint64 = 1_000_000
+const maxCostLimit uint64 = 100_000_000
+const goMemoryTarget = 64 * 1024 * 1024
 
 type binding struct{ Name, Expr string }
 type function struct {
@@ -78,7 +83,8 @@ type request struct {
 	State             map[string]interface{}
 	Steps             []step
 	Context           map[string]interface{}
-	TimeoutMS         int `json:"timeout_ms"`
+	TimeoutMS         int    `json:"timeout_ms"`
+	CostLimit         uint64 `json:"cost_limit"`
 }
 type prepared struct {
 	State      map[string]interface{}   `json:"state"`
@@ -88,11 +94,12 @@ type prepared struct {
 	Candidates []map[string]interface{} `json:"candidates"`
 }
 type metrics struct {
-	OperationNS  int64 `json:"operation_ns"`
-	ConversionNS int64 `json:"conversion_ns"`
-	Evaluations  int   `json:"evaluations"`
-	HelperCalls  int   `json:"helper_calls"`
-	CacheHits    int   `json:"cache_hits"`
+	OperationNS  int64  `json:"operation_ns"`
+	ConversionNS int64  `json:"conversion_ns"`
+	Evaluations  int    `json:"evaluations"`
+	HelperCalls  int    `json:"helper_calls"`
+	CacheHits    int    `json:"cache_hits"`
+	Cost         uint64 `json:"cost"`
 }
 type response struct {
 	Result  interface{} `json:"result"`
@@ -108,6 +115,9 @@ type execution struct {
 	pkg           *compiled
 	cache         map[string]ref.Val
 	nextID, nodes int
+	costLimit     uint64
+	callCost      uint64
+	exhausted     error
 	stats         metrics
 }
 type compiled struct {
@@ -117,6 +127,67 @@ type compiled struct {
 	random       map[string]bool
 	assets       map[string]rendered
 	active       *execution
+}
+
+type runtimeCostEstimator struct {
+	pkg *compiled
+}
+
+func (r runtimeCostEstimator) CallCost(function, overloadID string, args []ref.Val, result ref.Val) *uint64 {
+	var custom *uint64
+	var c uint64 = 1
+	switch function {
+	case operators.Add:
+		switch v := result.(type) {
+		case types.String:
+			c = cost.SafeAdd(1, uint64(len(v)+9)/10)
+			custom = &c
+		case types.Bytes:
+			c = cost.SafeAdd(1, uint64(len(v)+9)/10)
+			custom = &c
+		case traits.Lister:
+			if sz, ok := v.Size().(types.Int); ok && sz > 0 {
+				if len(args) == 2 {
+					if _, isMutable := args[0].(traits.MutableLister); !isMutable {
+						c = cost.SafeAdd(1, uint64(sz))
+						custom = &c
+					}
+				}
+			}
+		}
+	case operators.In, operators.OldIn:
+		if len(args) == 2 {
+			if l, ok := args[1].(traits.Lister); ok {
+				if sz, ok := l.Size().(types.Int); ok && sz > 0 {
+					c = uint64(sz)
+					custom = &c
+				}
+			}
+		}
+	case operators.Less, operators.LessEquals, operators.Greater, operators.GreaterEquals:
+		if len(args) == 2 {
+			if a, ok := args[0].(types.String); ok {
+				if b, ok := args[1].(types.String); ok {
+					n := len(a)
+					if len(b) < n {
+						n = len(b)
+					}
+					c = cost.SafeAdd(1, uint64(n+9)/10)
+					custom = &c
+				}
+			}
+		}
+	}
+	if e := r.pkg.active; e != nil {
+		// Account for the call plus operand attribute resolutions in the running estimate.
+		stepCost := cost.SafeAdd(c, uint64(len(args)))
+		e.callCost = cost.SafeAdd(e.callCost, stepCost)
+		if cost.SafeAdd(e.stats.Cost, e.callCost) > e.costLimit {
+			overflow := uint64(math.MaxUint64)
+			return &overflow
+		}
+	}
+	return custom
 }
 
 // Preserve JSON integers (including int64 boundaries) instead of decoding them
@@ -153,7 +224,10 @@ func compile(req request) (*compiled, error) {
 	for _, s := range req.Random {
 		p.random[s] = true
 	}
-	opts := []cel.EnvOption{}
+	opts := []cel.EnvOption{
+		cel.ParserExpressionSizeLimit(4000),
+		cel.ExpressionNodeLimit(1000),
+	}
 	for name, f := range p.def.Functions {
 		name, f := name, f
 		args := make([]*cel.Type, len(f.Parameters))
@@ -209,6 +283,11 @@ func compile(req request) (*compiled, error) {
 	if err != nil {
 		return nil, err
 	}
+	programCostLimit := req.CostLimit
+	if programCostLimit == 0 {
+		programCostLimit = defaultCostLimit
+	}
+	estimator := runtimeCostEstimator{pkg: p}
 	for source := range req.Sources {
 		// The parent performs the application's syntax/function restrictions.
 		// Parse-only retains the package's dynamically scoped JSON variables.
@@ -216,7 +295,12 @@ func compile(req request) (*compiled, error) {
 		if issues != nil && issues.Err() != nil {
 			return nil, issues.Err()
 		}
-		program, err := env.Program(ast, cel.InterruptCheckFrequency(100))
+		program, err := env.Program(
+			ast,
+			cel.InterruptCheckFrequency(100),
+			cel.CostTracking(estimator),
+			cel.CostLimit(programCostLimit),
+		)
 		if err != nil {
 			return nil, err
 		}
@@ -245,6 +329,9 @@ func (e *execution) extend(s scope, name string, value interface{}) scope {
 	return scope{values: values, ids: ids}
 }
 func (e *execution) eval(source string, s scope) (ref.Val, error) {
+	if e.exhausted != nil {
+		return nil, e.exhausted
+	}
 	if err := e.ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -263,8 +350,22 @@ func (e *execution) eval(source string, s scope) (ref.Val, error) {
 		}
 	}
 	e.stats.Evaluations++
-	v, _, err := program.ContextEval(e.ctx, s.values)
-	// Check the shared context even when a CEL boolean masks a helper error.
+	savedCallCost := e.callCost
+	e.callCost = 0
+	v, details, err := program.ContextEval(e.ctx, s.values)
+	e.callCost = savedCallCost
+	if details != nil {
+		if actualCost := details.ActualCost(); actualCost != nil {
+			e.stats.Cost = cost.SafeAdd(e.stats.Cost, *actualCost)
+		}
+	}
+	if e.stats.Cost > e.costLimit || (err != nil && strings.Contains(err.Error(), "actual cost limit exceeded")) {
+		e.exhausted = fmt.Errorf("operation cancelled: actual cost limit exceeded")
+	}
+	// Check shared exhaustion and deadline even when a CEL boolean masks a helper error.
+	if e.exhausted != nil {
+		return nil, e.exhausted
+	}
 	if deadline := e.ctx.Err(); deadline != nil {
 		return nil, deadline
 	}
@@ -646,6 +747,7 @@ func (e *execution) operate(req request) (interface{}, error) {
 }
 
 func main() {
+	debug.SetMemoryLimit(goMemoryTarget)
 	scanner := bufio.NewScanner(os.Stdin)
 	scanner.Buffer(make([]byte, 4096), maxFrame)
 	writer := bufio.NewWriter(os.Stdout)
@@ -694,11 +796,17 @@ func main() {
 				err = fmt.Errorf("no package loaded")
 			}
 			if err == nil {
+				costLimit := req.CostLimit
+				if costLimit == 0 {
+					costLimit = defaultCostLimit
+				}
 				if req.TimeoutMS < 1 || req.TimeoutMS > 30000 {
 					err = fmt.Errorf("invalid operation timeout")
+				} else if costLimit > maxCostLimit {
+					err = fmt.Errorf("invalid operation cost limit")
 				} else {
 					ctx, cancel := context.WithTimeout(context.Background(), time.Duration(req.TimeoutMS)*time.Millisecond)
-					e := &execution{ctx: ctx, pkg: pkg, cache: map[string]ref.Val{}}
+					e := &execution{ctx: ctx, pkg: pkg, cache: map[string]ref.Val{}, costLimit: costLimit}
 					pkg.active = e
 					resp.Result, err = e.operate(req)
 					resp.Metrics = e.stats

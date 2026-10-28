@@ -11,7 +11,7 @@ import pytest
 from game.game_runtime import FunctionDefinition, GameAction, GameProgram, GameStep, GameWorkBudgetExceeded
 from testing.game_fixtures import counter_definition, exchange_definition
 from testlab.game_benchmark import sample
-from game.go_cel import GoGameState, GoWorker
+from game.go_cel import DEFAULT_COST_LIMIT, GoGameState, GoWorker
 
 
 @pytest.fixture
@@ -164,6 +164,7 @@ def test_go_timeout_kills_worker_rolls_back_and_can_replace(worker: GoWorker, tm
     directory.mkdir()
     (directory / "game.json").write_text(definition.model_dump_json(), encoding="utf-8")
     persist = Mock()
+    worker.cost_limit = 100_000_000
     game = GoGameState(tmp_path, persist, Mock(), worker=worker)
     assert game.program is not None
     previous = game.serialize()
@@ -179,9 +180,87 @@ def test_go_timeout_kills_worker_rolls_back_and_can_replace(worker: GoWorker, tm
     assert old_process.poll() is not None
     assert worker.process is None
     worker.timeout = 5
+    worker.cost_limit = DEFAULT_COST_LIMIT
     worker.start()
     worker.load(GameProgram(counter_definition()))
     assert expression(worker, "initial", {"initial": {"count": 0}}) == {"count": 0}
+
+
+def test_go_cost_limit_aborts_expensive_expression_and_keeps_worker_alive(worker: GoWorker, tmp_path: Path) -> None:
+    definition = counter_definition()
+    definition.constants["values"] = list(range(500))
+    definition.invariants = ["state.count == 0 || constants.values.all(x, constants.values.all(y, x + y >= 0))"]
+    directory = tmp_path / "game"
+    directory.mkdir()
+    (directory / "game.json").write_text(definition.model_dump_json(), encoding="utf-8")
+    persist = Mock()
+    worker.cost_limit = 20_000
+    game = GoGameState(tmp_path, persist, Mock(), worker=worker)
+    previous = game.serialize()
+    old_process = worker.process
+    assert old_process is not None
+    with patch("game.game_state.logger.exception"), pytest.raises(GameWorkBudgetExceeded, match="cost limit"):
+        game.act(GameAction(name="add", arguments={"amount": 1}, revision=0))
+    assert game.serialize() == previous
+    persist.assert_not_called()
+    assert worker.process is old_process
+    assert old_process.poll() is None
+    assert worker.last_metrics["cost"] > 20_000
+    worker.cost_limit = DEFAULT_COST_LIMIT
+    assert game.act(GameAction(name="clear", revision=0))["revision"] == 1
+    assert game.revision == 1
+
+
+def test_go_cost_limit_aborts_memory_amplification_bombs(worker: GoWorker) -> None:
+    definition = counter_definition()
+    string_bomb = "values.map(x, text + text + text + text).size() > 0"
+    list_bomb = "values.map(x, items + items + items + items).size() > 0"
+    definition.transitions["clear"].guard = string_bomb
+    definition.transitions["add"].guard = list_bomb
+    worker.load(GameProgram(definition))
+    worker.cost_limit = 5_000
+    try:
+        with pytest.raises(GameWorkBudgetExceeded, match="cost limit"):
+            expression(
+                worker,
+                string_bomb,
+                {"values": list(range(200)), "text": "a" * 4096},
+            )
+        with pytest.raises(GameWorkBudgetExceeded, match="cost limit"):
+            expression(
+                worker,
+                list_bomb,
+                {"values": list(range(200)), "items": list(range(500))},
+            )
+    finally:
+        worker.cost_limit = DEFAULT_COST_LIMIT
+    assert worker.process is not None
+    assert worker.process.poll() is None
+    assert expression(worker, "initial", {"initial": {"count": 0}}) == {"count": 0}
+
+
+def test_go_masked_helper_cost_exhaustion_is_not_suppressed(worker: GoWorker) -> None:
+    definition = counter_definition()
+    definition.constants["values"] = list(range(300))
+    definition.functions["burn"] = FunctionDefinition(
+        parameters=[],
+        expr="constants.values.all(x, constants.values.all(y, x + y >= 0))",
+    )
+    or_masked = "burn() || true"
+    and_masked = "burn() && false"
+    definition.transitions["clear"].guard = or_masked
+    definition.transitions["add"].guard = and_masked
+    worker.cost_limit = 10_000
+    worker.load(GameProgram(definition))
+    try:
+        with pytest.raises(GameWorkBudgetExceeded, match="cost limit"):
+            expression(worker, or_masked, {})
+        with pytest.raises(GameWorkBudgetExceeded, match="cost limit"):
+            expression(worker, and_masked, {})
+    finally:
+        worker.cost_limit = DEFAULT_COST_LIMIT
+    assert worker.process is not None
+    assert worker.process.poll() is None
 
 
 def test_go_parent_deadline_covers_stalled_stdio(worker: GoWorker) -> None:
