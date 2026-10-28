@@ -435,8 +435,10 @@ class GameState:
                     "[GameState] Act rejected: stale revision (action_revision=%d, current_revision=%d)",
                     action.revision,
                     self.revision,
-                    )
-                raise StaleGameAction("The game changed. Review its current state and try again.")
+                )
+                raise StaleGameAction(
+                    f"The game changed (action revision {action.revision} != current revision {self.revision}). Review its current state and try again."
+                )
             if len(action.model_dump_json().encode("utf-8")) > 32768:
                 logger.debug("[GameState] Act rejected: action exceeds size budget")
                 raise ValueError("Game action exceeds its size budget.")

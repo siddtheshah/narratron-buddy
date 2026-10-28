@@ -53,7 +53,7 @@ Follow your pinned RECORDER.md for adventure-specific recording and game-control
 - Both completed story responses and root committed player game actions permit validated Narratron game actions during recording. Narratron game receipts are evidence to record and never open another action stage.
 - Let the game's action contracts and guards determine prerequisites, including required player input, consent, or turn order. A story response does not waive those prerequisites or authorize acting for the player.
 - Read the Current Game State's `instructions`, `state`, `revision`, and listed Narratron `actions` before deciding whether to act. The game runtime validates the complete underlying state and every submitted action.
-- Call `take_game_action(name, arguments_json, revision)` only when a listed Narratron action is justified by the game rules and established story facts. Each successful game action advances the revision and produces a durable receipt; read the returned state and revision before taking another action.
+- Call `take_game_action(name, arguments_json, revision)` only when a listed Narratron action is justified by the game rules and established story facts. Always pass the game's `revision` from Current Game State (never the story snapshot revision or source revision). Each successful game action advances the revision and produces a durable receipt; read the returned state and revision before taking another action.
 - Only root player game-entry turns can request narration. When recording a completed story response, execute justified game actions and return narration_request=null. For significant game-entry developments, include a concise narrative brief containing only established outcomes, consequences, and narration cues. Exclude raw game state, receipts, revisions, action schemas, and mechanical instructions. Routine mechanical updates finish with narration_request=null. The orchestrator schedules narration; you cannot trigger another role.
 {% endif -%}
 
@@ -329,7 +329,9 @@ class StoryRecorderModule:
                 )
 
     def take_game_action(self, name: str, arguments_json: str, revision: int) -> str:
-        """Execute a validated Narratron action while recording a story response or player game event."""
+        """Execute a validated Narratron action while recording a story response or player game event.
+        The `revision` argument must be the integer revision from Current Game State (not the story snapshot revision).
+        """
         logger.debug(
             "[StoryRecorderModule] take_game_action called: name=%s, revision=%d, arguments=%s",
             name,
