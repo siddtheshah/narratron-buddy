@@ -67,8 +67,10 @@ def test_production_stamp_manager_separates_sources_and_places_theater_stamps(st
     assert stamp_page.locator("#stamp-manager-count").text_content() == "1/10"
     assert stamp_page.locator("#stamp-manager-count").get_attribute("title") == "1 user stamps · 1 theater stamps"
     stamp_page.locator("#chat-open-stamps-btn").click()
+    stamp_page.evaluate("canvasCursorState.select({type: 'navigate'})")
     stamp_page.locator('.stamp-card[data-stamp-id="theater:stage:hero.png"]').drag_to(stamp_page.locator("#image-container"))
     assert stamp_page.evaluate("doodleActions[0].stamp_id") == "theater:stage:hero.png"
+    assert stamp_page.evaluate("canvasCursorState.current.type") == "select"
     assert stamp_page.locator(".stamp-card").count() == 2
     stamp_page.evaluate("cachedUserStamps = []; renderStampManagerGrid(cachedUserStamps)")
     assert stamp_page.locator(".stamp-card-name").all_text_contents() == ["Theater Hero"]
@@ -340,6 +342,8 @@ def stamp_page() -> Iterator[Page]:
             </div>
         """)
 
+        cursor_code = Path("static/js/canvas-cursor-state.js").read_text(encoding="utf-8")
+        page.add_script_tag(content=cursor_code.replace("export ", ""))
         page.add_script_tag(content=renderer_code.replace("export function", "function"))
         page.add_script_tag(content="""
             const canvas = document.getElementById('doodle-canvas');

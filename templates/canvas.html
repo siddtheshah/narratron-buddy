@@ -15,7 +15,7 @@
     <link rel="stylesheet" href="/static/css/text-effects.css">
     <link rel="stylesheet" href="/static/css/chat.css">
     <link rel="stylesheet" href="/static/css/canvas-navigation.css">
-    <script defer src="/static/js/canvas-navigation.js"></script>
+    <script type="module" src="/static/js/canvas-navigation.js?v=cursor-cycle-20261028-1"></script>
     <link rel="stylesheet" href="/static/css/narration-pane.css">
     <link rel="stylesheet" href="/static/css/auth-flow.css">
     <script src="/static/js/auth-flow.js"></script>
@@ -3665,7 +3665,8 @@
     <script type="module">
         import { setupTheaterReport } from '/static/js/theater-report.js';
         import { initializeStoryLogInspector } from "/static/js/story-log-inspector.js";
-        import { initializeActionWheel } from "/static/js/action-wheel.js?v=canvas-navigation-20261028-1";
+        import { initializeActionWheel } from "/static/js/action-wheel.js?v=cursor-cycle-20261028-1";
+        import { canvasCursorState } from '/static/js/canvas-cursor-state.js?v=20261028-1';
         import { initializeChatController } from "/static/js/chat-controller.js";
         import { initializeBeyond20Listener } from "/static/js/beyond20-listener.js";
 
@@ -4287,7 +4288,7 @@
             .catch((err) => {
                 console.error("Failed to load device-aware-pcm.js:", err);
             });
-        import { createDoodleRenderer, createImageRenderer } from "/static/js/canvas-renderers.js?v=canvas-navigation-20261028-1";
+        import { createDoodleRenderer, createImageRenderer } from "/static/js/canvas-renderers.js?v=cursor-states-20261028-1";
         import { createA2UICanvasRenderer } from "/static/js/a2ui-canvas-renderer.js?v=20261005-1";
         import { createGameRenderer } from "/static/js/game-renderer.js?v=12";
         import { createNarrationPane } from "/static/js/narration-pane.js";
@@ -4496,8 +4497,8 @@
             canvasTarget: document.getElementById('image-container'),
             onOpen: () => { isDrawing = false; flushDrawBatch(); },
             onCenterAction: () => {
-                if (typeof toggleToolSelection === 'function') {
-                    toggleToolSelection();
+                if (typeof cycleCanvasCursor === 'function') {
+                    cycleCanvasCursor();
                 }
             },
             onRebindStart: () => {
@@ -5964,6 +5965,7 @@
         let lastSelectedTool = { type: 'marker', color: '#ef4444' };
         let currentBrushSize = 3;
         let isDrawing = false;
+        let currentStrokeId = null;
         let lastNormX = 0;
         let lastNormY = 0;
         let doodlesEnabled = true;
@@ -6104,15 +6106,15 @@
             canvas,
             isVisible: () => doodlesEnabled,
             textLayer: document.getElementById('canvas-text-layer'),
-            canEditText: () => canAddTextAnnotation() && !isPagedBack,
+            canEditText: () => canAddTextAnnotation() && !isPagedBack && canvasCursorState.current.type === 'select',
             onEditText: action => openTextAnnotationEditor(action),
             onMoveText: (action, previous, commit) => moveTextAnnotation(action, previous, commit),
             stampLayer: document.getElementById('canvas-stamp-layer'),
-            canMoveStamp: () => canPlaceStamps() && !isPagedBack,
+            canMoveStamp: () => canPlaceStamps() && !isPagedBack && canvasCursorState.current.type === 'select',
             onMoveStamp: (action, previous, commit) => moveStampAnnotation(action, previous, commit),
             onRemoveStamp: action => removeStampAnnotation(action),
             onSelectStamp: action => selectStampAnnotation(action),
-            canSelectSegment: () => doodlesEnabled && !isPagedBack && currentColor === null && !textAnnotationMode,
+            canSelectSegment: () => doodlesEnabled && !isPagedBack && canvasCursorState.current.type === 'select',
             onRemoveSegment: (removed) => {
                 const removedSet = new Set((removed || []).map(r => r.id || r));
                 doodleActions = doodleActions.filter(a => !removedSet.has(a.id) && !removedSet.has(a));
@@ -6165,26 +6167,35 @@
             narrationPane.setDrawingColorSelected(canvasInteractive);
         }
 
-        function setTextAnnotationMode(active, openMenu = active) {
-            textAnnotationMode = Boolean(active && canAddTextAnnotation());
-            if (textAnnotationMode) {
-                lastSelectedTool = { type: 'text' };
-            }
-            if (textAnnotationMode && currentColor) {
-                currentColor = null;
-                colorBtns.forEach(button => {
-                    button.classList.remove('active');
-                    button.setAttribute('aria-pressed', 'false');
-                });
-            }
-            if (textAnnotationMode) {
-                doodleRenderer?.clearSelectedSegments?.();
-                doodleRenderer?.selectStamp?.(null);
-            }
+        function applyCanvasCursorState(state) {
+            // These values are projections for drawing code; only this function updates them.
+            currentColor = state.type === 'marker' ? state.color : null;
+            textAnnotationMode = state.type === 'text';
+            imgContainer.dataset.cursorMode = state.type;
+            isDrawing = false;
+            currentStrokeId = null;
+            flushDrawBatch();
+            activeTextEditor?.remove();
+            activeTextEditor = null;
+            if (state.type === 'marker') lastSelectedTool = { type: 'marker', color: state.color };
+            if (textAnnotationMode) lastSelectedTool = { type: 'text' };
+            doodleRenderer.cancelInteraction();
+            colorBtns.forEach(button => {
+                const active = state.type === 'marker' && button.dataset.color === state.color;
+                button.classList.toggle('active', active);
+                button.setAttribute('aria-pressed', String(active));
+            });
             textAnnotationToggle?.classList.toggle('active', textAnnotationMode);
             textAnnotationToggle?.setAttribute('aria-pressed', String(textAnnotationMode));
-            setTextAnnotationMenuOpen(Boolean(openMenu && textAnnotationMode));
+            setTextAnnotationMenuOpen(false);
+            pagingControls?.classList.remove('canvas-selected');
             refreshCanvasToolInteraction();
+        }
+
+        function setTextAnnotationMode(active, openMenu = active) {
+            if (active && !canAddTextAnnotation()) return;
+            canvasCursorState.select({ type: active ? 'text' : 'select' });
+            setTextAnnotationMenuOpen(Boolean(openMenu && textAnnotationMode));
         }
 
         function updateTextAnnotationAvailability() {
@@ -6202,53 +6213,22 @@
         }
 
         function setDrawingColor(color) {
-            if (color !== null) {
-                lastSelectedTool = { type: 'marker', color: color };
-            }
-            if (color !== null && textAnnotationMode) {
-                textAnnotationMode = false;
-                textAnnotationToggle?.classList.remove('active');
-                textAnnotationToggle?.setAttribute('aria-pressed', 'false');
-                setTextAnnotationMenuOpen(false);
-            }
-            if (color !== null) {
-                doodleRenderer?.clearSelectedSegments?.();
-                doodleRenderer?.selectStamp?.(null);
-            }
-            currentColor = color || null;
-            colorBtns.forEach(button => {
-                const isActive = currentColor !== null && button.dataset.color === currentColor;
-                button.classList.toggle('active', isActive);
-                button.setAttribute('aria-pressed', String(isActive));
-            });
-            canvas.classList.toggle('drawing-disabled', currentColor === null);
-            narrationPane.setDrawingColorSelected(currentColor !== null);
-            refreshCanvasToolInteraction();
-            if (currentColor !== null) {
-                pagingControls?.classList.remove('canvas-selected');
-            }
+            canvasCursorState.select(color ? { type: 'marker', color } : { type: 'select' });
         }
 
-        function toggleToolSelection() {
-            if (!doodlesEnabled) return;
-            const isToolActive = (currentColor !== null) || textAnnotationMode;
-            if (isToolActive) {
-                if (textAnnotationMode) {
-                    activeTextEditor?.remove();
-                    activeTextEditor = null;
-                    setTextAnnotationMode(false, false);
-                } else {
-                    setDrawingColor(null);
-                }
+        function cycleCanvasCursor() {
+            const current = canvasCursorState.current.type;
+            if (current === 'marker' || current === 'text') {
+                canvasCursorState.select({ type: 'select' });
+            } else if (current === 'select') {
+                canvasCursorState.select({ type: 'navigate' });
+            } else if (!doodlesEnabled) {
+                canvasCursorState.select({ type: 'select' });
+            } else if (lastSelectedTool.type === 'text' && canAddTextAnnotation()) {
+                setTextAnnotationMode(true, false);
             } else {
-                if (lastSelectedTool.type === 'text' && canAddTextAnnotation()) {
-                    setTextAnnotationMode(true, false);
-                } else {
-                    const colorToSelect = (lastSelectedTool.type === 'marker' && lastSelectedTool.color)
-                        ? lastSelectedTool.color
-                        : '#ef4444';
-                    setDrawingColor(colorToSelect);
-                }
+                const color = lastSelectedTool.type === 'marker' ? lastSelectedTool.color : '#ef4444';
+                setDrawingColor(color);
             }
         }
 
@@ -6256,10 +6236,10 @@
             if (!imgContainer) return;
             const clickedCanvas = imgContainer.contains(event.target);
             const clickedDrawingControls = doodleToolbar?.contains(event.target);
-            if (!clickedCanvas && !clickedDrawingControls && currentColor !== null) {
+            if (!clickedCanvas && !clickedDrawingControls && (currentColor !== null || textAnnotationMode)) {
                 setDrawingColor(null);
             }
-            pagingControls?.classList.toggle('canvas-selected', clickedCanvas && currentColor === null);
+            pagingControls?.classList.toggle('canvas-selected', clickedCanvas && canvasCursorState.current.type === 'select');
             if (textAnnotationMode) pagingControls?.classList.remove('canvas-selected');
         });
 
@@ -6274,7 +6254,7 @@
                 return;
             }
             event.preventDefault();
-            toggleToolSelection();
+            cycleCanvasCursor();
         });
 
         textAnnotationToggle?.addEventListener('click', () => {
@@ -6330,7 +6310,8 @@
                 setPaletteOpen(false);
             });
         });
-        setDrawingColor(currentColor);
+        canvasCursorState.subscribe(applyCanvasCursorState);
+        applyCanvasCursorState(canvasCursorState.current);
 
         const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const wsUrl = `${wsProtocol}//${window.location.host}/ws/doodle` + (currenttheaterId ? `?theater_id=${encodeURIComponent(currenttheaterId)}` : '');
@@ -6623,8 +6604,6 @@
         }
 
         canvas.addEventListener('click', beginTextAnnotation);
-
-        let currentStrokeId = null;
 
         canvas.addEventListener('mousedown', (e) => {
             if (e.button !== 0) return;
@@ -7202,6 +7181,7 @@
 
         function placeStampOnCanvas(stampData, normX, normY) {
             if (!canPlaceStamps() || isPagedBack) return;
+            canvasCursorState.select({ type: 'select' });
             if (typeof isCurrentOrator === 'function' && isCurrentOrator() && typeof doodlesEnabled !== 'undefined' && !doodlesEnabled) {
                 setDoodlesDisplay(true, doodlesPersistent);
                 sendOrQueueDoodleMessage({ type: 'toggle_doodles', enabled: true, persistent: Boolean(doodlesPersistent) });
@@ -11419,7 +11399,7 @@
         <span class="wheel-action" data-primary data-direction="upleft">⏮🖼<br>Prev image</span>
         <span class="wheel-action" data-secondary data-direction="up">📖<br>Update Story</span>
         <span class="wheel-action" data-secondary data-direction="down">🎛<br>Update UI</span>
-        <span class="wheel-center">Toggle<br>marker</span>
+        <span class="wheel-center">Cycle<br>cursor</span>
     </div>
     <div id="action-wheel-status" role="status" aria-live="polite" hidden
         style="position:fixed;bottom:32px;left:50%;transform:translateX(-50%);z-index:10000;background:#1e293b;color:#f8fafc;padding:12px 18px;border-radius:10px;pointer-events:none;">

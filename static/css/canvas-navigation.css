@@ -1,6 +1,6 @@
 /* View state belongs to this browser tab, never to the theater. */
 #image-container > :is(#canvas-renderer, #canvas-stamp-layer, #doodle-canvas,
-    #canvas-text-layer, .canvas-image-effect-frame) {
+    #canvas-text-layer, .canvas-text-editor, .canvas-image-effect-frame) {
     transform-origin: 0 0;
     translate: var(--canvas-view-x, 0px) var(--canvas-view-y, 0px);
     scale: var(--canvas-view-scale, 1);

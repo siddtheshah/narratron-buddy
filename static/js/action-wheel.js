@@ -145,7 +145,7 @@ export function initializeActionWheel({
         }
         return isPointOverCanvas(x, y);
     };
-    const excluded = target => Boolean(target.closest('input,textarea,select,button,a,[contenteditable="true"],[role="dialog"],#canvas-navigation-surface'));
+    const excluded = target => Boolean(target.closest('input,textarea,select,button,a,[contenteditable="true"],[role="dialog"]'));
     const managesBinding = target => Boolean(target.closest(
         '#action-wheel-rebind,#action-wheel-2-rebind,#action-wheel-disable,#action-wheel-reset,#menu-item-hotkey,#menu-item-text-hotkey,#mic-config-close-btn,#mic-config-done-btn'
     ));
@@ -189,10 +189,10 @@ export function initializeActionWheel({
         wheel.style.left = `${centerX}px`; wheel.style.top = `${centerY}px`; wheel.hidden = false;
         wheel.dataset.selected = '';
         const centerEl = wheel.querySelector('.wheel-center');
-        if (centerEl) centerEl.innerHTML = trigger.secondary ? 'Release<br>to cancel' : 'Toggle<br>marker';
+        if (centerEl) centerEl.innerHTML = trigger.secondary ? 'Release<br>to cancel' : 'Cycle<br>cursor';
         consume(event);
         onOpen();
-        const centerMsg = trigger.secondary ? 'Release in the center to cancel' : 'Release in the center to toggle marker';
+        const centerMsg = trigger.secondary ? 'Release in the center to cancel' : 'Release in the center to cycle drawing tool, selection, and zoom and pan';
         show(`Move to an action and release · ${centerMsg}`);
     };
     const finish = async event => {

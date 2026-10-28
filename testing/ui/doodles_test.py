@@ -8,7 +8,7 @@ from testing.ui.base import UITestCase
 
 class TestDoodles(UITestCase):
 
-    def test_deselecting_drawing_color_enables_scrollable_narration_pane(self):
+    def test_deselecting_drawing_color_enables_scrollable_narration_pane(self) -> None:
         canvas = (Path(__file__).resolve().parents[2] / "templates" / "canvas.html").read_text(encoding="utf-8")
         narration_js = (Path(__file__).resolve().parents[2] / "static" / "js" / "narration-pane.js").read_text(encoding="utf-8")
         narration_css = (Path(__file__).resolve().parents[2] / "static" / "css" / "narration-pane.css").read_text(encoding="utf-8")
@@ -16,8 +16,8 @@ class TestDoodles(UITestCase):
 
         self.assertIn("function setDrawingColor(color)", canvas)
         self.assertIn("const nextColor = btn.classList.contains('active') ? null : btn.dataset.color;", canvas)
-        self.assertIn("canvas.classList.toggle('drawing-disabled', currentColor === null);", canvas)
-        self.assertIn("narrationPane.setDrawingColorSelected(currentColor !== null);", canvas)
+        self.assertIn("canvas.classList.toggle('drawing-disabled', !canvasInteractive);", canvas)
+        self.assertIn("narrationPane.setDrawingColorSelected(canvasInteractive);", canvas)
         self.assertIn('id="narration-pane-mount"', canvas)
         self.assertIn('id="scene-dialogue-overlay"', narration_html)
         self.assertIn("fetch('/static/html/narration-pane.html')", narration_js)
@@ -26,17 +26,17 @@ class TestDoodles(UITestCase):
         self.assertIn("overflow-y: auto;", narration_css)
         self.assertIn("overscroll-behavior: contain;", narration_css)
 
-    def test_canvas_starts_without_a_drawing_color_and_click_controls_page_bar(self):
+    def test_canvas_starts_without_a_drawing_color_and_click_controls_page_bar(self) -> None:
         canvas = (Path(__file__).resolve().parents[2] / "templates" / "canvas.html").read_text(encoding="utf-8")
 
         self.assertIn("let currentColor = null;", canvas)
         self.assertNotIn('class="color-btn active"', canvas)
         self.assertIn("const clickedCanvas = imgContainer.contains(event.target);", canvas)
         self.assertIn("const clickedDrawingControls = doodleToolbar?.contains(event.target);", canvas)
-        self.assertIn("if (!clickedCanvas && !clickedDrawingControls && currentColor !== null) {", canvas)
+        self.assertIn("if (!clickedCanvas && !clickedDrawingControls && (currentColor !== null || textAnnotationMode)) {", canvas)
         self.assertIn("setDrawingColor(null);", canvas)
         self.assertIn(
-            "pagingControls?.classList.toggle('canvas-selected', clickedCanvas && currentColor === null);",
+            "pagingControls?.classList.toggle('canvas-selected', clickedCanvas && canvasCursorState.current.type === 'select');",
             canvas,
         )
         self.assertIn("#history-paging-controls.canvas-selected,", canvas)
@@ -150,12 +150,12 @@ class TestDoodles(UITestCase):
         wheel_js = (Path(__file__).resolve().parents[2] / "static" / "js" / "action-wheel.js").read_text(encoding="utf-8")
 
         self.assertIn("let lastSelectedTool = { type: 'marker', color: '#ef4444' };", canvas)
-        self.assertIn("function toggleToolSelection()", canvas)
+        self.assertIn("function cycleCanvasCursor()", canvas)
         self.assertIn("document.addEventListener('contextmenu', (event) => {", canvas)
         self.assertIn("onCenterAction: () => {", canvas)
-        self.assertIn("toggleToolSelection();", canvas)
-        self.assertIn("Toggle<br>marker", canvas)
+        self.assertIn("cycleCanvasCursor();", canvas)
+        self.assertIn("Cycle<br>cursor", canvas)
         self.assertIn("if (e.button !== 0) return;", canvas)
         self.assertIn("onCenterAction = null,", wheel_js)
         self.assertIn("isRightClickBound()", wheel_js)
-        self.assertIn("Release in the center to toggle marker", wheel_js)
+        self.assertIn("Release in the center to cycle drawing tool, selection, and zoom and pan", wheel_js)

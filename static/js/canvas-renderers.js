@@ -1092,6 +1092,20 @@ export function createDoodleRenderer({ canvas, isVisible = () => true, textLayer
 
     let boxDrag = null;
 
+    function cancelInteraction() {
+        const pointerId = boxDrag?.pointerId;
+        boxDrag = null;
+        if (typeof window !== 'undefined') window.isCanvasSelectionActive = false;
+        const box = interactionTarget?.querySelector('.canvas-selection-box');
+        if (box) box.style.display = 'none';
+        if (pointerId !== undefined && interactionTarget.hasPointerCapture(pointerId)) {
+            interactionTarget.releasePointerCapture(pointerId);
+        }
+        clearSelectedSegments();
+        selectMovableStamp(null);
+        selectMovableText(null);
+    }
+
     interactionTarget?.addEventListener("pointerdown", event => {
         if (event.button !== 0) return;
         if (event.target && event.target.closest && (
@@ -1852,6 +1866,7 @@ export function createDoodleRenderer({ canvas, isVisible = () => true, textLayer
         deselectSegment,
         clearSelectedSegments,
         getSelectedSegments,
+        cancelInteraction,
         isSegmentSelected,
         findSegmentAt,
         getSegmentsInRect,

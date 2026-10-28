@@ -1,10 +1,11 @@
+import { canvasCursorState } from './canvas-cursor-state.js?v=20261028-1';
+
 (() => {
     const container = document.getElementById('image-container');
     const toggle = document.getElementById('canvas-navigation-toggle');
     const surface = document.getElementById('canvas-navigation-surface');
     if (!container || !toggle || !surface) return;
 
-    let enabled = false;
     let scale = 1;
     let x = 0;
     let y = 0;
@@ -28,21 +29,25 @@
         apply();
     }
 
-    toggle.addEventListener('click', () => {
-        enabled = !enabled;
+    function updateCursor(state) {
+        const enabled = state.type === 'navigate';
+        for (const pointerId of pointers.keys()) {
+            if (surface.hasPointerCapture(pointerId)) surface.releasePointerCapture(pointerId);
+        }
         pointers.clear();
         surface.classList.remove('dragging');
         container.classList.toggle('canvas-navigation-enabled', enabled);
         toggle.setAttribute('aria-pressed', String(enabled));
         toggle.title = enabled
-            ? 'Disable zoom and pan and reset view · Scroll to zoom, drag to pan, double-click to reset'
-            : 'Enable zoom and pan';
-        if (!enabled) {
-            scale = 1;
-            x = y = 0;
-            apply();
-        }
-    });
+            ? 'Switch to selection · Scroll to zoom, drag to pan, double-click to reset'
+            : 'Enable zoom and pan · Double-click to reset view';
+    }
+
+    toggle.addEventListener('click', () => canvasCursorState.select({
+        type: canvasCursorState.current.type === 'navigate' ? 'select' : 'navigate',
+    }));
+    canvasCursorState.subscribe(updateCursor);
+    updateCursor(canvasCursorState.current);
 
     surface.addEventListener('wheel', event => {
         event.preventDefault();
@@ -88,7 +93,7 @@
             if (!pointers.size) surface.classList.remove('dragging');
         });
     }
-    for (const type of ['mousedown', 'mouseup', 'click', 'contextmenu']) {
+    for (const type of ['mousedown', 'mouseup', 'click']) {
         surface.addEventListener(type, event => {
             event.preventDefault();
             event.stopPropagation();
@@ -98,7 +103,8 @@
         pointers.clear();
         surface.classList.remove('dragging');
     });
-    surface.addEventListener('dblclick', () => {
+    container.addEventListener('dblclick', event => {
+        if (!event.target.closest('#canvas-navigation-toggle, #canvas-navigation-surface, #doodle-canvas, #canvas-renderer') && event.target !== container) return;
         scale = 1;
         x = y = 0;
         apply();
