@@ -99,7 +99,8 @@ export function createImageRenderer({
 
     function drawSingleImage(sourceImage) {
         if (!canvas || !context) return;
-        const rect = canvas.getBoundingClientRect();
+        // Drawing uses layout pixels; screen bounds include the viewer's zoom.
+        const rect = { width: canvas.clientWidth, height: canvas.clientHeight };
         context.clearRect(0, 0, rect.width, rect.height);
         drawScaledImage(sourceImage, rect.width, rect.height);
     }
@@ -107,7 +108,7 @@ export function createImageRenderer({
     function layoutImageEffect(sourceImage = image) {
         if (!imageEffectController || !canvas || !sourceImage?.naturalWidth) return;
 
-        const rect = canvas.getBoundingClientRect();
+        const rect = { width: canvas.clientWidth, height: canvas.clientHeight };
         const scale = fitMode === "cover"
             ? Math.max(rect.width / sourceImage.naturalWidth, rect.height / sourceImage.naturalHeight)
             : Math.min(rect.width / sourceImage.naturalWidth, rect.height / sourceImage.naturalHeight);
@@ -289,7 +290,7 @@ export function createImageRenderer({
             activeAnimation = null;
         }
 
-        const rect = canvas.getBoundingClientRect();
+        const rect = { width: canvas.clientWidth, height: canvas.clientHeight };
         const oldImage = currentImage;
         const hasOldImage = (oldImage?.complete && oldImage.naturalWidth > 0) || oldSnapshot !== null;
 
@@ -413,7 +414,7 @@ export function createImageRenderer({
             }
         };
 
-        const rect = canvas.getBoundingClientRect();
+        const rect = { width: canvas.clientWidth, height: canvas.clientHeight };
         context.clearRect(0, 0, rect.width, rect.height);
         drawScaledImage(currentImage, rect.width, rect.height);
         drawSnapshotOverlay(performance.now());
@@ -616,7 +617,7 @@ export function createImageRenderer({
         };
         const frame = (now) => {
             if (generation !== sequenceGeneration) return;
-            const rect = canvas.getBoundingClientRect();
+            const rect = { width: canvas.clientWidth, height: canvas.clientHeight };
             context.clearRect(0, 0, rect.width, rect.height);
             prepared.slice().sort((a, b) => (a.order || 0) - (b.order || 0)).forEach(layer => drawLayer(layer, now, rect.width, rect.height));
 
@@ -831,7 +832,7 @@ export function createImageRenderer({
                 }
             }
 
-            const rect = canvas.getBoundingClientRect();
+            const rect = { width: canvas.clientWidth, height: canvas.clientHeight };
             context.clearRect(0, 0, rect.width, rect.height);
             drawScaledVideo(video, rect.width, rect.height);
 
@@ -1560,11 +1561,10 @@ export function createDoodleRenderer({ canvas, isVisible = () => true, textLayer
             stampLayer.appendChild(item);
         }
         item.annotation = action;
-        const rect = (canvas && canvas.getBoundingClientRect().width > 0)
-            ? canvas.getBoundingClientRect()
-            : (stampLayer?.getBoundingClientRect() || null);
+        // Size in layout pixels; the viewer transform scales the whole layer.
+        const width = canvas?.clientWidth || stampLayer?.clientWidth || 1000;
         const refWidth = 1000;
-        const scale = (rect && rect.width > 0) ? (rect.width / refWidth) : 1;
+        const scale = width / refWidth;
         const baseSize = Math.max(16, Number(action.size) || 80);
         const renderedSize = Math.max(16, Math.round(baseSize * scale));
         item.style.width = `${renderedSize}px`;
@@ -1666,7 +1666,7 @@ export function createDoodleRenderer({ canvas, isVisible = () => true, textLayer
     function renderText(action) {
         if (!context || !canvas || !action?.text) return;
 
-        const rect = canvas.getBoundingClientRect();
+        const rect = { width: canvas.clientWidth, height: canvas.clientHeight };
         const size = Math.max(12, Number(action.size) || 32);
         const font = String(action.font || "Outfit").replace(/["'`;{}]/g, "");
         const lines = String(action.text).split("\n").slice(0, 4);
@@ -1763,7 +1763,7 @@ export function createDoodleRenderer({ canvas, isVisible = () => true, textLayer
             stampLayer.hidden = !isVisible();
         }
 
-        const rect = canvas.getBoundingClientRect();
+        const rect = { width: canvas.clientWidth, height: canvas.clientHeight };
         context.clearRect(0, 0, rect.width, rect.height);
         if (!isVisible()) return;
 
@@ -1808,7 +1808,7 @@ export function createDoodleRenderer({ canvas, isVisible = () => true, textLayer
         if (!canvas || !context) return;
         if (actions) lastDoodleActions = actions;
 
-        const rect = canvas.getBoundingClientRect();
+        const rect = { width: canvas.clientWidth, height: canvas.clientHeight };
         if (rect.width === 0 || rect.height === 0) return;
 
         const dpr = window.devicePixelRatio || 1;

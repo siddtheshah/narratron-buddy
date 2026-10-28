@@ -145,7 +145,7 @@ export function initializeActionWheel({
         }
         return isPointOverCanvas(x, y);
     };
-    const excluded = target => Boolean(target.closest('input,textarea,select,button,a,[contenteditable="true"],[role="dialog"]'));
+    const excluded = target => Boolean(target.closest('input,textarea,select,button,a,[contenteditable="true"],[role="dialog"],#canvas-navigation-surface'));
     const managesBinding = target => Boolean(target.closest(
         '#action-wheel-rebind,#action-wheel-2-rebind,#action-wheel-disable,#action-wheel-reset,#menu-item-hotkey,#menu-item-text-hotkey,#mic-config-close-btn,#mic-config-done-btn'
     ));

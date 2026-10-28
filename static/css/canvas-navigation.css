@@ -1,0 +1,44 @@
+/* View state belongs to this browser tab, never to the theater. */
+#image-container > :is(#canvas-renderer, #canvas-stamp-layer, #doodle-canvas,
+    #canvas-text-layer, .canvas-image-effect-frame) {
+    transform-origin: 0 0;
+    translate: var(--canvas-view-x, 0px) var(--canvas-view-y, 0px);
+    scale: var(--canvas-view-scale, 1);
+}
+
+#canvas-navigation-surface {
+    display: none;
+    position: absolute;
+    inset: 0;
+    z-index: 21;
+    touch-action: none;
+    cursor: grab;
+}
+
+#image-container.canvas-navigation-enabled #canvas-navigation-surface { display: block; }
+#canvas-navigation-surface.dragging { cursor: grabbing; }
+
+#canvas-navigation-toggle {
+    position: absolute;
+    right: 8.1rem;
+    bottom: 1.5rem;
+    z-index: 26;
+    width: 44px;
+    height: 44px;
+    min-height: 44px;
+    padding: 0;
+    display: grid;
+    place-items: center;
+    border: 1px solid var(--glass-border, #64748b);
+    border-radius: 22px;
+    background: rgba(15, 23, 42, 0.9);
+    color: #e2e8f0;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.4);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    cursor: pointer;
+}
+
+#canvas-navigation-toggle:hover { background: #334155; }
+#canvas-navigation-toggle[aria-pressed="true"] { background: #4338ca; border-color: #a5b4fc; }
+#canvas-navigation-toggle:focus-visible { outline: 2px solid #a5b4fc; outline-offset: 3px; }

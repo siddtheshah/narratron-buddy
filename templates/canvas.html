@@ -14,6 +14,8 @@
     <link rel="stylesheet" href="/static/css/splitting.css">
     <link rel="stylesheet" href="/static/css/text-effects.css">
     <link rel="stylesheet" href="/static/css/chat.css">
+    <link rel="stylesheet" href="/static/css/canvas-navigation.css">
+    <script defer src="/static/js/canvas-navigation.js"></script>
     <link rel="stylesheet" href="/static/css/narration-pane.css">
     <link rel="stylesheet" href="/static/css/auth-flow.css">
     <script src="/static/js/auth-flow.js"></script>
@@ -3086,6 +3088,14 @@
         </header>
 
         <div id="image-container">
+            <div id="canvas-navigation-surface" aria-hidden="true"></div>
+            <button id="canvas-navigation-toggle" type="button" aria-pressed="false"
+                aria-label="Zoom and pan" title="Enable zoom and pan">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                    stroke-width="2" stroke-linecap="round" aria-hidden="true">
+                    <circle cx="10" cy="10" r="6" /><path d="m15 15 6 6M7 10h6M10 7v6" />
+                </svg>
+            </button>
             <canvas id="canvas-renderer"
                 style="position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1;"></canvas>
             <img id="current-image" src="" alt="Narratron Generation"
@@ -3655,7 +3665,7 @@
     <script type="module">
         import { setupTheaterReport } from '/static/js/theater-report.js';
         import { initializeStoryLogInspector } from "/static/js/story-log-inspector.js";
-        import { initializeActionWheel } from "/static/js/action-wheel.js?v=secondary-20261007-2";
+        import { initializeActionWheel } from "/static/js/action-wheel.js?v=canvas-navigation-20261028-1";
         import { initializeChatController } from "/static/js/chat-controller.js";
         import { initializeBeyond20Listener } from "/static/js/beyond20-listener.js";
 
@@ -4277,7 +4287,7 @@
             .catch((err) => {
                 console.error("Failed to load device-aware-pcm.js:", err);
             });
-        import { createDoodleRenderer, createImageRenderer } from "/static/js/canvas-renderers.js?v=multi-stamp-delete-video-loop-silent-20261018-1";
+        import { createDoodleRenderer, createImageRenderer } from "/static/js/canvas-renderers.js?v=canvas-navigation-20261028-1";
         import { createA2UICanvasRenderer } from "/static/js/a2ui-canvas-renderer.js?v=20261005-1";
         import { createGameRenderer } from "/static/js/game-renderer.js?v=12";
         import { createNarrationPane } from "/static/js/narration-pane.js";
@@ -5982,7 +5992,7 @@
             const points = data.points;
             if (!Array.isArray(points) || points.length < 4) return;
             const batchStrokeId = data.stroke_id || data.client_message_id || ((typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : ('batch-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7)));
-            const rect = canvas.getBoundingClientRect();
+            const rect = { width: canvas.clientWidth, height: canvas.clientHeight };
             for (let index = 0; index < points.length - 2; index += 2) {
                 const action = {
                     type: 'draw',
@@ -6395,7 +6405,7 @@
                         data.stroke_id = data.client_message_id || ((typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : ('stroke-' + Date.now()));
                     }
                     doodleActions.push(data);
-                    const rect = canvas.getBoundingClientRect();
+                    const rect = { width: canvas.clientWidth, height: canvas.clientHeight };
                     renderSegment(
                         data.x0 * rect.width, data.y0 * rect.height,
                         data.x1 * rect.width, data.y1 * rect.height,
@@ -6444,7 +6454,7 @@
             };
 
             doodleActions.push(action);
-            const rect = canvas.getBoundingClientRect();
+            const rect = { width: canvas.clientWidth, height: canvas.clientHeight };
             renderSegment(nx0 * rect.width, ny0 * rect.height, nx1 * rect.width, ny1 * rect.height, color, size);
 
             if (!emit) return;
