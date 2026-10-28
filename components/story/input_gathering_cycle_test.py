@@ -137,6 +137,45 @@ def test_short_batch_waits_for_original_interval_without_extending_it() -> None:
             cycle.close()
 
 
+def test_cycle_empties_after_idle_interval_and_next_input_triggers_immediately() -> None:
+    cycle = StoryInputGatheringCycle(60)
+    calls: list[list[str]] = []
+
+    def consume(ids: list[str]) -> dict[str, StoryResult]:
+        calls.append(ids)
+        return {turn_id: {"status": "completed"} for turn_id in ids}
+
+    with patch("components.story.input_gathering_cycle.time.monotonic", return_value=100.0) as now, patch(
+        "components.story.input_gathering_cycle.Timer",
+    ) as timer:
+        cycle.bind(consume)
+        try:
+            assert cycle.submit("first").result(timeout=5)["status"] == "completed"
+            assert cycle.wait(5)
+            cycle.flush()
+            now.return_value = 110.0
+            queued = cycle.submit("queued")
+            assert timer.call_count == 1
+            now.return_value = 160.0
+            cycle._tick()
+            assert queued.result(timeout=5)["status"] == "completed"
+            assert cycle.wait(5)
+            cycle.flush()
+            assert calls == [["first"], ["queued"]]
+
+            # The deferred batch opened a cycle ending at 220 that receives no input.
+            now.return_value = 221.0
+            assert not cycle.is_active
+            assert cycle.payload() == {"active": False, "pending": 0, "cycle_length": 60}
+
+            later = cycle.submit("later")
+            assert later.result(timeout=5)["status"] == "completed"
+            assert calls == [["first"], ["queued"], ["later"]]
+            assert timer.call_count == 1
+        finally:
+            cycle.close()
+
+
 @pytest.mark.parametrize("failure", [RuntimeError("journal unavailable"), CancelledError("cancelled")])
 def test_consumer_failure_releases_gate_and_settles_all_futures(failure: BaseException) -> None:
     cycle = StoryInputGatheringCycle(60)
