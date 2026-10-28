@@ -25,6 +25,7 @@ def remote_page() -> Iterator[Page]:
             files = {
                 "/remote": ("templates/remote.html", "text/html"),
                 "/static/js/remote.js": ("static/js/remote.js", "text/javascript"),
+                "/static/js/remote-audio.js": ("static/js/remote-audio.js", "text/javascript"),
                 "/static/js/story-log-inspector.js": ("static/js/story-log-inspector.js", "text/javascript"),
                 "/static/js/chat-controller.js": ("static/js/chat-controller.js", "text/javascript"),
                 "/static/js/chat-emotes.js": ("static/js/chat-emotes.js", "text/javascript"),
@@ -69,6 +70,146 @@ def remote_page() -> Iterator[Page]:
         page.wait_for_function("!document.getElementById('controls').disabled")
         yield page
         browser.close()
+
+
+def install_watch_audio_stub(page: Page) -> None:
+    page.add_init_script("""
+        window.watchAudio = [];
+        window.Audio = class {
+            constructor() {
+                this.src = '';
+                this.paused = true;
+                this.muted = false;
+                this.volume = 1;
+                window.watchAudio.push(this);
+            }
+            getAttribute(name) { return name === 'src' ? this.src || null : null; }
+            removeAttribute(name) { if (name === 'src') this.src = ''; }
+            play() { this.paused = false; return Promise.resolve(); }
+            pause() { this.paused = true; }
+            load() {}
+            dispatchEvent(event) { this['on' + event.type]?.(event); }
+        };
+    """)
+
+
+def test_watch_audio_defaults_muted_and_follows_music(remote_page: Page, tmp_path: Path) -> None:
+    page = remote_page
+    install_watch_audio_stub(page)
+    music = {"music_id": "rain", "tracks": ["/audio/rain.mp3"], "paused": False}
+    page.route("**/api/theaters/stage/remote", lambda route: route.fulfill(json={
+        "agent_running": True, "is_owner": True, "is_orator": True,
+        "music": music, "committed_scene_speech_generation": 1,
+    }))
+    page.route("**/audio/*.mp3", lambda route: route.fulfill(status=204))
+    page.goto("http://remote.test/remote?theater_id=stage&audio_test=1#preview")
+    frame = page.locator('.preview-frame')
+    expect(frame).to_be_visible()
+    page.wait_for_function("watchAudio[0].getAttribute('src') === '/audio/rain.mp3' && !watchAudio[0].paused")
+    assert page.evaluate("watchAudio.every(audio => audio.muted)")
+    frame.tap()
+    expect(frame).to_have_attribute("aria-label", "Mute canvas audio")
+    expect(frame).to_have_attribute("aria-pressed", "true")
+    expect(page.locator("#preview-audio-feedback")).to_have_text("🔊")
+    expect(page.locator("#preview-audio-feedback")).to_be_visible()
+    page.screenshot(path=str(tmp_path / "watch-audio-unmuted.png"))
+    assert page.evaluate("watchAudio.every(audio => !audio.muted)")
+    expect(page.locator("#preview-audio-feedback")).to_be_hidden()
+    frame.press("Space")
+    expect(frame).to_have_attribute("aria-label", "Unmute canvas audio")
+    expect(page.locator("#preview-audio-feedback")).to_have_text("🔇")
+    frame.press("Enter")
+    assert page.evaluate("watchAudio.every(audio => !audio.muted)")
+
+    music["paused"] = True
+    page.wait_for_function("watchAudio[0].paused")
+    music["paused"] = False
+    page.wait_for_function("!watchAudio[0].paused")
+    music["music_id"] = "forest"
+    music["tracks"] = ["/audio/forest.mp3"]
+    page.wait_for_function("watchAudio[0].getAttribute('src') === '/audio/forest.mp3' && !watchAudio[0].paused")
+    assert page.evaluate("!watchAudio[0].muted")
+    page.get_by_role("tab", name="Inputs", exact=True).click()
+    page.wait_for_function("watchAudio.every(audio => audio.paused)")
+    page.get_by_role("tab", name="Watch", exact=True).click()
+    page.wait_for_function("!watchAudio[0].paused")
+    music["music_id"] = None
+    music["tracks"] = []
+    page.wait_for_function("watchAudio[0].paused && !watchAudio[0].getAttribute('src')")
+
+
+def test_watch_audio_plays_real_media_after_tapping(remote_page: Page) -> None:
+    page = remote_page
+    page.add_init_script("""
+        window.watchAudio = [];
+        const NativeAudio = window.Audio;
+        window.Audio = function(...args) {
+            const audio = new NativeAudio(...args);
+            window.watchAudio.push(audio);
+            return audio;
+        };
+    """)
+    sockets: list[WebSocketRoute] = []
+    page.route_web_socket("**/ws/canvas-state?*", lambda socket: sockets.append(socket))
+    page.route("**/api/theaters/stage/remote", lambda route: route.fulfill(json={
+        "agent_running": True, "is_owner": True, "is_orator": True,
+        "music": {"music_id": "desert", "tracks": ["/audio/desert.mp3"], "paused": False},
+        "committed_scene_speech_generation": 1,
+    }))
+    page.route("**/audio/desert.mp3", lambda route: route.fulfill(
+        path="testing/testdata/playlists/cold desert.mp3", content_type="audio/mpeg",
+    ))
+    page.goto("http://remote.test/remote?theater_id=stage&audio_test=1#preview")
+    page.wait_for_function("watchAudio[0].getAttribute('src') === '/audio/desert.mp3'")
+    assert page.evaluate("watchAudio.every(audio => audio.muted)")
+    page.get_by_role("button", name="Unmute canvas audio").tap()
+    page.wait_for_function("!watchAudio[0].muted && !watchAudio[0].paused && watchAudio[0].currentTime > 0")
+    sockets[0].send(json.dumps({
+        "type": "scene_speech_ready", "speech_generation": 1, "audio_url": "/audio/desert.mp3",
+    }))
+    page.wait_for_function("!watchAudio[1].muted && !watchAudio[1].paused && watchAudio[1].currentTime > 0")
+    page.get_by_role("button", name="Mute canvas audio").tap()
+    assert page.evaluate("watchAudio.every(audio => audio.muted)")
+
+
+def test_watch_audio_queues_matching_live_speech(remote_page: Page) -> None:
+    page = remote_page
+    install_watch_audio_stub(page)
+    generation = 1
+    sockets: list[WebSocketRoute] = []
+    page.route_web_socket("**/ws/canvas-state?*", lambda socket: sockets.append(socket))
+    page.route("**/api/theaters/stage/remote", lambda route: route.fulfill(json={
+        "agent_running": True, "is_owner": True, "is_orator": True,
+        "committed_scene_speech_generation": generation,
+    }))
+    page.route("**/speech/*.mp3", lambda route: route.fulfill(status=204))
+    page.goto("http://remote.test/remote?theater_id=stage&audio_test=1#preview")
+    page.wait_for_function("document.getElementById('connection-status').dataset.connected === 'true'")
+    assert len(sockets) == 1
+    socket = sockets[0]
+    socket.send(json.dumps({"type": "scene_speech_ready", "speech_generation": 2, "audio_url": "/speech/first.mp3"}))
+    page.wait_for_timeout(100)
+    assert page.evaluate("!watchAudio[1].getAttribute('src')")
+    generation = 2
+    socket.send(json.dumps({"type": "state_changed", "domains": ["latest"]}))
+    page.wait_for_function("watchAudio[1].getAttribute('src') === '/speech/first.mp3' && !watchAudio[1].paused")
+    assert page.evaluate("watchAudio[1].muted")
+    page.get_by_role("button", name="Unmute canvas audio").tap()
+    assert page.evaluate("!watchAudio[1].muted")
+    socket.send(json.dumps({"type": "scene_speech_ready", "speech_generation": 2, "audio_url": "/speech/second.mp3"}))
+    page.wait_for_timeout(100)
+    page.evaluate("watchAudio[1].dispatchEvent(new Event('ended'))")
+    page.wait_for_function("watchAudio[1].getAttribute('src') === '/speech/second.mp3'")
+    generation = 3
+    socket.send(json.dumps({"type": "state_changed", "domains": ["latest"]}))
+    page.wait_for_function("watchAudio[1].paused && !watchAudio[1].getAttribute('src')")
+    socket.send(json.dumps({"type": "scene_speech_ready", "speech_generation": 2, "audio_url": "/speech/stale.mp3"}))
+    page.wait_for_timeout(100)
+    assert page.evaluate("!watchAudio[1].getAttribute('src')")
+    page.get_by_role("tab", name="Inputs", exact=True).click()
+    socket.send(json.dumps({"type": "scene_speech_ready", "speech_generation": 3, "audio_url": "/speech/hidden.mp3"}))
+    page.get_by_role("tab", name="Watch", exact=True).click()
+    assert page.evaluate("watchAudio[1].paused && !watchAudio[1].getAttribute('src')")
 
 
 def test_story_preview_reads_updates_and_sends_instructions(remote_page: Page, tmp_path: Path) -> None:

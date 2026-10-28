@@ -101,9 +101,10 @@
     </div>
     <section id="canvas-preview" role="tabpanel" aria-labelledby="preview-tab" tabindex="0" hidden>
         <div class="preview-heading"><h2 id="preview-title">Canvas preview</h2><span id="preview-status" role="status">Connecting…</span></div>
-        <div class="preview-frame">
+        <div class="preview-frame" role="button" tabindex="0" aria-label="Unmute canvas audio" aria-pressed="false" title="Tap to unmute canvas audio">
             <img id="preview-image" alt="Current canvas scene" hidden decoding="async" referrerpolicy="no-referrer">
             <p id="preview-placeholder">Waiting for the canvas…</p>
+            <span id="preview-audio-feedback" aria-hidden="true" hidden></span>
         </div>
         <nav class="remote-tabs preview-tabs" role="tablist" aria-label="Watch screens">
             <button id="preview-chat-tab" role="tab" aria-controls="preview-chat-panel" aria-selected="true">Chat</button>

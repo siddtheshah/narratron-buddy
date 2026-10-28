@@ -15,6 +15,10 @@ def remote_services() -> Iterator[tuple[TestClient, MagicMock, MagicMock]]:
     state = MagicMock()
     state.visual.pinned = True
     state.audio.pinned = False
+    state.audio.current_music_id = "rain"
+    state.audio.current_playlist_tracks = ["/audio/rain.mp3"]
+    state.audio.music_paused = False
+    state.story.committed_scene_speech_generation = 3
     state.ui.viewer_collab_enabled = True
     state.visual.preview_image_url.return_value = "/theaters/stage/output/scene.webp"
     manager = MagicMock()
@@ -78,6 +82,8 @@ def test_remote_returns_state_for_active_orator(
         "theater_id": "stage", "agent_running": False, "pinned": True,
         "music_pinned": False, "viewer_collab_enabled": True,
         "preview_url": "/theaters/stage/output/scene.webp",
+        "music": {"music_id": "rain", "tracks": ["/audio/rain.mp3"], "paused": False},
+        "committed_scene_speech_generation": 3,
         "is_contributor": True,
         "is_owner": False,
         "is_orator": True,

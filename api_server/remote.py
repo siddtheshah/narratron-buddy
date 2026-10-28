@@ -28,6 +28,12 @@ _REMOTE_BODY_TEMPLATE = jinja2.Environment(autoescape=True).from_string(
 )
 
 
+class RemoteMusicStatus(BaseModel):
+    music_id: str | None
+    tracks: list[str]
+    paused: bool
+
+
 class RemoteStatus(BaseModel):
     theater_id: str
     agent_running: bool
@@ -35,6 +41,8 @@ class RemoteStatus(BaseModel):
     music_pinned: bool
     viewer_collab_enabled: bool
     preview_url: str | None = None
+    music: RemoteMusicStatus
+    committed_scene_speech_generation: int
     is_contributor: bool = False
     is_owner: bool = False
     is_orator: bool = False
@@ -114,6 +122,12 @@ def get_remote_status(theater_id: str, request: Request, response: Response) -> 
         music_pinned=state.audio.pinned,
         viewer_collab_enabled=state.ui.viewer_collab_enabled,
         preview_url=state.visual.preview_image_url(),
+        music=RemoteMusicStatus(
+            music_id=state.audio.current_music_id or state.audio.current_playlist,
+            tracks=state.audio.current_playlist_tracks,
+            paused=state.audio.music_paused,
+        ),
+        committed_scene_speech_generation=state.story.committed_scene_speech_generation,
         is_contributor=is_contributor(deployment, current_user=user),
         is_owner=is_owner,
         is_orator=is_orator,

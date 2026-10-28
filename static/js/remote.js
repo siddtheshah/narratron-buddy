@@ -1,5 +1,6 @@
 import { initializeChatController } from './chat-controller.js';
 import { initializeStoryLogInspector } from './story-log-inspector.js';
+import { initializeRemoteAudio } from './remote-audio.js';
 
 (() => {
     'use strict';
@@ -19,6 +20,11 @@ import { initializeStoryLogInspector } from './story-log-inspector.js';
     const previewStatus = document.getElementById('preview-status');
     const previewPlaceholder = document.getElementById('preview-placeholder');
     const previewView = document.getElementById('canvas-preview');
+    const previewAudio = initializeRemoteAudio({
+        frame: document.querySelector('.preview-frame'),
+        feedback: document.getElementById('preview-audio-feedback'),
+        onError: () => showToast('Audio could not play. Tap the canvas to try again.', 'error'),
+    });
     const tabs = [...document.querySelectorAll('[data-view]')];
     const views = tabs.map(tab => document.getElementById(tab.getAttribute('aria-controls')));
     const viewContainer = document.getElementById('remote-views');
@@ -108,6 +114,38 @@ import { initializeStoryLogInspector } from './story-log-inspector.js';
     let batonTimerInterval = null;
     let doodleWs = null;
     let doodleReconnectTimer = null;
+    let audioWs = null;
+    let audioReconnectTimer = null;
+    let audioRefreshTimer = null;
+
+    function connectAudioSocket() {
+        if (!theaterId || !/^[a-zA-Z0-9_-]+$/.test(theaterId)) return;
+        if (audioWs && [WebSocket.OPEN, WebSocket.CONNECTING].includes(audioWs.readyState)) return;
+        clearTimeout(audioReconnectTimer);
+        const params = new URLSearchParams({ theater_id: theaterId });
+        if (theaterKey) params.set('join_key', theaterKey);
+        const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const socket = new WebSocket(`${protocol}//${location.host}/ws/canvas-state?${params}`);
+        audioWs = socket;
+        socket.onmessage = event => {
+            let data;
+            try { data = JSON.parse(event.data); } catch (_) { return; }
+            if (data.type === 'scene_speech_ready') previewAudio.enqueueSpeech(data);
+            if (!document.hidden && (data.type === 'state_ready' ||
+                (data.type === 'state_changed' && data.domains?.includes('latest')))) {
+                clearTimeout(audioRefreshTimer);
+                audioRefreshTimer = setTimeout(() => {
+                    if (!busy) void refresh(generation);
+                }, 50);
+            }
+        };
+        socket.onclose = () => {
+            if (audioWs !== socket) return;
+            audioWs = null;
+            if (!document.hidden) audioReconnectTimer = setTimeout(connectAudioSocket, 3000);
+        };
+        socket.onerror = () => socket.close();
+    }
 
     function connectViewerSocket() {
         if (!theaterId || !/^[a-zA-Z0-9_-]+$/.test(theaterId)) return;
@@ -308,6 +346,7 @@ import { initializeStoryLogInspector } from './story-log-inspector.js';
         });
         document.title = `${tabs[selected].textContent} · Narratron Remote`;
         renderPreviewTab();
+        previewAudio.update(state, !previewView.hidden && !document.hidden);
         if (focus && !tabs[selected].hidden) tabs[selected].focus();
         if (tabs[selected].dataset.view === 'preview') {
             updatePreview();
@@ -561,6 +600,7 @@ import { initializeStoryLogInspector } from './story-log-inspector.js';
     }
 
     function updatePreview() {
+        previewAudio.update(state, !previewView.hidden && !document.hidden);
         if (previewView.hidden && state) return;
         const nextUrl = state?.preview_url || null;
         if (nextUrl !== previewUrl) {
@@ -1535,6 +1575,13 @@ import { initializeStoryLogInspector } from './story-log-inspector.js';
     });
 
     window.addEventListener('pagehide', () => {
+        previewAudio.update(null, false);
+        clearTimeout(audioReconnectTimer);
+        clearTimeout(audioRefreshTimer);
+        if (audioWs) {
+            audioWs.close();
+            audioWs = null;
+        }
         if (micTransmitting) void stopMicrophone('page_hide');
         if (doodleWs) {
             try { doodleWs.close(); } catch (_) {}
@@ -1545,9 +1592,11 @@ import { initializeStoryLogInspector } from './story-log-inspector.js';
     document.addEventListener('visibilitychange', () => {
         clearTimeout(pollTimer);
         if (document.hidden) {
+            previewAudio.update(state, false);
             if (micTransmitting) void stopMicrophone('page_hidden');
         } else {
             connectViewerSocket();
+            connectAudioSocket();
             if (theaterId && !busy) {
                 void refresh(generation);
             }
@@ -1571,6 +1620,7 @@ import { initializeStoryLogInspector } from './story-log-inspector.js';
         return checkBatonState();
     });
     connectViewerSocket();
+    connectAudioSocket();
     if (theaterId && /^[a-zA-Z0-9_-]+$/.test(theaterId)) {
         document.getElementById('theater-id').textContent = theaterId;
         document.getElementById('theater-id').title = theaterId;
