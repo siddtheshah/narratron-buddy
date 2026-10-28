@@ -9691,6 +9691,9 @@
             }
 
             if (active) {
+                if (!document.body.classList.contains('fullscreen-cinematic')) {
+                    setPanelCollapsed(true);
+                }
                 document.body.classList.add('fullscreen-cinematic');
                 window.addEventListener('mousemove', handleCinematicMouseMove);
                 showCinematicUI();
@@ -9814,7 +9817,7 @@
         }
 
         window.addEventListener('resize', () => {
-            if (!userToggledPanel) {
+            if (!userToggledPanel && !isFullscreenActive()) {
                 const shouldCollapse = window.innerWidth <= SMALL_WINDOW_BREAKPOINT;
                 if (shouldCollapse !== isPanelCollapsed) {
                     setPanelCollapsed(shouldCollapse, false);
