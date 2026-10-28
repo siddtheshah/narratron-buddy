@@ -13,6 +13,7 @@ from api_server.shared import (
     db,
     get_current_user,
     is_contributor,
+    theater_manager,
     _extract_candidate_join_key,
     _grant_canvas_access,
     _require_canvas_access,
@@ -40,6 +41,7 @@ class RemoteStatus(BaseModel):
     pinned: bool
     music_pinned: bool
     viewer_collab_enabled: bool
+    is_adventure_mode: bool = False
     preview_url: str | None = None
     music: RemoteMusicStatus
     committed_scene_speech_generation: int
@@ -108,6 +110,7 @@ def get_remote_status(theater_id: str, request: Request, response: Response) -> 
     deployment = db.get_deployment(theater_id)
     state = canvas_states.get(theater_id)
     session = live_agent_manager.get_session(theater_id)
+    theater = theater_manager.get_theater(theater_id)
     user_id = user.get("id")
     is_owner = bool(deployment and user_id and user_id == deployment.get("user_id"))
     active_orator_id = deployment.get("active_orator_id") if deployment else None
@@ -121,6 +124,9 @@ def get_remote_status(theater_id: str, request: Request, response: Response) -> 
         pinned=state.visual.pinned,
         music_pinned=state.audio.pinned,
         viewer_collab_enabled=state.ui.viewer_collab_enabled,
+        is_adventure_mode=bool(
+            theater and theater.config.get("story_planning", {}).get("adventure_mode", False)
+        ),
         preview_url=state.visual.preview_image_url(),
         music=RemoteMusicStatus(
             music_id=state.audio.current_music_id or state.audio.current_playlist,

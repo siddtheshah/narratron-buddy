@@ -32,6 +32,7 @@ header a { display: inline-flex; align-items: center; gap: 8px; color: #e9edf5; 
 a { color: #bac5d7; font-size: 10px; text-underline-offset: 3px; }
 fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
 .bar { --bar-accent: #edc68c; position: relative; padding: 6px; border: 1px solid var(--line); background: linear-gradient(110deg, #222a36b0, #1a202ce0); border-radius: 10px; margin: 0 0 6px; box-shadow: 0 2px 5px #00000012, inset 0 1px 0 #ffffff03; }
+.bar[hidden] { display: none; }
 .bar[aria-labelledby="scene-title"] { --bar-accent: #cd9aff; }
 .bar[aria-labelledby="music-title"] { --bar-accent: #45e0ff; }
 .bar[aria-labelledby="direction-title"] { --bar-accent: #edc68c; }

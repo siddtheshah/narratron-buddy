@@ -63,6 +63,7 @@ import { initializeRemoteAudio } from './remote-audio.js';
 
     previewTabs.forEach((tab, index) => {
         function select() {
+            if (tab.hidden) return;
             storySelected = Boolean(index);
             renderPreviewTab();
             tab.focus();
@@ -73,7 +74,7 @@ import { initializeRemoteAudio } from './remote-audio.js';
                 : ['ArrowLeft', 'ArrowRight'].includes(event.key) ? 1 - index : null;
             if (next === null) return;
             event.preventDefault();
-            previewTabs[next].click();
+            previewTabs[previewTabs[next].hidden ? 0 : next].click();
         });
     });
     let theaterKey = (document.body && document.body.dataset ? document.body.dataset.joinKey : '') ||
@@ -680,6 +681,11 @@ import { initializeRemoteAudio } from './remote-audio.js';
     }
 
     function render() {
+        const adventureMode = Boolean(state?.is_adventure_mode);
+        document.getElementById('preview-story-tab').hidden = !adventureMode;
+        document.getElementById('story-direction').hidden = !adventureMode;
+        if (!adventureMode) storySelected = false;
+        renderPreviewTab();
         const isOwner = Boolean(currentUser && currentBatonState?.owner && currentUser.id === currentBatonState.owner.id);
         const isActiveOrator = Boolean(currentUser && currentBatonState?.active_orator && currentUser.id === currentBatonState.active_orator.id);
         const isNowOrator = !currentBatonState || Boolean(isActiveOrator || (isOwner && !currentBatonState.active_orator));

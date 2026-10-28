@@ -45,7 +45,7 @@ def remote_page() -> Iterator[Page]:
             elif path.endswith("/remote"):
                 route.fulfill(json={"agent_running": True, "pinned": False, "music_pinned": False,
                                     "viewer_collab_enabled": False, "is_owner": True, "is_orator": True,
-                                    "is_contributor": True})
+                                    "is_contributor": True, "is_adventure_mode": True})
             elif path.endswith("/baton"):
                 route.fulfill(json={
                     "owner": {"id": 1, "username": "owner"},
@@ -70,6 +70,25 @@ def remote_page() -> Iterator[Page]:
         page.wait_for_function("!document.getElementById('controls').disabled")
         yield page
         browser.close()
+
+
+@pytest.mark.parametrize("adventure_mode", [False, True])
+def test_adventure_controls_follow_theater_mode(remote_page: Page, adventure_mode: bool) -> None:
+    page = remote_page
+    page.route("**/api/theaters/stage/remote", lambda route: route.fulfill(json={
+        "agent_running": True, "is_owner": True, "is_orator": True,
+        "is_adventure_mode": adventure_mode,
+    }))
+    page.reload()
+    page.wait_for_function("!document.getElementById('controls').disabled")
+    expect(page.locator("#story-direction")).to_be_visible(visible=adventure_mode)
+    expect(page.get_by_role("button", name="Update story", exact=True)).to_be_visible(visible=adventure_mode)
+    page.get_by_role("tab", name="Watch", exact=True).click()
+    expect(page.locator("#preview-story-tab")).to_be_visible(visible=adventure_mode)
+    if not adventure_mode:
+        page.get_by_role("tab", name="Chat", exact=True).press("ArrowRight")
+        expect(page.locator("#preview-chat-panel")).to_be_visible()
+        expect(page.locator("#preview-story-panel")).to_be_hidden()
 
 
 def install_watch_audio_stub(page: Page) -> None:
@@ -264,7 +283,7 @@ def test_story_preview_empty_errors_and_disabled_input(remote_page: Page) -> Non
     page.route("**/output/story_log.jsonl", lambda route: route.fulfill(status=404))
     expect(log).to_have_text("No story actions have been recorded yet.")
     page.route("**/api/theaters/stage/remote", lambda route: route.fulfill(json={
-        "agent_running": False, "is_owner": True, "is_orator": True,
+        "agent_running": False, "is_owner": True, "is_orator": True, "is_adventure_mode": True,
     }))
     expect(page.get_by_role("button", name="Microphone", exact=True)).to_be_disabled()
     expect(page.get_by_role("button", name="Keyboard", exact=True)).to_be_disabled()
@@ -281,7 +300,7 @@ def test_story_preview_remains_readable_without_baton(remote_page: Page) -> None
         body=json.dumps({"type": "story_plan", "output": {"narration": "The adventure continues."}}),
     ))
     page.route("**/api/theaters/stage/remote", lambda route: route.fulfill(json={
-        "agent_running": True, "is_owner": False, "is_orator": False,
+        "agent_running": True, "is_owner": False, "is_orator": False, "is_adventure_mode": True,
     }))
     page.route("**/api/theaters/stage/baton", lambda route: route.fulfill(json={
         "owner": {"id": 2, "username": "other"},

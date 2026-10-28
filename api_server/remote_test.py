@@ -27,6 +27,7 @@ def remote_services() -> Iterator[tuple[TestClient, MagicMock, MagicMock]]:
             patch.object(remote, "get_current_user", return_value={"id": 2}) as current_user, \
             patch.object(remote.db, "get_deployment", return_value=deployment), \
             patch.object(remote.canvas_states, "get", return_value=state), \
+            patch.object(remote.theater_manager, "get_theater", return_value=MagicMock(config={})), \
             patch.object(remote, "live_agent_manager", manager):
         yield TestClient(remote.app), current_user, manager
 
@@ -81,6 +82,7 @@ def test_remote_returns_state_for_active_orator(
     assert response.json() == {
         "theater_id": "stage", "agent_running": False, "pinned": True,
         "music_pinned": False, "viewer_collab_enabled": True,
+        "is_adventure_mode": False,
         "preview_url": "/theaters/stage/output/scene.webp",
         "music": {"music_id": "rain", "tracks": ["/audio/rain.mp3"], "paused": False},
         "committed_scene_speech_generation": 3,
