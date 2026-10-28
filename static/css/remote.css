@@ -337,6 +337,19 @@ body[data-owner-idle="true"] #remote-controls {
 #retry-assets { margin-top: 8px; font-size: 12px; padding: 6px 12px; }
 #retry-assets[hidden] { display: none; }
 #canvas-preview { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: #10151f; }
+.preview-tabs { margin: 8px; }
+.preview-tabs button { min-height: 44px; height: auto; font-size: 14px; }
+#remote-story-log { height: clamp(180px, 32svh, 400px); overflow-y: auto; padding: 12px; overflow-wrap: anywhere; overscroll-behavior: contain; }
+#remote-story-log .story-log-turn { display: grid; gap: 8px; margin-bottom: 16px; }
+#remote-story-log .story-log-entry { padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: #ffffff04; }
+#remote-story-log .story-log-entry.action { border-color: #edc68c40; background: #edc68c08; }
+#remote-story-log .story-log-label { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px; color: var(--accent); font-size: 12px; margin-bottom: 8px; }
+#remote-story-log .story-log-time { color: var(--muted); }
+#remote-story-log .story-log-text { white-space: pre-wrap; font-size: 16px; line-height: 1.6; }
+#remote-story-log .story-log-section { color: var(--muted); font-size: 12px; margin: 12px 0 4px; }
+#story-input-controls { padding: 8px; border-top: 1px solid var(--line); }
+#story-input-status { color: var(--muted); font-size: 13px; margin: 0 0 8px; }
+#story-input-status:empty, #remote-composer[hidden] { display: none; }
 .preview-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; }
 .preview-heading h2 { flex: 1; padding: 0; color: #b6a7e2; }
 #preview-status { color: var(--muted); font-size: 10px; }

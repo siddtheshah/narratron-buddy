@@ -1,4 +1,5 @@
 import { initializeChatController } from './chat-controller.js';
+import { initializeStoryLogInspector } from './story-log-inspector.js';
 
 (() => {
     'use strict';
@@ -34,6 +35,41 @@ import { initializeChatController } from './chat-controller.js';
     let assetsLoading = false;
     let lastAssetsSignature = null;
     const theaterId = new URLSearchParams(location.search).get('theater_id');
+    const storyLog = initializeStoryLogInspector(theaterId, { embedded: true });
+    const previewTabs = [...document.querySelectorAll('.preview-tabs [role="tab"]')];
+    const storyControls = document.getElementById('story-input-controls');
+    const composer = document.getElementById('remote-composer');
+    let storySelected = false;
+
+    function renderPreviewTab() {
+        previewTabs.forEach((tab, index) => {
+            const selected = Boolean(index) === storySelected;
+            tab.setAttribute('aria-selected', String(selected));
+            tab.tabIndex = selected ? 0 : -1;
+            document.getElementById(tab.getAttribute('aria-controls')).hidden = !selected;
+        });
+        const readingStory = !previewView.hidden && storySelected;
+        storyLog?.setOpen(readingStory);
+        const slot = document.getElementById(readingStory ? 'story-composer-slot' : 'inputs-composer-slot');
+        if (composer.parentElement !== slot) slot.appendChild(composer);
+        composer.hidden = readingStory && !isOratorUser();
+    }
+
+    previewTabs.forEach((tab, index) => {
+        function select() {
+            storySelected = Boolean(index);
+            renderPreviewTab();
+            tab.focus();
+        }
+        tab.addEventListener('click', select);
+        tab.addEventListener('keydown', event => {
+            const next = event.key === 'Home' ? 0 : event.key === 'End' ? 1
+                : ['ArrowLeft', 'ArrowRight'].includes(event.key) ? 1 - index : null;
+            if (next === null) return;
+            event.preventDefault();
+            previewTabs[next].click();
+        });
+    });
     let theaterKey = (document.body && document.body.dataset ? document.body.dataset.joinKey : '') ||
                      new URLSearchParams(location.search).get('join_key') ||
                      new URLSearchParams(location.search).get('key') ||
@@ -271,6 +307,7 @@ import { initializeChatController } from './chat-controller.js';
             }
         });
         document.title = `${tabs[selected].textContent} · Narratron Remote`;
+        renderPreviewTab();
         if (focus && !tabs[selected].hidden) tabs[selected].focus();
         if (tabs[selected].dataset.view === 'preview') {
             updatePreview();
@@ -309,7 +346,7 @@ import { initializeChatController } from './chat-controller.js';
 
     let swipeStart = null;
     viewContainer.addEventListener('touchstart', event => {
-        const nested = event.target.closest('.asset-carousel, .asset-card, input, textarea, button, #chat-messages');
+        const nested = event.target.closest('.asset-carousel, .asset-card, input, textarea, button, #chat-messages, #remote-story-log');
         swipeStart = event.touches.length === 1 && !nested
             ? {x: event.touches[0].clientX, y: event.touches[0].clientY} : null;
     }, {passive: true});
@@ -608,6 +645,10 @@ import { initializeChatController } from './chat-controller.js';
         const isNowOrator = !currentBatonState || Boolean(isActiveOrator || (isOwner && !currentBatonState.active_orator));
 
         controls.disabled = !state || busy || !isNowOrator;
+        storyControls.disabled = !state || busy || !isNowOrator;
+        document.getElementById('story-input-status').textContent = !isOratorUser()
+            ? 'The baton holder controls story input.' : !state ? 'Reconnecting…'
+                : !state.agent_running ? 'Turn the agent on in Inputs to continue the story.' : '';
         if (!state) {
             assetSequence += 1;
             assetsLoading = false;
@@ -619,11 +660,11 @@ import { initializeChatController } from './chat-controller.js';
             && assetStatus.textContent === 'Reconnect to browse assets.') {
             void loadAssets();
         }
-        controls.querySelectorAll('[data-live]').forEach(button => {
-            button.disabled = !state?.agent_running;
+        document.querySelectorAll('[data-live]').forEach(button => {
+            button.disabled = !state?.agent_running || busy || !isNowOrator;
         });
-        command.disabled = !state?.agent_running;
-        if (!state?.agent_running) {
+        command.disabled = !state?.agent_running || busy || !isNowOrator;
+        if (!state?.agent_running || !isNowOrator) {
             if (micTransmitting) void stopMicrophone('agent_stopped');
             if (commandModal && !commandModal.hidden) closeCommandModal();
         }
@@ -921,11 +962,7 @@ import { initializeChatController } from './chat-controller.js';
             hideBatonRequestModal();
         }
 
-        if (controls && !isNowOrator && state) {
-            controls.disabled = true;
-        }
-        renderTabsVisibility();
-        renderView();
+        render();
     }
 
     function showBatonRequestModal(batonReq) {

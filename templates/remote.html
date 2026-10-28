@@ -19,7 +19,7 @@
     <nav class="remote-tabs" role="tablist" aria-label="Remote screens">
         <button id="assets-tab" role="tab" aria-controls="asset-manager" aria-selected="false" tabindex="-1" data-view="assets">Assets</button>
         <button id="inputs-tab" role="tab" aria-controls="remote-controls" aria-selected="true" data-view="inputs">Inputs</button>
-        <button id="preview-tab" role="tab" aria-controls="canvas-preview" aria-selected="false" tabindex="-1" data-view="preview">Preview</button>
+        <button id="preview-tab" role="tab" aria-controls="canvas-preview" aria-selected="false" tabindex="-1" data-view="preview">Watch</button>
         <button id="party-tab" role="tab" aria-controls="remote-baton" aria-selected="false" tabindex="-1" data-view="party">Party</button>
     </nav>
     <div id="remote-views">
@@ -66,7 +66,8 @@
             <h2 id="direction-title">Direction</h2>
             <button data-action="update_story" data-live>Update story</button>
         </section>
-        <section class="bar input-actions-bar" aria-label="Input controls">
+        <div id="inputs-composer-slot"></div>
+        <section id="remote-composer" class="bar input-actions-bar" aria-label="Input controls">
             <button type="button" id="mic-btn" class="input-action-btn mic-btn" data-live aria-pressed="false" aria-label="Microphone" title="Transmit audio to Narratron">
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/><line x1="8" y1="22" x2="16" y2="22"/></svg>
                 <span class="btn-text">Microphone</span>
@@ -78,6 +79,7 @@
             </button>
         </section>
     </fieldset>
+    </div>
     <div id="command-modal" class="command-modal" role="dialog" aria-modal="true" aria-labelledby="command-modal-title" hidden>
         <div class="command-modal-backdrop" id="command-modal-backdrop"></div>
         <div class="command-modal-dialog">
@@ -97,14 +99,17 @@
             </div>
         </div>
     </div>
-    </div>
     <section id="canvas-preview" role="tabpanel" aria-labelledby="preview-tab" tabindex="0" hidden>
         <div class="preview-heading"><h2 id="preview-title">Canvas preview</h2><span id="preview-status" role="status">Connecting…</span></div>
         <div class="preview-frame">
             <img id="preview-image" alt="Current canvas scene" hidden decoding="async" referrerpolicy="no-referrer">
             <p id="preview-placeholder">Waiting for the canvas…</p>
         </div>
-        <section class="preview-chat" aria-labelledby="preview-chat-title">
+        <nav class="remote-tabs preview-tabs" role="tablist" aria-label="Watch screens">
+            <button id="preview-chat-tab" role="tab" aria-controls="preview-chat-panel" aria-selected="true">Chat</button>
+            <button id="preview-story-tab" role="tab" aria-controls="preview-story-panel" aria-selected="false" tabindex="-1">Story log</button>
+        </nav>
+        <section id="preview-chat-panel" class="preview-chat" role="tabpanel" aria-labelledby="preview-chat-tab">
             <div class="preview-chat-heading">
                 <h2 id="preview-chat-title">Chat</h2>
                 <span id="chat-name-display"></span>
@@ -132,6 +137,15 @@
                     </button>
                 </div>
             </form>
+        </section>
+        <section id="preview-story-panel" role="tabpanel" aria-labelledby="preview-story-tab" hidden>
+            <h2 class="sr-only">Story log</h2>
+            <div id="remote-story-log" role="log" aria-label="Story log" aria-live="polite" tabindex="0">Loading story log…</div>
+            <fieldset id="story-input-controls" disabled>
+                <legend class="sr-only">Story input</legend>
+                <p id="story-input-status" role="status"></p>
+                <div id="story-composer-slot"></div>
+            </fieldset>
         </section>
     </section>
     <section id="remote-baton" role="tabpanel" aria-labelledby="party-tab" tabindex="0" hidden>

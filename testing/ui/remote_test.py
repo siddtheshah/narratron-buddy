@@ -25,6 +25,7 @@ def remote_page() -> Iterator[Page]:
             files = {
                 "/remote": ("templates/remote.html", "text/html"),
                 "/static/js/remote.js": ("static/js/remote.js", "text/javascript"),
+                "/static/js/story-log-inspector.js": ("static/js/story-log-inspector.js", "text/javascript"),
                 "/static/js/chat-controller.js": ("static/js/chat-controller.js", "text/javascript"),
                 "/static/js/chat-emotes.js": ("static/js/chat-emotes.js", "text/javascript"),
                 "/static/js/device-navigation.js": ("static/js/device-navigation.js", "text/javascript"),
@@ -54,6 +55,8 @@ def remote_page() -> Iterator[Page]:
                 })
             elif path.endswith("/auth/me"):
                 route.fulfill(json={"authenticated": True, "user": {"id": 1, "username": "owner"}})
+            elif path.endswith("/output/story_log.jsonl"):
+                route.fulfill(status=404)
             else:
                 route.fulfill(json={"status": "accepted"})
 
@@ -66,6 +69,91 @@ def remote_page() -> Iterator[Page]:
         page.wait_for_function("!document.getElementById('controls').disabled")
         yield page
         browser.close()
+
+
+def test_story_preview_reads_updates_and_sends_instructions(remote_page: Page, tmp_path: Path) -> None:
+    page = remote_page
+    entries = [
+        {"type": "user_action", "action": "Open the gate"},
+        {"type": "story_plan", "output": {
+            "narration": "The gate opens. <script>alert('unsafe')</script>",
+            "dialogue": [{"speaker": "Guard", "text": "Welcome, traveler."}],
+            "die_rolls": [{"notation": "1d20", "total": 17}],
+        }},
+    ]
+
+    def serve_log(route: Route) -> None:
+        route.fulfill(body="\n".join(json.dumps(entry) for entry in entries), content_type="text/plain")
+
+    page.route("**/output/story_log.jsonl", serve_log)
+    page.get_by_role("tab", name="Watch", exact=True).click()
+    page.get_by_role("tab", name="Story log", exact=True).click()
+    log = page.get_by_role("log", name="Story log", exact=True)
+    expect(log).to_contain_text("Open the gate")
+    expect(log).to_contain_text("Guard: Welcome, traveler.")
+    expect(log).to_contain_text("1d20: 17")
+    expect(page.locator(".preview-frame")).to_be_visible()
+    expect(page.locator("#preview-chat-panel")).to_be_hidden()
+    assert page.locator(".preview-frame").bounding_box()["y"] < log.bounding_box()["y"]
+    assert log.locator("script").count() == 0
+    page.get_by_role("button", name="Keyboard", exact=True).click()
+    page.locator("#command").fill("Ask the guard for directions")
+    with page.expect_request("**/api/orator/command?*") as instruction:
+        page.get_by_role("button", name="Send instruction").click()
+    assert instruction.value.post_data_json == {"text": "Ask the guard for directions"}
+    expect(page.locator("#command-modal")).to_be_hidden()
+    expect(page.get_by_role("button", name="Microphone", exact=True)).to_be_enabled()
+    entries.append({"type": "story_plan", "output": {"narration": "The guard points north."}})
+    expect(log).to_contain_text("The guard points north.")
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+    page.screenshot(path=str(tmp_path / "remote-story-mobile.png"))
+    page.get_by_role("tab", name="Inputs", exact=True).click()
+    expect(page.locator("#controls #mic-btn")).to_be_visible()
+    page.get_by_role("tab", name="Watch", exact=True).click()
+    expect(log).to_be_visible()
+
+
+def test_story_preview_empty_errors_and_disabled_input(remote_page: Page) -> None:
+    page = remote_page
+    page.route("**/output/story_log.jsonl", lambda route: route.fulfill(status=503))
+    page.get_by_role("tab", name="Watch", exact=True).click()
+    page.get_by_role("tab", name="Story log", exact=True).click()
+    log = page.get_by_role("log", name="Story log", exact=True)
+    expect(log).to_have_text("The story log could not be loaded.")
+    page.route("**/output/story_log.jsonl", lambda route: route.fulfill(status=404))
+    expect(log).to_have_text("No story actions have been recorded yet.")
+    page.route("**/api/theaters/stage/remote", lambda route: route.fulfill(json={
+        "agent_running": False, "is_owner": True, "is_orator": True,
+    }))
+    expect(page.get_by_role("button", name="Microphone", exact=True)).to_be_disabled()
+    expect(page.get_by_role("button", name="Keyboard", exact=True)).to_be_disabled()
+    expect(page.locator("#story-input-status")).to_contain_text("Turn the agent on")
+    page.get_by_role("tab", name="Chat", exact=True).click()
+    expect(log).to_be_hidden()
+    expect(page.locator(".preview-frame")).to_be_visible()
+    expect(page.locator("#preview-chat-panel")).to_be_visible()
+
+
+def test_story_preview_remains_readable_without_baton(remote_page: Page) -> None:
+    page = remote_page
+    page.route("**/output/story_log.jsonl", lambda route: route.fulfill(
+        body=json.dumps({"type": "story_plan", "output": {"narration": "The adventure continues."}}),
+    ))
+    page.route("**/api/theaters/stage/remote", lambda route: route.fulfill(json={
+        "agent_running": True, "is_owner": False, "is_orator": False,
+    }))
+    page.route("**/api/theaters/stage/baton", lambda route: route.fulfill(json={
+        "owner": {"id": 2, "username": "other"},
+        "active_orator": {"id": 2, "username": "other"},
+        "contributors": [], "active_viewers": [], "baton_request": None,
+    }))
+    page.get_by_role("tab", name="Watch", exact=True).click()
+    page.get_by_role("tab", name="Story log", exact=True).click()
+    expect(page.get_by_role("log", name="Story log", exact=True)).to_contain_text("The adventure continues.")
+    expect(page.locator("#story-input-status")).to_have_text("The baton holder controls story input.")
+    expect(page.locator("#mic-btn")).to_be_hidden()
+    expect(page.locator("#keyboard-btn")).to_be_hidden()
+    expect(page.locator("#story-input-controls")).to_have_attribute("disabled", "")
 
 
 def test_phone_remote_sends_actions_and_instructions(remote_page: Page) -> None:
@@ -106,8 +194,8 @@ def test_preview_chat_sends_emotes_suggestions_and_private_help(
 
     def help_answer(route: Route) -> None:
         questions.append(json.loads(route.request.post_data or "{}"))
-        route.fulfill(json={"type": "user_help", "text": "Use the Preview tab to chat.",
-                            "html": "<p>Use the <strong>Preview</strong> tab to chat.</p>"})
+        route.fulfill(json={"type": "user_help", "text": "Use the Watch tab to chat.",
+                            "html": "<p>Use the <strong>Watch</strong> tab to chat.</p>"})
 
     page.route("**/api/chat?theater_id=stage", chat)
     page.route("**/api/user-help?theater_id=stage", help_answer)
@@ -146,7 +234,7 @@ def test_preview_chat_sends_emotes_suggestions_and_private_help(
 
     chat_input.fill("How do I chat?")
     page.get_by_role("button", name="Find basic help and documentation (free)").click()
-    expect(page.locator(".user-help-message strong")).to_have_text("Preview")
+    expect(page.locator(".user-help-message strong")).to_have_text("Watch")
     assert questions == [{"question": "How do I chat?"}]
     assert len(sent) == 3
     assert all("How do I chat?" not in message["text"] for message in messages)
@@ -160,7 +248,7 @@ def test_preview_chat_sends_emotes_suggestions_and_private_help(
     assert sent[-1]["text"] == "First line\nSecond line"
     messages.append({"author": "bob", "text": "A new message from canvas"})
     expect(page.get_by_role("log")).to_contain_text("A new message from canvas")
-    expect(page.locator(".user-help-message strong")).to_have_text("Preview")
+    expect(page.locator(".user-help-message strong")).to_have_text("Watch")
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
     assert page.locator("#chat-form").evaluate("""form => {
         const bounds = form.getBoundingClientRect();
@@ -281,7 +369,7 @@ def test_preview_tracks_scene_changes_without_reloading_unchanged_images(remote_
     page.route("**/scenes/*", image)
     page.reload()
     assert images == []
-    page.get_by_role("tab", name="Preview", exact=True).click()
+    page.get_by_role("tab", name="Watch", exact=True).click()
     page.get_by_text("Current scene", exact=True).wait_for()
     assert page.locator("#preview-image").is_visible()
     page.get_by_role("tab", name="Inputs", exact=True).click()
@@ -291,7 +379,7 @@ def test_preview_tracks_scene_changes_without_reloading_unchanged_images(remote_
     scene = "second"
     page.get_by_role("button", name="Next scene", exact=True).click()
     page.wait_for_function("!document.getElementById('controls').disabled")
-    page.get_by_role("tab", name="Preview", exact=True).click()
+    page.get_by_role("tab", name="Watch", exact=True).click()
     page.wait_for_function("document.getElementById('preview-image').getAttribute('src') === '/scenes/second.svg' && !document.getElementById('preview-image').hidden")
     assert len(images) == 2
     assert page.locator("#preview-image").evaluate("image => getComputedStyle(image).objectFit") == "contain"
@@ -303,7 +391,7 @@ def test_preview_tracks_scene_changes_without_reloading_unchanged_images(remote_
     page.get_by_role("tab", name="Inputs", exact=True).click()
     page.get_by_role("button", name="Next scene", exact=True).click()
     page.wait_for_function("document.getElementById('controls').disabled && document.getElementById('connection-status').dataset.connected === 'false'")
-    page.get_by_role("tab", name="Preview", exact=True).click()
+    page.get_by_role("tab", name="Watch", exact=True).click()
     page.get_by_text("Reconnect to see the canvas.").wait_for()
     assert page.locator("#preview-image").is_hidden()
     assert page.locator("#preview-image").get_attribute("src") is None
@@ -311,7 +399,7 @@ def test_preview_tracks_scene_changes_without_reloading_unchanged_images(remote_
 
 def test_preview_empty_state_keeps_controls_available(remote_page: Page) -> None:
     page = remote_page
-    page.get_by_role("tab", name="Preview", exact=True).click()
+    page.get_by_role("tab", name="Watch", exact=True).click()
     page.get_by_text("No scene on the canvas yet.").wait_for()
     assert page.locator("#preview-image").is_hidden()
     page.get_by_role("tab", name="Inputs", exact=True).click()
@@ -325,7 +413,7 @@ def test_preview_is_a_separate_view_with_back_navigation(remote_page: Page, widt
     page.get_by_role("button", name="Keyboard").click()
     page.locator("#command").fill("Keep my direction draft")
     page.locator("#command-modal-close").click()
-    page.get_by_role("tab", name="Preview", exact=True).click()
+    page.get_by_role("tab", name="Watch", exact=True).click()
     page.wait_for_url("**#preview")
     expect(page.locator("#remote-controls")).to_be_hidden()
     expect(page.locator("#canvas-preview")).to_be_visible()
@@ -368,7 +456,7 @@ def test_horizontal_swipes_switch_all_tabs_and_preserve_draft(remote_page: Page)
     page.get_by_role("button", name="Keyboard").click()
     page.locator('#command').fill('Keep my draft')
     page.locator("#command-modal-close").click()
-    page.get_by_role('tab', name='Preview', exact=True).click()
+    page.get_by_role('tab', name='Watch', exact=True).click()
     swipe_preview(page, 140, 10)
     expect(page.get_by_role('tab', name='Inputs')).to_have_attribute('aria-selected', 'true')
     swipe_panel(page, 140, 10)
@@ -377,7 +465,7 @@ def test_horizontal_swipes_switch_all_tabs_and_preserve_draft(remote_page: Page)
     expect(page.get_by_role('tab', name='Inputs')).to_have_attribute('aria-selected', 'true')
     assert page.locator('#command').input_value() == 'Keep my draft'
     swipe_panel(page, -140, 10)
-    expect(page.get_by_role('tab', name='Preview', exact=True)).to_have_attribute('aria-selected', 'true')
+    expect(page.get_by_role('tab', name='Watch', exact=True)).to_have_attribute('aria-selected', 'true')
     swipe_panel(page, -140, 10)
     expect(page.get_by_role('tab', name='Party', exact=True)).to_have_attribute('aria-selected', 'true')
 
@@ -401,9 +489,9 @@ def test_preview_ignores_vertical_small_or_cancelled_gestures(
     remote_page: Page, dx: int, dy: int, cancel: bool,
 ) -> None:
     page = remote_page
-    page.get_by_role('tab', name='Preview', exact=True).click()
+    page.get_by_role('tab', name='Watch', exact=True).click()
     swipe_preview(page, dx, dy, cancel)
-    expect(page.get_by_role('tab', name='Preview', exact=True)).to_have_attribute('aria-selected', 'true')
+    expect(page.get_by_role('tab', name='Watch', exact=True)).to_have_attribute('aria-selected', 'true')
 
 
 def test_preview_retries_failed_image_without_disabling_controls(remote_page: Page) -> None:
@@ -424,14 +512,14 @@ def test_preview_retries_failed_image_without_disabling_controls(remote_page: Pa
     page.route("**/api/theaters/stage/remote", status)
     page.route("**/scene.svg", image)
     page.reload()
-    page.get_by_role("tab", name="Preview", exact=True).click()
+    page.get_by_role("tab", name="Watch", exact=True).click()
     page.get_by_text("Scene could not load. Retrying…").wait_for()
     page.get_by_role("tab", name="Inputs", exact=True).click()
     assert page.get_by_role("button", name="Next scene", exact=True).is_enabled()
     failed = False
     page.get_by_role("button", name="Next scene", exact=True).click()
     page.wait_for_function("!document.getElementById('controls').disabled")
-    page.get_by_role("tab", name="Preview", exact=True).click()
+    page.get_by_role("tab", name="Watch", exact=True).click()
     page.get_by_text("Current scene", exact=True).wait_for()
     assert page.locator("#preview-image").is_visible()
 
@@ -598,7 +686,7 @@ def test_remote_bars_fit_on_one_line(remote_page: Page, width: int) -> None:
     assert page.locator("#controls").bounding_box()["height"] < 400
     assert page.locator("#canvas-preview").is_hidden()
     assert page.locator("#inputs-tab").get_attribute("aria-selected") == "true"
-    assert page.locator(".remote-tabs").bounding_box()["width"] <= width
+    assert page.get_by_role("tablist", name="Remote screens", exact=True).bounding_box()["width"] <= width
     assert page.locator(".desk-heading").count() == 0
     assert page.locator('[aria-labelledby="agent-title"] #connection-status').count() == 1
     assert page.locator("header #theater-id").inner_text() == "stage"
@@ -845,8 +933,12 @@ def test_microphone_denied_permission_shows_toast(remote_page: Page) -> None:
     assert mic_btn.get_attribute("aria-pressed") == "false"
 
 
-def test_microphone_button_streams_audio_and_stops_on_release(remote_page: Page) -> None:
+@pytest.mark.parametrize("story_preview", [False, True])
+def test_microphone_button_streams_audio_and_stops_on_release(remote_page: Page, story_preview: bool) -> None:
     page = remote_page
+    if story_preview:
+        page.get_by_role("tab", name="Watch", exact=True).click()
+        page.get_by_role("tab", name="Story log", exact=True).click()
     messages: list[str] = []
 
     def mock_agent_socket(ws: WebSocketRoute) -> None:
@@ -1203,7 +1295,7 @@ def test_owner_always_sees_party_tab(remote_page: Page) -> None:
     page.route("**/api/theaters/stage/baton", lambda route: route.fulfill(json=baton_state))
     page.reload()
 
-    # Owner when idle sees Party and Preview tabs, but not Assets/Inputs
+    # Owner when idle sees Party and Watch tabs, but not Assets/Inputs
     expect(page.locator("#party-tab")).to_be_visible()
     expect(page.locator("#party-tab")).to_have_text("Party")
     expect(page.locator("#preview-tab")).to_be_visible()

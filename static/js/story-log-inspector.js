@@ -104,10 +104,10 @@ function positionLatestAction(inspector, content) {
     }
 }
 
-export function initializeStoryLogInspector(theaterId) {
+export function initializeStoryLogInspector(theaterId, { embedded = false } = {}) {
     const controls = document.getElementById('history-paging-controls');
-    const content = document.getElementById('story-log-content');
-    const inspector = document.getElementById('story-log-inspector');
+    const content = document.getElementById(embedded ? 'remote-story-log' : 'story-log-content');
+    const inspector = document.getElementById(embedded ? 'remote-story-log' : 'story-log-inspector');
     const toggleBtn = document.getElementById('story-log-toggle-btn');
     const closeBtn = document.getElementById('story-log-close-btn');
     if (!content || !theaterId) return;
@@ -163,7 +163,9 @@ export function initializeStoryLogInspector(theaterId) {
     }
 
     function toggleStoryLog(force) {
-        isOpen = typeof force === 'boolean' ? force : !isOpen;
+        const nextOpen = typeof force === 'boolean' ? force : !isOpen;
+        if (nextOpen === isOpen) return;
+        isOpen = nextOpen;
         if (inspector) {
             inspector.classList.toggle('open', isOpen);
             inspector.classList.toggle('is-open', isOpen);
@@ -179,6 +181,8 @@ export function initializeStoryLogInspector(theaterId) {
     }
 
     document.addEventListener('visibilitychange', syncRefresh);
+
+    if (embedded) return { setOpen: toggleStoryLog };
 
     if (toggleBtn) {
         toggleBtn.addEventListener('click', (e) => {
