@@ -1203,8 +1203,11 @@ export function createDoodleRenderer({ canvas, isVisible = () => true, textLayer
 
             const box = getOrCreateSelectionBox();
             if (box) {
-                box.style.left = `${boxLeft}px`;
-                box.style.top = `${boxTop}px`;
+                // The overlay belongs to the untransformed container, while hit
+                // testing above uses screen pixels relative to the viewed canvas.
+                const parentRect = interactionTarget.getBoundingClientRect();
+                box.style.left = `${boxLeft + rect.left - parentRect.left - interactionTarget.clientLeft + interactionTarget.scrollLeft}px`;
+                box.style.top = `${boxTop + rect.top - parentRect.top - interactionTarget.clientTop + interactionTarget.scrollTop}px`;
                 box.style.width = `${boxRight - boxLeft}px`;
                 box.style.height = `${boxBottom - boxTop}px`;
             }

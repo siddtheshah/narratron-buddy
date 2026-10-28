@@ -127,6 +127,45 @@ def segment_page() -> Iterator[Page]:
         browser.close()
 
 
+@pytest.mark.parametrize('scale,pan_x,pan_y', [(2, -100, -50), (0.75, 80, 50), (1.5, -120, 30)])
+@pytest.mark.parametrize('reverse', [False, True])
+def test_selection_box_follows_screen_drag_in_transformed_view(
+    segment_page: Page, scale: float, pan_x: int, pan_y: int, reverse: bool,
+) -> None:
+    page = segment_page
+    page.set_viewport_size({'width': 1000, 'height': 700})
+    template = Path('templates/canvas.html').read_text(encoding='utf-8')
+    box_styles = template[template.index('        .canvas-selection-box {'):template.index('        .canvas-text-editor {')]
+    page.add_style_tag(content=box_styles)
+    page.add_style_tag(content=Path('static/css/canvas-navigation.css').read_text(encoding='utf-8'))
+    page.add_style_tag(content='#image-container { margin: 35px 0 0 25px; border: 3px solid black; }')
+    page.locator('#image-container').evaluate('''(container, view) => {
+        container.style.setProperty('--canvas-view-scale', view.scale);
+        container.style.setProperty('--canvas-view-x', `${view.pan_x}px`);
+        container.style.setProperty('--canvas-view-y', `${view.pan_y}px`);
+    }''', {'scale': scale, 'pan_x': pan_x, 'pan_y': pan_y})
+    scene = page.locator('#doodle-canvas').bounding_box()
+    assert scene is not None
+    left = scene['x'] + scene['width'] * 0.13
+    right = scene['x'] + scene['width'] * 0.52
+    top = scene['y'] + scene['height'] * 0.15
+    bottom = scene['y'] + scene['height'] * 0.25
+    start = (right, bottom) if reverse else (left, top)
+    end = (left, top) if reverse else (right, bottom)
+    page.mouse.move(*start)
+    page.mouse.down()
+    page.mouse.move(*end)
+    box = page.locator('.canvas-selection-box').bounding_box()
+    assert box is not None
+    assert box['x'] == pytest.approx(left, abs=0.1)
+    assert box['y'] == pytest.approx(top, abs=0.1)
+    assert box['width'] == pytest.approx(right - left, abs=0.1)
+    assert box['height'] == pytest.approx(bottom - top, abs=0.1)
+    page.mouse.up()
+    assert page.evaluate('renderer.getSelectedSegments().map(segment => segment.id)') == ['seg-1a', 'seg-1b']
+    assert page.evaluate('renderer.getSelectedStamps().length') == 0
+
+
 def test_doodles_created_in_same_mouse_press_selected_together(segment_page: Page) -> None:
     # Clicking anywhere on seg-1a (e.g. at x=160, y=100) must select BOTH seg-1a and seg-1b because they share stroke-1
     segment_page.mouse.click(160, 100)
