@@ -28,6 +28,7 @@ from game.game_runtime import (
 from game.game_state import (
     GameAction,
     GameState,
+    SavedGame,
     StaleGameAction,
     UnauthorizedGameAction,
 )
@@ -35,6 +36,83 @@ from components.canvas.canvas_state_manager import CanvasStateManager
 
 
 from testing.game_fixtures import counter_definition, make_game
+
+
+def test_serialize_reuses_unchanged_game(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    game = make_game(tmp_path)
+    with caplog.at_level(logging.DEBUG, logger="game.game_state"), patch.object(
+        SavedGame, "model_dump", autospec=True, side_effect=SavedGame.model_dump,
+    ) as dump:
+        before = game.serialize()
+        for _ in range(10):
+            assert game.serialize() == before
+        dump.assert_called_once()
+        assert caplog.text.count("Serializing game state (revision=0)") == 1
+
+        game.act(GameAction(name="add", arguments={"amount": 2}, revision=0))
+        after = game.serialize()
+        assert after["game_state"]["state"] == {"count": 2}
+        assert after["game_state"]["revision"] == 1
+        assert before["game_state"]["state"] == {"count": 0}
+        assert game.serialize() == after
+        assert dump.call_count == 2
+
+
+def test_serialize_cache_isolated_from_callers_and_same_revision_load(tmp_path: Path) -> None:
+    game = make_game(tmp_path)
+    saved = game.serialize()["game_state"]
+    saved["state"]["count"] = 4
+    assert game.serialize()["game_state"]["state"] == {"count": 0}
+    assert game.state == {"count": 0}
+
+    game.load(saved)
+    assert game.revision == 0
+    assert game.serialize()["game_state"]["state"] == {"count": 4}
+    # Public state can also be edited in place without advancing the revision.
+    game.state["count"] = 5
+    assert game.serialize()["game_state"]["state"] == {"count": 5}
+
+
+@pytest.mark.parametrize("fail", [False, True])
+def test_serialize_tracks_acknowledgements_and_rollback(tmp_path: Path, fail: bool) -> None:
+    game = make_game(tmp_path)
+    game.act(GameAction(name="add", arguments={"amount": 1}, revision=0))
+    before = game.serialize()
+    event_id = next(iter(before["game_state"]["story_commits"]))
+    persisted: list[dict[str, JsonValue]] = []
+
+    def persist() -> None:
+        persisted.append(game.serialize())
+        if fail:
+            raise OSError("save failed")
+
+    game._persist = persist
+    if fail:
+        with pytest.raises(OSError, match="save failed"):
+            game.acknowledge_story_action(event_id)
+    else:
+        game.acknowledge_story_action(event_id)
+
+    assert persisted[0]["game_state"]["story_commits"][event_id]["pending"] is False
+    assert before["game_state"]["story_commits"][event_id]["pending"] is True
+    assert game.revision == 1
+    assert game.serialize()["game_state"]["story_commits"][event_id]["pending"] is fail
+
+
+def test_serialize_tracks_action_rollback_after_persistence_failure(tmp_path: Path) -> None:
+    game = make_game(tmp_path)
+    before = game.serialize()
+    persisted: list[dict[str, JsonValue]] = []
+
+    def persist() -> None:
+        persisted.append(game.serialize())
+        raise OSError("save failed")
+
+    game._persist = persist
+    with pytest.raises(ValueError, match="undone"):
+        game.act(GameAction(name="add", arguments={"amount": 2}, revision=0))
+    assert persisted[0]["game_state"]["state"] == {"count": 2}
+    assert game.serialize() == before
 
 
 def test_random_binding_is_drawn_once_and_persisted(tmp_path: Path) -> None:

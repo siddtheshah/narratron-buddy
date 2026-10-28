@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from copy import deepcopy
 from hashlib import sha256
 import json
 import logging
@@ -92,6 +93,8 @@ class GameState:
         self._model_state: JsonValue = {}
         self._narratron_actions: dict[str, JsonValue] = {}
         self._story_commits: dict[str, StoryGameCommit] = {}
+        self._serialized_snapshot: SavedGame | None = None
+        self._serialized_payload: dict[str, JsonValue] = {}
         self._client: dict[str, JsonValue] | None = None
         self._dedicated_worker = worker is not None
         self._worker: GoWorker | None = worker
@@ -259,8 +262,28 @@ class GameState:
             if self.program is None:
                 logger.debug("[GameState] Serializing empty game state (no program)")
                 return {"game_state": None}
-            logger.debug("[GameState] Serializing game state (revision=%d)", self.revision)
-            return {"game_state": SavedGame(definition_hash=self.definition_hash, state=self.state, revision=self.revision, story_commits=self._story_commits).model_dump(mode="json")}
+            snapshot = self._serialized_snapshot
+            # Commits can change without advancing the revision (acknowledgements),
+            # and loading a save can replace state at the same revision.
+            if (
+                snapshot is None
+                or snapshot.definition_hash != self.definition_hash
+                or snapshot.revision != self.revision
+                or snapshot.state != self.state
+                or snapshot.story_commits != self._story_commits
+            ):
+                logger.debug("[GameState] Serializing game state (revision=%d)", self.revision)
+                snapshot = SavedGame(
+                    definition_hash=self.definition_hash,
+                    state=self.state,
+                    revision=self.revision,
+                    story_commits=self._story_commits,
+                ).model_copy(deep=True)
+                self._serialized_payload = {"game_state": snapshot.model_dump(mode="json")}
+                self._serialized_snapshot = snapshot
+            # Preserve independent return values: callers may edit a save before
+            # loading it, without changing the game or poisoning the cache.
+            return deepcopy(self._serialized_payload)
 
     def pending_story_actions(self) -> list[tuple[GameAction, dict[str, JsonValue]]]:
         """Recover player ingress even when a post-commit callback failed."""
