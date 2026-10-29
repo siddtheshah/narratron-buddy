@@ -401,7 +401,7 @@ def main():
     )
     parser.add_argument(
         "--bucket",
-        default=os.getenv("GCS_ADVENTURES_BUCKET", DEFAULT_BUCKET),
+        default=os.getenv("GCS_BUCKET", DEFAULT_BUCKET),
         help=f"GCS bucket name (default: {DEFAULT_BUCKET})",
     )
     parser.add_argument(

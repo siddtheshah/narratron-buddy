@@ -1,6 +1,7 @@
 """Service for managing premade adventures stored on disk or mounted storage.
 
-Operates directly on a directory path (e.g. local directory or mounted cloud storage).
+Lists packages through local or mounted storage and downloads cloud assets
+directly through the GCS Python client when preparing a deployment.
 """
 
 from __future__ import annotations
@@ -9,13 +10,19 @@ from datetime import datetime, timezone
 import json
 import logging
 import mimetypes
+import os
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from threading import Lock
 from typing import Any, Dict, List, Optional, Tuple
 import yaml
+from google.cloud import storage
+from google.cloud.storage import transfer_manager
+from pydantic import JsonValue, TypeAdapter
 
 from absl import flags
 from game.game_source import GAME_FILES
+from components.theater_manager import asset_destination
 
 if "testing_use_local" not in flags.FLAGS:
     flags.DEFINE_boolean(
@@ -37,6 +44,12 @@ mimetypes.add_type("image/jpeg", ".jpeg")
 mimetypes.add_type("image/webp", ".webp")
 
 CACHE_CHECK_INTERVAL_SECONDS = 60.0
+DEFAULT_ADVENTURES_BUCKET = "narratron-buddy-app-storage"
+DEFAULT_ADVENTURES_PREFIX = "adventures"
+DOWNLOAD_WORKERS = 8
+
+AdventureAssets = tuple[list[tuple[str, bytes]], dict[str, list[tuple[str, bytes]]],
+                        list[tuple[str, bytes]], dict[str, JsonValue]]
 
 
 def get_adventures_root() -> Path:
@@ -228,7 +241,7 @@ class AdventureService:
 
     def load_adventure_assets(
         self, adventure_id: str
-    ) -> Tuple[List[Tuple[str, bytes]], Dict[str, List[Tuple[str, bytes]]], List[Tuple[str, bytes]], Dict[str, Any]]:
+    ) -> AdventureAssets:
         """Load and package all adventure assets for mounting to a new theater.
 
         Returns:
@@ -238,10 +251,10 @@ class AdventureService:
             - lore_files: List[(rel_path, bytes)]
             - theater_config: Dict loaded from theater.yaml
         """
-        reference_files: List[Tuple[str, bytes]] = []
-        playlists_data: Dict[str, List[Tuple[str, bytes]]] = {}
-        lore_files: List[Tuple[str, bytes]] = []
-        theater_config: Dict[str, Any] = {}
+        reference_files: list[tuple[str, bytes]] = []
+        playlists_data: dict[str, list[tuple[str, bytes]]] = {}
+        lore_files: list[tuple[str, bytes]] = []
+        theater_config: dict[str, JsonValue] = {}
 
         target_dir = self.base_dir
         if not target_dir.exists():
@@ -264,38 +277,75 @@ class AdventureService:
                 matched_folder = folder
                 break
 
-        if matched_folder:
-            for file_path in matched_folder.rglob("*"):
-                if not file_path.is_file():
-                    continue
-                rel = file_path.relative_to(matched_folder).as_posix()
-                parts = [p for p in rel.split("/") if p]
-                filename = file_path.name
-                content = file_path.read_bytes()
+        if matched_folder is None:
+            return reference_files, playlists_data, lore_files, theater_config
 
-                if rel in ("theater.yaml", "theater.yml"):
-                    try:
-                        loaded = yaml.safe_load(content.decode("utf-8"))
-                        if isinstance(loaded, dict):
-                            theater_config = loaded
-                    except Exception as e:
-                        logger.warning("Failed to parse theater.yaml for %s: %s", adventure_id, e)
-                elif rel in GAME_FILES or (parts[0] == "game" and filename.lower().endswith(".svg")):
+        use_gcs = (not FLAGS["testing_use_local"].value
+                   and self.base_dir == get_adventures_root().resolve())
+        if use_gcs:
+            with TemporaryDirectory(prefix="narratron-adventure-") as temporary:
+                local_folder = Path(temporary)
+                self._download_adventure_folder(matched_folder.name, local_folder)
+                return self._load_adventure_folder(local_folder, adventure_id)
+        return self._load_adventure_folder(matched_folder, adventure_id)
+
+    @staticmethod
+    def _download_adventure_folder(folder_name: str, destination: Path) -> None:
+        """Download a package directly from GCS with bounded parallel transfers."""
+        client = storage.Client()
+        bucket = client.bucket(os.getenv("GCS_BUCKET", DEFAULT_ADVENTURES_BUCKET))
+        root_prefix = os.getenv("GCS_ADVENTURES_PREFIX", DEFAULT_ADVENTURES_PREFIX).strip("/")
+        prefix = f"{root_prefix}/{folder_name}/" if root_prefix else f"{folder_name}/"
+        names = [blob.name.removeprefix(prefix) for blob in bucket.list_blobs(prefix=prefix)
+                 if not blob.name.endswith("/")]
+        if not names:
+            raise FileNotFoundError(f"No adventure files found under gs://{bucket.name}/{prefix}")
+        # Reject unsafe object names before starting any of the downloads.
+        for name in names:
+            asset_destination(destination, name)
+        transfer_manager.download_many_to_path(
+            bucket, names, destination_directory=str(destination), blob_name_prefix=prefix,
+            worker_type=transfer_manager.THREAD, max_workers=DOWNLOAD_WORKERS,
+            raise_exception=True,
+        )
+
+    @staticmethod
+    def _load_adventure_folder(folder: Path, adventure_id: str) -> AdventureAssets:
+        """Apply the same package parsing to local and downloaded adventures."""
+        reference_files: list[tuple[str, bytes]] = []
+        playlists_data: dict[str, list[tuple[str, bytes]]] = {}
+        lore_files: list[tuple[str, bytes]] = []
+        theater_config: dict[str, JsonValue] = {}
+        for file_path in folder.rglob("*"):
+            if not file_path.is_file():
+                continue
+            rel = file_path.relative_to(folder).as_posix()
+            parts = [p for p in rel.split("/") if p]
+            filename = file_path.name
+            content = file_path.read_bytes()
+
+            if rel in ("theater.yaml", "theater.yml"):
+                try:
+                    loaded = yaml.safe_load(content.decode("utf-8"))
+                    theater_config = TypeAdapter(dict[str, JsonValue]).validate_python(loaded)
+                except Exception as e:
+                    logger.warning("Failed to parse theater.yaml for %s: %s", adventure_id, e)
+            elif rel in GAME_FILES or (parts[0] == "game" and filename.lower().endswith(".svg")):
+                reference_files.append((rel, content))
+            elif rel in ("planning.yaml", "planning.yml") or filename.lower() in ("planning.yaml", "planning.yml"):
+                reference_files.append(("planning.yaml", content))
+            elif "references" in parts or "reference_library" in parts or "stamps" in parts or parts[0] == "characters":
+                if filename.lower().endswith((".png", ".jpg", ".jpeg", ".webp", ".gif")):
                     reference_files.append((rel, content))
-                elif rel in ("planning.yaml", "planning.yml") or filename.lower() in ("planning.yaml", "planning.yml"):
-                    reference_files.append(("planning.yaml", content))
-                elif "references" in parts or "reference_library" in parts or "stamps" in parts or parts[0] == "characters":
-                    if filename.lower().endswith((".png", ".jpg", ".jpeg", ".webp", ".gif")):
-                        reference_files.append((rel, content))
-                elif "playlists" in parts:
-                    idx = parts.index("playlists")
-                    pl_name = parts[idx + 1] if idx + 1 < len(parts) - 1 else "default"
-                    if filename.lower().endswith((".mp3", ".wav", ".ogg", ".flac", ".m4a", ".aac")):
-                        if pl_name not in playlists_data:
-                            playlists_data[pl_name] = []
-                        playlists_data[pl_name].append((filename, content))
-                elif "lore" in parts:
-                    if filename.lower().endswith((".txt", ".md")):
-                        lore_files.append((rel, content))
+            elif "playlists" in parts:
+                idx = parts.index("playlists")
+                pl_name = parts[idx + 1] if idx + 1 < len(parts) - 1 else "default"
+                if filename.lower().endswith((".mp3", ".wav", ".ogg", ".flac", ".m4a", ".aac")):
+                    if pl_name not in playlists_data:
+                        playlists_data[pl_name] = []
+                    playlists_data[pl_name].append((filename, content))
+            elif "lore" in parts:
+                if filename.lower().endswith((".txt", ".md")):
+                    lore_files.append((rel, content))
 
         return reference_files, playlists_data, lore_files, theater_config

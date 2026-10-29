@@ -4,15 +4,136 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
 
+from absl.testing import flagsaver
+from google.cloud import storage
+import pytest
 import yaml
 
+import services.adventure_service as adventures
 from services.adventure_service import (
     AdventureService,
     FLAGS,
     get_adventures_root,
 )
+
+
+@pytest.mark.parametrize("prefix", ["adventures", "/custom/presets/", ""])
+def test_cloud_adventure_download_uses_python_transfer_manager(tmp_path: Path, prefix: str) -> None:
+    mount = tmp_path / "mount"
+    folder = mount / "Actual Folder"
+    folder.mkdir(parents=True)
+    (folder / "metadata.json").write_text('{"id": "public-id"}', encoding="utf-8")
+    assets = {
+        "theater.yaml": b"live_agent:\n  style: epic\n",
+        "references/characters/Hero/1.png": b"portrait",
+        "references/scenes/Forest/1.webp": b"scene",
+        "stamps/token.png": b"stamp",
+        "playlists/ambient/wind.mp3": b"music",
+        "lore/nested/world.md": b"World lore",
+        "planning.yaml": b"HUD: {}",
+        "game/game.yaml": b"game: {}",
+        "game/map.svg": b"<svg/>",
+    }
+    bucket = MagicMock(spec=storage.Bucket)
+    bucket.name = "custom-bucket"
+    root = prefix.strip("/")
+    object_prefix = f"{root}/Actual Folder/" if root else "Actual Folder/"
+    bucket.list_blobs.return_value = [SimpleNamespace(name=object_prefix + name) for name in assets]
+    bucket.list_blobs.return_value.append(SimpleNamespace(name=object_prefix + "lore/"))
+    temporary_paths: list[Path] = []
+
+    def download(
+        source: storage.Bucket, names: list[str], *, destination_directory: str,
+        blob_name_prefix: str, worker_type: str, max_workers: int, raise_exception: bool,
+    ) -> list[None]:
+        assert source is bucket
+        assert blob_name_prefix == object_prefix
+        assert worker_type == adventures.transfer_manager.THREAD
+        assert max_workers == 8
+        assert raise_exception
+        destination = Path(destination_directory)
+        temporary_paths.append(destination)
+        for name in names:
+            path = destination / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(assets[name])
+        return [None for _ in names]
+
+    service = AdventureService(mount)
+    with flagsaver.flagsaver(testing_use_local=False), \
+         patch.object(adventures, "get_adventures_root", return_value=mount), \
+         patch.dict("os.environ", {"GCS_BUCKET": "custom-bucket", "GCS_ADVENTURES_PREFIX": prefix}), \
+         patch.object(adventures.storage, "Client", autospec=True) as client, \
+         patch.object(adventures.transfer_manager, "download_many_to_path", side_effect=download) as transfer:
+        client.return_value.bucket.return_value = bucket
+        references, playlists, lore, config = service.load_adventure_assets("public-id")
+        client.return_value.bucket.assert_called_once_with("custom-bucket")
+        bucket.list_blobs.assert_called_once_with(prefix=object_prefix)
+        transfer.assert_called_once()
+
+    assert dict(references) == {name: data for name, data in assets.items()
+                                if name.startswith(("references/", "stamps/", "game/")) or name == "planning.yaml"}
+    assert playlists == {"ambient": [("wind.mp3", b"music")]}
+    assert lore == [("lore/nested/world.md", b"World lore")]
+    assert config == {"live_agent": {"style": "epic"}}
+    assert not temporary_paths[0].exists()
+
+
+@pytest.mark.parametrize("local_mode", [True, False])
+def test_explicit_local_adventure_directory_does_not_contact_gcs(tmp_path: Path, local_mode: bool) -> None:
+    folder = tmp_path / "local-adventure"
+    folder.mkdir()
+    (folder / "theater.yaml").write_text("live_agent: {}", encoding="utf-8")
+    with flagsaver.flagsaver(testing_use_local=local_mode), \
+         patch.object(adventures.storage, "Client", autospec=True) as client:
+        assert AdventureService(tmp_path).load_adventure_assets("local-adventure")[3] == {"live_agent": {}}
+        client.assert_not_called()
+
+
+@pytest.mark.parametrize("name", ["../outside.txt", "/absolute.txt", "lore/../../outside.txt", "C:/outside.txt"])
+def test_cloud_adventure_rejects_unsafe_names_before_downloading(tmp_path: Path, name: str) -> None:
+    bucket = MagicMock(spec=storage.Bucket)
+    bucket.list_blobs.return_value = [SimpleNamespace(name="adventures/stage/" + name)]
+    with patch.dict("os.environ", {"GCS_ADVENTURES_PREFIX": "adventures"}), \
+         patch.object(adventures.storage, "Client", autospec=True) as client, \
+         patch.object(adventures.transfer_manager, "download_many_to_path") as transfer:
+        client.return_value.bucket.return_value = bucket
+        with pytest.raises(ValueError):
+            AdventureService._download_adventure_folder("stage", tmp_path)
+        transfer.assert_not_called()
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_cloud_adventure_download_failure_cleans_up_temporary_package(tmp_path: Path) -> None:
+    folder = tmp_path / "stage"
+    folder.mkdir()
+    service = AdventureService(tmp_path)
+    temporary_paths: list[Path] = []
+
+    def fail_download(folder_name: str, destination: Path) -> None:
+        assert folder_name == "stage"
+        temporary_paths.append(destination)
+        (destination / "partial.txt").write_bytes(b"partial")
+        raise OSError("Download failed")
+
+    with flagsaver.flagsaver(testing_use_local=False), \
+         patch.object(adventures, "get_adventures_root", return_value=tmp_path), \
+         patch.object(service, "_download_adventure_folder", side_effect=fail_download), \
+         pytest.raises(OSError, match="Download failed"):
+        service.load_adventure_assets("stage")
+    assert not temporary_paths[0].exists()
+
+
+def test_cloud_adventure_empty_prefix_is_reported(tmp_path: Path) -> None:
+    with patch.object(adventures.storage, "Client", autospec=True) as client, \
+         patch.object(adventures.transfer_manager, "download_many_to_path") as transfer:
+        client.return_value.bucket.return_value.list_blobs.return_value = []
+        with pytest.raises(FileNotFoundError, match="No adventure files"):
+            AdventureService._download_adventure_folder("stage", tmp_path)
+        transfer.assert_not_called()
 
 
 class TestAdventureService(unittest.TestCase):

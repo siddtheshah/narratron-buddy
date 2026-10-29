@@ -1112,7 +1112,9 @@ async def create_and_deploy_theater(request: Request):
     # If an adventure preset is chosen, load its assets first
     adv_config: dict = {}
     if preset_adventure_id:
-        adv_refs, adv_playlists, adv_lore, adv_config = adventure_service.load_adventure_assets(preset_adventure_id)
+        adv_refs, adv_playlists, adv_lore, adv_config = await asyncio.to_thread(
+            adventure_service.load_adventure_assets, preset_adventure_id,
+        )
         reference_files.extend(adv_refs)
         lore_files.extend(adv_lore)
         for pl_name, tracks in adv_playlists.items():
