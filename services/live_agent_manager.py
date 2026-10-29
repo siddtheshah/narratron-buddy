@@ -12,9 +12,10 @@ from typing import Dict, Optional, Any, Set, Tuple
 
 from fastapi import WebSocket, WebSocketDisconnect
 from google.adk.runners import Runner
+from google.adk.events import Event
 from google.adk.sessions import InMemorySessionService
 from google.genai import types
-from pydantic import JsonValue
+from pydantic import JsonValue, TypeAdapter, ValidationError
 
 from game.game_runtime import GameAction
 
@@ -45,6 +46,7 @@ DEFAULT_VIEWER_SUGGESTION_INTERVAL_SECONDS = 30.0
 DEFAULT_COLLABORATION_OBSERVABILITY_COOLDOWN_SECONDS = 5.0
 DEFAULT_LIVE_TOOL_BUDGET = 3
 AUTO_BEGIN_COOLDOWN_SECONDS = 60 * 60
+_TOOL_RESULT_TEXT = TypeAdapter(str)
 AUTO_BEGIN_ADVENTURE_ACTION = (
     "Begin or resume the adventure. If this is a resumed adventure, briefly summarize "
     "where the player left off; then introduce the current scene, situation, and an "
@@ -216,6 +218,47 @@ class LiveAgentSession:
         self._auto_begin_started = False
         self._has_connected = False
         self._summoned = False
+        self._chat_turn_id = -1
+        self._turn_chat_succeeded = False
+        self._turn_other_tool_succeeded = False
+
+    @staticmethod
+    def _tool_response_succeeded(response: types.FunctionResponse) -> bool:
+        payload = response.response or {}
+        if payload.get("error"):
+            return False
+        status = payload.get("status")
+        if status is not None:
+            return status in (
+                "ok", "success", "accepted", "queued", "started", "processing",
+                "displayed", "updated", "applied", "cleared",
+            )
+        try:
+            result = _TOOL_RESULT_TEXT.validate_python(payload.get("result"), strict=True)
+        except ValidationError:
+            return False
+        return bool(result.strip()) and not result.lstrip().lower().startswith(
+            ("error", "failed", "failure")
+        )
+
+    def _update_chat_turn(self, event: Event) -> None:
+        """Keep tool-result accounting across model continuations for one user input."""
+        turn_id = self.live_request_queue.user_input_turn_id
+        if turn_id != self._chat_turn_id:
+            self._chat_turn_id = turn_id
+            self._turn_chat_succeeded = False
+            self._turn_other_tool_succeeded = False
+        for response in event.get_function_responses():
+            if not self._tool_response_succeeded(response):
+                continue
+            if response.name == "send_chat_message":
+                self._turn_chat_succeeded = True
+            else:
+                self._turn_other_tool_succeeded = True
+        if self.canvas_state_manager is not None:
+            self.canvas_state_manager.tool_response.set_agent_thought_highlighted(
+                self._turn_chat_succeeded and not self._turn_other_tool_succeeded
+            )
 
     @staticmethod
     def _get_nonnegative_config_seconds(value: Any, setting_name: str) -> float:
@@ -883,6 +926,7 @@ class LiveAgentSession:
                 run_config=self.run_config,
             ))) as events:
                 async for event in events:
+                    self._update_chat_turn(event)
                     function_calls = event.get_function_calls()
                     if function_calls:
                         self.record_live_agent_tool_calls(len(function_calls))

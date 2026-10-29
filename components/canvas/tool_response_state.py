@@ -26,6 +26,7 @@ class ToolResponseState:
         self.live_connection_until = 0.0; self.dice_roll_until = 0.0
         self.dice_roll_result: dict[str, object] | None = None
         self.current_agent_thought = ""; self.current_agent_thought_time = 0.0
+        self.agent_thought_highlighted = False
 
     def set_activity(self, tool: str, active: bool = True, recent_seconds: float = 5.0,
                      result: dict[str, object] | None = None) -> None:
@@ -55,7 +56,14 @@ class ToolResponseState:
         normalized = text.strip()
         self.current_agent_thought = normalized[:maximum_length - 1].rstrip() + "…" if len(normalized) > maximum_length else normalized
         self.current_agent_thought_time = time.time() if normalized else 0.0
+        self.agent_thought_highlighted = False
         self._notify_changed("latest")
 
+    def set_agent_thought_highlighted(self, highlighted: bool) -> None:
+        if self.agent_thought_highlighted != highlighted:
+            self.agent_thought_highlighted = highlighted
+            self._notify_changed("latest")
+
     def agent_thought_payload(self) -> dict[str, object]:
-        return {"text": self.current_agent_thought, "time": self.current_agent_thought_time}
+        return {"text": self.current_agent_thought, "time": self.current_agent_thought_time,
+                "highlighted": self.agent_thought_highlighted}

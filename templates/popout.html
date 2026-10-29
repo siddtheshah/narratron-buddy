@@ -157,6 +157,12 @@
             background: linear-gradient(135deg, rgba(88, 28, 135, 0.34), rgba(30, 41, 59, 0.7));
         }
 
+        .agent-thought-card.is-highlighted {
+            border-color: #fbbf24;
+            background: linear-gradient(135deg, rgba(180, 83, 9, 0.65), rgba(92, 50, 16, 0.85));
+            box-shadow: 0 0 18px rgba(245, 158, 11, 0.55);
+        }
+
         .agent-thought-label {
             margin-bottom: 0.3rem;
             color: #e9d5ff;
@@ -679,6 +685,9 @@
                 const res = await fetch(`/api/latest?theater_id=${encodeURIComponent(theaterId)}`);
                 const data = await res.json();
                 const thought = data.agent_thought && data.agent_thought.text;
+                agentThoughtText.closest('.agent-thought-card').classList.toggle(
+                    'is-highlighted', Boolean(data.agent_thought && data.agent_thought.highlighted && thought)
+                );
                 const isWandering = (thought || '').trim().toLowerCase() === 'wandering';
                 agentThoughtText.textContent = isWandering
                     ? 'Narratron has wandered away. (Try resummoning?)'

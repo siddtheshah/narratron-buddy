@@ -7,6 +7,25 @@ from services.priority_live_request_queue import PriorityLiveRequestQueue
 
 
 class TestPriorityLiveRequestQueue(unittest.TestCase):
+    def test_user_turn_generation_changes_only_when_new_input_is_delivered(self) -> None:
+        async def run_test() -> None:
+            queue = PriorityLiveRequestQueue()
+            queue.send_user_input(types.Content(parts=[types.Part(text="Hello")]))
+            self.assertEqual(queue.user_input_turn_id, 0)
+            await queue.get()
+            self.assertEqual(queue.user_input_turn_id, 1)
+            queue.send_notification(types.Content(parts=[types.Part(text="Tool finished")]))
+            await queue.get()
+            self.assertEqual(queue.user_input_turn_id, 1)
+            queue.send_activity_start()
+            queue.send_activity_end()
+            await queue.get()
+            self.assertEqual(queue.user_input_turn_id, 2)
+            await queue.get()
+            self.assertEqual(queue.user_input_turn_id, 2)
+
+        asyncio.run(run_test())
+
     def test_actionable_notifications_wake_after_budget_expires_and_prioritize_speech(self) -> None:
         async def run_test() -> None:
             queue = PriorityLiveRequestQueue(live_tool_budget=1, background_content_is_partial=True)

@@ -23,7 +23,7 @@ def test_tool_response_state_initial_payloads() -> None:
         "dice_result": None,
     }
     thought = state.agent_thought_payload()
-    assert thought == {"text": "", "time": 0.0}
+    assert thought == {"text": "", "time": 0.0, "highlighted": False}
 
 
 def test_set_activity_music_generation() -> None:
@@ -135,13 +135,14 @@ def test_set_agent_thought_normal_and_empty() -> None:
     assert state.agent_thought_payload() == {
         "text": "Analyzing tactical map...",
         "time": state.current_agent_thought_time,
+        "highlighted": False,
     }
 
     # Setting empty thought resets timestamp to 0.0
     state.set_agent_thought("   ")
     assert state.current_agent_thought == ""
     assert state.current_agent_thought_time == 0.0
-    assert state.agent_thought_payload() == {"text": "", "time": 0.0}
+    assert state.agent_thought_payload() == {"text": "", "time": 0.0, "highlighted": False}
 
 
 def test_set_agent_thought_truncation_with_ellipsis() -> None:

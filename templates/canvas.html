@@ -2116,6 +2116,12 @@
             box-shadow: 0 5px 16px rgba(0, 0, 0, 0.18);
         }
 
+        .agent-thought-card.is-highlighted {
+            border-color: #fbbf24;
+            background: linear-gradient(135deg, rgba(180, 83, 9, 0.65), rgba(92, 50, 16, 0.85));
+            box-shadow: 0 0 18px rgba(245, 158, 11, 0.55);
+        }
+
         .agent-thought-label {
             display: flex;
             align-items: center;
@@ -5762,6 +5768,9 @@
 
         function updateAgentThought(thought) {
             const text = thought && thought.text ? thought.text.trim() : '';
+            agentThoughtText.closest('.agent-thought-card').classList.toggle(
+                'is-highlighted', Boolean(thought && thought.highlighted && text)
+            );
             if (text === lastAgentThought) return;
             const isWandering = text.toLowerCase() === 'wandering';
             agentThoughtText.textContent = isWandering

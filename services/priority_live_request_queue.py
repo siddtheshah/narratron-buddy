@@ -31,11 +31,17 @@ class PriorityLiveRequestQueue(LiveRequestQueue):
         self._future_non_audio_queue: asyncio.Queue = asyncio.Queue()
         self._state = self._NON_AUDIO
         self._user_input_turn_pending = False
+        self._user_input_turn_id = 0
         self._notify_event: asyncio.Event = asyncio.Event()
         self._live_tool_budget = max(0, int(live_tool_budget))
         self._remaining_live_tool_budget = 0
         self._post_user_input_window_active = False
         self._defer_non_audio_until_next_input = False
+
+    @property
+    def user_input_turn_id(self) -> int:
+        """Generation of the latest user input delivered to the live provider."""
+        return self._user_input_turn_id
 
     @property
     def remaining_live_tool_budget(self) -> int:
@@ -109,6 +115,7 @@ class PriorityLiveRequestQueue(LiveRequestQueue):
         """Return the next user-input request and arm post-input notifications."""
         req = self._current_user_input_queue.get_nowait()
         if req.activity_start is not None:
+            self._user_input_turn_id += 1
             self._post_user_input_window_active = False
         elif req.activity_end is not None:
             # Leave user-input priority in place until the model has used its
@@ -117,6 +124,7 @@ class PriorityLiveRequestQueue(LiveRequestQueue):
             # scheduling resumes.
             self._arm_post_user_input_window()
         elif req.content is not None:
+            self._user_input_turn_id += 1
             # The Live API reserves activity boundaries for audio. A typed
             # command is therefore a standalone, prioritized content request.
             # It is still a user turn, so it gets the same bounded follow-up

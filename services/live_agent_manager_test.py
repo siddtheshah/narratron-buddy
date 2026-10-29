@@ -32,7 +32,72 @@ from tools.game_tool import GameTool
 from tools.tool_bundle import ToolBundle
 from testing.game_fixtures import exchange_definition, make_game
 from services.priority_live_request_queue import PriorityLiveRequestQueue
+from components.canvas.tool_response_state import ToolResponseState
 from storage.database import LocalDatabaseManager
+
+
+@pytest.mark.parametrize("other_result, highlighted", [
+    ({"result": "Error: image unavailable"}, True),
+    ({"error": "Image unavailable"}, True),
+    ({"status": "failed"}, True),
+    ({"result": "Successfully displayed image"}, False),
+    ({"status": "processing"}, False),
+])
+@pytest.mark.parametrize("chat_first", [True, False])
+def test_chat_highlight_counts_successful_tools_across_continuations(
+    other_result: dict[str, str], highlighted: bool, chat_first: bool,
+) -> None:
+    runner = MagicMock()
+    runner.agent.tools = []
+    canvas = MagicMock()
+    canvas.tool_response = ToolResponseState(lambda _: None)
+    canvas.tool_response.set_agent_thought("Here's my response")
+    session = LiveAgentSession(
+        theater_id="chat-highlight", runner=runner, tool_bundle=MagicMock(),
+        canvas_state_manager=canvas,
+    )
+    responses = [
+        types.FunctionResponse(name="send_chat_message", response={"result": "Successfully updated thought"}),
+        types.FunctionResponse(name="show_image", response=other_result),
+    ]
+    if not chat_first:
+        responses.reverse()
+    for response in responses:
+        session._update_chat_turn(Event(author="agent", content=types.Content(parts=[
+            types.Part(function_response=response),
+        ])))
+        # Model response boundaries must not forget earlier tool successes.
+        session._update_chat_turn(Event(author="agent", turn_complete=True))
+    assert canvas.tool_response.agent_thought_payload()["highlighted"] == highlighted
+
+    # The next delivered input starts fresh accounting, even with identical text.
+    session.live_request_queue.send_user_input(types.Content(parts=[types.Part(text="Again")]))
+    asyncio.run(session.live_request_queue.get())
+    canvas.tool_response.set_agent_thought("Here's my response")
+    session._update_chat_turn(Event(author="agent", content=types.Content(parts=[
+        types.Part(function_response=types.FunctionResponse(
+            name="send_chat_message", response={"result": "Successfully updated thought"},
+        )),
+    ])))
+    assert canvas.tool_response.agent_thought_payload()["highlighted"] is True
+
+
+def test_failed_chat_does_not_highlight_existing_thought() -> None:
+    runner = MagicMock()
+    runner.agent.tools = []
+    canvas = MagicMock()
+    canvas.tool_response = ToolResponseState(lambda _: None)
+    canvas.tool_response.set_agent_thought("Earlier thought")
+    session = LiveAgentSession(
+        theater_id="chat-highlight", runner=runner, tool_bundle=MagicMock(),
+        canvas_state_manager=canvas,
+    )
+    session._update_chat_turn(Event(author="agent", content=types.Content(parts=[
+        types.Part(function_response=types.FunctionResponse(
+            name="send_chat_message", response={"result": "Error sending chat message: unavailable"},
+        )),
+    ])))
+    assert canvas.tool_response.agent_thought_payload()["highlighted"] is False
 
 
 @pytest.fixture
