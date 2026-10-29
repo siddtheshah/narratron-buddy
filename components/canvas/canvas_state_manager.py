@@ -151,6 +151,7 @@ class CanvasStateManager:
         document.setdefault("theater_id", self.theater_id); document.setdefault("name", self.theater_id)
         document["canvas_state"] = self.serialized_state()
         target.write_text(json.dumps(document, indent=2), encoding="utf-8")
+        self.theater.storage_changed()
         return document, []
 
     def get_latest_state(self) -> dict[str, object]:

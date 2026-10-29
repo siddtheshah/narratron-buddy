@@ -730,6 +730,7 @@ class ReferenceManager:
                 temporary.replace(path)
             finally:
                 temporary.unlink(missing_ok=True)
+            self.theater.storage_changed()
         return self.add_canvas_capture(path, handle=path.stem)
 
     def get_canvas_capture_path(self, handle: str) -> Optional[str]:
@@ -837,6 +838,7 @@ class ReferenceManager:
                 yaml.safe_dump({"description": self._scene_descriptions[key]}, sort_keys=False, allow_unicode=True),
                 encoding="utf-8",
             )
+            self.theater.storage_changed()
         except OSError as exc:
             logger.warning("[ReferenceManager] Could not save scene traits for %s: %s", name, exc)
 
@@ -866,6 +868,7 @@ class ReferenceManager:
             (directory / "character.yaml").write_text(
                 yaml.safe_dump(traits.model_dump(), sort_keys=False, allow_unicode=True), encoding="utf-8",
             )
+            self.theater.storage_changed()
         except OSError as exc:
             logger.warning("[ReferenceManager] Could not save character traits for %s: %s", character.name, exc)
 
@@ -1084,6 +1087,7 @@ class ReferenceManager:
             exif = image.getexif()
             embed_image_metadata(exif, f"Scene reference for {name} (iteration {iteration}). {prompt}")
             image.save(output, "PNG" if ext == ".png" else "WEBP" if ext == ".webp" else "JPEG", exif=exif, quality=95)
+            self.theater.storage_changed()
             return output
         except (ImageProviderError, OSError, ValueError) as exc:
             logger.warning("[ReferenceManager] Could not create scene image for %s: %s", name, exc)
@@ -1560,6 +1564,7 @@ class ReferenceManager:
             exif = image.getexif()
             embed_image_metadata(exif, f"Character reference for {character.name} (iteration {next_num}). {prompt}")
             image.save(output, "PNG" if ext == ".png" else "WEBP" if ext == ".webp" else "JPEG", exif=exif, quality=95)
+            self.theater.storage_changed()
             alias = f"output/artifacts/updated_references/characters/{char_dir.name}/{output.name}"
             return {
                 "name": f"{char_dir.name}_{next_num}",
@@ -1679,6 +1684,7 @@ class ReferenceManager:
             exif = image.getexif()
             embed_image_metadata(exif, f"Player character reference for {name_label} (iteration {next_num}). {prompt}")
             image.save(output, "PNG" if ext == ".png" else "WEBP" if ext == ".webp" else "JPEG", exif=exif, quality=95)
+            self.theater.storage_changed()
             alias = f"output/artifacts/updated_references/characters/{char_dir.name}/{output.name}"
             return {
                 "name": f"{char_dir.name}_{next_num}",

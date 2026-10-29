@@ -10,6 +10,10 @@ class FakeTheater:
     def __init__(self, theater_id: str, root: Path, manager: FakeTheaterManager | None = None) -> None:
         self.theater_id, self.root = theater_id, root / theater_id
         self.manager = manager
+        self.storage_change_count = 0
+
+    def storage_changed(self) -> None:
+        self.storage_change_count += 1
 
     def directory(self) -> Path:
         return self.root

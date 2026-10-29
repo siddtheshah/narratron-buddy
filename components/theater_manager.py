@@ -9,7 +9,7 @@ from pathlib import Path, PurePosixPath, PureWindowsPath
 import secrets
 import shutil
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple, TypedDict
+from typing import Any, Callable, Dict, List, Optional, Tuple, TypedDict
 from urllib.parse import quote, unquote
 import zipfile
 
@@ -448,6 +448,9 @@ class Theater:
     def destroy(self) -> bool:
         return self.manager.destroy_theater(self.theater_id)
 
+    def storage_changed(self) -> None:
+        self.manager.notify_storage_changed(self.theater_id)
+
     def references(self) -> list[dict[str, str | int]]:
         return self.manager.get_theater_references(self.theater_id)
 
@@ -556,9 +559,15 @@ def extract_asset_package(
 class TheaterManager:
     """Own theater workspace creation, lifecycle metadata, and asset lookup."""
 
-    def __init__(self, base_theaters_dir: Optional[str | Path] = None):
+    def __init__(self, base_theaters_dir: Optional[str | Path] = None,
+                 storage_changed: Callable[[str], None] | None = None) -> None:
         self.base_dir = Path(base_theaters_dir).resolve() if base_theaters_dir else ensure_ephemeral_root()
         self.base_dir.mkdir(parents=True, exist_ok=True)
+        self.storage_changed = storage_changed
+
+    def notify_storage_changed(self, theater_id: str) -> None:
+        if self.storage_changed is not None:
+            self.storage_changed(theater_id)
 
     def _get_theater_dir(self, theater_id: str) -> Path:
         validate_theater_id(theater_id)
@@ -652,6 +661,7 @@ class TheaterManager:
         theater_dir = self._get_theater_dir(metadata.theater_id)
         theater_dir.mkdir(parents=True, exist_ok=True)
         self._metadata_path(metadata.theater_id).write_text(metadata.model_dump_json(indent=2), encoding="utf-8")
+        self.notify_storage_changed(metadata.theater_id)
 
     def update_theater_name(self, theater_id: str, new_name: str) -> Optional[TheaterMetadata]:
         metadata = self.get_theater(theater_id)
@@ -870,13 +880,15 @@ class TheaterManager:
         # validating so an agent restart cannot be blocked by missing identity
         # fields.  Use the directory ID as the safe fallback display name when
         # the original name was not persisted.
+        needs_normalization = not metadata_data.get("theater_id") or not metadata_data.get("name")
         if not metadata_data.get("theater_id"):
             metadata_data["theater_id"] = theater_id
         if not metadata_data.get("name"):
             metadata_data["name"] = theater_id
 
         metadata = TheaterMetadata.model_validate(metadata_data)
-        self._save_metadata(metadata)
+        if needs_normalization:
+            self._save_metadata(metadata)
         return metadata
 
     def get_lore_documents(self, theater_id: str) -> List[str]:
@@ -940,6 +952,7 @@ class TheaterManager:
         else:
             with open(target, "a", encoding="utf-8") as f:
                 f.write(str(content))
+        self.notify_storage_changed(theater_id)
 
     def list_theaters(self) -> List[TheaterMetadata]:
         theaters = []
@@ -983,6 +996,7 @@ class TheaterManager:
         if not theater_dir.exists():
             return False
         shutil.rmtree(theater_dir)
+        self.notify_storage_changed(theater_id)
         return True
 
     def get_theater_references(self, theater_id: str) -> list[dict[str, str | int]]:

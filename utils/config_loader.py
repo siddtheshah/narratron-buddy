@@ -143,5 +143,6 @@ def save_theater_config(
 
     with open(yaml_path, "w", encoding="utf-8") as f:
         yaml.safe_dump(config_data, f, default_flow_style=False)
+    theater_manager.notify_storage_changed(theater_id)
 
     return yaml_path

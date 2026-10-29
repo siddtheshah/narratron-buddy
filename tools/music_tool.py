@@ -198,6 +198,7 @@ class MusicTools(BaseTools):
             filename = f"{alias_key}_{int(time.time())}.mp3"
             destination = Path(self.output_dir) / filename
             shutil.copy2(match["path"], destination)
+            self.theater.storage_changed()
             track_url = f"/theaters/{self.active_theater_id}/output/music/{filename}" if self.active_theater_id else f"/output/music/{filename}"
             self.music_aliases[alias_key] = track_url
             self.music_aliases[alias_key.lower()] = track_url
@@ -268,6 +269,7 @@ class MusicTools(BaseTools):
             except Exception as e:
                 logger.error("[MusicTools] Background music generation failed: %s", e)
             finally:
+                self.theater.storage_changed()
                 self.canvas_manager.tool_response.set_activity("music", active=False)
 
         t = threading.Thread(target=_worker, daemon=True)

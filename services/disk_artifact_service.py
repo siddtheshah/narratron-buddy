@@ -1,7 +1,7 @@
 import os
 import mimetypes
 from pathlib import Path
-from typing import Any, Optional, Union
+from typing import Any, Callable, Optional, Union
 from google.genai import types
 from google.adk.artifacts.base_artifact_service import BaseArtifactService, ArtifactVersion, ensure_part
 from google.adk.errors.input_validation_error import InputValidationError
@@ -14,9 +14,10 @@ class DiskArtifactService(BaseArtifactService):
     When artifacts are listed, it lists all files in that directory
     recursively, including files that weren't created by the current session.
     """
-    def __init__(self, directory: Union[str, Path]):
+    def __init__(self, directory: Union[str, Path], storage_changed: Callable[[], None] | None = None) -> None:
         self.directory = Path(directory).expanduser().resolve()
         self.directory.mkdir(parents=True, exist_ok=True)
+        self.storage_changed = storage_changed
 
     def _get_path(self, filename: str, session_id: Optional[str] = None) -> Path:
         # Strip user: prefix if present
@@ -51,13 +52,16 @@ class DiskArtifactService(BaseArtifactService):
         filepath = self._get_path(filename, session_id=session_id)
         filepath.parent.mkdir(parents=True, exist_ok=True)
         
-        if artifact.inline_data:
-            filepath.write_bytes(artifact.inline_data.data)
-        elif artifact.text is not None:
-            filepath.write_text(artifact.text, encoding="utf-8")
-        else:
+        if not artifact.inline_data and artifact.text is None:
             raise InputValidationError("Artifact must have either inline_data or text content.")
-            
+        try:
+            if artifact.inline_data:
+                filepath.write_bytes(artifact.inline_data.data)
+            else:
+                filepath.write_text(artifact.text, encoding="utf-8")
+        finally:
+            if self.storage_changed is not None:
+                self.storage_changed()
         return 0
 
     async def load_artifact(
@@ -118,6 +122,8 @@ class DiskArtifactService(BaseArtifactService):
         filepath = self._get_path(filename, session_id=session_id)
         if filepath.is_file():
             filepath.unlink()
+            if self.storage_changed is not None:
+                self.storage_changed()
 
     async def list_versions(
         self,

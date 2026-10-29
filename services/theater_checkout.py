@@ -17,7 +17,7 @@ checkout_locks: dict[str, asyncio.Lock] = {}
 
 def refresh_checkout_metadata(info: DraftInfo, manager: TheaterManager) -> None:
     """Keep runtime metadata consistent with edits in the shared directory."""
-    builder = TheaterBuilderStore(manager.base_dir)
+    builder = TheaterBuilderStore(manager.base_dir, manager.notify_storage_changed)
     root = builder.directory(info.theater_id)
     text = (root / "theater.yaml").read_text(encoding="utf-8")
     validate_text("theater.yaml", text)
@@ -40,7 +40,7 @@ def refresh_checkout_metadata(info: DraftInfo, manager: TheaterManager) -> None:
 
 def save_theater_checkout(theater_id: str, manager: TheaterManager, repository: TheaterRepository) -> bool:
     """Save the same working copy from either screen, including package removals."""
-    builder = TheaterBuilderStore(manager.base_dir)
+    builder = TheaterBuilderStore(manager.base_dir, manager.notify_storage_changed)
     info = builder.load(theater_id)
     if info is not None:
         refresh_checkout_metadata(info, manager)

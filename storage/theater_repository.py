@@ -9,7 +9,7 @@ import json
 import logging
 from pathlib import Path
 import shutil
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from components.theater_manager import validate_theater_id
 from components.theater_package import safe_asset_path
@@ -46,12 +46,18 @@ logger = logging.getLogger(__name__)
 class TheaterRepository:
     """Provides theater export, reconstruction, and metadata management on a storage directory."""
 
-    def __init__(self, base_dir: Optional[Path | str] = None):
+    def __init__(self, base_dir: Optional[Path | str] = None,
+                 storage_changed: Callable[[str], None] | None = None) -> None:
+        self.storage_changed = storage_changed
         if base_dir is not None:
             self._base_dir = Path(base_dir).resolve()
         else:
             self._base_dir = ensure_theaters_root()
         self._base_dir.mkdir(parents=True, exist_ok=True)
+
+    def _notify_storage_changed(self, theater_id: str) -> None:
+        if self.storage_changed is not None:
+            self.storage_changed(theater_id)
 
     @property
     def base_dir(self) -> Path:
@@ -92,6 +98,7 @@ class TheaterRepository:
 
         target = self.theater_path(theater_id)
         if source_dir == target:
+            self._notify_storage_changed(theater_id)
             return True
 
         try:
@@ -123,6 +130,8 @@ class TheaterRepository:
         except Exception as e:
             logger.warning("Failed to export theater %s to %s: %s", theater_id, target, e)
             return False
+        finally:
+            self._notify_storage_changed(theater_id)
 
     def reconstruct_theater(self, theater_id: str, target_dir: Path | str) -> bool:
         """Reconstruct a theater's directory and assets from repository storage."""
@@ -138,6 +147,7 @@ class TheaterRepository:
             (target_dir / "stamps").mkdir(parents=True, exist_ok=True)
             (target_dir / "references" / "characters").mkdir(parents=True, exist_ok=True)
             (target_dir / "references" / "scenes").mkdir(parents=True, exist_ok=True)
+            self._notify_storage_changed(theater_id)
             return (target_dir / "theater.json").exists()
 
         if not source.exists():
@@ -155,6 +165,8 @@ class TheaterRepository:
         except Exception as e:
             logger.warning("Failed to reconstruct theater %s to %s: %s", theater_id, target_dir, e)
             return False
+        finally:
+            self._notify_storage_changed(theater_id)
 
     def get_theater_metadata(self, theater_id: str) -> Optional[Dict[str, Any]]:
         """Fetch parsed theater.json metadata for a theater without modifying disk."""
@@ -186,6 +198,7 @@ class TheaterRepository:
             raise ValueError(f"Unsafe repository directory for deletion: {resolved_target}")
         if target.exists():
             shutil.rmtree(target)
+            self._notify_storage_changed(theater_id)
             return True
         return False
 

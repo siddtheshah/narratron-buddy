@@ -9,6 +9,10 @@ from components.canvas.chat_manager import ChatManager
 class FakeTheater:
     def __init__(self, chats_dir: str | Path = "/tmp/test_chat") -> None:
         self._chats_dir = Path(chats_dir)
+        self.storage_change_count = 0
+
+    def storage_changed(self) -> None:
+        self.storage_change_count += 1
 
     def chats_dir(self) -> Path:
         return self._chats_dir

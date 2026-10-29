@@ -1509,7 +1509,7 @@ class LiveAgentSessionManager:
             if test_data_dir.exists():
                 artifact_service.preload_directory(test_data_dir, app_name=self.app_name)
         else:
-            artifact_service = DiskArtifactService(disk_service_path)
+            artifact_service = DiskArtifactService(disk_service_path, storage_changed=theater.storage_changed)
 
         runner = Runner(
             app_name=self.app_name,

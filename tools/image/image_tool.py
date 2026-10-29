@@ -403,6 +403,7 @@ class ImageTools(BaseTools):
                     self.record_tool_failure("image_cycle")
                     logger.error(f"[ImageTools] Error generating image in background: {e}")
                 finally:
+                    self.theater.storage_changed()
                     self._set_canvas_activity(False)
                     self._trigger_after_tool_call("create_image")
                     self._on_cycle_tool_completed("image_cycle")

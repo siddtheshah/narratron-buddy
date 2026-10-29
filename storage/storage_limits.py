@@ -45,8 +45,21 @@ def calculate_user_theaters_storage_bytes(
     if checkouts_root is None:
         from components.theater_manager import get_ephemeral_root
         checkouts_root = get_ephemeral_root()
-    return sum(max(get_directory_size_bytes(root / tid), get_directory_size_bytes(checkouts_root / tid))
-               for tid in resolved_db.get_user_theater_ids(user_id))
+    # Old deployments are backfilled lazily. Unchanged theaters never require
+    # another filesystem walk, even after restarting the application.
+    for _ in range(3):
+        total = 0
+        for record in resolved_db.get_user_theater_storage(user_id):
+            size = record["storage_bytes"]
+            if size is None:
+                tid = record["theater_id"]
+                size = max(get_directory_size_bytes(root / tid), get_directory_size_bytes(checkouts_root / tid))
+                if not resolved_db.cache_theater_storage(tid, size, record["storage_revision"]):
+                    break
+            total += size
+        else:
+            return total
+    raise ValueError("Theater storage changed during the quota check. Please retry.")
 
 
 def check_user_theaters_storage_allowance(

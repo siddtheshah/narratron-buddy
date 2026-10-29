@@ -125,8 +125,15 @@ async def monitor_adventure_catalog(stop: asyncio.Event) -> None:
 load_dotenv()
 config = get_app_config()
 app = FastAPI(lifespan=lifespan, docs_url="/fastapi-docs")
-theater_manager = TheaterManager()
-theater_repository = TheaterRepository()
+
+
+def invalidate_theater_storage(theater_id: str) -> None:
+    """Resolve the active database when a working copy or saved package changes."""
+    db.invalidate_theater_storage(theater_id)
+
+
+theater_manager = TheaterManager(storage_changed=invalidate_theater_storage)
+theater_repository = TheaterRepository(storage_changed=invalidate_theater_storage)
 pricing_controller = PricingController.from_env()
 local_database_path = PROJECT_ROOT / "deployer.db"
 if FLAGS.testing_use_local and FLAGS.with_empty_db:

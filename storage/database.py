@@ -10,7 +10,7 @@ import threading
 import time
 import uuid
 from queue import Empty, Queue
-from typing import Any, Dict, Iterable, List, Optional, Union
+from typing import Any, Dict, Iterable, List, Optional, TypedDict, Union
 import logging
 import re
 from dotenv import load_dotenv
@@ -33,6 +33,12 @@ class DatabaseConnectionTimeout(TimeoutError):
 
 class DatabaseOperationTimeout(TimeoutError):
     """Raised after a live database operation exceeds its deadline."""
+
+
+class TheaterStorageRecord(TypedDict):
+    theater_id: str
+    storage_bytes: int | None
+    storage_revision: int
 
 
 class _DictCursor:
@@ -1689,6 +1695,42 @@ class _DatabaseManagerBase:
             rows = cursor.fetchall()
             return [str(row["theater_id"]) for row in rows]
 
+    def get_user_theater_storage(self, user_id: int) -> list[TheaterStorageRecord]:
+        """Read quota totals without touching theater directories."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT theater_id, storage_bytes, storage_revision FROM theaters WHERE user_id = ?",
+                (user_id,),
+            )
+            return [TheaterStorageRecord(theater_id=row["theater_id"], storage_bytes=row["storage_bytes"],
+                                         storage_revision=row["storage_revision"]) for row in cursor.fetchall()]
+
+    def invalidate_theater_storage(self, theater_id: str) -> None:
+        """Invalidate only the changed theater, including an in-flight size scan."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE theaters SET storage_bytes = NULL, storage_revision = storage_revision + 1 "
+                "WHERE theater_id = ?",
+                (theater_id,),
+            )
+            conn.commit()
+
+    def cache_theater_storage(self, theater_id: str, size_bytes: int, revision: int) -> bool:
+        """Never publish a scan whose theater changed or was deleted while scanning."""
+        if size_bytes < 0:
+            raise ValueError("Theater storage size cannot be negative.")
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE theaters SET storage_bytes = ? WHERE theater_id = ? AND storage_revision = ?",
+                (size_bytes, theater_id, revision),
+            )
+            updated = cursor.rowcount > 0
+            conn.commit()
+            return updated
+
 
     def update_theater_name(self, theater_id: str, new_name: str, user_id: Optional[int] = None) -> bool:
         """Update the display name of a theater in theaters table."""
@@ -1814,19 +1856,6 @@ class _DatabaseManagerBase:
                     if age_seconds > ttl_seconds:
                         logger.info(f"[DatabaseDaemon] Auto-cleaning expired non-persistent theater_id={theater_id}")
                         cursor.execute("DELETE FROM theaters WHERE theater_id = ?", (theater_id,))
-                        if theater_repository:
-                            try:
-                                if hasattr(theater_repository, "delete_theater"):
-                                    theater_repository.delete_theater(theater_id)
-                                elif hasattr(theater_repository, "destroy_theater"):
-                                    theater_repository.destroy_theater(theater_id)
-                            except Exception as e:
-                                logger.warning(f"[DatabaseDaemon] Error deleting theater repository files for {theater_id}: {e}")
-                        if theater_manager:
-                            try:
-                                theater_manager.destroy_theater(theater_id)
-                            except Exception as e:
-                                logger.warning(f"[DatabaseDaemon] Error destroying theater files for {theater_id}: {e}")
                         cleaned_up_sessions.append(theater_id)
                 else:
                     # Accrue charges for persistent session
@@ -1875,22 +1904,23 @@ class _DatabaseManagerBase:
                         else:
                             logger.warning(f"[DatabaseDaemon] User user_id={user_id} has insufficient credits ({user_credits}) for persistent theater_id={theater_id}. Expiring session.")
                             cursor.execute("DELETE FROM theaters WHERE theater_id = ?", (theater_id,))
-                            if theater_repository:
-                                try:
-                                    if hasattr(theater_repository, "delete_theater"):
-                                        theater_repository.delete_theater(theater_id)
-                                    elif hasattr(theater_repository, "destroy_theater"):
-                                        theater_repository.destroy_theater(theater_id)
-                                except Exception as e:
-                                    logger.warning(f"[DatabaseDaemon] Error deleting theater repository files for {theater_id}: {e}")
-                            if theater_manager:
-                                try:
-                                    theater_manager.destroy_theater(theater_id)
-                                except Exception as e:
-                                    logger.warning(f"[DatabaseDaemon] Error destroying theater files for {theater_id}: {e}")
                             cleaned_up_sessions.append(theater_id)
 
             conn.commit()
+
+        # Storage callbacks may update the quota index using another connection.
+        # Release deleted-row locks before invoking filesystem cleanup.
+        for theater_id in cleaned_up_sessions:
+            if theater_repository is not None:
+                try:
+                    theater_repository.delete_theater(theater_id)
+                except Exception as error:
+                    logger.warning("[DatabaseDaemon] Error deleting repository files for %s: %s", theater_id, error)
+            if theater_manager is not None:
+                try:
+                    theater_manager.destroy_theater(theater_id)
+                except Exception as error:
+                    logger.warning("[DatabaseDaemon] Error destroying theater files for %s: %s", theater_id, error)
 
         return {
             "cleaned_up_sessions": cleaned_up_sessions,

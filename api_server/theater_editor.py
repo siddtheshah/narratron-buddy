@@ -108,7 +108,7 @@ class ImportDraftResponse(DraftResponse):
 
 
 def store() -> TheaterBuilderStore:
-    return TheaterBuilderStore(Path(theater_manager.base_dir))
+    return TheaterBuilderStore(Path(theater_manager.base_dir), theater_manager.notify_storage_changed)
 
 
 def write_checkout(info: DraftInfo, files: dict[str, bytes], moves: list[FileMove] | None = None, deletions: list[str] | None = None) -> None:
@@ -564,6 +564,7 @@ async def generate_draft_asset(theater_id: str, body: GenerateDraftRequest, requ
             except Exception as error:
                 # Do not leave an unbilled asset available if settlement failed.
                 safe_asset_path(store().directory(theater_id), path).unlink(missing_ok=True)
+                await asyncio.to_thread(theater_manager.notify_storage_changed, theater_id)
                 logger.exception("Theater builder billing failed")
                 raise HTTPException(status_code=503, detail="Could not settle generation credits. Please reload the draft.") from error
             auth_session_cache.invalidate_user(owner_id)
@@ -639,6 +640,7 @@ async def reset_theater_draft(theater_id: str, request: Request, body: ResetThea
             check_revision(info, body.revision)
 
         live_agent_manager.stop_session(theater_id)
+        await asyncio.to_thread(theater_manager.notify_storage_changed, theater_id)
         roots = {store().directory(theater_id).resolve(), theater_repository.theater_path(theater_id).resolve()}
         for root in roots:
             await asyncio.to_thread(_remove_reference_updates, root / "references")
@@ -654,6 +656,7 @@ async def reset_theater_draft(theater_id: str, request: Request, body: ResetThea
                 document["canvas_state"] = {}
                 metadata_path.write_text(json.dumps(document), encoding="utf-8")
         canvas_states.reset(theater_id)
+        await asyncio.to_thread(theater_manager.notify_storage_changed, theater_id)
         theater_access_cache.invalidate_theater(info.theater_id)
 
         return await asyncio.to_thread(response, info)

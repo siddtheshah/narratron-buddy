@@ -77,6 +77,7 @@ def _save_generated_stamp(theater_id: str, filename: str, content: bytes) -> Non
         target = root / "stamps" / filename
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(content)
+    theater_manager.notify_storage_changed(theater_id)
 
 
 def _remove_generated_stamp(theater_id: str, filename: str) -> None:
@@ -85,6 +86,7 @@ def _remove_generated_stamp(theater_id: str, filename: str) -> None:
         theater_repository.theater_path(theater_id),
     ):
         (root / "stamps" / filename).unlink(missing_ok=True)
+    theater_manager.notify_storage_changed(theater_id)
 
 
 @app.post("/api/theaters/{theater_id}/stamps/generate")

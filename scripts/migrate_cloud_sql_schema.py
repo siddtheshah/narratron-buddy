@@ -18,6 +18,8 @@ from storage.database import CloudPostgresDatabaseManager
 
 
 MIGRATIONS = (
+    "ALTER TABLE theaters ADD COLUMN IF NOT EXISTS storage_bytes BIGINT CHECK (storage_bytes >= 0)",
+    "ALTER TABLE theaters ADD COLUMN IF NOT EXISTS storage_revision BIGINT NOT NULL DEFAULT 0",
     """CREATE TABLE IF NOT EXISTS friendships (
         user_low BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
         user_high BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,

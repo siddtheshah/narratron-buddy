@@ -7,6 +7,10 @@ from components.canvas.canvas_state_service import CanvasStateService
 class FakeTheater:
     def __init__(self, theater_id: str, root: Path) -> None:
         self.theater_id, self.root = theater_id, root / theater_id
+        self.storage_change_count = 0
+
+    def storage_changed(self) -> None:
+        self.storage_change_count += 1
 
     def directory(self) -> Path: return self.root
     def output_dir(self) -> Path: return self.root / "output"

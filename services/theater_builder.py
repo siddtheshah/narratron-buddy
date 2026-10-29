@@ -8,7 +8,7 @@ import mimetypes
 import os
 from pathlib import Path, PurePosixPath
 import re
-from typing import Literal
+from typing import Callable, Literal
 import uuid
 
 from google import genai
@@ -149,8 +149,9 @@ def upload_path(filename: str, folder: bool) -> str:
 
 
 class TheaterBuilderStore:
-    def __init__(self, checkout_root: Path) -> None:
+    def __init__(self, checkout_root: Path, storage_changed: Callable[[str], None] | None = None) -> None:
         self.root = checkout_root
+        self.storage_changed = storage_changed
 
     def directory(self, theater_id: str) -> Path:
         if not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9_-]*", theater_id):
@@ -196,6 +197,8 @@ class TheaterBuilderStore:
         temporary = folder / "editor.tmp"
         temporary.write_text(info.model_dump_json(), encoding="utf-8")
         temporary.replace(folder / "editor.json")
+        if self.storage_changed is not None:
+            self.storage_changed(info.theater_id)
 
     def create(self, owner_id: int, name: str, default_yaml: str, theater_id: str | None = None, populate_default: bool = True, initial_files: dict[str, bytes] | None = None) -> DraftInfo:
         identifier = theater_id or f"theater_{uuid.uuid4().hex}"
@@ -298,25 +301,31 @@ class TheaterBuilderStore:
         net_increase = sum(current.values()) - existing_draft_size
         if net_increase > 0:
             check_user_theaters_storage_allowance(info.owner_id, net_increase)
-        for path in removal_paths:
-            del_target = safe_asset_path(root, path)
-            del_target.unlink()
-            parent = del_target.parent
-            while parent != resolved_root and parent.is_dir() and not any(parent.iterdir()):
-                if parent.parent == resolved_root and parent.name in {"characters", "references", "stamps", "playlists", "lore"}:
-                    break
-                parent.rmdir()
-                parent = parent.parent
-        for move in operations:
-            destination = safe_asset_path(root, move.destination)
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            safe_asset_path(root, move.source).replace(destination)
-        for name, content in files.items():
-            target = targets[name]
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes(content)
-        info.revision += 1
-        self.save_info(info)
+        try:
+            for path in removal_paths:
+                del_target = safe_asset_path(root, path)
+                del_target.unlink()
+                parent = del_target.parent
+                while parent != resolved_root and parent.is_dir() and not any(parent.iterdir()):
+                    if parent.parent == resolved_root and parent.name in {"characters", "references", "stamps", "playlists", "lore"}:
+                        break
+                    parent.rmdir()
+                    parent = parent.parent
+            for move in operations:
+                destination = safe_asset_path(root, move.destination)
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                safe_asset_path(root, move.source).replace(destination)
+            for name, content in files.items():
+                target = targets[name]
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(content)
+            info.revision += 1
+            self.save_info(info)
+        except Exception:
+            # A failed batch may already have changed some files.
+            if self.storage_changed is not None:
+                self.storage_changed(info.theater_id)
+            raise
 
     def delete_files(self, info: DraftInfo, paths: list[str]) -> None:
         self.write_files(info, {}, deletions=paths)

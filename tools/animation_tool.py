@@ -162,6 +162,8 @@ class AnimationTools(BaseTools):
     def _set_canvas_activity(self, active: bool) -> None:
         """Notify connected canvases that animation generation has started or finished."""
         self.is_generating = bool(active)
+        if not active:
+            self.theater.storage_changed()
         self.canvas_manager.tool_response.set_activity("animation", active=active)
 
     def join_generation(self, timeout: float = 30.0) -> None:

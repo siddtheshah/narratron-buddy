@@ -181,6 +181,7 @@ class ChatManager:
         try:
             with open(filepath, 'w', encoding='utf-8') as f:
                 json.dump(self.messages, f, indent=2)
+            self.theater.storage_changed()
             print(f"[CHAT MANAGER] Exported {len(self.messages)} messages to {filepath}")
         except Exception as e:
             print(f"[CHAT MANAGER] Failed to export chat log: {e}")
