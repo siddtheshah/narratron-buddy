@@ -15,6 +15,7 @@
     <link rel="stylesheet" href="/static/css/text-effects.css">
     <link rel="stylesheet" href="/static/css/chat.css">
     <link rel="stylesheet" href="/static/css/canvas-navigation.css">
+    <link rel="stylesheet" href="/static/css/canvas-bookmarks.css">
     <script type="module" src="/static/js/canvas-navigation.js?v=cursor-cycle-20261028-1"></script>
     <link rel="stylesheet" href="/static/css/narration-pane.css">
     <link rel="stylesheet" href="/static/css/auth-flow.css">
@@ -3224,6 +3225,7 @@
                     <line x1="3" y1="3" x2="21" y2="21" stroke="#f87171" stroke-width="2.2" />
                 </svg>
             </button>
+            <div id="canvas-bookmarks" hidden></div>
             <div id="prompt-toggle-btn" title="View Prompt">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
                     stroke-linecap="round" stroke-linejoin="round">
@@ -3681,6 +3683,7 @@
     <script type="module">
         import { setupTheaterReport } from '/static/js/theater-report.js';
         import { initializeStoryLogInspector } from "/static/js/story-log-inspector.js";
+        import { initializeCanvasBookmarks } from "/static/js/canvas-bookmarks.js";
         import { initializeActionWheel } from "/static/js/action-wheel.js?v=cursor-cycle-20261028-1";
         import { canvasCursorState } from '/static/js/canvas-cursor-state.js?v=20261028-1';
         import { initializeChatController } from "/static/js/chat-controller.js";
@@ -5150,6 +5153,24 @@
         let hasNewHeadWhilePagedBack = false;
         let lastAnimationSignature = '';
 
+        const canvasBookmarks = initializeCanvasBookmarks({
+            theaterId,
+            isOrator: isCurrentOrator,
+            getHistory: () => imageHistory,
+            getIndex: () => currentViewIndex,
+            navigate: async index => {
+                const response = await fetch(`/api/theaters/${encodeURIComponent(theaterId)}/orator-action`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'bookmark_image', history_index: index }),
+                });
+                if (!response.ok) throw new Error('Bookmark navigation failed');
+                const result = await response.json();
+                oratorCursorIndex = Number(result.orator_cursor);
+                displayHistoryImage(oratorCursorIndex, 'none');
+            },
+        });
+
         function stepOratorPreviousImage() {
             if (oratorCursorIndex > 0) {
                 oratorCursorIndex -= 1;
@@ -5325,6 +5346,7 @@
         }
 
         function updatePagingControlsUI() {
+            canvasBookmarks.refresh();
             const controls = document.getElementById('history-paging-controls');
             const prevBtn = document.getElementById('page-prev-btn');
             const nextBtn = document.getElementById('page-next-btn');

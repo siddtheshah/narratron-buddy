@@ -143,13 +143,47 @@ def test_unpin_reaches_live_request_queue(
     asyncio.run(run())
 
 
-def test_actions_reject_viewers(action_services: tuple[MagicMock, MagicMock]) -> None:
+@pytest.mark.parametrize("action", ["new_image", "bookmark_image"])
+def test_actions_reject_viewers(action_services: tuple[MagicMock, MagicMock], action: str) -> None:
     state, session = action_services
     with patch.object(canvas, "can_control_agent_websocket", return_value=False), pytest.raises(HTTPException) as error:
-        canvas.post_orator_action("stage", canvas.OratorAction(action="new_image"), Request({"type": "http"}))
+        canvas.post_orator_action("stage", canvas.OratorAction(action=action), Request({"type": "http"}))
     assert error.value.status_code == 403
     session.send_notification.assert_not_called()
     state.persist.assert_not_called()
+
+
+def test_bookmark_navigation_persists_shared_cursor(action_services: tuple[MagicMock, MagicMock]) -> None:
+    state, session = action_services
+    session.is_alive = False
+    state.visual.select_history_image.return_value = True
+    state.visual.orator_cursor = 2
+    result = canvas.post_orator_action(
+        "stage", canvas.OratorAction(action="bookmark_image", history_index=2), Request({"type": "http"})
+    )
+    state.visual.select_history_image.assert_called_once_with(2)
+    state.persist.assert_called_once_with()
+    assert result["orator_cursor"] == 2
+
+
+@pytest.mark.parametrize("index", [None, 50])
+def test_bookmark_navigation_rejects_missing_pages(
+    action_services: tuple[MagicMock, MagicMock], index: int | None,
+) -> None:
+    state, _ = action_services
+    state.visual.select_history_image.return_value = False
+    with pytest.raises(HTTPException) as error:
+        canvas.post_orator_action(
+            "stage", canvas.OratorAction(action="bookmark_image", history_index=index), Request({"type": "http"})
+        )
+    assert error.value.status_code == 400
+    state.persist.assert_not_called()
+
+
+@pytest.mark.parametrize("index", [-1, 1.5, True, "1"])
+def test_bookmark_navigation_requires_integer_index(index: int | float | bool | str) -> None:
+    with pytest.raises(ValidationError):
+        canvas.OratorAction(action="bookmark_image", history_index=index)
 
 
 def test_rejected_generation_cancels_bypass(action_services: tuple[MagicMock, MagicMock]) -> None:

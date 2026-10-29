@@ -1509,6 +1509,24 @@ def test_payload_updates_shown_image_prompt_when_image_resolved(tmp_path: Path) 
         assert state.shown_image_prompt == "A dragon over mountains\nReferences: dragon.png"
 
 
+def test_bookmark_history_selection_restores_media(tmp_path: Path) -> None:
+    theater = make_theater(tmp_path, config={"visuals": {"cycle_length": 0}})
+    state = VisualState(theater)
+    assert state.select_history_image(0) is False
+    state.show_image("forest.png", prompt="Forest")
+    state.show_image("castle.png", prompt="Castle")
+    state.show_image("sea.png", prompt="Sea")
+    assert state.select_history_image(0) is True
+    assert state.shown_image_path == "forest.png"
+    assert state.shown_image_prompt == "Forest"
+    assert state.orator_cursor == 0
+    assert state.select_history_image(2) is True
+    assert state.shown_image_path == "sea.png"
+    assert state.select_history_image(-1) is False
+    assert state.select_history_image(3) is False
+    assert state.orator_cursor == 2
+
+
 def test_previous_image_navigation(tmp_path: Path) -> None:
     theater = make_theater(tmp_path, config={"visuals": {"cycle_length": 0}})
     notifications: list[str] = []

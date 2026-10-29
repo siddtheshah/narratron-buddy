@@ -967,6 +967,10 @@ class VisualState:
                 return False
             return self._apply_history_item(curr_idx - 1)
 
+    def select_history_image(self, index: int) -> bool:
+        """Present a bookmarked history entry using the normal media restoration path."""
+        return self._apply_history_item(index)
+
     def next_image(self) -> bool:
         """Advance visual presentation to the next image/animation in history towards head."""
         with self._cycle_lock:

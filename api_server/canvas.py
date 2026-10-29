@@ -294,10 +294,11 @@ class CanvasPinRequest(BaseModel):
 class OratorAction(BaseModel):
     action: Literal[
         "new_music", "new_image",
-        "previous_music", "next_music", "previous_image", "next_image",
+        "previous_music", "next_music", "previous_image", "next_image", "bookmark_image",
         "toggle_music_pin", "toggle_canvas_pin",
         "update_story", "update_ui",
     ]
+    history_index: int | None = Field(default=None, ge=0, strict=True)
 
 
 class OratorActionResponse(BaseModel):
@@ -950,6 +951,13 @@ def post_orator_action(
             if is_image:
                 state.visual.cancel_immediate_image()
             raise HTTPException(status_code=409, detail="Narratron could not receive the action.")
+    elif payload.action == "bookmark_image":
+        if payload.history_index is None or not state.visual.select_history_image(payload.history_index):
+            raise HTTPException(status_code=400, detail="Bookmark image is no longer available.")
+        if session and session.is_alive:
+            session.send_content(types.Content(role="system", parts=[types.Part(text=(
+                "[Orator Action] The orator returned to a bookmarked scene image."
+            ))]))
     elif payload.action == "previous_image":
         if not state.visual.previous_image():
             raise HTTPException(status_code=400, detail="No previous image available.")
