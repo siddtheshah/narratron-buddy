@@ -46,11 +46,17 @@ class TestConfigLoader(BaseTestCase):
         config = get_theater_default_config()
         self.assertIsInstance(config, dict)
         self.assertIn("visuals", config)
+        self.assertEqual(config["visuals"].get("safety_reduction"), False)
         self.assertIn("image_generation", config)
         self.assertNotIn("style", config["image_generation"])
         self.assertNotIn("cycle_length", config["image_generation"])
         self.assertNotIn("model", config.get("interactive_canvas", {}))
         self.assertIn("model", get_app_config().get("interactive_canvas", {}))
+
+    def test_theater_default_config_visuals_safety_reduction_default(self) -> None:
+        config = get_theater_default_config()
+        self.assertIn("visuals", config)
+        self.assertFalse(config["visuals"]["safety_reduction"])
 
     def test_get_theater_config_creates_yaml(self):
         temp_dir = Path(tempfile.mkdtemp())

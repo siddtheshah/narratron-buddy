@@ -20,6 +20,8 @@ visuals:
     # Minimum screen time per visual; a waiting queue advances when this expires.
     cycle_length: 8
     style: "charming"
+    # Enables prompt_cleanup to reduce negative/restraining safety phrasing in image generation.
+    safety_reduction: false
 
 # Generate portraits and scene reference images alongside character/scene records.
 # Existing reference images remain usable when this is false.

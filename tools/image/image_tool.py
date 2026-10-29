@@ -57,6 +57,12 @@ class ImageTools(BaseTools):
         self.reference_wait_timeout = max(0.0, float(self.image_config.get("reference_wait_timeout", 60.0)))
         self.adventure_mode = bool(adventure_mode)
 
+        safety_reduction_val = self.visuals_config.get("safety_reduction", False)
+        if safety_reduction_val in (False, "false", "False", 0, "0", None):
+            self.safety_reduction: bool = False
+        else:
+            self.safety_reduction: bool = bool(safety_reduction_val)
+
         self.default_style = str(self.visuals_config.get("style", "")).strip()
         self.image_outputs = ImageLibrary(theater)
         self.output_dir = self.image_outputs.output_dir
@@ -235,15 +241,20 @@ class ImageTools(BaseTools):
             return res
 
         styled_prompt = self._apply_default_style(image_prompt)
-        effective_prompt = clean_image_prompt(styled_prompt)
-        if effective_prompt != styled_prompt:
-            logger.debug(
-                "[ImageTools] Image prompt cleanup original=%r cleaned=%r",
-                styled_prompt, effective_prompt,
-            )
+        if self.safety_reduction:
+            effective_prompt = clean_image_prompt(styled_prompt)
+            if effective_prompt != styled_prompt:
+                logger.debug(
+                    "[ImageTools] Image prompt cleanup original=%r cleaned=%r",
+                    styled_prompt, effective_prompt,
+                )
+        else:
+            effective_prompt = styled_prompt
         if not effective_prompt:
             self._trigger_after_tool_call("create_image")
-            return "Error: image_prompt must describe a scene after prompt cleanup."
+            if self.safety_reduction:
+                return "Error: image_prompt must describe a scene after prompt cleanup."
+            return "Error: image_prompt must describe a scene."
         logger.debug(f"[ImageTools] create_image prompt={effective_prompt}, image_name={image_name}, display={display}")
 
         with self._story_plan_lock:

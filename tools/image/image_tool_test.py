@@ -197,7 +197,12 @@ class TestImageTools(BaseTestCase):
     def test_create_image_cleans_prompt_before_provider_and_metadata(self, mock_get_provider: MagicMock) -> None:
         provider = mock_get_provider.return_value
         provider.generate.return_value = self._provider_result()
-        tools = self.make_image_tools(self.config, theater_id="prompt_cleanup", theater_manager=self.manager)
+        config = {
+            **self.config,
+            "visuals": {**self.config["visuals"], "safety_reduction": True},
+        }
+        tools = self.make_image_tools(config, theater_id="prompt_cleanup", theater_manager=self.manager)
+        self.assertTrue(tools.safety_reduction)
         with self.assertLogs("tools.image.image_tool", level="DEBUG") as logs:
             tools.create_image("A duel, no graphic content, subdued violence, sparks fly. Keep the scene non-graphic, intense, and cinematic.", image_name="duel", display=False)
             tools.join_generation()
@@ -211,10 +216,49 @@ class TestImageTools(BaseTestCase):
             self.assertIn("explicit violence", str(image.getexif()))
 
     @patch("tools.image.image_tool.get_image_provider")
+    def test_create_image_does_not_clean_prompt_when_safety_reduction_disabled(self, mock_get_provider: MagicMock) -> None:
+        provider = mock_get_provider.return_value
+        provider.generate.return_value = self._provider_result()
+        tools = self.make_image_tools(self.config, theater_id="no_safety_reduction", theater_manager=self.manager)
+        self.assertFalse(tools.safety_reduction)
+        prompt = "A duel, no graphic content, subdued violence, sparks fly. Keep the scene non-graphic, intense, and cinematic."
+        tools.create_image(prompt, image_name="duel_safe", display=False)
+        tools.join_generation()
+        request = provider.generate.call_args.args[0]
+        self.assertEqual(request.prompt, prompt)
+
+    @patch("tools.image.image_tool.get_image_provider")
+    def test_create_image_does_not_clean_prompt_when_safety_reduction_explicitly_false(self, mock_get_provider: MagicMock) -> None:
+        provider = mock_get_provider.return_value
+        provider.generate.return_value = self._provider_result()
+        config = {
+            **self.config,
+            "visuals": {**self.config["visuals"], "safety_reduction": False},
+        }
+        tools = self.make_image_tools(config, theater_id="explicit_false_safety", theater_manager=self.manager)
+        self.assertFalse(tools.safety_reduction)
+        prompt = "A duel, no graphic content, subdued violence, sparks fly. Keep the scene non-graphic, intense, and cinematic."
+        tools.create_image(prompt, image_name="duel_explicit_false", display=False)
+        tools.join_generation()
+        request = provider.generate.call_args.args[0]
+        self.assertEqual(request.prompt, prompt)
+
+    @patch("tools.image.image_tool.get_image_provider")
     def test_create_image_rejects_empty_cleaned_prompt(self, mock_get_provider: MagicMock) -> None:
-        tools = self.make_image_tools(self.config, theater_id="cleanup_empty", theater_manager=self.manager)
+        config = {
+            **self.config,
+            "visuals": {**self.config["visuals"], "safety_reduction": True},
+        }
+        tools = self.make_image_tools(config, theater_id="cleanup_empty", theater_manager=self.manager)
         result = tools.create_image("", image_name="empty", display=False)
-        self.assertIn("Error: image_prompt", result)
+        self.assertEqual(result, "Error: image_prompt must describe a scene after prompt cleanup.")
+        mock_get_provider.assert_not_called()
+
+    @patch("tools.image.image_tool.get_image_provider")
+    def test_create_image_rejects_empty_prompt_without_safety_reduction(self, mock_get_provider: MagicMock) -> None:
+        tools = self.make_image_tools(self.config, theater_id="empty_prompt", theater_manager=self.manager)
+        result = tools.create_image("", image_name="empty", display=False)
+        self.assertEqual(result, "Error: image_prompt must describe a scene.")
         mock_get_provider.assert_not_called()
 
     @patch("tools.image.image_tool.get_image_provider")
