@@ -13,14 +13,14 @@ from utils.config_loader import apply_app_config
 
 def generate_theater_image(
     root: Path | None, *, kind: Literal["reference", "stamp", "character", "scene"], prompt: str,
-    references: list[ImageReference],
+    references: list[ImageReference], use_visual_style: bool = True,
 ) -> ImageGenerationResult:
     # Personal stamps use application model settings, without a theater or configured style.
     config = yaml.safe_load((root / "theater.yaml").read_text(encoding="utf-8")) if root is not None else {}
     settings = TypeAdapter(dict[str, JsonValue]).validate_python(apply_app_config(config or {}))
     visuals = TypeAdapter(dict[str, JsonValue]).validate_python(settings.get("visuals") or {})
     style = str(visuals.get("style") or "").strip()
-    if style and root is not None:
+    if use_visual_style and style and root is not None:
         prompt += f"\nStyle: {style}"
     if kind == "stamp":
         prompt += (

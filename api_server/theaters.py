@@ -7,7 +7,7 @@ import json
 import logging
 from pathlib import Path
 import re
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, Literal, Optional, Union
 import uuid
 import yaml
 
@@ -68,6 +68,51 @@ class GenerateTheaterStampRequest(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     prompt: str = Field(min_length=1, max_length=4000)
 
+    def generation_prompt(self) -> str:
+        return self.prompt.strip()
+
+    def use_visual_style(self) -> bool:
+        return True
+
+
+SCENE_PRESETS: dict[str, str] = {
+    "cinematic": "Cinematic environment establishing shot, rich atmosphere and dramatic lighting, cinematic composition, environmental storytelling, no extreme close-up characters, no text, no split-screen.",
+    "tactical_map": "Tactical battle map for tabletop play. Strict top-down orthographic view, no perspective or isometric angle. Clearly readable terrain, traversable paths, cover and obstacles at a consistent scale. Flat overhead lighting. Overlay a clearly visible square grid with evenly spaced horizontal and vertical grid lines, consistent cell size across the entire map, and terrain aligned to the grid. No labels, no text, no tokens or characters, no border.",
+    "regional_map": "Regional cartographic map viewed directly from above. Coherent geography with connected rivers, mountain ranges, forests, coastlines, roads and settlements. Clear terrain boundaries and readable travel routes. Map illustration, no perspective landscape, no labels, no text, no border.",
+}
+
+
+class GenerateTheaterSceneRequest(GenerateTheaterStampRequest):
+    scene_type: Literal["none", "cinematic", "tactical_map", "regional_map"] = "none"
+
+    def generation_prompt(self) -> str:
+        if self.scene_type == "none":
+            return self.prompt.strip()
+        return f"{self.prompt.strip()}\n{SCENE_PRESETS[self.scene_type]}"
+
+    def use_visual_style(self) -> bool:
+        return self.scene_type == "none"
+
+
+def _save_generated_scene(theater_id: str, filename: str, content: bytes) -> None:
+    for root in (
+        theater_manager.theater(theater_id).directory(),
+        theater_repository.theater_path(theater_id),
+    ):
+        target = root / "references" / "scenes" / filename
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(content)
+    theater_manager.notify_storage_changed(theater_id)
+
+
+def _remove_generated_scene(theater_id: str, filename: str) -> None:
+    for root in (
+        theater_manager.theater(theater_id).directory(),
+        theater_repository.theater_path(theater_id),
+    ):
+        (root / "references" / "scenes" / filename).unlink(missing_ok=True)
+    theater_manager.notify_storage_changed(theater_id)
+
 
 def _save_generated_stamp(theater_id: str, filename: str, content: bytes) -> None:
     for root in (
@@ -93,21 +138,36 @@ def _remove_generated_stamp(theater_id: str, filename: str) -> None:
 async def generate_theater_stamp(
     request: Request, theater_id: str, body: GenerateTheaterStampRequest,
 ) -> dict[str, JsonValue]:
+    return await _generate_canvas_asset(request, theater_id, body, "stamp")
+
+
+@app.post("/api/theaters/{theater_id}/scenes/generate")
+async def generate_theater_scene(
+    request: Request, theater_id: str, body: GenerateTheaterSceneRequest,
+) -> dict[str, JsonValue]:
+    return await _generate_canvas_asset(request, theater_id, body, "scene")
+
+
+async def _generate_canvas_asset(
+    request: Request, theater_id: str, body: GenerateTheaterStampRequest,
+    kind: Literal["stamp", "scene"],
+) -> dict[str, JsonValue]:
     _safe_path_param(theater_id, "theater_id")
     user = await get_current_user_async(request)
     if user is None:
-        raise HTTPException(status_code=401, detail="Sign in to generate theater stamps.")
+        raise HTTPException(status_code=401, detail=f"Sign in to generate theater {kind}s.")
     deployment = await asyncio.to_thread(db.get_deployment, theater_id)
     if not deployment or deployment["user_id"] != user["id"]:
-        raise HTTPException(status_code=403, detail="Only the theater owner can generate stamps.")
+        raise HTTPException(status_code=403, detail=f"Only the theater owner can generate {kind}s.")
     name, prompt = body.name.strip(), body.prompt.strip()
     if not name or not prompt:
-        raise HTTPException(status_code=422, detail="Enter a stamp name and image prompt.")
+        raise HTTPException(status_code=422, detail=f"Enter a {kind} name and image prompt.")
+    prompt = body.generation_prompt()
     owner_id = int(user["id"])
     slot_id = await asyncio.to_thread(
         db.acquire_generation_slot,
         owner_id,
-        "stamp",
+        kind,
         theater_id,
         MAX_CONCURRENT_GENERATION_JOBS,
         GENERATION_SLOT_TTL_SECONDS,
@@ -129,37 +189,47 @@ async def generate_theater_stamp(
                     raise HTTPException(status_code=404, detail="Theater files not found.")
         # Image jobs can overlap; hold the billing lock only for account checks and settlement.
         try:
-            image = await asyncio.to_thread(generate_theater_image, root, kind="stamp", prompt=prompt, references=[])
+            # Scene presets already supply composition instructions. The reference path
+            # shares editor model/style settings without adding a conflicting scenic shot.
+            image = await asyncio.to_thread(
+                generate_theater_image, root, kind="reference" if kind == "scene" else kind,
+                prompt=prompt, references=[], use_visual_style=body.use_visual_style(),
+            )
             if not image.image_bytes or image.mime_type != "image/webp":
-                raise ValueError("Stamp generation must return a WebP image.")
+                raise ValueError(f"{kind.title()} generation must return a WebP image.")
         except Exception as error:
-            logger.exception("Theater stamp generation failed")
-            raise HTTPException(status_code=502, detail="Stamp generation failed; no credits were charged.") from error
+            logger.exception("Theater %s generation failed", kind)
+            raise HTTPException(status_code=502, detail=f"{kind.title()} generation failed; no credits were charged.") from error
 
         async with _billing_locks.setdefault(owner_id, asyncio.Lock()):
             filename = ""
             try:
-                safe_name = re.sub(r"[^a-zA-Z0-9_-]", "_", name).strip("_") or "stamp"
+                safe_name = re.sub(r"[^a-zA-Z0-9_-]", "_", name).strip("_") or kind
                 filename = f"{safe_name}_{uuid.uuid4().hex[:12]}.webp"
-                await asyncio.to_thread(_save_generated_stamp, theater_id, filename, image.image_bytes)
+                save = _save_generated_stamp if kind == "stamp" else _save_generated_scene
+                await asyncio.to_thread(save, theater_id, filename, image.image_bytes)
             except Exception as error:
                 if filename:
-                    await asyncio.to_thread(_remove_generated_stamp, theater_id, filename)
-                logger.exception("Theater stamp generation failed")
-                raise HTTPException(status_code=502, detail="Stamp generation failed; no credits were charged.") from error
+                    await asyncio.to_thread(_remove_generated_stamp if kind == "stamp" else _remove_generated_scene, theater_id, filename)
+                logger.exception("Theater %s generation failed", kind)
+                raise HTTPException(status_code=502, detail=f"{kind.title()} generation failed; no credits were charged.") from error
             try:
                 updated = await asyncio.to_thread(
                     db.record_user_usage, owner_id, images_created=1, credit_cost=cost,
-                    idempotency_key=f"stamp:{theater_id}:{filename}",
+                    idempotency_key=f"{kind}:{theater_id}:{filename}",
                 )
             except Exception as error:
-                await asyncio.to_thread(_remove_generated_stamp, theater_id, filename)
-                logger.exception("Theater stamp billing failed")
+                await asyncio.to_thread(_remove_generated_stamp if kind == "stamp" else _remove_generated_scene, theater_id, filename)
+                logger.exception("Theater %s billing failed", kind)
                 raise HTTPException(status_code=503, detail="Could not settle generation credits. Please try again.") from error
             auth_session_cache.invalidate_user(owner_id)
+        if kind == "stamp":
             stamps = theater_manager.theater(theater_id).stamps()
-        await _broadcast_doodle(canvas_states.get(theater_id), {"type": "theater_stamps_updated", "stamps": stamps})
-        return {"stamps": stamps, "credits_charged": cost, "credits": float(updated["credits"])}
+            assets: dict[str, JsonValue] = {"stamps": stamps}
+        else:
+            assets = {"scenes": [dict(scene) for scene in theater_manager.theater(theater_id).scenes()]}
+        await _broadcast_doodle(canvas_states.get(theater_id), {"type": f"theater_{kind}s_updated", **assets})
+        return {**assets, "credits_charged": cost, "credits": float(updated["credits"])}
     finally:
         await asyncio.to_thread(db.release_generation_slot, slot_id)
 

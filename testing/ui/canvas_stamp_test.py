@@ -132,6 +132,7 @@ def test_production_stamp_generation_permissions_pending_and_result(stamp_page: 
     render = html[html.index("        function renderStampManagerGrid(stamps) {"):html.index("        // Canvas-state notifications")]
     stamp_page.add_script_tag(content="""
         const theaterId = 'stage';
+        let activeStampManagerTab = 'stamps';
         let cachedTheaterStamps = [];
         let stampLoadError = '';
         const stampManagerEmpty = document.getElementById('stamp-manager-empty');

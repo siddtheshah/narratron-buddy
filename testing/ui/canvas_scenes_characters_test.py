@@ -27,6 +27,11 @@ def scenes_chars_page() -> Iterator[Page]:
     start_idx = canvas_html.index(start_token)
     end_idx = canvas_html.index(end_token, start_idx)
     extracted_js = canvas_html[start_idx:end_idx]
+    permission_start = canvas_html.index('        function updateStampGenerationPermission() {')
+    naming_end = canvas_html.index("        document.getElementById('stamp-generation-prompt')?.addEventListener", permission_start)
+    scene_start = canvas_html.index("        const scenePresetMenu = ")
+    scene_end = canvas_html.index('        function setStampManagerOpen(open) {', scene_start)
+    generation_js = canvas_html[permission_start:naming_end] + canvas_html[scene_start:scene_end]
 
     shell_html = f"""<!DOCTYPE html>
 <html>
@@ -75,7 +80,7 @@ def scenes_chars_page() -> Iterator[Page]:
             let hasContributorsPermission = () => true;
             let canPlaceStamps = () => true;
             let updateStampManagerPermissionBanner = () => {};
-            let updateStampGenerationPermission = () => {};
+            let isTheaterStampOwner = false;
 
             const stampManagerPane = document.getElementById('stamp-manager-pane');
             const stampManagerTabs = document.getElementById('stamp-manager-tabs');
@@ -126,7 +131,7 @@ def scenes_chars_page() -> Iterator[Page]:
             stampTabStampsBtn?.addEventListener('click', () => switchStampManagerTab('stamps'));
             stampTabScenesBtn?.addEventListener('click', () => switchStampManagerTab('scenes'));
             stampTabCharactersBtn?.addEventListener('click', () => switchStampManagerTab('characters'));
-        """ + "\n" + extracted_js)
+        """ + "\n" + extracted_js + "\n" + generation_js)
 
         yield page
         browser.close()
@@ -720,3 +725,110 @@ def test_asset_manager_tabs_scroll_properly(scenes_chars_page: Page) -> None:
     )
     assert can_scroll_scenes is True
 
+
+
+def test_scene_generator_visibility_and_submission(scenes_chars_page: Page) -> None:
+    page = scenes_chars_page
+    page.evaluate("applyRoleUI(true); setStampManagerOpen(true); switchStampManagerTab('scenes')")
+    expect(page.locator('#scene-generation-form')).to_be_hidden()
+    page.evaluate("isTheaterStampOwner = true; updateStampGenerationPermission()")
+    expect(page.locator('#scene-generation-form')).to_be_visible()
+    expect(page.locator('#stamp-generation-form')).to_be_hidden()
+    requests: list[dict[str, str]] = []
+
+    def generate(route: Route) -> None:
+        requests.append(route.request.post_data_json)
+        route.fulfill(json={"scenes": [{"id": "forest", "name": "Forest map", "url": "/img/forest.png"}], "credits_charged": 4})
+
+    page.route('**/api/theaters/*/scenes/generate', generate)
+    expect(page.locator('#scene-generation-type')).to_have_value('none')
+    expect(page.locator('#scene-generation-type-label')).to_have_text('No preset')
+    assert page.locator('#scene-generation-submit').count() == 0
+    page.locator('#scene-generation-presets summary').click()
+    menu = page.locator('.scene-preset-menu').bounding_box()
+    trigger = page.locator('#scene-generation-presets summary').bounding_box()
+    assert menu is not None and trigger is not None
+    assert menu['y'] + menu['height'] < trigger['y']
+    expect(page.get_by_role('button', name='Cinematic', exact=True)).to_be_visible()
+    page.get_by_role('button', name='Tactical Map', exact=True).click()
+    expect(page.locator('.scene-preset-menu')).to_be_hidden()
+    page.locator('#scene-generation-prompt').fill('A forest clearing')
+    page.locator('#scene-generation-prompt').press('Enter')
+    expect(page.locator('#scene-generation-status')).to_contain_text('Charged 4 credits')
+    expect(page.locator('#scenes-manager-grid .scene-card')).to_have_count(1)
+    assert requests == [{"name": "forest clearing", "prompt": "A forest clearing", "scene_type": "tactical_map"}]
+    expect(page.locator('#scene-generation-prompt')).to_have_value('')
+    page.evaluate("cachedTheaterCharacters = []; switchStampManagerTab('characters')")
+    expect(page.locator('#scene-generation-form')).to_be_hidden()
+    expect(page.locator('#scene-generation-status')).to_be_hidden()
+    page.evaluate("switchStampManagerTab('stamps')")
+    expect(page.locator('#stamp-generation-form')).to_be_visible()
+    expect(page.locator('#scene-generation-form')).to_be_hidden()
+
+
+def test_scene_generator_preserves_prompt_after_failure(scenes_chars_page: Page) -> None:
+    page = scenes_chars_page
+
+    def fail_generation(route: Route) -> None:
+        route.fulfill(status=502, json={"detail": "Generation failed; no credits were charged."})
+
+    page.route('**/api/theaters/*/scenes/generate', fail_generation)
+    page.evaluate("isTheaterStampOwner = true; applyRoleUI(true); setStampManagerOpen(true); switchStampManagerTab('scenes')")
+    page.locator('#scene-generation-presets summary').click()
+    page.get_by_role('button', name='Regional Map', exact=True).click()
+    page.locator('#scene-generation-prompt').fill('An island kingdom')
+    page.locator('#scene-generation-prompt').press('Enter')
+    expect(page.locator('#scene-generation-status')).to_contain_text('no credits were charged')
+    expect(page.locator('#scene-generation-prompt')).to_have_value('An island kingdom')
+    expect(page.locator('#scene-generation-type')).to_have_value('regional_map')
+    expect(page.locator('#scene-generation-form')).to_have_attribute('aria-busy', 'false')
+
+
+@pytest.mark.parametrize("older_succeeds", [True, False])
+def test_scene_generation_pending_cards_and_overlapping_jobs(
+    scenes_chars_page: Page, older_succeeds: bool,
+) -> None:
+    page = scenes_chars_page
+    jobs: list[Route] = []
+
+    def hold_generation(route: Route) -> None:
+        jobs.append(route)
+
+    page.route('**/api/theaters/*/scenes/generate', hold_generation)
+    page.evaluate("isTheaterStampOwner = true; cachedTheaterScenes = []; applyRoleUI(true); setStampManagerOpen(true); switchStampManagerTab('scenes')")
+    prompt = page.locator('#scene-generation-prompt')
+    prompt.fill('Forest clearing')
+    prompt.press('Enter')
+    expect(page.locator('.scene-card-generating')).to_have_count(1)
+    expect(prompt).to_have_value('')
+    expect(prompt).to_be_editable()
+    expect(page.locator('#scenes-manager-empty')).to_be_hidden()
+    expect(page.locator('.scene-card-generating')).to_have_attribute('aria-busy', 'true')
+    assert page.locator('.scene-card-generating [role="button"]').count() == 0
+    assert page.locator('.scene-card-generating .scene-card-push-badge').count() == 0
+    page.evaluate("cachedTheaterCharacters = []; switchStampManagerTab('characters'); switchStampManagerTab('scenes')")
+    expect(page.locator('.scene-card-generating')).to_have_count(1)
+    prompt.fill('Island kingdom')
+    prompt.press('Enter')
+    expect(page.locator('.scene-card-generating')).to_have_count(2)
+    expect(page.locator('#scene-generation-status')).to_contain_text('2 scenes generating')
+    expect(page.locator('#stamp-manager-count')).to_contain_text('2 generating')
+    assert len(jobs) == 2
+    # A newer snapshot can arrive before the response to the first request.
+    scenes = [{"id": "island", "name": "Island kingdom"}]
+    if older_succeeds:
+        scenes.append({"id": "forest", "name": "Forest clearing"})
+    jobs[1].fulfill(json={"scenes": scenes, "credits_charged": 4})
+    expect(page.locator('.scene-card-generating')).to_have_count(1)
+    expect(page.locator('#scene-generation-status')).to_contain_text('1 scene generating')
+    # A failed older job must preserve a new draft, and both outcomes clear its card.
+    prompt.fill('Next scene draft')
+    if older_succeeds:
+        jobs[0].fulfill(json={"scenes": [{"id": "forest", "name": "Forest clearing"}], "credits_charged": 4})
+    else:
+        jobs[0].fulfill(status=429, json={"detail": "Too many concurrent generation jobs."})
+        expect(page.locator('#scene-generation-status')).to_contain_text('Too many concurrent generation jobs')
+    expect(page.locator('.scene-card-generating')).to_have_count(0)
+    expect(page.locator('#scenes-manager-grid .scene-card')).to_have_count(2 if older_succeeds else 1)
+    expect(prompt).to_have_value('Next scene draft')
+    expect(page.locator('#scene-generation-form')).to_have_attribute('aria-busy', 'false')

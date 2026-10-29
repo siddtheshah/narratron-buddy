@@ -68,14 +68,15 @@ def stamps(tmp_path: Path) -> Iterator[StampHarness]:
         yield StampHarness(client, manager, repository, database, provider, broadcast)
 
 
+@pytest.mark.parametrize("asset", ["stamps", "scenes"])
 @pytest.mark.parametrize(("user_id", "status"), [(None, 401), (8, 403), (9, 403), (10, 403)])
 def test_only_owner_can_generate_not_orator_or_contributor(
-    stamps: StampHarness, user_id: int | None, status: int,
+    stamps: StampHarness, user_id: int | None, status: int, asset: str,
 ) -> None:
     stamps.client.headers.pop("x-test-user")
     if user_id is not None:
         stamps.client.headers["x-test-user"] = str(user_id)
-    result = stamps.client.post("/api/theaters/stage/stamps/generate", json={"name": "Goblin", "prompt": "Goblin"})
+    result = stamps.client.post(f"/api/theaters/stage/{asset}/generate", json={"name": "Goblin", "prompt": "Goblin"})
     assert result.status_code == status
     stamps.provider.generate.assert_not_called()
     stamps.database.record_user_usage.assert_not_called()
@@ -150,9 +151,10 @@ def test_storage_failure_removes_partial_stamp_without_charging(stamps: StampHar
     stamps.broadcast.assert_not_awaited()
 
 
+@pytest.mark.parametrize("asset", ["stamps", "scenes"])
 @pytest.mark.parametrize("credits", [10, 4])
 def test_stamp_jobs_generate_concurrently_and_settle_with_bounded_overdraft(
-    stamps: StampHarness, credits: int,
+    stamps: StampHarness, credits: int, asset: str,
 ) -> None:
     both_generating = Barrier(2)
     image = stamps.provider.generate.return_value
@@ -172,7 +174,7 @@ def test_stamp_jobs_generate_concurrently_and_settle_with_bounded_overdraft(
 
     def submit(name: str) -> int:
         return stamps.client.post(
-            "/api/theaters/stage/stamps/generate", json={"name": name, "prompt": name},
+            f"/api/theaters/stage/{asset}/generate", json={"name": name, "prompt": name},
         ).status_code
 
     stamps.provider.generate.side_effect = generate
@@ -184,16 +186,117 @@ def test_stamp_jobs_generate_concurrently_and_settle_with_bounded_overdraft(
     assert results == [200, 200]
     assert stamps.provider.generate.call_count == 2
     assert stamps.database.record_user_usage.call_count == expected_count
-    assert len(stamps.manager.theater("stage").stamps()) == expected_count
+    saved = stamps.manager.theater("stage").stamps() if asset == "stamps" else stamps.manager.theater("stage").scenes()
+    assert len(saved) == expected_count
+    assert stamps.database.acquire_generation_slot.call_count == expected_count
+    assert stamps.database.release_generation_slot.call_count == expected_count
     assert account["credits"] == credits - expected_count * 4
 
 
-def test_stamp_generation_beyond_concurrency_cap_rejected_with_429(stamps: StampHarness) -> None:
+@pytest.mark.parametrize("asset", ["stamps", "scenes"])
+def test_generation_beyond_concurrency_cap_rejected_with_429(stamps: StampHarness, asset: str) -> None:
     stamps.database.acquire_generation_slot.return_value = None
     result = stamps.client.post(
-        "/api/theaters/stage/stamps/generate", json={"name": "Dragon", "prompt": "Dragon"},
+        f"/api/theaters/stage/{asset}/generate", json={"name": "Dragon", "prompt": "Dragon"},
     )
     assert result.status_code == 429
     assert "Too many concurrent generation jobs" in result.json()["detail"]
     stamps.provider.generate.assert_not_called()
     stamps.database.record_user_usage.assert_not_called()
+
+
+@pytest.mark.parametrize(("scene_type", "instructions"), [
+    ("cinematic", "Cinematic environment establishing shot"),
+    ("tactical_map", "Strict top-down orthographic view"),
+    ("regional_map", "Coherent geography with connected rivers"),
+])
+def test_scene_preset_saves_persistent_scene_and_charges_image_rate(
+    stamps: StampHarness, scene_type: str, instructions: str,
+) -> None:
+    result = stamps.client.post("/api/theaters/stage/scenes/generate", json={
+        "name": "../Forest", "prompt": "A forest clearing", "scene_type": scene_type,
+    })
+    assert result.status_code == 200, result.text
+    payload = result.json()
+    scene = payload["scenes"][0]
+    path = Path(scene["path"])
+    assert path.parent == stamps.manager.theater("stage").scenes_dir()
+    assert path.read_bytes() == stamps.provider.generate.return_value.image_bytes
+    assert (stamps.repository.theater_path("stage") / "references" / "scenes" / path.name).read_bytes() == path.read_bytes()
+    request = stamps.provider.generate.call_args.args[0]
+    assert request.prompt.startswith("A forest clearing\n")
+    assert instructions in request.prompt
+    assert "Style: Fantasy" not in request.prompt
+    assert request.aspect_ratio == "16:9"
+    assert request.background == "opaque"
+    if scene_type == "tactical_map":
+        assert "clearly visible square grid" in request.prompt
+        assert "horizontal and vertical grid lines" in request.prompt
+        assert "no grid" not in request.prompt
+    if scene_type != "cinematic":
+        assert "Establishing shot" not in request.prompt
+        assert "Scenic environment" not in request.prompt
+    assert payload["credits_charged"] == 4
+    stamps.database.acquire_generation_slot.assert_called_once_with(
+        7, "scene", "stage", theaters.MAX_CONCURRENT_GENERATION_JOBS, theaters.GENERATION_SLOT_TTL_SECONDS,
+    )
+    stamps.database.release_generation_slot.assert_called_once_with(stamps.database.acquire_generation_slot.return_value)
+    assert stamps.database.record_user_usage.call_args.kwargs["images_created"] == 1
+    assert stamps.broadcast.await_args.args[1] == {"type": "theater_scenes_updated", "scenes": payload["scenes"]}
+    rebuilt = stamps.manager.base_dir / "rebuilt"
+    assert stamps.repository.reconstruct_theater("stage", rebuilt)
+    assert (rebuilt / "references" / "scenes" / path.name).read_bytes() == path.read_bytes()
+
+
+@pytest.mark.parametrize("failure", ["credits", "provider", "billing", "storage"])
+def test_scene_generation_failure_does_not_leave_a_scene(stamps: StampHarness, failure: str) -> None:
+    expected_status = 502
+    if failure == "credits":
+        stamps.database.get_user_by_id.return_value = {"id": 7, "credits": 0}
+        expected_status = 402
+    elif failure == "provider":
+        stamps.provider.generate.side_effect = RuntimeError("Provider failed")
+    elif failure == "billing":
+        stamps.database.record_user_usage.side_effect = RuntimeError("Billing failed")
+        expected_status = 503
+
+    def save_scene(theater_id: str, filename: str, content: bytes) -> None:
+        target = stamps.manager.theater(theater_id).scenes_dir() / filename
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(content)
+        if failure == "storage":
+            raise OSError("Repository unavailable")
+
+    original_save = theaters._save_generated_scene
+    with patch.object(theaters, "_save_generated_scene", side_effect=save_scene if failure == "storage" else original_save):
+        result = stamps.client.post("/api/theaters/stage/scenes/generate", json={"name": "Forest", "prompt": "Forest"})
+    assert result.status_code == expected_status
+    assert stamps.manager.theater("stage").scenes() == []
+    assert list((stamps.repository.theater_path("stage") / "references" / "scenes").glob("*.webp")) == []
+    stamps.broadcast.assert_not_awaited()
+    if failure != "billing":
+        stamps.database.record_user_usage.assert_not_called()
+    stamps.database.release_generation_slot.assert_called_once()
+
+
+@pytest.mark.parametrize("body", [
+    {"name": "Forest", "prompt": "Forest", "scene_type": "unknown"},
+    {"name": "Forest", "prompt": "   "},
+    {"name": "Forest", "prompt": "x" * 4001},
+])
+def test_invalid_scene_input_does_not_generate(stamps: StampHarness, body: dict[str, str]) -> None:
+    assert stamps.client.post("/api/theaters/stage/scenes/generate", json=body).status_code == 422
+    stamps.provider.generate.assert_not_called()
+
+
+@pytest.mark.parametrize("explicit_none", [False, True])
+def test_no_scene_preset_preserves_user_prompt_and_theater_style(
+    stamps: StampHarness, explicit_none: bool,
+) -> None:
+    body = {"name": "Forest", "prompt": "A forest clearing"}
+    if explicit_none:
+        body["scene_type"] = "none"
+    result = stamps.client.post("/api/theaters/stage/scenes/generate", json=body)
+    assert result.status_code == 200, result.text
+    request = stamps.provider.generate.call_args.args[0]
+    assert request.prompt == "A forest clearing\nStyle: Fantasy"

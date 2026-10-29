@@ -1204,6 +1204,7 @@
     overflow-wrap: anywhere;
 }
 
+#scene-generation-status,
 #stamp-generation-status { color: #94a3b8; font-size: 0.75rem; padding: 8px 1rem; }
 
 /* Scenes Grid and Cards */
@@ -1438,3 +1439,46 @@
     overflow: hidden;
     text-align: center;
 }
+
+#scene-generation-form { gap: 8px; }
+#scene-generation-presets { position: relative; align-self: flex-start; }
+#scene-generation-presets summary,
+.scene-preset-menu button {
+    padding: 7px 10px;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 8px;
+    background: #1e293b;
+    color: #fff;
+    font: inherit;
+    cursor: pointer;
+}
+#scene-generation-presets summary { list-style: none; }
+#scene-generation-presets summary::-webkit-details-marker { display: none; }
+.scene-preset-menu {
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: 0;
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+    min-width: 160px;
+    padding: 4px;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 10px;
+    background: #0f172a;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+.scene-preset-menu button { border: 0; text-align: left; background: transparent; }
+.scene-preset-menu button:hover,
+.scene-preset-menu button:focus-visible,
+.scene-preset-menu button[aria-pressed="true"] { background: #334155; }
+
+.scene-card-generating,
+.scene-card-generating:hover,
+.scene-card-generating:active {
+    cursor: progress;
+    border-style: dashed;
+    border-color: rgba(129, 140, 248, 0.5);
+    transform: none;
+}
+.scene-card-generating .stamp-card-progress { padding: 0 10px 8px; }

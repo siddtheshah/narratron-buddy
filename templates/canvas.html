@@ -3652,7 +3652,23 @@
             </div>
             <div id="stamp-generation-status" role="status" aria-live="polite" hidden>Uses image generation credits.
                 Saved to this theater for everyone to use.</div>
+            <div id="scene-generation-status" role="status" aria-live="polite" hidden>Uses image generation credits. Saved to this theater.</div>
             <div class="stamp-manager-footer">
+                <form id="scene-generation-form" class="stamp-generation-form" hidden>
+                    <input id="scene-generation-type" type="hidden" value="none">
+                    <details id="scene-generation-presets">
+                        <summary aria-label="Scene type"><span id="scene-generation-type-label">No preset</span> ▴</summary>
+                        <div class="scene-preset-menu" role="group" aria-label="Scene types">
+                            <button type="button" data-scene-type="none" aria-pressed="true">No preset</button>
+                            <button type="button" data-scene-type="cinematic" aria-pressed="false">Cinematic</button>
+                            <button type="button" data-scene-type="tactical_map" aria-pressed="false">Tactical Map</button>
+                            <button type="button" data-scene-type="regional_map" aria-pressed="false">Regional Map</button>
+                        </div>
+                    </details>
+                    <textarea id="scene-generation-prompt" maxlength="4000" rows="2" wrap="soft"
+                        aria-label="Scene image prompt" aria-keyshortcuts="Enter" required
+                        placeholder="describe a scene or map and press (enter)" autocomplete="off"></textarea>
+                </form>
                 <form id="stamp-generation-form" class="stamp-generation-form" hidden>
                     <textarea id="stamp-generation-prompt" maxlength="4000" rows="2" wrap="soft"
                         aria-label="Stamp image prompt" aria-keyshortcuts="Enter" required
@@ -6117,6 +6133,11 @@
             socket.onerror = () => socket.close();
             socket.onmessage = (event) => {
                 const data = JSON.parse(event.data);
+                if (data.type === 'theater_scenes_updated') {
+                    cachedTheaterScenes = data.scenes || [];
+                    if (isStampManagerOpen && activeStampManagerTab === 'scenes') renderScenesManagerGrid(cachedTheaterScenes);
+                    return;
+                }
                 if (data.type === 'theater_stamps_updated') {
                     cachedTheaterStamps = data.stamps || [];
                     if (isStampManagerOpen) renderStampManagerGrid(cachedUserStamps || []);
@@ -6489,8 +6510,10 @@
 
         function updateStampGenerationPermission() {
             const form = document.getElementById('stamp-generation-form');
-            if (form) form.hidden = !isTheaterStampOwner;
-            document.getElementById('stamp-generation-status').hidden = !isTheaterStampOwner;
+            if (form) form.hidden = !isTheaterStampOwner || activeStampManagerTab !== 'stamps';
+            document.getElementById('scene-generation-form').hidden = !isTheaterStampOwner || activeStampManagerTab !== 'scenes';
+            document.getElementById('scene-generation-status').hidden = !isTheaterStampOwner || activeStampManagerTab !== 'scenes';
+            document.getElementById('stamp-generation-status').hidden = !isTheaterStampOwner || activeStampManagerTab !== 'stamps';
         }
 
         const stampNameStopwords = new Set((
@@ -6553,6 +6576,86 @@
                 pendingStampGenerations.delete(jobId);
                 renderStampManagerGrid(cachedUserStamps || []);
                 updateStampGenerationStatus(resultMessage);
+            }
+        });
+
+        const scenePresetMenu = document.getElementById('scene-generation-presets');
+        const pendingSceneGenerations = new Map();
+        let nextSceneGenerationId = 0;
+
+        function updateSceneGenerationStatus(message = '') {
+            const count = pendingSceneGenerations.size;
+            const pending = count ? `${count} scene${count === 1 ? '' : 's'} generating. You can generate another while you wait.` : '';
+            document.getElementById('scene-generation-status').textContent = [message, pending].filter(Boolean).join(' ');
+            document.getElementById('scene-generation-form').setAttribute('aria-busy', String(count > 0));
+        }
+
+        scenePresetMenu.querySelectorAll('[data-scene-type]').forEach(option => {
+            option.addEventListener('click', () => {
+                document.getElementById('scene-generation-type').value = option.dataset.sceneType;
+                document.getElementById('scene-generation-type-label').textContent = option.textContent;
+                scenePresetMenu.querySelectorAll('[data-scene-type]').forEach(item => {
+                    item.setAttribute('aria-pressed', String(item === option));
+                });
+                scenePresetMenu.open = false;
+                scenePresetMenu.querySelector('summary').focus();
+            });
+        });
+        document.addEventListener('pointerdown', event => {
+            if (!scenePresetMenu.contains(event.target)) scenePresetMenu.open = false;
+        });
+        scenePresetMenu.addEventListener('keydown', event => {
+            if (event.key === 'Escape') {
+                scenePresetMenu.open = false;
+                scenePresetMenu.querySelector('summary').focus();
+            }
+        });
+        document.getElementById('scene-generation-prompt').addEventListener('keydown', event => {
+            if (event.key !== 'Enter' || event.isComposing) return;
+            event.preventDefault();
+            if (!event.repeat) document.getElementById('scene-generation-form').requestSubmit();
+        });
+
+        document.getElementById('scene-generation-form')?.addEventListener('submit', async event => {
+            event.preventDefault();
+            if (!isTheaterStampOwner) return;
+            const promptInput = document.getElementById('scene-generation-prompt');
+            const typeInput = document.getElementById('scene-generation-type');
+            const prompt = promptInput.value.trim();
+            if (!prompt) return;
+            const sceneType = typeInput.value;
+            const name = stampNameFromPrompt(prompt);
+            const generationTheaterId = theaterId;
+            const jobId = ++nextSceneGenerationId;
+            pendingSceneGenerations.set(jobId, { name, prompt, sceneType });
+            promptInput.value = '';
+            renderScenesManagerGrid(cachedTheaterScenes || []);
+            updateSceneGenerationStatus();
+            let resultMessage = '';
+            try {
+                const response = await fetch(`/api/theaters/${encodeURIComponent(generationTheaterId)}/scenes/generate`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, prompt, scene_type: sceneType }),
+                });
+                const data = await response.json();
+                if (!response.ok) throw new Error(typeof data.detail === 'string' ? data.detail : 'Unable to generate scene.');
+                if (theaterId !== generationTheaterId) return;
+                // Concurrent requests can return snapshots in a different order.
+                const mergedScenes = new Map((cachedTheaterScenes || []).map(scene => [scene.id, scene]));
+                data.scenes.forEach(scene => mergedScenes.set(scene.id, scene));
+                cachedTheaterScenes = [...mergedScenes.values()];
+                resultMessage = `“${name}” saved and ready to push to canvas. Charged ${data.credits_charged} credits.`;
+            } catch (error) {
+                if (theaterId !== generationTheaterId) return;
+                resultMessage = `“${name}”: ${error.message || 'Unable to generate scene. Please try again.'}`;
+                if (!promptInput.value.trim()) promptInput.value = prompt;
+            } finally {
+                pendingSceneGenerations.delete(jobId);
+                if (theaterId === generationTheaterId) {
+                    if (activeStampManagerTab === 'scenes') renderScenesManagerGrid(cachedTheaterScenes || []);
+                    updateSceneGenerationStatus(resultMessage);
+                }
             }
         });
 
@@ -7449,6 +7552,9 @@
             const headerTitle = document.getElementById('stamp-manager-header-title');
             const stampGenForm = document.getElementById('stamp-generation-form');
             const stampGenStatus = document.getElementById('stamp-generation-status');
+            const canGenerateScene = typeof isTheaterStampOwner !== 'undefined' && isTheaterStampOwner && tab === 'scenes';
+            document.getElementById('scene-generation-form').hidden = !canGenerateScene;
+            document.getElementById('scene-generation-status').hidden = !canGenerateScene;
 
             if (tab === 'playlists' || tab === 'animations') {
                 if (headerIcon) headerIcon.textContent = tab === 'playlists' ? '♫' : '▶';
@@ -7569,12 +7675,32 @@
 
         function renderScenesManagerGrid(scenes) {
             if (!scenesManagerGrid) return;
+            scenes = scenes || [];
             scenesManagerGrid.innerHTML = '';
+            pendingSceneGenerations.forEach((job, jobId) => {
+                const card = document.createElement('div');
+                card.className = 'scene-card scene-card-generating';
+                card.dataset.generationId = String(jobId);
+                card.setAttribute('aria-busy', 'true');
+                card.setAttribute('aria-label', `${job.name}: Generating`);
+                card.title = `Generating “${job.name}” — ${job.prompt}`;
+                const thumb = document.createElement('div');
+                thumb.className = 'scene-card-thumb-container stamp-generation-placeholder';
+                thumb.setAttribute('aria-hidden', 'true');
+                const name = document.createElement('div');
+                name.className = 'scene-card-name';
+                name.textContent = job.name;
+                const progress = document.createElement('div');
+                progress.className = 'stamp-card-progress';
+                progress.textContent = 'Generating…';
+                card.append(thumb, name, progress);
+                scenesManagerGrid.appendChild(card);
+            });
             if (stampManagerCount && activeStampManagerTab === 'scenes') {
-                stampManagerCount.textContent = `${scenes.length}`;
-                stampManagerCount.title = `${scenes.length} adventure scenes`;
+                stampManagerCount.textContent = `${scenes.length}` + (pendingSceneGenerations.size ? ` · ${pendingSceneGenerations.size} generating` : '');
+                stampManagerCount.title = `${scenes.length} adventure scenes` + (pendingSceneGenerations.size ? ` · ${pendingSceneGenerations.size} generating` : '');
             }
-            if (!scenes || scenes.length === 0) {
+            if (scenes.length === 0 && pendingSceneGenerations.size === 0) {
                 if (scenesManagerEmpty) {
                     scenesManagerEmpty.style.display = 'flex';
                     if (scenesEmptyMessage) scenesEmptyMessage.textContent = 'No scenes found for this adventure.';
