@@ -2139,7 +2139,6 @@
                 }
 
                 if (response.ok && result.theater_id) {
-                    await checkAuthStatus();
                     window.location.href = window.NarratronNavigation.theaterUrl(result.theater_id);
                 } else {
                     alert('Error deploying theater: ' + (result.detail || `Server error (${response.status})`));
