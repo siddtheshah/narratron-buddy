@@ -1032,7 +1032,9 @@
             box-sizing: border-box;
             cursor: pointer;
             overflow: hidden;
-            transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+            /* Keep layout changes immediate so suggestion text never wraps at intermediate widths. */
+            transition: background 0.4s ease, border-color 0.4s ease,
+                border-radius 0.4s ease, box-shadow 0.4s ease;
             box-shadow: 0 10px 25px rgba(0, 0, 0, 0.4);
         }
 
