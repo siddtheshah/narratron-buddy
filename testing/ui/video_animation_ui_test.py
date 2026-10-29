@@ -5,7 +5,7 @@ from testing.ui.base import UITestCase
 
 
 class TestVideoAnimationUI(UITestCase):
-    def test_video_animation_is_exposed_silent_and_looping_in_canvas_renderers(self):
+    def test_video_animation_is_exposed_silent_and_looping_in_canvas_renderers(self) -> None:
         """Verify video animation state exposes loop/muted flags and canvas-renderers wires them."""
         theater_id = "dummy_video_theater"
         manager = self.make_canvas_state(theater_id)
@@ -40,6 +40,7 @@ class TestVideoAnimationUI(UITestCase):
         self.assertEqual(state["history"][0]["prompt"], "A soaring griffin over snow-capped mountains.")
         self.assertEqual(state["history"][0]["animation"]["type"], "video")
 
+        media = (PROJECT_ROOT / "static" / "js" / "canvas-media.js").read_text(encoding="utf-8")
         renderer = (PROJECT_ROOT / "static" / "js" / "canvas-renderers.js").read_text(encoding="utf-8")
         self.assertIn("video_duration_seconds", renderer)
         canvas = (PROJECT_ROOT / "templates" / "canvas.html").read_text(encoding="utf-8")
@@ -63,7 +64,6 @@ class TestVideoAnimationUI(UITestCase):
         self.assertIn("currentVideo.parentElement.removeChild(currentVideo)", renderer)
 
         # Verify wiring in canvas and OBS templates
-        self.assertIn("playVideoAnimation", canvas)
-        self.assertIn("playVideoAnimation", obs)
-        self.assertIn("video-loop-silent", canvas)
-        self.assertIn("video-loop-silent", obs)
+        self.assertIn("playCanvasAnimation", canvas)
+        self.assertIn("playCanvasAnimation", obs)
+        self.assertIn("playVideoAnimation", media)

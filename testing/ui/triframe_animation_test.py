@@ -9,7 +9,7 @@ from testing.ui.base import UITestCase
 
 
 class TestTriFrameAnimationUI(UITestCase):
-    def test_dummy_frames_are_exposed_and_wired_to_canvas_renderers(self):
+    def test_dummy_frames_are_exposed_and_wired_to_canvas_renderers(self) -> None:
         """Exercise the exact nested output paths the browser receives."""
         theater_id = "dummy_triframe"
         manager = self.make_canvas_state(theater_id)
@@ -33,6 +33,7 @@ class TestTriFrameAnimationUI(UITestCase):
         ])
         self.assertTrue(all(Path(path).is_file() for path in frame_paths))
 
+        media = (PROJECT_ROOT / "static" / "js" / "canvas-media.js").read_text(encoding="utf-8")
         renderer = (PROJECT_ROOT / "static" / "js" / "canvas-renderers.js").read_text(encoding="utf-8")
         canvas = (PROJECT_ROOT / "templates" / "canvas.html").read_text(encoding="utf-8")
         obs = (PROJECT_ROOT / "templates" / "obs.html").read_text(encoding="utf-8")
@@ -41,7 +42,7 @@ class TestTriFrameAnimationUI(UITestCase):
         self.assertIn("crossfadeDuration", renderer)
         self.assertIn('image.style.opacity = "0"', renderer)
         self.assertIn('backgroundLayer.style.backgroundImage = "none"', renderer)
-        self.assertIn("playTriFrameAnimation(animation)", canvas)
-        self.assertIn("playLayeredAnimation", canvas)
-        self.assertIn("playImageSequence(data.animation.frames", obs)
-        self.assertIn("playLayeredAnimation", obs)
+        self.assertIn("playCanvasAnimation", canvas)
+        self.assertIn("playCanvasAnimation", obs)
+        self.assertIn("playSequence", media)
+        self.assertIn("playLayeredAnimation", media)
