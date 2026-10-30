@@ -15,6 +15,10 @@ example_adventure/
 ├── theater.yaml            # Story planner settings, agent persona, and runtime config
 ├── planning.yaml           # Deep planner schemas, sticky definitions, and initial notes
 ├── README.md               # This reference file
+├── animations/             # Standalone animations and video loops
+│   └── book_of_origins_portal/
+│       ├── video.json
+│       └── video.mp4
 ├── lore/                   # Contextual lore injected into the story modules
 │   ├── RESPONDER.md         # Pinned immediate-response instructions
 │   ├── RECORDER.md          # Pinned factual-recording and game-control instructions

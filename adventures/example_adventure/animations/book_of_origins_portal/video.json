@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "id": "book_of_origins_portal",
+  "type": "video",
+  "scene_prompt": "Opening a book while in the middle of the mostly dark library of origins. As the book opens, the camera pulls back to see a column of dream and story essence rise up and out of the book, which expands into a vast portal that leads to a mythical kingdom with a castle.",
+  "effective_prompt": "Opening a book while in the middle of the mostly dark library of origins. As the book opens, the camera pulls back to see a column of dream and story essence rise up and out of the book, which expands into a vast portal that leads to a mythical kingdom with a castle.\n\nStyle: surreal fantasy library of discarded stories, floating luminous pages, glowing amber lanterns, towering endless bookshelves, dusty manuscripts, soft atmospheric haze, digital painting, loopable",
+  "video_path": "animations/book_of_origins_portal/video.mp4",
+  "video_url": "https://v3b.fal.media/files/b/0ab07b79/FqqZfB823n_MHXhViXBdm_minimax-h3.mp4",
+  "mime_type": "video/mp4",
+  "video_duration_seconds": 5,
+  "loop": true,
+  "muted": true,
+  "provider": {
+    "provider": "fal-minimax-h3-turbo",
+    "model": "fal-ai/minimax-h3-turbo/text-to-video",
+    "request_id": null,
+    "usage": {
+      "timings": {
+        "inference": 2.7949585860005755
+      }
+    }
+  }
+}
