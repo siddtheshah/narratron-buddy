@@ -1125,9 +1125,10 @@
     <section id="join-adventure" class="join-card" aria-labelledby="join-theater-title">
       <button type="button" class="join-card-switch" data-join-card="friends" aria-controls="friend-theaters">Friends' theaters <span aria-hidden="true">→</span></button>
       <h2 id="join-theater-title">Join a theater</h2>
-      <p>Ask the theater host for their 8-character join key</p>
+      <p id="join-key-hint">Enter the host's six-character code, or paste the full KEY- prefixed key.</p>
       <div class="input-group">
-        <input type="text" id="joinKeyInput" class="join-input" placeholder="KEY-XXXXXX" maxlength="12"
+        <input type="text" id="joinKeyInput" class="join-input" placeholder="XXXXXX" maxlength="12"
+          aria-label="Theater code" aria-describedby="join-key-hint"
           autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false"
           onkeydown="if(event.key==='Enter') submitJoinKey()">
         <button class="join-btn" onclick="submitJoinKey()">Join</button>
@@ -1407,7 +1408,8 @@
     async function submitJoinKey() {
       const input = document.getElementById('joinKeyInput');
       const err = document.getElementById('errorMessage');
-      const key = input.value.trim();
+      const enteredKey = input.value.trim().toUpperCase();
+      const key = /^[A-Z0-9]{6}$/.test(enteredKey) ? `KEY-${enteredKey}` : enteredKey;
 
       err.style.display = 'none';
       err.textContent = '';
@@ -1438,11 +1440,6 @@
       }
     }
 
-    document.getElementById('joinKeyInput').addEventListener('keypress', (e) => {
-      if (e.key === 'Enter') {
-        submitJoinKey();
-      }
-    });
   </script>
 </body>
 
