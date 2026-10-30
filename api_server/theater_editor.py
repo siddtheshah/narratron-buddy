@@ -28,6 +28,7 @@ from providers.image_provider import ImageReference
 from providers.music_provider import MusicGenerationRequest
 from providers.registry import get_music_provider
 from services.theater_image_generation import generate_theater_image
+from services.theater_media_generation import generate_theater_media
 from services.theater_checkout import checkout_locks as _draft_locks, refresh_checkout_metadata, save_theater_checkout
 from services.generation_billing import (
     billing_locks as _billing_locks,
@@ -513,6 +514,20 @@ def generate_asset(info: DraftInfo, body: GenerationRequest) -> tuple[str, bytes
     return f"playlists/{playlist}/{name}_{identifier}{extension}", music.audio_bytes
 
 
+def generate_assets(info: DraftInfo, body: GenerationRequest) -> tuple[str, dict[str, bytes]]:
+    """Stage every file for one generation before persistence and billing."""
+    if body.kind == "animation":
+        name = re.sub(r"[^a-zA-Z0-9_-]", "_", body.name).strip("_") or "animation"
+        identifier = f"{name}_{uuid.uuid4().hex[:12]}"
+        files = generate_theater_media(
+            store().directory(info.theater_id), kind="animation", prompt=body.prompt,
+            identifier=identifier, animation_type=body.animation_type,
+        )
+        return f"output/animations/{identifier}/{body.animation_type}.json", files
+    path, content = generate_asset(info, body)
+    return path, {path: content}
+
+
 @app.post("/api/theater-editor/{theater_id}/generate")
 async def generate_draft_asset(theater_id: str, body: GenerateDraftRequest, request: Request) -> dict[str, JsonValue]:
     owner_id = await require_user(request)
@@ -534,12 +549,12 @@ async def generate_draft_asset(theater_id: str, body: GenerateDraftRequest, requ
             info = await require_draft(request, theater_id)
             check_revision(info, body.revision)
             rates = pricing_controller.get_rates()
-            cost = rates["image_credit_rate" if body.kind in ("reference", "stamp", "character", "scene") else "music_credit_rate"]
+            cost = rates["layered_animation_credit_rate" if body.kind == "animation" else "music_credit_rate" if body.kind == "playlist" else "image_credit_rate"]
             user = await asyncio.to_thread(db.get_user_by_id, owner_id)
             if not user or user["credits"] < cost:
                 raise HTTPException(status_code=402, detail=f"This generation requires {cost:g} credits. Top up on /deploy.")
         try:
-            path, content = await asyncio.to_thread(generate_asset, info, body)
+            path, files = await asyncio.to_thread(generate_assets, info, body)
         except Exception as error:
             logger.exception("Theater builder asset generation failed")
             raise HTTPException(status_code=502, detail="Generation failed; no credits were charged.") from error
@@ -548,7 +563,7 @@ async def generate_draft_asset(theater_id: str, body: GenerateDraftRequest, requ
             try:
                 info = await require_draft(request, theater_id)
                 # Validate capacity and persist before charging, just like successful live generation.
-                await asyncio.to_thread(write_checkout, info, {path: content})
+                await asyncio.to_thread(write_checkout, info, files)
             except HTTPException:
                 raise
             except Exception as error:
@@ -559,11 +574,13 @@ async def generate_draft_asset(theater_id: str, body: GenerateDraftRequest, requ
             try:
                 updated = await asyncio.to_thread(db.record_user_usage, owner_id,
                     images_created=1 if body.kind in ("reference", "stamp", "character", "scene") else 0,
-                    music_created=1 if body.kind == "playlist" else 0, credit_cost=cost,
+                    music_created=1 if body.kind == "playlist" else 0,
+                    layered_animations_created=1 if body.kind == "animation" else 0, credit_cost=cost,
                     idempotency_key=f"builder:{theater_id}:{path}")
             except Exception as error:
                 # Do not leave an unbilled asset available if settlement failed.
-                safe_asset_path(store().directory(theater_id), path).unlink(missing_ok=True)
+                for filename in files:
+                    safe_asset_path(store().directory(theater_id), filename).unlink(missing_ok=True)
                 await asyncio.to_thread(theater_manager.notify_storage_changed, theater_id)
                 logger.exception("Theater builder billing failed")
                 raise HTTPException(status_code=503, detail="Could not settle generation credits. Please reload the draft.") from error

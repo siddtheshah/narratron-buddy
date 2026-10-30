@@ -41,17 +41,17 @@ def test_animation_uses_configured_video_provider_duration_and_visual_style(tmp_
     )
     settings = {"animation": {"video_provider": "custom-video", "video_duration_seconds": 8}, "visuals": {"style": "Watercolor"}}
     with patch("services.theater_media_generation.apply_app_config", return_value=settings), patch(
-        "services.theater_media_generation.get_video_provider", return_value=provider,
+        "services.animation_service.get_video_provider", return_value=provider,
     ) as resolve:
         files = generate_theater_media(tmp_path, kind="animation", prompt="Rain", identifier="rain")
     resolve.assert_called_once_with("custom-video")
     request = provider.generate.call_args.args[0]
     assert request.video_duration_seconds == 8
     assert "Style: Watercolor" in request.prompt
-    assert "looping" in request.prompt
+    assert "loopable" in request.prompt
     assert files["output/animations/rain/video.mp4"] == b"video"
     manifest = json.loads(files["output/animations/rain/video.json"])
-    assert manifest["video_path"] == "video.mp4"
+    assert manifest["video_path"] == "animations/rain/video.mp4"
     assert manifest["loop"] is True
 
 
@@ -67,6 +67,7 @@ def test_image_animation_presets_produce_playable_catalog_assets(tmp_path: Path,
     provider = MagicMock()
     provider.generate.return_value = ImageGenerationResult(image_bytes=image, mime_type="image/png", provider="mock", model="mock")
     layered = MagicMock()
+    layered.model = "mock-layered"
     layered.decompose.return_value = LayeredImageResult(images=[(image, "image/png"), (image, "image/png")])
     layers = [{"name": "background", "description": "Forest", "effect": "none"},
               {"name": "subject", "description": "Tree", "effect": "sway"}]
@@ -74,11 +75,11 @@ def test_image_animation_presets_produce_playable_catalog_assets(tmp_path: Path,
     settings = {"animation": {"text_provider": "planner", "text_model": "planner-model"},
                 "visuals": {"model": "image", "style": "Watercolor"}}
     with patch("services.theater_media_generation.apply_app_config", return_value=settings), \
-         patch("services.theater_media_generation.get_image_provider", return_value=provider), \
-         patch("services.theater_media_generation.get_text_response_provider") as planner, \
-         patch("services.theater_media_generation.FalQwenLayeredProvider", return_value=layered), \
-         patch("services.theater_media_generation.AnimationTools.plan_layers_with_provider", return_value=(layers, {})), \
-         patch("services.theater_media_generation.AnimationTools.plan_triframe_with_provider", return_value=(plan, {})):
+         patch("services.animation_service.get_image_provider", return_value=provider), \
+         patch("services.animation_service.get_text_response_provider") as planner, \
+         patch("services.animation_service.FalQwenLayeredProvider", return_value=layered), \
+         patch("services.animation_service.AnimationService.plan_layers_with_provider", return_value=(layers, {})), \
+         patch("services.animation_service.AnimationService.plan_triframe_with_provider", return_value=(plan, {})):
         files = generate_theater_media(root, kind="animation", prompt="Forest", identifier="forest", animation_type=technique)
     planner.assert_called_once_with("planner", {"model": "planner-model"})
     for filename, content in files.items():
@@ -92,7 +93,7 @@ def test_image_animation_presets_produce_playable_catalog_assets(tmp_path: Path,
     if technique == "triframe":
         assert len(assets[0].frames) == 3
         assert provider.generate.call_count == 3
-        assert provider.generate.call_args_list[1].args[0].references[0].mime_type == "image/webp"
+        assert provider.generate.call_args_list[1].args[0].references[0].mime_type == "image/png"
         assert "Style: Watercolor" in provider.generate.call_args.args[0].prompt
     else:
         assert assets[0].manifest["layers"][1]["effect"] == "sway"

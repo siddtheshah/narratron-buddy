@@ -1179,7 +1179,7 @@ def test_draft_generations_generate_concurrently(builder: BuilderHarness) -> Non
         both_generating.wait(timeout=5)
         return (f"references/{body.name}.png", png_bytes())
 
-    def settle(user_id: int, *, images_created: int = 0, music_created: int = 0, credit_cost: float, idempotency_key: str) -> dict[str, float]:
+    def settle(user_id: int, *, images_created: int = 0, music_created: int = 0, layered_animations_created: int = 0, credit_cost: float, idempotency_key: str) -> dict[str, float]:
         account["credits"] -= credit_cost
         return {"credits": account["credits"]}
 
@@ -1343,3 +1343,48 @@ def test_reset_removes_image_updates_and_cached_canvas_history(builder: BuilderH
     assert "references/scenes/Harbor/2.webp" not in paths
     assert "references/characters/Hero/10.webp" not in paths
 
+
+
+@pytest.mark.parametrize("technique", ["video", "layered", "triframe"])
+def test_editor_generates_all_animation_files_and_charges_once(builder: BuilderHarness, technique: str) -> None:
+    data = builder.create()
+    identifier = data["draft"]["theater_id"]
+    files = {
+        f"output/animations/rain/{technique}.json": b'{"scene_prompt":"Rain"}',
+        "output/animations/rain/frame_1.webp": png_bytes(),
+        "output/animations/rain/frame_2.webp": png_bytes(),
+    }
+    with patch("api_server.theater_editor.generate_theater_media", return_value=files) as generate:
+        result = builder.client.post(f"/api/theater-editor/{identifier}/generate", json={
+            "revision": data["draft"]["revision"], "kind": "animation",
+            "name": "rain", "prompt": "Rain", "animation_type": technique,
+        })
+    assert result.status_code == 200, result.text
+    assert generate.call_args.kwargs["animation_type"] == technique
+    assert generate.call_args.kwargs["kind"] == "animation"
+    for filename, content in files.items():
+        assert (builder.manager.theater(identifier).directory() / filename).read_bytes() == content
+    usage = builder.database.record_user_usage
+    usage.assert_called_once()
+    assert usage.call_args.kwargs["layered_animations_created"] == 1
+    assert usage.call_args.kwargs["images_created"] == 0
+    assert usage.call_args.kwargs["music_created"] == 0
+    paths = {item["path"] for item in result.json()["state"]["files"]}
+    assert files.keys() <= paths
+
+
+def test_editor_animation_billing_failure_removes_every_generated_file(builder: BuilderHarness) -> None:
+    data = builder.create()
+    identifier = data["draft"]["theater_id"]
+    files = {
+        "output/animations/rain/video.json": b'{"scene_prompt":"Rain"}',
+        "output/animations/rain/video.mp4": b"video",
+    }
+    builder.database.record_user_usage.side_effect = RuntimeError("billing unavailable")
+    with patch("api_server.theater_editor.generate_theater_media", return_value=files):
+        result = builder.client.post(f"/api/theater-editor/{identifier}/generate", json={
+            "revision": data["draft"]["revision"], "kind": "animation", "name": "rain", "prompt": "Rain",
+        })
+    assert result.status_code == 503
+    for filename in files:
+        assert not (builder.manager.theater(identifier).directory() / filename).exists()

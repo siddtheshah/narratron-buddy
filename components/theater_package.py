@@ -17,7 +17,7 @@ class IneligibleAssetError(ValueError):
 
 
 def safe_asset_path(root: Path, relative: str) -> Path:
-    """Only package files are addressable; never internal metadata or runtime output."""
+    """Only package files are addressable; never internal metadata or unrelated runtime state."""
     normalized = relative.replace("\\", "/")
     parts = normalized.split("/")
     if not normalized or any(not part or part in {".", ".."} or re.search(r'[<>:"|?*\x00-\x1f]', part) or part.endswith((".", " ")) for part in parts):
@@ -36,6 +36,10 @@ def safe_asset_path(root: Path, relative: str) -> Path:
     allowed |= len(parts) >= 3 and parts[0] == "playlists" and suffix in AUDIO_EXTENSIONS
     allowed |= len(parts) == 3 and parts[0] == "playlists" and parts[-1] == "description.txt"
     allowed |= len(parts) >= 2 and parts[0] == "lore" and suffix in {".txt", ".md"}
+    # Saved animations are editable assets shared with the live canvas.
+    allowed |= len(parts) == 4 and parts[:2] == ["output", "animations"] and (
+        suffix in IMAGE_EXTENSIONS or parts[-1] in {"video.mp4", "video.json", "layered.json", "triframe.json", "animation.json"}
+    )
     if not allowed:
         raise IneligibleAssetError("Use theater.yaml, planning.yaml, metadata.json, README.md, lore/*.txt or *.md, references/images, references/characters/<Name>/images or character.yaml, references/scenes/<Name>/images or scene.yaml, stamps/images, playlists/<Name>/audio or description.txt, or game/game.yaml (game.yml/game.json) with game/*.svg and companion game/*.json.")
     target = root.joinpath(*parts).resolve()

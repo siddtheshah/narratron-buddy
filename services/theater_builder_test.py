@@ -32,6 +32,15 @@ def test_paths_cannot_escape_or_edit_internal_files(tmp_path: Path, path: str) -
         safe_asset_path(tmp_path, path)
 
 
+@pytest.mark.parametrize("path", [
+    "output/animations/rain/state.json", "output/animations/rain/run.py",
+    "output/animations/rain/nested/video.mp4", "output/chats/rain/video.json",
+])
+def test_animation_assets_do_not_expose_other_runtime_files(tmp_path: Path, path: str) -> None:
+    with pytest.raises(ValueError):
+        safe_asset_path(tmp_path, path)
+
+
 @pytest.mark.parametrize(("name", "folder", "expected"), [
     ("hero.png", False, "references/hero.png"),
     ("stamp_orc.png", False, "stamps/stamp_orc.png"),

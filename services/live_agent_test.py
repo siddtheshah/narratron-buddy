@@ -549,7 +549,7 @@ class TestCreateAgent(unittest.TestCase):
                 "animation": {"enabled": True},
             },
         )
-        with patch("tools.animation_tool.get_image_provider", return_value=MagicMock(spec=ImageProvider)):
+        with patch("services.animation_service.get_image_provider", return_value=MagicMock(spec=ImageProvider)):
             bundle = create_tool_bundle_for_session(theater)
         tool_names = [tool.name for tool in bundle.tools]
         self.assertNotIn("create_image", tool_names)

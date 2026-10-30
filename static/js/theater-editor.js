@@ -72,7 +72,7 @@
     const rates = state.rates;
     el('assistant-send').textContent = `Send · ${rates.theater_editor_assistant_credit_rate} Cr →`;
     el('assistant-cost').textContent = `${rates.theater_editor_assistant_credit_rate} Cr per assistant turn, including shortcuts. Charged when a reply is ready.`;
-    el('generation-rates').textContent = 'Image and playlist pricing follows standard live pricing.';
+    el('generation-rates').textContent = 'Image, playlist, and animation pricing follows standard live pricing.';
     updateGenerationCost();
     if (lastDraftKey) localStorage.setItem(lastDraftKey, state.draft.theater_id);
     const url = new URL(location.href);
@@ -220,7 +220,7 @@
         el('file-editor').value = content; el('file-editor').hidden = false;
       } catch (error) { status(error.message, true); }
     } else {
-      const media = document.createElement(file.kind === 'image' ? 'img' : 'audio');
+      const media = document.createElement(file.kind === 'image' ? 'img' : file.kind === 'video' ? 'video' : 'audio');
       media.src = url;
       if (file.kind === 'image') media.alt = file.path;
       else media.controls = true;
@@ -509,11 +509,10 @@
     }
     for (const generation of proposal.generations) {
       const card = document.createElement('div'); card.className = 'generation-card';
-      const kindLabel = { reference: 'Reference', stamp: 'Stamp token', character: 'Character portrait', scene: 'Scene visual', playlist: 'Playlist track' }[generation.kind];
+      const kindLabel = { reference: 'Reference', stamp: 'Stamp token', character: 'Character portrait', scene: 'Scene visual', playlist: 'Playlist track', animation: 'Animation' }[generation.kind];
       const label = document.createElement('strong'); label.textContent = `${kindLabel}: ${generation.name}`;
       const description = document.createElement('p'); description.textContent = generation.prompt;
       const button = document.createElement('button'); button.type = 'button';
-      const isMusic = generation.kind === 'playlist';
       const key = `${generation.kind}:${generation.name}:${generation.playlist || ''}`;
       if (generation.generated_path) {
         button.textContent = 'Generated';
@@ -527,7 +526,7 @@
         button.disabled = true;
         card.append(label, description, button);
       } else {
-        button.textContent = `Generate · ${state.rates[isMusic ? 'music_credit_rate' : 'image_credit_rate']} Cr`;
+        button.textContent = `Generate · ${state.rates[generationRate(generation.kind)]} Cr`;
         button.addEventListener('click', () => generate(generation, button));
         card.append(label, description, button);
       }
@@ -592,8 +591,7 @@
         if (isManualSubmit) {
           updateGenerationCost();
         } else {
-          const isMusic = request.kind === 'playlist';
-          button.textContent = `Generate · ${state.rates[isMusic ? 'music_credit_rate' : 'image_credit_rate']} Cr`;
+          button.textContent = `Generate · ${state.rates[generationRate(request.kind)]} Cr`;
         }
       }
     } finally {
@@ -605,10 +603,15 @@
       }
     }
   }
+  function generationRate(kind) {
+    return kind === 'animation' ? 'layered_animation_credit_rate' : kind === 'playlist' ? 'music_credit_rate' : 'image_credit_rate';
+  }
   function updateGenerationCost() {
+    const isAnimation = el('generation-kind').value === 'animation';
+    el('generation-animation-type').hidden = !isAnimation;
+    document.querySelector('label[for="generation-animation-type"]').hidden = !isAnimation;
     if (state && el('generation-submit') && el('generation-submit').dataset.generating !== 'true') {
-      const isMusic = el('generation-kind').value === 'playlist';
-      el('generation-submit').textContent = `Generate · ${state.rates[isMusic ? 'music_credit_rate' : 'image_credit_rate']} Cr`;
+      el('generation-submit').textContent = `Generate · ${state.rates[generationRate(el('generation-kind').value)]} Cr`;
     }
   }
   function openGoogleDialog(focusDoc = false) {
@@ -774,6 +777,7 @@
       kind: el('generation-kind').value,
       name: el('generation-name').value,
       playlist: el('generation-playlist').value || 'ambient',
+      animation_type: el('generation-animation-type').value,
       prompt: el('generation-prompt').value,
       references: []
     }, el('generation-submit'));

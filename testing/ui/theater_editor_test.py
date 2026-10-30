@@ -59,7 +59,7 @@ def editor_page() -> Iterator[Page]:
             ];
             const draft = {
                 draft: {theater_id: 'theater_tree', name: 'Harbor', revision: 0, saved_revision: 0},
-                files: [...initialFiles], rates: {image_credit_rate: 4, music_credit_rate: 6, theater_editor_assistant_credit_rate: 0.1},
+                files: [...initialFiles], rates: {image_credit_rate: 4, music_credit_rate: 6, layered_animation_credit_rate: 8, theater_editor_assistant_credit_rate: 0.1},
             };
             window.savedFiles = {};
             window.fetch = async (url, options = {}) => {
@@ -143,6 +143,7 @@ def editor_page() -> Iterator[Page]:
                             window.releaseGenerations[body.name] = resolve;
                         });
                     }
+                    window.lastGenerationRequest = body;
                     const isStamp = body.kind === 'stamp';
                     const path = isStamp ? `stamps/${body.name || 'goblin'}.png` : `references/${body.name || 'harbor'}.png`;
                     if (!draft.files.some(file => file.path === path)) {
@@ -403,7 +404,7 @@ def test_pricing_info_hover_button_and_rates(editor_page: Page) -> None:
     info_btn = page.locator("#assistant-pricing-info")
     expect(info_btn).to_be_visible()
     expect(info_btn).to_have_text("i")
-    expect(page.locator("#generation-rates")).to_have_text("Image and playlist pricing follows standard live pricing.")
+    expect(page.locator("#generation-rates")).to_have_text("Image, playlist, and animation pricing follows standard live pricing.")
     expect(page.locator("#assistant-cost")).to_contain_text("0.1 Cr per assistant turn, including shortcuts")
     info_btn.hover()
     expect(page.locator("#pricing-tooltip")).to_be_visible()
@@ -1212,3 +1213,17 @@ def test_svg_rendering_and_source_toggle_in_theater_editor(editor_page: Page) ->
 
 
 
+
+
+@pytest.mark.parametrize("technique", ["video", "layered", "triframe"])
+def test_manual_animation_presets_send_selected_technique_and_show_price(editor_page: Page, technique: str) -> None:
+    page = editor_page
+    page.locator(".manual-generation summary").click()
+    page.locator("#generation-kind").select_option("animation")
+    page.locator("#generation-animation-type").select_option(technique)
+    expect(page.locator("#generation-submit")).to_have_text("Generate · 8 Cr")
+    page.locator("#generation-name").fill("harbor")
+    page.locator("#generation-prompt").fill("Rain over the harbor")
+    page.locator("#generation-submit").click()
+    page.wait_for_function("window.lastGenerationRequest?.kind === 'animation'")
+    assert page.evaluate("window.lastGenerationRequest.animation_type") == technique

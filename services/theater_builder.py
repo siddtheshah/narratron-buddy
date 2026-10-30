@@ -43,7 +43,7 @@ class DraftInfo(BaseModel):
 class BuilderFile(BaseModel):
     path: str
     size: int
-    kind: Literal["text", "image", "audio"]
+    kind: Literal["text", "image", "audio", "video"]
 
 
 class FileWrite(BaseModel):
@@ -57,9 +57,10 @@ class FileMove(BaseModel):
 
 
 class GenerationRequest(BaseModel):
-    kind: Literal["reference", "playlist", "stamp", "character", "scene"]
+    kind: Literal["reference", "playlist", "stamp", "character", "scene", "animation"]
     prompt: str = Field(min_length=1, max_length=4000)
     name: str = Field(min_length=1, max_length=100)
+    animation_type: Literal["video", "layered", "triframe"] = "video"
     playlist: str = Field(default="ambient", min_length=1, max_length=80)
     references: list[str] = Field(default_factory=list, max_length=4)
 
@@ -239,7 +240,7 @@ class TheaterBuilderStore:
             except ValueError:
                 continue
             suffix = item.suffix.lower()
-            kind: Literal["text", "image", "audio"] = "image" if suffix in IMAGE_EXTENSIONS or suffix == ".svg" else "audio" if suffix in AUDIO_EXTENSIONS else "text"
+            kind: Literal["text", "image", "audio", "video"] = "image" if suffix in IMAGE_EXTENSIONS or suffix == ".svg" else "audio" if suffix in AUDIO_EXTENSIONS else "video" if suffix == ".mp4" else "text"
             result.append(BuilderFile(path=relative, size=item.stat().st_size, kind=kind))
         return result
 
@@ -380,7 +381,7 @@ class TheaterBuilderStore:
                         "Scene imagery belongs in references/scenes/<Scene Name>/<iteration>.ext (e.g. references/scenes/Old Harbor/1.webp). Each scene must have its own subfolder; loose files directly under references/scenes/ are not permitted. Supported image formats are PNG, JPEG, WebP, and GIF. Numbered iterations such as 1.webp, 2.webp allow visual evolution across story arcs. Organize scene image uploads into references/scenes/<Scene Name>/1.ext. Scene descriptions belong in references/scenes/<Scene Name>/scene.yaml with a description string alongside their image iterations. Keep additional location lore in lore/locations/*.txt (or lore/*.txt). "
                         "You may write playlists/name/description.txt to explain a playlist's mood and when to use it. "
                         "Image previews are supplied for up to twelve reference, stamp, character, and scene assets; identify their content when organizing generic filenames. Do not claim to have inspected audio or unshown images. "
-                        "Update lore/config asset paths when moving assets. starting_image must identify an existing reference image by filename, alias, or references/ path; do not point it at an asset that has only been proposed for generation. metadata.json may describe catalog title, id, description, author, genre, tags, cover_image, difficulty, and recommended_players. Keep cover paths consistent with the authored files. Generation requests propose one reference image, stamp token, character portrait, scene visual, or playlist track each (kind: 'reference', 'stamp', 'character', 'scene', or 'playlist'). "
+                        "Update lore/config asset paths when moving assets. starting_image must identify an existing reference image by filename, alias, or references/ path; do not point it at an asset that has only been proposed for generation. metadata.json may describe catalog title, id, description, author, genre, tags, cover_image, difficulty, and recommended_players. Keep cover paths consistent with the authored files. Generation requests propose one reference image, stamp token, character portrait, scene visual, playlist track, or animation each (kind: 'reference', 'stamp', 'character', 'scene', 'playlist', or 'animation'). Animation requests use animation_type 'video', 'layered', or 'triframe' and save all files under output/animations/<id>/. "
                         "Generated assets are charged only when the user clicks Generate. Use only existing references, scene, or character image paths in generation requests. "
                         "Character portraits under references/characters/<Character Name>/ establish visual identity for NPCs and heroes. Propose generation requests with kind 'character' (name matching the character's canonical name) to generate portraits. "
                         "Scene visuals under references/scenes/<Scene Name>/ establish environmental visuals for narrative locations. Propose generation requests with kind 'scene' (name matching the scene's canonical name) to generate scene imagery. "
