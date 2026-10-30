@@ -1422,10 +1422,10 @@
     text-align: center;
 }
 
-#scene-generation-form { gap: 8px; }
-#scene-generation-presets { position: relative; align-self: flex-start; }
-#scene-generation-presets summary,
-.scene-preset-menu button {
+#scene-generation-form, #animation-generation-form { gap: 8px; }
+#scene-generation-presets, .generation-presets { position: relative; align-self: flex-start; }
+#scene-generation-presets summary, .generation-presets summary,
+:is(.scene-preset-menu, .generation-preset-menu) button {
     padding: 7px 10px;
     border: 1px solid rgba(255, 255, 255, 0.15);
     border-radius: 8px;
@@ -1434,9 +1434,9 @@
     font: inherit;
     cursor: pointer;
 }
-#scene-generation-presets summary { list-style: none; }
-#scene-generation-presets summary::-webkit-details-marker { display: none; }
-.scene-preset-menu {
+#scene-generation-presets summary, .generation-presets summary { list-style: none; }
+#scene-generation-presets summary::-webkit-details-marker, .generation-presets summary::-webkit-details-marker { display: none; }
+:is(.scene-preset-menu, .generation-preset-menu) {
     position: absolute;
     bottom: calc(100% + 6px);
     left: 0;
@@ -1450,10 +1450,10 @@
     background: #0f172a;
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
 }
-.scene-preset-menu button { border: 0; text-align: left; background: transparent; }
-.scene-preset-menu button:hover,
-.scene-preset-menu button:focus-visible,
-.scene-preset-menu button[aria-pressed="true"] { background: #334155; }
+:is(.scene-preset-menu, .generation-preset-menu) button { border: 0; text-align: left; background: transparent; }
+:is(.scene-preset-menu, .generation-preset-menu) button:hover,
+:is(.scene-preset-menu, .generation-preset-menu) button:focus-visible,
+:is(.scene-preset-menu, .generation-preset-menu) button[aria-pressed="true"] { background: #334155; }
 
 .scene-card-generating,
 .scene-card-generating:hover,

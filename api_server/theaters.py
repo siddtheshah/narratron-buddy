@@ -95,6 +95,10 @@ class GenerateTheaterSceneRequest(GenerateTheaterStampRequest):
         return self.scene_type == "none"
 
 
+class GenerateTheaterAnimationRequest(GenerateTheaterStampRequest):
+    animation_type: Literal["video", "layered", "triframe"] = "video"
+
+
 def _save_generated_scene(theater_id: str, filename: str, content: bytes) -> None:
     for root in (
         theater_manager.theater(theater_id).directory(),
@@ -168,9 +172,9 @@ async def generate_theater_music(
 
 @app.post("/api/theaters/{theater_id}/animations/generate")
 async def generate_theater_animation(
-    request: Request, theater_id: str, body: GenerateTheaterStampRequest,
+    request: Request, theater_id: str, body: GenerateTheaterAnimationRequest,
 ) -> dict[str, JsonValue]:
-    return await _generate_canvas_asset(request, theater_id, body, "animation")
+    return await _generate_canvas_asset(request, theater_id, body, "animation", animation_type=body.animation_type)
 
 
 @app.post("/api/theaters/{theater_id}/stamps/generate")
@@ -190,6 +194,7 @@ async def generate_theater_scene(
 async def _generate_canvas_asset(
     request: Request, theater_id: str, body: GenerateTheaterStampRequest,
     kind: Literal["stamp", "scene", "character", "music", "animation"],
+    *, animation_type: Literal["video", "layered", "triframe"] = "video",
 ) -> dict[str, JsonValue]:
     _safe_path_param(theater_id, "theater_id")
     user = await get_current_user_async(request)
@@ -232,7 +237,12 @@ async def _generate_canvas_asset(
         save = {"stamp": _save_generated_stamp, "scene": _save_generated_scene}.get(kind, _save_generated_file)
         remove = {"stamp": _remove_generated_stamp, "scene": _remove_generated_scene}.get(kind, _remove_generated_file)
         try:
-            if kind == "music" or kind == "animation":
+            if kind == "animation":
+                files = await asyncio.to_thread(
+                    generate_theater_media, root, kind=kind, prompt=prompt,
+                    identifier=identifier, animation_type=animation_type,
+                )
+            elif kind == "music":
                 files = await asyncio.to_thread(generate_theater_media, root, kind=kind, prompt=prompt, identifier=identifier)
             else:
                 image = await asyncio.to_thread(

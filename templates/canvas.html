@@ -3684,6 +3684,15 @@
                     <textarea id="character-generation-prompt" maxlength="4000" rows="2" aria-label="Character portrait prompt" aria-keyshortcuts="Enter" required placeholder="describe a character and press (enter)" autocomplete="off"></textarea>
                 </form>
                 <form id="animation-generation-form" class="stamp-generation-form" hidden>
+                    <input id="animation-generation-type" type="hidden" value="video">
+                    <details id="animation-generation-presets" class="generation-presets">
+                        <summary aria-label="Animation type"><span id="animation-generation-type-label">Video</span> ▴</summary>
+                        <div class="generation-preset-menu" role="group" aria-label="Animation types">
+                            <button type="button" data-animation-type="video" aria-pressed="true">Video</button>
+                            <button type="button" data-animation-type="layered" aria-pressed="false">Layered</button>
+                            <button type="button" data-animation-type="triframe" aria-pressed="false">Tri-frame</button>
+                        </div>
+                    </details>
                     <textarea id="animation-generation-prompt" maxlength="4000" rows="2" aria-label="Animation prompt" aria-keyshortcuts="Enter" required placeholder="describe a looping animation and press (enter)" autocomplete="off"></textarea>
                 </form>
                 <form id="music-generation-form" class="stamp-generation-form" hidden>
@@ -6729,6 +6738,27 @@
         });
 
         const assetGenerationKinds = { characters: 'character', animations: 'animation', playlists: 'music' };
+        const animationPresetMenu = document.getElementById('animation-generation-presets');
+        animationPresetMenu.querySelectorAll('[data-animation-type]').forEach(option => {
+            option.addEventListener('click', () => {
+                document.getElementById('animation-generation-type').value = option.dataset.animationType;
+                document.getElementById('animation-generation-type-label').textContent = option.textContent;
+                animationPresetMenu.querySelectorAll('[data-animation-type]').forEach(item => {
+                    item.setAttribute('aria-pressed', String(item === option));
+                });
+                animationPresetMenu.open = false;
+                animationPresetMenu.querySelector('summary').focus();
+            });
+        });
+        document.addEventListener('pointerdown', event => {
+            if (!animationPresetMenu.contains(event.target)) animationPresetMenu.open = false;
+        });
+        animationPresetMenu.addEventListener('keydown', event => {
+            if (event.key === 'Escape') {
+                animationPresetMenu.open = false;
+                animationPresetMenu.querySelector('summary').focus();
+            }
+        });
         const pendingAssetGenerations = new Map();
         const assetGenerationMessages = new Map();
         let nextAssetGenerationId = 0;
@@ -6783,6 +6813,8 @@
                 if (!isTheaterStampOwner || !prompt) return;
                 const generationTheaterId = theaterId;
                 const name = stampNameFromPrompt(prompt);
+                const payload = { name, prompt };
+                if (kind === 'animation') payload.animation_type = document.getElementById('animation-generation-type').value;
                 const id = ++nextAssetGenerationId;
                 pendingAssetGenerations.set(id, { kind, name, prompt, theaterId: generationTheaterId });
                 assetGenerationMessages.delete(kind);
@@ -6791,7 +6823,7 @@
                 try {
                     const endpoint = kind === 'music' ? 'music' : tab;
                     const response = await fetch(`/api/theaters/${encodeURIComponent(generationTheaterId)}/${endpoint}/generate`, {
-                        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, prompt }),
+                        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
                     });
                     const data = await response.json();
                     if (!response.ok) throw new Error(typeof data.detail === 'string' ? data.detail : `Unable to generate ${kind}.`);

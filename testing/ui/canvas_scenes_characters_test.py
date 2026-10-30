@@ -812,7 +812,10 @@ def test_asset_generation_permissions_pending_and_retry(scenes_chars_page: Page,
     prompt.fill('Next draft')
     prompt.press('Enter')
     expect(page.locator('.asset-card-generating')).to_have_count(2)
-    assert jobs[0].request.post_data_json == {"name": "Gentle forest rain", "prompt": "Gentle forest rain"}
+    expected = {"name": "Gentle forest rain", "prompt": "Gentle forest rain"}
+    if kind == 'animation':
+        expected['animation_type'] = 'video'
+    assert jobs[0].request.post_data_json == expected
     jobs[1].fulfill(status=502, json={"detail": "Provider failed; no credits were charged."})
     expect(page.locator('#asset-generation-status')).to_contain_text('no credits were charged')
     expect(prompt).to_have_value('Next draft')
@@ -821,6 +824,42 @@ def test_asset_generation_permissions_pending_and_retry(scenes_chars_page: Page,
     expect(page.locator('#asset-generation-status')).to_contain_text('Charged 4 credits')
     expect(prompt).to_have_value('Next draft')
     expect(page.locator(f'#{kind}-generation-form')).to_have_attribute('aria-busy', 'false')
+
+
+@pytest.mark.parametrize(("preset", "label"), [("video", "Video"), ("layered", "Layered"), ("triframe", "Tri-frame")])
+def test_animation_presets_submit_selected_type(scenes_chars_page: Page, preset: str, label: str) -> None:
+    page = scenes_chars_page
+    requests: list[dict[str, str]] = []
+
+    def empty_assets(route: Route) -> None:
+        route.fulfill(json=[])
+
+    def generate(route: Route) -> None:
+        requests.append(route.request.post_data_json)
+        route.fulfill(status=502, json={"detail": "Generation failed; no credits were charged."})
+
+    page.route('**/api/theaters/*/animations', empty_assets)
+    page.route('**/api/theaters/*/animations/generate', generate)
+    page.evaluate("isTheaterStampOwner = true; applyRoleUI(true); setStampManagerOpen(true); switchStampManagerTab('animations')")
+    menu = page.locator('#animation-generation-presets')
+    menu.locator('summary').click()
+    bounds = menu.locator('.generation-preset-menu').bounding_box()
+    trigger = menu.locator('summary').bounding_box()
+    assert bounds is not None and trigger is not None
+    assert bounds['y'] + bounds['height'] < trigger['y']
+    menu.get_by_role('button', name=label, exact=True).click()
+    expect(menu.get_by_role('button', name=label, exact=True, include_hidden=True)).to_have_attribute('aria-pressed', 'true')
+    expect(page.locator('#animation-generation-type-label')).to_have_text(label)
+    expect(menu.locator('.generation-preset-menu')).to_be_hidden()
+    page.locator('#animation-generation-prompt').fill('Gentle forest rain')
+    page.locator('#animation-generation-prompt').press('Enter')
+    expect(page.locator('#asset-generation-status')).to_contain_text('no credits were charged')
+    assert requests == [{"name": "Gentle forest rain", "prompt": "Gentle forest rain", "animation_type": preset}]
+    expect(page.locator('#animation-generation-type')).to_have_value(preset)
+    expect(page.locator('#animation-generation-prompt')).to_have_value('Gentle forest rain')
+    menu.locator('summary').click()
+    menu.locator('summary').press('Escape')
+    expect(menu.locator('.generation-preset-menu')).to_be_hidden()
 
 
 def test_asset_search_filters_descriptions_and_survives_tab_switches(scenes_chars_page: Page) -> None:

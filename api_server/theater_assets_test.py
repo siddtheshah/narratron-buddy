@@ -6,11 +6,32 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import HTTPException, Request
+from pydantic import ValidationError
 
 from api_server import theaters
 from components.theater_manager import TheaterManager
 from components.canvas.audio_state import AudioState
 from services.theater_assets import animations, playlists
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("technique", ["video", "layered", "triframe"])
+async def test_animation_generation_forwards_selected_preset(technique: str) -> None:
+    body = theaters.GenerateTheaterAnimationRequest.model_validate({
+        "name": "Forest", "prompt": "Swaying trees", "animation_type": technique,
+    })
+    request = Request({"type": "http", "headers": []})
+    with patch.object(theaters, "_generate_canvas_asset", AsyncMock(return_value={"animations": []})) as generate:
+        await theaters.generate_theater_animation(request, "stage", body)
+    generate.assert_awaited_once_with(request, "stage", body, "animation", animation_type=technique)
+
+
+def test_animation_generation_defaults_to_video_and_rejects_unknown_preset() -> None:
+    assert theaters.GenerateTheaterAnimationRequest(name="Forest", prompt="Trees").animation_type == "video"
+    with pytest.raises(ValidationError):
+        theaters.GenerateTheaterAnimationRequest.model_validate({
+            "name": "Forest", "prompt": "Trees", "animation_type": "unknown",
+        })
 
 
 @pytest.mark.parametrize("extension", ["webp", "jpg"])
