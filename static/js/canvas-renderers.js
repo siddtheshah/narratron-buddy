@@ -1457,7 +1457,8 @@ export function createDoodleRenderer({ canvas, isVisible = () => true, textLayer
                 const stampsToRemove = (selectedStampItems.size > 0 && typeof onRemoveStamp === "function" && canMoveStamp())
                     ? Array.from(selectedStampItems).map(node => node.annotation).filter(Boolean)
                     : [];
-                const textsToRemove = (selectedTextItems.size > 0 && typeof onRemoveText === "function" && canEditText())
+                const canDeleteText = typeof canEditText === "function" ? canEditText() : true;
+                const textsToRemove = (selectedTextItems.size > 0 && typeof onRemoveText === "function" && canDeleteText)
                     ? Array.from(selectedTextItems).map(node => node.annotation).filter(Boolean)
                     : [];
 

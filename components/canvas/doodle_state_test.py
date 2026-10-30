@@ -112,6 +112,12 @@ def test_text_edits_replace_saved_annotation_and_observability_pixels(tmp_path: 
     reloaded.load(state.serialize())
     assert reloaded.text_annotations() == state.text_annotations()
 
+    # Removal by ID
+    state.remove_text("label")
+    assert len(state.doodles) == 0
+    assert len(state.text_annotations()) == 0
+    assert state.has_visible_annotations() is False
+
 
 def test_legacy_text_gets_stable_identity_for_editing() -> None:
     state = DoodleState(lambda: None)

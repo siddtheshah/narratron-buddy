@@ -47,6 +47,8 @@ def test_canvas_html_and_renderer_segment_selection_wiring() -> None:
     # Canvas.html wiring
     assert "canSelectSegment:" in canvas_html
     assert "onRemoveSegment:" in canvas_html
+    assert "onRemoveText:" in canvas_html
+    assert "onRemoveText" in renderer_js
 
 
 @pytest.fixture
@@ -99,11 +101,17 @@ def segment_page() -> Iterator[Page]:
             ];
             window.removedSegments = [];
             window.removedStamps = [];
+            window.removedTexts = [];
             const renderer = createDoodleRenderer({
                 canvas,
                 isVisible: () => true,
                 textLayer: document.getElementById('canvas-text-layer'),
                 canEditText: () => selectable && !isPagedBack,
+                onRemoveText: (text) => {
+                    window.removedTexts.push(text);
+                    doodleActions = doodleActions.filter(a => a.id !== text.id);
+                    renderer.redraw(doodleActions);
+                },
                 stampLayer: document.getElementById('canvas-stamp-layer'),
                 canMoveStamp: () => true,
                 onRemoveStamp: (stamp) => {
@@ -534,3 +542,61 @@ def test_escape_key_drops_text_selection(segment_page: Page) -> None:
         return el ? el.classList.contains('movable') : false;
     }""")
     assert is_movable is False
+
+
+def test_selection_box_group_delete_text_with_doodles_and_stamps(segment_page: Page) -> None:
+    # Add text annotation at x=0.35, y=0.15
+    segment_page.evaluate("""() => {
+        const action = {
+            id: 'text-del',
+            type: 'text',
+            text: 'Group delete target',
+            x: 0.35,
+            y: 0.15,
+            size: 24,
+            color: '#ffffff',
+            font: 'Outfit'
+        };
+        window.getDoodleActions().push(action);
+        window.renderer.redraw(window.getDoodleActions());
+    }""")
+
+    # Initial counts: 3 doodle segments, 1 stamp, 1 text item
+    assert segment_page.evaluate("() => window.getDoodleActions().filter(a => a.type === 'draw').length") == 3
+    assert segment_page.evaluate("() => window.getDoodleActions().filter(a => a.type === 'stamp').length") == 1
+    assert segment_page.evaluate("() => window.getDoodleActions().filter(a => a.type === 'text').length") == 1
+
+    # Drag selection box across stroke-1 (x=0.1..0.5, y=0.2), text-del (x=0.35, y=0.15), and stamp-1 (x=0.7, y=0.2)
+    segment_page.mouse.move(50, 40)
+    segment_page.mouse.down()
+    segment_page.mouse.move(650, 160)
+    segment_page.mouse.up()
+
+    # All three must be selected together
+    assert segment_page.evaluate("() => window.renderer.getSelectedSegments().length") == 2
+    assert segment_page.evaluate("() => window.renderer.getSelectedStamps().length") == 1
+    assert segment_page.evaluate("() => window.renderer.getSelectedTexts().length") == 1
+
+    # Press Delete key to group delete everything selected
+    segment_page.keyboard.press("Delete")
+
+    # Selected stroke-1 removed (remaining draw count == 1: seg-2)
+    remaining_draws: int = segment_page.evaluate("() => window.getDoodleActions().filter(a => a.type === 'draw').length")
+    assert remaining_draws == 1
+    assert segment_page.evaluate("() => window.getDoodleActions().find(a => a.type === 'draw').id") == "seg-2"
+    assert segment_page.evaluate("() => window.removedSegments.length") == 2
+
+    # Selected stamp removed
+    assert segment_page.evaluate("() => window.getDoodleActions().filter(a => a.type === 'stamp').length") == 0
+    assert segment_page.evaluate("() => window.removedStamps.length") == 1
+
+    # Selected text removed
+    assert segment_page.evaluate("() => window.getDoodleActions().filter(a => a.type === 'text').length") == 0
+    assert segment_page.evaluate("() => window.removedTexts.length") == 1
+    assert segment_page.evaluate("() => window.removedTexts[0].id") == "text-del"
+
+    # All selections are cleared
+    assert segment_page.evaluate("() => window.renderer.getSelectedSegments().length") == 0
+    assert segment_page.evaluate("() => window.renderer.getSelectedStamps().length") == 0
+    assert segment_page.evaluate("() => window.renderer.getSelectedTexts().length") == 0
+    assert segment_page.locator('.canvas-text-annotation').count() == 0

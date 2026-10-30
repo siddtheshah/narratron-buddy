@@ -153,6 +153,17 @@ class DoodleState:
                 return True
         return False
 
+    def remove_text(self, text_annotation_id: str) -> None:
+        """Remove a text annotation by its unique annotation ID."""
+        original_len = len(self.doodles)
+        self.doodles = [
+            action
+            for action in self.doodles
+            if not (action.get("type") == "text" and action.get("id") == text_annotation_id)
+        ]
+        if len(self.doodles) != original_len:
+            self._persist()
+
     def remove_stamp(self, stamp_annotation_id: str) -> None:
         """Remove a stamp annotation by its unique annotation ID."""
         original_len = len(self.doodles)

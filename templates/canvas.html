@@ -5973,6 +5973,7 @@
             onMoveStamp: (action, previous, commit) => moveStampAnnotation(action, previous, commit),
             onRemoveStamp: action => removeStampAnnotation(action),
             onSelectStamp: action => selectStampAnnotation(action),
+            onRemoveText: action => removeTextAnnotation(action),
             canSelectSegment: () => doodlesEnabled && !isPagedBack && canvasCursorState.current.type === 'select',
             onRemoveSegment: (removed) => {
                 const removedSet = new Set((removed || []).map(r => r.id || r));
@@ -6278,6 +6279,12 @@
                         doodleActions.splice(idx, 1);
                         redrawAllDoodles();
                     }
+                } else if (data.type === 'remove_text') {
+                    const idx = doodleActions.findIndex(a => a.type === 'text' && a.id === data.id);
+                    if (idx >= 0) {
+                        doodleActions.splice(idx, 1);
+                        redrawAllDoodles();
+                    }
                 } else if (data.type === 'toggle_mic') {
                     if (isCurrentOrator() && agentConnectBtn && !agentConnectBtn.disabled) {
                         agentConnectBtn.click();
@@ -6420,6 +6427,21 @@
                 sendOrQueueDoodleMessage({ type: 'remove_stamp', id: action.id });
                 redrawAllDoodles();
             }
+        }
+
+        function removeTextAnnotation(action) {
+            const list = Array.isArray(action) ? action : (action ? [action] : []);
+            list.forEach(item => {
+                const annotationId = item?.id || item;
+                const index = doodleActions.findIndex(
+                    existing => existing.type === 'text' && existing.id === annotationId
+                );
+                if (index >= 0) {
+                    doodleActions.splice(index, 1);
+                    sendOrQueueDoodleMessage({ type: 'remove_text', id: annotationId });
+                }
+            });
+            redrawAllDoodles();
         }
 
         function openTextAnnotationEditor(existing, placement = existing) {
