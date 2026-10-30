@@ -62,6 +62,8 @@ from providers.video_provider import (
 )
 from providers.fal_minimax_video_provider import FalMinimaxVideoProvider
 from providers.registry import (
+    get_animation_provider,
+    list_animation_provider_specs,
     get_live_agent_provider,
     get_image_provider,
     get_music_provider,
@@ -76,8 +78,13 @@ from providers.registry import (
     get_speech_provider,
     list_speech_provider_specs,
 )
+from providers.animation_provider import AnimationProvider, AnimationTechnique
 
 __all__ = [
+    "AnimationProvider",
+    "AnimationTechnique",
+    "get_animation_provider",
+    "list_animation_provider_specs",
     "LiveAgentCompactionConfig",
     "LiveAgentConfig",
     "LiveAgentProvider",

@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Callable, Optional, Union
 
 from pydantic import TypeAdapter
-from services.animation_service import AnimationService, AnimationTechnique, AnimationLayer as AnimationLayer
+from providers.animation_provider import AnimationProvider, AnimationTechnique, AnimationLayer as AnimationLayer
 
 from providers import (
     ImageProvider,
@@ -19,6 +19,7 @@ from providers import (
     TextResponseProvider,
     VideoProvider,
 )
+from providers.registry import get_animation_provider
 from providers.fal_qwen_layered_provider import FalQwenLayeredProvider
 from tools.base_tool import BaseTools, blocked_when_canvas_pinned, logged_tool_call, with_cycle_cooldown
 from tools.tool_metadata import terminal
@@ -51,17 +52,17 @@ class AnimationTools(BaseTools):
         self.reference_manager: Optional[ReferenceManager] = (
             reference_manager if reference_manager is not None else (ReferenceManager(theater=theater) if theater is not None else None)
         )
-        self.animation_service = AnimationService(
-            Path(theater.output_dir()), self.config,
+        self.animation_provider = get_animation_provider(
+            options=self.config,
             image_provider=image_provider, text_response_provider=text_response_provider,
             layered_provider=layered_provider, video_provider=video_provider,
         )
-        self.animation_config = self.animation_service.animation_config
+        self.animation_config = self.animation_provider.animation_config
         self.cooldown_duration = float(self.animation_config.get("cooldown_duration") or 0)
         self.output_dir = str(theater.image_artifacts_dir())
-        self.animations_dir = self.animation_service.animations_dir
+        self.animations_dir = str(theater.output_dir() / "animations")
         Path(self.animations_dir).mkdir(parents=True, exist_ok=True)
-        self.default_style = self.animation_service.default_style
+        self.default_style = self.animation_provider.default_style
         self._animations: dict[str, list[str]] = {}
         self._layered_animations: dict[str, dict] = {}
         self._video_animations: dict[str, dict] = {}
@@ -160,19 +161,19 @@ class AnimationTools(BaseTools):
         )
 
     # Compatibility aliases for existing planner consumers.
-    plan_animation_technique_with_provider = staticmethod(AnimationService.plan_animation_technique_with_provider)
-    plan_triframe_with_provider = staticmethod(AnimationService.plan_triframe_with_provider)
-    plan_layers_with_provider = staticmethod(AnimationService.plan_layers_with_provider)
-    _flatten_layer_plan = staticmethod(AnimationService._flatten_layer_plan)
-    _decomposition_prompt = staticmethod(AnimationService._decomposition_prompt)
-    _apply_video_style = AnimationService._apply_video_style
+    plan_animation_technique_with_provider = staticmethod(AnimationProvider.plan_animation_technique_with_provider)
+    plan_triframe_with_provider = staticmethod(AnimationProvider.plan_triframe_with_provider)
+    plan_layers_with_provider = staticmethod(AnimationProvider.plan_layers_with_provider)
+    _flatten_layer_plan = staticmethod(AnimationProvider._flatten_layer_plan)
+    _decomposition_prompt = staticmethod(AnimationProvider._decomposition_prompt)
+    _apply_video_style = AnimationProvider._apply_video_style
 
     def _generate_animation(
         self, scene_prompt: str, animation_id: str,
         references: list[ImageReference], technique: str | None,
     ) -> None:
-        selected = self.animation_service.create_animation(
-            scene_prompt, animation_id,
+        selected = self.animation_provider.create_animation(
+            scene_prompt, animation_id, output_dir=self.theater.output_dir(),
             technique=TypeAdapter(AnimationTechnique | None).validate_python(technique),
             references=references,
         )

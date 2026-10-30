@@ -14,22 +14,18 @@ from pathlib import Path
 from typing import Literal
 from PIL import Image
 from pydantic import BaseModel, Field, JsonValue, TypeAdapter
-from providers import (
+from providers.image_provider import (
     ImageGenerationRequest,
     ImageProvider,
     ImageProviderError,
     ImageReference,
+)
+from providers.text_response_provider import (
     TextResponseProvider,
     TextResponseProviderError,
     TextResponseRequest,
-    VideoGenerationRequest,
-    VideoProvider,
 )
-from providers.registry import (
-    get_image_provider,
-    get_text_response_provider,
-    get_video_provider,
-)
+from providers.video_provider import VideoGenerationRequest, VideoProvider
 from providers.fal_qwen_layered_provider import (
     FalQwenLayeredProvider,
     LayeredImageRequest,
@@ -82,12 +78,14 @@ class AnimationTechniquePlanResponse(BaseModel):
     reasoning: str = Field(min_length=3, max_length=300)
 
 
-class AnimationService:
-    """Plan, generate, and save animations without a live canvas or agent."""
+class AnimationProvider:
+    """Plan and generate animations with a separate output directory per call."""
+
+    id = "default"
+    display_name = "Animation (video, layered, and triframe)"
 
     def __init__(
         self,
-        output_dir: Path,
         config: dict[str, JsonValue],
         *,
         image_provider: ImageProvider | None = None,
@@ -95,8 +93,6 @@ class AnimationService:
         layered_provider: FalQwenLayeredProvider | None = None,
         video_provider: VideoProvider | None = None,
     ) -> None:
-        self.output_dir = str(output_dir)
-        self.animations_dir = str(output_dir / "animations")
         self.animation_config = TypeAdapter(dict[str, JsonValue]).validate_python(
             config.get("animation") or {}
         )
@@ -112,6 +108,8 @@ class AnimationService:
     @property
     def image_provider(self) -> ImageProvider:
         if self._image_provider is None:
+            from providers.registry import get_image_provider
+
             self._image_provider = get_image_provider(
                 str(self.visuals_config.get("model") or "hybrid-flux-gemini"),
                 TypeAdapter(dict[str, JsonValue]).validate_python(
@@ -123,6 +121,8 @@ class AnimationService:
     @property
     def text_response_provider(self) -> TextResponseProvider:
         if self._text_response_provider is None:
+            from providers.registry import get_text_response_provider
+
             self._text_response_provider = get_text_response_provider(
                 str(self.animation_config.get("text_provider") or "gemini-3"),
                 {
@@ -143,6 +143,8 @@ class AnimationService:
     @property
     def video_provider(self) -> VideoProvider:
         if self._video_provider is None:
+            from providers.registry import get_video_provider
+
             self._video_provider = get_video_provider(
                 str(
                     self.animation_config.get("video_provider")
@@ -156,6 +158,7 @@ class AnimationService:
         scene_prompt: str,
         animation_id: str,
         *,
+        output_dir: Path,
         technique: AnimationTechnique | None = None,
         references: list[ImageReference] | None = None,
     ) -> AnimationTechnique:
@@ -174,14 +177,14 @@ class AnimationService:
         selected = TypeAdapter(AnimationTechnique).validate_python(selected)
         if selected == "triframe":
             self._run_triframe_animation(
-                scene_prompt.strip(), animation_id, references or []
+                scene_prompt.strip(), animation_id, output_dir, references or []
             )
         elif selected == "layered":
             self._run_layered_animation(
-                scene_prompt.strip(), animation_id, references or []
+                scene_prompt.strip(), animation_id, output_dir, references or []
             )
         else:
-            self._run_video_animation(scene_prompt.strip(), animation_id)
+            self._run_video_animation(scene_prompt.strip(), animation_id, output_dir)
         return selected
 
     def _apply_default_style(self, prompt: str) -> str:
@@ -195,16 +198,17 @@ class AnimationService:
         self,
         scene_prompt: str,
         animation_id: str,
+        output_dir: Path,
         provider_references: list[ImageReference],
     ) -> None:
         plan, planner_debug = self.plan_triframe_with_provider(
             self.text_response_provider, scene_prompt
         )
         logger.debug(
-            "[AnimationService] Triframe animation %s LLM plan=%s", animation_id, plan
+            "[AnimationProvider] Triframe animation %s LLM plan=%s", animation_id, plan
         )
         effective_base_frame = self._apply_default_style(plan["base_frame"].strip())
-        animation_dir = os.path.join(self.animations_dir, animation_id)
+        animation_dir = str(output_dir / "animations" / animation_id)
         os.makedirs(animation_dir, exist_ok=False)
         previous_frame: ImageReference | None = None
         saved_paths = []
@@ -252,7 +256,7 @@ class AnimationService:
             "id": animation_id,
             "type": "triframe",
             "scene_prompt": scene_prompt.strip(),
-            "frames": [self._to_relative_path(p) for p in saved_paths],
+            "frames": [self._to_relative_path(p, output_dir) for p in saved_paths],
             "plan": plan,
             "provider": {
                 "planner": planner_debug,
@@ -261,22 +265,23 @@ class AnimationService:
         manifest_path = Path(animation_dir) / "triframe.json"
         manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
         logger.debug(
-            "[AnimationService] Animation '%s' is ready to play.", animation_id
+            "[AnimationProvider] Animation '%s' is ready to play.", animation_id
         )
 
     def _run_layered_animation(
         self,
         scene_prompt: str,
         animation_id: str,
+        output_dir: Path,
         provider_references: list[ImageReference],
     ) -> None:
-        animation_dir = Path(self.animations_dir) / animation_id
+        animation_dir = output_dir / "animations" / animation_id
         animation_dir.mkdir(parents=True, exist_ok=False)
         plan, planner_debug = self.plan_layers_with_provider(
             self.text_response_provider, scene_prompt.strip()
         )
         logger.debug(
-            "[AnimationService] Layered animation %s LLM plan=%s", animation_id, plan
+            "[AnimationProvider] Layered animation %s LLM plan=%s", animation_id, plan
         )
         flattened_prompt = self._flatten_layer_plan(scene_prompt.strip(), plan)
         base_result = self.image_provider.generate(
@@ -320,9 +325,13 @@ class AnimationService:
             "scene_prompt": scene_prompt.strip(),
             "flattened_prompt": flattened_prompt,
             "decomposition_prompt": decomposition_prompt,
-            "base_image": self._to_relative_path(base_path),
+            "base_image": self._to_relative_path(base_path, output_dir),
             "layers": [
-                {**description, "path": self._to_relative_path(path), "order": index}
+                {
+                    **description,
+                    "path": self._to_relative_path(path, output_dir),
+                    "order": index,
+                }
                 for index, (description, path) in enumerate(
                     zip(plan[: len(layer_paths)], layer_paths)
                 )
@@ -339,7 +348,7 @@ class AnimationService:
         manifest_path = animation_dir / "layered.json"
         manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
         logger.debug(
-            "[AnimationService] Layered animation ready id=%s base=%s layers=%s manifest=%s",
+            "[AnimationProvider] Layered animation ready id=%s base=%s layers=%s manifest=%s",
             animation_id,
             base_path,
             len(layer_paths),
@@ -366,9 +375,11 @@ class AnimationService:
             return f"{prompt}, loopable"
         return prompt
 
-    def _run_video_animation(self, scene_prompt: str, animation_id: str) -> None:
+    def _run_video_animation(
+        self, scene_prompt: str, animation_id: str, output_dir: Path
+    ) -> None:
         effective_prompt = self._apply_video_style(scene_prompt)
-        animation_dir = Path(self.animations_dir) / animation_id
+        animation_dir = output_dir / "animations" / animation_id
         animation_dir.mkdir(parents=True, exist_ok=False)
         video_duration_seconds = int(
             self.animation_config.get("video_duration_seconds") or 5
@@ -391,7 +402,7 @@ class AnimationService:
             "type": "video",
             "scene_prompt": scene_prompt.strip(),
             "effective_prompt": effective_prompt,
-            "video_path": self._to_relative_path(video_path),
+            "video_path": self._to_relative_path(video_path, output_dir),
             "video_url": result.video_url or "",
             "mime_type": result.mime_type or "video/mp4",
             "video_duration_seconds": video_duration_seconds,
@@ -407,7 +418,7 @@ class AnimationService:
         manifest_path = animation_dir / "video.json"
         manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
         logger.debug(
-            "[AnimationService] Video animation '%s' is ready to play at %s.",
+            "[AnimationProvider] Video animation '%s' is ready to play at %s.",
             animation_id,
             video_path,
         )
@@ -438,7 +449,7 @@ class AnimationService:
             response = text_response_provider.generate(request)
         except TextResponseProviderError as exc:
             logger.warning(
-                "[AnimationService] Technique planner returned invalid output; retrying once: %s",
+                "[AnimationProvider] Technique planner returned invalid output; retrying once: %s",
                 exc,
             )
             response = text_response_provider.generate(request)
@@ -454,7 +465,7 @@ class AnimationService:
             }
         except Exception as exc:
             logger.warning(
-                "[AnimationService] Technique planner parsing failed, defaulting to layered: %s",
+                "[AnimationProvider] Technique planner parsing failed, defaulting to layered: %s",
                 exc,
             )
             return "layered", {"error": str(exc)}
@@ -485,7 +496,7 @@ class AnimationService:
             response = text_response_provider.generate(request)
         except TextResponseProviderError as exc:
             logger.warning(
-                "[AnimationService] Triframe planner returned invalid structured output; retrying once: %s",
+                "[AnimationProvider] Triframe planner returned invalid structured output; retrying once: %s",
                 exc,
             )
             response = text_response_provider.generate(request)
@@ -535,7 +546,7 @@ class AnimationService:
             response = text_response_provider.generate(request)
         except TextResponseProviderError as exc:
             logger.warning(
-                "[AnimationService] Layer planner returned invalid structured output; retrying once: %s",
+                "[AnimationProvider] Layer planner returned invalid structured output; retrying once: %s",
                 exc,
             )
             response = text_response_provider.generate(request)
@@ -591,5 +602,6 @@ class AnimationService:
         image.save(filepath, "WEBP", exif=exif, quality=95, method=6)
         return filepath
 
-    def _to_relative_path(self, path: str | Path) -> str:
-        return Path(path).relative_to(self.output_dir).as_posix()
+    @staticmethod
+    def _to_relative_path(path: str | Path, output_dir: Path) -> str:
+        return Path(path).relative_to(output_dir).as_posix()

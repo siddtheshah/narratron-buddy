@@ -5,6 +5,10 @@ from __future__ import annotations
 import os
 from typing import Any
 
+from pydantic import JsonValue
+from providers.animation_provider import AnimationProvider
+from providers.fal_qwen_layered_provider import FalQwenLayeredProvider
+
 from providers.gemini_image_provider import GeminiImageProvider
 from providers.fal_flux_klein_provider import FalFluxKleinProvider
 from providers.hybrid_image_provider import HybridImageProvider
@@ -26,6 +30,31 @@ from providers.fal_minimax_video_provider import FalMinimaxVideoProvider
 from providers.gemini_live_agent_provider import GeminiLiveAgentProvider
 from providers.openai_live_agent_provider import OpenAILiveAgentProvider
 from providers.live_agent_provider import LiveAgentProvider, LiveAgentProviderError
+
+
+def list_animation_provider_specs() -> list[dict[str, JsonValue]]:
+    return [{"id": AnimationProvider.id, "name": AnimationProvider.display_name}]
+
+
+def get_animation_provider(
+    provider_id: str = "default",
+    options: dict[str, JsonValue] | None = None,
+    *,
+    image_provider: ImageProvider | None = None,
+    text_response_provider: TextResponseProvider | None = None,
+    layered_provider: FalQwenLayeredProvider | None = None,
+    video_provider: VideoProvider | None = None,
+) -> AnimationProvider:
+    """Resolve animation generation with no server state or output location."""
+    if provider_id != AnimationProvider.id:
+        raise ValueError(f"Unknown animation provider: {provider_id}")
+    return AnimationProvider(
+        options or {},
+        image_provider=image_provider,
+        text_response_provider=text_response_provider,
+        layered_provider=layered_provider,
+        video_provider=video_provider,
+    )
 
 
 _IMAGE_SPECS = (

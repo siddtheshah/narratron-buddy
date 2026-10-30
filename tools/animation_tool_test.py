@@ -83,7 +83,7 @@ class TestAnimationTools(BaseTestCase):
         self.assertEqual(tools.play_animation("anything"), CANVAS_PINNED_MESSAGE)
         self.assertFalse(tools.is_in_flight("create_animation"))
 
-    @patch("services.animation_service.get_image_provider")
+    @patch("providers.registry.get_image_provider")
     def test_uses_image_provider_configured_by_visuals(self, mock_get_provider):
         theater = self.manager.theater("visual_provider")
         theater.manager.get_theater_config = MagicMock(return_value={
@@ -103,7 +103,7 @@ class TestAnimationTools(BaseTestCase):
             video_provider=MagicMock(),
         )
 
-        _ = tools.animation_service.image_provider
+        _ = tools.animation_provider.image_provider
         mock_get_provider.assert_called_once_with(
             "hybrid-flux-gemini", {"classifier_model": "gemini-2.5-flash-lite"}
         )

@@ -41,7 +41,7 @@ def test_animation_uses_configured_video_provider_duration_and_visual_style(tmp_
     )
     settings = {"animation": {"video_provider": "custom-video", "video_duration_seconds": 8}, "visuals": {"style": "Watercolor"}}
     with patch("services.theater_media_generation.apply_app_config", return_value=settings), patch(
-        "services.animation_service.get_video_provider", return_value=provider,
+        "providers.registry.get_video_provider", return_value=provider,
     ) as resolve:
         files = generate_theater_media(tmp_path, kind="animation", prompt="Rain", identifier="rain")
     resolve.assert_called_once_with("custom-video")
@@ -75,11 +75,11 @@ def test_image_animation_presets_produce_playable_catalog_assets(tmp_path: Path,
     settings = {"animation": {"text_provider": "planner", "text_model": "planner-model"},
                 "visuals": {"model": "image", "style": "Watercolor"}}
     with patch("services.theater_media_generation.apply_app_config", return_value=settings), \
-         patch("services.animation_service.get_image_provider", return_value=provider), \
-         patch("services.animation_service.get_text_response_provider") as planner, \
-         patch("services.animation_service.FalQwenLayeredProvider", return_value=layered), \
-         patch("services.animation_service.AnimationService.plan_layers_with_provider", return_value=(layers, {})), \
-         patch("services.animation_service.AnimationService.plan_triframe_with_provider", return_value=(plan, {})):
+         patch("providers.registry.get_image_provider", return_value=provider), \
+         patch("providers.registry.get_text_response_provider") as planner, \
+         patch("providers.animation_provider.FalQwenLayeredProvider", return_value=layered), \
+         patch("providers.animation_provider.AnimationProvider.plan_layers_with_provider", return_value=(layers, {})), \
+         patch("providers.animation_provider.AnimationProvider.plan_triframe_with_provider", return_value=(plan, {})):
         files = generate_theater_media(root, kind="animation", prompt="Forest", identifier="forest", animation_type=technique)
     planner.assert_called_once_with("planner", {"model": "planner-model"})
     for filename, content in files.items():

@@ -8,8 +8,7 @@ from pydantic import JsonValue, TypeAdapter
 import yaml
 
 from providers.music_provider import MusicGenerationRequest
-from providers.registry import get_music_provider
-from services.animation_service import AnimationService
+from providers.registry import get_music_provider, get_animation_provider
 from utils.config_loader import apply_app_config
 
 
@@ -37,8 +36,8 @@ def generate_theater_media(
     # The editor and canvas assets pane both use this entry point.
     with TemporaryDirectory(prefix="narratron-animation-") as staging:
         output = Path(staging) / "output"
-        service = AnimationService(output, settings)
-        service.create_animation(prompt, identifier, technique=animation_type)
+        provider = get_animation_provider(options=settings)
+        provider.create_animation(prompt, identifier, output_dir=output, technique=animation_type)
         folder = output / "animations" / identifier
         return {
             f"output/animations/{identifier}/{path.name}": path.read_bytes()
