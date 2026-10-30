@@ -403,6 +403,16 @@ it. The instructions to provide the hint should take that into account.
 
 Always test adventures locally before packaging or distributing.
 
+### 7.0. Adventure Unit Tests (Run Only These)
+Default test discovery (`uv run pytest`) excludes `adventures/`. When writing or editing an adventure, run **only** that adventure's unit tests:
+
+```bash
+uv run pytest adventures/<adventure-folder-name>
+```
+
+- Do not run the full core test suite (`uv run pytest`) or tests from other adventures when developing an adventure.
+- Keep adventure unit tests isolated inside the adventure folder (e.g., `game/*_test.py` or `tests/`).
+
 ### 7.1. Fast CLI Smoke Test
 Verify that the adventure loads, parses configuration, and completes an initial narrative turn:
 
@@ -497,6 +507,7 @@ Before packaging your adventure for players or deploying to a live session:
   - [ ] Character and location reference images are properly organized under `references/characters/<Name>/` and `references/scenes/<Name>/` (`.png`, `.jpg`, `.webp`).
   - [ ] `playlists/` contain valid audio files organized by mood subdirectories.
 - [ ] **Testing**:
+  - [ ] Adventure unit tests pass (run only this adventure's tests): `uv run pytest adventures/<slug>`.
   - [ ] CLI smoke test passes: `uv run python testlab/adventure_runner.py --adventure <slug> --smoke`.
   - [ ] Interactive multi-turn CLI test succeeds without unhandled errors.
   - [ ] Autonomous multi-turn playtest passes: `uv run python testlab/adventure_runner.py --adventure <slug> --autoplay --turns 10`.

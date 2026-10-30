@@ -86,9 +86,29 @@ uv run pytest -n 4
 Parallel execution via `pytest-xdist` significantly reduces full test suite run times (from minutes to under a minute on multi-core systems).
 
 Pytest uses `--import-mode=importlib` so independent adventure packages can reuse
-test filenames such as `game_test.py` without module-name collisions. Discovery
-excludes `theaters/`, which contains generated copies of adventure files; run
-the original tests under `adventures/` instead.
+test filenames such as `game_test.py` without module-name collisions.
+
+Default discovery (`uv run pytest` with no path) excludes `adventures/` and
+`theaters/` via `norecursedirs` in `pytest.ini`. The default run covers only the
+core platform. `theaters/` contains generated copies of adventure files and is
+never run directly. Adventure tests run only when you pass their path explicitly:
+
+```bash
+# Run the tests for the adventure you are working on
+uv run pytest adventures/<adventure-slug>
+
+# Run every adventure's tests
+uv run pytest adventures
+```
+
+- **Changing core platform code**: run `uv run pytest`. Do not add adventure
+  tests to that run.
+- **Writing or editing an adventure**: run **only** that adventure's tests with
+  `uv run pytest adventures/<adventure-slug>`. Do not run the full core suite
+  for adventure-only changes.
+
+
+
 
 ### Mocking Practices
 - **Gemini API / Vertex AI**: Always mock `genai.Client` in `ImageTools` tests using `unittest.mock.patch("tools.image_tool.genai.Client")` to avoid external API calls during unit tests.
