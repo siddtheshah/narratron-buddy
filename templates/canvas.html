@@ -2091,6 +2091,7 @@
         .characters-grid,
         .scenes-grid,
         .stamp-grid,
+        .animations-grid,
         #playlists-manager,
         #playlists-manager-content,
         #animations-manager {
@@ -7476,6 +7477,7 @@
         function revertAllOtherPushItems(currentElement) {
             document.querySelectorAll('.asset-push-button, .playlist-push-button').forEach(btn => {
                 if (btn !== currentElement) {
+                    btn.classList.remove('pushing', 'pushed');
                     const action = btn.querySelector('small');
                     if (action && (action.textContent === 'Pushed!' || action.textContent === 'Pushing…')) {
                         action.textContent = 'Push';
@@ -7646,6 +7648,9 @@
                         listContainer.appendChild(group);
                     });
                     panel.appendChild(listContainer);
+                } else if (kind === 'animations') {
+                    panel.className = 'animations-grid';
+                    assets.forEach(asset => panel.appendChild(createAssetButton(asset, kind)));
                 } else {
                     panel.className = 'asset-track-list';
                     assets.forEach(asset => panel.appendChild(createAssetButton(asset, kind)));
@@ -7675,29 +7680,90 @@
             if (asset.tracks) button.dataset.playlist = asset.name;
             button.dataset.trackUrl = asset.tracks ? asset.tracks[0]?.url || '' : asset.url || asset.id;
             button.title = asset.description || `Push ${asset.name}`;
-            if (kind === 'animations' && asset.url) {
-                const img = document.createElement('img');
-                img.src = asset.url;
-                img.alt = '';
-                img.loading = 'lazy';
-                button.appendChild(img);
+
+            let action;
+            if (kind === 'animations') {
+                button.setAttribute('aria-label', `Push ${asset.name || 'animation'}`);
+                const thumbContainer = document.createElement('div');
+                thumbContainer.className = 'asset-thumb-container';
+
+                const mediaUrl = asset.url;
+                if (mediaUrl) {
+                    const isVideo = mediaUrl.endsWith('.mp4') || mediaUrl.endsWith('.webm') || asset.type === 'video';
+                    if (isVideo && (mediaUrl.endsWith('.mp4') || mediaUrl.endsWith('.webm'))) {
+                        const video = document.createElement('video');
+                        video.className = 'asset-thumb';
+                        video.src = `${mediaUrl}#t=0.001`;
+                        video.preload = 'metadata';
+                        video.muted = true;
+                        video.playsInline = true;
+                        video.onerror = () => {
+                            video.style.display = 'none';
+                            if (!thumbContainer.querySelector('.asset-fallback-thumb')) {
+                                const placeholder = document.createElement('div');
+                                placeholder.className = 'asset-fallback-thumb';
+                                placeholder.textContent = '🎬';
+                                thumbContainer.appendChild(placeholder);
+                            }
+                        };
+                        thumbContainer.appendChild(video);
+                    } else {
+                        const img = document.createElement('img');
+                        img.className = 'asset-thumb';
+                        img.src = mediaUrl;
+                        img.alt = asset.name || '';
+                        img.loading = 'lazy';
+                        img.onerror = () => {
+                            img.style.display = 'none';
+                            if (!thumbContainer.querySelector('.asset-fallback-thumb')) {
+                                const placeholder = document.createElement('div');
+                                placeholder.className = 'asset-fallback-thumb';
+                                placeholder.textContent = '🎬';
+                                thumbContainer.appendChild(placeholder);
+                            }
+                        };
+                        thumbContainer.appendChild(img);
+                    }
+                } else {
+                    const placeholder = document.createElement('div');
+                    placeholder.className = 'asset-fallback-thumb';
+                    placeholder.textContent = '🎬';
+                    thumbContainer.appendChild(placeholder);
+                }
+
+                const overlay = document.createElement('div');
+                overlay.className = 'asset-overlay';
+                action = document.createElement('small');
+                action.textContent = 'Push';
+                overlay.appendChild(action);
+                thumbContainer.appendChild(overlay);
+                button.appendChild(thumbContainer);
+
+                const label = document.createElement('span');
+                label.className = 'asset-label';
+                label.hidden = true;
+                label.style.display = 'none';
+                button.appendChild(label);
+            } else {
+                const label = document.createElement('span');
+                label.className = 'asset-label';
+                label.textContent = asset.tracks ? 'Push' : (asset.description || asset.name);
+                action = document.createElement('small');
+                action.textContent = 'Push';
+                action.hidden = Boolean(asset.tracks);
+                const indicator = document.createElement('span');
+                indicator.className = 'asset-playing-indicator';
+                indicator.hidden = true;
+                button.append(indicator, label, action);
+                updateAssetPlaybackButton(button);
             }
-            const label = document.createElement('span');
-            label.className = 'asset-label';
-            label.textContent = asset.tracks ? 'Push' : (asset.description || asset.name);
-            const action = document.createElement('small');
-            action.textContent = 'Push';
-            action.hidden = Boolean(asset.tracks);
-            const indicator = document.createElement('span');
-            indicator.className = 'asset-playing-indicator';
-            indicator.hidden = true;
-            button.append(indicator, label, action);
-            updateAssetPlaybackButton(button);
+
             button.addEventListener('click', async () => {
                 if (!isCurrentOrator()) return;
                 revertAllOtherPushItems(button);
                 button.disabled = true;
                 action.textContent = 'Pushing…';
+                button.classList.add('pushing');
                 try {
                     const res = await fetch(`/api/theaters/${encodeURIComponent(theaterId)}/${kind}/push`, {
                         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -7734,8 +7800,10 @@
                     }
                     refreshCanvasState(['latest']);
                     revertAllOtherPushItems(button);
+                    button.classList.add('pushed');
                     action.textContent = 'Pushed!';
                     setTimeout(() => {
+                        button.classList.remove('pushed');
                         if (action.textContent === 'Pushed!') {
                             action.textContent = 'Push';
                         }
@@ -7745,6 +7813,7 @@
                     action.textContent = 'Retry';
                 } finally {
                     button.disabled = false;
+                    button.classList.remove('pushing');
                 }
             });
             return button;

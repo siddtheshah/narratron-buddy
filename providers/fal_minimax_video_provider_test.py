@@ -1,13 +1,14 @@
 import pytest
+from pydantic import JsonValue
 
 from providers.fal_minimax_video_provider import FalMinimaxVideoProvider
 from providers.video_provider import VideoGenerationRequest, VideoProviderError
 
 
-def test_minimax_video_posts_prompt_and_downloads_video():
-    calls = []
+def test_minimax_video_posts_prompt_and_downloads_video() -> None:
+    calls: list[tuple[str, dict[str, JsonValue]]] = []
 
-    def request_json(endpoint, payload):
+    def request_json(endpoint: str, payload: dict[str, JsonValue]) -> dict[str, JsonValue]:
         calls.append((endpoint, payload))
         return {
             "request_id": "req-video-1",
@@ -20,7 +21,7 @@ def test_minimax_video_posts_prompt_and_downloads_video():
             },
         }
 
-    def download(url):
+    def download(url: str) -> tuple[bytes, str]:
         assert url == "https://fal.media/files/monkey/sample.mp4"
         return b"fake-mp4-data", "video/mp4"
 
@@ -32,22 +33,23 @@ def test_minimax_video_posts_prompt_and_downloads_video():
     result = provider.generate(VideoGenerationRequest(prompt="A knight riding a horse across a bridge at sunset."))
 
     assert len(calls) == 1
-    assert calls[0][0] == "fal-ai/minimax-h3-turbo/text-to-video"
+    assert calls[0][0] == "minimax/h3-max-turbo/text-to-video"
     assert calls[0][1]["prompt"] == "A knight riding a horse across a bridge at sunset."
     assert calls[0][1]["prompt_expansion_mode"] == "balanced"
+    assert calls[0][1]["resolution"] == "768P"
     assert result.video_bytes == b"fake-mp4-data"
     assert result.mime_type == "video/mp4"
     assert result.provider == "fal-minimax-h3-turbo"
-    assert result.model == "fal-ai/minimax-h3-turbo/text-to-video"
+    assert result.model == "minimax/h3-max-turbo/text-to-video"
     assert result.request_id == "req-video-1"
     assert result.video_url == "https://fal.media/files/monkey/sample.mp4"
     assert result.usage.get("seed") == 42
 
 
-def test_minimax_video_custom_expansion_mode():
-    calls = []
+def test_minimax_video_custom_expansion_mode_and_resolution() -> None:
+    calls: list[tuple[str, dict[str, JsonValue]]] = []
 
-    def request_json(endpoint, payload):
+    def request_json(endpoint: str, payload: dict[str, JsonValue]) -> dict[str, JsonValue]:
         calls.append((endpoint, payload))
         return {"video": {"url": "https://fal.media/video.mp4"}}
 
@@ -55,31 +57,35 @@ def test_minimax_video_custom_expansion_mode():
         api_key="test-key",
         request_json=request_json,
         download=lambda url: (b"video", "video/mp4"),
+        resolution="1080P",
+        model="custom-h3-model",
     )
-    provider.generate(
+    result = provider.generate(
         VideoGenerationRequest(
             prompt="A futuristic train zooming through neon city.",
             prompt_expansion_mode="fast",
         )
     )
 
+    assert calls[0][0] == "custom-h3-model"
     assert calls[0][1]["prompt_expansion_mode"] == "fast"
+    assert calls[0][1]["resolution"] == "1080P"
+    assert result.model == "custom-h3-model"
 
 
-def test_minimax_video_requires_prompt():
+def test_minimax_video_requires_prompt() -> None:
     provider = FalMinimaxVideoProvider(api_key="test-key")
     with pytest.raises(VideoProviderError, match="non-empty prompt"):
         provider.generate(VideoGenerationRequest(prompt="   "))
 
 
-def test_minimax_video_requires_api_key(monkeypatch):
+def test_minimax_video_requires_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("FAL_API_KEY", raising=False)
-    monkeypatch.delenv("FAL_API_KEY", raising=False)
-    with pytest.raises(VideoProviderError, match="FAL_API_KEY or FAL_API_KEY is not configured"):
+    with pytest.raises(VideoProviderError, match="FAL_API_KEY is not configured"):
         FalMinimaxVideoProvider(api_key=None)
 
 
-def test_minimax_video_raises_when_no_video_url():
+def test_minimax_video_raises_when_no_video_url() -> None:
     provider = FalMinimaxVideoProvider(
         api_key="test-key",
         request_json=lambda endpoint, payload: {"error": "queue full"},
@@ -88,10 +94,10 @@ def test_minimax_video_raises_when_no_video_url():
         provider.generate(VideoGenerationRequest(prompt="A castle on a mountain."))
 
 
-def test_minimax_video_passes_duration():
-    calls = []
+def test_minimax_video_passes_duration() -> None:
+    calls: list[tuple[str, dict[str, JsonValue]]] = []
 
-    def request_json(endpoint, payload):
+    def request_json(endpoint: str, payload: dict[str, JsonValue]) -> dict[str, JsonValue]:
         calls.append((endpoint, payload))
         return {"video": {"url": "https://fal.media/video.mp4"}}
 
@@ -109,4 +115,4 @@ def test_minimax_video_passes_duration():
 
     assert len(calls) == 1
     assert calls[0][1]["duration"] == 5
-
+    assert calls[0][1]["resolution"] == "768P"

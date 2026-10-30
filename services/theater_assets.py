@@ -104,6 +104,8 @@ def animations(theater: Theater) -> list[AnimationAsset]:
                         preview = theater.get_url_for_path(manifest.poster_image)
                     except ValueError:
                         manifest.poster_image = ""
+                if not preview and manifest.video_url:
+                    preview = manifest.video_url
             elif kind == "layered":
                 if len(manifest.layers) < 2:
                     continue

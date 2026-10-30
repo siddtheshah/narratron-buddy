@@ -7,7 +7,7 @@ from testlab.server import app
 from testlab.video_benchmark import get_video_prompt, video_prompt_catalog
 
 
-def test_video_benchmark_catalog_has_default_prompts():
+def test_video_benchmark_catalog_has_default_prompts() -> None:
     catalog = video_prompt_catalog()
     ids = {item["id"] for item in catalog}
     assert "dragon-flight" in ids
@@ -17,7 +17,7 @@ def test_video_benchmark_catalog_has_default_prompts():
     assert "dragon" in prompt.prompt.lower()
 
 
-def test_video_benchmark_routes():
+def test_video_benchmark_routes() -> None:
     client = TestClient(app)
     assert client.get("/video-benchmark").status_code == 200
     assert client.get("/video-lab").status_code == 200
@@ -30,7 +30,7 @@ def test_video_benchmark_routes():
     assert any(p["id"] == "fal-minimax-h3-turbo" for p in data["providers"])
 
 
-def test_video_benchmark_validates_required_input():
+def test_video_benchmark_validates_required_input() -> None:
     client = TestClient(app)
     resp = client.post("/api/video-benchmark/runs", json={})
     assert resp.status_code == 400
@@ -38,15 +38,15 @@ def test_video_benchmark_validates_required_input():
 
 
 @patch("testlab.server.get_video_provider")
-def test_video_benchmark_run_execution(mock_get_provider):
+def test_video_benchmark_run_execution(mock_get_provider: MagicMock) -> None:
     mock_provider = MagicMock()
     mock_provider.id = "fal-minimax-h3-turbo"
-    mock_provider.model = "fal-ai/minimax-h3-turbo/text-to-video"
+    mock_provider.model = "minimax/h3-max-turbo/text-to-video"
     mock_provider.generate.return_value = VideoGenerationResult(
         video_bytes=b"fake-mp4-stream",
         mime_type="video/mp4",
         provider="fal-minimax-h3-turbo",
-        model="fal-ai/minimax-h3-turbo/text-to-video",
+        model="minimax/h3-max-turbo/text-to-video",
         request_id="test-vid-req-123",
         usage={"timings": {"inference": 1.8}},
         video_url="https://fal.media/sample.mp4",
@@ -80,4 +80,4 @@ def test_video_benchmark_run_execution(mock_get_provider):
     assert final_data["status"] == "completed"
     assert "video_url" in final_data
     assert final_data["video_url"].endswith(".mp4")
-    assert final_data["model"] == "fal-ai/minimax-h3-turbo/text-to-video"
+    assert final_data["model"] == "minimax/h3-max-turbo/text-to-video"

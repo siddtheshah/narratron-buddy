@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, Mapping
+from typing import Mapping
+
+from pydantic import JsonValue
 
 
 class VideoProviderError(RuntimeError):
@@ -26,7 +28,7 @@ class VideoGenerationResult:
     provider: str
     model: str
     request_id: str | None = None
-    usage: Mapping[str, Any] = field(default_factory=dict)
+    usage: Mapping[str, JsonValue] = field(default_factory=dict)
     video_url: str | None = None
 
 

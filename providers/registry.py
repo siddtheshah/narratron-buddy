@@ -409,15 +409,15 @@ def get_speech_provider(provider_id: str, options: dict[str, Any] | None = None)
 _VIDEO_SPECS = (
     {
         "id": "fal-minimax-h3-turbo",
-        "name": "MiniMax H3 Turbo Video (FAL)",
-        "model": "fal-ai/minimax-h3-turbo/text-to-video",
+        "name": "MiniMax H3 Max Turbo Video (FAL)",
+        "model": "minimax/h3-max-turbo/text-to-video",
         "status": "unconfigured",
-        "notes": "Fast text-to-video generation via FAL MiniMax H3 Turbo.",
+        "notes": "Fast text-to-video generation via FAL MiniMax H3 Max Turbo at 768p.",
     },
 )
 
 
-def list_video_provider_specs() -> list[dict[str, Any]]:
+def list_video_provider_specs() -> list[dict[str, JsonValue]]:
     specs = [dict(spec) for spec in _VIDEO_SPECS]
     for spec in specs:
         if spec["id"] == "fal-minimax-h3-turbo":
@@ -429,16 +429,27 @@ def list_video_provider_specs() -> list[dict[str, Any]]:
     return specs
 
 
-def get_video_provider(provider_id: str, options: dict[str, Any] | None = None) -> VideoProvider:
+def get_video_provider(provider_id: str, options: dict[str, JsonValue] | None = None) -> VideoProvider:
     options = options or {}
-    if provider_id in ("fal-minimax-h3-turbo", "minimax-h3-turbo", "minimax"):
+    if provider_id in (
+        "fal-minimax-h3-turbo",
+        "minimax-h3-turbo",
+        "minimax",
+        "fal-minimax-h3-max-turbo",
+        "h3-max-turbo",
+        "minimax-h3-max-turbo",
+    ):
+        model_opt = options.get("model")
         return FalMinimaxVideoProvider(
             prompt_expansion_mode=str(options.get("prompt_expansion_mode", "balanced")),
+            resolution=str(options.get("resolution", "768P")),
+            model=str(model_opt) if model_opt is not None else None,
         )
     spec = next((item for item in _VIDEO_SPECS if item["id"] == provider_id), None)
     if spec:
         raise VideoProviderError(f"{spec['name']} is listed for comparison but its adapter is not configured yet.")
     raise VideoProviderError(f"Unknown video provider: {provider_id}")
+
 
 
 

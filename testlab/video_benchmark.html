@@ -400,7 +400,7 @@
     </div>
     <h1>Video Provider Bench</h1>
     <p class="intro">
-      Generate fluid text-to-video sequences using FAL's high-speed <code>fal-ai/minimax-h3-turbo/text-to-video</code>
+      Generate fluid text-to-video sequences using FAL's high-speed <code>minimax/h3-max-turbo/text-to-video</code>
       model.
       Inspect end-to-end latency, review prompt adherence, and download or loop generated MP4 video clips.
     </p>
@@ -611,7 +611,7 @@
           document.getElementById('runBtn').disabled = false;
           addVideoResult(data);
         } else {
-          document.getElementById('status').innerHTML = '<span class="status-running"><span class="spinner"></span> Generating video on FAL MiniMax H3 Turbo…</span>';
+          document.getElementById('status').innerHTML = '<span class="status-running"><span class="spinner"></span> Generating video on FAL MiniMax H3 Max Turbo…</span>';
           state.pollTimer = setTimeout(() => pollRun(runId), 800);
         }
       } catch (err) {

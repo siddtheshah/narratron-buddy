@@ -269,6 +269,47 @@ def test_animation_tab_push_and_role_loss(scenes_chars_page: Page) -> None:
     assert page.evaluate("activeStampManagerTab") == "stamps"
 
 
+def test_animation_tab_renders_thumbnails_rather_than_titles(scenes_chars_page: Page) -> None:
+    page = scenes_chars_page
+    page.evaluate("applyRoleUI(true); setStampManagerOpen(true)")
+
+    def serve_animations(route: Route) -> None:
+        route.fulfill(json=[
+            {"id": "storm", "name": "Storm", "description": "A rolling storm", "type": "layered", "url": "/theaters/stage/animations/storm/base.webp"},
+            {"id": "portal", "name": "Portal", "description": "Swirling vortex", "type": "video", "url": "/theaters/stage/animations/portal/video.mp4"},
+            {"id": "rain", "name": "Rain", "description": "Gentle rain", "type": "video", "url": ""},
+        ])
+
+    def serve_media(route: Route) -> None:
+        route.fulfill(status=200, body=b"media")
+
+    page.route("**/theaters/*/animations/**", serve_media)
+    page.route("**/api/theaters/*/animations", serve_animations)
+    page.locator("#stamp-tab-animations").click()
+
+    expect(page.locator("#animations-manager")).to_have_class("animations-grid")
+    buttons = page.locator("#animations-manager .asset-push-button")
+    expect(buttons).to_have_count(3)
+
+    # 1. Image animation renders thumbnail img, not title text
+    storm_btn = page.locator('#animations-manager [data-asset-id="storm"]')
+    expect(storm_btn.locator(".asset-thumb-container img.asset-thumb")).to_have_attribute("src", "/theaters/stage/animations/storm/base.webp")
+    expect(storm_btn.locator(".asset-label")).to_be_hidden()
+    expect(storm_btn.locator("small")).to_have_text("Push")
+
+    # 2. Video animation renders video thumbnail, not title text
+    portal_btn = page.locator('#animations-manager [data-asset-id="portal"]')
+    expect(portal_btn.locator(".asset-thumb-container video.asset-thumb")).to_have_attribute("src", "/theaters/stage/animations/portal/video.mp4#t=0.001")
+    expect(portal_btn.locator(".asset-label")).to_be_hidden()
+    expect(portal_btn.locator("small")).to_have_text("Push")
+
+    # 3. Animation with empty url renders fallback thumbnail, not title text
+    rain_btn = page.locator('#animations-manager [data-asset-id="rain"]')
+    expect(rain_btn.locator(".asset-thumb-container .asset-fallback-thumb")).to_have_text("🎬")
+    expect(rain_btn.locator(".asset-label")).to_be_hidden()
+    expect(rain_btn.locator("small")).to_have_text("Push")
+
+
 def test_no_music_available_without_playlist_tracks(scenes_chars_page: Page) -> None:
     page = scenes_chars_page
     page.evaluate("applyRoleUI(true); setStampManagerOpen(true)")

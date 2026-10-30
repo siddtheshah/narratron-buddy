@@ -788,6 +788,123 @@
 
 .asset-playing-indicator[hidden] { display: none; }
 
+/* Animations Grid and Cards */
+.animations-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    gap: 10px;
+    width: 100%;
+}
+
+.animations-grid[hidden],
+#animations-manager[hidden] {
+    display: none !important;
+}
+
+#animations-manager.animations-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    gap: 10px;
+    width: 100%;
+}
+
+#animations-manager .asset-push-button {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    padding: 8px;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    cursor: pointer;
+    overflow: hidden;
+    width: 100%;
+    box-sizing: border-box;
+    text-align: center;
+}
+
+#animations-manager .asset-push-button:hover,
+#animations-manager .asset-push-button:focus-visible {
+    background: rgba(99, 102, 241, 0.12);
+    border-color: rgba(99, 102, 241, 0.4);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+}
+
+#animations-manager .asset-push-button:active {
+    transform: translateY(0);
+}
+
+#animations-manager .asset-thumb-container {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    border-radius: 6px;
+    overflow: hidden;
+    background: rgba(0, 0, 0, 0.3);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+#animations-manager .asset-push-button img.asset-thumb,
+#animations-manager .asset-push-button video.asset-thumb {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 0;
+    transition: transform 0.25s ease;
+}
+
+#animations-manager .asset-push-button:hover img.asset-thumb,
+#animations-manager .asset-push-button:hover video.asset-thumb {
+    transform: scale(1.05);
+}
+
+#animations-manager .asset-fallback-thumb {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2rem;
+    color: #64748b;
+    background: rgba(0, 0, 0, 0.25);
+    user-select: none;
+}
+
+#animations-manager .asset-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+    border-radius: 6px;
+}
+
+#animations-manager .asset-push-button:hover .asset-overlay,
+#animations-manager .asset-push-button:focus-visible .asset-overlay,
+#animations-manager .asset-push-button.pushing .asset-overlay,
+#animations-manager .asset-push-button.pushed .asset-overlay,
+#animations-manager .asset-push-button:disabled .asset-overlay {
+    opacity: 1;
+}
+
+#animations-manager .asset-push-button small {
+    background: #6366f1;
+    color: #fff;
+    font-size: 0.72rem;
+    font-weight: 600;
+    padding: 4px 8px;
+    border-radius: 4px;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+    flex-shrink: 0;
+}
+
 .stamp-manager-permission-banner {
     padding: 6px 12px;
     font-size: 0.78rem;
