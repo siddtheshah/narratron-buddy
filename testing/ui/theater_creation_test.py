@@ -116,7 +116,7 @@ def test_blank_canvas_settings_are_visible_and_submitted(
 ) -> None:
     page = deploy_page
     page.set_viewport_size({"width": width, "height": 900})
-    assert page.locator(".path-card").count() == 4
+    assert page.locator(".path-card").count() == 3
     assert page.get_by_text("Configure with Assets", exact=True).count() == 0
     assert page.locator("#refFileInput, #playlistsContainer").count() == 0
     expect(page.locator("#cfgImageGeneration")).not_to_be_visible()
@@ -150,6 +150,10 @@ def test_blank_canvas_settings_are_visible_and_submitted(
 
 
 def test_retired_creation_path_falls_back_to_blank_canvas(deploy_page: Page) -> None:
+    deploy_page.goto("http://narratron.test/deploy?creation_path=folder")
+    expect(deploy_page.locator("#pathCardBlank")).to_have_class("path-card active")
+    expect(deploy_page.locator("#simpleConfig summary")).to_be_visible()
+
     deploy_page.goto("http://narratron.test/deploy?creation_path=individual")
     expect(deploy_page.locator("#pathCardBlank")).to_have_class("path-card active")
     expect(deploy_page.locator("#simpleConfig summary")).to_be_visible()
@@ -188,26 +192,34 @@ def test_blank_canvas_config_does_not_override_adventure(deploy_page: Page) -> N
     assert data["advanced_config"] == "image_generation:\n  enabled: false"
 
 
-def test_folder_package_still_previews_and_submits_files(deploy_page: Page) -> None:
+def test_create_new_theater_options_and_responsive_stacking(deploy_page: Page) -> None:
     page = deploy_page
-    page.locator("#pathCardFolder").click()
-    expect(page.locator("#customConfigOptions")).not_to_be_visible()
-    page.evaluate("""() => handleFolderUploadFiles([
-        new File(['image'], 'references/hero.png', {type: 'image/png'}),
-        new File(['audio'], 'playlists/ambient/forest.mp3', {type: 'audio/mpeg'}),
-        new File(['image_generation:\\n  enabled: false'], 'theater.yaml', {type: 'text/yaml'})
-    ])""")
-    expect(page.locator("#folderManifestSummary")).to_have_text("3 Files Mounted")
-    expect(page.locator("#folderManifestDetails")).to_contain_text("1 reference image(s)")
-    expect(page.locator("#folderManifestDetails")).to_contain_text("1 playlist(s) (1 tracks)")
-    page.locator("#deployBtn").click()
-    page.wait_for_function("window.deployment !== undefined")
-    data: dict[str, str] = page.evaluate("window.deployment")
-    assert data["creation_mode"] == "folder"
-    assert data["asset_folder_files"] == "theater.yaml"
-    assert data["folder_theater_config_yaml"] == "image_generation:\n  enabled: false"
-    page.evaluate("clearFolderUpload()")
-    expect(page.locator("#folderUploadManifest")).not_to_be_visible()
+    cards = page.locator(".path-card")
+    expect(cards).to_have_count(3)
+    expect(cards.nth(0)).to_contain_text("Fresh Canvas")
+    expect(cards.nth(1)).to_contain_text("New Adventure")
+    expect(cards.nth(2)).to_contain_text("Enter Theater Builder")
+    expect(page.locator("#pathCardFolder")).to_have_count(0)
+    expect(page.locator("#pathSectionFolder")).to_have_count(0)
+
+    # On desktop (width > 768px), cards stack horizontally
+    page.set_viewport_size({"width": 1280, "height": 900})
+    box0 = cards.nth(0).bounding_box()
+    box1 = cards.nth(1).bounding_box()
+    box2 = cards.nth(2).bounding_box()
+    assert box0 is not None and box1 is not None and box2 is not None
+    assert box0["y"] == pytest.approx(box1["y"], abs=4)
+    assert box1["y"] == pytest.approx(box2["y"], abs=4)
+    assert box0["x"] < box1["x"] < box2["x"]
+
+    # On mobile (width <= 768px), cards stack vertically
+    page.set_viewport_size({"width": 390, "height": 844})
+    mbox0 = cards.nth(0).bounding_box()
+    mbox1 = cards.nth(1).bounding_box()
+    mbox2 = cards.nth(2).bounding_box()
+    assert mbox0 is not None and mbox1 is not None and mbox2 is not None
+    assert mbox0["y"] < mbox1["y"] < mbox2["y"]
+    assert mbox0["x"] == pytest.approx(mbox1["x"], abs=4)
 
 
 def test_deleting_theater_asks_for_confirmation_once_until_reloaded(deploy_page: Page) -> None:

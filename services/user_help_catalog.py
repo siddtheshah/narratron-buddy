@@ -21,8 +21,8 @@ _FAQ_ENTRIES: tuple[tuple[tuple[str, ...], str], ...] = (
      "and click **Join**.\n\nSee the [Virtual Tabletop Guide](/docs/virtual-tabletop) for canvas controls and participation."),
     (("How do I make a theater?", "How do I create a theater?", "How do I host a theater?", "How do I deploy a theater?", "How can I make a theater?"),
      "1. Sign in and open [Create Theater](/deploy).\n"
-     "2. Choose **Blank Canvas** for a quick start, **Adventure Mode** for an adventure, "
-     "or **Folder Package** to upload a prepared theater. **Build with AI** opens the theater editor.\n"
+     "2. Choose **Fresh Canvas** for a quick start, **New Adventure** for an adventure, "
+     "or **Enter Theater Builder** to open the theater editor.\n"
      "3. Enter a **Theater Name**, configure your chosen path, and click **Deploy Theater**. "
      "Share the join key with your viewers.\n\n"
      "For custom adventures and configuration, see [Writing Adventures](/docs/writing-adventures) "

@@ -480,7 +480,7 @@
 
         .creation-paths-grid {
             display: grid;
-            grid-template-columns: repeat(2, 1fr);
+            grid-template-columns: repeat(3, minmax(0, 1fr));
             gap: 10px;
         }
 
@@ -488,6 +488,10 @@
             .creation-paths-grid {
                 grid-template-columns: 1fr;
             }
+        }
+
+        html.mobile-device .creation-paths-grid {
+            grid-template-columns: 1fr;
         }
 
         .path-card {
@@ -963,11 +967,11 @@
     <main>
         <div class="hero">
             <h1>Theater Deployer</h1>
-            <p>Start a blank canvas, launch an adventure, or deploy a theater package.</p>
+            <p>Start a fresh canvas, launch an adventure, or enter the theater builder.</p>
             <p class="mobile-canvas-note">Use the remote on your phone as the active orator. Open the full canvas on a desktop for visuals, microphone input, and audio.</p>
             <div class="canvas-return-banner" id="canvasReturnBanner" role="status">
                 <span>Ready to make it your own? Use the <a href="/theater-editor">Theater Editor</a> to add reference
-                    images and music, or expand Blank Canvas settings to configure your tools.</span>
+                    images and music, or expand Fresh Canvas settings to configure your tools.</span>
                 <button class="btn btn-secondary btn-sm" type="button" onclick="dismissCanvasReturnBanner()">Got
                     it</button>
             </div>
@@ -985,28 +989,23 @@
                 <!-- Theater Creation Path Cards -->
                 <div class="creation-paths-container">
                     <div class="creation-paths-grid">
-                        <a class="path-card" id="pathCardBuilder" href="/theater-editor" style="text-decoration: none; color: inherit;">
-                            <div class="path-icon">✦</div>
-                            <div class="path-title">Build with AI</div>
-                            <div class="path-desc">Create a world with an assistant, organize assets, and test your theater</div>
-                        </a>
                         <div class="path-card active" id="pathCardBlank" onclick="selectCreationPath('blank')">
                             <div class="path-icon">✨</div>
-                            <div class="path-title">Blank Canvas</div>
+                            <div class="path-title">Fresh Canvas</div>
                             <div class="path-desc">Start with default assets and optional tool settings</div>
                         </div>
 
                         <div class="path-card" id="pathCardAdventure" onclick="selectCreationPath('adventure')">
                             <div class="path-icon">🗺️</div>
-                            <div class="path-title">Adventure Mode</div>
+                            <div class="path-title">New Adventure</div>
                             <div class="path-desc">Jump into a player-led, choice-driven story</div>
                         </div>
 
-                        <div class="path-card" id="pathCardFolder" onclick="selectCreationPath('folder')">
-                            <div class="path-icon">📁</div>
-                            <div class="path-title">Folder Package</div>
-                            <div class="path-desc">Upload folder / zip with references & audio</div>
-                        </div>
+                        <a class="path-card" id="pathCardBuilder" href="/theater-editor" style="text-decoration: none; color: inherit;">
+                            <div class="path-icon">✦</div>
+                            <div class="path-title">Enter Theater Builder</div>
+                            <div class="path-desc">Create a world with an assistant, organize assets, and test your theater</div>
+                        </a>
                     </div>
                 </div>
 
@@ -1015,7 +1014,7 @@
                     <label for="theaterName">Theater Name</label>
                     <input type="text" id="theaterName" placeholder="e.g. Desert Mystery Adventure">
                 </div>
-                <!-- PATH 1: Blank Canvas -->
+                <!-- PATH 1: Fresh Canvas -->
                 <div id="pathSectionBlank" class="creation-path-section">
                     <div
                         style="background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.25); border-radius: var(--radius-md); padding: 1.1rem; text-align: center;">
@@ -1258,105 +1257,7 @@
                     </div>
                 </div>
 
-                <!-- PATH 3: Folder Package Creation -->
-                <div id="pathSectionFolder" class="creation-path-section" style="display: none;">
-                    <div class="form-group" style="position: relative;">
-                        <div
-                            style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.25rem;">
-                            <label
-                                style="display: flex; align-items: center; gap: 6px; font-weight: 600; color: #f8fafc;">
-                                <span>📁 Asset Folder / ZIP Upload</span>
-                            </label>
-                            <div class="hover-tutorial-trigger" id="assetTutorialBadge">
-                                <span>ℹ️ Structure Guide</span>
-                                <div class="hover-tutorial-popover">
-                                    <div class="tutorial-title">
-                                        <span>📦</span> Asset Folder Directory Structure
-                                    </div>
-                                    <p class="tutorial-desc">
-                                        Upload a structured folder or <code>.zip</code> package to automatically
-                                        populate references, playlists, optional <code>lore/</code> text documents,
-                                        and canvas defaults.
-                                    </p>
-                                    <div class="folder-tree-card">
-                                        <div class="tree-root">📁 my_theater_assets/</div>
-                                        <div>├── <span class="tree-folder">📁 references/</span> <span
-                                                class="tree-tag">(Images: .png, .jpg, .webp)</span></div>
-                                        <div>│ ├── <span class="tree-file">hero_portrait.png</span></div>
-                                        <div>│ └── <span class="tree-file">desert_map.jpg</span></div>
-                                        <div>├── <span class="tree-folder">📁 playlists/</span> <span
-                                                class="tree-tag">(Audio folders = playlist names)</span></div>
-                                        <div>│ ├── <span class="tree-folder">📁 ambient/</span></div>
-                                        <div>│ │ └── <span class="tree-file">desert_wind.mp3</span></div>
-                                        <div>│ └── <span class="tree-folder">📁 combat/</span></div>
-                                        <div>│ └── <span class="tree-file">battle_theme.wav</span></div>
-                                        <div>└── <span class="tree-file">📄 theater.yaml</span> <span
-                                                class="tree-tag">(Required theater configuration)</span></div>
-                                    </div>
-                                    <div class="tutorial-bullet-list">
-                                        <div class="tutorial-bullet-item">
-                                            <span>⚡</span>
-                                            <span><strong>Auto-Extraction:</strong> References and audio tracks are
-                                                parsed & mounted instantly. Put character and world background in
-                                                <code>lore/</code> as UTF-8 <code>.txt</code> or <code>.md</code> files; use separate <code>RESPONDER.md</code> and <code>PLANNER.md</code> guides. The story planner
-                                                can
-                                                browse them when creating characters.</span>
-                                        </div>
-                                        <div class="tutorial-bullet-item">
-                                            <span>💡</span>
-                                            <span><strong>Pro tip:</strong> Export an existing theater, edit its
-                                                assets or <code>theater.yaml</code>, then upload it here to create a
-                                                revised copy.</span>
-                                        </div>
-                                        <div class="tutorial-bullet-item">
-                                            <span>📦</span>
-                                            <span><strong>ZIP Support:</strong> You can drop an uncompressed folder or a
-                                                compressed <code>.zip</code> file directly.</span>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="dropzone" id="folderDropzone"
-                            style="background: rgba(168, 85, 247, 0.04); border-color: rgba(168, 85, 247, 0.25);">
-                            <input type="file" id="folderFileInput" webkitdirectory directory multiple
-                                style="display: none;">
-                            <input type="file" id="zipFileInput" accept=".zip" style="display: none;">
-                            <span style="font-size: 1.8rem;">📂</span>
-                            <p style="font-weight: 600; color: #f8fafc; margin-top: 0.25rem;">Drop Asset Folder or .ZIP
-                                here</p>
-                            <small
-                                style="color: var(--text-muted); font-size: 0.8rem; margin-top: 2px; display: block;">
-                                Supports full directory folders containing <code>references/</code>,
-                                <code>playlists/</code>, optional text-only <code>lore/</code>, and
-                                <code>theater.yaml</code>
-                            </small>
-                            <div style="display: flex; gap: 8px; justify-content: center; margin-top: 10px;">
-                                <button type="button" class="btn btn-secondary btn-sm"
-                                    onclick="triggerAssetPackageSelect()">📁 Select</button>
-                            </div>
-                        </div>
-
-                        <div id="folderUploadManifest"
-                            style="display: none; background: rgba(99, 102, 241, 0.1); border: 1px solid rgba(99, 102, 241, 0.3); border-radius: var(--radius-md); padding: 0.75rem 1rem; margin-top: 0.4rem;">
-                            <div style="display: flex; align-items: center; justify-content: space-between;">
-                                <div
-                                    style="font-weight: 600; font-size: 0.88rem; color: #a5b4fc; display: flex; align-items: center; gap: 6px;">
-                                    <span>✅ Mounted Asset Package:</span>
-                                    <span id="folderManifestSummary"></span>
-                                </div>
-                                <button type="button" class="remove-btn" onclick="clearFolderUpload()"
-                                    title="Clear folder package">&times;</button>
-                            </div>
-                            <div id="folderManifestDetails"
-                                style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 4px; line-height: 1.4;">
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <button class="btn btn-primary" id="deployBtn" onclick="deployNewTheater()" style="margin-top: 1rem;">
+<button class="btn btn-primary" id="deployBtn" onclick="deployNewTheater()" style="margin-top: 1rem;">
                     <span id="deploySpinner" style="display: none;">⏳</span>
                     <span id="deployBtnText">🚀 Deploy Theater</span>
                 </button>
@@ -1732,186 +1633,34 @@
             loadTheaters();
         });
 
-        // Asset Folder & ZIP Dropzone Handling
-        let mountedZipFile = null;
-        let mountedFolderFiles = [];
-        let folderTheaterConfigYaml = '';
-        let folderConfigReadPromise = null;
-
-        const folderDropzone = document.getElementById('folderDropzone');
-        const folderFileInput = document.getElementById('folderFileInput');
-        const zipFileInput = document.getElementById('zipFileInput');
-
-        function triggerAssetPackageSelect() {
-            const fInput = document.getElementById('folderFileInput');
-            const zInput = document.getElementById('zipFileInput');
-            if (fInput) {
-                fInput.click();
-            } else if (zInput) {
-                zInput.click();
-            }
-        }
-
-        if (folderFileInput) {
-            folderFileInput.onchange = (e) => {
-                if (e.target.files && e.target.files.length > 0) {
-                    handleFolderUploadFiles(Array.from(e.target.files));
-                }
-            };
-        }
-
-        if (zipFileInput) {
-            zipFileInput.onchange = (e) => {
-                if (e.target.files && e.target.files.length > 0) {
-                    handleZipUploadFile(e.target.files[0]);
-                }
-            };
-        }
-
-        if (folderDropzone) {
-            folderDropzone.ondragover = (e) => {
-                e.preventDefault();
-                folderDropzone.classList.add('dragover');
-            };
-
-            folderDropzone.ondragleave = () => {
-                folderDropzone.classList.remove('dragover');
-            };
-
-            folderDropzone.ondrop = (e) => {
-                e.preventDefault();
-                folderDropzone.classList.remove('dragover');
-
-                const files = e.dataTransfer ? e.dataTransfer.files : null;
-                if (files && files.length === 1 && files[0].name.toLowerCase().endsWith('.zip')) {
-                    handleZipUploadFile(files[0]);
-                } else if (files && files.length > 0) {
-                    handleFolderUploadFiles(Array.from(files));
-                }
-            };
-        }
-
-        function handleZipUploadFile(file) {
-            const MAX_SIZE = 10 * 1024 * 1024; // 10MB limit
-            if (file.size > MAX_SIZE) {
-                alert(`Error: ZIP archive "${file.name}" exceeds the maximum allowed 10MB size limit (File size: ${(file.size / (1024 * 1024)).toFixed(2)} MB). Please select a smaller package.`);
-                clearFolderUpload();
-                return;
-            }
-
-            mountedZipFile = file;
-            mountedFolderFiles = [];
-            folderTheaterConfigYaml = '';
-            folderConfigReadPromise = null;
-            const summarySpan = document.getElementById('folderManifestSummary');
-            const detailsDiv = document.getElementById('folderManifestDetails');
-            const manifestCard = document.getElementById('folderUploadManifest');
-
-            if (summarySpan) summarySpan.innerText = `ZIP Package (${file.name})`;
-            if (detailsDiv) detailsDiv.innerHTML = `File size: ${(file.size / (1024 * 1024)).toFixed(2)} MB. Contents will be unpacked on canvas deployment (max 10MB limit enforced).`;
-            if (manifestCard) manifestCard.style.display = 'block';
-        }
-
-        function handleFolderUploadFiles(files) {
-            for (const f of files) {
-                if (f.size > 10 * 1024 * 1024) {
-                    alert(`Error: File "${f.name}" exceeds the maximum allowed 10MB size limit (File size: ${(f.size / (1024 * 1024)).toFixed(2)} MB). Please select smaller files.`);
-                    clearFolderUpload();
-                    return;
-                }
-            }
-            mountedZipFile = null;
-            mountedFolderFiles = files;
-            folderTheaterConfigYaml = '';
-
-            let refCount = 0;
-            let playListMap = {};
-
-            files.forEach(f => {
-                const relPath = (f.webkitRelativePath || f.name).replace(/\\/g, '/');
-                const parts = relPath.split('/').filter(Boolean);
-                const cleanName = parts.length > 0 ? parts[parts.length - 1] : f.name;
-
-                if (parts.includes('references') || (cleanName.match(/\.(png|jpg|jpeg|webp|gif)$/i) && !parts.includes('playlists'))) {
-                    refCount++;
-                } else if (parts.includes('playlists')) {
-                    const idx = parts.indexOf('playlists');
-                    const plName = (idx + 1 < parts.length - 1) ? parts[idx + 1] : 'default';
-                    if (!playListMap[plName]) playListMap[plName] = 0;
-                    playListMap[plName]++;
-                }
-            });
-
-            const theaterConfigFile = files.find(f => {
-                const relPath = (f.webkitRelativePath || f.name).replace(/\\/g, '/');
-                return relPath.split('/').filter(Boolean).pop()?.toLowerCase() === 'theater.yaml';
-            });
-            folderConfigReadPromise = theaterConfigFile
-                ? theaterConfigFile.text().then(text => { folderTheaterConfigYaml = text; })
-                : null;
-
-            const summarySpan = document.getElementById('folderManifestSummary');
-            const detailsDiv = document.getElementById('folderManifestDetails');
-            const manifestCard = document.getElementById('folderUploadManifest');
-
-            const plNames = Object.keys(playListMap);
-            if (summarySpan) summarySpan.innerText = `${files.length} Files Mounted`;
-            if (detailsDiv) {
-                detailsDiv.innerHTML = `
-                    Found <strong>${refCount}</strong> reference image(s), 
-                    <strong>${plNames.length}</strong> playlist(s) (${Object.values(playListMap).reduce((a, b) => a + b, 0)} tracks)${theaterConfigFile ? ', and theater.yaml' : ''}.
-                `;
-            }
-            if (manifestCard) manifestCard.style.display = 'block';
-        }
-
-        function clearFolderUpload() {
-            mountedZipFile = null;
-            mountedFolderFiles = [];
-            folderTheaterConfigYaml = '';
-            folderConfigReadPromise = null;
-            const fInput = document.getElementById('folderFileInput');
-            const zInput = document.getElementById('zipFileInput');
-            const manifestCard = document.getElementById('folderUploadManifest');
-            if (fInput) fInput.value = '';
-            if (zInput) zInput.value = '';
-            if (manifestCard) manifestCard.style.display = 'none';
-        }
-
         // Creation Path State & Switcher
         const deployQuery = new URLSearchParams(window.location.search);
         const requestedCreationPath = deployQuery.get('creation_path');
-        let currentCreationPath = ['blank', 'adventure', 'folder'].includes(requestedCreationPath)
+        let currentCreationPath = ['blank', 'adventure'].includes(requestedCreationPath)
             ? requestedCreationPath
             : 'blank';
 
         function selectCreationPath(mode) {
-            currentCreationPath = mode;
+            currentCreationPath = mode === 'adventure' ? 'adventure' : 'blank';
 
-            const cardFolder = document.getElementById('pathCardFolder');
             const cardBlank = document.getElementById('pathCardBlank');
             const cardAdventure = document.getElementById('pathCardAdventure');
 
-            const secFolder = document.getElementById('pathSectionFolder');
             const secBlank = document.getElementById('pathSectionBlank');
             const secAdventure = document.getElementById('pathSectionAdventure');
 
             const deployBtnText = document.getElementById('deployBtnText');
             const theaterNameConfig = document.getElementById('theaterNameConfig');
 
-            [cardFolder, cardBlank, cardAdventure].forEach(c => c && c.classList.remove('active'));
-            [secFolder, secBlank, secAdventure].forEach(s => s && (s.style.display = 'none'));
+            [cardBlank, cardAdventure].forEach(c => c && c.classList.remove('active'));
+            [secBlank, secAdventure].forEach(s => s && (s.style.display = 'none'));
             if (theaterNameConfig) theaterNameConfig.style.display = 'block';
 
-            if (mode === 'adventure') {
+            if (currentCreationPath === 'adventure') {
                 if (cardAdventure) cardAdventure.classList.add('active');
                 if (secAdventure) secAdventure.style.display = 'block';
                 if (deployBtnText) deployBtnText.innerText = 'Start Adventure';
-            } else if (mode === 'folder') {
-                if (cardFolder) cardFolder.classList.add('active');
-                if (secFolder) secFolder.style.display = 'block';
-                if (deployBtnText) deployBtnText.innerText = '🚀 Deploy Theater from Folder';
-            } else if (mode === 'blank') {
+            } else {
                 if (cardBlank) cardBlank.classList.add('active');
                 if (secBlank) secBlank.style.display = 'block';
                 if (deployBtnText) deployBtnText.innerText = '🚀 Deploy Theater';
@@ -2074,7 +1823,6 @@
 
             try {
                 if (theaterDefaultConfigRequest) await theaterDefaultConfigRequest;
-                if (folderConfigReadPromise) await folderConfigReadPromise;
                 const formData = new FormData();
                 formData.append('name', name);
                 formData.append('creation_mode', currentCreationPath);
@@ -2103,21 +1851,6 @@
                 const theaterConfigYaml = document.getElementById('theaterConfigEditor')?.value.trim();
                 if (useBlankConfig && advancedConfigIsCanonical && theaterConfigYaml) {
                     formData.append('advanced_config', theaterConfigYaml);
-                }
-
-                if (currentCreationPath === 'folder') {
-                    if (mountedZipFile) {
-                        formData.append('asset_zip', mountedZipFile);
-                    }
-
-                    if (mountedFolderFiles && mountedFolderFiles.length > 0) {
-                        mountedFolderFiles.forEach(file => {
-                            formData.append('asset_folder_files', file, file.webkitRelativePath || file.name);
-                        });
-                    }
-                    if (folderTheaterConfigYaml) {
-                        formData.append('folder_theater_config_yaml', folderTheaterConfigYaml);
-                    }
                 }
 
                 const response = await fetch('/api/theaters/create-and-deploy', {
