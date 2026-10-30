@@ -115,9 +115,14 @@ export function createImageRenderer({
         const width = sourceImage.naturalWidth * scale;
         const height = sourceImage.naturalHeight * scale;
         const frame = imageEffectController.element;
+        const left = (rect.width - width) / 2;
+        const top = (rect.height - height) / 2;
 
-        frame.style.left = `${(rect.width - width) / 2}px`;
-        frame.style.top = `${(rect.height - height) / 2}px`;
+        frame.style.left = `${left}px`;
+        frame.style.top = `${top}px`;
+        // The fitted frame is inset from the canvas. Zoom both layers around
+        // the canvas origin so their copies of the image stay registered.
+        frame.style.transformOrigin = `${-left}px ${-top}px`;
         frame.style.width = `${width}px`;
         frame.style.height = `${height}px`;
         frame.style.display = "block";
