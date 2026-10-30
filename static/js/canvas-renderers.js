@@ -879,7 +879,7 @@ export function createImageRenderer({
     };
 }
 
-export function createDoodleRenderer({ canvas, isVisible = () => true, textLayer = null, canEditText = () => false, onEditText = () => {}, onMoveText = () => {}, stampLayer = null, canMoveStamp = () => false, onMoveStamp = () => {}, onRemoveStamp = () => {}, onSelectStamp = () => {}, canSelectSegment = () => true, onSelectSegment = () => {}, onRemoveSegment = () => {} }) {
+export function createDoodleRenderer({ canvas, isVisible = () => true, textLayer = null, canEditText = () => false, onEditText = () => {}, onMoveText = () => {}, onRemoveText = () => {}, onSelectText = () => {}, stampLayer = null, canMoveStamp = () => false, onMoveStamp = () => {}, onRemoveStamp = () => {}, onSelectStamp = () => {}, canSelectSegment = () => true, onSelectSegment = () => {}, onRemoveSegment = () => {} }) {
     const context = canvas?.getContext("2d");
 
     const selectedSegmentIds = new Set();
@@ -1278,6 +1278,92 @@ export function createDoodleRenderer({ canvas, isVisible = () => true, textLayer
         });
     }
 
+    const selectedTextItems = new Set();
+    let selectedTextItem = null;
+
+    function selectMovableText(item, multi = false) {
+        if (!textLayer) return;
+        const previous = selectedTextItem;
+        const rawItems = Array.isArray(item) ? item : (item ? [item] : []);
+        const items = rawItems.map(it => {
+            if (!it) return null;
+            if (it.nodeType) return it;
+            const targetId = it.id || it;
+            return Array.from(textLayer.children).find(node => node.dataset?.annotationId === targetId || node.annotation?.id === targetId) || null;
+        }).filter(Boolean);
+
+        if (!multi) {
+            selectedTextItems.clear();
+        }
+        items.forEach(node => {
+            if (node) selectedTextItems.add(node);
+        });
+        Array.from(textLayer.children).forEach(node => {
+            const isMovable = selectedTextItems.has(node);
+            node.classList.toggle("movable", isMovable);
+            if (!isMovable && (document.activeElement === node || node.contains(document.activeElement))) {
+                if (typeof document.activeElement?.blur === "function") {
+                    document.activeElement.blur();
+                }
+                if (typeof node.blur === "function") {
+                    node.blur();
+                }
+            }
+        });
+        const lastItem = items[items.length - 1] || null;
+        selectedTextItem = lastItem;
+        if (lastItem) {
+            textLayer.appendChild(lastItem);
+            if (typeof lastItem.focus === "function") {
+                lastItem.focus();
+            }
+            if (previous !== lastItem && typeof onSelectText === "function" && lastItem.annotation) {
+                onSelectText(lastItem.annotation);
+            }
+        }
+    }
+
+    function getTextInRect(x0, y0, x1, y1) {
+        if (!textLayer || !canvas) return [];
+        const canvasRect = canvas.getBoundingClientRect();
+        if (!canvasRect.width || !canvasRect.height) return [];
+        let minX = Math.min(x0, x1);
+        let maxX = Math.max(x0, x1);
+        let minY = Math.min(y0, y1);
+        let maxY = Math.max(y0, y1);
+        if (maxX <= 1 && maxY <= 1 && (canvasRect.width > 1 || canvasRect.height > 1)) {
+            minX *= canvasRect.width;
+            maxX *= canvasRect.width;
+            minY *= canvasRect.height;
+            maxY *= canvasRect.height;
+        }
+
+        return Array.from(textLayer.children).filter(item => {
+            if (!item.classList.contains("canvas-text-annotation")) return false;
+            const itemRect = item.getBoundingClientRect();
+            if (itemRect.width > 0 || itemRect.height > 0) {
+                const textLeft = itemRect.left - canvasRect.left;
+                const textTop = itemRect.top - canvasRect.top;
+                const textRight = itemRect.right - canvasRect.left;
+                const textBottom = itemRect.bottom - canvasRect.top;
+
+                return textLeft <= maxX && textRight >= minX && textTop <= maxY && textBottom >= minY;
+            }
+            if (item.annotation) {
+                const tx = Number(item.annotation.x) * canvasRect.width;
+                const ty = Number(item.annotation.y) * canvasRect.height;
+                const size = Number(item.annotation.size) || 32;
+                const lines = String(item.annotation.text || "").split("\n").length;
+                const estHeight = size * 1.15 * Math.max(1, lines);
+                const estWidth = size * 0.6 * Math.max(1, String(item.annotation.text || "").length);
+                const textRight = tx + estWidth;
+                const textBottom = ty + estHeight;
+                return tx <= maxX && textRight >= minX && ty <= maxY && textBottom >= minY;
+            }
+            return false;
+        });
+    }
+
     const finishSelectionBox = event => {
         if (!boxDrag) return;
         const drag = boxDrag;
@@ -1314,14 +1400,25 @@ export function createDoodleRenderer({ canvas, isVisible = () => true, textLayer
             } else if (!drag.isMulti) {
                 selectMovableStamp(null);
             }
+
+            const textsInBox = getTextInRect(boxLeft, boxTop, boxRight, boxBottom);
+            if (textsInBox.length > 0) {
+                selectMovableText(textsInBox, drag.isMulti);
+            } else if (!drag.isMulti) {
+                selectMovableText(null);
+            }
         } else {
             const hit = findSegmentAt(drag.startX, drag.startY);
             if (hit) {
                 selectSegment(hit, drag.isMulti);
-                if (!drag.isMulti) selectMovableStamp(null);
+                if (!drag.isMulti) {
+                    selectMovableStamp(null);
+                    selectMovableText(null);
+                }
             } else if (!drag.isMulti) {
                 clearSelectedSegments();
                 selectMovableStamp(null);
+                selectMovableText(null);
             }
         }
     };
@@ -1348,6 +1445,10 @@ export function createDoodleRenderer({ canvas, isVisible = () => true, textLayer
                     event.preventDefault();
                     selectMovableStamp(null);
                 }
+                if (selectedTextItems.size > 0 || selectedTextItem) {
+                    event.preventDefault();
+                    selectMovableText(null);
+                }
             } else if (event.key === "Delete" || event.key === "Backspace") {
                 let handled = false;
                 const segmentsToRemove = (selectedSegmentIds.size > 0 && typeof onRemoveSegment === "function")
@@ -1355,6 +1456,9 @@ export function createDoodleRenderer({ canvas, isVisible = () => true, textLayer
                     : [];
                 const stampsToRemove = (selectedStampItems.size > 0 && typeof onRemoveStamp === "function" && canMoveStamp())
                     ? Array.from(selectedStampItems).map(node => node.annotation).filter(Boolean)
+                    : [];
+                const textsToRemove = (selectedTextItems.size > 0 && typeof onRemoveText === "function" && canEditText())
+                    ? Array.from(selectedTextItems).map(node => node.annotation).filter(Boolean)
                     : [];
 
                 if (segmentsToRemove.length > 0) {
@@ -1365,6 +1469,11 @@ export function createDoodleRenderer({ canvas, isVisible = () => true, textLayer
                 if (stampsToRemove.length > 0) {
                     selectMovableStamp(null);
                     stampsToRemove.forEach(ann => onRemoveStamp(ann));
+                    handled = true;
+                }
+                if (textsToRemove.length > 0) {
+                    selectMovableText(null);
+                    textsToRemove.forEach(ann => onRemoveText(ann));
                     handled = true;
                 }
                 if (handled) {
@@ -1600,14 +1709,29 @@ export function createDoodleRenderer({ canvas, isVisible = () => true, textLayer
         }
     }
 
-    function selectMovableText(label) {
-        if (!textLayer) return;
-        Array.from(textLayer.children).forEach(node => node.classList.toggle("movable", node === label));
+    if (typeof window !== "undefined") {
+        window.addEventListener("pointerdown", event => {
+            if (event.shiftKey || event.ctrlKey || event.metaKey) return;
+            if (event.target && event.target.closest && (
+                event.target.closest(".canvas-text-annotation") ||
+                event.target.closest(".canvas-selection-box")
+            )) return;
+            if (selectedTextItems.size > 0 || selectedTextItem) {
+                selectMovableText(null);
+            }
+        });
+    } else {
+        textLayer?.parentElement?.addEventListener("pointerdown", event => {
+            if (event.shiftKey || event.ctrlKey || event.metaKey) return;
+            if (event.target && event.target.closest && (
+                event.target.closest(".canvas-text-annotation") ||
+                event.target.closest(".canvas-selection-box")
+            )) return;
+            if (selectedTextItems.size > 0 || selectedTextItem) {
+                selectMovableText(null);
+            }
+        });
     }
-
-    textLayer?.parentElement.addEventListener("pointerdown", event => {
-        if (!event.target.closest(".canvas-text-annotation")) selectMovableText(null);
-    });
 
     function renderSelectableText(action) {
         if (!textLayer || !action.id) return;
@@ -1621,7 +1745,7 @@ export function createDoodleRenderer({ canvas, isVisible = () => true, textLayer
             let drag = null;
             label.addEventListener("click", event => {
                 event.stopPropagation();
-                if (canEditText()) selectMovableText(label);
+                if (canEditText()) selectMovableText(label, event.shiftKey || event.ctrlKey || event.metaKey);
             });
             label.addEventListener("pointerdown", event => {
                 if (event.button !== 0 || !canEditText() || !label.classList.contains("movable")) return;
@@ -1772,8 +1896,14 @@ export function createDoodleRenderer({ canvas, isVisible = () => true, textLayer
         if (textLayer) {
             const ids = new Set(lastDoodleActions.filter(action => action.type === "text").map(action => action.id));
             Array.from(textLayer.children).forEach(label => {
-                if (!ids.has(label.dataset.annotationId)) label.remove();
+                if (!ids.has(label.dataset.annotationId)) {
+                    selectedTextItems.delete(label);
+                    label.remove();
+                }
             });
+            if (selectedTextItem && !ids.has(selectedTextItem.dataset?.annotationId)) {
+                selectedTextItem = null;
+            }
             textLayer.hidden = !isVisible();
         }
 
@@ -1882,5 +2012,29 @@ export function createDoodleRenderer({ canvas, isVisible = () => true, textLayer
         selectStamp: selectMovableStamp,
         getSelectedStamps: () => Array.from(selectedStampItems).map(node => node.annotation).filter(Boolean),
         getStampsInRect,
+        selectText: selectMovableText,
+        getSelectedTexts: () => Array.from(selectedTextItems).map(node => node.annotation).filter(Boolean),
+        getSelectedText: () => Array.from(selectedTextItems).map(node => node.annotation).filter(Boolean),
+        getTextInRect,
+        getTextsInRect: getTextInRect,
+        selectTextsInRect: (x0, y0, x1, y1, multi = false) => {
+            const found = getTextInRect(x0, y0, x1, y1);
+            selectMovableText(found, multi);
+            return found;
+        },
+        clearSelectedTexts: () => selectMovableText(null),
+        isTextSelected: (target) => {
+            if (!target) return false;
+            if (typeof target === "string") {
+                return Array.from(selectedTextItems).some(node => node.dataset?.annotationId === target || node.annotation?.id === target);
+            }
+            if (target.nodeType) {
+                return selectedTextItems.has(target);
+            }
+            if (target.id) {
+                return Array.from(selectedTextItems).some(node => node.dataset?.annotationId === target.id || node.annotation?.id === target.id);
+            }
+            return false;
+        },
     };
 }

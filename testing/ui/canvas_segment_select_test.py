@@ -27,6 +27,9 @@ def test_canvas_html_and_renderer_segment_selection_wiring() -> None:
     assert "getStampsInRect" in renderer_js
     assert "selectStamp" in renderer_js
     assert "getSelectedStamps" in renderer_js
+    assert "getTextInRect" in renderer_js
+    assert "selectText" in renderer_js
+    assert "getSelectedTexts" in renderer_js
 
     # Selection box marquee
     assert "canvas-selection-box" in renderer_js
@@ -54,6 +57,11 @@ def segment_page() -> Iterator[Page]:
             "        .status-dot {", template.index("        #doodle-canvas {")
         )
     ]
+    text_styles = template[
+        template.index("        #canvas-text-layer {") : template.index(
+            "        .eraser-btn {", template.index("        #canvas-text-layer {")
+        )
+    ]
     renderer = Path("static/js/canvas-renderers.js").read_text(encoding="utf-8")
     renderer = renderer[renderer.index("export function createDoodleRenderer(") :]
 
@@ -65,7 +73,7 @@ def segment_page() -> Iterator[Page]:
         )
         page = browser.new_page(viewport={"width": 800, "height": 500})
         page.set_content(
-            f"<style>{styles} {chat_css} #image-container {{ position: relative; width: 800px; height: 500px; }}</style>"
+            f"<style>{styles} {text_styles} {chat_css} #image-container {{ position: relative; width: 800px; height: 500px; }}</style>"
             '<div id="image-container">'
             '<canvas id="doodle-canvas" style="width: 100%; height: 100%;"></canvas>'
             '<div id="canvas-text-layer"></div>'
@@ -94,6 +102,8 @@ def segment_page() -> Iterator[Page]:
             const renderer = createDoodleRenderer({
                 canvas,
                 isVisible: () => true,
+                textLayer: document.getElementById('canvas-text-layer'),
+                canEditText: () => selectable && !isPagedBack,
                 stampLayer: document.getElementById('canvas-stamp-layer'),
                 canMoveStamp: () => true,
                 onRemoveStamp: (stamp) => {
@@ -409,3 +419,118 @@ def test_selection_box_multiple_stamps_deletion_without_doodles(segment_page: Pa
     assert remaining_doodles == 3
 
 
+
+
+def test_click_drag_selection_box_selects_text_items(segment_page: Page) -> None:
+    # Add a text annotation at x=0.2 * 800 = 160, y=0.5 * 500 = 250
+    segment_page.evaluate("""() => {
+        const action = {
+            id: 'text-1',
+            type: 'text',
+            text: 'Secret Clue',
+            x: 0.2,
+            y: 0.5,
+            size: 32,
+            color: '#ffffff',
+            font: 'Outfit'
+        };
+        window.getDoodleActions().push(action);
+        window.renderer.redraw(window.getDoodleActions());
+    }""")
+
+    # Verify text element rendered
+    label = segment_page.locator('.canvas-text-annotation')
+    assert label.inner_text() == 'Secret Clue'
+    assert label.evaluate("el => el.classList.contains('movable')") is False
+
+    # Drag a selection box around the text item from (120, 220) to (320, 300)
+    segment_page.mouse.move(120, 220)
+    segment_page.mouse.down()
+    segment_page.mouse.move(320, 300)
+    segment_page.mouse.up()
+
+    # The text item must now have 'movable' class and be in getSelectedTexts()
+    assert label.evaluate("el => el.classList.contains('movable')") is True
+    selected_texts_count: int = segment_page.evaluate("() => window.renderer.getSelectedTexts().length")
+    assert selected_texts_count == 1
+    selected_id: str = segment_page.evaluate("() => window.renderer.getSelectedTexts()[0].id")
+    assert selected_id == 'text-1'
+
+    # Strokes and stamps outside the box must not be selected
+    assert segment_page.evaluate("() => window.renderer.getSelectedSegments().length") == 0
+    assert segment_page.evaluate("() => window.renderer.getSelectedStamps().length") == 0
+
+
+def test_click_drag_selection_box_selects_doodles_stamps_and_text_together(segment_page: Page) -> None:
+    # Add text annotation at x=0.35, y=0.15
+    segment_page.evaluate("""() => {
+        const action = {
+            id: 'text-1',
+            type: 'text',
+            text: 'Joint Selection',
+            x: 0.35,
+            y: 0.15,
+            size: 24,
+            color: '#ffffff',
+            font: 'Outfit'
+        };
+        window.getDoodleActions().push(action);
+        window.renderer.redraw(window.getDoodleActions());
+    }""")
+
+    # Drag selection box across stroke-1 (x=0.1..0.5, y=0.2), text-1 (x=0.35, y=0.15), and stamp-1 (x=0.7, y=0.2)
+    segment_page.mouse.move(50, 40)
+    segment_page.mouse.down()
+    segment_page.mouse.move(650, 160)
+    segment_page.mouse.up()
+
+    # All three types must be captured by the selection box
+    selected_segments: int = segment_page.evaluate("() => window.renderer.getSelectedSegments().length")
+    selected_stamps: int = segment_page.evaluate("() => window.renderer.getSelectedStamps().length")
+    selected_texts: int = segment_page.evaluate("() => window.renderer.getSelectedTexts().length")
+
+    assert selected_segments == 2
+    assert selected_stamps == 1
+    assert selected_texts == 1
+
+    # Clicking off onto empty canvas drops all selections
+    segment_page.mouse.click(200, 400)
+    assert segment_page.evaluate("() => window.renderer.getSelectedSegments().length") == 0
+    assert segment_page.evaluate("() => window.renderer.getSelectedStamps().length") == 0
+    assert segment_page.evaluate("() => window.renderer.getSelectedTexts().length") == 0
+
+
+def test_escape_key_drops_text_selection(segment_page: Page) -> None:
+    # Add text annotation
+    segment_page.evaluate("""() => {
+        const action = {
+            id: 'text-esc',
+            type: 'text',
+            text: 'Escape me',
+            x: 0.2,
+            y: 0.5,
+            size: 32,
+            color: '#ffffff',
+            font: 'Outfit'
+        };
+        window.getDoodleActions().push(action);
+        window.renderer.redraw(window.getDoodleActions());
+    }""")
+
+    # Drag-select the text
+    segment_page.mouse.move(120, 220)
+    segment_page.mouse.down()
+    segment_page.mouse.move(320, 300)
+    segment_page.mouse.up()
+
+    assert segment_page.evaluate("() => window.renderer.getSelectedTexts().length") == 1
+
+    # Press Escape key
+    segment_page.keyboard.press("Escape")
+
+    assert segment_page.evaluate("() => window.renderer.getSelectedTexts().length") == 0
+    is_movable: bool = segment_page.evaluate("""() => {
+        const el = document.querySelector('.canvas-text-annotation');
+        return el ? el.classList.contains('movable') : false;
+    }""")
+    assert is_movable is False
