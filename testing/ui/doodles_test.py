@@ -111,7 +111,7 @@ class TestDoodles(UITestCase):
         self.assertIn(".split(';', 1)[0]", obs)
         self.assertNotIn("/api/clips", obs)
 
-    def test_doodles_persist_and_reset_when_cleared(self):
+    def test_doodles_persist_and_reset_when_cleared(self) -> None:
         theater_id = "doodle_persistence"
         first_image = self.workspace / "img1.jpg"
         second_image = self.workspace / "img2.jpg"
@@ -140,6 +140,8 @@ class TestDoodles(UITestCase):
         self.assertEqual(reloaded_manager.doodles.doodles, [first_doodle, second_doodle])
 
         manager.visual.show_image(str(second_image))
+        self.assertEqual(manager.doodles.doodles, [])
+        manager.visual.previous_image()
         self.assertEqual(manager.doodles.doodles, [first_doodle, second_doodle])
 
         manager.doodles.add([{"type": "clear"}])

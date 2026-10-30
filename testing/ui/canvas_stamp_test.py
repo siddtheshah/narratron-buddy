@@ -99,12 +99,10 @@ def test_production_stamp_drag_works_when_doodles_disabled(stamp_page: Page) -> 
         const stampManagerEmpty = document.getElementById('stamp-manager-empty');
         const stampEmptyMessage = null;
         let doodlesEnabled = false;
-        let doodlesPersistent = false;
         let activeOrator = false;
         function isCurrentOrator() { return activeOrator; }
-        function setDoodlesDisplay(enabled, persistent) {
+        function setDoodlesDisplay(enabled) {
             doodlesEnabled = Boolean(enabled);
-            doodlesPersistent = Boolean(persistent);
             canvas.style.display = doodlesEnabled ? 'block' : 'none';
         }
         crypto.randomUUID = () => 'test-dragon-stamp';

@@ -1,9 +1,10 @@
 """Exercise the complete OBS page with local assets and simulated state sockets."""
 
+import json
 from collections.abc import Iterator
 from pathlib import Path
 import sys
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 from playwright.sync_api import Page, Route, WebSocketRoute, expect, sync_playwright
 import pytest
@@ -127,3 +128,47 @@ def test_shared_scene_preserves_speech_until_scene_commit(obs_page: Page) -> Non
     assert result == {"beforeCommit": 0, "afterCommit": 1, "finalCount": 1,
                       "source": "http://narratron.test/future.mp3?join_key=JOIN",
                       "caption": "Next scene", "focusable": 0}
+
+
+
+def test_obs_restores_doodles_from_selected_history_page(obs_page: Page) -> None:
+    selected = [0]
+    sockets: list[WebSocketRoute] = []
+
+    def snapshot(page_id: str) -> dict[str, str | bool | list[dict[str, str | int | list[float]]]]:
+        return {"type": "doodle_snapshot", "page_id": page_id, "enabled": True,
+                "batches": [{"points": [0.1, 0.1, 0.8, 0.8], "color": "#ff0000", "size": 10}] if page_id == "first" else []}
+
+    def history_state(route: Route) -> None:
+        route.fulfill(json={"latest": "/image.png", "time": selected[0] + 1, "effect": "none",
+                            "doodle_page_id": ["first", "second"][selected[0]],
+                            "orator_cursor": selected[0], "doodles_enabled": True,
+                            "history": [{"page_id": "first"}, {"page_id": "second"}]})
+
+    def doodle_state(route: Route) -> None:
+        route.fulfill(json=snapshot(parse_qs(urlsplit(route.request.url).query)["page_id"][0]))
+
+    def doodle_socket(route: WebSocketRoute) -> None:
+        def receive(message: str | bytes) -> None:
+            data = json.loads(message)
+            route.send(json.dumps(snapshot(data["page_id"])))
+        route.on_message(receive)
+        route.send(json.dumps(snapshot("first")))
+
+    def state_socket(route: WebSocketRoute) -> None:
+        sockets.append(route)
+        route.send('{"type":"state_ready"}')
+
+    obs_page.route("**/api/latest?**", history_state)
+    obs_page.route("**/api/doodles?**", doodle_state)
+    obs_page.route_web_socket("**/ws/doodle?**", doodle_socket)
+    obs_page.route_web_socket("**/ws/canvas-state?**", state_socket)
+    obs_page.goto("http://narratron.test/obs/test")
+    expect(obs_page.locator("#current-image")).to_have_js_property("naturalWidth", 1)
+    first_drawing = obs_page.locator("#doodle-canvas").evaluate("canvas => canvas.toDataURL()")
+    selected[0] = 1
+    sockets[0].send('{"type":"state_changed","domains":["latest"]}')
+    obs_page.wait_for_function("previous => document.getElementById('doodle-canvas').toDataURL() !== previous", arg=first_drawing)
+    selected[0] = 0
+    sockets[0].send('{"type":"state_changed","domains":["latest"]}')
+    obs_page.wait_for_function("expected => document.getElementById('doodle-canvas').toDataURL() === expected", arg=first_drawing)

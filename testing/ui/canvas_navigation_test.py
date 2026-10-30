@@ -123,6 +123,7 @@ def test_navigation_keeps_rendered_content_aligned_and_resets_locally() -> None:
             let doodlesEnabled = true, currentColor = '#ff0000', currentBrushSize = 6;
             let isDrawing = false, lastNormX = 0, lastNormY = 0, currentStrokeId = null;
             let pendingDrawBatch = null, drawBatchFrame = null;
+            const displayedDoodlePageId = "navigation-page";
             window.sentDraws = [];
             function sendOrQueueDoodleMessage(message) { sentDraws.push(message); }
         '''
@@ -235,6 +236,7 @@ def test_navigation_keeps_rendered_content_aligned_and_resets_locally() -> None:
         assert stroke["x1"] == pytest.approx((228 - drawing_rect["x"]) / drawing_rect["width"])
         assert stroke["y1"] == pytest.approx((178 - drawing_rect["y"]) / drawing_rect["height"])
         page.wait_for_function("sentDraws.length > 0")
+        assert page.evaluate("sentDraws.at(-1).page_id") == "navigation-page"
         assert page.evaluate("sentDraws.at(-1).points") == pytest.approx([stroke["x0"], stroke["y0"], stroke["x1"], stroke["y1"]])
         assert page.evaluate('''() => {
             const ctx = canvas.getContext('2d');

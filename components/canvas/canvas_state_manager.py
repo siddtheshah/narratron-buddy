@@ -9,10 +9,11 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import Optional
+from typing import Optional, cast
 
 from components.canvas import AudioState, ChatManager, ConnectionState, DoodleState, StoryState, ToolResponseState, UIState, VisualState
 from components.theater_manager import Theater
+from components.canvas.doodle_state import DoodlePage
 from game.game_state import GameState
 from components.notepad import Notepad
 from components.story.input_gathering_cycle import story_input_cycle_duration
@@ -54,7 +55,7 @@ class CanvasStateManager:
             on_visual_changed_fn=self._on_visual_changed,
         )
         self.audio = AudioState(self.notify_changed)
-        self.doodles = DoodleState(self.persist, theater=self.theater)
+        self.doodles = DoodleState(self.persist, theater=self.theater, page_provider=self._doodle_page)
         self.ui = UIState(self.persist, self.notify_changed)
         self.tool_response = ToolResponseState(self.notify_changed)
         story_planning_config = theater.config().get("story_planning", {})
@@ -93,10 +94,23 @@ class CanvasStateManager:
         self.visual.initialize_starting_image()
         self.notify_changed()
 
+    def _doodle_page(self) -> DoodlePage | None:
+        history = self.visual.shown_images_history
+        index = self.visual.orator_cursor
+        if not history:
+            return None
+        return cast(DoodlePage, history[-1 if index is None else index])
+
+    def doodles_for_page(self, page_id: str) -> DoodleState | None:
+        """Route delayed drawing messages to their original history page."""
+        for item in self.visual.shown_images_history:
+            if item.get("page_id") == page_id:
+                page = cast(DoodlePage, item)
+                return DoodleState(self.persist, theater=self.theater, page_provider=lambda: page)
+        return None
+
     def _on_visual_changed(self, changed: bool = True) -> None:
         if changed:
-            if not self.doodles.persistent:
-                self.doodles.doodles.clear()
             self.ui.interactive_surfaces = {
                 surface_id: surface for surface_id, surface in self.ui.interactive_surfaces.items()
                 if bool(surface.get("persistent", False))
@@ -172,7 +186,7 @@ class CanvasStateManager:
         return {**visual, "music": self.audio.payload(), "music_pinned": self.audio.pinned,
                 "music_orator_cursor": self.audio.payload().get("orator_cursor"),
                 "doodles_enabled": self.doodles.enabled,
-                "doodles_persistent": self.doodles.persistent,
+                "doodle_page_id": self.doodles.page_id,
                 "viewer_collab_enabled": self.ui.viewer_collab_enabled,
                 "tool_activity": self.tool_response.activity_payload(),
                 "agent_thought": self.tool_response.agent_thought_payload(),

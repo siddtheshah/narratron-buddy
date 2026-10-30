@@ -8,6 +8,7 @@ import io
 import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
+from typing_extensions import TypedDict
 from urllib.parse import unquote
 from uuid import uuid4
 
@@ -18,6 +19,21 @@ logger = logging.getLogger(__name__)
 
 DoodleValue = str | float | int | bool | list[float] | None
 DoodleAction = dict[str, DoodleValue]
+
+
+class DoodleSnapshot(TypedDict):
+    type: str
+    page_id: str
+    enabled: bool
+    batches: list[DoodleAction]
+    annotations: list[DoodleAction]
+    stamps: list[DoodleAction]
+
+
+class DoodlePage(TypedDict, total=False):
+    page_id: str
+    doodles: list[DoodleAction]
+    doodles_enabled: bool
 
 
 def doodle_snapshot_batches(doodles: list[DoodleAction]) -> list[DoodleAction]:
@@ -51,13 +67,38 @@ class DoodleState:
         persist: Callable[[], None],
         theater: Optional[Theater] = None,
         stamp_resolver: Optional[Callable[[DoodleAction], bytes | None]] = None,
+        page_provider: Callable[[], DoodlePage | None] | None = None,
     ) -> None:
         self._persist = persist
         self.theater = theater
         self.stamp_resolver = stamp_resolver
-        self.doodles: list[DoodleAction] = []
-        self.enabled = True
-        self.persistent = False
+        self._page_provider = page_provider
+        self._empty_page: DoodlePage = {}
+
+    @property
+    def page(self) -> DoodlePage:
+        page = self._page_provider() if self._page_provider is not None else None
+        return page if page is not None else self._empty_page
+
+    @property
+    def page_id(self) -> str:
+        return self.page.get("page_id", "")
+
+    @property
+    def doodles(self) -> list[DoodleAction]:
+        return self.page.setdefault("doodles", [])
+
+    @doodles.setter
+    def doodles(self, actions: list[DoodleAction]) -> None:
+        self.page["doodles"] = actions
+
+    @property
+    def enabled(self) -> bool:
+        return self.page.get("doodles_enabled", True)
+
+    @enabled.setter
+    def enabled(self, enabled: bool) -> None:
+        self.page["doodles_enabled"] = enabled
 
     def add(self, doodles: list[DoodleAction] | DoodleAction) -> None:
         if type(doodles) is dict:
@@ -71,6 +112,11 @@ class DoodleState:
     def set_enabled(self, enabled: bool) -> None:
         self.enabled = bool(enabled)
         self._persist()
+
+    def snapshot(self) -> DoodleSnapshot:
+        return {"type": "doodle_snapshot", "page_id": self.page_id, "enabled": self.enabled,
+                "batches": self.snapshot_batches(), "annotations": self.text_annotations(),
+                "stamps": self.stamp_annotations()}
 
     def snapshot_batches(self) -> list[DoodleAction]:
         return doodle_snapshot_batches(self.doodles)
@@ -440,14 +486,13 @@ class DoodleState:
             return None
 
     def load(self, data: dict[str, DoodleValue | list[DoodleAction]]) -> None:
+        # Older saves stored just the active page's doodles at the top level.
+        # Never replace explicit page state with that compatibility snapshot.
         saved = data.get("doodles", [])
-        if type(saved) is list:
-            self.doodles = [item for item in saved if type(item) is dict]
-        else:
-            self.doodles = []
-        self.enabled = bool(data.get("doodles_enabled", True))
-        self.persistent = self.enabled and bool(data.get("doodles_persistent", False))
+        if "doodles" not in self.page:
+            self.doodles = [item for item in saved if type(item) is dict] if type(saved) is list else []
+        if "doodles_enabled" not in self.page:
+            self.enabled = bool(data.get("doodles_enabled", True))
 
     def serialize(self) -> dict[str, list[DoodleAction] | bool]:
-        return {"doodles": self.doodles, "doodles_enabled": self.enabled,
-                "doodles_persistent": self.persistent}
+        return {"doodles": self.doodles, "doodles_enabled": self.enabled}

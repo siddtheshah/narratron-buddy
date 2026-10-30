@@ -5456,6 +5456,7 @@
             pruneHistoryResources(currentViewIndex);
 
             const item = imageHistory[currentViewIndex];
+            if (item) displayPageDoodles(item);
             if (!item || (!item.url && !item.animation)) return;
 
             promptBtn.classList.remove('expanded');
@@ -5568,10 +5569,6 @@
 
                 if (data.music) updateAssetPlaybackSelection(data.music);
 
-                if (data.doodles_enabled !== undefined) {
-                    setDoodlesDisplay(data.doodles_enabled, data.doodles_persistent);
-                }
-
                 if (data.history && Array.isArray(data.history) && data.history.length > 0) {
                     imageHistory = data.history;
                 } else if (data.latest) {
@@ -5647,11 +5644,6 @@
                         isPagedBack = false;
                         hasNewHeadWhilePagedBack = false;
                         pruneHistoryResources(currentViewIndex);
-
-                        if (!doodlesPersistent) {
-                            doodleActions = [];
-                            redrawAllDoodles();
-                        }
 
                         displayHistoryImage(currentViewIndex, transition);
                     } else {
@@ -5828,7 +5820,8 @@
         let lastNormX = 0;
         let lastNormY = 0;
         let doodlesEnabled = true;
-        let doodlesPersistent = false;
+        let displayedDoodlePageId = null;
+        let doodlePageRequestSequence = 0;
         let textAnnotationMode = false;
         let currentTextColor = '#ffffff';
         let activeTextEditor = null;
@@ -5867,6 +5860,51 @@
             }
         }
 
+        function displayPageDoodles(item) {
+            const pageId = item.page_id || null;
+            if (displayedDoodlePageId === pageId) return;
+            flushDrawBatch();
+            isDrawing = false;
+            activeTextEditor?.remove();
+            activeTextEditor = null;
+            displayedDoodlePageId = pageId;
+            doodleActions = [];
+            doodleRenderer?.clearSelectedSegments();
+            setDoodlesDisplay(item.doodles_enabled !== false);
+            redrawAllDoodles();
+            void requestPageDoodles(pageId);
+        }
+
+        async function requestPageDoodles(pageId = displayedDoodlePageId) {
+            if (!pageId) return;
+            const sequence = ++doodlePageRequestSequence;
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                doodleSocketReady = false;
+                ws.send(JSON.stringify({type: 'subscribe_doodles', page_id: pageId}));
+                return;
+            }
+            try {
+                const params = new URLSearchParams({theater_id: currenttheaterId, page_id: pageId});
+                const response = await fetch('/api/doodles?' + params);
+                if (!response.ok) throw new Error(`Unable to load page doodles (${response.status}).`);
+                const snapshot = await response.json();
+                if (sequence === doodlePageRequestSequence) applyDoodleSnapshot(snapshot);
+            } catch (error) {
+                console.warn('Could not load page doodles.', error);
+            }
+        }
+
+        function applyDoodleSnapshot(data) {
+            if (data.page_id && displayedDoodlePageId && data.page_id !== displayedDoodlePageId) return;
+            displayedDoodlePageId = data.page_id || displayedDoodlePageId;
+            doodleActions = [];
+            (data.stamps || []).forEach(action => doodleActions.push(action));
+            (data.batches || []).forEach(renderDoodleBatch);
+            (data.annotations || []).forEach(action => doodleActions.push(action));
+            if (data.enabled !== undefined) setDoodlesDisplay(data.enabled);
+            redrawAllDoodles();
+        }
+
         function flushDrawBatch() {
             drawBatchFrame = null;
             if (!pendingDrawBatch) return;
@@ -5880,6 +5918,9 @@
         }
 
         function sendOrQueueDoodleMessage(message) {
+            if (message.page_id === undefined && displayedDoodlePageId) {
+                message.page_id = displayedDoodlePageId;
+            }
             if (!message.client_message_id) {
                 nextDoodleMessageId += 1;
                 message.client_message_id = `${Date.now()}-${nextDoodleMessageId}`;
@@ -5903,6 +5944,13 @@
             const queuedMessages = pendingDoodleMessages.splice(0);
             for (const message of queuedMessages) {
                 sendOrQueueDoodleMessage(message);
+                if (message.page_id && message.page_id !== displayedDoodlePageId) continue;
+                if (message.type === 'draw_batch') renderDoodleBatch(message);
+                if (message.type === 'clear') {
+                    doodleActions = [];
+                    redrawAllDoodles();
+                }
+                if (message.type === 'toggle_doodles') setDoodlesDisplay(message.enabled);
                 if (message.type === 'text') applyTextAnnotation(message);
                 if (message.type === 'stamp') applyStampAnnotation(message);
             }
@@ -5919,20 +5967,18 @@
             }, delay);
         }
 
-        function setDoodlesDisplay(enabled, persistent = false) {
+        function setDoodlesDisplay(enabled) {
             doodlesEnabled = Boolean(enabled);
-            doodlesPersistent = doodlesEnabled && Boolean(persistent);
             if (canvas) {
                 canvas.style.display = doodlesEnabled ? 'block' : 'none';
+                if (doodlesEnabled) doodleRenderer.resize(doodleActions);
             }
             if (doodleToolbar) {
                 doodleToolbar.style.display = doodlesEnabled ? 'flex' : 'none';
             }
             if (doodlesToggleBtn) {
-                doodlesToggleBtn.textContent = doodlesPersistent ? '✏️ Doodles: Persist' : doodlesEnabled ? '✏️ Doodles: On' : '✏️ Doodles: Off';
-                doodlesToggleBtn.title = doodlesPersistent
-                    ? 'Doodles survive visual updates. Click to turn off.'
-                    : doodlesEnabled ? 'Doodles clear on visual updates. Click to persist.' : 'Click to turn doodles on.';
+                doodlesToggleBtn.textContent = doodlesEnabled ? '✏️ Doodles: On' : '✏️ Doodles: Off';
+                doodlesToggleBtn.title = doodlesEnabled ? 'Hide doodles for this page.' : 'Show doodles for this page.';
                 doodlesToggleBtn.style.color = doodlesEnabled ? '#a5b4fc' : '#94a3b8';
                 doodlesToggleBtn.style.background = doodlesEnabled ? 'rgba(99, 102, 241, 0.2)' : 'rgba(255, 255, 255, 0.08)';
                 doodlesToggleBtn.style.borderColor = doodlesEnabled ? 'rgba(99, 102, 241, 0.4)' : 'var(--glass-border)';
@@ -5948,10 +5994,9 @@
         if (doodlesToggleBtn) {
             doodlesToggleBtn.addEventListener('click', () => {
                 if (!isCurrentOrator()) return;
-                const newEnabled = !doodlesPersistent;
-                const newPersistent = doodlesEnabled && !doodlesPersistent;
-                setDoodlesDisplay(newEnabled, newPersistent);
-                sendOrQueueDoodleMessage({ type: 'toggle_doodles', enabled: newEnabled, persistent: newPersistent });
+                const newEnabled = !doodlesEnabled;
+                setDoodlesDisplay(newEnabled);
+                sendOrQueueDoodleMessage({ type: 'toggle_doodles', enabled: newEnabled });
             });
         }
 
@@ -6009,12 +6054,12 @@
         function refreshCanvasToolInteraction() {
             const textLayer = document.getElementById('canvas-text-layer');
             if (textLayer) {
-                textLayer.hidden = !doodlesEnabled || isPagedBack;
+                textLayer.hidden = !doodlesEnabled;
                 textLayer.style.zIndex = currentColor !== null ? '4' : '6';
             }
             const stampLayer = document.getElementById('canvas-stamp-layer');
             if (stampLayer) {
-                stampLayer.hidden = !doodlesEnabled || isPagedBack;
+                stampLayer.hidden = !doodlesEnabled;
                 stampLayer.style.zIndex = '4';
             }
             const hasCanvasTool = currentColor !== null || textAnnotationMode;
@@ -6181,13 +6226,15 @@
             // has received focus. Subsequent retries stay limited to
             // an active window by scheduleDoodleReconnect.
             if ((!initialConnection && !isActiveCanvasWindow()) || (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING))) return;
-            const socket = new WebSocket(wsUrl);
+            const socketPageId = displayedDoodlePageId;
+            const socketUrl = socketPageId ? wsUrl + '&page_id=' + encodeURIComponent(socketPageId) : wsUrl;
+            const socket = new WebSocket(socketUrl);
             ws = socket;
             doodleSocketReady = false;
 
             socket.onopen = () => {
-                // The server always follows this with doodles_toggle and
-                // doodle_snapshot; wait for the latter before flushing.
+                // Reconnect to the page being browsed, which may differ from the orator.
+                if (displayedDoodlePageId && displayedDoodlePageId !== socketPageId) void requestPageDoodles();
             };
             socket.onclose = () => {
                 if (ws === socket) {
@@ -6222,23 +6269,15 @@
                     if (isStampManagerOpen) renderStampManagerGrid(cachedUserStamps || []);
                     return;
                 }
+                if (data.page_id && displayedDoodlePageId && data.page_id !== displayedDoodlePageId) return;
                 if (data.type === 'doodles_toggle') {
-                    setDoodlesDisplay(data.enabled, data.persistent);
+                    setDoodlesDisplay(data.enabled);
                 } else if (data.type === 'clear') {
                     doodleActions = [];
                     redrawAllDoodles();
                 } else if (data.type === 'doodle_snapshot') {
-                    doodleActions = [];
-                    redrawAllDoodles();
-                    (data.stamps || []).forEach(action => {
-                        doodleActions.push(action);
-                    });
-                    (data.batches || []).forEach(renderDoodleBatch);
-                    (data.annotations || []).forEach(action => {
-                        doodleActions.push(action);
-                        renderTextAnnotation(action);
-                    });
-                    redrawAllDoodles();
+                    doodlePageRequestSequence += 1;
+                    applyDoodleSnapshot(data);
                     doodleSocketReady = true;
                     flushQueuedDoodleMessages();
                 } else if (data.type === 'doodle_ack') {
@@ -6325,7 +6364,7 @@
                 pendingDrawBatch.points[pendingDrawBatch.points.length - 2] !== nx0 ||
                 pendingDrawBatch.points[pendingDrawBatch.points.length - 1] !== ny0) {
                 flushDrawBatch();
-                pendingDrawBatch = { type: 'draw_batch', color, size, points: [nx0, ny0] };
+                pendingDrawBatch = { type: 'draw_batch', page_id: displayedDoodlePageId, color, size, points: [nx0, ny0] };
             }
             pendingDrawBatch.points.push(nx1, ny1);
             if (!drawBatchFrame) drawBatchFrame = requestAnimationFrame(flushDrawBatch);
@@ -6552,8 +6591,12 @@
             flushDrawBatch();
             activeTextEditor?.remove();
             activeTextEditor = null;
-            pendingDoodleMessages.length = 0;
-            inFlightDoodleMessages.clear();
+            for (let index = pendingDoodleMessages.length - 1; index >= 0; index--) {
+                if (pendingDoodleMessages[index].page_id === displayedDoodlePageId) pendingDoodleMessages.splice(index, 1);
+            }
+            for (const [id, message] of inFlightDoodleMessages) {
+                if (message.page_id === displayedDoodlePageId) inFlightDoodleMessages.delete(id);
+            }
             doodleRenderer?.clearSelectedSegments();
             doodleActions = [];
             redrawAllDoodles();
@@ -7306,8 +7349,8 @@
             if (!canPlaceStamps() || isPagedBack) return;
             canvasCursorState.select({ type: 'select' });
             if (typeof isCurrentOrator === 'function' && isCurrentOrator() && typeof doodlesEnabled !== 'undefined' && !doodlesEnabled) {
-                setDoodlesDisplay(true, doodlesPersistent);
-                sendOrQueueDoodleMessage({ type: 'toggle_doodles', enabled: true, persistent: Boolean(doodlesPersistent) });
+                setDoodlesDisplay(true);
+                sendOrQueueDoodleMessage({ type: 'toggle_doodles', enabled: true });
             }
             const myId = (typeof currentUser !== 'undefined' && currentUser && currentUser.id) ? currentUser.id : myUserId;
             const action = {

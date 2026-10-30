@@ -241,7 +241,8 @@
         let lastAnimationSignature = '';
         let doodleActions = [];
         let doodlesEnabled = true;
-        let doodlesPersistent = false;
+        let displayedDoodlePageId = null;
+        let doodlePageRequestSequence = 0;
         // OBS Browser Sources capture audio produced by this page. Keep this
         // player deliberately headless so the visual output remains clean.
         const audioEnabled = urlParams.get('audio') !== '0';
@@ -387,7 +388,14 @@
                     syncMusic(data.music);
                 }
 
-                doodlesPersistent = Boolean(data.doodles_persistent);
+                const doodlePage = data.history?.[data.orator_cursor];
+                const pageId = data.doodle_page_id || doodlePage?.page_id || null;
+                if (pageId !== displayedDoodlePageId) {
+                    displayedDoodlePageId = pageId;
+                    doodleActions = [];
+                    redrawAllDoodles();
+                    void requestPageDoodles(pageId);
+                }
                 if (data.doodles_enabled !== undefined && data.doodles_enabled !== doodlesEnabled) {
                     doodlesEnabled = Boolean(data.doodles_enabled);
                     redrawAllDoodles();
@@ -409,10 +417,6 @@
                 lastImageRawUrl = data.latest;
                 lastImageEffect = currentImageEffect;
                 lastAnimationSignature = animationSignature;
-                if (!firstLoad && !doodlesPersistent) {
-                    doodleActions = [];
-                    redrawAllDoodles();
-                }
                 if (animationSignature) {
                     playCanvasAnimation(imageRenderer, data.animation, withJoinKey);
                 } else {
@@ -426,6 +430,49 @@
             }
         }
 
+        function applyDoodleSnapshot(data) {
+            if (data.page_id && displayedDoodlePageId && data.page_id !== displayedDoodlePageId) return;
+            displayedDoodlePageId = data.page_id || displayedDoodlePageId;
+            if (data.enabled !== undefined) doodlesEnabled = Boolean(data.enabled);
+            doodleActions = [];
+            redrawAllDoodles();
+            (data.stamps || []).forEach((action) => {
+                doodleActions.push(action);
+            });
+            (data.batches || []).forEach((batch) => {
+                const points = batch.points || [];
+                const rect = doodleCanvas.getBoundingClientRect();
+                for (let index = 0; index < points.length - 2; index += 2) {
+                    const action = { type: 'draw', x0: points[index], y0: points[index + 1], x1: points[index + 2], y1: points[index + 3], color: batch.color, size: batch.size || 3 };
+                    doodleActions.push(action);
+                    renderSegment(action.x0 * rect.width, action.y0 * rect.height, action.x1 * rect.width, action.y1 * rect.height, action.color, action.size);
+                }
+            });
+            (data.annotations || []).forEach((action) => {
+                doodleActions.push(action);
+                renderTextAnnotation(action);
+            });
+            redrawAllDoodles();
+        }
+
+        async function requestPageDoodles(pageId = displayedDoodlePageId) {
+            if (!pageId) return;
+            const sequence = ++doodlePageRequestSequence;
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({type: 'subscribe_doodles', page_id: pageId}));
+                return;
+            }
+            try {
+                const params = new URLSearchParams({theater_id: currenttheaterId, page_id: pageId});
+                const response = await fetch(withJoinKey('/api/doodles?' + params));
+                if (!response.ok) throw new Error(`Unable to load page doodles (${response.status}).`);
+                const snapshot = await response.json();
+                if (sequence === doodlePageRequestSequence) applyDoodleSnapshot(snapshot);
+            } catch (error) {
+                console.warn('Could not load page doodles.', error);
+            }
+        }
+
         // Connect WebSocket for Doodles Sync
         const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         let ws = null;
@@ -435,36 +482,22 @@
             if (currentJoinKey) doodleParams.set('join_key', currentJoinKey);
             const wsUrl = `${wsProtocol}//${window.location.host}/ws/doodle?${doodleParams.toString()}`;
             ws = new WebSocket(wsUrl);
+            ws.onopen = () => {
+                if (displayedDoodlePageId) void requestPageDoodles();
+            };
 
             ws.onmessage = (event) => {
                 const data = JSON.parse(event.data);
+                if (data.page_id && displayedDoodlePageId && data.page_id !== displayedDoodlePageId) return;
                 if (data.type === 'doodles_toggle') {
                     doodlesEnabled = Boolean(data.enabled);
-                    doodlesPersistent = doodlesEnabled && Boolean(data.persistent);
                     redrawAllDoodles();
                 } else if (data.type === 'clear') {
                     doodleActions = [];
                     redrawAllDoodles();
                 } else if (data.type === 'doodle_snapshot') {
-                    doodleActions = [];
-                    redrawAllDoodles();
-                    (data.stamps || []).forEach((action) => {
-                        doodleActions.push(action);
-                    });
-                    (data.batches || []).forEach((batch) => {
-                        const points = batch.points || [];
-                        const rect = doodleCanvas.getBoundingClientRect();
-                        for (let index = 0; index < points.length - 2; index += 2) {
-                            const action = { type: 'draw', x0: points[index], y0: points[index + 1], x1: points[index + 2], y1: points[index + 3], color: batch.color, size: batch.size || 3 };
-                            doodleActions.push(action);
-                            renderSegment(action.x0 * rect.width, action.y0 * rect.height, action.x1 * rect.width, action.y1 * rect.height, action.color, action.size);
-                        }
-                    });
-                    (data.annotations || []).forEach((action) => {
-                        doodleActions.push(action);
-                        renderTextAnnotation(action);
-                    });
-                    redrawAllDoodles();
+                    doodlePageRequestSequence += 1;
+                    applyDoodleSnapshot(data);
                 } else if (data.type === 'draw_batch') {
                     const points = data.points || [];
                     const rect = doodleCanvas.getBoundingClientRect();

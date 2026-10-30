@@ -732,7 +732,9 @@ def test_load_restores_complete_state() -> None:
     assert state.shown_image_prompt == "Ancient library"
     assert state.shown_image_transition == "cut"
     assert state.shown_image_effect == "zoom"
-    assert state.shown_images_history == [{"path": "library.png", "prompt": "Ancient library"}]
+    assert state.shown_images_history[0]["path"] == "library.png"
+    assert state.shown_images_history[0]["prompt"] == "Ancient library"
+    assert state.shown_images_history[0]["page_id"]
     assert state.shown_animation_frames == ["frame1.png", "frame2.png", "frame3.png"]
     assert state.shown_layered_animation == {"id": "layer_1", "layers": []}
     assert state.shown_video_animation == {"id": "vid_1", "video_url": "clip.mp4"}

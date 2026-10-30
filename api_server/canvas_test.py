@@ -1,13 +1,15 @@
 """Unit coverage for canvas routes with object-registry service mocks."""
 
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from fastapi import HTTPException
+from fastapi import HTTPException, WebSocketDisconnect
 
 import object_registry
 from api_server import canvas
+from components.theater_manager import TheaterManager
 
 
 def request():
@@ -240,6 +242,7 @@ def _text_annotation_state(sender: MagicMock, *, collab_enabled: bool) -> MagicM
     state.connections.processed_doodle_message_ids = set()
     state.connections.active_ws_connections = [sender]
     state.connections.active_user_connections = {sender: {"id": 9}}
+    state.doodles.page_id = ""
     state.ui.viewer_collab_enabled = collab_enabled
     return state
 
@@ -538,26 +541,139 @@ def test_websocket_endpoints_pass_join_key_to_require_canvas_access_async():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("enabled,persistent", [(True, False), (True, True), (False, False)])
-async def test_doodle_mode_is_saved_and_broadcast(enabled: bool, persistent: bool) -> None:
+@pytest.mark.parametrize("enabled", [True, False])
+async def test_doodle_mode_is_saved_and_broadcast(enabled: bool) -> None:
     sender = MagicMock()
     sender.send_json = AsyncMock()
     viewer = MagicMock()
     viewer.send_json = AsyncMock()
     state = MagicMock()
+    state.doodles.page_id = ""
     state.connections.processed_doodle_message_ids = set()
     state.connections.active_ws_connections = [sender, viewer]
     await canvas._apply_doodle_message(state, {
-        "type": "toggle_doodles", "enabled": enabled, "persistent": persistent,
+        "type": "toggle_doodles", "enabled": enabled,
         "client_message_id": "mode-1",
     }, sender)
     assert state.doodles.enabled == enabled
-    assert state.doodles.persistent == persistent
     state.persist.assert_called_once()
     viewer.send_json.assert_awaited_once_with({
-        "type": "doodles_toggle", "enabled": enabled, "persistent": persistent,
+        "type": "doodles_toggle", "enabled": enabled,
     })
     sender.send_json.assert_any_await({
-        "type": "doodles_toggle", "enabled": enabled, "persistent": persistent,
+        "type": "doodles_toggle", "enabled": enabled,
     })
     sender.send_json.assert_any_await({"type": "doodle_ack", "client_message_id": "mode-1"})
+
+
+@pytest.mark.asyncio
+async def test_delayed_doodle_messages_edit_only_their_original_page(tmp_path: Path) -> None:
+    state = canvas.CanvasStateManager(TheaterManager(base_theaters_dir=tmp_path).theater("stage"))
+    sender, viewer = MagicMock(), MagicMock()
+    sender.send_json, viewer.send_json = AsyncMock(), AsyncMock()
+    state.connections.active_ws_connections = [sender, viewer]
+    state.visual.show_image("first.png")
+    first_page_id = state.doodles.page_id
+    state.connections.doodle_subscriptions[viewer] = first_page_id
+    state.visual.show_image("second.png")
+    state.doodles.add([{"type": "text", "id": "second", "text": "Keep this clue"}])
+    message = {"type": "draw_batch", "page_id": first_page_id, "client_message_id": "delayed-1",
+               "color": "#ffffff", "size": 3, "points": [0.1, 0.1, 0.2, 0.2]}
+    await canvas._apply_doodle_message(state, message, sender)
+    await canvas._apply_doodle_message(state, message, sender)
+    assert state.doodles.doodles == [{"type": "text", "id": "second", "text": "Keep this clue"}]
+    viewer.send_json.assert_awaited_once_with({
+        "type": "draw_batch", "page_id": first_page_id, "color": "#ffffff",
+        "size": 3.0, "points": [0.1, 0.1, 0.2, 0.2],
+    })
+    assert state.visual.previous_image() is True
+    assert len(state.doodles.doodles) == 1
+    assert state.doodles.doodles[0]["type"] == "draw"
+    await canvas._apply_doodle_message(state, {
+        "type": "clear", "page_id": "expired-page", "client_message_id": "expired-1",
+    }, sender)
+    assert len(state.doodles.doodles) == 1
+    sender.send_json.assert_any_await({"type": "doodle_ack", "client_message_id": "expired-1"})
+
+
+@pytest.mark.asyncio
+async def test_doodle_subscription_sends_only_requested_page_and_filters_live_updates(tmp_path: Path) -> None:
+    state = canvas.CanvasStateManager(TheaterManager(base_theaters_dir=tmp_path).theater("stage"))
+    state.visual.show_image("first.png")
+    state.doodles.add([{"type": "text", "id": "first", "text": "First page"}])
+    first_id = state.doodles.page_id
+    state.visual.show_image("second.png")
+    state.doodles.add([{"type": "text", "id": "second", "text": "Second page"}])
+    second_id = state.doodles.page_id
+    first_viewer, second_viewer = MagicMock(), MagicMock()
+    first_viewer.send_json, second_viewer.send_json = AsyncMock(), AsyncMock()
+    state.connections.active_ws_connections = [first_viewer, second_viewer]
+    for viewer, page_id in [(first_viewer, first_id), (second_viewer, second_id)]:
+        await canvas._apply_doodle_message(state, {"type": "subscribe_doodles", "page_id": page_id}, viewer)
+    first_snapshot = first_viewer.send_json.await_args.args[0]
+    assert first_snapshot["page_id"] == first_id
+    assert [action["text"] for action in first_snapshot["annotations"]] == ["First page"]
+    second_snapshot = second_viewer.send_json.await_args.args[0]
+    assert [action["text"] for action in second_snapshot["annotations"]] == ["Second page"]
+    first_viewer.send_json.reset_mock()
+    second_viewer.send_json.reset_mock()
+    await canvas._broadcast_doodle(state, {"type": "clear", "page_id": first_id})
+    first_viewer.send_json.assert_awaited_once_with({"type": "clear", "page_id": first_id})
+    second_viewer.send_json.assert_not_awaited()
+    # Non-drawing messages such as baton updates still reach every viewer.
+    await canvas._broadcast_doodle(state, {"type": "baton_state"})
+    second_viewer.send_json.assert_awaited_once_with({"type": "baton_state"})
+    first_viewer.send_json.reset_mock()
+    second_viewer.send_json.reset_mock()
+    # Older clients without a page ID still produce page-scoped broadcasts.
+    await canvas._apply_doodle_message(state, {"type": "clear"}, MagicMock())
+    first_viewer.send_json.assert_not_awaited()
+    second_viewer.send_json.assert_awaited_once_with({"type": "clear", "page_id": second_id})
+    canvas._unregister_doodle_websocket(state, first_viewer)
+    assert first_viewer not in state.connections.doodle_subscriptions
+
+
+def test_page_doodle_endpoint_checks_access_and_returns_only_requested_page(tmp_path: Path) -> None:
+    state = canvas.CanvasStateManager(TheaterManager(base_theaters_dir=tmp_path).theater("stage"))
+    state.visual.show_image("first.png")
+    state.doodles.add([{"type": "text", "id": "first", "text": "First page"}])
+    first_id = state.doodles.page_id
+    state.visual.show_image("second.png")
+    state.doodles.add([{"type": "text", "id": "second", "text": "Second page"}])
+    req = request()
+    with patch.object(canvas, "_require_canvas_access") as access, patch.object(canvas, "_state", return_value=state):
+        snapshot = canvas.get_page_doodles(req, "stage", first_id, join_key="JOIN")
+        access.assert_called_once_with(req, "stage", join_key="JOIN")
+        assert snapshot["page_id"] == first_id
+        assert [action["text"] for action in snapshot["annotations"]] == ["First page"]
+        with pytest.raises(HTTPException) as error:
+            canvas.get_page_doodles(req, "stage", "expired")
+        assert error.value.status_code == 404
+    with patch.object(canvas, "_require_canvas_access", side_effect=HTTPException(403)), patch.object(canvas, "_state") as lookup:
+        with pytest.raises(HTTPException):
+            canvas.get_page_doodles(req, "stage", first_id)
+        lookup.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_reconnecting_viewer_receives_only_browsed_page_snapshot(tmp_path: Path) -> None:
+    state = canvas.CanvasStateManager(TheaterManager(base_theaters_dir=tmp_path).theater("stage"))
+    state.visual.show_image("first.png")
+    state.doodles.add([{"type": "text", "id": "first", "text": "First page"}])
+    first_id = state.doodles.page_id
+    state.visual.show_image("second.png")
+    state.doodles.add([{"type": "text", "id": "second", "text": "Second page"}])
+    viewer = MagicMock()
+    viewer.accept, viewer.send_json = AsyncMock(), AsyncMock()
+    viewer.receive_json = AsyncMock(side_effect=WebSocketDisconnect())
+    with patch.object(canvas, "_require_canvas_access_async", AsyncMock()), \
+         patch.object(canvas, "get_current_user_async", AsyncMock(return_value=None)), \
+         patch.object(canvas.db, "get_theater_baton_state_async", AsyncMock(return_value=None)), \
+         patch.object(canvas, "_state", return_value=state):
+        await canvas.websocket_endpoint(viewer, "stage", page_id=first_id)
+    messages = [call.args[0] for call in viewer.send_json.await_args_list]
+    snapshots = [message for message in messages if message["type"] == "doodle_snapshot"]
+    assert len(snapshots) == 1
+    assert snapshots[0]["page_id"] == first_id
+    assert [action["text"] for action in snapshots[0]["annotations"]] == ["First page"]
+    assert "Second page" not in str(messages)

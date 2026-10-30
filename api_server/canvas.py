@@ -28,6 +28,7 @@ from api_server.shared import (
 )
 from api_server.dependencies import live_agent_manager
 from components.canvas.canvas_state_manager import CanvasStateManager
+from components.canvas.doodle_state import DoodleSnapshot
 from game.game_state import GameAction, StaleGameAction, UnauthorizedGameAction
 from pydantic import JsonValue
 
@@ -351,16 +352,20 @@ def _session_notepad(session: Any) -> Any:
     return None
 
 
-def _unregister_doodle_websocket(state: Any, websocket: WebSocket) -> None:
+def _unregister_doodle_websocket(state: CanvasStateManager, websocket: WebSocket) -> None:
     connections = state.connections
     if websocket in connections.active_ws_connections:
         connections.active_ws_connections.remove(websocket)
     connections.active_user_connections.pop(websocket, None)
+    connections.doodle_subscriptions.pop(websocket, None)
 
 
-async def _broadcast_doodle(state: Any, message: dict[str, object], sender: WebSocket | None = None) -> None:
+async def _broadcast_doodle(state: CanvasStateManager, message: dict[str, JsonValue], sender: WebSocket | None = None) -> None:
     connections = state.connections
-    recipients = [connection for connection in connections.active_ws_connections if connection is not sender]
+    page_id = message.get("page_id")
+    recipients = [connection for connection in connections.active_ws_connections
+                  if connection is not sender
+                  and (not page_id or connections.doodle_subscriptions.get(connection) == page_id)]
     results = await asyncio.gather(*(connection.send_json(message) for connection in recipients), return_exceptions=True)
     for connection, result in zip(recipients, results):
         if isinstance(result, BaseException):
@@ -429,11 +434,11 @@ def _interactive_action(state: Any, surface_id: str, component_id: str, action_n
     return None
 
 
-async def _apply_doodle_message(state: Any, data: dict[str, object], sender: WebSocket) -> None:
+async def _apply_doodle_message(state: CanvasStateManager, data: dict[str, JsonValue], sender: WebSocket) -> None:
     """Validate, persist, and relay the browser doodle protocol."""
     connections = state.connections
     message_id = data.get("client_message_id")
-    message_id = message_id if isinstance(message_id, str) and len(message_id) <= 128 else None
+    message_id = message_id if type(message_id) is str and len(message_id) <= 128 else None
 
     async def acknowledge() -> None:
         if not message_id:
@@ -448,12 +453,26 @@ async def _apply_doodle_message(state: Any, data: dict[str, object], sender: Web
         await sender.send_json({"type": "doodle_ack", "client_message_id": message_id})
         return
 
+    page_id = str(data.get("page_id") or "")
+    doodles = state.doodles_for_page(page_id) if page_id else state.doodles
+    if doodles is None:
+        await acknowledge()
+        return
+
+    if data.get("type") == "subscribe_doodles":
+        connections.doodle_subscriptions[sender] = page_id
+        await sender.send_json(doodles.snapshot())
+        return
+
+    async def broadcast(message: dict[str, JsonValue], exclude: WebSocket | None = None) -> None:
+        broadcast_page_id = page_id or doodles.page_id
+        payload = {**message, "page_id": broadcast_page_id} if broadcast_page_id else message
+        await _broadcast_doodle(state, payload, exclude)
+
     if data.get("type") == "toggle_doodles":
-        state.doodles.enabled = bool(data.get("enabled", True))
-        state.doodles.persistent = state.doodles.enabled and bool(data.get("persistent", False))
+        doodles.enabled = bool(data.get("enabled", True))
         state.persist()
-        await _broadcast_doodle(state, {"type": "doodles_toggle", "enabled": state.doodles.enabled,
-                                        "persistent": state.doodles.persistent})
+        await broadcast({"type": "doodles_toggle", "enabled": doodles.enabled})
         await acknowledge()
         return
 
@@ -468,13 +487,13 @@ async def _apply_doodle_message(state: Any, data: dict[str, object], sender: Web
             return
         if not all(0 <= point <= 1 for point in normalized_points) or not 1 <= normalized_size <= 100:
             return
-        state.doodles.add([
+        doodles.add([
             {"type": "draw", "x0": normalized_points[index], "y0": normalized_points[index + 1],
              "x1": normalized_points[index + 2], "y1": normalized_points[index + 3],
              "color": color, "size": normalized_size}
             for index in range(0, len(normalized_points) - 2, 2)
         ])
-        await _broadcast_doodle(state, {"type": "draw_batch", "color": color, "size": normalized_size,
+        await broadcast({"type": "draw_batch", "color": color, "size": normalized_size,
                                         "points": normalized_points}, sender)
         await acknowledge()
         return
@@ -510,8 +529,8 @@ async def _apply_doodle_message(state: Any, data: dict[str, object], sender: Web
             "type": "text", "id": annotation_id, "x": x, "y": y, "text": str(text).strip(),
             "color": str(color), "size": size, "font": str(font),
         }
-        state.doodles.save_text(action)
-        await _broadcast_doodle(state, action, sender)
+        doodles.save_text(action)
+        await broadcast(action, sender)
         await acknowledge()
         return
 
@@ -555,8 +574,8 @@ async def _apply_doodle_message(state: Any, data: dict[str, object], sender: Web
             "size": size,
             "rotation": rotation % 360,
         }
-        state.doodles.save_stamp(stamp_action)
-        await _broadcast_doodle(state, stamp_action, sender)
+        doodles.save_stamp(stamp_action)
+        await broadcast(stamp_action, sender)
         await acknowledge()
         return
 
@@ -570,8 +589,8 @@ async def _apply_doodle_message(state: Any, data: dict[str, object], sender: Web
             return
         action_id = str(data.get("id", ""))
         if action_id:
-            state.doodles.remove_text(action_id)
-            await _broadcast_doodle(state, {"type": "remove_text", "id": action_id}, sender)
+            doodles.remove_text(action_id)
+            await broadcast({"type": "remove_text", "id": action_id}, sender)
         await acknowledge()
         return
 
@@ -587,8 +606,8 @@ async def _apply_doodle_message(state: Any, data: dict[str, object], sender: Web
             return
         action_id = str(data.get("id", ""))
         if action_id:
-            state.doodles.remove_stamp(action_id)
-            await _broadcast_doodle(state, {"type": "remove_stamp", "id": action_id}, sender)
+            doodles.remove_stamp(action_id)
+            await broadcast({"type": "remove_stamp", "id": action_id}, sender)
         await acknowledge()
         return
 
@@ -604,14 +623,14 @@ async def _apply_doodle_message(state: Any, data: dict[str, object], sender: Web
             return
         action_id = str(data.get("id", ""))
         if action_id:
-            if state.doodles.select_stamp(action_id):
-                await _broadcast_doodle(state, {"type": "select_stamp", "id": action_id}, sender)
+            if doodles.select_stamp(action_id):
+                await broadcast({"type": "select_stamp", "id": action_id}, sender)
         await acknowledge()
         return
 
     if data.get("type") in {"clear", "draw"}:
-        state.doodles.add([data])
-        await _broadcast_doodle(state, data, sender)
+        doodles.add([data])
+        await broadcast(data, sender)
         await acknowledge()
 
 @app.websocket("/ws/doodle")
@@ -619,7 +638,8 @@ async def websocket_endpoint(
     websocket: WebSocket,
     theater_id: Optional[str] = None,
     join_key: Optional[str] = None,
-):
+    page_id: str | None = None,
+) -> None:
     if not theater_id or not theater_id.strip():
         await websocket.close(code=1008)
         return
@@ -637,14 +657,15 @@ async def websocket_endpoint(
     if websocket not in connections.active_ws_connections:
         connections.active_ws_connections.append(websocket)
     connections.active_user_connections[websocket] = current_user
-    await websocket.send_json({"type": "doodles_toggle", "enabled": cs.doodles.enabled,
-                               "persistent": cs.doodles.persistent})
-    await websocket.send_json({
-        "type": "doodle_snapshot",
-        "batches": cs.doodles.snapshot_batches(),
-        "annotations": cs.doodles.text_annotations(),
-        "stamps": cs.doodles.stamp_annotations(),
-    })
+    initial_doodles = cs.doodles_for_page(page_id) if page_id else cs.doodles
+    if initial_doodles is None:
+        _unregister_doodle_websocket(cs, websocket)
+        await websocket.close(code=1008)
+        return
+    await websocket.send_json({"type": "doodles_toggle", "enabled": initial_doodles.enabled,
+                               "page_id": initial_doodles.page_id})
+    connections.doodle_subscriptions[websocket] = initial_doodles.page_id
+    await websocket.send_json(initial_doodles.snapshot())
     
     baton_st = await db.get_theater_baton_state_async(theater_id)
     if baton_st:
@@ -737,6 +758,17 @@ def get_latest_image(
     if not theater_dir.exists():
         theater_repository.reconstruct_theater(theater_id, theater_dir)
     return _state(theater_id).get_latest_state()
+
+@app.get("/api/doodles")
+def get_page_doodles(request: Request, theater_id: str, page_id: str,
+                     join_key: str | None = None) -> DoodleSnapshot:
+    """Load only the requested history page; regular canvas polling contains no strokes."""
+    _require_canvas_access(request, theater_id, join_key=join_key)
+    doodles = _state(theater_id).doodles_for_page(page_id)
+    if doodles is None:
+        raise HTTPException(status_code=404, detail="Canvas history page not found.")
+    return doodles.snapshot()
+
 
 @app.get("/api/chat")
 def get_chat(

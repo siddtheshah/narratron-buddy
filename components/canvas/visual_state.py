@@ -7,6 +7,7 @@ from pathlib import Path
 import re
 import threading
 import time
+from uuid import uuid4
 from collections.abc import Callable
 from typing import Any, Literal, Optional, Tuple, TypeAlias, TypedDict, Union
 
@@ -836,10 +837,11 @@ class VisualState:
                 or last.get("effect") != effect
                 or last.get("animation") != animation
             ):
+                item["page_id"] = uuid4().hex
                 self.shown_images_history.append(item)
                 self.shown_images_history = self.shown_images_history[-100:]
             else:
-                self.shown_images_history[-1] = item
+                last.update(item)
 
         if animation:
             anim_type = str(animation.get("type", "animation"))
@@ -1047,6 +1049,11 @@ class VisualState:
             self.shown_image_time = float(data["time"])
         history = data.get("shown_images_history", [])
         self.shown_images_history = list(history) if isinstance(history, list) else []
+        for index, item in enumerate(self.shown_images_history):
+            if type(item) is str:
+                item = {"path": item, "url": self.get_url_for_path(item)}
+                self.shown_images_history[index] = item
+            item.setdefault("page_id", uuid4().hex)
         frames = data.get("shown_animation_frames", [])
         self.shown_animation_frames = [frame for frame in frames if isinstance(frame, str)] if isinstance(frames, list) else []
         self.shown_layered_animation = data.get("shown_layered_animation") if isinstance(data.get("shown_layered_animation"), dict) else None
@@ -1102,7 +1109,7 @@ class VisualState:
         formatted_history: list[dict[str, object]] = []
         for h in self.shown_images_history:
             if isinstance(h, dict):
-                h_copy = dict(h)
+                h_copy = {key: value for key, value in h.items() if key != "doodles"}
                 h_path = str(h_copy.get("path") or "")
                 h_prompt = str(h_copy.get("prompt") or "")
                 if h_path:

@@ -133,34 +133,83 @@ def test_manager_persist_writes_theater_json(tmp_path: Path) -> None:
     assert data["canvas_state"]["narration"] == "Persisted narration"
 
 
-def test_persistent_doodles_survive_visual_updates_and_reload(tmp_path: Path) -> None:
-    theater = FakeTheaterManager(tmp_path).theater("persistent_doodles")
+def test_doodles_are_restored_per_history_page_after_reload(tmp_path: Path) -> None:
+    theater = FakeTheaterManager(tmp_path).theater("page_doodles")
     manager = CanvasStateManager(theater)
+    manager.visual.show_image("first.png")
     actions = [{"type": "draw", "x0": 0.1, "y0": 0.1, "x1": 0.2, "y1": 0.2},
-               {"type": "text", "text": "A clue", "x": 0.3, "y": 0.4}]
-    manager.doodles.persistent = True
+               {"type": "text", "id": "clue", "text": "A clue", "x": 0.3, "y": 0.4},
+               {"type": "stamp", "id": "hero", "stamp_id": 1, "x": 0.5, "y": 0.5}]
     manager.doodles.add(actions)
-    manager._on_visual_changed(True)
-    assert manager.doodles.doodles == actions
-    assert manager.get_latest_state()["doodles_persistent"] is True
+    first_page_id = manager.doodles.page_id
+    manager.doodles.set_enabled(False)
+    manager.visual.show_image("second.png")
+    assert manager.doodles.doodles == []
+    assert manager.doodles.enabled is True
+    assert manager.doodles.page_id != first_page_id
+    manager.doodles.add([{"type": "text", "id": "second", "text": "Second clue"}])
     manager.persist()
 
     reloaded = CanvasStateManager(theater)
-    assert reloaded.doodles.persistent is True
+    assert reloaded.doodles.doodles[0]["id"] == "second"
+    assert reloaded.visual.previous_image() is True
+    assert reloaded.doodles.page_id == first_page_id
     assert reloaded.doodles.doodles == actions
-    reloaded._on_visual_changed(True)
-    assert reloaded.doodles.doodles == actions
+    assert reloaded.doodles.enabled is False
+    assert all("doodles" not in page for page in reloaded.get_latest_state()["history"])
+    assert reloaded.serialized_state()["shown_images_history"][0]["doodles"] == actions
     reloaded.doodles.add([{"type": "clear"}])
+    assert reloaded.visual.next_image() is True
+    assert reloaded.doodles.doodles[0]["id"] == "second"
+    assert reloaded.doodles.enabled is True
+    assert reloaded.visual.select_history_image(0) is True
     assert reloaded.doodles.doodles == []
 
 
-def test_normal_doodles_clear_only_when_visual_changes(tmp_path: Path) -> None:
-    manager = CanvasStateManager(FakeTheaterManager(tmp_path).theater("normal_doodles"))
-    manager.doodles.add([{"type": "text", "text": "Temporary clue"}])
+def test_representing_same_page_keeps_doodles_and_page_identity(tmp_path: Path) -> None:
+    manager = CanvasStateManager(FakeTheaterManager(tmp_path).theater("same_page"))
+    manager.visual.show_image("first.png")
+    page_id = manager.doodles.page_id
+    manager.doodles.add([{"type": "text", "text": "A clue"}])
+    manager.visual.show_image("first.png", prompt="Updated prompt")
     manager._on_visual_changed(False)
-    assert len(manager.doodles.doodles) == 1
-    manager._on_visual_changed(True)
+    assert manager.doodles.page_id == page_id
+    assert manager.doodles.doodles == [{"type": "text", "text": "A clue"}]
+
+
+def test_legacy_global_doodles_migrate_only_to_active_history_page(tmp_path: Path) -> None:
+    theater = FakeTheaterManager(tmp_path).theater("legacy_doodles")
+    theater.directory().mkdir()
+    (theater.directory() / "theater.json").write_text(json.dumps({"canvas_state": {
+        "shown_image_path": "first.png", "orator_cursor": 0,
+        "shown_images_history": [{"path": "first.png"}, {"path": "second.png"}],
+        "doodles": [{"type": "text", "text": "Legacy clue"}],
+        "doodles_enabled": False, "doodles_persistent": True,
+    }}), encoding="utf-8")
+    manager = CanvasStateManager(theater)
+    assert manager.doodles.doodles == [{"type": "text", "text": "Legacy clue"}]
+    assert manager.doodles.enabled is False
+    assert manager.visual.next_image() is True
     assert manager.doodles.doodles == []
+    assert manager.doodles.enabled is True
+    assert "doodles_persistent" not in manager.serialized_state()
+
+
+def test_repeated_visuals_and_history_trimming_keep_separate_doodles(tmp_path: Path) -> None:
+    manager = CanvasStateManager(FakeTheaterManager(tmp_path).theater("trimmed_doodles"))
+    manager.visual.show_image("repeated.png")
+    manager.doodles.add([{"type": "text", "text": "First visit"}])
+    manager.visual.show_image("other.png")
+    manager.visual.show_image("repeated.png")
+    assert manager.doodles.doodles == []
+    manager.doodles.add([{"type": "text", "text": "Second visit"}])
+    page_id = manager.doodles.page_id
+    for index in range(99):
+        manager.visual.show_image(f"scene_{index}.png")
+    assert len(manager.visual.shown_images_history) == 100
+    assert manager.visual.select_history_image(0) is True
+    assert manager.doodles.page_id == page_id
+    assert manager.doodles.doodles == [{"type": "text", "text": "Second visit"}]
 
 
 def test_manager_initializes_and_persists_notepad(tmp_path: Path) -> None:
@@ -199,3 +248,15 @@ def test_manager_hydrates_notepad_from_story_planning_state(tmp_path: Path) -> N
     assert len(present) == 1
     assert present[0]["topic"] == "Quest"
     assert present[0]["info"] == "Find the goblet"
+
+
+def test_latest_payload_never_transmits_history_doodle_content(tmp_path: Path) -> None:
+    manager = CanvasStateManager(FakeTheaterManager(tmp_path).theater("lean_history"))
+    for index in range(10):
+        manager.visual.show_image(f"scene_{index}.png")
+        manager.doodles.add([{"type": "text", "id": str(index), "text": f"Private page content {index}"}])
+    payload = manager.get_latest_state()
+    assert len(payload["history"]) == 10
+    assert all("doodles" not in page for page in payload["history"])
+    assert "Private page content" not in json.dumps(payload)
+    assert "Private page content 0" in json.dumps(manager.serialized_state())

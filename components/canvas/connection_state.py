@@ -17,6 +17,7 @@ class ConnectionState:
         self.state_ws_loop: asyncio.AbstractEventLoop | None = None
         self.state_revision = 0
         self.processed_doodle_message_ids: set[str] = set()
+        self.doodle_subscriptions: dict[WebSocket, str] = {}
 
     def notify(self, *domains: str) -> None:
         """Record a bundled-state invalidation; transport owns delivery."""
@@ -29,7 +30,8 @@ class ConnectionState:
             self.active_user_connections = {}
         self.active_user_connections[websocket] = user
 
-    def unregister_websocket(self, websocket: WebSocket):
+    def unregister_websocket(self, websocket: WebSocket) -> None:
+        self.doodle_subscriptions.pop(websocket, None)
         if websocket in self.active_ws_connections:
             self.active_ws_connections.remove(websocket)
         if hasattr(self, "active_user_connections") and websocket in self.active_user_connections:
