@@ -784,6 +784,95 @@ def test_scene_generator_preserves_prompt_after_failure(scenes_chars_page: Page)
     expect(page.locator('#scene-generation-form')).to_have_attribute('aria-busy', 'false')
 
 
+@pytest.mark.parametrize(("tab", "kind"), [("characters", "character"), ("animations", "animation"), ("playlists", "music")])
+def test_asset_generation_permissions_pending_and_retry(scenes_chars_page: Page, tab: str, kind: str) -> None:
+    page = scenes_chars_page
+
+    def empty_assets(route: Route) -> None:
+        route.fulfill(json=[])
+
+    page.route(f'**/api/theaters/*/{tab}', empty_assets)
+    page.evaluate(f"applyRoleUI(true); setStampManagerOpen(true); switchStampManagerTab('{tab}')")
+    expect(page.locator(f'#{kind}-generation-form')).to_be_hidden()
+    page.evaluate('isTheaterStampOwner = true; updateStampGenerationPermission()')
+    expect(page.locator(f'#{kind}-generation-form')).to_be_visible()
+    jobs: list[Route] = []
+
+    def hold(route: Route) -> None:
+        jobs.append(route)
+
+    endpoint = 'music' if kind == 'music' else tab
+    page.route(f'**/api/theaters/*/{endpoint}/generate', hold)
+    prompt = page.locator(f'#{kind}-generation-prompt')
+    prompt.fill('Gentle forest rain')
+    prompt.press('Enter')
+    expect(page.locator('.asset-card-generating')).to_have_count(1)
+    expect(prompt).to_have_value('')
+    expect(prompt).to_be_editable()
+    prompt.fill('Next draft')
+    prompt.press('Enter')
+    expect(page.locator('.asset-card-generating')).to_have_count(2)
+    assert jobs[0].request.post_data_json == {"name": "Gentle forest rain", "prompt": "Gentle forest rain"}
+    jobs[1].fulfill(status=502, json={"detail": "Provider failed; no credits were charged."})
+    expect(page.locator('#asset-generation-status')).to_contain_text('no credits were charged')
+    expect(prompt).to_have_value('Next draft')
+    jobs[0].fulfill(json={"characters": [{"id": "rain", "name": "Rain"}], "credits_charged": 4})
+    expect(page.locator('.asset-card-generating')).to_have_count(0)
+    expect(page.locator('#asset-generation-status')).to_contain_text('Charged 4 credits')
+    expect(prompt).to_have_value('Next draft')
+    expect(page.locator(f'#{kind}-generation-form')).to_have_attribute('aria-busy', 'false')
+
+
+def test_asset_search_filters_descriptions_and_survives_tab_switches(scenes_chars_page: Page) -> None:
+    page = scenes_chars_page
+    page.evaluate("""
+        cachedTheaterScenes = [{id: 'forest', name: 'Forest', description: 'Misty woodland'}, {id: 'port', name: 'Harbor'}];
+        cachedTheaterCharacters = [{id: 'scout', name: 'Scout', description: 'Woodland ranger'}, {id: 'captain', name: 'Captain'}];
+        applyRoleUI(true); setStampManagerOpen(true); switchStampManagerTab('scenes');
+    """)
+    search = page.get_by_role('searchbox', name='Search assets')
+    search.fill('  WOODLAND  ')
+    expect(page.locator('#scenes-manager-grid .scene-card:visible')).to_have_count(1)
+    expect(page.locator('#scenes-manager-grid .scene-card:visible')).to_contain_text('Forest')
+    page.locator('#stamp-tab-characters').click()
+    expect(page.locator('#characters-manager-grid .character-card:visible')).to_have_count(1)
+    expect(page.locator('#characters-manager-grid .character-card:visible')).to_contain_text('Scout')
+    search.fill('no match')
+    expect(page.locator('#characters-manager-grid .character-card:visible')).to_have_count(0)
+    expect(page.locator('#asset-search-empty')).to_be_visible()
+    search.fill('')
+    expect(page.locator('#characters-manager-grid .character-card:visible')).to_have_count(2)
+    expect(page.locator('#asset-search-empty')).to_be_hidden()
+
+
+def test_asset_search_expands_matching_tracks_and_filters_animations(scenes_chars_page: Page) -> None:
+    page = scenes_chars_page
+
+    def playlists(route: Route) -> None:
+        route.fulfill(json=[{"id": "ambient", "name": "Ambient", "tracks": [{"id": "rain", "name": "Rainfall"}, {"id": "wind", "name": "Wind"}]},
+                            {"id": "battle", "name": "Battle", "tracks": [{"id": "drums", "name": "Drums"}]}])
+
+    def animations(route: Route) -> None:
+        route.fulfill(json=[{"id": "rain", "name": "Clouds", "description": "Rainfall over the forest"}, {"id": "fire", "name": "Fire"}])
+
+    page.route('**/api/theaters/*/playlists', playlists)
+    page.route('**/api/theaters/*/animations', animations)
+    page.evaluate("applyRoleUI(true); setStampManagerOpen(true); switchStampManagerTab('playlists')")
+    expect(page.locator('.playlist-group')).to_have_count(2)
+    search = page.locator('#asset-search')
+    search.fill('rainfall')
+    expect(page.locator('.playlist-group:visible')).to_have_count(1)
+    expect(page.locator('.playlist-track-list .asset-push-button:visible')).to_have_count(1)
+    expect(page.locator('.playlist-track-list .asset-push-button:visible')).to_contain_text('Rainfall')
+    search.fill('ambient')
+    expect(page.locator('.playlist-track-list .asset-push-button:visible')).to_have_count(2)
+    search.fill('rainfall')
+    page.locator('#stamp-tab-animations').click()
+    expect(page.locator('#animations-manager .asset-push-button:visible')).to_have_count(1)
+    search.fill('')
+    expect(page.locator('#animations-manager .asset-push-button:visible')).to_have_count(2)
+
+
 @pytest.mark.parametrize("older_succeeds", [True, False])
 def test_scene_generation_pending_cards_and_overlapping_jobs(
     scenes_chars_page: Page, older_succeeds: bool,

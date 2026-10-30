@@ -67,6 +67,16 @@ def test_production_stamp_manager_separates_sources_and_places_theater_stamps(st
     assert stamp_page.locator("#stamp-manager-count").text_content() == "1/10"
     assert stamp_page.locator("#stamp-manager-count").get_attribute("title") == "1 user stamps · 1 theater stamps"
     stamp_page.locator("#chat-open-stamps-btn").click()
+    search = html[html.index('        function applyAssetSearch() {'):html.index('        function setStampManagerOpen(open) {')]
+    stamp_page.add_script_tag(content="let activeStampManagerTab = 'stamps';\n" + search)
+    stamp_page.locator('#asset-search').fill('theater hero')
+    expect(stamp_page.locator('.stamp-card:visible')).to_have_count(1)
+    expect(stamp_page.locator('.stamp-card:visible')).to_contain_text('Theater Hero')
+    stamp_page.locator('#asset-search').fill('unknown')
+    expect(stamp_page.locator('.stamp-card:visible')).to_have_count(0)
+    expect(stamp_page.locator('#asset-search-empty')).to_be_visible()
+    stamp_page.locator('#asset-search').fill('')
+    expect(stamp_page.locator('.stamp-card:visible')).to_have_count(2)
     stamp_page.evaluate("canvasCursorState.select({type: 'navigate'})")
     stamp_page.locator('.stamp-card[data-stamp-id="theater:stage:hero.png"]').drag_to(stamp_page.locator("#image-container"))
     assert stamp_page.evaluate("doodleActions[0].stamp_id") == "theater:stage:hero.png"
@@ -332,7 +342,10 @@ def stamp_page() -> Iterator[Page]:
                             <span id="stamp-manager-count">0/10</span>
                         </div>
                         <div id="stamp-manager-permission-banner"></div>
+                        <input id="asset-search" type="search" aria-label="Search assets">
+                        <div id="asset-search-empty" hidden>No matching assets.</div>
                         <div id="stamp-manager-body" class="stamp-manager-body">
+                            <div id="asset-generation-pending" class="scenes-grid" hidden></div>
                             <div id="stamp-manager-grid" class="stamp-grid"></div>
                             <div id="stamp-manager-empty" style="display:none;">Empty</div>
                         </div>

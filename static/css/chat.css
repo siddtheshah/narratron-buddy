@@ -531,24 +531,6 @@
     background: rgba(15, 23, 42, 0.95);
 }
 
-.stamp-manager-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0.75rem 0.9rem;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-    background: rgba(0, 0, 0, 0.25);
-}
-
-.stamp-manager-header-title {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-weight: 600;
-    font-size: 0.95rem;
-    color: #f8fafc;
-}
-
 .stamp-manager-count-badge {
     font-size: 0.72rem;
     padding: 2px 7px;
@@ -1482,3 +1464,24 @@
     transform: none;
 }
 .scene-card-generating .stamp-card-progress { padding: 0 10px 8px; }
+
+
+.asset-search-bar { display: flex; align-items: center; gap: 8px; padding: 6px 1rem; }
+.asset-search-bar .stamp-manager-count-badge { flex-shrink: 0; }
+.asset-search-bar input {
+    flex: 1;
+    min-width: 0;
+    box-sizing: border-box;
+    width: 100%;
+    padding: 6px 10px;
+    border: 1px solid #334155;
+    border-radius: 6px;
+    background: #0f172a;
+    color: #e2e8f0;
+    font: inherit;
+    font-size: 0.8rem;
+}
+.asset-search-bar input:focus-visible { outline: 2px solid #818cf8; outline-offset: 2px; }
+.asset-search-hidden { display: none !important; }
+#asset-search-empty, .asset-generation-status { color: #94a3b8; font-size: 0.75rem; padding: 8px 1rem; }
+#asset-generation-pending[hidden] { display: none; }

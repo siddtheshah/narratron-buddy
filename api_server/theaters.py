@@ -37,6 +37,7 @@ from google.genai import types
 from api_server.dependencies import live_agent_manager, suggestion_service, adventure_service, pricing_controller
 from api_server.canvas import broadcast_baton_update, _broadcast_doodle
 from services.theater_image_generation import generate_theater_image
+from services.theater_media_generation import generate_theater_media
 from services.theater_checkout import checkout_locks, save_theater_checkout
 from services.theater_assets import Playlist, AnimationAsset, playlists, animations
 from services.generation_billing import (
@@ -134,6 +135,44 @@ def _remove_generated_stamp(theater_id: str, filename: str) -> None:
     theater_manager.notify_storage_changed(theater_id)
 
 
+def _save_generated_file(theater_id: str, filename: str, content: bytes) -> None:
+    for root in (theater_manager.theater(theater_id).directory(), theater_repository.theater_path(theater_id)):
+        target = root / filename
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(content)
+    theater_manager.notify_storage_changed(theater_id)
+
+
+def _remove_generated_file(theater_id: str, filename: str) -> None:
+    for root in (theater_manager.theater(theater_id).directory(), theater_repository.theater_path(theater_id)):
+        target = root / filename
+        target.unlink(missing_ok=True)
+        if target.parent.is_dir() and not list(target.parent.iterdir()):
+            target.parent.rmdir()
+    theater_manager.notify_storage_changed(theater_id)
+
+
+@app.post("/api/theaters/{theater_id}/characters/generate")
+async def generate_theater_character(
+    request: Request, theater_id: str, body: GenerateTheaterStampRequest,
+) -> dict[str, JsonValue]:
+    return await _generate_canvas_asset(request, theater_id, body, "character")
+
+
+@app.post("/api/theaters/{theater_id}/music/generate")
+async def generate_theater_music(
+    request: Request, theater_id: str, body: GenerateTheaterStampRequest,
+) -> dict[str, JsonValue]:
+    return await _generate_canvas_asset(request, theater_id, body, "music")
+
+
+@app.post("/api/theaters/{theater_id}/animations/generate")
+async def generate_theater_animation(
+    request: Request, theater_id: str, body: GenerateTheaterStampRequest,
+) -> dict[str, JsonValue]:
+    return await _generate_canvas_asset(request, theater_id, body, "animation")
+
+
 @app.post("/api/theaters/{theater_id}/stamps/generate")
 async def generate_theater_stamp(
     request: Request, theater_id: str, body: GenerateTheaterStampRequest,
@@ -150,18 +189,19 @@ async def generate_theater_scene(
 
 async def _generate_canvas_asset(
     request: Request, theater_id: str, body: GenerateTheaterStampRequest,
-    kind: Literal["stamp", "scene"],
+    kind: Literal["stamp", "scene", "character", "music", "animation"],
 ) -> dict[str, JsonValue]:
     _safe_path_param(theater_id, "theater_id")
     user = await get_current_user_async(request)
+    label = "music" if kind == "music" else f"{kind}s"
     if user is None:
-        raise HTTPException(status_code=401, detail=f"Sign in to generate theater {kind}s.")
+        raise HTTPException(status_code=401, detail=f"Sign in to generate theater {label}.")
     deployment = await asyncio.to_thread(db.get_deployment, theater_id)
     if not deployment or deployment["user_id"] != user["id"]:
-        raise HTTPException(status_code=403, detail=f"Only the theater owner can generate {kind}s.")
+        raise HTTPException(status_code=403, detail=f"Only the theater owner can generate {label}.")
     name, prompt = body.name.strip(), body.prompt.strip()
     if not name or not prompt:
-        raise HTTPException(status_code=422, detail=f"Enter a {kind} name and image prompt.")
+        raise HTTPException(status_code=422, detail=f"Enter a {kind} name and prompt.")
     prompt = body.generation_prompt()
     owner_id = int(user["id"])
     slot_id = await asyncio.to_thread(
@@ -179,7 +219,8 @@ async def _generate_canvas_asset(
         )
     try:
         async with _billing_locks.setdefault(owner_id, asyncio.Lock()):
-            cost = pricing_controller.get_rates()["image_credit_rate"]
+            rate = {"music": "music_credit_rate", "animation": "layered_animation_credit_rate"}.get(kind, "image_credit_rate")
+            cost = pricing_controller.get_rates()[rate]
             account = await asyncio.to_thread(db.get_user_by_id, owner_id)
             if not account or account["credits"] < cost:
                 raise HTTPException(status_code=402, detail=f"Generation requires {cost:g} credits. Top up on /deploy.")
@@ -187,48 +228,64 @@ async def _generate_canvas_asset(
             if not (root / "theater.yaml").is_file():
                 if not await asyncio.to_thread(theater_repository.reconstruct_theater, theater_id, root):
                     raise HTTPException(status_code=404, detail="Theater files not found.")
-        # Image jobs can overlap; hold the billing lock only for account checks and settlement.
+        identifier = f"{re.sub(r'[^a-zA-Z0-9_-]', '_', name).strip('_') or kind}_{uuid.uuid4().hex[:12]}"
+        save = {"stamp": _save_generated_stamp, "scene": _save_generated_scene}.get(kind, _save_generated_file)
+        remove = {"stamp": _remove_generated_stamp, "scene": _remove_generated_scene}.get(kind, _remove_generated_file)
         try:
-            # Scene presets already supply composition instructions. The reference path
-            # shares editor model/style settings without adding a conflicting scenic shot.
-            image = await asyncio.to_thread(
-                generate_theater_image, root, kind="reference" if kind == "scene" else kind,
-                prompt=prompt, references=[], use_visual_style=body.use_visual_style(),
-            )
-            if not image.image_bytes or image.mime_type != "image/webp":
-                raise ValueError(f"{kind.title()} generation must return a WebP image.")
+            if kind == "music" or kind == "animation":
+                files = await asyncio.to_thread(generate_theater_media, root, kind=kind, prompt=prompt, identifier=identifier)
+            else:
+                image = await asyncio.to_thread(
+                    generate_theater_image, root, kind="reference" if kind == "scene" else kind,
+                    prompt=prompt, references=[], use_visual_style=body.use_visual_style(),
+                )
+                if not image.image_bytes or image.mime_type != "image/webp":
+                    raise ValueError(f"{kind.title()} generation must return a WebP image.")
+                filename = f"{identifier}.webp"
+                files = {filename: image.image_bytes}
+                if kind == "character":
+                    folder = f"references/characters/{identifier}"
+                    files = {f"{folder}/1.webp": image.image_bytes,
+                             f"{folder}/character.yaml": yaml.safe_dump({"description": prompt}).encode("utf-8")}
         except Exception as error:
             logger.exception("Theater %s generation failed", kind)
             raise HTTPException(status_code=502, detail=f"{kind.title()} generation failed; no credits were charged.") from error
 
         async with _billing_locks.setdefault(owner_id, asyncio.Lock()):
-            filename = ""
             try:
-                safe_name = re.sub(r"[^a-zA-Z0-9_-]", "_", name).strip("_") or kind
-                filename = f"{safe_name}_{uuid.uuid4().hex[:12]}.webp"
-                save = _save_generated_stamp if kind == "stamp" else _save_generated_scene
-                await asyncio.to_thread(save, theater_id, filename, image.image_bytes)
+                for filename, content in files.items():
+                    await asyncio.to_thread(save, theater_id, filename, content)
             except Exception as error:
-                if filename:
-                    await asyncio.to_thread(_remove_generated_stamp if kind == "stamp" else _remove_generated_scene, theater_id, filename)
+                for filename in files:
+                    await asyncio.to_thread(remove, theater_id, filename)
                 logger.exception("Theater %s generation failed", kind)
                 raise HTTPException(status_code=502, detail=f"{kind.title()} generation failed; no credits were charged.") from error
             try:
                 updated = await asyncio.to_thread(
-                    db.record_user_usage, owner_id, images_created=1, credit_cost=cost,
-                    idempotency_key=f"{kind}:{theater_id}:{filename}",
+                    db.record_user_usage, owner_id,
+                    images_created=int(kind in ("stamp", "scene", "character")),
+                    music_created=int(kind == "music"), layered_animations_created=int(kind == "animation"),
+                    credit_cost=cost, idempotency_key=f"{kind}:{theater_id}:{identifier}",
                 )
             except Exception as error:
-                await asyncio.to_thread(_remove_generated_stamp if kind == "stamp" else _remove_generated_scene, theater_id, filename)
+                for filename in files:
+                    await asyncio.to_thread(remove, theater_id, filename)
                 logger.exception("Theater %s billing failed", kind)
                 raise HTTPException(status_code=503, detail="Could not settle generation credits. Please try again.") from error
             auth_session_cache.invalidate_user(owner_id)
         if kind == "stamp":
             stamps = theater_manager.theater(theater_id).stamps()
             assets: dict[str, JsonValue] = {"stamps": stamps}
-        else:
+        elif kind == "scene":
             assets = {"scenes": [dict(scene) for scene in theater_manager.theater(theater_id).scenes()]}
-        await _broadcast_doodle(canvas_states.get(theater_id), {"type": f"theater_{kind}s_updated", **assets})
+        elif kind == "character":
+            assets = {"characters": [dict(character) for character in theater_manager.theater(theater_id).characters()]}
+        elif kind == "music":
+            assets = {"playlists": [playlist.model_dump(mode="json") for playlist in playlists(theater_manager.theater(theater_id))]}
+        else:
+            assets = {"animations": [animation.model_dump(mode="json") for animation in animations(theater_manager.theater(theater_id))]}
+        collection = "playlists" if kind == "music" else f"{kind}s"
+        await _broadcast_doodle(canvas_states.get(theater_id), {"type": f"theater_{collection}_updated", **assets})
         return {**assets, "credits_charged": cost, "credits": float(updated["credits"])}
     finally:
         await asyncio.to_thread(db.release_generation_slot, slot_id)

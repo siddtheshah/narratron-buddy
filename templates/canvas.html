@@ -3618,13 +3618,6 @@
 
         <div id="stamp-manager-pane" role="tabpanel" aria-labelledby="chat-open-stamps-btn"
             style="display: none; flex-direction: column; flex: 1; overflow: hidden; min-height: 0;">
-            <div class="stamp-manager-header">
-                <div class="stamp-manager-header-title">
-                    <span aria-hidden="true" id="stamp-manager-header-icon">🏷️</span>
-                    <span id="stamp-manager-header-title">Asset Manager</span>
-                    <span id="stamp-manager-count" class="stamp-manager-count-badge">0/10</span>
-                </div>
-            </div>
             <div id="stamp-manager-tabs" class="stamp-manager-tabs" style="display: none;">
                 <div class="stamp-manager-tab-row">
                     <button type="button" class="stamp-tab-btn active" id="stamp-tab-stamps" data-tab="stamps">
@@ -3644,10 +3637,16 @@
                         Animations</button>
                 </div>
             </div>
+            <div class="asset-search-bar">
+                <input id="asset-search" type="search" aria-label="Search assets" placeholder="Search assets…" autocomplete="off">
+                <span id="stamp-manager-count" class="stamp-manager-count-badge">0/10</span>
+            </div>
+            <div id="asset-search-empty" role="status" hidden>No matching assets.</div>
             <div id="stamp-manager-permission-banner" class="stamp-manager-permission-banner non-contributor">
                 <!-- Populated dynamically based on contributor status -->
             </div>
             <div id="stamp-manager-body" class="stamp-manager-body">
+                <div id="asset-generation-pending" class="scenes-grid" hidden></div>
                 <div id="stamp-manager-grid" class="stamp-grid"></div>
                 <div id="stamp-manager-empty" class="stamp-manager-empty" style="display: none;">
                     <div class="empty-icon">🏷️</div>
@@ -3679,7 +3678,17 @@
             <div id="stamp-generation-status" role="status" aria-live="polite" hidden>Uses image generation credits.
                 Saved to this theater for everyone to use.</div>
             <div id="scene-generation-status" role="status" aria-live="polite" hidden>Uses image generation credits. Saved to this theater.</div>
+            <div id="asset-generation-status" class="asset-generation-status" role="status" aria-live="polite" hidden></div>
             <div class="stamp-manager-footer">
+                <form id="character-generation-form" class="stamp-generation-form" hidden>
+                    <textarea id="character-generation-prompt" maxlength="4000" rows="2" aria-label="Character portrait prompt" aria-keyshortcuts="Enter" required placeholder="describe a character and press (enter)" autocomplete="off"></textarea>
+                </form>
+                <form id="animation-generation-form" class="stamp-generation-form" hidden>
+                    <textarea id="animation-generation-prompt" maxlength="4000" rows="2" aria-label="Animation prompt" aria-keyshortcuts="Enter" required placeholder="describe a looping animation and press (enter)" autocomplete="off"></textarea>
+                </form>
+                <form id="music-generation-form" class="stamp-generation-form" hidden>
+                    <textarea id="music-generation-prompt" maxlength="4000" rows="2" aria-label="Music prompt" aria-keyshortcuts="Enter" required placeholder="describe music and press (enter)" autocomplete="off"></textarea>
+                </form>
                 <form id="scene-generation-form" class="stamp-generation-form" hidden>
                     <input id="scene-generation-type" type="hidden" value="none">
                     <details id="scene-generation-presets">
@@ -6182,6 +6191,16 @@
             socket.onerror = () => socket.close();
             socket.onmessage = (event) => {
                 const data = JSON.parse(event.data);
+                if (data.type === 'theater_characters_updated') {
+                    cachedTheaterCharacters = data.characters || [];
+                    if (isStampManagerOpen && activeStampManagerTab === 'characters') renderCharactersManagerGrid(cachedTheaterCharacters);
+                    return;
+                }
+                if (data.type === 'theater_playlists_updated' || data.type === 'theater_animations_updated') {
+                    const tab = data.type === 'theater_playlists_updated' ? 'playlists' : 'animations';
+                    if (isStampManagerOpen && activeStampManagerTab === tab) loadExtraAssets(tab);
+                    return;
+                }
                 if (data.type === 'theater_scenes_updated') {
                     cachedTheaterScenes = data.scenes || [];
                     if (isStampManagerOpen && activeStampManagerTab === 'scenes') renderScenesManagerGrid(cachedTheaterScenes);
@@ -6558,6 +6577,7 @@
         }
 
         function updateStampGenerationPermission() {
+            updateAssetGenerationUI();
             const form = document.getElementById('stamp-generation-form');
             if (form) form.hidden = !isTheaterStampOwner || activeStampManagerTab !== 'stamps';
             document.getElementById('scene-generation-form').hidden = !isTheaterStampOwner || activeStampManagerTab !== 'scenes';
@@ -6707,6 +6727,125 @@
                 }
             }
         });
+
+        const assetGenerationKinds = { characters: 'character', animations: 'animation', playlists: 'music' };
+        const pendingAssetGenerations = new Map();
+        const assetGenerationMessages = new Map();
+        let nextAssetGenerationId = 0;
+
+        function updateAssetGenerationUI() {
+            const kind = assetGenerationKinds[activeStampManagerTab];
+            for (const value of Object.values(assetGenerationKinds)) {
+                document.getElementById(`${value}-generation-form`).hidden = !isTheaterStampOwner || kind !== value;
+            }
+            const status = document.getElementById('asset-generation-status');
+            status.hidden = !isTheaterStampOwner || !kind;
+            const jobs = [...pendingAssetGenerations.values()].filter(job => job.kind === kind && job.theaterId === theaterId);
+            const note = kind === 'character' ? 'Uses image generation credits.' : `Uses ${kind || 'asset'} generation credits.`;
+            status.textContent = [assetGenerationMessages.get(kind) || `${note} Saved to this theater.`,
+                jobs.length ? `${jobs.length} generating. You can generate another while you wait.` : ''].filter(Boolean).join(' ');
+            const panel = document.getElementById('asset-generation-pending');
+            panel.replaceChildren();
+            panel.hidden = !jobs.length;
+            if (kind === 'character' && cachedTheaterCharacters !== null) {
+                charactersManagerEmpty.style.display = jobs.length || cachedTheaterCharacters.length ? 'none' : 'flex';
+            }
+            for (const job of jobs) {
+                const card = document.createElement('div');
+                card.className = 'scene-card asset-card-generating';
+                card.dataset.assetSearch = `${job.name} ${job.prompt}`;
+                card.setAttribute('aria-busy', 'true');
+                const placeholder = document.createElement('div');
+                placeholder.className = 'scene-card-thumb-container stamp-generation-placeholder';
+                const label = document.createElement('div');
+                label.className = 'scene-card-name';
+                label.textContent = job.name;
+                const progress = document.createElement('div');
+                progress.className = 'stamp-card-progress';
+                progress.textContent = 'Generating…';
+                card.append(placeholder, label, progress);
+                panel.appendChild(card);
+            }
+            if (kind) document.getElementById(`${kind}-generation-form`).setAttribute('aria-busy', String(jobs.length > 0));
+        }
+
+        for (const [tab, kind] of Object.entries(assetGenerationKinds)) {
+            const form = document.getElementById(`${kind}-generation-form`);
+            const input = document.getElementById(`${kind}-generation-prompt`);
+            input.addEventListener('keydown', event => {
+                if (event.key !== 'Enter' || event.isComposing) return;
+                event.preventDefault();
+                if (!event.repeat) form.requestSubmit();
+            });
+            form.addEventListener('submit', async event => {
+                event.preventDefault();
+                const prompt = input.value.trim();
+                if (!isTheaterStampOwner || !prompt) return;
+                const generationTheaterId = theaterId;
+                const name = stampNameFromPrompt(prompt);
+                const id = ++nextAssetGenerationId;
+                pendingAssetGenerations.set(id, { kind, name, prompt, theaterId: generationTheaterId });
+                assetGenerationMessages.delete(kind);
+                input.value = '';
+                updateAssetGenerationUI();
+                try {
+                    const endpoint = kind === 'music' ? 'music' : tab;
+                    const response = await fetch(`/api/theaters/${encodeURIComponent(generationTheaterId)}/${endpoint}/generate`, {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, prompt }),
+                    });
+                    const data = await response.json();
+                    if (!response.ok) throw new Error(typeof data.detail === 'string' ? data.detail : `Unable to generate ${kind}.`);
+                    if (theaterId !== generationTheaterId) return;
+                    if (kind === 'character') {
+                        const merged = new Map((cachedTheaterCharacters || []).map(asset => [asset.id || asset.name, asset]));
+                        (data.characters || []).forEach(asset => merged.set(asset.id || asset.name, asset));
+                        cachedTheaterCharacters = [...merged.values()];
+                        if (activeStampManagerTab === tab) renderCharactersManagerGrid(cachedTheaterCharacters);
+                    } else if (activeStampManagerTab === tab) {
+                        await loadExtraAssets(tab);
+                    }
+                    assetGenerationMessages.set(kind, `“${name}” saved to this theater. Charged ${data.credits_charged} credits.`);
+                } catch (error) {
+                    if (theaterId !== generationTheaterId) return;
+                    assetGenerationMessages.set(kind, `“${name}”: ${error.message}`);
+                    if (!input.value.trim()) input.value = prompt;
+                } finally {
+                    pendingAssetGenerations.delete(id);
+                    if (theaterId === generationTheaterId) updateAssetGenerationUI();
+                }
+            });
+        }
+
+        function applyAssetSearch() {
+            const query = document.getElementById('asset-search').value.trim().toLocaleLowerCase();
+            const matches = text => text.toLocaleLowerCase().includes(query);
+            const body = document.getElementById('stamp-manager-body');
+            body.querySelectorAll('[data-asset-search]').forEach(card => {
+                const playlist = card.closest('.playlist-group');
+                card.classList.toggle('asset-search-hidden', !matches(`${card.dataset.assetSearch} ${playlist?.dataset.playlistName || ''}`));
+            });
+            body.querySelectorAll('.playlist-group').forEach(group => {
+                const nameMatches = matches(group.dataset.playlistName);
+                const tracks = [...group.querySelectorAll('.playlist-track-list [data-asset-search]')];
+                const visible = nameMatches || tracks.some(track => !track.classList.contains('asset-search-hidden'));
+                group.classList.toggle('asset-search-hidden', !visible);
+                group.querySelector('.playlist-header-push').classList.toggle('asset-search-hidden', !visible);
+                const expanded = query ? visible : expandedPlaylists.has(group.dataset.playlistName);
+                group.querySelector('.playlist-track-list').hidden = !expanded;
+                group.querySelector('.playlist-header-toggle').setAttribute('aria-expanded', String(expanded));
+                const chevron = group.querySelector('.playlist-chevron');
+                const symbol = expanded ? '▼' : '▶';
+                if (chevron.textContent !== symbol) chevron.textContent = symbol;
+                group.classList.toggle('minimized', !expanded);
+            });
+            const panels = { stamps: 'stamp-manager-grid', scenes: 'scenes-manager-grid', characters: 'characters-manager-grid', playlists: 'playlists-manager', animations: 'animations-manager' };
+            const panel = document.getElementById(panels[activeStampManagerTab]);
+            const visible = [...panel.querySelectorAll('[data-asset-search]'), ...document.querySelectorAll('#asset-generation-pending [data-asset-search]')]
+                .some(card => !card.classList.contains('asset-search-hidden'));
+            document.getElementById('asset-search-empty').hidden = !query || visible;
+        }
+        document.getElementById('asset-search').addEventListener('input', applyAssetSearch);
+        new MutationObserver(applyAssetSearch).observe(document.getElementById('stamp-manager-body'), { childList: true, subtree: true });
 
         function setStampManagerOpen(open) {
             if (open) {
@@ -6966,6 +7105,7 @@
                 if (index === stamps.length) addSection('Theater stamps', true);
                 const card = document.createElement('div');
                 card.className = `stamp-card ${canDrag ? 'can-drag' : 'locked'}`;
+                card.dataset.assetSearch = JSON.stringify(stamp);
                 card.draggable = canDrag;
                 card.dataset.stampId = String(stamp.id);
                 card.dataset.stampName = stamp.name || 'Stamp';
@@ -7080,6 +7220,7 @@
             pendingStampGenerations.forEach((job, jobId) => {
                 const card = document.createElement('div');
                 card.className = 'stamp-card stamp-card-generating';
+                card.dataset.assetSearch = `${job.name} ${job.prompt}`;
                 card.dataset.generationId = String(jobId);
                 card.draggable = false;
                 card.setAttribute('aria-busy', 'true');
@@ -7495,6 +7636,7 @@
             const button = document.createElement('button');
             button.type = 'button';
             button.className = asset.tracks ? 'stamp-tab-btn playlist-push-button' : 'asset-push-button';
+            button.dataset.assetSearch = JSON.stringify(asset);
             button.dataset.assetKind = kind;
             button.dataset.assetId = asset.id;
             button.dataset.playlistName = asset.tracks ? asset.name : '';
@@ -7582,6 +7724,8 @@
                 tab = 'stamps';
             }
             activeStampManagerTab = tab;
+            updateAssetGenerationUI();
+            queueMicrotask(applyAssetSearch);
             ++assetLoadVersion;
             const stampManagerBodyEl = document.getElementById('stamp-manager-body');
             if (stampManagerBodyEl) {
@@ -7597,8 +7741,6 @@
             stampTabScenesBtn?.classList.toggle('active', tab === 'scenes');
             stampTabCharactersBtn?.classList.toggle('active', tab === 'characters');
 
-            const headerIcon = document.getElementById('stamp-manager-header-icon');
-            const headerTitle = document.getElementById('stamp-manager-header-title');
             const stampGenForm = document.getElementById('stamp-generation-form');
             const stampGenStatus = document.getElementById('stamp-generation-status');
             const canGenerateScene = typeof isTheaterStampOwner !== 'undefined' && isTheaterStampOwner && tab === 'scenes';
@@ -7606,8 +7748,6 @@
             document.getElementById('scene-generation-status').hidden = !canGenerateScene;
 
             if (tab === 'playlists' || tab === 'animations') {
-                if (headerIcon) headerIcon.textContent = tab === 'playlists' ? '♫' : '▶';
-                if (headerTitle) headerTitle.textContent = 'Asset Manager';
                 for (const el of [stampManagerPermissionBanner, stampManagerGrid, stampManagerEmpty,
                     scenesManagerGrid, scenesManagerEmpty, charactersManagerGrid, charactersManagerEmpty]) {
                     if (el) el.style.display = 'none';
@@ -7617,8 +7757,6 @@
                 }
                 loadExtraAssets(tab);
             } else if (tab === 'stamps') {
-                if (headerIcon) headerIcon.textContent = '🏷️';
-                if (headerTitle) headerTitle.textContent = 'Asset Manager';
                 if (stampManagerPermissionBanner) stampManagerPermissionBanner.style.display = '';
                 if (stampManagerGrid) stampManagerGrid.style.display = '';
                 if (scenesManagerGrid) scenesManagerGrid.style.display = 'none';
@@ -7643,8 +7781,6 @@
                     loadUserStamps();
                 }
             } else if (tab === 'scenes') {
-                if (headerIcon) headerIcon.textContent = '🎬';
-                if (headerTitle) headerTitle.textContent = 'Asset Manager';
                 if (stampManagerPermissionBanner) stampManagerPermissionBanner.style.display = 'none';
                 if (stampManagerGrid) stampManagerGrid.style.display = 'none';
                 if (stampManagerEmpty) stampManagerEmpty.style.display = 'none';
@@ -7668,8 +7804,6 @@
                     loadTheaterScenes();
                 }
             } else if (tab === 'characters') {
-                if (headerIcon) headerIcon.textContent = '👤';
-                if (headerTitle) headerTitle.textContent = 'Asset Manager';
                 if (stampManagerPermissionBanner) stampManagerPermissionBanner.style.display = 'none';
                 if (stampManagerGrid) stampManagerGrid.style.display = 'none';
                 if (stampManagerEmpty) stampManagerEmpty.style.display = 'none';
@@ -7729,6 +7863,7 @@
             pendingSceneGenerations.forEach((job, jobId) => {
                 const card = document.createElement('div');
                 card.className = 'scene-card scene-card-generating';
+                card.dataset.assetSearch = `${job.name} ${job.prompt}`;
                 card.dataset.generationId = String(jobId);
                 card.setAttribute('aria-busy', 'true');
                 card.setAttribute('aria-label', `${job.name}: Generating`);
@@ -7761,6 +7896,7 @@
             scenes.forEach(scene => {
                 const card = document.createElement('div');
                 card.className = 'scene-card';
+                card.dataset.assetSearch = JSON.stringify(scene);
                 card.setAttribute('role', 'button');
                 card.setAttribute('tabindex', '0');
                 card.setAttribute('title', `Click to push "${scene.name}"`);
@@ -7941,6 +8077,7 @@
             characters.forEach(char => {
                 const card = document.createElement('div');
                 card.className = 'character-card';
+                card.dataset.assetSearch = JSON.stringify(char);
                 card.setAttribute('role', 'button');
                 card.setAttribute('tabindex', '0');
                 card.setAttribute('title', `Click to push "${char.name}"`);
