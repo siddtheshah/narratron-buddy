@@ -19,22 +19,31 @@ class ToolActivityPayload(TypedDict):
 class ToolResponseState:
     def __init__(self, notify_changed: Callable[..., None]) -> None:
         self._notify_changed = notify_changed
-        self.image_generation_active = False; self.animation_generation_active = False
-        self.user_action_processing_active = False; self.live_connection_active = False
+        self.image_generation_active = False
+        self.animation_generation_active = False
+        self.user_action_processing_active = False
+        self.live_connection_active = False
         self.reference_generation_active = False
         self.music_generation_active = False
-        self.live_connection_until = 0.0; self.dice_roll_until = 0.0
+        self.live_connection_until = 0.0
+        self.dice_roll_until = 0.0
         self.dice_roll_result: dict[str, object] | None = None
-        self.current_agent_thought = ""; self.current_agent_thought_time = 0.0
+        self.current_agent_thought = ""
+        self.current_agent_thought_time = 0.0
         self.agent_thought_highlighted = False
 
     def set_activity(self, tool: str, active: bool = True, recent_seconds: float = 5.0,
                      result: dict[str, object] | None = None) -> None:
-        if tool == "image": self.image_generation_active = bool(active)
-        elif tool == "animation": self.animation_generation_active = bool(active)
-        elif tool == "user_action": self.user_action_processing_active = bool(active)
-        elif tool == "reference": self.reference_generation_active = bool(active)
-        elif tool == "music": self.music_generation_active = bool(active)
+        if tool == "image":
+            self.image_generation_active = bool(active)
+        elif tool == "animation":
+            self.animation_generation_active = bool(active)
+        elif tool == "user_action":
+            self.user_action_processing_active = bool(active)
+        elif tool == "reference":
+            self.reference_generation_active = bool(active)
+        elif tool == "music":
+            self.music_generation_active = bool(active)
         elif tool == "live":
             self.live_connection_active = bool(active)
             self.live_connection_until = time.time() + max(0.0, recent_seconds) if active and recent_seconds > 0 else 0.0

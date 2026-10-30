@@ -36,6 +36,8 @@ def test_cloud_adventure_download_uses_python_transfer_manager(tmp_path: Path, p
         "planning.yaml": b"HUD: {}",
         "game/game.yaml": b"game: {}",
         "game/map.svg": b"<svg/>",
+        "animations/rain/video.mp4": b"video",
+        "animations/rain/video.json": b'{"scene_prompt":"Rain"}',
     }
     bucket = MagicMock(spec=storage.Bucket)
     bucket.name = "custom-bucket"
@@ -75,7 +77,7 @@ def test_cloud_adventure_download_uses_python_transfer_manager(tmp_path: Path, p
         transfer.assert_called_once()
 
     assert dict(references) == {name: data for name, data in assets.items()
-                                if name.startswith(("references/", "stamps/", "game/")) or name == "planning.yaml"}
+                                if name.startswith(("references/", "stamps/", "game/", "animations/")) or name == "planning.yaml"}
     assert playlists == {"ambient": [("wind.mp3", b"music")]}
     assert lore == [("lore/nested/world.md", b"World lore")]
     assert config == {"live_agent": {"style": "epic"}}

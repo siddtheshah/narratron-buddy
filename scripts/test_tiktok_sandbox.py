@@ -6,7 +6,6 @@ Run only after the Narratron server and its reserved ngrok tunnel are running:
 
 import argparse
 import os
-import sys
 import webbrowser
 from pathlib import Path
 from urllib.parse import urlsplit

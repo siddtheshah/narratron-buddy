@@ -35,11 +35,11 @@ def generate_theater_media(
     # Stage complete artifacts before the API persists or bills the request.
     # The editor and canvas assets pane both use this entry point.
     with TemporaryDirectory(prefix="narratron-animation-") as staging:
-        output = Path(staging) / "output"
+        output = Path(staging)
         provider = get_animation_provider(options=settings)
         provider.create_animation(prompt, identifier, output_dir=output, technique=animation_type)
         folder = output / "animations" / identifier
         return {
-            f"output/animations/{identifier}/{path.name}": path.read_bytes()
+            f"animations/{identifier}/{path.name}": path.read_bytes()
             for path in sorted(folder.iterdir()) if path.is_file()
         }

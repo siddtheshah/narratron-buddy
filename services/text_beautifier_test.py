@@ -10,11 +10,6 @@ from providers.text_response_provider import (
 from services.text_beautifier import (
     ALLOWED_EFFECTS,
     ALLOWED_FONTS,
-    EFFECTS,
-    FONTS,
-    _BEAUTIFIER_PROMPT_TEMPLATE,
-    _BEAUTIFY_SCENE_PROMPT_TEMPLATE,
-    _BEAUTIFY_TEXT_PROMPT_TEMPLATE,
     BeautifiedDialogueLine,
     BeautifiedSceneResponse,
     SingleTextBeautifyResponse,

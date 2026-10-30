@@ -1350,9 +1350,9 @@ def test_editor_generates_all_animation_files_and_charges_once(builder: BuilderH
     data = builder.create()
     identifier = data["draft"]["theater_id"]
     files = {
-        f"output/animations/rain/{technique}.json": b'{"scene_prompt":"Rain"}',
-        "output/animations/rain/frame_1.webp": png_bytes(),
-        "output/animations/rain/frame_2.webp": png_bytes(),
+        f"animations/rain/{technique}.json": b'{"scene_prompt":"Rain"}',
+        "animations/rain/frame_1.webp": png_bytes(),
+        "animations/rain/frame_2.webp": png_bytes(),
     }
     with patch("api_server.theater_editor.generate_theater_media", return_value=files) as generate:
         result = builder.client.post(f"/api/theater-editor/{identifier}/generate", json={
@@ -1377,8 +1377,8 @@ def test_editor_animation_billing_failure_removes_every_generated_file(builder: 
     data = builder.create()
     identifier = data["draft"]["theater_id"]
     files = {
-        "output/animations/rain/video.json": b'{"scene_prompt":"Rain"}',
-        "output/animations/rain/video.mp4": b"video",
+        "animations/rain/video.json": b'{"scene_prompt":"Rain"}',
+        "animations/rain/video.mp4": b"video",
     }
     builder.database.record_user_usage.side_effect = RuntimeError("billing unavailable")
     with patch("api_server.theater_editor.generate_theater_media", return_value=files):

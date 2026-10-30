@@ -30,7 +30,7 @@ class FakeTheater:
     def references_dir(self) -> Path:
         return self.root / "references"
 
-    def config(self) -> dict:
+    def config(self) -> dict[str, object]:
         return {}
 
     def get_url_for_path(self, file_path: str) -> str:
@@ -67,7 +67,8 @@ def test_manager_serializes_components_and_bundles_their_canvas_payload(tmp_path
 
 
 def test_manager_hydrates_each_persisted_component(tmp_path: Path) -> None:
-    directory = tmp_path / "restored"; directory.mkdir()
+    directory = tmp_path / "restored"
+    directory.mkdir()
     (directory / "theater.json").write_text(json.dumps({"canvas_state": {
         "shown_image_path": "saved.png", "current_playlist": "score",
         "doodles_enabled": False, "viewer_collab_enabled": True,
@@ -86,7 +87,8 @@ def test_manager_hydrates_each_persisted_component(tmp_path: Path) -> None:
 
 
 def test_manager_hydrates_from_legacy_theater_state_json(tmp_path: Path) -> None:
-    directory = tmp_path / "legacy"; directory.mkdir()
+    directory = tmp_path / "legacy"
+    directory.mkdir()
     (directory / "theater_state.json").write_text(json.dumps({"canvas_state": {
         "shown_image_path": "legacy.png",
         "narration": "From legacy file.",
@@ -99,7 +101,8 @@ def test_manager_hydrates_from_legacy_theater_state_json(tmp_path: Path) -> None
 
 
 def test_manager_handles_corrupt_json_gracefully(tmp_path: Path) -> None:
-    directory = tmp_path / "corrupted"; directory.mkdir()
+    directory = tmp_path / "corrupted"
+    directory.mkdir()
     (directory / "theater.json").write_text("{invalid json corrupt content...", encoding="utf-8")
 
     # Should not raise exception
@@ -128,7 +131,6 @@ def test_manager_persist_writes_theater_json(tmp_path: Path) -> None:
     assert target.exists()
     data = json.loads(target.read_text(encoding="utf-8"))
     assert data["canvas_state"]["narration"] == "Persisted narration"
-
 
 
 def test_persistent_doodles_survive_visual_updates_and_reload(tmp_path: Path) -> None:

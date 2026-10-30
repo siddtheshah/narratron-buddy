@@ -1,6 +1,8 @@
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from components.canvas.canvas_state_service import CanvasStateService
 
 
@@ -12,13 +14,26 @@ class FakeTheater:
     def storage_changed(self) -> None:
         self.storage_change_count += 1
 
-    def directory(self) -> Path: return self.root
-    def output_dir(self) -> Path: return self.root / "output"
-    def chats_dir(self) -> Path: return self.root / "chats"
-    def image_artifacts_dir(self) -> Path: return self.root / "images"
-    def references_dir(self) -> Path: return self.root / "references"
-    def config(self) -> dict: return {}
-    def get_url_for_path(self, path: str) -> str: return path
+    def directory(self) -> Path:
+        return self.root
+
+    def output_dir(self) -> Path:
+        return self.root / "output"
+
+    def chats_dir(self) -> Path:
+        return self.root / "chats"
+
+    def image_artifacts_dir(self) -> Path:
+        return self.root / "images"
+
+    def references_dir(self) -> Path:
+        return self.root / "references"
+
+    def config(self) -> dict[str, object]:
+        return {}
+
+    def get_url_for_path(self, path: str) -> str:
+        return path
 
 
 class FakeTheaterManager:
@@ -26,11 +41,11 @@ class FakeTheaterManager:
         self.root = root
         self.deployed = [SimpleNamespace(theater_id="live", status="deployed")]
 
-    def list_theaters(self): return self.deployed
-    def theater(self, theater_id: str) -> FakeTheater: return FakeTheater(theater_id, self.root)
+    def list_theaters(self) -> list[SimpleNamespace]:
+        return self.deployed
 
-
-import pytest
+    def theater(self, theater_id: str) -> FakeTheater:
+        return FakeTheater(theater_id, self.root)
 
 
 def test_service_caches_one_manager_per_theater(tmp_path: Path) -> None:
@@ -55,4 +70,3 @@ def test_service_requires_theater_id(tmp_path: Path) -> None:
     with pytest.raises(ValueError) as excinfo:
         service.get("   ")
     assert "theater_id is required" in str(excinfo.value)
-

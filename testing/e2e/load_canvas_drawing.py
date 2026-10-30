@@ -18,7 +18,6 @@ import sys
 import time
 import urllib.parse
 from datetime import datetime, timezone
-from pathlib import Path
 
 from playwright.async_api import Browser, BrowserContext, Page, async_playwright
 

@@ -59,8 +59,8 @@ class AnimationTools(BaseTools):
         )
         self.animation_config = self.animation_provider.animation_config
         self.cooldown_duration = float(self.animation_config.get("cooldown_duration") or 0)
-        self.output_dir = str(theater.image_artifacts_dir())
-        self.animations_dir = str(theater.output_dir() / "animations")
+        self.output_dir = str(theater.directory())
+        self.animations_dir = str(theater.animations_dir())
         Path(self.animations_dir).mkdir(parents=True, exist_ok=True)
         self.default_style = self.animation_provider.default_style
         self._animations: dict[str, list[str]] = {}
@@ -173,7 +173,7 @@ class AnimationTools(BaseTools):
         references: list[ImageReference], technique: str | None,
     ) -> None:
         selected = self.animation_provider.create_animation(
-            scene_prompt, animation_id, output_dir=self.theater.output_dir(),
+            scene_prompt, animation_id, output_dir=self.theater.directory(),
             technique=TypeAdapter(AnimationTechnique | None).validate_python(technique),
             references=references,
         )
@@ -213,7 +213,10 @@ class AnimationTools(BaseTools):
         if animation_id in self._layered_animations:
             return self._layered_animations[animation_id]
         clean_id = re.sub(r"[^a-zA-Z0-9_-]", "_", animation_id)
-        manifest_path = Path(self.animations_dir) / clean_id / "layered.json"
+        animation_dir = Path(self.animations_dir) / clean_id
+        manifest_path = animation_dir / "layered.json"
+        if not manifest_path.is_file():
+            manifest_path = animation_dir / "animation.json"
         if not manifest_path.is_file():
             return None
         try:
@@ -226,7 +229,7 @@ class AnimationTools(BaseTools):
                     layer_path = Path(layer["path"])
                     abs_path = (output_dir_path / layer_path) if not layer_path.is_absolute() else layer_path
                     if not abs_path.is_file():
-                        local_path = Path(self.animations_dir) / clean_id / layer_path.name
+                        local_path = animation_dir / layer_path.name
                         if local_path.is_file():
                             abs_path = local_path
                     layer["path"] = str(abs_path)
@@ -234,7 +237,7 @@ class AnimationTools(BaseTools):
                 base_path = Path(manifest["base_image"])
                 abs_base = (output_dir_path / base_path) if not base_path.is_absolute() else base_path
                 if not abs_base.is_file():
-                    local_base = Path(self.animations_dir) / clean_id / base_path.name
+                    local_base = animation_dir / base_path.name
                     if local_base.is_file():
                         abs_base = local_base
                 manifest["base_image"] = str(abs_base)

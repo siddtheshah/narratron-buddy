@@ -128,7 +128,7 @@ def upload_path(filename: str, folder: bool) -> str:
         return relative
     if relative in GAME_FILENAMES:
         return f"game/{relative}"
-    if relative in ROOT_FILES or parts[0] in {"references", "stamps", "playlists", "lore", "game"}:
+    if relative in ROOT_FILES or parts[0] in {"references", "stamps", "playlists", "animations", "lore", "game"}:
         return relative
     if parts[0] in {"characters", "scenes"}:
         raise IneligibleAssetError("Use references/characters/<Name>/ or references/scenes/<Name>/.")
@@ -168,6 +168,7 @@ class TheaterBuilderStore:
         (root / "playlists").mkdir(parents=True, exist_ok=True)
         (root / "lore").mkdir(parents=True, exist_ok=True)
         (root / "stamps").mkdir(parents=True, exist_ok=True)
+        (root / "animations").mkdir(parents=True, exist_ok=True)
 
     def import_session_references(self, info: DraftInfo) -> None:
         """Expose runtime-created character and scene assets in the package editor."""
@@ -308,7 +309,7 @@ class TheaterBuilderStore:
                 del_target.unlink()
                 parent = del_target.parent
                 while parent != resolved_root and parent.is_dir() and not any(parent.iterdir()):
-                    if parent.parent == resolved_root and parent.name in {"characters", "references", "stamps", "playlists", "lore"}:
+                    if parent.parent == resolved_root and parent.name in {"characters", "references", "stamps", "playlists", "animations", "lore"}:
                         break
                     parent.rmdir()
                     parent = parent.parent
@@ -381,7 +382,7 @@ class TheaterBuilderStore:
                         "Scene imagery belongs in references/scenes/<Scene Name>/<iteration>.ext (e.g. references/scenes/Old Harbor/1.webp). Each scene must have its own subfolder; loose files directly under references/scenes/ are not permitted. Supported image formats are PNG, JPEG, WebP, and GIF. Numbered iterations such as 1.webp, 2.webp allow visual evolution across story arcs. Organize scene image uploads into references/scenes/<Scene Name>/1.ext. Scene descriptions belong in references/scenes/<Scene Name>/scene.yaml with a description string alongside their image iterations. Keep additional location lore in lore/locations/*.txt (or lore/*.txt). "
                         "You may write playlists/name/description.txt to explain a playlist's mood and when to use it. "
                         "Image previews are supplied for up to twelve reference, stamp, character, and scene assets; identify their content when organizing generic filenames. Do not claim to have inspected audio or unshown images. "
-                        "Update lore/config asset paths when moving assets. starting_image must identify an existing reference image by filename, alias, or references/ path; do not point it at an asset that has only been proposed for generation. metadata.json may describe catalog title, id, description, author, genre, tags, cover_image, difficulty, and recommended_players. Keep cover paths consistent with the authored files. Generation requests propose one reference image, stamp token, character portrait, scene visual, playlist track, or animation each (kind: 'reference', 'stamp', 'character', 'scene', 'playlist', or 'animation'). Animation requests use animation_type 'video', 'layered', or 'triframe' and save all files under output/animations/<id>/. "
+                        "Update lore/config asset paths when moving assets. starting_image must identify an existing reference image by filename, alias, or references/ path; do not point it at an asset that has only been proposed for generation. metadata.json may describe catalog title, id, description, author, genre, tags, cover_image, difficulty, and recommended_players. Keep cover paths consistent with the authored files. Generation requests propose one reference image, stamp token, character portrait, scene visual, playlist track, or animation each (kind: 'reference', 'stamp', 'character', 'scene', 'playlist', or 'animation'). Animation requests use animation_type 'video', 'layered', or 'triframe' and save all files under animations/<id>/. "
                         "Generated assets are charged only when the user clicks Generate. Use only existing references, scene, or character image paths in generation requests. "
                         "Character portraits under references/characters/<Character Name>/ establish visual identity for NPCs and heroes. Propose generation requests with kind 'character' (name matching the character's canonical name) to generate portraits. "
                         "Scene visuals under references/scenes/<Scene Name>/ establish environmental visuals for narrative locations. Propose generation requests with kind 'scene' (name matching the scene's canonical name) to generate scene imagery. "

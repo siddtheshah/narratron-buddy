@@ -9,7 +9,7 @@ class TestVideoAnimationUI(UITestCase):
         """Verify video animation state exposes loop/muted flags and canvas-renderers wires them."""
         theater_id = "dummy_video_theater"
         manager = self.make_canvas_state(theater_id)
-        anim_dir = manager.theater.output_dir() / "animations" / "flight_123"
+        anim_dir = manager.theater.animations_dir() / "flight_123"
         anim_dir.mkdir(parents=True)
         fake_video_file = anim_dir / "video.mp4"
         fake_video_file.write_bytes(b"\x00\x00\x00 fake mp4 data")
@@ -19,7 +19,7 @@ class TestVideoAnimationUI(UITestCase):
             "type": "video",
             "scene_prompt": "A soaring griffin over snow-capped mountains.",
             "video_path": str(fake_video_file),
-            "video_url": f"/theaters/{theater_id}/output/animations/flight_123/video.mp4",
+            "video_url": f"/theaters/{theater_id}/animations/flight_123/video.mp4",
             "loop": True,
             "muted": True,
         }
@@ -28,7 +28,7 @@ class TestVideoAnimationUI(UITestCase):
 
         self.assertEqual(state["animation"]["type"], "video")
         self.assertEqual(state["animation"]["id"], "flight_123")
-        self.assertEqual(state["animation"]["video_url"], f"/theaters/{theater_id}/output/animations/flight_123/video.mp4")
+        self.assertEqual(state["animation"]["video_url"], f"/theaters/{theater_id}/animations/flight_123/video.mp4")
         self.assertEqual(state["animation"]["video_duration_seconds"], 5)
         self.assertTrue(state["animation"]["loop"])
         self.assertTrue(state["animation"]["muted"])

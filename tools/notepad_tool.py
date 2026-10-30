@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 from components.canvas_state import CanvasStateManager
 from components.theater_manager import Theater
 from tools.base_tool import BaseTools, logged_tool_call
 from tools.tool_metadata import terminal
-from components.notepad import Notepad
 
 
 class NotepadTool(BaseTools):

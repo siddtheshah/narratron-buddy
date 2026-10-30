@@ -1,5 +1,7 @@
 import io
+import json
 import os
+from pathlib import Path
 import shutil
 import tempfile
 import re
@@ -7,6 +9,7 @@ import threading
 from unittest.mock import MagicMock, patch
 
 from PIL import Image
+import pytest
 
 from components.theater_manager import TheaterManager
 from components.canvas.canvas_state_service import CanvasStateService
@@ -35,6 +38,62 @@ def fake_video_bytes() -> bytes:
 BASE_FRAME = "A lantern hangs in a quiet tavern."
 SECOND_FRAME_CHANGE = "The lantern swings slightly to the left."
 THIRD_FRAME_CHANGE = "The lantern swings back toward center."
+
+
+def test_animations_under_output_folder_are_ignored(tmp_path: Path) -> None:
+    manager = TheaterManager(tmp_path)
+    theater = manager.theater("preloaded")
+    folder = theater.output_dir() / "animations" / "rain"
+    folder.mkdir(parents=True)
+    (folder / "video.mp4").write_bytes(b"video")
+    canvas = MagicMock()
+    canvas.visual.pinned = False
+    with patch.object(manager, "get_theater_config", return_value={"animation": {"cooldown_duration": 0}}):
+        tools = AnimationTools(theater, canvas, MagicMock(), MagicMock(), image_provider=MagicMock(), reference_manager=MagicMock())
+    assert tools.browse_animations() == []
+    assert tools.play_animation("rain") == "Error: Animation 'rain' was not found."
+    canvas.visual.update_animation.assert_not_called()
+
+
+@pytest.mark.parametrize("technique", ["video", "layered", "triframe"])
+def test_prepopulated_animations_can_be_browsed_and_played(tmp_path: Path, technique: str) -> None:
+    manager = TheaterManager(tmp_path)
+    theater = manager.theater("preloaded")
+    folder = theater.animations_dir() / "rain"
+    folder.mkdir(parents=True)
+    if technique == "video":
+        (folder / "video.mp4").write_bytes(b"video")
+        (folder / "video.json").write_text('{"scene_prompt":"Rain", "video_path":"video.mp4"}', encoding="utf-8")
+    elif technique == "layered":
+        for name in ("base.webp", "foreground.webp"):
+            (folder / name).write_bytes(b"image")
+        (folder / "layered.json").write_text(json.dumps({
+            "scene_prompt": "Rain", "base_image": "base.webp",
+            "layers": [{"path": "base.webp", "effect": "none"}, {"path": "foreground.webp", "effect": "sway"}],
+        }), encoding="utf-8")
+    else:
+        for number in range(1, 4):
+            (folder / f"frame_{number}.webp").write_bytes(b"frame")
+        (folder / "triframe.json").write_text(json.dumps({
+            "scene_prompt": "Rain", "frames": [f"frame_{number}.webp" for number in range(1, 4)],
+        }), encoding="utf-8")
+    canvas = MagicMock()
+    canvas.visual.pinned = False
+    canvas.visual.update_animation.return_value = {"status": "displayed"}
+    with patch.object(manager, "get_theater_config", return_value={"animation": {"cooldown_duration": 0}}):
+        tools = AnimationTools(theater, canvas, MagicMock(), MagicMock(), image_provider=MagicMock(), reference_manager=MagicMock())
+    assert Path(tools.animations_dir) == theater.animations_dir()
+    assert tools.browse_animations() == [{"id": "rain", "type": technique, "scene_prompt": "Rain"}]
+    with patch.object(AnimationTools, "_schedule_cooldown_timer"):
+        result = tools.play_animation("rain")
+    assert "Playing" in result
+    assert canvas.visual.update_animation.call_args.args[0] == technique
+    if technique == "video":
+        assert Path(canvas.visual.update_animation.call_args.args[1]["video_path"]) == folder / "video.mp4"
+    elif technique == "layered":
+        assert Path(canvas.visual.update_animation.call_args.args[1]["layers"][1]["path"]) == folder / "foreground.webp"
+    else:
+        assert [Path(path) for path in canvas.visual.update_animation.call_args.args[1]] == [folder / f"frame_{n}.webp" for n in range(1, 4)]
 
 
 class TestAnimationTools(BaseTestCase):
@@ -185,7 +244,7 @@ class TestAnimationTools(BaseTestCase):
         animation = canvas_state_service.get("tri_frame_canvas").get_latest_state()["animation"]
         self.assertEqual(animation["type"], "triframe")
         self.assertEqual(len(animation["frames"]), 3)
-        self.assertIn(f"/output/animations/{animation_id}/frame_1.webp", animation["frames"][0])
+        self.assertIn(f"/animations/{animation_id}/frame_1.webp", animation["frames"][0])
 
     @patch("tools.image.image_tool.get_image_provider")
     def test_create_animation_passes_references_to_each_frame(self, mock_get_provider):

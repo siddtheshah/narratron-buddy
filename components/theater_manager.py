@@ -19,6 +19,7 @@ from absl import flags
 from game.game_source import GAME_FILES
 from components.playlist_audio import playlist_audio_type
 from components.reference_images import reference_image_type
+from components.theater_package import safe_asset_path
 
 logger = logging.getLogger(__name__)
 
@@ -383,6 +384,10 @@ class Theater:
     def playlists_dir(self) -> Path:
         return self.manager._get_theater_playlists_dir(self.theater_id)
 
+    def animations_dir(self) -> Path:
+        """Saved animations, including assets supplied with the theater."""
+        return self.directory() / "animations"
+
     def lore_dir(self) -> Path:
         """Directory containing text-only story reference documents."""
         return self.manager._get_theater_lore_dir(self.theater_id)
@@ -525,6 +530,10 @@ def extract_asset_package(
                     reference_files.append(("/".join(parts[parts.index("game"):]), content))
                 elif filename.lower() in ("planning.yaml", "planning.yml"):
                     reference_files.append(("planning.yaml", content))
+                elif "animations" in parts:
+                    relative = "/".join(parts[parts.index("animations"):])
+                    safe_asset_path(Path("."), relative)
+                    reference_files.append((relative, content))
                 elif "references" in parts or (filename.lower().endswith((".png", ".jpg", ".jpeg", ".webp", ".gif")) and "playlists" not in parts):
                     reference_files.append((info.filename, content))
                 elif "playlists" in parts or filename.lower().endswith((".mp3", ".wav", ".ogg", ".flac", ".m4a", ".aac")):
@@ -624,12 +633,17 @@ class TheaterManager:
         if not file_path:
             return ""
         path_obj = Path(file_path)
-        if not path_obj.is_absolute() and path_obj.parts and path_obj.parts[0] == "references":
+        if not path_obj.is_absolute() and path_obj.parts and path_obj.parts[0] in {"references", "animations"}:
             sel_path_obj = (self._get_theater_dir(theater_id) / path_obj).resolve()
         elif not path_obj.is_absolute():
             sel_path_obj = (self._get_theater_output_dir(theater_id) / path_obj).resolve()
         else:
             sel_path_obj = path_obj.resolve()
+
+        animations_dir = self.theater(theater_id).animations_dir().resolve()
+        if animations_dir in sel_path_obj.parents:
+            relative_animation = sel_path_obj.relative_to(animations_dir).as_posix()
+            return f"/theaters/{theater_id}/animations/{quote(relative_animation, safe='/')}"
 
         if "references" in sel_path_obj.parts or "reference_library" in sel_path_obj.parts:
             if "references" in sel_path_obj.parts:
@@ -718,6 +732,9 @@ class TheaterManager:
             if len(content) > MAX_FILE_BYTES:
                 raise ValueError(f"File '{filename}' exceeds maximum allowed size of 10MB.")
             parts = validate_asset_path(filename)
+            if "animations" in parts:
+                safe_asset_path(theater_dir, "/".join(parts[parts.index("animations"):]))
+                continue
             if "/".join(parts[-2:]) in GAME_FILES:
                 from game.game_runtime import validate_game_package, MAX_GAME_BYTES
 
@@ -781,6 +798,7 @@ class TheaterManager:
         lore_dir.mkdir()
         characters_dir.mkdir()
         (theater_dir / "stamps").mkdir()
+        (theater_dir / "animations").mkdir()
         self._get_theater_output_dir(theater_id).mkdir()
 
         if metadata_json is not None:
@@ -795,6 +813,11 @@ class TheaterManager:
         mounted_references = []
         for relative_filename, content in reference_files or []:
             parts = validate_asset_path(relative_filename)
+            if "animations" in parts:
+                target = safe_asset_path(theater_dir, "/".join(parts[parts.index("animations"):]))
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(content)
+                continue
             if "stamps" in parts:
                 stamp_path = asset_destination(theater_dir / "stamps", "/".join(parts[parts.index("stamps") + 1:]))
                 stamp_path.parent.mkdir(parents=True, exist_ok=True)

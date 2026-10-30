@@ -14,6 +14,39 @@ from components.canvas.audio_state import AudioState
 from services.theater_assets import animations, playlists
 
 
+def test_animations_under_output_folder_are_not_listed(tmp_path: Path) -> None:
+    theater = TheaterManager(tmp_path).theater("stage")
+    folder = theater.output_dir() / "animations" / "rain"
+    folder.mkdir(parents=True)
+    (folder / "video.mp4").write_bytes(b"video")
+    assert animations(theater) == []
+
+
+@pytest.mark.asyncio
+async def test_prepopulated_animation_file_is_served_with_canvas_access(tmp_path: Path) -> None:
+    manager = TheaterManager(tmp_path)
+    path = manager.theater("stage").animations_dir() / "rain/video.mp4"
+    path.parent.mkdir(parents=True)
+    path.write_bytes(b"video")
+    request = Request({"type": "http", "headers": []})
+    with patch.object(theaters, "theater_manager", manager), patch.object(theaters, "_require_canvas_access_async", AsyncMock()) as access:
+        response = await theaters.serve_theater_animation(request, "stage", "rain/video.mp4", join_key="key")
+    access.assert_awaited_once_with(request, "stage", join_key="key")
+    assert response.status_code == 200
+    assert Path(response.path) == path.resolve()
+    assert response.media_type == "video/mp4"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("filename,status", [("../theater.yaml", 400), ("rain/run.py", 400), ("rain/video.mp4", 404)])
+async def test_animation_serving_rejects_invalid_or_missing_files(tmp_path: Path, filename: str, status: int) -> None:
+    request = Request({"type": "http", "headers": []})
+    with patch.object(theaters, "theater_manager", TheaterManager(tmp_path)), patch.object(theaters, "_require_canvas_access_async", AsyncMock()):
+        with pytest.raises(HTTPException) as error:
+            await theaters.serve_theater_animation(request, "stage", filename)
+    assert error.value.status_code == status
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("technique", ["video", "layered", "triframe"])
 async def test_animation_generation_forwards_selected_preset(technique: str) -> None:
@@ -37,7 +70,7 @@ def test_animation_generation_defaults_to_video_and_rejects_unknown_preset() -> 
 @pytest.mark.parametrize("extension", ["webp", "jpg"])
 def test_animation_catalog_reads_standard_and_legacy_frames_without_manifest(tmp_path: Path, extension: str) -> None:
     theater = TheaterManager(tmp_path).theater("frames")
-    folder = theater.output_dir() / "animations" / "scene"
+    folder = theater.animations_dir() / "scene"
     folder.mkdir(parents=True)
     expected: list[str] = []
     for number in range(1, 4):
@@ -174,7 +207,7 @@ async def test_entire_playlist_push_updates_shared_playback_when_pinned(tmp_path
 async def test_animations_resolve_local_files_and_push(tmp_path: Path) -> None:
     manager = TheaterManager(base_theaters_dir=tmp_path)
     theater = manager.theater("asset-stage")
-    root = theater.output_dir() / "animations"
+    root = theater.animations_dir()
     video = root / "movie"
     video.mkdir(parents=True)
     (video / "video.mp4").write_bytes(b"video")
@@ -199,6 +232,9 @@ async def test_animations_resolve_local_files_and_push(tmp_path: Path) -> None:
     assert assets[2].manifest["video_path"] == str((video / "video.mp4").resolve())
     assert assets[1].manifest["base_image"] == str((layered / "base.png").resolve())
     assert len(assets[0].frames) == 3
+    prefix = "/theaters/asset-stage/animations"
+    assert assets[0].url == f"{prefix}/frames/frame_1.jpg"
+    assert assets[2].manifest["video_url"] == f"{prefix}/movie/video.mp4"
     request = Request({"type": "http", "headers": []})
     state = MagicMock()
     state.visual.update_animation.return_value = {"status": "displayed", "message": "Playing Storm"}

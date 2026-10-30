@@ -523,7 +523,7 @@ def generate_assets(info: DraftInfo, body: GenerationRequest) -> tuple[str, dict
             store().directory(info.theater_id), kind="animation", prompt=body.prompt,
             identifier=identifier, animation_type=body.animation_type,
         )
-        return f"output/animations/{identifier}/{body.animation_type}.json", files
+        return f"animations/{identifier}/{body.animation_type}.json", files
     path, content = generate_asset(info, body)
     return path, {path: content}
 

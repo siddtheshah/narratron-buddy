@@ -145,6 +145,7 @@ class TheaterRepository:
             (target_dir / "references").mkdir(parents=True, exist_ok=True)
             (target_dir / "playlists").mkdir(parents=True, exist_ok=True)
             (target_dir / "stamps").mkdir(parents=True, exist_ok=True)
+            (target_dir / "animations").mkdir(parents=True, exist_ok=True)
             (target_dir / "references" / "characters").mkdir(parents=True, exist_ok=True)
             (target_dir / "references" / "scenes").mkdir(parents=True, exist_ok=True)
             self._notify_storage_changed(theater_id)
@@ -159,6 +160,7 @@ class TheaterRepository:
             (target_dir / "references").mkdir(parents=True, exist_ok=True)
             (target_dir / "playlists").mkdir(parents=True, exist_ok=True)
             (target_dir / "stamps").mkdir(parents=True, exist_ok=True)
+            (target_dir / "animations").mkdir(parents=True, exist_ok=True)
             (target_dir / "references" / "characters").mkdir(parents=True, exist_ok=True)
             (target_dir / "references" / "scenes").mkdir(parents=True, exist_ok=True)
             return True

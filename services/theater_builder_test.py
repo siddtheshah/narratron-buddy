@@ -33,12 +33,36 @@ def test_paths_cannot_escape_or_edit_internal_files(tmp_path: Path, path: str) -
 
 
 @pytest.mark.parametrize("path", [
-    "output/animations/rain/state.json", "output/animations/rain/run.py",
-    "output/animations/rain/nested/video.mp4", "output/chats/rain/video.json",
+    "animations/rain/state.json", "animations/rain/run.py",
+    "animations/rain/nested/video.mp4", "output/animations/rain/video.mp4",
+    "output/chats/rain/video.json",
 ])
 def test_animation_assets_do_not_expose_other_runtime_files(tmp_path: Path, path: str) -> None:
     with pytest.raises(ValueError):
         safe_asset_path(tmp_path, path)
+
+
+def test_animation_folder_upload_save_restore_and_delete(tmp_path: Path) -> None:
+    store = TheaterBuilderStore(tmp_path / "checkouts")
+    info = store.create(7, "World", "live_agent: {}\n", populate_default=False)
+    root = store.directory(info.theater_id)
+    assert (root / "animations").is_dir()
+    files = {
+        upload_path("world/animations/rain/video.mp4", True): b"video",
+        upload_path("world/animations/rain/video.json", True): b'{"scene_prompt":"Rain"}',
+    }
+    store.write_files(info, files)
+    assert set(files) <= {item.path for item in store.files(info.theater_id)}
+    repo = TheaterRepository(tmp_path / "saved")
+    assert repo.export_theater(info.theater_id, root)
+    restored = tmp_path / "restored"
+    assert repo.reconstruct_theater(info.theater_id, restored)
+    for name, content in files.items():
+        assert (restored / name).read_bytes() == content
+    store.write_files(info, {}, deletions=list(files))
+    assert (root / "animations").is_dir()
+    assert repo.export_theater(info.theater_id, root)
+    assert not (repo.theater_path(info.theater_id) / "animations/rain/video.mp4").exists()
 
 
 @pytest.mark.parametrize(("name", "folder", "expected"), [

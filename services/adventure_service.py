@@ -334,6 +334,8 @@ class AdventureService:
                 reference_files.append((rel, content))
             elif rel in ("planning.yaml", "planning.yml") or filename.lower() in ("planning.yaml", "planning.yml"):
                 reference_files.append(("planning.yaml", content))
+            elif parts[0] == "animations":
+                reference_files.append((rel, content))
             elif "references" in parts or "reference_library" in parts or "stamps" in parts or parts[0] == "characters":
                 if filename.lower().endswith((".png", ".jpg", ".jpeg", ".webp", ".gif")):
                     reference_files.append((rel, content))

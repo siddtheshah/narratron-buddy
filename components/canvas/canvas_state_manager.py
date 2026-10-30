@@ -112,12 +112,18 @@ class CanvasStateManager:
     def load_state_from_disk(self) -> None:
         directory = self.theater.directory()
         source = directory / "theater.json"
-        if not source.exists(): source = directory / "theater_state.json"
-        if not source.exists(): return
+        if not source.exists():
+            source = directory / "theater_state.json"
+        if not source.exists():
+            return
         try:
-            data = json.loads(source.read_text(encoding="utf-8")); state = data.get("canvas_state", data)
-            self.visual.load(state); self.audio.load(state); self.doodles.load(state)
-            self.ui.load(state); self.story.load(state)
+            data = json.loads(source.read_text(encoding="utf-8"))
+            state = data.get("canvas_state", data)
+            self.visual.load(state)
+            self.audio.load(state)
+            self.doodles.load(state)
+            self.ui.load(state)
+            self.story.load(state)
             self.game.load(state.get("game_state"))
             if self.notepad is not None:
                 notepad_data = state.get("notepad")
@@ -127,7 +133,8 @@ class CanvasStateManager:
                     sp_state = self.story.get_story_planning_state()
                     if sp_state:
                         self.notepad.import_state(sp_state)
-            self.chat.messages = list(state.get("chat_messages", [])); self.chat.load_suggestions(state.get("suggestions", []))
+            self.chat.messages = list(state.get("chat_messages", []))
+            self.chat.load_suggestions(state.get("suggestions", []))
         except (OSError, ValueError, TypeError) as exc:
             logger.warning("Failed to load canvas state for %s: %s", self.theater_id, exc)
 
@@ -143,12 +150,17 @@ class CanvasStateManager:
         return serialized
 
     def save_local_theater_data(self, theater_dir: Optional[Path] = None) -> tuple[dict[str, object], list[dict[str, object]]]:
-        directory = theater_dir or self.theater.directory(); directory.mkdir(parents=True, exist_ok=True)
-        target = directory / "theater.json"; document: dict[str, object] = {}
+        directory = theater_dir or self.theater.directory()
+        directory.mkdir(parents=True, exist_ok=True)
+        target = directory / "theater.json"
+        document: dict[str, object] = {}
         if target.exists():
-            try: document = json.loads(target.read_text(encoding="utf-8"))
-            except (OSError, ValueError): pass
-        document.setdefault("theater_id", self.theater_id); document.setdefault("name", self.theater_id)
+            try:
+                document = json.loads(target.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                pass
+        document.setdefault("theater_id", self.theater_id)
+        document.setdefault("name", self.theater_id)
         document["canvas_state"] = self.serialized_state()
         target.write_text(json.dumps(document, indent=2), encoding="utf-8")
         self.theater.storage_changed()

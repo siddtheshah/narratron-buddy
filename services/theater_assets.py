@@ -71,7 +71,7 @@ def playlists(theater: Theater) -> list[Playlist]:
 
 
 def animations(theater: Theater) -> list[AnimationAsset]:
-    root = (theater.output_dir() / "animations").resolve()
+    root = theater.animations_dir().resolve()
     result: list[AnimationAsset] = []
     for folder in sorted(root.glob("*")):
         if not folder.is_dir() or root not in folder.resolve().parents:

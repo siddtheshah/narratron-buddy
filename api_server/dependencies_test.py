@@ -15,8 +15,8 @@ def test_current_user_uses_a_database_replaced_in_the_object_registry():
     replacement_db.validate_session_token.return_value = {"id": 7, "username": "mocked"}
 
     with patch.object(object_registry, "db", replacement_db):
-        client = TestClient(app)
-        response = client.get("/api/auth/me", cookies={"auth_token": "test-token"})
+        client = TestClient(app, cookies={"auth_token": "test-token"})
+        response = client.get("/api/auth/me")
 
     assert response.status_code == 200
     assert response.json()["user"]["username"] == "mocked"
@@ -90,4 +90,3 @@ def test_music_catalog_initialized_in_object_registry():
     assert music_catalog.target is object_registry.music_catalog
     from services.music_catalog import MusicCatalog
     assert isinstance(object_registry.music_catalog, MusicCatalog)
-

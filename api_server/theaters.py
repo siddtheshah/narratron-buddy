@@ -40,6 +40,7 @@ from services.theater_image_generation import generate_theater_image
 from services.theater_media_generation import generate_theater_media
 from services.theater_checkout import checkout_locks, save_theater_checkout
 from services.theater_assets import Playlist, AnimationAsset, playlists, animations
+from components.theater_package import safe_asset_path
 from services.generation_billing import (
     billing_locks as _billing_locks,
     MAX_CONCURRENT_GENERATION_JOBS,
@@ -792,6 +793,36 @@ async def serve_theater_playlist_track(
         return NotModifiedResponse(response.headers)
     return response
 
+@app.get("/theaters/{theater_id}/animations/{filename:path}")
+async def serve_theater_animation(
+    request: Request,
+    theater_id: str,
+    filename: str,
+    join_key: str | None = None,
+    quality: str | None = None,
+) -> Response:
+    await _require_canvas_access_async(request, theater_id, join_key=join_key)
+    _safe_path_param(theater_id, "theater_id")
+    theater = theater_manager.theater(theater_id)
+    try:
+        file_path = safe_asset_path(theater.directory(), f"animations/{filename}")
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail="Invalid animation path") from error
+    if not file_path.is_file():
+        raise HTTPException(status_code=404, detail="Theater animation file not found")
+    target_file = file_path
+    target_quality = _resolve_requested_quality(quality)
+    if target_quality is not None and file_path.suffix.lower() == ".webp":
+        target_file = await asyncio.to_thread(_get_or_create_low_quality_webp, theater_id, file_path, target_quality)
+    response = FileResponse(target_file, headers={
+        "Cache-Control": "private, max-age=3600", "Vary": "Cookie",
+        "X-Content-Type-Options": "nosniff",
+    }, stat_result=target_file.stat())
+    if StaticFiles().is_not_modified(response.headers, request.headers):
+        return NotModifiedResponse(response.headers)
+    return response
+
+
 @app.get("/theaters/{theater_id}/output/{filename:path}")
 async def serve_theater_output(
     request: Request,
@@ -1313,6 +1344,8 @@ async def create_and_deploy_theater(request: Request):
                         reference_files.append((f"game/{parts[-1]}", content))
                     elif "game" in parts and parts.index("game") < len(parts) - 1 and clean_name.lower().endswith(".svg"):
                         reference_files.append(("/".join(parts[parts.index("game"):]), content))
+                    elif "animations" in parts:
+                        reference_files.append(("/".join(parts[parts.index("animations"):]), content))
                     elif "references" in parts or (
                         clean_name.lower().endswith((".png", ".jpg", ".jpeg", ".webp", ".gif"))
                         and "playlists" not in parts

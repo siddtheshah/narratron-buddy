@@ -16,6 +16,15 @@ assets keep their filenames and format; no migration is required.
 Canvas display uses the original image directly, without writing duplicate
 display images into the theater output folder.
 
+Saved animations live in `animations/<animation-id>/` inside each theater.
+Generated animations are written there, and pre-populated folders are available
+in the animation browser and through `play_animation`. Include `video.mp4` with
+an optional `video.json`, `layered.json` with its layer images, or `triframe.json`
+with its three frame images. Three frames named `frame_1.webp` through
+`frame_3.webp` (or `.jpg`) also work without a manifest. Animation folders are
+preserved when importing adventure packages and editing, saving, or exporting
+theaters.
+
 ## Prerequisites
 
 - Python 3.10+

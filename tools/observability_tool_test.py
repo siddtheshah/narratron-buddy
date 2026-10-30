@@ -1,5 +1,4 @@
 from unittest.mock import MagicMock
-from unittest.mock import MagicMock
 
 from tools.observability_tool import ObservabilityTools
 

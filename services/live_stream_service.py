@@ -10,7 +10,6 @@ from fastapi import WebSocket, WebSocketDisconnect
 from google.genai import types
 
 from components.canvas_state import CanvasStateManager
-from components.notepad import Notepad
 from components.reference_manager import ReferenceManager
 from services.audio_codecs import LiveAudioDecoder
 

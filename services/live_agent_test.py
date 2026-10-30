@@ -26,6 +26,7 @@ def make_test_theater(theater_id: str, config: dict, tmp_path: Optional[Path] = 
     base_dir = tmp_path or object_registry.theater_manager.base_dir / theater_id
     theater.directory.return_value = base_dir / "theater"
     theater.output_dir.return_value = base_dir / "output"
+    theater.animations_dir.return_value = base_dir / "theater" / "animations"
     theater.references_dir.return_value = base_dir / "references"
     theater.image_artifacts_dir.return_value = base_dir / "images"
     theater.music_artifacts_dir.return_value = base_dir / "music"

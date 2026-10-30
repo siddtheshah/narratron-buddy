@@ -79,7 +79,7 @@ class TestImageHistoryPaging(UITestCase):
         manager.visual.show_image(str(img_file), url_for_path=manager.theater.get_url_for_path)
 
         # 2. Tri-frame animation with adjacent triframe.json
-        anim_dir = manager.theater.output_dir() / "animations" / "crystal_glow"
+        anim_dir = manager.theater.animations_dir() / "crystal_glow"
         anim_dir.mkdir(parents=True)
         frame_paths = []
         for i in range(1, 4):
@@ -100,7 +100,7 @@ class TestImageHistoryPaging(UITestCase):
         )
 
         # 3. Video animation
-        vid_dir = manager.theater.output_dir() / "animations" / "dragon_flight"
+        vid_dir = manager.theater.animations_dir() / "dragon_flight"
         vid_dir.mkdir(parents=True)
         vid_file = vid_dir / "video.mp4"
         vid_file.write_bytes(b"video_bytes")
@@ -113,12 +113,12 @@ class TestImageHistoryPaging(UITestCase):
         manager.visual.show_video_animation({
             "id": "dragon_flight",
             "video_path": str(vid_file),
-            "video_url": f"/theaters/{theater_id}/output/animations/dragon_flight/video.mp4",
+            "video_url": f"/theaters/{theater_id}/animations/dragon_flight/video.mp4",
             "scene_prompt": "A fire-breathing dragon soaring above a volcanic crater.",
         })
 
         # 4. Layered animation
-        layered_dir = manager.theater.output_dir() / "animations" / "layered_lake"
+        layered_dir = manager.theater.animations_dir() / "layered_lake"
         layered_dir.mkdir(parents=True)
         base_img = layered_dir / "base.png"
         layer1_img = layered_dir / "waves.png"

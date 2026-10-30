@@ -49,8 +49,8 @@ def test_animation_uses_configured_video_provider_duration_and_visual_style(tmp_
     assert request.video_duration_seconds == 8
     assert "Style: Watercolor" in request.prompt
     assert "loopable" in request.prompt
-    assert files["output/animations/rain/video.mp4"] == b"video"
-    manifest = json.loads(files["output/animations/rain/video.json"])
+    assert files["animations/rain/video.mp4"] == b"video"
+    manifest = json.loads(files["animations/rain/video.json"])
     assert manifest["video_path"] == "animations/rain/video.mp4"
     assert manifest["loop"] is True
 
@@ -97,5 +97,5 @@ def test_image_animation_presets_produce_playable_catalog_assets(tmp_path: Path,
         assert "Style: Watercolor" in provider.generate.call_args.args[0].prompt
     else:
         assert assets[0].manifest["layers"][1]["effect"] == "sway"
-        with Image.open(root / "output/animations/forest/layer_2.webp") as saved:
+        with Image.open(root / "animations/forest/layer_2.webp") as saved:
             assert saved.getpixel((0, 0))[3] == 100

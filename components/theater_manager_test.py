@@ -21,6 +21,41 @@ from components.theater_manager import (
 )
 
 
+def test_animation_package_preserves_manifests_and_media(tmp_path: Path) -> None:
+    files = {
+        "animations/rain/video.mp4": b"video",
+        "animations/rain/video.json": b'{"scene_prompt":"Rain"}',
+        "animations/dance/frame_1.webp": png_bytes(),
+        "animations/dance/triframe.json": b'{"frames":["frame_1.webp"]}',
+    }
+    package_bytes = io.BytesIO()
+    with zipfile.ZipFile(package_bytes, "w") as package:
+        for name, content in files.items():
+            package.writestr(f"assets/{name}", content)
+    references, playlists, lore, _ = extract_asset_package(package_bytes.getvalue())
+    manager = TheaterManager(tmp_path)
+    metadata = manager.create_theater("Stage", "stage", reference_files=references, playlists_data=playlists, lore_files=lore)
+    theater = manager.theater("stage")
+    assert theater.animations_dir().is_dir()
+    assert not [name for name in metadata.mounted_references if "animations" in Path(name).parts]
+    for name, content in files.items():
+        assert (theater.directory() / name).read_bytes() == content
+
+
+def test_new_theater_includes_empty_animation_directory(tmp_path: Path) -> None:
+    manager = TheaterManager(tmp_path)
+    manager.create_theater("Stage", "stage")
+    assert manager.theater("stage").animations_dir().is_dir()
+
+
+@pytest.mark.parametrize("filename", ["animations/rain/run.py", "animations/rain/state.json", "animations/../video.mp4"])
+def test_invalid_animation_upload_is_rejected_before_writes(tmp_path: Path, filename: str) -> None:
+    manager = TheaterManager(tmp_path)
+    with pytest.raises(ValueError):
+        manager.create_theater("Stage", "stage", reference_files=[(filename, b"invalid")])
+    assert not manager.theater("stage").directory().exists()
+
+
 def test_character_images_in_uploaded_package_preserve_named_folders(tmp_path: Path) -> None:
     manager = TheaterManager(tmp_path)
     image = png_bytes()
@@ -321,12 +356,12 @@ class TestTheaterManager(unittest.TestCase):
 
     def testget_url_for_path_resolves_output_and_reference_urls(self):
         theater = self.manager.theater("stage")
-        output_file = str(theater.output_dir() / "animations" / "hero_anim" / "frame_1.png")
+        output_file = str(theater.output_dir() / "images" / "hero.png")
         url = theater.get_url_for_path(output_file)
-        self.assertEqual(url, "/theaters/stage/output/animations/hero_anim/frame_1.png")
+        self.assertEqual(url, "/theaters/stage/output/images/hero.png")
 
         rel_url = theater.get_url_for_path("animations/hero_anim/frame_1.png")
-        self.assertEqual(rel_url, "/theaters/stage/output/animations/hero_anim/frame_1.png")
+        self.assertEqual(rel_url, "/theaters/stage/animations/hero_anim/frame_1.png")
 
     def test_append_and_read_output_file_lines(self):
         self.manager.create_theater(name="Output Theater", theater_id="out_test")

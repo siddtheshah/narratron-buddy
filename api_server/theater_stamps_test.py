@@ -332,14 +332,14 @@ def test_generated_media_persistence_billing_and_failures(
         if failure == "storage":
             raise OSError("Storage failed after writing")
 
-    resolver = "get_music_provider" if kind == "music" else "get_video_provider"
-    with patch(f"services.theater_media_generation.{resolver}", return_value=provider), patch.object(theaters, "_save_generated_file", side_effect=save_file):
+    resolver = "services.theater_media_generation.get_music_provider" if kind == "music" else "providers.registry.get_video_provider"
+    with patch(resolver, return_value=provider), patch.object(theaters, "_save_generated_file", side_effect=save_file):
         response = stamps.client.post(f"/api/theaters/stage/{kind}/generate", json={"name": "Rain", "prompt": "Gentle rainfall"})
     expected = {"none": 200, "credits": 402, "provider": 502, "empty": 502, "billing": 503, "storage": 502}
     assert response.status_code == expected[failure], response.text
     stamps.database.release_generation_slot.assert_called_once()
     for root in (stamps.manager.theater("stage").directory(), stamps.repository.theater_path("stage")):
-        media = list((root / "output").rglob("*.mp3")) + list((root / "output").rglob("*.mp4"))
+        media = list((root / "output").rglob("*.mp3")) + list((root / "animations").rglob("*.mp4"))
         assert len(media) == int(failure == "none")
         if media:
             assert media[0].read_bytes() == content
