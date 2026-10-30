@@ -414,16 +414,23 @@ _VIDEO_SPECS = (
         "status": "unconfigured",
         "notes": "Fast text-to-video generation via FAL MiniMax H3 Max Turbo at 768p.",
     },
+    {
+        "id": "fal-minimax-h3-image-to-video",
+        "name": "MiniMax H3 Max Turbo Image-to-Video (FAL)",
+        "model": "minimax/h3-max-turbo/image-to-video",
+        "status": "unconfigured",
+        "notes": "Fast image-to-video generation via FAL MiniMax H3 Max Turbo at 768p with start frame grounding.",
+    },
 )
 
 
 def list_video_provider_specs() -> list[dict[str, JsonValue]]:
     specs = [dict(spec) for spec in _VIDEO_SPECS]
     for spec in specs:
-        if spec["id"] == "fal-minimax-h3-turbo":
+        if spec["id"] in ("fal-minimax-h3-turbo", "fal-minimax-h3-image-to-video"):
             spec["status"] = (
                 "available"
-                if (os.getenv("FAL_API_KEY") or os.getenv("FAL_API_KEY"))
+                if (os.getenv("FAL_API_KEY") or os.getenv("FAL_KEY"))
                 else "unconfigured"
             )
     return specs
@@ -431,6 +438,25 @@ def list_video_provider_specs() -> list[dict[str, JsonValue]]:
 
 def get_video_provider(provider_id: str, options: dict[str, JsonValue] | None = None) -> VideoProvider:
     options = options or {}
+    api_key_opt = options.get("api_key")
+    api_key = str(api_key_opt) if api_key_opt is not None else None
+    if provider_id in (
+        "fal-minimax-h3-image-to-video",
+        "fal-minimax-h3-turbo-image-to-video",
+        "minimax/h3-max-turbo/image-to-video",
+        "h3-max-turbo/image-to-video",
+        "minimax-h3-image-to-video",
+        "image-to-video",
+    ):
+        model_opt = options.get("model")
+        return FalMinimaxVideoProvider(
+            api_key=api_key,
+            id="fal-minimax-h3-image-to-video",
+            display_name="MiniMax H3 Max Turbo Image-to-Video (FAL)",
+            model=str(model_opt) if model_opt is not None else "minimax/h3-max-turbo/image-to-video",
+            prompt_expansion_mode=str(options.get("prompt_expansion_mode", "balanced")),
+            resolution=str(options.get("resolution", "768P")),
+        )
     if provider_id in (
         "fal-minimax-h3-turbo",
         "minimax-h3-turbo",
@@ -441,6 +467,7 @@ def get_video_provider(provider_id: str, options: dict[str, JsonValue] | None = 
     ):
         model_opt = options.get("model")
         return FalMinimaxVideoProvider(
+            api_key=api_key,
             prompt_expansion_mode=str(options.get("prompt_expansion_mode", "balanced")),
             resolution=str(options.get("resolution", "768P")),
             model=str(model_opt) if model_opt is not None else None,

@@ -1,7 +1,8 @@
-"""FAL adapter for MiniMax H3 Max Turbo text-to-video generation."""
+"""FAL adapter for MiniMax H3 Max Turbo text-to-video and image-to-video generation."""
 
 from __future__ import annotations
 
+import base64
 import json
 import os
 from typing import Callable
@@ -31,11 +32,13 @@ class _FalVideoResponse(BaseModel):
 
 
 class FalMinimaxVideoProvider(VideoProvider):
-    """Call ``minimax/h3-max-turbo/text-to-video`` and download its generated video clip."""
+    """Call FAL MiniMax H3 Max Turbo text-to-video or image-to-video."""
 
     id = "fal-minimax-h3-turbo"
     display_name = "MiniMax H3 Max Turbo Video (FAL)"
     model = "minimax/h3-max-turbo/text-to-video"
+    text_model = "minimax/h3-max-turbo/text-to-video"
+    image_model = "minimax/h3-max-turbo/image-to-video"
 
     def __init__(
         self,
@@ -46,8 +49,10 @@ class FalMinimaxVideoProvider(VideoProvider):
         resolution: str = "768P",
         model: str | None = None,
         timeout_seconds: int = 300,
+        id: str | None = None,
+        display_name: str | None = None,
     ) -> None:
-        self.api_key = api_key or os.getenv("FAL_API_KEY")
+        self.api_key = api_key or os.getenv("FAL_API_KEY") or os.getenv("FAL_KEY")
         if not self.api_key:
             raise VideoProviderError("FAL_API_KEY is not configured for MiniMax Video.")
         self._request_json = request_json or self._post_json
@@ -56,23 +61,64 @@ class FalMinimaxVideoProvider(VideoProvider):
         self.resolution = resolution
         if model is not None:
             self.model = model
+        if id is not None:
+            self.id = id
+        elif "image-to-video" in self.model:
+            self.id = "fal-minimax-h3-image-to-video"
+        if display_name is not None:
+            self.display_name = display_name
+        elif "image-to-video" in self.model:
+            self.display_name = "MiniMax H3 Max Turbo Image-to-Video (FAL)"
         self.timeout_seconds = timeout_seconds
+
+    @property
+    def is_image_to_video(self) -> bool:
+        return "image-to-video" in self.model
+
+    @staticmethod
+    def _data_uri(data: bytes, mime_type: str) -> str:
+        encoded = base64.b64encode(data).decode("ascii")
+        return f"data:{mime_type};base64,{encoded}"
 
     def generate(self, request: VideoGenerationRequest) -> VideoGenerationResult:
         if not request.prompt or not request.prompt.strip():
             raise VideoProviderError("MiniMax text-to-video requires a non-empty prompt.")
 
+        image_url = request.image_url
+        if not image_url and request.image_bytes:
+            image_url = self._data_uri(
+                request.image_bytes, request.image_mime_type or "image/png"
+            )
+
+        end_image_url = request.end_image_url
+        if not end_image_url and request.end_image_bytes:
+            end_image_url = self._data_uri(
+                request.end_image_bytes, request.image_mime_type or "image/png"
+            )
+
+        if self.is_image_to_video and not image_url:
+            raise VideoProviderError("MiniMax image-to-video requires a starting image.")
+
+        endpoint = self.model
+        if self.model == self.text_model and image_url is not None:
+            endpoint = self.image_model
+
         payload: dict[str, JsonValue] = {
             "prompt": request.prompt.strip(),
             "resolution": self.resolution,
         }
+        if image_url is not None:
+            payload["image_url"] = image_url
+        if end_image_url is not None:
+            payload["end_image_url"] = end_image_url
+
         mode = request.prompt_expansion_mode or self.prompt_expansion_mode
         if mode:
             payload["prompt_expansion_mode"] = mode
         if request.video_duration_seconds is not None:
             payload["duration"] = request.video_duration_seconds
 
-        response = self._request_json(self.model, payload)
+        response = self._request_json(endpoint, payload)
         parsed = _FalVideoResponse.model_validate(response)
         if parsed.video is None or not parsed.video.url:
             raise VideoProviderError("FAL returned no generated video URL.")
@@ -89,7 +135,7 @@ class FalMinimaxVideoProvider(VideoProvider):
             video_bytes=video_bytes,
             mime_type=mime_type or "video/mp4",
             provider=self.id,
-            model=self.model,
+            model=endpoint,
             request_id=parsed.request_id or parsed.requestId,
             usage=usage,
             video_url=video_url,

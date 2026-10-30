@@ -157,3 +157,137 @@ def test_registry_provider_reuses_instance_across_concurrent_output_directories(
 def test_registry_rejects_unknown_animation_provider() -> None:
     with pytest.raises(ValueError, match="Unknown animation provider"):
         get_animation_provider("missing")
+
+def test_video_technique_with_references_generates_starting_image_via_image_provider(tmp_path: Path) -> None:
+    from PIL import Image as PILImage
+    import io
+    from providers.image_provider import ImageReference, ImageGenerationResult
+
+    img = PILImage.new("RGB", (32, 32), color="blue")
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    raw_img_bytes = buf.getvalue()
+
+    image_mock = MagicMock()
+    image_mock.generate.return_value = ImageGenerationResult(
+        image_bytes=raw_img_bytes,
+        mime_type="image/png",
+        provider="mock-image-prov",
+        model="mock-image-model",
+        request_id="img-req-1",
+    )
+
+    video_mock = MagicMock()
+    video_mock.generate.return_value = VideoGenerationResult(
+        video_bytes=b"fake-video-bytes",
+        mime_type="video/mp4",
+        provider="fal-minimax-h3-image-to-video",
+        model="minimax/h3-max-turbo/image-to-video",
+        request_id="vid-req-1",
+    )
+    video_mock.model = "minimax/h3-max-turbo/image-to-video"
+    video_mock.is_image_to_video = True
+
+    provider = AnimationProvider(
+        {},
+        image_provider=image_mock,
+        video_provider=video_mock,
+    )
+
+    knight_ref = ImageReference(name="knight.png", data=b"knight-ref", mime_type="image/png")
+    selected = provider.create_animation(
+        "A brave knight stands before a dragon.",
+        "knight_dragon",
+        technique="video",
+        output_dir=tmp_path,
+        references=[knight_ref],
+    )
+
+    assert selected == "video"
+    # Ensure image_provider was called with the references to create the scene image
+    image_mock.generate.assert_called_once()
+    img_req = image_mock.generate.call_args[0][0]
+    assert img_req.references == [knight_ref]
+    assert "knight stands before a dragon" in img_req.prompt
+
+    # Ensure video_provider received the generated scene image as start image
+    video_mock.generate.assert_called_once()
+    vid_req = video_mock.generate.call_args[0][0]
+    assert vid_req.image_bytes == raw_img_bytes
+
+    # Check manifest and start_frame file
+    anim_dir = tmp_path / "animations/knight_dragon"
+    assert (anim_dir / "start_frame.webp").is_file()
+    assert (anim_dir / "video.mp4").is_file()
+    manifest = json.loads((anim_dir / "video.json").read_text(encoding="utf-8"))
+    assert manifest["start_image"] == "animations/knight_dragon/start_frame.webp"
+    assert manifest["start_frame"] == "animations/knight_dragon/start_frame.webp"
+    assert manifest["provider"]["start_image_provider"] == "mock-image-prov"
+    assert manifest["provider"]["start_image_model"] == "mock-image-model"
+
+
+def test_video_technique_with_image_to_video_provider_generates_starting_image_without_references(tmp_path: Path) -> None:
+    from PIL import Image as PILImage
+    import io
+    from providers.image_provider import ImageGenerationResult
+
+    img = PILImage.new("RGB", (32, 32), color="red")
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    raw_img_bytes = buf.getvalue()
+
+    image_mock = MagicMock()
+    image_mock.generate.return_value = ImageGenerationResult(
+        image_bytes=raw_img_bytes,
+        mime_type="image/png",
+        provider="mock-image-prov",
+        model="mock-image-model",
+    )
+
+    video_mock = MagicMock()
+    video_mock.generate.return_value = VideoGenerationResult(
+        video_bytes=b"fake-video-bytes",
+        mime_type="video/mp4",
+        provider="fal-minimax-h3-image-to-video",
+        model="minimax/h3-max-turbo/image-to-video",
+    )
+    video_mock.model = "minimax/h3-max-turbo/image-to-video"
+    video_mock.is_image_to_video = True
+
+    provider = AnimationProvider(
+        {},
+        image_provider=image_mock,
+        video_provider=video_mock,
+    )
+
+    selected = provider.create_animation(
+        "A peaceful lake at dusk.",
+        "lake_dusk",
+        technique="video",
+        output_dir=tmp_path,
+        references=[],
+    )
+
+    assert selected == "video"
+    image_mock.generate.assert_called_once()
+    img_req = image_mock.generate.call_args[0][0]
+    assert img_req.references == []
+    assert "peaceful lake at dusk" in img_req.prompt
+    video_mock.generate.assert_called_once()
+    vid_req = video_mock.generate.call_args[0][0]
+    assert vid_req.image_bytes == raw_img_bytes
+
+
+def test_registry_resolves_image_to_video_provider() -> None:
+    from providers.registry import get_video_provider, list_video_provider_specs
+
+    provider = get_video_provider("fal-minimax-h3-image-to-video", options={"api_key": "test-key", "model": "minimax/h3-max-turbo/image-to-video"})
+    assert provider.id == "fal-minimax-h3-image-to-video"
+    assert provider.model == "minimax/h3-max-turbo/image-to-video"
+    assert provider.is_image_to_video is True
+
+    specs = list_video_provider_specs()
+    spec_ids = [s["id"] for s in specs]
+    assert "fal-minimax-h3-turbo" in spec_ids
+    assert "fal-minimax-h3-image-to-video" in spec_ids
+

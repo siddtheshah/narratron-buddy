@@ -16,6 +16,7 @@ from PIL import Image
 from pydantic import BaseModel, Field, JsonValue, TypeAdapter
 from providers.image_provider import (
     ImageGenerationRequest,
+    ImageGenerationResult,
     ImageProvider,
     ImageProviderError,
     ImageReference,
@@ -184,7 +185,9 @@ class AnimationProvider:
                 scene_prompt.strip(), animation_id, output_dir, references or []
             )
         else:
-            self._run_video_animation(scene_prompt.strip(), animation_id, output_dir)
+            self._run_video_animation(
+                scene_prompt.strip(), animation_id, output_dir, references or []
+            )
         return selected
 
     def _apply_default_style(self, prompt: str) -> str:
@@ -376,7 +379,11 @@ class AnimationProvider:
         return prompt
 
     def _run_video_animation(
-        self, scene_prompt: str, animation_id: str, output_dir: Path
+        self,
+        scene_prompt: str,
+        animation_id: str,
+        output_dir: Path,
+        provider_references: list[ImageReference] | None = None,
     ) -> None:
         effective_prompt = self._apply_video_style(scene_prompt)
         animation_dir = output_dir / "animations" / animation_id
@@ -384,11 +391,43 @@ class AnimationProvider:
         video_duration_seconds = int(
             self.animation_config.get("video_duration_seconds") or 5
         )
+        references = provider_references or []
+        is_i2v = (self.video_provider.is_image_to_video is True) or (
+            "image-to-video" in str(self.video_provider.model)
+        )
+        needs_start_image = bool(references) or is_i2v
+
+        start_image_path: Path | None = None
+        start_image_result: ImageGenerationResult | None = None
+
+        if needs_start_image:
+            image_prompt = (
+                f"{self._apply_default_style(scene_prompt.strip())}\n\n"
+                "Return exactly one full-bleed scene image for this request. "
+                "Do not create a collage, triptych, storyboard, contact sheet, split panels, "
+                "borders, or multiple views in one image. Render one cinematic still image only."
+            )
+            start_image_result = self.image_provider.generate(
+                ImageGenerationRequest(
+                    prompt=image_prompt,
+                    aspect_ratio="16:9",
+                    references=references,
+                )
+            )
+            saved_start_path = self._save_named_image(
+                start_image_result.image_bytes,
+                animation_dir / "start_frame.webp",
+                image_prompt,
+            )
+            start_image_path = Path(saved_start_path)
+
         result = self.video_provider.generate(
             VideoGenerationRequest(
                 prompt=effective_prompt,
                 aspect_ratio="16:9",
                 video_duration_seconds=video_duration_seconds,
+                image_bytes=start_image_result.image_bytes if start_image_result is not None else None,
+                image_mime_type=(start_image_result.mime_type or "image/webp") if start_image_result is not None else None,
             )
         )
         if not result.video_bytes or result.mime_type != "video/mp4":
@@ -396,7 +435,19 @@ class AnimationProvider:
         video_filename = "video.mp4"
         video_path = animation_dir / video_filename
         video_path.write_bytes(result.video_bytes)
-        manifest = {
+        provider_info: dict[str, JsonValue] = {
+            "provider": result.provider,
+            "model": result.model,
+            "request_id": result.request_id,
+            "usage": dict(result.usage),
+        }
+        if start_image_result is not None:
+            provider_info["start_image_provider"] = start_image_result.provider
+            provider_info["start_image_model"] = start_image_result.model
+            if start_image_result.request_id:
+                provider_info["start_image_request_id"] = start_image_result.request_id
+
+        manifest: dict[str, JsonValue] = {
             "version": 1,
             "id": animation_id,
             "type": "video",
@@ -408,13 +459,11 @@ class AnimationProvider:
             "video_duration_seconds": video_duration_seconds,
             "loop": True,
             "muted": True,
-            "provider": {
-                "provider": result.provider,
-                "model": result.model,
-                "request_id": result.request_id,
-                "usage": dict(result.usage),
-            },
+            "provider": provider_info,
         }
+        if start_image_path is not None:
+            manifest["start_image"] = self._to_relative_path(start_image_path, output_dir)
+            manifest["start_frame"] = self._to_relative_path(start_image_path, output_dir)
         manifest_path = animation_dir / "video.json"
         manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
         logger.debug(

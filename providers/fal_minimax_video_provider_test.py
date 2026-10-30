@@ -116,3 +116,99 @@ def test_minimax_video_passes_duration() -> None:
     assert len(calls) == 1
     assert calls[0][1]["duration"] == 5
     assert calls[0][1]["resolution"] == "768P"
+
+def test_minimax_image_to_video_posts_image_url_and_downloads_video() -> None:
+    calls: list[tuple[str, dict[str, JsonValue]]] = []
+
+    def request_json(endpoint: str, payload: dict[str, JsonValue]) -> dict[str, JsonValue]:
+        calls.append((endpoint, payload))
+        return {
+            "request_id": "req-i2v-1",
+            "video": {
+                "url": "https://fal.media/files/i2v.mp4",
+                "content_type": "video/mp4",
+            },
+        }
+
+    provider = FalMinimaxVideoProvider(
+        api_key="test-key",
+        model="minimax/h3-max-turbo/image-to-video",
+        request_json=request_json,
+        download=lambda url: (b"i2v-bytes", "video/mp4"),
+    )
+    result = provider.generate(
+        VideoGenerationRequest(
+            prompt="A warrior steps forward swinging a sword.",
+            image_url="https://fal.media/starting_frame.png",
+        )
+    )
+
+    assert len(calls) == 1
+    assert calls[0][0] == "minimax/h3-max-turbo/image-to-video"
+    assert calls[0][1]["image_url"] == "https://fal.media/starting_frame.png"
+    assert calls[0][1]["prompt"] == "A warrior steps forward swinging a sword."
+    assert result.video_bytes == b"i2v-bytes"
+    assert result.model == "minimax/h3-max-turbo/image-to-video"
+    assert result.provider == "fal-minimax-h3-image-to-video"
+
+
+def test_minimax_image_to_video_converts_image_bytes_to_data_uri() -> None:
+    calls: list[tuple[str, dict[str, JsonValue]]] = []
+
+    def request_json(endpoint: str, payload: dict[str, JsonValue]) -> dict[str, JsonValue]:
+        calls.append((endpoint, payload))
+        return {"video": {"url": "https://fal.media/i2v.mp4"}}
+
+    provider = FalMinimaxVideoProvider(
+        api_key="test-key",
+        model="minimax/h3-max-turbo/image-to-video",
+        request_json=request_json,
+        download=lambda url: (b"i2v-bytes", "video/mp4"),
+    )
+    provider.generate(
+        VideoGenerationRequest(
+            prompt="A warrior steps forward.",
+            image_bytes=b"raw-image-bytes",
+            image_mime_type="image/webp",
+        )
+    )
+
+    assert len(calls) == 1
+    assert calls[0][0] == "minimax/h3-max-turbo/image-to-video"
+    image_url = str(calls[0][1]["image_url"])
+    assert image_url.startswith("data:image/webp;base64,")
+
+
+def test_minimax_video_routes_to_image_to_video_when_image_supplied() -> None:
+    calls: list[tuple[str, dict[str, JsonValue]]] = []
+
+    def request_json(endpoint: str, payload: dict[str, JsonValue]) -> dict[str, JsonValue]:
+        calls.append((endpoint, payload))
+        return {"video": {"url": "https://fal.media/routed.mp4"}}
+
+    # Initialized as standard text-to-video
+    provider = FalMinimaxVideoProvider(
+        api_key="test-key",
+        request_json=request_json,
+        download=lambda url: (b"routed-bytes", "video/mp4"),
+    )
+    result = provider.generate(
+        VideoGenerationRequest(
+            prompt="A castle glowing under aurora.",
+            image_bytes=b"start-frame-bytes",
+        )
+    )
+
+    assert len(calls) == 1
+    assert calls[0][0] == "minimax/h3-max-turbo/image-to-video"
+    assert result.model == "minimax/h3-max-turbo/image-to-video"
+
+
+def test_minimax_image_to_video_requires_starting_image() -> None:
+    provider = FalMinimaxVideoProvider(
+        api_key="test-key",
+        model="minimax/h3-max-turbo/image-to-video",
+    )
+    with pytest.raises(VideoProviderError, match="requires a starting image"):
+        provider.generate(VideoGenerationRequest(prompt="A walking cat."))
+

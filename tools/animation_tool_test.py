@@ -1628,4 +1628,91 @@ class TestAnimationTools(BaseTestCase):
         requests = [call.args[0] for call in image_provider.generate.call_args_list]
         self.assertEqual(len(requests[0].references), 0)
 
+    @patch("tools.image.image_tool.get_image_provider")
+    def test_create_animation_video_with_references_creates_scene_image_for_starting_frame(self, mock_get_provider):
+        image_tools = self.make_image_tools(self.config, "video_references_theater", self.manager)
+        knight_path = os.path.join(image_tools.reference_dir, "knight.png")
+        Image.new("RGB", (32, 32), color="purple").save(knight_path)
+        image_tools._load_references()
+
+        raw_scene_image = io.BytesIO()
+        Image.new("RGB", (64, 64), color="cyan").save(raw_scene_image, format="PNG")
+        raw_scene_bytes = raw_scene_image.getvalue()
+
+        image_provider = MagicMock()
+        image_provider.generate.return_value = ImageGenerationResult(
+            image_bytes=raw_scene_bytes,
+            mime_type="image/png",
+            provider="mock-image-prov",
+            model="mock-image-model",
+        )
+
+        video_provider = MagicMock()
+        video_provider.generate.return_value = VideoGenerationResult(
+            video_bytes=fake_video_bytes(),
+            mime_type="video/mp4",
+            provider="fal-minimax-h3-image-to-video",
+            model="minimax/h3-max-turbo/image-to-video",
+            request_id="vid-req-1",
+            video_url="https://fal.media/knight_scene.mp4",
+        )
+        video_provider.model = "minimax/h3-max-turbo/image-to-video"
+
+        created_images: list[str] = []
+        ready_notifications: list[tuple[str, str]] = []
+
+        animation_tools = self.make_animation_tools(
+            image_tools,
+            image_provider,
+            MagicMock(),
+            MagicMock(),
+            {"cooldown_duration": 0},
+            video_provider=video_provider,
+        )
+        animation_tools.on_image_created = lambda path: created_images.append(path)
+        animation_tools.on_animation_ready = lambda anim_id, tech: ready_notifications.append((anim_id, tech))
+
+        result = animation_tools.create_animation(
+            "A brave knight standing on a cliff at sunset.",
+            "knight_cliff",
+            reference_images="knight",
+            technique="video",
+        )
+        animation_tools.join_generation()
+
+        animation_id = re.search(r"Animation ID: '([^']+)'", result).group(1)
+
+        # 1. Image provider should generate the scene image with the reference supplied
+        image_provider.generate.assert_called_once()
+        img_req = image_provider.generate.call_args[0][0]
+        self.assertEqual(len(img_req.references), 1)
+        self.assertEqual(img_req.references[0].name, "knight.png")
+        self.assertIn("knight standing on a cliff", img_req.prompt.lower())
+
+        # 2. Video provider should receive the newly created scene image as start frame
+        video_provider.generate.assert_called_once()
+        vid_req = video_provider.generate.call_args[0][0]
+        self.assertEqual(vid_req.image_bytes, raw_scene_bytes)
+        self.assertIn("knight standing on a cliff", vid_req.prompt.lower())
+
+        # 3. Canvas visual state should have both video and start_frame aliases registered
+        self.assertIsNotNone(animation_tools.visual.resolve_image_path(f"{animation_id}_video"))
+        self.assertIsNotNone(animation_tools.visual.resolve_image_path(f"{animation_id}_start_frame"))
+
+        # 4. Callbacks triggered
+        self.assertTrue(any(animation_id in path for path in created_images))
+        self.assertIn((animation_id, "video"), ready_notifications)
+
+        # 5. Manifest contains start_image and video files
+        anim_folder = os.path.join(animation_tools.animations_dir, animation_id)
+        self.assertTrue(os.path.isfile(os.path.join(anim_folder, "start_frame.webp")))
+        self.assertTrue(os.path.isfile(os.path.join(anim_folder, "video.mp4")))
+
+        manifest_file = os.path.join(anim_folder, "video.json")
+        with open(manifest_file, "r", encoding="utf-8") as f:
+            manifest = json.load(f)
+        self.assertEqual(manifest["type"], "video")
+        self.assertEqual(manifest["start_image"], f"animations/{animation_id}/start_frame.webp")
+        self.assertEqual(manifest["start_frame"], f"animations/{animation_id}/start_frame.webp")
+        self.assertEqual(manifest["provider"]["start_image_provider"], "mock-image-prov")
 

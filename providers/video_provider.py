@@ -19,6 +19,11 @@ class VideoGenerationRequest:
     aspect_ratio: str = "16:9"
     video_duration_seconds: int | None = None
     prompt_expansion_mode: str | None = None
+    image_bytes: bytes | None = None
+    image_mime_type: str | None = None
+    image_url: str | None = None
+    end_image_bytes: bytes | None = None
+    end_image_url: str | None = None
 
 
 @dataclass(frozen=True)
@@ -38,6 +43,7 @@ class VideoProvider(ABC):
     id: str
     display_name: str
     model: str
+    is_image_to_video: bool = False
 
     @abstractmethod
     def generate(self, request: VideoGenerationRequest) -> VideoGenerationResult:

@@ -184,8 +184,14 @@ class AnimationTools(BaseTools):
             manifest = self._find_layered_animation(animation_id)
             if manifest:
                 self._register_layered_aliases(animation_id, manifest["base_image"], [layer["path"] for layer in manifest["layers"]])
-        elif self.visual:
-            self.visual.register_image(str(Path(self.animations_dir) / animation_id / "video.mp4"), f"{animation_id}_video", animation_id)
+        else:
+            start_frame_path = Path(self.animations_dir) / animation_id / "start_frame.webp"
+            if self.visual:
+                self.visual.register_image(str(Path(self.animations_dir) / animation_id / "video.mp4"), f"{animation_id}_video", animation_id)
+                if start_frame_path.is_file():
+                    self.visual.register_image(str(start_frame_path), f"{animation_id}_start_frame")
+            if start_frame_path.is_file():
+                self._notify_image_created(str(start_frame_path))
         self._notify_animation_created(animation_id)
         if selected == "layered":
             self._notify_layered_animation_created(animation_id)
@@ -270,6 +276,16 @@ class AnimationTools(BaseTools):
                         manifest["video_path"] = str(video_path)
                 elif video_path.is_file():
                     manifest["video_path"] = str(video_path)
+                if "start_image" in manifest:
+                    sip = Path(manifest["start_image"])
+                    abs_sip = (output_dir_path / sip) if not sip.is_absolute() else sip
+                    if abs_sip.is_file():
+                        manifest["start_image"] = str(abs_sip)
+                if "start_frame" in manifest:
+                    sfp = Path(manifest["start_frame"])
+                    abs_sfp = (output_dir_path / sfp) if not sfp.is_absolute() else sfp
+                    if abs_sfp.is_file():
+                        manifest["start_frame"] = str(abs_sfp)
                 manifest.setdefault(
                     "video_duration_seconds",  5
                 )
@@ -523,6 +539,7 @@ class AnimationTools(BaseTools):
                         "video_path": manifest.get("video_path", self._to_relative_path(subfolder / "video.mp4")),
                         "video_url": manifest.get("video_url"),
                         "video_duration_seconds": manifest.get("video_duration_seconds", manifest.get("duration_seconds", manifest.get("duration", 5))),
+                        "start_image": manifest.get("start_image", manifest.get("start_frame")),
                     }
             except (OSError, json.JSONDecodeError):
                 pass
