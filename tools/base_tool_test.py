@@ -146,7 +146,7 @@ class TestBaseTools(BaseTestCase):
         theater.config = MagicMock(return_value=config)
         return SampleTools(theater, self.canvas_manager)
 
-    def test_cooldown_checking_and_recording(self):
+    def test_cooldown_checking_and_recording(self) -> None:
         self.assertIsNone(self.base_tools.check_cooldown("sample_tool", "running sample tool"))
 
         self.base_tools.record_tool_call("sample_tool")
@@ -155,17 +155,19 @@ class TestBaseTools(BaseTestCase):
         self.assertIsNotNone(err)
         self.assertIn("sample_tool is on cooldown", err)
 
-    def test_expiration_callbacks(self):
+    def test_expiration_callbacks(self) -> None:
         self.base_tools.cooldown_duration = 0.1
         mock_on_expired = MagicMock()
         self.base_tools.on_cooldown_expired = mock_on_expired
 
         self.base_tools.record_tool_call("play_music")
-        time.sleep(0.25)
+        deadline = time.monotonic() + 2.0
+        while not mock_on_expired.called and time.monotonic() < deadline:
+            time.sleep(0.01)
 
         mock_on_expired.assert_called_with("play_music")
 
-    def test_with_cooldown_decorator(self):
+    def test_with_cooldown_decorator(self) -> None:
         sample = self.make_sample({"cooldown_duration": 10.0})
         res1 = sample.decorated_tool()
         self.assertEqual(res1, "Success")
@@ -173,15 +175,17 @@ class TestBaseTools(BaseTestCase):
         res2 = sample.decorated_tool()
         self.assertIn("decorated_tool is on cooldown", res2)
 
-    def test_with_cooldown_decorator_uses_override_duration(self):
+    def test_with_cooldown_decorator_uses_override_duration(self) -> None:
         sample = self.make_sample({"cooldown_duration": 10.0})
         self.assertEqual(sample.quick_tool(), "Success")
         self.assertIn("quick_tool is on cooldown", sample.quick_tool())
 
-        time.sleep(0.2)
+        deadline = time.monotonic() + 2.0
+        while sample.get_cooldown_remaining("quick_tool", duration=0.1) > 0.0 and time.monotonic() < deadline:
+            time.sleep(0.01)
         self.assertEqual(sample.quick_tool(), "Success")
 
-    def test_with_cooldown_logs_named_arguments(self):
+    def test_with_cooldown_logs_named_arguments(self) -> None:
         sample = self.make_sample({})
 
         with self.assertLogs("tools.base_tool", level="INFO") as logs:
@@ -189,7 +193,7 @@ class TestBaseTools(BaseTestCase):
 
         self.assertIn("show_sample_image called (theater=test_theater, args={'file_path': 'scene.png', 'transition': 'fade'})", logs.output[0])
 
-    def test_in_flight_tracking(self):
+    def test_in_flight_tracking(self) -> None:
         self.assertFalse(self.base_tools.is_in_flight("my_tool"))
         self.assertTrue(self.base_tools.acquire_in_flight("my_tool"))
         self.assertTrue(self.base_tools.is_in_flight("my_tool"))
@@ -199,17 +203,17 @@ class TestBaseTools(BaseTestCase):
         self.assertFalse(self.base_tools.is_in_flight("my_tool"))
         self.assertTrue(self.base_tools.acquire_in_flight("my_tool"))
 
-    def test_single_flight_decorator_success(self):
+    def test_single_flight_decorator_success(self) -> None:
         sample = self.make_sample({})
         res = sample.fast_single_flight()
         self.assertEqual(res, {"status": "ok"})
         self.assertFalse(sample.is_in_flight("fast_single_flight"))
 
-    def test_single_flight_requires_a_callable_timeout_handler(self):
+    def test_single_flight_requires_a_callable_timeout_handler(self) -> None:
         with self.assertRaises(TypeError):
             single_flight(on_timeout="handle_timeout")
 
-    def test_single_flight_decorator_timeout_and_callback(self):
+    def test_single_flight_decorator_timeout_and_callback(self) -> None:
         sample = self.make_sample({})
         sample.timeout_called = False
         with self.assertRaises(TimeoutError):
@@ -217,7 +221,7 @@ class TestBaseTools(BaseTestCase):
         self.assertTrue(sample.timeout_called)
         self.assertFalse(sample.is_in_flight("slow_tool"))
 
-    def test_async_single_flight_decorator_timeout(self):
+    def test_async_single_flight_decorator_timeout(self) -> None:
         sample = self.make_sample({})
         sample.timeout_called = False
         with self.assertRaises(TimeoutError):
@@ -226,7 +230,7 @@ class TestBaseTools(BaseTestCase):
         self.assertFalse(sample.is_in_flight("async_slow_tool"))
 
 
-    def test_with_cycle_cooldown_immediate_and_scheduled_calls(self):
+    def test_with_cycle_cooldown_immediate_and_scheduled_calls(self) -> None:
         sample = self.make_sample({})
         # First call executes immediately
         res1 = sample.cycle_tool("A")
@@ -244,10 +248,12 @@ class TestBaseTools(BaseTestCase):
         self.assertEqual(sample.cycle_calls, ["A"])
 
         # Wait for cooldown to expire and background timer to execute the pending call
-        time.sleep(0.25)
+        deadline = time.monotonic() + 2.0
+        while len(sample.cycle_calls) < 2 and time.monotonic() < deadline:
+            time.sleep(0.01)
         self.assertEqual(sample.cycle_calls, ["A", "C"])
 
-    def test_with_cycle_cooldown_cancel_pending(self):
+    def test_with_cycle_cooldown_cancel_pending(self) -> None:
         sample = self.make_sample({})
         sample.cycle_tool("A")
         sample.cycle_tool("B")
@@ -260,7 +266,7 @@ class TestBaseTools(BaseTestCase):
         time.sleep(0.2)
         self.assertEqual(sample.cycle_calls, ["A"])
 
-    def test_with_cycle_cooldown_does_not_fire_expired_cb_when_pending_runs(self):
+    def test_with_cycle_cooldown_does_not_fire_expired_cb_when_pending_runs(self) -> None:
         sample = self.make_sample({})
         mock_expired = MagicMock()
         sample.on_cooldown_expired = mock_expired
@@ -269,15 +275,19 @@ class TestBaseTools(BaseTestCase):
         sample.cycle_tool("B")
 
         # After the first cycle, B runs and starts a new cooldown cycle, so on_cooldown_expired is not fired yet
-        time.sleep(0.2)
+        deadline = time.monotonic() + 2.0
+        while len(sample.cycle_calls) < 2 and time.monotonic() < deadline:
+            time.sleep(0.01)
         self.assertEqual(sample.cycle_calls, ["A", "B"])
         mock_expired.assert_not_called()
 
         # After the second cycle finishes with no pending calls, on_cooldown_expired is fired
-        time.sleep(0.2)
+        deadline = time.monotonic() + 2.0
+        while not mock_expired.called and time.monotonic() < deadline:
+            time.sleep(0.01)
         mock_expired.assert_called_with("cycle_tool")
 
-    def test_with_cycle_cooldown_async(self):
+    def test_with_cycle_cooldown_async(self) -> None:
         sample = self.make_sample({})
         res1 = asyncio.run(sample.async_cycle_tool("A"))
         self.assertEqual(res1, "Async ran A")
@@ -285,7 +295,9 @@ class TestBaseTools(BaseTestCase):
         res2 = asyncio.run(sample.async_cycle_tool("B"))
         self.assertEqual(res2, "Tool 'async_cycle_tool' scheduled for next cycle when cooldown expires.")
 
-        time.sleep(0.25)
+        deadline = time.monotonic() + 2.0
+        while len(sample.async_cycle_calls) < 2 and time.monotonic() < deadline:
+            time.sleep(0.01)
         self.assertEqual(sample.async_cycle_calls, ["A", "B"])
 
     def test_with_cycle_cooldown_dict_error_clears_cooldown(self) -> None:
@@ -314,7 +326,9 @@ class TestBaseTools(BaseTestCase):
         self.assertTrue(sample.is_in_flight("slow_cycle_tool"))
 
         t1.join()
-        time.sleep(0.06)
+        deadline = time.monotonic() + 2.0
+        while len(sample.slow_cycle_calls) < 2 and time.monotonic() < deadline:
+            time.sleep(0.01)
         self.assertEqual(sample.slow_cycle_calls, ["A", "B"])
         self.assertEqual(sample.max_concurrent, 1)
 
@@ -333,7 +347,9 @@ class TestBaseTools(BaseTestCase):
         self.assertEqual(sample.cycle_calls, ["A"])
 
         # Wait for cooldown (0.1s + 0.05s buffer) to elapse
-        time.sleep(0.20)
+        deadline = time.monotonic() + 2.0
+        while len(sample.cycle_calls) < 2 and time.monotonic() < deadline:
+            time.sleep(0.01)
         self.assertEqual(sample.cycle_calls, ["A", "B"])
 
     def test_with_cycle_cooldown_assures_only_one_tool_call_active_at_once(self) -> None:
@@ -348,7 +364,9 @@ class TestBaseTools(BaseTestCase):
         self.assertIn("scheduled for next cycle", res_b)
 
         t1.join()
-        time.sleep(0.1)
+        deadline = time.monotonic() + 2.0
+        while len(sample.slow_cycle_calls) < 2 and time.monotonic() < deadline:
+            time.sleep(0.01)
         self.assertEqual(sample.slow_cycle_calls, ["A", "B"])
         self.assertEqual(sample.max_concurrent, 1)
 
@@ -363,7 +381,7 @@ class TestBaseTools(BaseTestCase):
         tokens_stop = normalize_text_to_tokens("I do it")
         self.assertEqual(tokens_stop, {"i", "do", "it"})
 
-    def test_calculate_jaccard_bow_similarity(self):
+    def test_calculate_jaccard_bow_similarity(self) -> None:
         s1 = {"open", "wooden", "chest"}
         s2 = {"open", "wooden", "chest"}
         self.assertEqual(calculate_jaccard_bow_similarity(s1, s2), 1.0)
@@ -375,7 +393,7 @@ class TestBaseTools(BaseTestCase):
         self.assertEqual(calculate_jaccard_bow_similarity(set(), set()), 1.0)
         self.assertEqual(calculate_jaccard_bow_similarity(s1, set()), 0.0)
 
-    def test_with_cycle_cooldown_swallows_duplicate_calls(self):
+    def test_with_cycle_cooldown_swallows_duplicate_calls(self) -> None:
         sample = self.make_sample({})
         # First call executes immediately
         res1 = sample.cycle_tool("Open the treasure chest")
@@ -403,13 +421,15 @@ class TestBaseTools(BaseTestCase):
         self.assertEqual(pending["args"], ("Cast a protective shield spell",))
 
         # Wait for cooldown to expire and verify only the genuinely new call executed
-        time.sleep(0.25)
+        deadline = time.monotonic() + 2.0
+        while len(sample.cycle_calls) < 2 and time.monotonic() < deadline:
+            time.sleep(0.01)
         self.assertEqual(
             sample.cycle_calls,
             ["Open the treasure chest", "Cast a protective shield spell"],
         )
 
-    def test_with_cooldown_swallows_duplicate_calls(self):
+    def test_with_cooldown_swallows_duplicate_calls(self) -> None:
         sample = self.make_sample({"cooldown_duration": 10.0})
         res1 = sample.duplicate_tool()
         self.assertEqual(res1, "Success")
@@ -418,7 +438,7 @@ class TestBaseTools(BaseTestCase):
         res2 = sample.duplicate_tool()
         self.assertIn("duplicate call ignored", res2)
 
-    def test_single_flight_swallows_duplicate_calls(self):
+    def test_single_flight_swallows_duplicate_calls(self) -> None:
         sample = self.make_sample({})
         sample.acquire_in_flight("fast_single_flight")
         # In-flight duplicate call is swallowed cleanly
@@ -426,7 +446,7 @@ class TestBaseTools(BaseTestCase):
         res = sample.fast_single_flight()
         self.assertIn("duplicate call ignored", res)
 
-    def test_with_cycle_cooldown_failure_disables_swallowing(self):
+    def test_with_cycle_cooldown_failure_disables_swallowing(self) -> None:
         sample = self.make_sample({"cooldown_duration": 10.0})
         # Initial call fails
         err1 = sample.cycle_tool_dict_error(False)

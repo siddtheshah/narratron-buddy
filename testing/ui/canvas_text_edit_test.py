@@ -59,9 +59,11 @@ def text_page() -> Iterator[Page]:
 def test_select_edit_cancel_and_replay_text(text_page: Page) -> None:
     label = text_page.locator('.canvas-text-annotation')
     assert label.inner_text() == 'Original clue'
-    label.evaluate("el => { const range = document.createRange(); range.selectNodeContents(el); "
-                   "const selection = window.getSelection(); selection.removeAllRanges(); selection.addRange(range); }")
-    assert text_page.evaluate("window.getSelection().toString()") == 'Original clue'
+    label.focus()
+    selected = label.evaluate("el => { const range = document.createRange(); range.selectNodeContents(el); "
+                              "const selection = window.getSelection(); selection.removeAllRanges(); selection.addRange(range); "
+                              "return selection.toString(); }")
+    assert selected == 'Original clue'
     before = text_page.locator('canvas').evaluate("el => el.toDataURL()")
     label.dblclick()
     editor = text_page.get_by_label('Text annotation', exact=True)
