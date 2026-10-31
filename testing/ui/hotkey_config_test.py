@@ -61,7 +61,7 @@ def test_orator_howto_modal_documents_text_input_and_configuration() -> None:
 
     # Documents how to customize hotkeys in Input Configuration
     assert "Input Configuration" in howto_snippet
-    assert 'id="howto-tip-text-hotkey"' in howto_snippet
+    assert 'id="howto-mic-hotkey-display"' in howto_snippet
 
 def test_spacebar_cannot_summon_or_banish_agent() -> None:
     content = (PROJECT_ROOT / "templates" / "canvas.html").read_text(encoding="utf-8")

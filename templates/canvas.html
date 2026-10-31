@@ -9571,10 +9571,6 @@
             if (howtoTextDisplay) {
                 howtoTextDisplay.textContent = formatHotkeyLabel(currentTextHotkey);
             }
-            const howtoTipTextDisplay = document.getElementById('howto-tip-text-hotkey');
-            if (howtoTipTextDisplay) {
-                howtoTipTextDisplay.textContent = formatHotkeyLabel(currentTextHotkey);
-            }
             const dismissHotkeyDisplay = document.getElementById('orator-command-dismiss-hotkey');
             if (dismissHotkeyDisplay) {
                 dismissHotkeyDisplay.textContent = formatHotkeyLabel(currentTextHotkey);
@@ -10980,6 +10976,10 @@
                 <div>
                     <h3 id="howto-title" class="howto-title-text">Orator Quick Start Guide</h3>
                     <div class="howto-subtitle">How to interact with Narratron as the Orator</div>
+                    <div class="howto-subtitle">
+                        <a href="https://youtu.be/ok1BGMhjiwY" target="_blank" rel="noopener noreferrer"
+                            style="color: #a5b4fc;">Watch the Orator video tutorial (opens in a new tab)</a>
+                    </div>
                 </div>
             </div>
 
@@ -10988,50 +10988,18 @@
                     <div class="step-num">1</div>
                     <div class="step-content">
                         <div class="step-title">
-                            Enable Microphone Input
-                            <span class="step-badge">🎙️ Mic Control</span>
+                            Use Mic or Text Input
                         </div>
                         <div class="step-desc">
-                            When the agent is running and this tab is active, the canvas connects automatically. Click
-                            <strong>Mic On</strong> (or press hotkey <code
+                            Click <strong>🚀 Summon</strong> to start Narratron, then use either input:<br>
+                            <strong>Mic:</strong> Click <strong>Mic On</strong> or press <code
                                 style="background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 4px; color: #a5b4fc;"
-                                id="howto-mic-hotkey-display">Ctrl+Shift+[</code>)
-                            to begin real-time microphone streaming, then click <strong>Mic Off</strong> to stop it.
-                            In Input Configuration, choose <strong>Push to talk</strong> to speak only while holding
-                            the mic button or hotkey.
-                        </div>
-                    </div>
-                </div>
-
-                <div class="howto-step-card">
-                    <div class="step-num">2</div>
-                    <div class="step-content">
-                        <div class="step-title">
-                            Interact & Speak Live
-                            <span class="step-badge mic-badge">🔌 Connect ➔ 🎙️ Disconnect</span>
-                        </div>
-                        <div class="step-desc">
-                            Speak to the agent in real time while using the bottom toolbar to doodle on canvas. In
-                            Mic on / off mode, press the hotkey again or click <strong>Mic Off</strong> to stop speaking.
-                            In Push to talk mode, release the button or hotkey.
-                        </div>
-                    </div>
-                </div>
-
-                <div class="howto-step-card">
-                    <div class="step-num">3</div>
-                    <div class="step-content">
-                        <div class="step-title">
-                            Command Narratron via Text
-                            <span class="step-badge"
-                                style="background: rgba(99, 102, 241, 0.2); color: #c7d2fe; border: 1px solid rgba(99, 102, 241, 0.4);">💬
-                                Text Input</span>
-                        </div>
-                        <div class="step-desc">
-                            Prefer typing or directing the agent quietly? Press hotkey <code
+                                id="howto-mic-hotkey-display">Ctrl+Shift+[</code>
+                            to speak to Narratron. Click <strong>Mic Off</strong> to stop.<br>
+                            <strong>Text:</strong> Press <code
                                 style="background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 4px; color: #c7d2fe;"
                                 id="howto-text-hotkey-display">Shift+Space</code>
-                            to summon the command prompt and send instructions directly to Narratron.
+                            to type a command to Narratron.
                         </div>
                     </div>
                 </div>
@@ -11043,8 +11011,6 @@
                         <div class="step-desc">
                             • Use headphones to prevent background audio echo.<br>
                             • Use the bottom toolbar to doodle live on canvas.<br>
-                            • Press <code id="howto-tip-text-hotkey" style="color:#c7d2fe;">Shift+Space</code> to type a
-                            direct command to Narratron without speaking.<br>
                             • Open ✨ menu ➔ <strong>Input Configuration</strong> to choose mic mode and customize your mic and
                             text input shortcuts.
                         </div>
