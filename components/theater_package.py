@@ -9,7 +9,7 @@ from game.game_source import GAME_FILES
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
 AUDIO_EXTENSIONS = {".mp3", ".wav", ".ogg", ".flac", ".m4a", ".aac"}
 TEXT_EXTENSIONS = {".txt", ".md", ".yaml", ".yml", ".json", ".svg"}
-ROOT_FILES = {"theater.yaml", "planning.yaml", "metadata.json", "README.md"}
+ROOT_FILES = {"theater.yaml", "planning.yaml", "metadata.json", "README.md", "LICENSE"}
 
 
 class IneligibleAssetError(ValueError):

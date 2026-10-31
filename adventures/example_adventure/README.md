@@ -15,6 +15,7 @@ example_adventure/
 ├── theater.yaml            # Story planner settings, agent persona, and runtime config
 ├── planning.yaml           # Deep planner schemas, sticky definitions, and initial notes
 ├── README.md               # This reference file
+├── LICENSE                 # Adventure license terms
 ├── animations/             # Standalone animations and video loops
 │   └── book_of_origins_portal/
 │       ├── video.json
