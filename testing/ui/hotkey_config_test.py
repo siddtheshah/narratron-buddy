@@ -63,3 +63,14 @@ def test_orator_howto_modal_documents_text_input_and_configuration() -> None:
     assert "Input Configuration" in howto_snippet
     assert 'id="howto-tip-text-hotkey"' in howto_snippet
 
+def test_spacebar_cannot_summon_or_banish_agent() -> None:
+    content = (PROJECT_ROOT / "templates" / "canvas.html").read_text(encoding="utf-8")
+
+    # Spacebar is prevented on agentStartStopBtn keydown and keyup
+    assert "agentStartStopBtn.addEventListener('keydown'" in content
+    assert "['Space', ' '].includes(e.code) || ['Space', ' ', 'Spacebar'].includes(e.key)" in content
+    assert "agentStartStopBtn.blur()" in content
+
+    # Global window listener also blocks Space when agentStartStopBtn is active
+    assert "document.activeElement === agentStartStopBtn" in content
+

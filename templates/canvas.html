@@ -9189,7 +9189,18 @@
         }
 
         if (agentStartStopBtn) {
+            agentStartStopBtn.addEventListener('keydown', (e) => {
+                if (['Space', ' '].includes(e.code) || ['Space', ' ', 'Spacebar'].includes(e.key)) {
+                    e.preventDefault();
+                }
+            });
+            agentStartStopBtn.addEventListener('keyup', (e) => {
+                if (['Space', ' '].includes(e.code) || ['Space', ' ', 'Spacebar'].includes(e.key)) {
+                    e.preventDefault();
+                }
+            });
             agentStartStopBtn.addEventListener('click', async () => {
+                agentStartStopBtn.blur();
                 if (isAgentStarted) {
                     await stopAgentTheater();
                 } else {
@@ -9641,6 +9652,10 @@
         // Global Keydown Listener for Hotkey
         window.addEventListener('keydown', (e) => {
             if (!isCurrentOrator()) return;
+            if (document.activeElement === agentStartStopBtn && (['Space', ' '].includes(e.code) || ['Space', ' ', 'Spacebar'].includes(e.key))) {
+                e.preventDefault();
+                return;
+            }
             if (micMode === 'push-to-talk' && document.activeElement === agentConnectBtn && ['Space', 'Enter'].includes(e.code)) {
                 e.preventDefault();
                 if (!e.repeat) beginMicPress('button-key');
@@ -9803,6 +9818,10 @@
             }
         });
         window.addEventListener('keyup', (e) => {
+            if (document.activeElement === agentStartStopBtn && (['Space', ' '].includes(e.code) || ['Space', ' ', 'Spacebar'].includes(e.key))) {
+                e.preventDefault();
+                return;
+            }
             if (micPressSource === 'button-key' && ['Space', 'Enter'].includes(e.code)) {
                 e.preventDefault();
                 releaseMicPress();
