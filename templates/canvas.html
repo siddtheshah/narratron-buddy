@@ -1801,6 +1801,8 @@
             position: absolute !important;
             top: 1.5rem !important;
             left: 50% !important;
+            width: max-content;
+            max-width: calc(100% - 3rem);
             transform: translateX(-50%) !important;
             z-index: 100 !important;
             opacity: 0;
@@ -3731,6 +3733,17 @@
         import { canvasCursorState } from '/static/js/canvas-cursor-state.js?v=20261028-1';
         import { initializeChatController } from "/static/js/chat-controller.js";
         import { initializeBeyond20Listener } from "/static/js/beyond20-listener.js";
+
+        // Plain Space is reserved for typing, never canvas shortcuts or button activation.
+        function ignorePlainSpace(event) {
+            if (event.code !== 'Space' || event.altKey || event.ctrlKey || event.shiftKey || event.metaKey) return;
+            const active = document.activeElement;
+            const isEditing = active && (['INPUT', 'TEXTAREA', 'SELECT'].includes(active.tagName) || active.isContentEditable);
+            if (!isEditing) event.preventDefault();
+            event.stopImmediatePropagation();
+        }
+        window.addEventListener('keydown', ignorePlainSpace, true);
+        window.addEventListener('keyup', ignorePlainSpace, true);
 
         function escapeHtml(str) {
             return String(str ?? '')
