@@ -5037,6 +5037,14 @@
         const diceIndicator = document.getElementById('agent-dice-indicator');
         const referenceIndicator = document.getElementById('agent-reference-indicator');
         const disconnectedIndicator = document.getElementById('agent-disconnected-indicator');
+        const agentToolActivity = {};
+        const agentToolActivityTiming = new Map();
+        const agentActivityStaleMs = 30 * 1000;
+        const agentActivityMaxMs = 10 * 60 * 1000;
+        const agentActivityFields = [
+            'image_generating', 'animation_generating', 'user_action_processing',
+            'music_generating', 'dice_rolling', 'reference_generating',
+        ];
 
         if (disconnectedIndicator) {
             disconnectedIndicator.addEventListener('click', () => {
@@ -5045,10 +5053,40 @@
         }
 
         function updateAgentActivity(toolActivity = {}) {
+            // Each tool needs its own confirmation: a live-connection heartbeat
+            // must not keep an unrelated tool indicator alive after an error.
+            Object.assign(agentToolActivity, toolActivity);
+            const now = Date.now();
+            for (const field of agentActivityFields) {
+                let timing = agentToolActivityTiming.get(field);
+                if (toolActivity?.[field] === false) {
+                    agentToolActivityTiming.delete(field);
+                } else if (toolActivity?.[field] === true) {
+                    if (!timing) {
+                        timing = { startedAt: now, confirmedAt: now, timedOut: false };
+                        agentToolActivityTiming.set(field, timing);
+                    }
+                    timing.confirmedAt = now;
+                }
+                if (timing && toolActivity?.[field] !== false) {
+                    // Latch the hard timeout until completion, so a stuck true
+                    // flag cannot repeatedly bring the indicator back.
+                    timing.timedOut ||= now - timing.startedAt >= agentActivityMaxMs;
+                    agentToolActivity[field] = !timing.timedOut
+                        && now - timing.confirmedAt < agentActivityStaleMs;
+                }
+            }
+            toolActivity = agentToolActivity;
             const setVisible = (element, visible) => {
                 if (!element) return;
-                element.classList.toggle('active', !!visible);
-                element.setAttribute('aria-hidden', String(!visible));
+                const active = Boolean(visible);
+                if (element.classList.contains('active') !== active) {
+                    element.classList.toggle('active', active);
+                }
+                const hidden = String(!active);
+                if (element.getAttribute('aria-hidden') !== hidden) {
+                    element.setAttribute('aria-hidden', hidden);
+                }
             };
             const isGeneratingImage = Boolean(toolActivity.image_generating);
             const isGeneratingAnimation = Boolean(toolActivity.animation_generating);
@@ -5068,13 +5106,21 @@
             const diceResult = toolActivity.dice_result || {};
             const tier = ['low', 'middle', 'high'].includes(diceResult.tier) ? diceResult.tier : '';
             if (diceIndicator) {
-                diceIndicator.classList.remove('dice-result-low', 'dice-result-middle', 'dice-result-high');
-                if (tier) diceIndicator.classList.add(`dice-result-${tier}`);
+                for (const resultTier of ['low', 'middle', 'high']) {
+                    const className = `dice-result-${resultTier}`;
+                    const selected = resultTier === tier;
+                    if (diceIndicator.classList.contains(className) !== selected) {
+                        diceIndicator.classList.toggle(className, selected);
+                    }
+                }
                 diceIndicator.title = diceResult.notation
                     ? `Rolled ${diceResult.notation}: ${diceResult.total}`
                     : 'The story is rolling the dice';
             }
         }
+
+        // Also expire indicators when requests fail and no new snapshot arrives.
+        setInterval(() => updateAgentActivity(), 1000);
 
         function setPcmBroadcasting(isBroadcasting) {
             if (!pcmBroadcastIndicator) return;
