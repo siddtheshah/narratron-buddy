@@ -14,6 +14,11 @@ from typing import Any, Callable, Optional
 from absl import flags
 
 from providers import (
+    ChoiceQuestion,
+    DecisionProvider,
+    DecisionRequest,
+    PredicateQuestion,
+    ScoreQuestion,
     TextResponseProvider,
     TextResponseRequest,
     get_text_response_provider,
@@ -64,6 +69,7 @@ class MusicCatalog:
         candidate_count: int = 5,
         reranker_provider: Optional[TextResponseProvider] = None,
         reranker: Optional[Callable[[str, list[dict[str, Any]]], tuple[str, float] | None]] = None,
+        decision_provider: Optional[DecisionProvider] = None,
     ) -> None:
         if database_manager is None:
             raise ValueError("database_manager is required")
@@ -74,10 +80,15 @@ class MusicCatalog:
         self.candidate_count = max(1, int(candidate_count))
         self.reranker_provider = reranker_provider
         self._reranker = reranker
+        self._decision_provider = decision_provider
         try:
             self.directory.mkdir(parents=True, exist_ok=True)
         except OSError:
             logger.warning("[MusicCatalog] Could not create directory: %s", self.directory)
+
+    @property
+    def decision_provider(self) -> Optional[DecisionProvider]:
+        return self._decision_provider
 
     @classmethod
     def from_config(
@@ -85,6 +96,7 @@ class MusicCatalog:
         config: Optional[dict] = None,
         database_manager: Optional[DatabaseManager] = None,
         directory: Optional[Path] = None,
+        decision_provider: Optional[DecisionProvider] = None,
     ) -> MusicCatalog:
         if database_manager is None:
             try:
@@ -111,6 +123,7 @@ class MusicCatalog:
             match_threshold=float(music_config.get("catalog_match_threshold", 0.86)),
             candidate_count=int(music_config.get("catalog_candidate_count", 5)),
             reranker_provider=reranker_provider,
+            decision_provider=decision_provider,
         )
 
     def find_match(self, prompt: str) -> Optional[dict[str, Any]]:
@@ -161,6 +174,47 @@ class MusicCatalog:
         return entry
 
     def _rerank(self, prompt: str, candidates: list[dict[str, Any]]) -> tuple[str, float] | None:
+        if self._decision_provider is not None:
+            choices = tuple(str(entry["id"]) for entry in candidates) + ("none",)
+            questions = (
+                ChoiceQuestion(
+                    name="best_candidate",
+                    instructions="Select the single catalog candidate ID that best serves the requested background music, or 'none' if none fit.",
+                    choices=choices,
+                ),
+                ScoreQuestion(
+                    name="musical_fit",
+                    instructions="Rate how closely the best candidate matches the requested mood, pacing, and instrumentation.",
+                    levels=("unrelated", "weak", "acceptable", "strong", "exact_match"),
+                    level_descriptions={
+                        "unrelated": "Clashes in genre, mood, and tempo.",
+                        "weak": "Shares only superficial tags.",
+                        "acceptable": "Usable fallback mood but different instrumentation.",
+                        "strong": "Matches mood, tempo, and primary instrumentation.",
+                        "exact_match": "Indistinguishable fit for the requested cue.",
+                    },
+                ),
+                PredicateQuestion(
+                    name="reuse_recommended",
+                    instructions="Does the best candidate fit well enough to play immediately instead of paying to generate a new track?",
+                ),
+            )
+            candidate_lines = "\n".join(f"- {c['id']}: {c.get('prompt', '')}" for c in candidates)
+            input_text = f"Requested Music Prompt: {prompt}\n\nCatalog Candidates:\n{candidate_lines}"
+            request = DecisionRequest(input_text=input_text, questions=questions)
+            result = self._decision_provider.decide(request)
+            cand = result.get_choice("best_candidate")
+            fit = result.get_score("musical_fit")
+            reuse = result.get_predicate("reuse_recommended")
+            if cand.choice == "none":
+                return None
+            if not reuse.passed(0.80):
+                return None
+            normalized_score = round(fit.score / 4.0, 4)
+            if fit.score < 3.0 and normalized_score >= self.match_threshold:
+                return None
+            return cand.choice, normalized_score
+
         if self._reranker:
             try:
                 return self._reranker(prompt, candidates)

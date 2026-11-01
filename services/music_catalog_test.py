@@ -1,8 +1,11 @@
 """Tests for MusicCatalog service and registry integration."""
 
+from __future__ import annotations
+
 import shutil
 import tempfile
 import unittest
+from collections.abc import Mapping
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -10,6 +13,14 @@ from absl import flags
 from absl.testing import flagsaver
 
 import object_registry
+from providers.decision_provider import (
+    ChoiceAnswer,
+    DecisionProvider,
+    DecisionRequest,
+    DecisionResult,
+    PredicateAnswer,
+    ScoreAnswer,
+)
 from providers.text_response_provider import TextResponseProvider, TextResponseResult
 from services.music_catalog import (
     PROJECT_ROOT,
@@ -20,7 +31,7 @@ from storage.database import DatabaseManager
 
 
 class TestMusicCatalogRootSelection(unittest.TestCase):
-    def test_cloud_root_defaults_to_mnt_storage_music_catalog(self):
+    def test_cloud_root_defaults_to_mnt_storage_music_catalog(self) -> None:
         orig_local = flags.FLAGS["testing_use_local"].value
         try:
             flags.FLAGS["testing_use_local"].value = False
@@ -29,7 +40,7 @@ class TestMusicCatalogRootSelection(unittest.TestCase):
             flags.FLAGS["testing_use_local"].value = orig_local
 
     @flagsaver.flagsaver(testing_use_local=True)
-    def test_local_root_uses_workspace_music_catalog_directory(self):
+    def test_local_root_uses_workspace_music_catalog_directory(self) -> None:
         self.assertEqual(
             get_music_catalog_root().resolve(),
             (PROJECT_ROOT / "music_catalog").resolve(),
@@ -37,10 +48,18 @@ class TestMusicCatalogRootSelection(unittest.TestCase):
 
 
 class FakeMusicDb:
-    def __init__(self):
-        self.tracks = []
+    def __init__(self) -> None:
+        self.tracks: list[dict[str, str]] = []
 
-    def add_music_catalog_track(self, track_id, filename, prompt, provider, model, term_frequencies):
+    def add_music_catalog_track(
+        self,
+        track_id: str,
+        filename: str,
+        prompt: str,
+        provider: str,
+        model: str,
+        term_frequencies: Mapping[str, int],
+    ) -> None:
         self.tracks.append({
             "id": track_id,
             "filename": filename,
@@ -49,7 +68,11 @@ class FakeMusicDb:
             "model": model,
         })
 
-    def find_music_catalog_candidates(self, term_frequencies, limit):
+    def find_music_catalog_candidates(
+        self,
+        term_frequencies: Mapping[str, int],
+        limit: int,
+    ) -> list[dict[str, str]]:
         return [
             {"id": t["id"], "filename": t["filename"], "prompt": t["prompt"]}
             for t in self.tracks[:limit]
@@ -57,16 +80,16 @@ class FakeMusicDb:
 
 
 class TestMusicCatalog(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         self.temp_dir = tempfile.mkdtemp()
         self.catalog_dir = Path(self.temp_dir) / "catalog"
         self.catalog_dir.mkdir(parents=True, exist_ok=True)
         self.db = FakeMusicDb()
 
-    def tearDown(self):
+    def tearDown(self) -> None:
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
-    def test_init_with_valid_arguments(self):
+    def test_init_with_valid_arguments(self) -> None:
         catalog = MusicCatalog(directory=self.catalog_dir, database_manager=self.db, match_threshold=0.8, candidate_count=3)
         self.assertEqual(catalog.directory, self.catalog_dir)
         self.assertTrue(self.catalog_dir.exists())
@@ -74,7 +97,16 @@ class TestMusicCatalog(unittest.TestCase):
         self.assertEqual(catalog.match_threshold, 0.8)
         self.assertEqual(catalog.candidate_count, 3)
 
-    def test_init_requires_database_manager(self):
+    def test_init_with_decision_provider(self) -> None:
+        mock_decision_provider = MagicMock(spec=DecisionProvider)
+        catalog = MusicCatalog(
+            directory=self.catalog_dir,
+            database_manager=self.db,
+            decision_provider=mock_decision_provider,
+        )
+        self.assertIs(catalog.decision_provider, mock_decision_provider)
+
+    def test_init_requires_database_manager(self) -> None:
         with self.assertRaises(ValueError) as ctx:
             MusicCatalog(directory=self.catalog_dir, database_manager=None)
         self.assertIn("database_manager is required", str(ctx.exception))
@@ -85,7 +117,7 @@ class TestMusicCatalog(unittest.TestCase):
         self.assertEqual(catalog.directory, self.catalog_dir)
         get_root.assert_called_once_with()
 
-    def test_init_missing_database_manager_raises_value_error(self):
+    def test_init_missing_database_manager_raises_value_error(self) -> None:
         with self.assertRaises(ValueError) as ctx:
             MusicCatalog()
         self.assertIn("database_manager is required", str(ctx.exception))
@@ -125,7 +157,7 @@ class TestMusicCatalog(unittest.TestCase):
         self.assertEqual(catalog.directory, self.catalog_dir)
         get_root.assert_called_once_with()
 
-    def test_from_config_resolves_object_registry_db_when_unspecified(self):
+    def test_from_config_resolves_object_registry_db_when_unspecified(self) -> None:
         mock_db = MagicMock(spec=DatabaseManager)
         with patch.object(object_registry, "db", mock_db):
             catalog = MusicCatalog.from_config(
@@ -135,7 +167,7 @@ class TestMusicCatalog(unittest.TestCase):
             )
             self.assertIs(catalog.database_manager, mock_db)
 
-    def test_from_config_raises_when_no_database_available(self):
+    def test_from_config_raises_when_no_database_available(self) -> None:
         with patch.object(object_registry, "db", None):
             with self.assertRaises(ValueError) as ctx:
                 MusicCatalog.from_config(
@@ -144,7 +176,18 @@ class TestMusicCatalog(unittest.TestCase):
                 )
             self.assertIn("database_manager is required", str(ctx.exception))
 
-    def test_find_match_with_mocked_database_manager(self):
+    def test_from_config_passes_decision_provider(self) -> None:
+        mock_db = MagicMock(spec=DatabaseManager)
+        mock_decision_provider = MagicMock(spec=DecisionProvider)
+        catalog = MusicCatalog.from_config(
+            config={},
+            database_manager=mock_db,
+            directory=self.catalog_dir,
+            decision_provider=mock_decision_provider,
+        )
+        self.assertIs(catalog.decision_provider, mock_decision_provider)
+
+    def test_find_match_with_mocked_database_manager(self) -> None:
         mock_db = MagicMock(spec=DatabaseManager)
         mock_db.find_music_catalog_candidates.return_value = [
             {"id": "mock_id", "filename": "track.mp3", "prompt": "ambient meadow sound"}
@@ -166,7 +209,167 @@ class TestMusicCatalog(unittest.TestCase):
         self.assertEqual(match["path"], self.catalog_dir / "track.mp3")
         mock_db.find_music_catalog_candidates.assert_called_once()
 
-    def test_add_with_mocked_database_manager(self):
+    def test_find_match_with_decision_provider_uses_decide_and_succeeds(self) -> None:
+        mock_db = MagicMock(spec=DatabaseManager)
+        mock_db.find_music_catalog_candidates.return_value = [
+            {"id": "track_01", "filename": "track_01.mp3", "prompt": "tense subterranean cello"}
+        ]
+        (self.catalog_dir / "track_01.mp3").write_bytes(b"dummy audio")
+
+        mock_decision_provider = MagicMock(spec=DecisionProvider)
+        mock_decision_provider.decide.return_value = DecisionResult(
+            provider="test-provider",
+            model="test-model",
+            answers={
+                "best_candidate": ChoiceAnswer(name="best_candidate", choice="track_01"),
+                "musical_fit": ScoreAnswer(name="musical_fit", score=3.6),
+                "reuse_recommended": PredicateAnswer(name="reuse_recommended", probability=0.95),
+            },
+        )
+
+        catalog = MusicCatalog(
+            directory=self.catalog_dir,
+            database_manager=mock_db,
+            match_threshold=0.86,
+            decision_provider=mock_decision_provider,
+        )
+
+        match = catalog.find_match("tense subterranean cello")
+
+        self.assertIsNotNone(match)
+        self.assertEqual(match["id"], "track_01")
+        self.assertEqual(match["score"], 0.9)
+        self.assertEqual(match["path"], self.catalog_dir / "track_01.mp3")
+
+        mock_decision_provider.decide.assert_called_once()
+        request: DecisionRequest = mock_decision_provider.decide.call_args[0][0]
+        self.assertIn("Requested Music Prompt: tense subterranean cello", request.input_text)
+        self.assertIn("track_01: tense subterranean cello", request.input_text)
+        self.assertEqual(len(request.questions), 3)
+
+        q0 = request.questions[0]
+        self.assertEqual(q0.name, "best_candidate")
+        self.assertEqual(q0.choices, ("track_01", "none"))
+
+        q1 = request.questions[1]
+        self.assertEqual(q1.name, "musical_fit")
+        self.assertEqual(q1.levels, ("unrelated", "weak", "acceptable", "strong", "exact_match"))
+
+        q2 = request.questions[2]
+        self.assertEqual(q2.name, "reuse_recommended")
+
+    def test_find_match_with_decision_provider_rejects_none_candidate(self) -> None:
+        mock_db = MagicMock(spec=DatabaseManager)
+        mock_db.find_music_catalog_candidates.return_value = [
+            {"id": "track_01", "filename": "track_01.mp3", "prompt": "tense subterranean cello"}
+        ]
+        (self.catalog_dir / "track_01.mp3").write_bytes(b"dummy audio")
+
+        mock_decision_provider = MagicMock(spec=DecisionProvider)
+        mock_decision_provider.decide.return_value = DecisionResult(
+            provider="test-provider",
+            model="test-model",
+            answers={
+                "best_candidate": ChoiceAnswer(name="best_candidate", choice="none"),
+                "musical_fit": ScoreAnswer(name="musical_fit", score=3.8),
+                "reuse_recommended": PredicateAnswer(name="reuse_recommended", probability=0.95),
+            },
+        )
+
+        catalog = MusicCatalog(
+            directory=self.catalog_dir,
+            database_manager=mock_db,
+            decision_provider=mock_decision_provider,
+        )
+
+        match = catalog.find_match("tense subterranean cello")
+        self.assertIsNone(match)
+
+    def test_find_match_with_decision_provider_rejects_below_threshold(self) -> None:
+        mock_db = MagicMock(spec=DatabaseManager)
+        mock_db.find_music_catalog_candidates.return_value = [
+            {"id": "track_01", "filename": "track_01.mp3", "prompt": "tense subterranean cello"}
+        ]
+        (self.catalog_dir / "track_01.mp3").write_bytes(b"dummy audio")
+
+        mock_decision_provider = MagicMock(spec=DecisionProvider)
+        mock_decision_provider.decide.return_value = DecisionResult(
+            provider="test-provider",
+            model="test-model",
+            answers={
+                "best_candidate": ChoiceAnswer(name="best_candidate", choice="track_01"),
+                "musical_fit": ScoreAnswer(name="musical_fit", score=2.0),
+                "reuse_recommended": PredicateAnswer(name="reuse_recommended", probability=0.90),
+            },
+        )
+
+        catalog = MusicCatalog(
+            directory=self.catalog_dir,
+            database_manager=mock_db,
+            match_threshold=0.86,
+            decision_provider=mock_decision_provider,
+        )
+
+        match = catalog.find_match("tense subterranean cello")
+        self.assertIsNone(match)
+
+    def test_find_match_with_decision_provider_rejects_when_reuse_not_recommended(self) -> None:
+        mock_db = MagicMock(spec=DatabaseManager)
+        mock_db.find_music_catalog_candidates.return_value = [
+            {"id": "track_01", "filename": "track_01.mp3", "prompt": "tense subterranean cello"}
+        ]
+        (self.catalog_dir / "track_01.mp3").write_bytes(b"dummy audio")
+
+        mock_decision_provider = MagicMock(spec=DecisionProvider)
+        mock_decision_provider.decide.return_value = DecisionResult(
+            provider="test-provider",
+            model="test-model",
+            answers={
+                "best_candidate": ChoiceAnswer(name="best_candidate", choice="track_01"),
+                "musical_fit": ScoreAnswer(name="musical_fit", score=3.8),
+                "reuse_recommended": PredicateAnswer(name="reuse_recommended", probability=0.50),
+            },
+        )
+
+        catalog = MusicCatalog(
+            directory=self.catalog_dir,
+            database_manager=mock_db,
+            match_threshold=0.86,
+            decision_provider=mock_decision_provider,
+        )
+
+        match = catalog.find_match("tense subterranean cello")
+        self.assertIsNone(match)
+
+    def test_find_match_fallback_to_reranker_provider_when_decision_provider_is_none(self) -> None:
+        mock_db = MagicMock(spec=DatabaseManager)
+        mock_db.find_music_catalog_candidates.return_value = [
+            {"id": "track_fallback", "filename": "fallback.mp3", "prompt": "gentle piano"}
+        ]
+        (self.catalog_dir / "fallback.mp3").write_bytes(b"dummy audio")
+
+        mock_text_provider = MagicMock(spec=TextResponseProvider)
+        mock_text_provider.generate.return_value = TextResponseResult(
+            text='```json\n{"id": "track_fallback", "score": 0.92}\n```',
+            provider="gemini",
+            model="gemini-2.5-flash-lite",
+        )
+
+        catalog = MusicCatalog(
+            directory=self.catalog_dir,
+            database_manager=mock_db,
+            match_threshold=0.85,
+            reranker_provider=mock_text_provider,
+            decision_provider=None,
+        )
+
+        match = catalog.find_match("gentle piano")
+        self.assertIsNotNone(match)
+        self.assertEqual(match["id"], "track_fallback")
+        self.assertEqual(match["score"], 0.92)
+        mock_text_provider.generate.assert_called_once()
+
+    def test_add_with_mocked_database_manager(self) -> None:
         mock_db = MagicMock(spec=DatabaseManager)
         catalog = MusicCatalog(
             directory=self.catalog_dir,
@@ -186,7 +389,7 @@ class TestMusicCatalog(unittest.TestCase):
         self.assertEqual(args[4], "v1")
         self.assertTrue((self.catalog_dir / entry["filename"]).exists())
 
-    def test_find_match_rejected_below_threshold(self):
+    def test_find_match_rejected_below_threshold(self) -> None:
         mock_db = MagicMock(spec=DatabaseManager)
         mock_db.find_music_catalog_candidates.return_value = [
             {"id": "battle_id", "filename": "battle.mp3", "prompt": "battle drums"}
@@ -202,11 +405,11 @@ class TestMusicCatalog(unittest.TestCase):
         match = catalog.find_match("battle drums")
         self.assertIsNone(match)
 
-    def test_tokens(self):
+    def test_tokens(self) -> None:
         tokens = MusicCatalog._tokens("Epic Orchestral Battle: Part 1!")
         self.assertEqual(tokens, ["epic", "orchestral", "battle", "part", "1"])
 
-    def test_rerank_with_provider(self):
+    def test_rerank_with_provider(self) -> None:
         mock_provider = MagicMock()
         mock_provider.generate.return_value = TextResponseResult(
             text='```json\n{"id": "track123", "score": 0.95}\n```',
