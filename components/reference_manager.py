@@ -9,7 +9,9 @@ import os
 import re
 import shutil
 import uuid
+from collections.abc import Generator
 from concurrent.futures import Future, ThreadPoolExecutor
+from contextlib import contextmanager
 from threading import Lock, Thread
 from time import monotonic
 from io import BytesIO
@@ -633,6 +635,27 @@ class ReferenceManager:
         self._load_canvas_captures()
         self._sync_story_state()
 
+    @contextmanager
+    def _reference_activity_scope(self) -> Generator[None, None, None]:
+        if self._initializing_references:
+            yield
+            return
+        with self._reference_updates_lock:
+            self._active_background_jobs += 1
+            should_activate = self._active_background_jobs == 1
+
+        if should_activate:
+            self._set_canvas_activity(True)
+
+        try:
+            yield
+        finally:
+            with self._reference_updates_lock:
+                self._active_background_jobs = max(0, self._active_background_jobs - 1)
+                should_deactivate = self._active_background_jobs == 0
+            if should_deactivate:
+                self._set_canvas_activity(False)
+
     def _set_canvas_activity(self, active: bool) -> None:
         """Notify connected canvases that background asset generation has started or finished."""
         if self.canvas_manager is not None and self.canvas_manager.tool_response is not None:
@@ -1039,45 +1062,46 @@ class ReferenceManager:
         name = name.strip()
         if not self._slug_key(name):
             raise ValueError("Scene name cannot be empty.")
-        with self._scene_images_lock:
-            directory = self._scene_reference_dir(name)
-            existing_path = self.get_scene_visual_path(name)
-            previous = Path(existing_path) if existing_path is not None else None
-            key = self._slug_key(name)
-            clean_description = description.strip()
-            if image_reference:
-                resolved = self.get_latest_reference_path_for_scene(image_reference)
-                source = Path(resolved or image_reference)
-                if not source.is_file():
-                    source = self.theater.directory() / image_reference
-                if not source.is_file() or source.suffix.lower() not in IMAGE_EXTENSIONS:
-                    raise ValueError("Scene image reference must identify a supported image file.")
-                authored_root = self.theater.scenes_dir().resolve()
-                if source.resolve().is_relative_to(authored_root):
-                    previous = source
-                elif source.parent.resolve() != directory.resolve():
-                    directory.mkdir(parents=True, exist_ok=True)
-                    destination = directory / f"{get_next_iteration_number(directory)}{source.suffix.lower()}"
-                    shutil.copy2(source, destination)
-                if not source.resolve().is_relative_to(authored_root):
-                    previous = get_latest_iteration_file(directory)
-            elif self.reference_generation_enabled and (
-                previous is None or (
-                    clean_description and key in self._scene_descriptions
-                    and clean_description != self._scene_descriptions[key]
-                )
-            ):
-                generated = self._generate_scene_reference(name, clean_description, directory, previous)
-                if generated is not None:
-                    previous = generated
-                elif previous is not None or not self._initializing_references:
-                    return self._scene_image_entry(name, previous) if previous is not None else None
-            if clean_description or (not self.reference_generation_enabled and key not in self._scene_descriptions):
-                self._scene_descriptions[key] = clean_description
-            self._save_scene_traits(name)
-            if previous is None and not self.reference_generation_enabled:
-                return {"name": name, "description": self._scene_descriptions[key]}
-            return self._scene_image_entry(name, previous) if previous is not None else None
+        with self._reference_activity_scope():
+            with self._scene_images_lock:
+                directory = self._scene_reference_dir(name)
+                existing_path = self.get_scene_visual_path(name)
+                previous = Path(existing_path) if existing_path is not None else None
+                key = self._slug_key(name)
+                clean_description = description.strip()
+                if image_reference:
+                    resolved = self.get_latest_reference_path_for_scene(image_reference)
+                    source = Path(resolved or image_reference)
+                    if not source.is_file():
+                        source = self.theater.directory() / image_reference
+                    if not source.is_file() or source.suffix.lower() not in IMAGE_EXTENSIONS:
+                        raise ValueError("Scene image reference must identify a supported image file.")
+                    authored_root = self.theater.scenes_dir().resolve()
+                    if source.resolve().is_relative_to(authored_root):
+                        previous = source
+                    elif source.parent.resolve() != directory.resolve():
+                        directory.mkdir(parents=True, exist_ok=True)
+                        destination = directory / f"{get_next_iteration_number(directory)}{source.suffix.lower()}"
+                        shutil.copy2(source, destination)
+                    if not source.resolve().is_relative_to(authored_root):
+                        previous = get_latest_iteration_file(directory)
+                elif self.reference_generation_enabled and (
+                    previous is None or (
+                        clean_description and key in self._scene_descriptions
+                        and clean_description != self._scene_descriptions[key]
+                    )
+                ):
+                    generated = self._generate_scene_reference(name, clean_description, directory, previous)
+                    if generated is not None:
+                        previous = generated
+                    elif previous is not None or not self._initializing_references:
+                        return self._scene_image_entry(name, previous) if previous is not None else None
+                if clean_description or (not self.reference_generation_enabled and key not in self._scene_descriptions):
+                    self._scene_descriptions[key] = clean_description
+                self._save_scene_traits(name)
+                if previous is None and not self.reference_generation_enabled:
+                    return {"name": name, "description": self._scene_descriptions[key]}
+                return self._scene_image_entry(name, previous) if previous is not None else None
 
     def _generate_scene_reference(
         self, name: str, description: str, directory: Path, previous: Path | None,
@@ -2032,231 +2056,233 @@ class ReferenceManager:
         if not clean_name:
             return None
 
-        supported_tags = self._supported_voice_tags()
+        with self._reference_activity_scope():
 
-        # 1. If character already exists, update all fields specified (upsert).
-        existing = self._existing_character(clean_name)
-        if existing:
-            clean_desc = str(description).strip()[:500] if description else ""
-            description_changed = bool(clean_desc and existing.description and clean_desc != existing.description)
-            if description:
-                existing.description = clean_desc
-            if personality:
-                existing.personality = str(personality).strip()[:300]
-            if motivation:
-                existing.motivation = str(motivation).strip()[:300]
-            if quirk:
-                existing.quirk = str(quirk).strip()[:300]
+            supported_tags = self._supported_voice_tags()
 
-            explicit_image_ref = bool(image_reference and str(image_reference).strip())
-            if explicit_image_ref:
-                existing.image_reference = str(image_reference).strip()
-                existing.image_reference_path = None
-                existing.image_reference_source = None
-            elif description_changed:
-                prev_path = existing.image_reference_path
-                entry = self._generate_character_reference(existing, previous_reference_path=prev_path)
-                if entry is not None:
-                    existing.image_reference = entry.get("alias", "")
-                    existing.image_reference_path = entry.get("path", "")
-                    existing.image_reference_source = "generated"
+            # 1. If character already exists, update all fields specified (upsert).
+            existing = self._existing_character(clean_name)
+            if existing:
+                clean_desc = str(description).strip()[:500] if description else ""
+                description_changed = bool(clean_desc and existing.description and clean_desc != existing.description)
+                if description:
+                    existing.description = clean_desc
+                if personality:
+                    existing.personality = str(personality).strip()[:300]
+                if motivation:
+                    existing.motivation = str(motivation).strip()[:300]
+                if quirk:
+                    existing.quirk = str(quirk).strip()[:300]
 
-            clean_gender = ""
-            if gender:
-                norm_g = normalize_voice_tags(gender)
-                if norm_g:
-                    clean_gender = norm_g[0]
+                explicit_image_ref = bool(image_reference and str(image_reference).strip())
+                if explicit_image_ref:
+                    existing.image_reference = str(image_reference).strip()
+                    existing.image_reference_path = None
+                    existing.image_reference_source = None
+                elif description_changed:
+                    prev_path = existing.image_reference_path
+                    entry = self._generate_character_reference(existing, previous_reference_path=prev_path)
+                    if entry is not None:
+                        existing.image_reference = entry.get("alias", "")
+                        existing.image_reference_path = entry.get("path", "")
+                        existing.image_reference_source = "generated"
 
-            if voice_tags is not None and (
-                (type(voice_tags) in (list, tuple, set) and len(voice_tags) > 0)
-                or (type(voice_tags) is str and voice_tags.strip())
-            ):
+                clean_gender = ""
+                if gender:
+                    norm_g = normalize_voice_tags(gender)
+                    if norm_g:
+                        clean_gender = norm_g[0]
+
+                if voice_tags is not None and (
+                    (type(voice_tags) in (list, tuple, set) and len(voice_tags) > 0)
+                    or (type(voice_tags) is str and voice_tags.strip())
+                ):
+                    clean_tags = normalize_voice_tags(voice_tags, supported_tags)
+                    tag_gender = _voice_tag_gender(clean_tags)
+                    if not clean_gender and tag_gender:
+                        clean_gender = tag_gender
+                    elif clean_gender and not tag_gender:
+                        clean_tags.insert(0, clean_gender)
+                    existing.voice_tags = clean_tags
+                    if clean_gender:
+                        existing.gender = clean_gender
+                elif clean_gender:
+                    existing.gender = clean_gender
+                    updated_tags = [
+                        t for t in existing.voice_tags
+                        if t not in SUPPORTED_VOICE_TAGS and not t.startswith("gender=")
+                    ]
+                    updated_tags.insert(0, clean_gender)
+                    existing.voice_tags = updated_tags
+
+                self._ensure_character_bindings(existing)
+                with self._characters_lock:
+                    self._characters[existing.alias] = existing
+                self._sync_story_state()
+                self._save_character_traits(existing)
+                return existing
+
+            # Load authored/session traits only when this character is introduced.
+            folders = self._reference_folders(
+                self.theater.characters_dir(), self.characters_dir,
+            ).get(self._slug_key(clean_name), [])
+            profile = self._library_profile(folders, "character.yaml")
+            if profile is not None:
+                traits = self._read_character_traits(profile.parent)
+                description = description or traits.description
+                personality = personality or traits.personality
+                motivation = motivation or traits.motivation
+                quirk = quirk or traits.quirk
+                gender = gender or traits.gender
+                voice_tags = voice_tags or traits.voice_tags
+
+            # 2. Character does not exist yet in memory.
+            # Check if traits were assigned per the serialized story state.
+            serialized = self._serialized_character(clean_name)
+
+            if serialized is not None:
+                clean_name = serialized.name or clean_name
+                alias = serialized.alias or self._alias_for_name(clean_name)
+
+                # Prioritize traits from serialized story state, falling back to caller's specified views
+                clean_gender = serialized.gender
+                if not clean_gender and gender:
+                    norm_g = normalize_voice_tags(gender)
+                    if norm_g:
+                        clean_gender = norm_g[0]
+
+                clean_tags = normalize_voice_tags(serialized.voice_tags or voice_tags, supported_tags)
+                tag_gender = _voice_tag_gender(clean_tags)
+                if not clean_gender and tag_gender:
+                    clean_gender = tag_gender
+                elif clean_gender and not tag_gender:
+                    clean_tags.insert(0, clean_gender)
+
+                clean_personality = (serialized.personality or personality or "")[:300]
+                clean_motivation = (serialized.motivation or motivation or "")[:300]
+                clean_quirk = (serialized.quirk or quirk or "")[:300]
+                clean_description = (serialized.description or description or "")[:500]
+
+                voice_id = serialized.voice_id
+                if image_reference and str(image_reference).strip():
+                    clean_image_ref = str(image_reference).strip()
+                    image_ref_path = None
+                    image_ref_source = None
+                else:
+                    clean_image_ref = (serialized.image_reference or "").strip()
+                    image_ref_path = serialized.image_reference_path if serialized.image_reference else None
+                    image_ref_source = serialized.image_reference_source if serialized.image_reference else None
+            else:
+                alias = self._alias_for_name(clean_name)
+                clean_description = str(description or "").strip()[:500]
+                clean_personality = str(personality or "").strip()[:300]
+                clean_motivation = str(motivation or "").strip()[:300]
+                clean_quirk = str(quirk or "").strip()[:300]
+                clean_gender = ""
+                if gender:
+                    norm_g = normalize_voice_tags(gender)
+                    if norm_g:
+                        clean_gender = norm_g[0]
+
                 clean_tags = normalize_voice_tags(voice_tags, supported_tags)
                 tag_gender = _voice_tag_gender(clean_tags)
                 if not clean_gender and tag_gender:
                     clean_gender = tag_gender
                 elif clean_gender and not tag_gender:
                     clean_tags.insert(0, clean_gender)
-                existing.voice_tags = clean_tags
-                if clean_gender:
-                    existing.gender = clean_gender
-            elif clean_gender:
-                existing.gender = clean_gender
-                updated_tags = [
-                    t for t in existing.voice_tags
-                    if t not in SUPPORTED_VOICE_TAGS and not t.startswith("gender=")
-                ]
-                updated_tags.insert(0, clean_gender)
-                existing.voice_tags = updated_tags
 
-            self._ensure_character_bindings(existing)
-            with self._characters_lock:
-                self._characters[existing.alias] = existing
-            self._sync_story_state()
-            self._save_character_traits(existing)
-            return existing
-
-        # Load authored/session traits only when this character is introduced.
-        folders = self._reference_folders(
-            self.theater.characters_dir(), self.characters_dir,
-        ).get(self._slug_key(clean_name), [])
-        profile = self._library_profile(folders, "character.yaml")
-        if profile is not None:
-            traits = self._read_character_traits(profile.parent)
-            description = description or traits.description
-            personality = personality or traits.personality
-            motivation = motivation or traits.motivation
-            quirk = quirk or traits.quirk
-            gender = gender or traits.gender
-            voice_tags = voice_tags or traits.voice_tags
-
-        # 2. Character does not exist yet in memory.
-        # Check if traits were assigned per the serialized story state.
-        serialized = self._serialized_character(clean_name)
-
-        if serialized is not None:
-            clean_name = serialized.name or clean_name
-            alias = serialized.alias or self._alias_for_name(clean_name)
-
-            # Prioritize traits from serialized story state, falling back to caller's specified views
-            clean_gender = serialized.gender
-            if not clean_gender and gender:
-                norm_g = normalize_voice_tags(gender)
-                if norm_g:
-                    clean_gender = norm_g[0]
-
-            clean_tags = normalize_voice_tags(serialized.voice_tags or voice_tags, supported_tags)
-            tag_gender = _voice_tag_gender(clean_tags)
-            if not clean_gender and tag_gender:
-                clean_gender = tag_gender
-            elif clean_gender and not tag_gender:
-                clean_tags.insert(0, clean_gender)
-
-            clean_personality = (serialized.personality or personality or "")[:300]
-            clean_motivation = (serialized.motivation or motivation or "")[:300]
-            clean_quirk = (serialized.quirk or quirk or "")[:300]
-            clean_description = (serialized.description or description or "")[:500]
-
-            voice_id = serialized.voice_id
-            if image_reference and str(image_reference).strip():
-                clean_image_ref = str(image_reference).strip()
+                voice_id = None
+                clean_image_ref = str(image_reference or "").strip()
                 image_ref_path = None
                 image_ref_source = None
-            else:
-                clean_image_ref = (serialized.image_reference or "").strip()
-                image_ref_path = serialized.image_reference_path if serialized.image_reference else None
-                image_ref_source = serialized.image_reference_source if serialized.image_reference else None
-        else:
-            alias = self._alias_for_name(clean_name)
-            clean_description = str(description or "").strip()[:500]
-            clean_personality = str(personality or "").strip()[:300]
-            clean_motivation = str(motivation or "").strip()[:300]
-            clean_quirk = str(quirk or "").strip()[:300]
-            clean_gender = ""
-            if gender:
-                norm_g = normalize_voice_tags(gender)
-                if norm_g:
-                    clean_gender = norm_g[0]
 
-            clean_tags = normalize_voice_tags(voice_tags, supported_tags)
-            tag_gender = _voice_tag_gender(clean_tags)
-            if not clean_gender and tag_gender:
-                clean_gender = tag_gender
-            elif clean_gender and not tag_gender:
+            # 3. If any traits are still missing, generate them via text provider.
+            if self.text_response_provider is not None and (
+                not clean_personality or not clean_motivation or not clean_tags or not clean_gender
+            ):
+                elements = self.notepad.get_present_elements() if self.notepad is not None else []
+                request = TextResponseRequest(
+                    prompt=_CHARACTER_GEN_PROMPT_TEMPLATE.render(
+                        name=clean_name,
+                        gender=clean_gender,
+                        description=clean_description,
+                        elements=elements,
+                        voice_tag_options=self._format_voice_tag_options(supported_tags),
+                    ),
+                    system_instruction=(
+                        "You generate distinctive characters for interactive adventure stories."
+                    ),
+                    temperature=0.7,
+                )
+                try:
+                    response = self.text_response_provider.generate(request)
+                    raw_text = response.text.strip()
+                    if raw_text.startswith("```"):
+                        raw_text = re.sub(r"^```(?:json)?\s*", "", raw_text)
+                        raw_text = re.sub(r"\s*```$", "", raw_text)
+                    generated = GeneratedCharacterProfile.model_validate_json(raw_text)
+                    if not clean_personality and generated.personality:
+                        clean_personality = generated.personality.strip()[:300]
+                    if not clean_motivation and generated.motivation:
+                        clean_motivation = generated.motivation.strip()[:300]
+                    if not clean_gender and generated.gender:
+                        gen_g = normalize_voice_tags(generated.gender)
+                        if gen_g:
+                            clean_gender = gen_g[0]
+                    if not clean_tags and generated.voice_tags:
+                        clean_tags = normalize_voice_tags(generated.voice_tags, supported_tags)
+                except Exception as exc:
+                    logger.warning("[ReferenceManager] Character profile generation failed: %s", exc)
+
+            clean_personality = clean_personality or "Enigmatic and watchful."
+            clean_motivation = clean_motivation or "Survive and prosper in the current scene."
+            if not clean_gender:
+                clean_gender = clean_tags[0] if clean_tags else "female"
+            if not clean_tags:
+                clean_tags = [clean_gender]
+            elif not _voice_tag_gender(clean_tags):
                 clean_tags.insert(0, clean_gender)
 
-            voice_id = None
-            clean_image_ref = str(image_reference or "").strip()
-            image_ref_path = None
-            image_ref_source = None
+            if not clean_quirk:
+                existing_quirks = [
+                    character.quirk
+                    for character in self.get_present_characters()
+                    if character.quirk
+                ]
+                clean_quirk = get_quirk_generator_service().get_random_quirk(
+                    exclude=existing_quirks,
+                )
 
-        # 3. If any traits are still missing, generate them via text provider.
-        if self.text_response_provider is not None and (
-            not clean_personality or not clean_motivation or not clean_tags or not clean_gender
-        ):
-            elements = self.notepad.get_present_elements() if self.notepad is not None else []
-            request = TextResponseRequest(
-                prompt=_CHARACTER_GEN_PROMPT_TEMPLATE.render(
-                    name=clean_name,
-                    gender=clean_gender,
-                    description=clean_description,
-                    elements=elements,
-                    voice_tag_options=self._format_voice_tag_options(supported_tags),
-                ),
-                system_instruction=(
-                    "You generate distinctive characters for interactive adventure stories."
-                ),
-                temperature=0.7,
+            character = Character(
+                name=clean_name,
+                alias=alias,
+                gender=clean_gender,
+                description=clean_description,
+                personality=clean_personality,
+                motivation=clean_motivation,
+                quirk=clean_quirk,
+                voice_tags=clean_tags,
+                voice_id=voice_id,
+                image_reference=clean_image_ref or None,
+                image_reference_path=image_ref_path,
+                image_reference_source=image_ref_source,
             )
-            try:
-                response = self.text_response_provider.generate(request)
-                raw_text = response.text.strip()
-                if raw_text.startswith("```"):
-                    raw_text = re.sub(r"^```(?:json)?\s*", "", raw_text)
-                    raw_text = re.sub(r"\s*```$", "", raw_text)
-                generated = GeneratedCharacterProfile.model_validate_json(raw_text)
-                if not clean_personality and generated.personality:
-                    clean_personality = generated.personality.strip()[:300]
-                if not clean_motivation and generated.motivation:
-                    clean_motivation = generated.motivation.strip()[:300]
-                if not clean_gender and generated.gender:
-                    gen_g = normalize_voice_tags(generated.gender)
-                    if gen_g:
-                        clean_gender = gen_g[0]
-                if not clean_tags and generated.voice_tags:
-                    clean_tags = normalize_voice_tags(generated.voice_tags, supported_tags)
-            except Exception as exc:
-                logger.warning("[ReferenceManager] Character profile generation failed: %s", exc)
-
-        clean_personality = clean_personality or "Enigmatic and watchful."
-        clean_motivation = clean_motivation or "Survive and prosper in the current scene."
-        if not clean_gender:
-            clean_gender = clean_tags[0] if clean_tags else "female"
-        if not clean_tags:
-            clean_tags = [clean_gender]
-        elif not _voice_tag_gender(clean_tags):
-            clean_tags.insert(0, clean_gender)
-
-        if not clean_quirk:
-            existing_quirks = [
-                character.quirk
-                for character in self.get_present_characters()
-                if character.quirk
-            ]
-            clean_quirk = get_quirk_generator_service().get_random_quirk(
-                exclude=existing_quirks,
-            )
-
-        character = Character(
-            name=clean_name,
-            alias=alias,
-            gender=clean_gender,
-            description=clean_description,
-            personality=clean_personality,
-            motivation=clean_motivation,
-            quirk=clean_quirk,
-            voice_tags=clean_tags,
-            voice_id=voice_id,
-            image_reference=clean_image_ref or None,
-            image_reference_path=image_ref_path,
-            image_reference_source=image_ref_source,
-        )
-        self._ensure_character_bindings(character)
-        with self._characters_lock:
-            self._characters[character.alias] = character
-        self._sync_story_state()
-
-        if image_reference and not character.image_reference_path and character.image_reference != str(image_reference).strip():
-            character.image_reference = str(image_reference).strip()
-            character.image_reference_path = None
-            character.image_reference_source = None
             self._ensure_character_bindings(character)
             with self._characters_lock:
                 self._characters[character.alias] = character
             self._sync_story_state()
 
-        self._save_character_traits(character)
-        return character
+            if image_reference and not character.image_reference_path and character.image_reference != str(image_reference).strip():
+                character.image_reference = str(image_reference).strip()
+                character.image_reference_path = None
+                character.image_reference_source = None
+                self._ensure_character_bindings(character)
+                with self._characters_lock:
+                    self._characters[character.alias] = character
+                self._sync_story_state()
+
+            self._save_character_traits(character)
+            return character
 
     def _supported_voice_tags(self) -> Mapping[str, tuple[str, ...]]:
         if self.speech_provider is None:

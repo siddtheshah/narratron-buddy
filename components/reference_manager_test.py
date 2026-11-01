@@ -148,6 +148,73 @@ class TestReferenceManager(unittest.TestCase):
         self.manager.wait_for_reference_updates(["Mira"], timeout=5)
         self.canvas_manager.tool_response.set_activity.assert_called_with("reference", active=False)
 
+    def test_create_or_update_character_triggers_reference_activity_indicator(self) -> None:
+        self.canvas_manager.tool_response = MagicMock(spec=ToolResponseState)
+        self.manager.create_or_update_character(
+            name="Alden",
+            description="A knight in gleaming plate",
+            gender="male",
+        )
+        self.canvas_manager.tool_response.set_activity.assert_any_call("reference", active=True)
+        self.canvas_manager.tool_response.set_activity.assert_any_call("reference", active=False)
+
+    def test_create_or_update_scene_triggers_reference_activity_indicator(self) -> None:
+        self.canvas_manager.tool_response = MagicMock(spec=ToolResponseState)
+        self.manager.create_or_update_scene(
+            name="Castle",
+            description="A high stone citadel overlooking the sea",
+        )
+        self.canvas_manager.tool_response.set_activity.assert_any_call("reference", active=True)
+        self.canvas_manager.tool_response.set_activity.assert_any_call("reference", active=False)
+
+    def test_overlapping_reference_updates_terminate_only_when_all_jobs_complete(self) -> None:
+        activity_calls: list[bool] = []
+        mock_tool_response = MagicMock(spec=ToolResponseState)
+
+        def record_activity(tool: str, active: bool = True) -> None:
+            if tool == "reference":
+                activity_calls.append(active)
+
+        mock_tool_response.set_activity = record_activity
+        self.canvas_manager.tool_response = mock_tool_response
+
+        started1 = threading.Event()
+        release1 = threading.Event()
+        started2 = threading.Event()
+        release2 = threading.Event()
+
+        orig_bind = self.manager._bind_character_image
+
+        def delayed_bind(char: Character) -> None:
+            if char.name == "CharA":
+                started1.set()
+                release1.wait(timeout=5)
+            elif char.name == "CharB":
+                started2.set()
+                release2.wait(timeout=5)
+            orig_bind(char)
+
+        self.manager._bind_character_image = delayed_bind
+
+        t1 = threading.Thread(target=lambda: self.manager.create_or_update_character("CharA", gender="female"))
+        t2 = threading.Thread(target=lambda: self.manager.create_or_update_character("CharB", gender="male"))
+
+        t1.start()
+        self.assertTrue(started1.wait(timeout=5))
+        self.assertEqual(activity_calls, [True])
+
+        t2.start()
+        self.assertTrue(started2.wait(timeout=5))
+        self.assertEqual(activity_calls, [True])
+
+        release1.set()
+        t1.join(timeout=5)
+        self.assertEqual(activity_calls, [True])
+
+        release2.set()
+        t2.join(timeout=5)
+        self.assertEqual(activity_calls, [True, False])
+
     def test_model_context_hides_bindings_without_changing_persisted_characters(self) -> None:
         character = Character(
             name="Arthur Modella", gender="male", description="A wizard",
