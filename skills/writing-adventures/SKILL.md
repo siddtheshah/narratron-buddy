@@ -13,59 +13,69 @@ This skill provides comprehensive instructions, design patterns, architectural s
 
 A **Narratron Adventure** is a self-contained content package stored under `adventures/<adventure-id>/`. It turns Narratron Buddy into a multimodal interactive storytelling experience powered by Google Gemini, generative visuals, and atmospheric audio.
 
-Every adventure package contains six core components:
+Every adventure package is structured around the following standard layout:
 
 ```text
 adventures/<adventure-slug>/
 ├── metadata.json           # Catalog metadata, genre tags, and browser display attributes
 ├── theater.yaml            # Story planning rules, agent persona, and tool settings
-├── planning.yaml           # Story planning schema, sticky definitions, fields, and initial values
-├── game/                   # Optional declarative game; see docs/game_packages.md
-│   └── game.yaml           # State, CEL rules, actions and view (game.yml/game.json also supported)
+├── planning.yaml           # Story planning schema, sticky definitions, fields, owners, and initial values
+├── game/                   # (Optional) Declarative turn-based game; see docs/game_packages.md
+│   ├── game.yaml           # State, CEL rules, actions, and view (game.yml or game.json also supported)
+│   └── *.svg               # (Optional) Board layouts, card graphics, or token SVGs
 ├── README.md               # (Optional) Creator notes or developer documentation
 ├── lore/                   # Worldbuilding, DM screen, character dossiers, locations, and rules
-│   ├── RESPONDER.md         # Pinned immediate-response instructions
-│   ├── PLANNER.md           # Pinned background-planning instructions
-│   ├── RECORDER.md          # Pinned factual recording and game-action instructions
+│   ├── RESPONDER.md         # Pinned immediate-response instructions (narration, dialogue, dice)
+│   ├── PLANNER.md           # Pinned background-planning instructions (milestones, pacing, encounters)
+│   ├── RECORDER.md          # Pinned factual recording instructions (state reconciliation, game actions)
 │   ├── characters/         # NPC dossiers with image references and behavior guidelines
 │   ├── locations/          # Regional descriptions, local commodities, and hazards
-│   └── factions/           # Agendas, rivalries, and allegiances
+│   ├── factions/           # Agendas, rivalries, and allegiances
+│   └── rules/              # Reusable game mechanics, economies, and relationship tiers
 ├── references/             # Cover art, portraits, scenes, and environment concepts
-│   ├── characters/         # One folder per character
+│   ├── characters/         # One folder per character containing portraits and traits
 │   │   └── Keeper Orun/
-│   │       ├── 1.png
+│   │       ├── 1.webp
 │   │       └── character.yaml
-│   ├── scenes/             # One folder per scene
+│   ├── scenes/             # One folder per scene containing imagery and description
 │   │   └── The Desk of Origins/
-│   │       ├── 1.png
+│   │       ├── 1.webp
 │   │       └── scene.yaml
-│   └── cover.png
+│   └── cover.webp          # Starting cover art
+├── stamps/                 # (Optional) Tactical tokens and markers for canvas stamps
+│   └── token_hero.webp
+├── animations/             # (Optional) Custom animations and manifests
+│   └── intro/
+│       ├── video.mp4
+│       └── animation.json
 └── playlists/              # Thematic audio folders with sound files
     ├── ambient/
-    │   └── theme.mp3
+    │   ├── theme.mp3
+    │   └── description.txt # (Optional) Description of playlist mood and instrumentation
     └── tension/
-        └── suspense.mp3
+        ├── suspense.mp3
+        └── description.txt
 ```
 
 ---
 
 ## 2. Quickstart: The Adventure Authoring Workflow
 
-For adventures with a board or structured game mechanics, prefer `game/game.yaml`
-for human editing. Use comments and `|-` for multiline CEL expressions, and keep
-CEL literal quotes in view props (`text: '"Play"'`). Keep exactly one declaration
-(`game.yaml`, `game.yml`, or `game.json`) in `game/`. Follow `docs/game_packages.md`
-for contracts and validation; the example adventure includes commented checkers.
+For adventures with a board or structured game mechanics, prefer `game/game.yaml` for human editing. Use comments and `|-` for multiline CEL expressions, and keep CEL literal quotes in view props (`text: '"Play"'`). Keep exactly one declaration (`game.yaml`, `game.yml`, or `game.json`) in `game/`. Follow `docs/game_packages.md` for contracts and validation; the example adventure includes commented checkers.
 
 When creating a new adventure, follow this sequence:
 
 1. **Scaffold the Package**: Create `adventures/<adventure-slug>/` with `lore/`, `references/characters/`, `references/scenes/`, `references/`, and `playlists/` folders.
 2. **Author `metadata.json`**: Configure the display title, slug ID, genre, difficulty, player count, and cover image.
-3. **Configure `theater.yaml` & `planning.yaml`**: Set `adventure_mode: true` and define agent persona, art, and music direction in `theater.yaml`. Define structured sticky notes, initial values, and required stickies in `planning.yaml`.
-4. **Write independent role guides**: Put opening, tone, action-resolution and dice rules in `lore/RESPONDER.md`; put campaign milestones, hidden consequences and planner sticky tracking in `lore/PLANNER.md`; put factual note reconciliation and game actions in `lore/RECORDER.md`. Each module has only its own complete guide pinned and cannot read the others. Put shared mechanics and facts in separate lore documents.
+3. **Configure `theater.yaml` & `planning.yaml`**: Set `adventure_mode: true` and configure live-agent persona, art, and music direction in `theater.yaml`. Define structured sticky notes, field schemas, explicit ownership (`owner: recorder` or `owner: planner`), and initial values in `planning.yaml`.
+4. **Write Independent Role Guides**: Put opening scene, tone, action-resolution rules, and dice rules in `lore/RESPONDER.md`; put campaign milestones, hidden consequences, and planner sticky tracking in `lore/PLANNER.md`; put factual note reconciliation and game actions in `lore/RECORDER.md`. Each module has only its own complete guide pinned and cannot read the others. Put shared mechanics and facts in separate lore documents.
 5. **Flesh Out Modular Lore**: Create character dossiers, location profiles, and faction files. Annotate characters with their canonical name (`image_reference: Keeper Orun`); annotate locations with their canonical scene name (`image_reference: The Desk of Origins`); other assets can use `image_reference: references/<filename>`.
-6. **Add Assets**: Place character portraits in `references/characters/<Character Name>/1.png` (each character requires its own folder; loose images directly under `references/characters/` are unsupported), scene imagery in `references/scenes/<Scene Name>/1.png` (with `scene.yaml`; loose images directly under `references/scenes/` are unsupported), cover/location references in `references/`, and loopable tracks in `playlists/`. During play, character portraits are copied into `output/artifacts/updated_references/characters/`, scene imagery into `output/artifacts/updated_references/scenes/`, and all appearance updates stay there. The live agent uses `<Character Name>` in visual prompts to attach the latest portrait; authors can manually copy session updates back into `references/characters/` and `references/scenes/`. See `docs/writing_adventures.md` for session reset and reference behavior.
-7. **Test Locally**: Run smoke and interactive tests using `testlab/adventure_runner.py`.
+6. **Add Assets**:
+   - Place character portraits in `references/characters/<Character Name>/1.webp` with `character.yaml` (each character requires its own subfolder; loose images directly under `references/characters/` are unsupported).
+   - Place scene imagery in `references/scenes/<Scene Name>/1.webp` with `scene.yaml` (each scene requires its own subfolder; loose images directly under `references/scenes/` are unsupported).
+   - Place cover/location references in `references/`, optional tactical tokens in `stamps/`, and loopable tracks in `playlists/<Mood>/`.
+   - **Asset Lifecycle**: At session initialization, the manager reads authored portraits, scene imagery, and trait files directly from `references/` without copying or duplicating them into output. During play, visual evolutions and appearance changes create new numbered iterations under `output/artifacts/updated_references/characters/` and `output/artifacts/updated_references/scenes/`. The live agent uses `<Character Name>` tags in visual prompts to bind the latest portrait. Authors can manually copy session updates back into authored folders if permanent evolution is desired.
+7. **Test Locally**: Run unit tests (`uv run pytest adventures/<adventure-slug>`), smoke tests (`--smoke`), and interactive/autoplay sessions using `testlab/adventure_runner.py`.
 8. **Final Verification**: Upload the folder to [narratron.app/deploy](https://narratron.app/deploy) for live verification.
 
 ---
@@ -83,22 +93,23 @@ The `metadata.json` file registers the adventure in the Narratron catalog and UI
   "genre": "Sci-Fi / Fantasy",
   "tags": ["Mystery", "Sci-Fi", "Exploration", "Puzzles"],
   "created_at": "2026-09-07T12:00:00Z",
-  "cover_image": "references/cover.png",
+  "cover_image": "references/cover.webp",
   "difficulty": "Medium",
   "recommended_players": "1-4"
 }
 ```
 
-### Field Requirements
-- **`id`** *(string, required)*: Lowercase kebab-case slug matching the folder name (e.g., `my-custom-adventure`, `obsidian-spire`).
-- **`title`** *(string, required)*: Display title.
+### Field Requirements & Defaults
+- **`id`** *(string, required)*: Lowercase alphanumeric kebab-case slug matching the folder name (e.g., `obsidian-spire`).
+- **`title`** *(string, required)*: Display title in the adventure browser.
 - **`description`** *(string, required)*: 1–3 sentence hook summarizing the adventure premise.
-- **`author`** *(string, required)*: Author handle or name.
+- **`author`** *(string, required)*: Creator handle or author name.
 - **`genre`** *(string, required)*: Primary genre (e.g., `"Dark Fantasy"`, `"Arctic Thriller"`, `"Historical Trade"`).
-- **`tags`** *(array of strings)*: Discoverability tags.
-- **`cover_image`** *(string, required)*: Relative path to cover art (e.g., `"references/cover.png"`).
-- **`difficulty`** *(string)*: `"Easy"`, `"Medium"`, or `"Hard"`.
-- **`recommended_players`** *(string)*: e.g. `"1"`, `"1-4"`, `"2-6"`.
+- **`tags`** *(array of strings)*: Discoverability and filtering tags.
+- **`cover_image`** *(string, required)*: Relative path to cover art (e.g., `"references/cover.webp"`). If omitted or missing, the adventure loader falls back to the first available image file (`.webp`, `.png`, `.jpg`, `.jpeg`) found in the package.
+- **`difficulty`** *(string, optional)*: `"Easy"`, `"Medium"`, or `"Hard"` (default fallback: `"Medium"`).
+- **`recommended_players`** *(string, optional)*: e.g. `"1"`, `"1-4"`, `"2-6"` (default fallback: `"1-4"`).
+- **`created_at`** *(string, optional)*: ISO 8601 UTC timestamp string (e.g. `"2026-09-07T12:00:00Z"`).
 
 ---
 
@@ -110,60 +121,66 @@ Adventures use `theater.yaml` to govern agent persona, art direction, and runtim
 
 ```yaml
 live_agent:
-    special_instructions: "Carry user actions faithfully and let the story planner resolve questions. Guide the adventure with dramatic tension and clear consequences."
+    special_instructions: "Carry user actions faithfully and guide the adventure with dramatic tension and clear consequences. Respect player agency and describe sensory feedback vividly."
+    enable_regular_observability: true
 
-starting_image: "references/cover.png"
+# Starting reference image displayed when a new canvas initializes
+starting_image: "references/cover.webp"
 
 visuals:
-    cycle_length: 6
+    cycle_length: 8                  # Default: 8 seconds minimum screen time per visual
     style: "dark fantasy matte painting, glowing runes, cinematic lighting, moody atmospheric fog, high detail"
+    safety_reduction: false
 
 image_generation:
     enabled: true
-    cooldown_duration: 6
+    cooldown_duration: 9             # Default: 9 seconds cooldown between image tool calls
+    exclude_starter: true            # Hide starting_image from the live agent's image browser
+    reference_wait_timeout: 30       # Seconds to wait for background reference generation
 
 music:
-    use_generated_music: true
-    generation_cooldown: 90
-    switch_cooldown: 15
+    use_generated_music: false       # Set true for AI music generation; false uses premade playlists
+    generation_cooldown: 90          # Seconds between generative music requests
+    switch_cooldown: 15              # Seconds between playlist track switches
     style: "orchestral fantasy ambiance, haunting cello melodies, distant percussion, loopable background"
 
 story_planning:
     adventure_mode: true             # MANDATORY: Enables player action resolution & turn tracking
-    auto_begin: true                 # Automatically initiates opening scene without waiting for prompt
-    character_voicing: true          # Gives NPCs distinct dialogue voices
-    text_beautification: true        # Polishes narrative output
+    enforce_structured: true         # Require sticky contracts in planning.yaml and validate updates
+    auto_begin: true                 # Automatically initiates opening scene without waiting for player input
+    enable_dice: true                # Allows responder action dice and planner procedural rolls
+    character_voicing: false         # Set true to synthesize distinct application voices for NPC dialogue
+    text_beautification: true        # Polishes narrative output with dynamic visual text effects
     style: "engaging mystery with player agency, dramatic tension, and fair consequences"
-
-    # Require sticky definitions, initial values, and visibility in planning.yaml.
-    enforce_structured: true
-
-    cooldown_duration: 10
+    input_cycle_duration: 15         # Batch input window in seconds (default: 15; 0 for immediate)
+    output_cycle_duration: 15        # Scene display duration in seconds (default: 15; 0 for immediate)
     require_user_input: true
 
 chat:
-    cooldown_duration: 20
+    cooldown_duration: 10            # Seconds between chat responses (default: 10)
 
 speech:
     voice_language_code: "en-US"
     accent_augmentation: true        # Amplifies character accent voice tags into explicit delivery instructions
+
+user_help:
+    enabled: true
+    cooldown_duration: 15
+    max_output_tokens: 1200
 ```
 
-The top-level `notepad` section is solely for normal narration and configures
-`initial_stickies`, `max_stickies`, `required_stickies`, and `hidden_stickies`.
-Adventure Mode ignores these settings; all adventure topics are required and
-pinned in `planning.yaml` order, and capacity includes every declared topic.
-With `story_planning.enforce_structured: true` (the default), a missing or empty
-contract is a configuration error. Set this flag to `false` to let recorder and
-planner also create and update shared freeform topics without a contract entry.
-Declared topics retain ownership and field validation. Freeform topics are
-visible by default and persist across saves and restarts; older optional notes
-are evicted at capacity, with at least one freeform slot alongside required topics.
+### Understanding `theater.yaml` Defaults & Sections
+- **`live_agent`**: Always use `live_agent` for live agent settings. The obsolete `agent` and `agent_internal` sections are no longer supported.
+- **`story_planning` Timing**: Story planning uses `input_cycle_duration` (batching user inputs) and `output_cycle_duration` (scene display duration), **not** `cooldown_duration`.
+- **`enforce_structured`**: When `enforce_structured: true` (standard for Adventure Mode), `planning.yaml` must be present and nonempty. All declared topics are required and pinned in contract order. Freeform notes are prohibited. When set to `false`, the recorder and planner may also create and update shared freeform topics without contract entries, while declared topics retain their schema and ownership.
+- **`notepad` Section Ignored in Adventure Mode**: The top-level `notepad` section (`initial_stickies`, `max_stickies`, `required_stickies`, `hidden_stickies`) applies solely to normal narration theaters. In Adventure Mode, all sticky contracts and visibility are configured in `planning.yaml`.
+- **`game_tool`**: `game_tool.enabled` is off by default and is only needed for live-agent game play outside Adventure Mode. In Adventure Mode, declarative games authored under `game/` are managed through the story orchestration engine and the recorder role.
+
+---
 
 ### 4.2. Deep Planning Schema Template (`planning.yaml`)
 
-Adventures use `planning.yaml` to define the persistent state that is
-handled by the deep story planner.
+Adventures use `planning.yaml` to define persistent state, structured field schemas, and ownership across the story orchestration roles.
 
 ```yaml
 # Deep Planner Schema: planning.yaml
@@ -202,27 +219,32 @@ handled by the deep story planner.
   hidden: true
   description: "Discovered clues and historical hints."
   initial: "The Spire activates only when three harmonic keys are aligned."
+
+"Upcoming Encounter Suggestion":
+  owner: planner
+  hidden: true
+  description: "Upcoming narrative dilemma, obstacle, or opportunity staged by the story planner."
+  fields:
+    encounter:
+      description: "Next staged encounter or anomaly"
+      initial: "A deactivated sentinel automaton blocking the narrow stairwell"
+    story_goal:
+      description: "Meaningful choice or objective for the player"
+      initial: "Choose whether to power it with a lodestone or bypass via the exterior ledge"
+    drama:
+      description: "Dramatic stakes or consequences"
+      initial: "Exterior winds risk losing carried supplies; waking it may sound the alarm"
 ```
 
-Each structured entry under `fields` contains a string `description` and a string
-`initial` value (defaulting to `"undefined"` when omitted). Structured topics have no
-top-level `initial`; topics without fields use an optional top-level string `initial`,
-also defaulting to `"undefined"` when omitted. Explicit empty strings are preserved.
-`render` is optional: by default, nonempty values appear as
-`field_name: value | next_field: value` in field declaration order. To customize
-labels or layout, add a template such as `render: "Name: {name} | Objective: {objective}"`
-using that topic's field names.
-
-
-### Critical Rules for `theater.yaml` & `planning.yaml`
-1. **Use `live_agent` for live-agent settings**: Put persona flags and `special_instructions` under `live_agent`; the former `agent` and `agent_internal` section names are no longer used.
-2. **`adventure_mode: true` is mandatory**: Without this flag, Narratron operates in passive storytelling mode rather than interactive adventure mode.
-3. **Move stickies to `planning.yaml`**: Define initial notes, field schemas, and optional rendering strings in `planning.yaml`. All entries are assumed required and pinned in order.
-4. **Sticky visibility**: Set `hidden: true` on each hidden topic in `planning.yaml`. The `notepad.hidden_stickies` list applies only to normal narration.
-5. **`starting_image` must exist**: Ensure the file referenced by `starting_image` is present in your adventure folder (usually under `references/`).
-6. **`speech` settings**: Configure `voice_language_code` and `accent_augmentation` to shape NPC voice generation; backend speech provider and model are application-level operational settings defined in `app.yaml`, which override corresponding fields.
-7. **Planner-owned 'Upcoming Encounter Suggestion' sticky**: Include a hidden sticky owned by the planner (`owner: planner`, `hidden: true`) with fields for `encounter`, `story_goal`, and `drama` to continuously stage narrative obstacles and dramatic tension.
-
+### Critical Rules for `planning.yaml`
+1. **Explicit Owner on Every Sticky**: Every sticky note MUST declare either `owner: recorder` (for established facts, inventory, location, status, and committed game events) or `owner: planner` (for contingent future events, upcoming dilemmas, and opposition intentions). Mixed topics are prohibited; split mixed factual and planning topics into separate notes.
+2. **String-Only Values**: Every field description and initial value must strictly be a string. Numeric and boolean values must be quoted strings (`initial: "0"`, `initial: "false"`).
+3. **Structured vs. Flat Topics**:
+   - **Structured Topics (with `fields`)**: Each field under `fields` has a `description` string and an `initial` string (defaulting to `"undefined"` if omitted). Do **not** place a top-level `initial` mapping on structured topics.
+   - **Flat Topics (without `fields`)**: Use an optional top-level string `initial: "..."` (defaulting to `"undefined"` if omitted).
+4. **Display Templates (`render`)**: `render` is optional. By default, nonempty fields render in declaration order as `field_name: value | next_field: value`. To customize layout, provide a format template such as `render: "Name: {name} | Objective: {objective}"` matching the topic's field keys.
+5. **Visibility (`hidden`)**: Set `hidden: true` on notes intended for background tracking or story staging. Hidden notes are accessible to all three roles in prompt context, but remain hidden in the canvas player view until toggled.
+6. **Mandatory Planner Sticky**: Every adventure should include the planner-owned hidden sticky `"Upcoming Encounter Suggestion"` (`owner: planner`, `hidden: true`) with fields `encounter`, `story_goal`, and `drama` to continuously stage narrative obstacles and dramatic pacing.
 
 ---
 
@@ -230,43 +252,32 @@ using that topic's field names.
 
 The `lore/` folder is the core storytelling engine. Proven architectural patterns for structuring interactive adventure lore ensure high narrative consistency, deep player agency, and reliable tool calling.
 
-### 5.1. Pinned role instructions: `RESPONDER.md`, `PLANNER.md`, and `RECORDER.md`
+### 5.1. Pinned Role Instructions: `RESPONDER.md`, `PLANNER.md`, and `RECORDER.md`
 
-Every adventure requires all three files at the top level of `lore/`. The runtime pins the full `RESPONDER.md` only for the responder, the full `PLANNER.md` only for the planner, and the full `RECORDER.md` only for the recorder. None of the modules can read or search the others' guides. Other `.txt` and `.md` lore is indexed and fetched on demand; no filename-prefix preloading is supported.
+Every adventure requires all three files at the top level of `lore/`. The runtime pins the full `RESPONDER.md` only for the responder, the full `PLANNER.md` only for the planner, and the full `RECORDER.md` only for the recorder. **None of the modules can list, read, or search the others' guides.** Other `.txt` and `.md` lore files in the folder are indexed and fetched on demand; no filename-prefix preloading is supported.
 
-Give the responder priorities for the opening, immediate action resolution, authored dice, dialogue, sensory feedback, disclosure, and factual planning signals. It does not write sticky notes or take game actions. Ensure `RESPONDER.md` is robust and features an explicit **Lore Directory Layout** detailing subdirectories and files (`lore/characters/`, `lore/locations/`, `lore/rules/`, etc.) so the live narrator knows where canonical facts live. Give the planner priorities for contingent future developments, off-screen actors, opposition intentions, campaign pacing, and planner-owned sticky notes (such as the hidden `Upcoming Encounter Suggestion`). It never narrates a second scene or chooses dice outcomes. Give the recorder priorities for reconciling completed responses and committed player events against established facts, maintaining recorder-owned sticky notes, and taking validated Narratron game actions. Shared world facts and mechanics belong in separate lore documents accessible to all roles.
+| Role | Guide File | Responsibilities & Boundaries | Call Budget per Run | Authorized Writes |
+| :--- | :--- | :--- | :--- | :--- |
+| **Responder** | `lore/RESPONDER.md` | Owns immediate action resolution, opening scenes, narrative prose, NPC dialogue, authored dice rolls, and scene sensory feedback. Emits `planning_signals`. Does **not** write sticky notes or take game actions. | **3 reads, 3 searches** | Narration, dialogue, planning signals (no direct sticky writes) |
+| **Planner** | `lore/PLANNER.md` | Owns campaign milestones, pacing, opposition intentions, off-screen clocks, and planner-owned stickies (e.g., `Upcoming Encounter Suggestion`). Reads game state and action schemas. Does **not** mutate game state or roll responder dice. | **8 reads, 8 searches** | Planner-owned stickies (`owner: planner`) |
+| **Recorder** | `lore/RECORDER.md` | Reconciles completed responses and committed events against established facts. Owns recorder-owned stickies and executes validated Narratron game actions through the game runtime. | **4 reads, 4 searches** | Recorder-owned stickies (`owner: recorder`), game state mutations |
 
-The planner begins immediately on a Player Action event, before responder completion. Treat that event as intent: research and prepare, but await the separate Responder Response event before committing costs or outcomes. Never count the two events as two actions. The planner has eight lore reads and eight searches per run; the responder has three of each.
+#### Timing & Action Resolution Loop
+The planner begins immediately on a Player Action event, before responder completion. Treat that initial event as unresolved intent: research and prepare, but await the separate Responder Response event before committing costs, clocks, or consequences. Never count the two events as two player actions. The recorder runs after the responder to reconcile completed turns, update factual notes, and take necessary game actions.
 
-#### Content to distribute by role
-
-1. **Premise & Core Philosophy**:
-   - The central conflict and thematic foundation.
-   - *Example (Commerce / Negotiation):* Non-violent commerce where inventory is HP, eliminating combat in favor of haggling, permits, and logistics.
-   - *Example (Mystery / Investigation):* Paranoia investigation where the player interacts normally with NPCs before danger strikes.
-2. **Narrative Arc & Timeline Progression**:
-   - Outline key milestones, acts, or in-game days.
-   - *Example (3-Phase / Multi-Day Mystery Timeline):*
-     - *Day / Phase 1:* Arrival, exploration, introductions, and initial gossip (no active danger yet).
-     - *Day / Phase 2:* Complication or sabotage event; an NPC confides in the player; DM selects the culprit based on player actions.
-     - *Day / Phase 3:* Culprit escalates and actively opposes the player; full climax and resolution.
-3. **Asset & Lore Directory Roadmap**:
-   - An explicit table of contents telling the LLM which subfolders exist and what they contain (e.g., `characters/`, `locations/`, `rules/`, `quests/`). This ensures the planner knows what lore tools to call.
-4. **Victory & Failure Conditions**:
-   - Clear, non-trivial resolution states.
-   - *Example (Economic Victory):* Accumulate target profits and rare artifacts vs Bankruptcy (zero funds and no goods).
-   - *Example (Survival / Mystery):* Unmask the culprit, secure an antidote/escape, or neutralize the threat.
-5. **State Tracking & Sticky Note Enforcement**:
-   - Explicit instructions on which sticky notes must exist and what fields they track.
-   - **Crucial Rule:** Instruct the story planner to strictly update existing dedicated notes rather than creating new stickies for every minor event.
-6. **DM Guidelines & Disclosure Pacing**:
-   - Instructions on how quickly to reveal secrets. Don't dump twists immediately; reward player inquiry and investigation.
+#### Content to Distribute by Role
+1. **Premise & Core Philosophy**: Include central conflict and thematic foundation in all three guides.
+2. **Narrative Arc & Timeline Progression**: Put act progression, multi-day milestones, and escalation in `lore/PLANNER.md`.
+3. **Lore Directory Layout**: Put an explicit table of contents in `lore/RESPONDER.md` and `lore/PLANNER.md` detailing subdirectories (`characters/`, `locations/`, `rules/`, `factions/`) so roles know where canonical facts live.
+4. **Victory & Failure Conditions**: Clear, non-trivial resolution states in `lore/PLANNER.md` and `lore/RECORDER.md`.
+5. **State Tracking Instructions**: Explicit instructions on which sticky notes each role maintains, reminding them to update existing dedicated notes rather than creating new stickies for minor events.
+6. **DM Guidelines & Disclosure Pacing**: Guidance on pacing revelations, rewarding player inquiry, and avoiding early spoilers.
 
 ---
 
 ### 5.2. Character Dossier Pattern
 
-Characters should be placed in `lore/characters/` (or dedicated subfolders). Use this standardized character profile structure:
+Characters should be placed in `lore/characters/` (e.g., `lore/characters/keeper_orun.txt`). Use this standardized character profile structure:
 
 ```text
 ================================================================================
@@ -304,16 +315,16 @@ Orun knows the third harmonic key was stolen by the rival excavation crew and hi
 ```
 
 #### Why the Character Dossier Pattern Works
-- **`IMAGE_REFERENCE`**: Gives the exact asset path so the agent can immediately trigger `show_image` without guessing or hallucinating filenames.
-- **`VOICE_TAG` & Quotes**: Guides the TTS and LLM character voicing engine for authentic dialogue.
-- **Green Flags / Red Flags**: Gives players actionable social levers to influence the story.
+- **`IMAGE_REFERENCE`**: Matches the canonical character folder name under `references/characters/`, allowing the live agent to bind `<Keeper Orun>` in generative prompts.
+- **`VOICE_TAG` & Quotes**: Guides character voicing and speech augmentation for authentic dialogue delivery.
+- **Green Flags / Red Flags**: Gives players concrete social levers to influence the story.
 - **DM Secrets**: Distinguishes public persona from private truth, preventing early spoilers.
 
 ---
 
 ### 5.3. Location & World Dossier Pattern
 
-Locations should be organized in `lore/locations/` (optionally grouped into regional or thematic subdirectories):
+Locations should be organized in `lore/locations/` (e.g., `lore/locations/celestial_orrery.txt`):
 
 ```text
 ================================================================================
@@ -346,55 +357,94 @@ If your adventure features non-standard mechanics (such as trading economies, af
 
 - **Economy & Inventory Pattern**:
   - Define trade goods, buy/sell values, weights, and carrying capacities.
-  - Mandate specific sticky notes for tracking currency (`"Current Currency"`), inventory (`"Inventory & Quantities"`), and encumbrance (`"Caravan Weight & Capacity"`).
+  - Mandate specific recorder-owned sticky notes for tracking currency (`"Current Currency"`), inventory (`"Inventory & Quantities"`), and encumbrance (`"Caravan Weight & Capacity"`).
 - **Social / Relationship & Trust Pattern**:
   - Define numerical tiers (e.g., 0–25 Hostile, 26–50 Neutral, 51–75 Warm, 76–100 Devoted / Ally).
-  - Instruct the DM to track scores on a dedicated sticky note.
+  - Instruct the recorder to track scores on a dedicated sticky note.
 - **Faction Standing & Reputation Pattern**:
   - Track favors, grudges, and fulfilled tasks for competing factions on a shared standing note.
 
 ---
 
 ### 5.5. Player Death, Lethal Consequences & Restarts
-- **Explicit Lethality**: When designing adventures with deadly hazards, hostile tyrants, assassinations, or lethal combat, explicitly permit player death in `theater.yaml` (`style`) and both `lore/RESPONDER.md` and `lore/PLANNER.md`.
+- **Explicit Lethality**: When designing adventures with deadly hazards, hostile tyrants, assassinations, or lethal combat, explicitly permit player death in `theater.yaml` (`style`), `lore/RESPONDER.md`, and `lore/PLANNER.md`.
 - **No Artificial Plot Armor**: Instruct the story planner that plot armor should not protect players who take deliberately suicidal actions, drink lethal poisons, or fail unescapable ultimatums.
-- **Restart on Continuation**: Clearly specify that if player death or a fatal loss condition occurs, any continued play represents a clean restart of the scenario from the beginning (as a new character, fresh incarnation, or timeline reset).
-- **Death Hint**: Add instructions for the story planner to give some possibly cryptic hint for why the player died, if it wasn't obvious. The player should feel like their death was a fair possibility, and learn from
-it. The instructions to provide the hint should take that into account.
+- **Restart on Continuation**: Clearly specify that if player death or a fatal loss condition occurs, any continued play represents a clean restart of the scenario from the beginning.
+- **Death Hint**: Instruct the story planner to provide a cryptic hint explaining why the player died if it was not obvious, helping the player learn from the outcome.
 
 ---
 
 ### 5.6. Counter-Plotting & Adversarial Escalation Pattern
 - **Dynamic Opposition**: When players perform exceptionally well, amass powerful leverage, or bully key NPCs/factions, the opposition must not remain passive punching bags.
-- **Auditing Past Actions**: Instruct the story planner to have rival NPCs investigate the player's previous actions during the scenario (e.g., reviewing security scrying logs, checking forged signatures or seals, debriefing spies/guards, or inspecting physical crime scenes).
-- **Retroactive Dirt & Standoffs**: NPCs manufacture or discover counter-dirt on the player based on earlier sloppy steps, creating dramatic counter-blackmail standoffs, mutual assured destruction, or ambush hearings before authority figures.
+- **Auditing Past Actions**: Instruct the story planner to have rival NPCs investigate the player's previous actions during the scenario (e.g., reviewing security logs, checking forged signatures or seals, debriefing spies/guards, or inspecting physical crime scenes).
+- **Retroactive Dirt & Standoffs**: NPCs manufacture or discover counter-dirt on the player based on earlier sloppy steps, creating dramatic counter-blackmail standoffs or ambush hearings.
 - **Sticky Note Tracking**: Track emerging counter-investigations on the relevant leverage or faction sticky note to keep the pressure tangible across turns.
 
 ---
 
-## 6. Visual & Audio Peripherals
+## 6. Visual, Tactical & Audio Peripherals
 
-### 6.1. Visual References (`references/`)
-- Place all static images in `references/`.
-- Character portraits belong in `references/characters/<Character Name>/` with `character.yaml`.
-- Scene and location images belong in `references/scenes/<Scene Name>/` with `scene.yaml`.
-- Supported formats: `.png`, `.jpg`, `.jpeg`, `.webp`.
-- **Cover Image**: Required. Referenced in `metadata.json` (`"cover_image": "references/cover.png"`) and `theater.yaml` (`starting_image: "references/cover.png"`).
-- **Annotation in Lore**: Include `IMAGE_REFERENCE: <Character Name>` in character dossiers and `IMAGE_REFERENCE: <Scene Name>` in location lore documents.
+### 6.1. Character Visuals (`references/characters/`)
+Each character requires its own subfolder named after the canonical character:
+```text
+references/characters/Keeper Orun/
+├── 1.webp
+├── 2.webp               # Optional visual evolution iterations
+└── character.yaml       # Canonical character traits
+```
 
-### 6.2. Atmospheric Playlists (`playlists/`)
-- Organize sound files into mood or scene subfolders under `playlists/`:
-  ```text
-  playlists/
-  ├── exploration/
-  │   ├── ancient_halls.mp3
-  │   └── quiet_steps.mp3
-  ├── tension/
-  │   └── ticking_clock.mp3
-  └── victory/
-      └── triumphant_fanfare.mp3
-  ```
-- Supported formats: `.mp3`, `.wav`, `.ogg`, `.flac`.
+Add `character.yaml` alongside the portraits to initialize traits:
+```yaml
+description: "A seven-foot-tall brass automaton with an etched porcelain face mask"
+personality: "Punctual, curious, and nostalgic"
+motivation: "Protect the celestial archives until mortal astronomers return"
+quirk: "Clicks internal gears when intrigued"
+gender: nonbinary        # male, female, or nonbinary
+voice_tags: [deep, brass, rhythmic]
+```
+
+- **Supported Formats**: `.webp` (preferred), `.png`, `.jpg`, `.jpeg`, `.gif`. Loose files directly under `references/characters/` are unsupported.
+- **Iteration Numbering**: Numbered iterations (`1.webp`, `2.webp`) allow visual evolution across story arcs. The highest numbered iteration is active.
+- **Visual Prompt Tagging**: The live agent tags `<Keeper Orun>` in generative prompts to automatically attach the character's active portrait without manual path management.
+
+### 6.2. Scene Visuals (`references/scenes/`)
+Each scene requires its own subfolder named after the canonical scene:
+```text
+references/scenes/The Desk of Origins/
+├── 1.webp
+├── 2.webp               # Optional visual evolution iterations
+└── scene.yaml           # Canonical scene description
+```
+
+Add `scene.yaml` beside the scene images:
+```yaml
+description: "An ancient cedar drafting table covered in star charts, glowing inkwells, and brass astrolabes"
+```
+
+- **Supported Formats**: `.webp` (preferred), `.png`, `.jpg`, `.jpeg`, `.gif`. Loose files directly under `references/scenes/` are unsupported.
+- **Iteration Numbering**: Numbered iterations (`1.webp`, `2.webp`) allow scenes to change state (e.g. ruined, night, festive).
+
+### 6.3. Static References & Tactical Stamps
+- **General References (`references/`)**: Place cover artwork, maps, and item sketches directly under `references/` (e.g., `references/cover.webp`).
+- **Tactical Stamps (`stamps/`)**: Place stamp tokens and tactical markers under `stamps/` (e.g., `stamps/token_sentinel.webp`). Supported formats: `.webp`, `.png`, `.jpg`, `.jpeg`, `.gif`.
+- **Animations (`animations/`)**: Package pre-rendered animation clips or manifests under `animations/<id>/` (e.g., `animations/intro/video.mp4`, `animations/intro/animation.json`).
+
+### 6.4. Atmospheric Playlists (`playlists/`)
+Organize sound files into mood or scene subfolders under `playlists/`:
+```text
+playlists/
+├── exploration/
+│   ├── ancient_halls.mp3
+│   ├── quiet_steps.mp3
+│   └── description.txt  # Optional: "Gentle ambient cello with quiet flute echoes"
+├── tension/
+│   ├── ticking_clock.mp3
+│   └── description.txt  # Optional: "Slow rhythmic heartbeat and dissonant strings"
+└── victory/
+    └── triumphant_fanfare.mp3
+```
+- **Supported Formats**: `.mp3`, `.wav`, `.ogg`, `.flac`, `.m4a`, `.aac`.
+- **Description File**: Add optional `description.txt` to help agents select suitable mood tracks.
 - Prefer seamless, loopable audio with gentle intros and outros.
 
 ---
@@ -404,7 +454,7 @@ it. The instructions to provide the hint should take that into account.
 Always test adventures locally before packaging or distributing.
 
 ### 7.0. Adventure Unit Tests (Run Only These)
-Default test discovery (`uv run pytest`) excludes `adventures/`. When writing or editing an adventure, run **only** that adventure's unit tests:
+Default test discovery (`uv run pytest`) excludes `adventures/`. When writing or editing an adventure with unit tests, run **only** that adventure's unit tests:
 
 ```bash
 uv run pytest adventures/<adventure-folder-name>
@@ -448,17 +498,32 @@ uv run python testlab/adventure_runner.py --adventure <adventure-folder-name> \
     --autoplay-instructions "Play in a realistic style: act as a grounded, pragmatic mortal assistant prioritizing survival, diplomatic leverage, and careful protocol."
 ```
 
-- **How it Works**: The `AutoPlayer` agent queries Gemini to evaluate recent scene narration and sticky notes, formulating an internal tactical **thought** and an in-character **action** each turn.
-- **Output Artifacts**: Automatically generates chronological Markdown and JSON logs in `evaluation_result/autoplay_<adventure>_<timestamp>.md`.
-- **Key Flags**:
-  - `--autoplay`: Flag to activate autonomous play.
-  - `--autoplay-instructions` / `--autoplay_instructions`: Custom persona, tactical directives, or behavioral constraints.
-  - `--turns` / `-n` / `--autoplay-turns`: Turn count limit (default: 10).
-  - `--autoplay-model`: Model driving player agent (default: `gemini-3.8-flash`).
-  - `--autoplay-delay`: Pause between turns in seconds to pace API requests.
+#### How Autoplay Works
+- The `AutoPlayer` agent queries Gemini to evaluate recent scene narration, spoken dialogue, and available game actions (if a declarative game exists under `game/`).
+- Each turn produces an internal tactical **thought** and an in-character **action** (or declarative game control).
+- By default, sticky notes are hidden from the player to prevent metagaming. Pass `--autoplay-include-stickies` to expose active stickies to the player agent.
+- **Output Artifacts**: Session chronicles and structured JSON summaries are automatically saved in `evaluation_results/autoplay_<adventure>_<timestamp>.md` and `.json`.
+
+#### CLI Flags Reference
+
+| Flag | Aliases | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `--adventure` | — | `example_adventure` | Adventure folder name or relative path. |
+| `--smoke` | — | `False` | Run a single automated smoke action and exit. |
+| `--autoplay` | — | `False` | Enables autonomous player mode. |
+| `--turns` | `-n`, `--autoplay-turns`, `--autoplay_turns` | `10` | Maximum number of turns to execute in autoplay mode. |
+| `--autoplay-instructions` | `--autoplay_instructions` | `""` | Directives, persona, or behavioral constraints for the player agent. |
+| `--autoplay-model` | `--autoplay_model` | `gemini-3.8-flash` | Gemini model ID driving the autonomous player agent. |
+| `--autoplay-log` | `--autoplay_log`, `--log-file`, `--log_file` | `evaluation_results/...` | Destination path for the session log file (`.md` and `.json`). |
+| `--autoplay-delay` | `--autoplay_delay` | `0.0` | Pause in seconds between turns to pace API requests. |
+| `--autoplay-include-stickies` | `--autoplay_include_stickies` | `False` | Expose active sticky notes in the player agent's prompt context. |
+| `--action` | — | `""` | Optional single action to execute, or override starting action for turn 1. |
+| `--agent-model` | — | `gemini-3.8-flash` | Model ID for the live text agent. |
+| `--planner-model` | — | `gemini-3.8-flash` | Model ID for the story planner and deep planning engine. |
+| `--nodes` | — | `3` | Nodes ahead buffer for story planning. |
 
 ### 7.4. Browser Diagnostic Harness (Test Lab)
-Test the visual interface and canvas peripherals locally:
+Test the visual interface, interactive canvas, and game surfaces locally:
 
 ```bash
 uv run python -m uvicorn testlab.server:app --host 127.0.0.1 --port 8015
@@ -476,7 +541,7 @@ The gold standard for validating an adventure before public release:
    - Starting cover image renders immediately on the canvas.
    - Player voice or chat input produces reactive storytelling and smooth turns.
    - Sticky notes update accurately without note proliferation.
-   - Reference images and playlists trigger when their associated characters, locations, or moods arise.
+   - Reference images, tactical stamps, and playlists trigger when their associated characters, locations, or moods arise.
 
 ---
 
@@ -488,29 +553,36 @@ Before packaging your adventure for players or deploying to a live session:
 - [ ] **`metadata.json`**:
   - [ ] Valid JSON syntax.
   - [ ] `id` matches directory slug.
-  - [ ] `cover_image` points to an existing file in `references/`.
+  - [ ] `cover_image` points to an existing image in `references/`.
   - [ ] `title`, `description`, `author`, `genre`, and `tags` are complete.
 - [ ] **`theater.yaml`**:
   - [ ] Valid YAML syntax.
   - [ ] Live-agent behavior and instructions use the `live_agent` section.
   - [ ] `story_planning.adventure_mode: true` is set.
   - [ ] `starting_image` points to a valid file in `references/`.
-  - [ ] `planning.yaml` defines every sticky with an explicit owner and valid initial values.
-  - [ ] `story_planning.enforce_structured: true` has a nonempty `planning.yaml` contract.
+  - [ ] Timing parameters use `input_cycle_duration` and `output_cycle_duration` (no `cooldown_duration` under `story_planning`).
+- [ ] **`planning.yaml`**:
+  - [ ] Every sticky declares an explicit owner (`owner: recorder` or `owner: planner`).
+  - [ ] Structured topics define fields with string `description` and `initial` values (no topic-level `initial`).
+  - [ ] Flat topics use string `initial` values.
+  - [ ] Includes hidden planner sticky `"Upcoming Encounter Suggestion"` (`owner: planner`, `hidden: true`) with fields `encounter`, `story_goal`, `drama`.
+  - [ ] `story_planning.enforce_structured: true` has a nonempty contract.
 - [ ] **`lore/` Architecture**:
-  - [ ] Contains independent `lore/RESPONDER.md`, `lore/PLANNER.md`, and `lore/RECORDER.md` guides, with no dependency on the other private guides.
-  - [ ] The responder guide defines opening, tone and resolution; the planner guide defines campaign progression and pacing; the recorder guide defines factual note reconciliation and game actions.
-  - [ ] Individual character and location lore files contain explicit `IMAGE_REFERENCE: references/<file>` annotations.
-  - [ ] Secrets and spoilers are isolated from public knowledge.
+  - [ ] Contains independent `lore/RESPONDER.md`, `lore/PLANNER.md`, and `lore/RECORDER.md` guides.
+  - [ ] Role boundaries are respected: responder owns immediate narration, dialogue, and dice; planner owns campaign milestones and pacing; recorder owns factual note reconciliation and game actions.
+  - [ ] Each role guide is standalone; no module depends on reading private peer guides.
+  - [ ] Shared lore files (`characters/`, `locations/`, `rules/`, `factions/`) contain reusable canon and mechanics.
 - [ ] **Assets**:
   - [ ] Cover image exists in `references/`.
-  - [ ] Character and location reference images are properly organized under `references/characters/<Name>/` and `references/scenes/<Name>/` (`.png`, `.jpg`, `.webp`).
-  - [ ] `playlists/` contain valid audio files organized by mood subdirectories.
+  - [ ] Character folders in `references/characters/<Name>/` include numbered portraits (`1.webp`) and `character.yaml`.
+  - [ ] Scene folders in `references/scenes/<Name>/` include numbered visuals (`1.webp`) and `scene.yaml`.
+  - [ ] `playlists/` contain valid audio files organized by mood subdirectories, with optional `description.txt`.
 - [ ] **Testing**:
-  - [ ] Adventure unit tests pass (run only this adventure's tests): `uv run pytest adventures/<slug>`.
+  - [ ] Adventure unit tests pass (if present): `uv run pytest adventures/<slug>`.
   - [ ] CLI smoke test passes: `uv run python testlab/adventure_runner.py --adventure <slug> --smoke`.
   - [ ] Interactive multi-turn CLI test succeeds without unhandled errors.
   - [ ] Autonomous multi-turn playtest passes: `uv run python testlab/adventure_runner.py --adventure <slug> --autoplay --turns 10`.
+  - [ ] Logs in `evaluation_results/` show clean sticky note updates without note sprawl.
   - [ ] Live `/deploy` session verified on [narratron.app/deploy](https://narratron.app/deploy).
 
 ---
