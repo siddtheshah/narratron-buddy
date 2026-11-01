@@ -21,11 +21,19 @@ from components.story.story_handoffs import (
     CommittedGameReceipt,
     GameControlDecision,
     GameControlOutcome,
+    NarrationRequest,
 )
 from components.story.story_models import DEFAULT_STORY_PLANNING_STYLE, VertexGemini
 from components.story.story_session import StorySession
 from components.story.story_staged_notes import StagedStoryNotes
 from components.story.story_recording_journal import RecordingEvent, StoryRecordingJournal
+from providers.decision_provider import (
+    ChoiceQuestion,
+    DecisionProvider,
+    DecisionRequest,
+    PredicateQuestion,
+    ScoreQuestion,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -185,6 +193,7 @@ class StoryRecorderModule:
         lore_library: LoreLibrary | None = None,
         game_state: GameState | None = None,
         control_game: ControlGame | None = None,
+        decision_provider: DecisionProvider | None = None,
         style: str = "",
         story_session: StorySession | None = None,
         reference_manager: ReferenceManager | None = None,
@@ -199,6 +208,7 @@ class StoryRecorderModule:
         self._reconcile = reconcile or self._reconcile_model
         self._game_state = game_state
         self._control_game = control_game
+        self._decision_provider = decision_provider
         raw_config = notepad.theater.config()
         config = raw_config.get("story_planning", raw_config)
         configured_style = style or str(config.get("style", DEFAULT_STORY_PLANNING_STYLE))
@@ -240,6 +250,10 @@ class StoryRecorderModule:
         if saved is not None:
             logger.debug("[StoryRecorderModule] Restoring recorded snapshot revision=%d", saved.revision)
             notepad.restore_recorded_snapshot(saved)
+
+    @property
+    def decision_provider(self) -> DecisionProvider | None:
+        return self._decision_provider
 
     def _run_model(
         self, event: RecordingEvent, snapshot: NoteSnapshot, *,
@@ -653,71 +667,133 @@ class StoryRecorderModule:
             raise ValueError("Completed responses cannot enter game control.")
         if event.source_event_ids or event.payload.get("actor") == "narratron":
             raise ValueError("Narratron game receipts cannot recursively enter game control.")
-        if self.story_session is not None:
+        if self.story_session is not None and self._decision_provider is None:
             return self._control_model_stage(event)
         with self._lock:
             player_revision = self.record(event)
             decision = self.journal.game_control_decision(event.event_id)
             if decision is None:
-                def submit_game_action(action: GameAction) -> dict[str, JsonValue]:
-                    existing = self.journal.narratron_receipt_for_revision(
-                        event.event_id, action.revision,
+                if self._decision_provider is not None:
+                    input_text = (
+                        str(
+                            event.payload.get("summary")
+                            or event.payload.get("action")
+                            or event.payload.get("name")
+                            or json.dumps(event.payload, ensure_ascii=False)
+                        ).strip()
+                        or "Game move committed"
                     )
-                    if existing is not None:
-                        if existing.action != action:
+                    request = DecisionRequest(
+                        input_text=input_text,
+                        questions=(
+                            PredicateQuestion(
+                                name="should_narrate_move",
+                                instructions=(
+                                    "Is this game move a dramatic capture, blunder, "
+                                    "kinging, or momentum swing worth immediate in-character narration?"
+                                ),
+                            ),
+                            ScoreQuestion(
+                                name="drama_level",
+                                instructions="Rate the narrative significance of this board-game move.",
+                                levels=("routine", "notable", "turning_point", "climactic"),
+                            ),
+                            ChoiceQuestion(
+                                name="narrator_reaction_tone",
+                                instructions="How should Narratron react in character to this player move?",
+                                choices=("unbothered", "impressed", "rattled", "triumphant"),
+                            ),
+                        ),
+                    )
+                    result = self._decision_provider.decide(request)
+                    narrate = result.get_predicate("should_narrate_move")
+                    drama = result.get_score("drama_level")
+                    tone = result.get_choice("narrator_reaction_tone")
+                    wake_responder = narrate.passed(0.60) or drama.score >= 2.0
+                    if wake_responder:
+                        narration_request = NarrationRequest(
+                            user_action=str(
+                                event.payload.get("action")
+                                or event.payload.get("name")
+                                or event.payload.get("summary")
+                                or "Game move committed"
+                            ),
+                            nudge=f"React in character with a {tone.choice} tone.",
+                            brief=f"Dramatic game move: drama={drama.score:.2f}, tone={tone.choice}.",
+                        )
+                        decision = GameControlDecision(
+                            narration_request=narration_request,
+                            reason=(
+                                f"Move exceeded drama threshold: drama={drama.score:.2f}, "
+                                f"should_narrate={narrate.probability:.0%}, tone={tone.choice}."
+                            ),
+                        )
+                    else:
+                        decision = GameControlDecision(
+                            narration_request=None,
+                            reason="Routine move below narration threshold.",
+                        )
+                    self.journal.save_game_control_decision(event.event_id, decision)
+                else:
+                    def submit_game_action(action: GameAction) -> dict[str, JsonValue]:
+                        existing = self.journal.narratron_receipt_for_revision(
+                            event.event_id, action.revision,
+                        )
+                        if existing is not None:
+                            if existing.action != action:
+                                raise ValueError(
+                                    "Game revision already has a different committed Narratron action."
+                                )
+                            logger.debug(
+                                "[StoryRecorderModule] Reusing existing Narratron receipt for event %s at revision %d",
+                                event.event_id,
+                                action.revision,
+                            )
+                            return existing.receipt
+                        if self._game_state is None:
                             raise ValueError(
-                                "Game revision already has a different committed Narratron action."
+                                "No game state is configured for Narratron game actions."
                             )
                         logger.debug(
-                            "[StoryRecorderModule] Reusing existing Narratron receipt for event %s at revision %d",
-                            event.event_id,
+                            "[StoryRecorderModule] Executing Narratron game action %s (revision=%d) for event %s",
+                            action.name,
                             action.revision,
+                            event.event_id,
                         )
-                        return existing.receipt
-                    if self._game_state is None:
-                        raise ValueError(
-                            "No game state is configured for Narratron game actions."
+                        self._game_state.act(action, actor="narratron")
+                        snapshot = self._game_state.story_snapshot("responder")
+                        if snapshot is None:
+                            raise ValueError("Game state did not return a committed receipt.")
+                        committed = CommittedGameReceipt(
+                            event_id=f"{event.event_id}:narratron:{action.revision}",
+                            parent_event_id=event.event_id,
+                            action_id=event.action_id,
+                            source_revision=player_revision,
+                            action=action,
+                            receipt=snapshot,
                         )
-                    logger.debug(
-                        "[StoryRecorderModule] Executing Narratron game action %s (revision=%d) for event %s",
-                        action.name,
-                        action.revision,
-                        event.event_id,
-                    )
-                    self._game_state.act(action, actor="narratron")
-                    snapshot = self._game_state.story_snapshot("responder")
-                    if snapshot is None:
-                        raise ValueError("Game state did not return a committed receipt.")
-                    committed = CommittedGameReceipt(
-                        event_id=f"{event.event_id}:narratron:{action.revision}",
-                        parent_event_id=event.event_id,
-                        action_id=event.action_id,
-                        source_revision=player_revision,
-                        action=action,
-                        receipt=snapshot,
-                    )
-                    self.journal.record_narratron_receipt(committed)
-                    logger.debug(
-                        "[StoryRecorderModule] Narratron game action %s committed at revision %d for event %s",
-                        action.name,
-                        action.revision,
-                        event.event_id,
-                    )
-                    return snapshot
+                        self.journal.record_narratron_receipt(committed)
+                        logger.debug(
+                            "[StoryRecorderModule] Narratron game action %s committed at revision %d for event %s",
+                            action.name,
+                            action.revision,
+                            event.event_id,
+                        )
+                        return snapshot
 
-                raw_decision = (
-                    self._control_game(event, self.notepad.snapshot(), submit_game_action)
-                    if self._control_game is not None
-                    else None
-                )
-                decision = raw_decision if raw_decision is not None else GameControlDecision()
-                self.journal.save_game_control_decision(event.event_id, decision)
-                logger.debug(
-                    "[StoryRecorderModule] Saved game control decision for event %s (narration_request=%s, factual_updates=%s)",
-                    event.event_id,
-                    decision.narration_request is not None,
-                    list(decision.factual_updates.keys()),
-                )
+                    raw_decision = (
+                        self._control_game(event, self.notepad.snapshot(), submit_game_action)
+                        if self._control_game is not None
+                        else None
+                    )
+                    decision = raw_decision if raw_decision is not None else GameControlDecision()
+                    self.journal.save_game_control_decision(event.event_id, decision)
+                    logger.debug(
+                        "[StoryRecorderModule] Saved game control decision for event %s (narration_request=%s, factual_updates=%s)",
+                        event.event_id,
+                        decision.narration_request is not None,
+                        list(decision.factual_updates.keys()),
+                    )
 
             receipts = tuple(self.journal.narratron_receipts(event.event_id))
             final_revision = player_revision
@@ -743,6 +819,7 @@ class StoryRecorderModule:
                 narratron_receipts=receipts,
                 final_recorded_revision=final_revision,
                 narration_request=decision.narration_request,
+                narration_triggered=(decision.narration_request is not None) if self._decision_provider is not None else False,
             )
 
     def retry_pending(self) -> None:

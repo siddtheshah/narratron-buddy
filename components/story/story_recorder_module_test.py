@@ -20,6 +20,14 @@ from components.story.story_recorder_module import (
     SubmitGameAction,
 )
 from components.story.story_recording_journal import RecordingEvent, StoryRecordingJournal
+from providers.decision_provider import (
+    ChoiceAnswer,
+    DecisionProvider,
+    DecisionRequest,
+    DecisionResult,
+    PredicateAnswer,
+    ScoreAnswer,
+)
 
 
 @pytest.fixture
@@ -492,3 +500,177 @@ def test_recorder_debug_logging(pad: Notepad, tmp_path: Path, caplog: pytest.Log
     finally:
         journal.close()
 
+
+
+def test_control_game_with_decision_provider_passes_predicate(
+    pad: Notepad, tmp_path: Path
+) -> None:
+    journal = StoryRecordingJournal(tmp_path / "recording.sqlite")
+    mock_provider = Mock(spec=DecisionProvider)
+    mock_provider.decide.return_value = DecisionResult(
+        provider="mock",
+        model="fast-decide",
+        answers={
+            "should_narrate_move": PredicateAnswer(name="should_narrate_move", probability=0.85),
+            "drama_level": ScoreAnswer(name="drama_level", score=1.5),
+            "narrator_reaction_tone": ChoiceAnswer(name="narrator_reaction_tone", choice="rattled"),
+        },
+    )
+    recorder = StoryRecorderModule(
+        pad,
+        journal,
+        Mock(return_value={}),
+        decision_provider=mock_provider,
+    )
+    try:
+        assert recorder.decision_provider is mock_provider
+
+        player_event = RecordingEvent(
+            event_id="game-1",
+            action_id="player-1",
+            kind="committed_game_action",
+            source_revision=0,
+            payload={"summary": "Double jump captures two kings."},
+        )
+        outcome = recorder.control_game(player_event)
+        mock_provider.decide.assert_called_once()
+        call_req: DecisionRequest = mock_provider.decide.call_args[0][0]
+        assert call_req.input_text == "Double jump captures two kings."
+        assert len(call_req.questions) == 3
+        assert call_req.questions[0].name == "should_narrate_move"
+        assert call_req.questions[1].name == "drama_level"
+        assert call_req.questions[2].name == "narrator_reaction_tone"
+
+        assert outcome.narration_triggered is True
+        assert outcome.narration_request is not None
+        assert outcome.narration_request.user_action == "Double jump captures two kings."
+        assert outcome.narration_request.nudge == "React in character with a rattled tone."
+        assert outcome.narration_request.brief == "Dramatic game move: drama=1.50, tone=rattled."
+
+        saved_decision = journal.game_control_decision("game-1")
+        assert saved_decision is not None
+        assert "Move exceeded drama threshold" in saved_decision.reason
+        assert "should_narrate=85%" in saved_decision.reason
+
+        repeated = recorder.control_game(player_event)
+        assert repeated == outcome
+        mock_provider.decide.assert_called_once()
+    finally:
+        journal.close()
+
+
+def test_control_game_with_decision_provider_high_drama_level(
+    pad: Notepad, tmp_path: Path
+) -> None:
+    journal = StoryRecordingJournal(tmp_path / "recording.sqlite")
+    mock_provider = Mock(spec=DecisionProvider)
+    mock_provider.decide.return_value = DecisionResult(
+        provider="mock",
+        model="fast-decide",
+        answers={
+            "should_narrate_move": PredicateAnswer(name="should_narrate_move", probability=0.40),
+            "drama_level": ScoreAnswer(name="drama_level", score=2.5),
+            "narrator_reaction_tone": ChoiceAnswer(name="narrator_reaction_tone", choice="impressed"),
+        },
+    )
+    recorder = StoryRecorderModule(
+        pad,
+        journal,
+        Mock(return_value={}),
+        decision_provider=mock_provider,
+    )
+    try:
+        player_event = RecordingEvent(
+            event_id="game-2",
+            action_id="player-2",
+            kind="committed_game_action",
+            source_revision=0,
+            payload={"action": "Queen sacrifice for checkmate sequence"},
+        )
+        outcome = recorder.control_game(player_event)
+        mock_provider.decide.assert_called_once()
+        assert outcome.narration_triggered is True
+        assert outcome.narration_request is not None
+        assert outcome.narration_request.user_action == "Queen sacrifice for checkmate sequence"
+        assert outcome.narration_request.nudge == "React in character with a impressed tone."
+        assert outcome.narration_request.brief == "Dramatic game move: drama=2.50, tone=impressed."
+    finally:
+        journal.close()
+
+
+def test_control_game_with_decision_provider_below_narration_threshold(
+    pad: Notepad, tmp_path: Path
+) -> None:
+    journal = StoryRecordingJournal(tmp_path / "recording.sqlite")
+    mock_provider = Mock(spec=DecisionProvider)
+    mock_provider.decide.return_value = DecisionResult(
+        provider="mock",
+        model="fast-decide",
+        answers={
+            "should_narrate_move": PredicateAnswer(name="should_narrate_move", probability=0.20),
+            "drama_level": ScoreAnswer(name="drama_level", score=0.8),
+            "narrator_reaction_tone": ChoiceAnswer(name="narrator_reaction_tone", choice="unbothered"),
+        },
+    )
+    recorder = StoryRecorderModule(
+        pad,
+        journal,
+        Mock(return_value={}),
+        decision_provider=mock_provider,
+    )
+    try:
+        player_event = RecordingEvent(
+            event_id="game-3",
+            action_id="player-3",
+            kind="committed_game_action",
+            source_revision=0,
+            payload={"name": "Pawn moves e2 to e3"},
+        )
+        outcome = recorder.control_game(player_event)
+        mock_provider.decide.assert_called_once()
+        assert outcome.narration_triggered is False
+        assert outcome.narration_request is None
+
+        saved_decision = journal.game_control_decision("game-3")
+        assert saved_decision is not None
+        assert saved_decision.narration_request is None
+        assert saved_decision.reason == "Routine move below narration threshold."
+    finally:
+        journal.close()
+
+
+def test_control_game_without_decision_provider_preserves_existing_behavior(
+    pad: Notepad, tmp_path: Path
+) -> None:
+    journal = StoryRecordingJournal(tmp_path / "recording.sqlite")
+    custom_decision = GameControlDecision(
+        narration_request=NarrationRequest(
+            user_action="Manual action",
+            nudge="Manual nudge",
+            brief="Manual brief",
+        ),
+        reason="Manual callback reason",
+    )
+    control_mock = Mock(return_value=custom_decision)
+    recorder = StoryRecorderModule(
+        pad,
+        journal,
+        Mock(return_value={}),
+        control_game=control_mock,
+        decision_provider=None,
+    )
+    try:
+        assert recorder.decision_provider is None
+        player_event = RecordingEvent(
+            event_id="game-4",
+            action_id="player-4",
+            kind="committed_game_action",
+            source_revision=0,
+            payload={"action": "step"},
+        )
+        outcome = recorder.control_game(player_event)
+        control_mock.assert_called_once()
+        assert outcome.narration_triggered is False
+        assert outcome.narration_request == custom_decision.narration_request
+    finally:
+        journal.close()
