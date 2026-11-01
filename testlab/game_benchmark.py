@@ -10,8 +10,8 @@ from unittest.mock import patch
 
 from pydantic import JsonValue
 
-from game.game_runtime import GameAction, GameStep
-from game.game_state import GameState
+from game_engine.game_runtime import GameAction, GameStep
+from game_engine.game_state import GameState
 
 GameFactory = Callable[[Path, Callable[[], None], Callable[..., None]], GameState]
 
@@ -73,7 +73,7 @@ def sample(directory: Path, game_factory: GameFactory = GameState) -> tuple[dict
         def invalid() -> None:
             before = game.serialize()
             try:
-                with patch("game.game_state.logger.exception"):
+                with patch("game_engine.game_state.logger.exception"):
                     game.act(GameAction(name="move", arguments={"source": 0, "target": 0}, revision=game.revision))
             except ValueError:
                 assert game.serialize() == before

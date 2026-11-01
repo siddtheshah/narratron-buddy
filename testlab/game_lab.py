@@ -12,9 +12,9 @@ from fastapi.responses import FileResponse
 from pydantic import Field, JsonValue
 
 from providers import get_text_response_provider, list_text_response_provider_specs
-from game.game_runtime import GameAction, MAX_GAME_BYTES, validate_game_package
-from game.game_state import GameState
-from game.game_source import GAME_FILENAMES
+from game_engine.game_runtime import GameAction, MAX_GAME_BYTES, validate_game_package
+from game_engine.game_state import GameState
+from game_engine.game_source import GAME_FILENAMES
 from providers.text_response_provider import TextResponseProvider
 from testlab.game_harness import (
     DEFAULT_GAME_MODEL, GameModel, GameReport, GameScenario, Move, PlayerStep, TurnTrace,

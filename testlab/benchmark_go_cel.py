@@ -16,9 +16,9 @@ from typing import Literal
 
 from pydantic import JsonValue
 
-from game.game_state import GameState
+from game_engine.game_state import GameState
 from testlab.game_benchmark import sample
-from game.go_cel import GoGameState, GoWorker
+from game_engine.go_cel import GoGameState, GoWorker
 
 
 def main() -> None:
@@ -31,7 +31,7 @@ def main() -> None:
     if args.rounds < 1:
         parser.error("--rounds must be positive")
     if not args.worker.is_file():
-        parser.error("Build game/cel_go_worker first and provide --worker")
+        parser.error("Build game_engine/cel_go_worker first and provide --worker")
     backends: list[Literal["python", "go"]] = ["python", "go"]
     timings: dict[str, list[dict[str, float]]] = {backend: [] for backend in backends}
     profiles: list[list[dict[str, float]]] = []

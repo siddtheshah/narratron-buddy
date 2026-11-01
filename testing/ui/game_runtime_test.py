@@ -5,8 +5,8 @@ from unittest.mock import Mock
 from playwright.sync_api import Route, expect, sync_playwright
 import pytest
 
-from game.game_runtime import GameStep
-from game.game_state import GameAction, GameState
+from game_engine.game_runtime import GameStep
+from game_engine.game_state import GameAction, GameState
 from testing.game_fixtures import counter_definition, make_game
 
 

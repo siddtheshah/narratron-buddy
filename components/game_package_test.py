@@ -11,8 +11,8 @@ from components.canvas.canvas_state_manager import CanvasStateManager
 from components.theater_manager import TheaterManager, extract_asset_package
 from services.adventure_service import AdventureService
 from services.theater_builder import safe_asset_path, upload_path, validate_text
-from game.game_state import GameAction, GameState
-from game.game_source import GAME_FILENAMES
+from game_engine.game_state import GameAction, GameState
+from game_engine.game_source import GAME_FILENAMES
 from testing.game_fixtures import counter_definition, exchange_definition, make_game
 
 

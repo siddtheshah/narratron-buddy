@@ -3,7 +3,7 @@
 from pathlib import Path, PurePosixPath
 import re
 
-from game.game_source import GAME_FILES
+from game_engine.game_source import GAME_FILES
 
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif"}

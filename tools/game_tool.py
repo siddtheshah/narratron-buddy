@@ -4,8 +4,8 @@ import json
 
 from pydantic import JsonValue, TypeAdapter
 
-from game.game_runtime import GameAction
-from game.game_state import GameState
+from game_engine.game_runtime import GameAction
+from game_engine.game_state import GameState
 
 
 class GameTool:

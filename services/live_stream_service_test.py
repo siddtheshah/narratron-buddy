@@ -20,7 +20,7 @@ from components.notepad import Notepad
 from components.reference_manager import Character, ReferenceManager, PlayerCharacter
 from components.theater_manager import TheaterManager
 from components.canvas.story_state import CharacterState, PlayerCharacterState, StoryState
-from game.game_state import GameState
+from game_engine.game_state import GameState
 from tools.notepad_tool import NotepadTool
 from tools.reference_tool import ReferenceTool
 

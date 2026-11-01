@@ -1,6 +1,6 @@
 # Persistent CEL-Go worker benchmark
 
-The offline prototype in `game/cel_go_worker/` evaluates complete game
+The offline prototype in `game_engine/cel_go_worker/` evaluates complete game
 operations in Go. It is a promising performance candidate, with matching
 checkers outputs, but is not a production runtime selection. No production
 imports, dependency groups, Docker images or runtime flags were changed for it.
@@ -12,12 +12,12 @@ the canonical `cel.dev/cel-go` module. Build from the worker directory:
 
 ```powershell
 New-Item -ItemType Directory -Force scratch | Out-Null
-Push-Location game/cel_go_worker
+Push-Location game_engine/cel_go_worker
 go build -o ../../scratch/cel-go-worker.exe .
 go vet ./...
 Pop-Location
 
-uv run pytest game/go_cel_test.py -n 0
+uv run pytest game_engine/go_cel_test.py -n 0
 uv run python -m testlab.benchmark_go_cel --rounds 7 --output testlab/benchmark_output/cel-go-python-windows.json
 ```
 
@@ -207,8 +207,8 @@ Ruff passes, and the Python/Go benchmark preserves output parity.
 The retained Go and game suites can be run with:
 
 ```powershell
-uv run pytest game/go_cel_test.py game/game_runtime_test.py game/game_state_test.py game/game_values_test.py game/game_client_test.py -n 0
-uv run ruff check testlab/game_benchmark.py testlab/benchmark_go_cel.py game/go_cel.py game/go_cel_test.py
+uv run pytest game_engine/go_cel_test.py game_engine/game_runtime_test.py game_engine/game_state_test.py game_engine/game_values_test.py game_engine/game_client_test.py -n 0
+uv run ruff check testlab/game_benchmark.py testlab/benchmark_go_cel.py game_engine/go_cel.py game_engine/go_cel_test.py
 ```
 
 API references: [CEL-Go repository](https://github.com/cel-expr/cel-go),

@@ -17,7 +17,7 @@ from google.adk.sessions import InMemorySessionService
 from google.genai import types
 from pydantic import JsonValue, TypeAdapter, ValidationError
 
-from game.game_runtime import GameAction
+from game_engine.game_runtime import GameAction
 
 from providers import LiveAgentProvider, LiveAgentRunRequest, get_live_agent_provider, get_speech_provider
 

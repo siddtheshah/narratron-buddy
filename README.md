@@ -69,7 +69,7 @@ To get started with GCloud, complete the following steps:
 Games use the CEL-Go worker by default. Build the local binary before starting:
 
 ```powershell
-go -C game/cel_go_worker build -trimpath -o ../../scratch/cel-go-worker.exe .
+go -C game_engine/cel_go_worker build -trimpath -o ../../scratch/cel-go-worker.exe .
 ```
 
 On Linux/macOS, omit `.exe`. Go 1.23 or newer is required to build the worker.

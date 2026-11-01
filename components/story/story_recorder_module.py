@@ -12,8 +12,8 @@ from google.genai import types
 from jinja2 import Template
 from pydantic import JsonValue, TypeAdapter
 
-from game.game_runtime import GameAction
-from game.game_state import GameState
+from game_engine.game_runtime import GameAction
+from game_engine.game_state import GameState
 from components.lore_library import LoreLibrary
 from components.notepad import Notepad, NoteSnapshot
 from components.reference_manager import ReferenceManager

@@ -11,8 +11,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 from pydantic import JsonValue
 
-from game.game_runtime import GameAction
-from game.game_state import GameState
+from game_engine.game_runtime import GameAction
+from game_engine.game_state import GameState
 from components.canvas.story_state import StoryState
 from components.canvas_state import CanvasStateManager
 from components.notepad import NoteSnapshot

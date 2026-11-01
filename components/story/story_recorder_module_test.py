@@ -6,8 +6,8 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from game.game_runtime import GameAction
-from game.game_state import GameState
+from game_engine.game_runtime import GameAction
+from game_engine.game_state import GameState
 from components.canvas_state import CanvasStateManager
 from components.lore_library import LoreLibrary
 from components.notepad import Notepad, NoteSnapshot

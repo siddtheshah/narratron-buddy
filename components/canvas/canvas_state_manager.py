@@ -14,7 +14,7 @@ from typing import Optional, cast
 from components.canvas import AudioState, ChatManager, ConnectionState, DoodleState, StoryState, ToolResponseState, UIState, VisualState
 from components.theater_manager import Theater
 from components.canvas.doodle_state import DoodlePage
-from game.game_state import GameState
+from game_engine.game_state import GameState
 from components.notepad import Notepad
 from components.story.input_gathering_cycle import story_input_cycle_duration
 from components.story.output_display_cycle import story_output_cycle_duration

@@ -1,4 +1,4 @@
-module narratron/game/cel-go-worker
+module narratron/game_engine/cel-go-worker
 
 go 1.23.0
 

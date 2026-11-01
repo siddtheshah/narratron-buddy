@@ -6,7 +6,7 @@ import pytest
 from fastapi import HTTPException, Request
 
 from api_server import canvas
-from game.game_state import GameAction, GameState
+from game_engine.game_state import GameAction, GameState
 
 
 @pytest.fixture

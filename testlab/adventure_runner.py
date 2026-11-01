@@ -61,8 +61,8 @@ from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
 from google.genai import types
 from pydantic import BaseModel, Field, JsonValue
-from game.game_source import GAME_FILENAMES, find_game_file
-from game.game_runtime import GameAction, RenderedNode
+from game_engine.game_source import GAME_FILENAMES, find_game_file
+from game_engine.game_runtime import GameAction, RenderedNode
 
 from components.canvas.canvas_state_service import CanvasStateService
 from components.reference_manager import ReferenceManager

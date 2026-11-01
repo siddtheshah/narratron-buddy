@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field, JsonValue, TypeAdapter
 from PIL import Image, UnidentifiedImageError
 import yaml
 
-from game.game_source import GAME_FILES, GAME_FILENAMES
+from game_engine.game_source import GAME_FILES, GAME_FILENAMES
 from components.theater_manager import MAX_LORE_DOCUMENT_BYTES
 from components.theater_package import (
     AUDIO_EXTENSIONS, IMAGE_EXTENSIONS, ROOT_FILES, TEXT_EXTENSIONS,
@@ -81,14 +81,14 @@ class ChatMessage(BaseModel):
 def validate_text(path: str, content: str) -> None:
     """Reject malformed configuration before it can replace a working draft."""
     if path in GAME_FILES:
-        from game.game_runtime import validate_game_package, MAX_GAME_BYTES
+        from game_engine.game_runtime import validate_game_package, MAX_GAME_BYTES
 
         if len(content.encode("utf-8")) > MAX_GAME_BYTES:
             raise ValueError("Game definition exceeds size limit.")
         validate_game_package(content.encode("utf-8"), filename=PurePosixPath(path).name)
         return
     elif path.startswith("game/") and path.lower().endswith(".svg"):
-        from game.game_runtime import validate_game_svg
+        from game_engine.game_runtime import validate_game_svg
 
         validate_game_svg(content.encode("utf-8"))
     if path.endswith((".yaml", ".yml")):

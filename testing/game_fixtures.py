@@ -3,8 +3,8 @@ from pathlib import Path
 from typing import Literal
 from unittest.mock import Mock
 
-from game.game_runtime import GameDefinition
-from game.game_state import GameState
+from game_engine.game_runtime import GameDefinition
+from game_engine.game_state import GameState
 
 
 def counter_definition() -> GameDefinition:

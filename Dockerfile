@@ -1,9 +1,9 @@
 # syntax=docker/dockerfile:1
 FROM golang:1.25-bookworm AS cel-worker
 WORKDIR /src
-COPY game/cel_go_worker/go.mod game/cel_go_worker/go.sum ./
+COPY game_engine/cel_go_worker/go.mod game_engine/cel_go_worker/go.sum ./
 RUN go mod download
-COPY game/cel_go_worker/ ./
+COPY game_engine/cel_go_worker/ ./
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /cel-go-worker .
 
 FROM python:3.13-slim
@@ -44,7 +44,7 @@ COPY theater_default.yaml .
 COPY adventures/ adventures/
 COPY api_server/ api_server/
 COPY components/ components/
-COPY game/ game/
+COPY game_engine/ game_engine/
 COPY services/ services/
 COPY storage/ storage/
 COPY testlab/ testlab/

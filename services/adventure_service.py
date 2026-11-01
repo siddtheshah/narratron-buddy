@@ -21,7 +21,7 @@ from google.cloud.storage import transfer_manager
 from pydantic import JsonValue, TypeAdapter
 
 from absl import flags
-from game.game_source import GAME_FILES
+from game_engine.game_source import GAME_FILES
 from components.theater_manager import asset_destination
 
 if "testing_use_local" not in flags.FLAGS:

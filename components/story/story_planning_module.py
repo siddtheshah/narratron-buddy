@@ -39,7 +39,7 @@ from components.story.story_snapshot import (
     diff,
 )
 from components.canvas_state import CanvasStateManager
-from game.game_state import GameState
+from game_engine.game_state import GameState
 from components.theater_manager import Theater
 from components.reference_manager import CharacterLookupResult, ReferenceManager, PlayerCharacter
 from components.lore_library import LoreLibrary

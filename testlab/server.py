@@ -10,8 +10,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from io import BytesIO
 from typing import Any
 from pydantic import JsonValue
-from game.game_runtime import GameAction
-from game.game_state import StaleGameAction
+from game_engine.game_runtime import GameAction
+from game_engine.game_state import StaleGameAction
 
 from PIL import Image
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect

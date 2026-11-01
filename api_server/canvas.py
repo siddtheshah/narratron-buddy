@@ -29,7 +29,7 @@ from api_server.shared import (
 from api_server.dependencies import live_agent_manager
 from components.canvas.canvas_state_manager import CanvasStateManager
 from components.canvas.doodle_state import DoodleSnapshot
-from game.game_state import GameAction, StaleGameAction, UnauthorizedGameAction
+from game_engine.game_state import GameAction, StaleGameAction, UnauthorizedGameAction
 from pydantic import JsonValue
 
 logger = logging.getLogger(__name__)
