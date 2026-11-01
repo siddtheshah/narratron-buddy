@@ -172,3 +172,33 @@ def test_obs_restores_doodles_from_selected_history_page(obs_page: Page) -> None
     selected[0] = 0
     sockets[0].send('{"type":"state_changed","domains":["latest"]}')
     obs_page.wait_for_function("expected => document.getElementById('doodle-canvas').toDataURL() === expected", arg=first_drawing)
+
+
+def test_canvas_scene_speech_silenced_when_muted(obs_page: Page) -> None:
+    obs_page.goto("http://narratron.test/obs/test")
+    result = obs_page.evaluate("""async () => {
+        const { createCanvasScene } = await import('/static/js/canvas-scene.js');
+        const element = document.createElement('div');
+        let muted = true;
+        const scene = createCanvasScene({
+            narrationPane: { element, prepare: () => {} },
+            resolveUrl: url => url,
+            audioEnabled: () => !muted,
+        });
+        scene.updateSceneDialogue([], 'Scene 1', null, 1);
+        scene.enqueueSceneSpeech('/speech1.mp3', 1);
+        const playedWhileMuted = window.playedAudio.length;
+
+        muted = false;
+        scene.updateSceneDialogue([], 'Scene 2', null, 2);
+        scene.enqueueSceneSpeech('/speech2.mp3', 2);
+        const playedAfterUnmute = window.playedAudio.length;
+
+        muted = true;
+        scene.stopSceneSpeech();
+        scene.enqueueSceneSpeech('/speech3.mp3', 2);
+        const playedAfterMuteAgain = window.playedAudio.length;
+
+        return { playedWhileMuted, playedAfterUnmute, playedAfterMuteAgain };
+    }""")
+    assert result == {"playedWhileMuted": 0, "playedAfterUnmute": 1, "playedAfterMuteAgain": 1}

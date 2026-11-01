@@ -66,3 +66,11 @@ class TestOBSCanvas(UITestCase):
         self.assertIn('createCanvasScene({', html)
         self.assertIn('/static/js/canvas-scene.js', html)
         self.assertIn('.scene-description', html)
+
+    def test_canvas_wires_mute_to_scene_speech(self) -> None:
+        response = self.client.get("/canvas?theater_id=test_theater")
+        self.assertEqual(response.status_code, 200)
+        html = response.text
+        self.assertIn("audioEnabled: () => !isMuted", html)
+        self.assertIn("stopSceneSpeech();", html)
+

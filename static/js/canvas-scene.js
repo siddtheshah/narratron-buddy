@@ -26,8 +26,13 @@ export function createCanvasScene({ narrationPane, resolveUrl = url => url, audi
     }
 
     function playQueuedSceneSpeech() {
-        if (sceneSpeechPlaying) return;
+        if (!audioEnabled() || sceneSpeechPlaying) return;
         const playNext = () => {
+            if (!audioEnabled()) {
+                sceneSpeechPlaying = false;
+                currentSceneAudio = null;
+                return;
+            }
             // Keep audio from a future generation queued: synthesis can
             // finish before its scene state is committed and rendered.
             while (
@@ -207,5 +212,5 @@ export function createCanvasScene({ narrationPane, resolveUrl = url => url, audi
         })();
     }
 
-    return { updateSceneDialogue, enqueueSceneSpeech };
+    return { updateSceneDialogue, enqueueSceneSpeech, stopSceneSpeech };
 }

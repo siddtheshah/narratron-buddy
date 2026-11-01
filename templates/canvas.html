@@ -4354,6 +4354,8 @@
         let lastImageEffect = null;
         const MINIMAL_MODE_STORAGE_KEY = 'narratron.canvas.performance.minimalMode';
         const LEGACY_IMAGE_EFFECTS_STORAGE_KEY = 'narratron.canvas.performance.disableImageEffects';
+        const MUSIC_MUTED_STORAGE_KEY = 'narratron_music_muted';
+        let isMuted = localStorage.getItem(MUSIC_MUTED_STORAGE_KEY) === 'true';
         let minimalMode = (() => {
             try {
                 // Preserve the old performance preference when upgrading to
@@ -4402,7 +4404,10 @@
             surfaceUrl: surfaceId => `/api/a2ui/surfaces/${encodeURIComponent(surfaceId)}?theater_id=${encodeURIComponent(currenttheaterId || '')}`,
             canEdit: () => isCurrentOrator(),
         });
-        const { updateSceneDialogue, enqueueSceneSpeech } = createCanvasScene({ narrationPane });
+        const { updateSceneDialogue, enqueueSceneSpeech, stopSceneSpeech } = createCanvasScene({
+            narrationPane,
+            audioEnabled: () => !isMuted,
+        });
 
         // Generate anonymous user ID and read theater context
         const myUserId = "Viewer_" + Math.floor(Math.random() * 10000);
@@ -4646,8 +4651,6 @@
         const playlistPlaybackState = new Map();
         let bgMusic = new Audio();
         let outgoingMusic = null;
-        const MUSIC_MUTED_STORAGE_KEY = 'narratron_music_muted';
-        let isMuted = localStorage.getItem(MUSIC_MUTED_STORAGE_KEY) === 'true';
         let isMusicPausedState = false;
         let lastPlaylistTime = 0;
         let activePlaylistName = null;
@@ -4703,6 +4706,9 @@
             localStorage.setItem(MUSIC_MUTED_STORAGE_KEY, String(muted));
             if (bgMusic) bgMusic.muted = muted;
             if (outgoingMusic) outgoingMusic.muted = muted;
+            if (muted && typeof stopSceneSpeech === 'function') {
+                stopSceneSpeech();
+            }
             musicMuteBtn.textContent = muted ? '🔇 Unmute' : '🔊 Mute';
             musicMuteBtn.style.background = muted ? 'rgba(239, 68, 68, 0.2)' : 'rgba(255,255,255,0.08)';
             musicMuteBtn.style.borderColor = muted ? 'rgba(239, 68, 68, 0.4)' : 'var(--glass-border)';
