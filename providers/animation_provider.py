@@ -31,6 +31,12 @@ from providers.fal_qwen_layered_provider import (
     FalQwenLayeredProvider,
     LayeredImageRequest,
 )
+from providers.decision_provider import (
+    ChoiceQuestion,
+    DecisionProvider,
+    DecisionRequest,
+    PredicateQuestion,
+)
 from utils.image_utils import embed_image_metadata
 
 logger = logging.getLogger(__name__)
@@ -93,6 +99,7 @@ class AnimationProvider:
         text_response_provider: TextResponseProvider | None = None,
         layered_provider: FalQwenLayeredProvider | None = None,
         video_provider: VideoProvider | None = None,
+        decision_provider: DecisionProvider | None = None,
     ) -> None:
         self.animation_config = TypeAdapter(dict[str, JsonValue]).validate_python(
             config.get("animation") or {}
@@ -105,6 +112,11 @@ class AnimationProvider:
         self._text_response_provider = text_response_provider
         self._layered_provider = layered_provider
         self._video_provider = video_provider
+        self._decision_provider = decision_provider
+
+    @property
+    def decision_provider(self) -> DecisionProvider | None:
+        return self._decision_provider
 
     @property
     def image_provider(self) -> ImageProvider:
@@ -172,9 +184,14 @@ class AnimationProvider:
         if selected not in ("triframe", "layered", "video"):
             if technique is not None:
                 raise ValueError("Unknown animation technique.")
-            selected, _ = self.plan_animation_technique_with_provider(
-                self.text_response_provider, scene_prompt.strip()
-            )
+            if self._decision_provider is not None:
+                selected, _ = self.plan_technique_with_decision_provider(
+                    self._decision_provider, scene_prompt.strip()
+                )
+            else:
+                selected, _ = self.plan_animation_technique_with_provider(
+                    self.text_response_provider, scene_prompt.strip()
+                )
         selected = TypeAdapter(AnimationTechnique).validate_python(selected)
         if selected == "triframe":
             self._run_triframe_animation(
@@ -471,6 +488,65 @@ class AnimationProvider:
             animation_id,
             video_path,
         )
+
+    @staticmethod
+    def plan_technique_with_decision_provider(
+        decision_provider: DecisionProvider,
+        scene_prompt: str,
+    ) -> tuple[AnimationTechnique, dict[str, JsonValue]]:
+        """Use the decision provider to choose technique and shader effects."""
+        request = DecisionRequest(
+            input_text=scene_prompt,
+            questions=(
+                ChoiceQuestion(
+                    name="technique",
+                    instructions=(
+                        "Choose 'layered' for ambient depth-separated motion, 'triframe' for 3-step cyclic "
+                        "pose loops, or 'video' for full camera/character motion."
+                    ),
+                    choices=("triframe", "layered", "video"),
+                ),
+                ChoiceQuestion(
+                    name="subject_effect",
+                    instructions="Select the shader animation effect for the primary subject.",
+                    choices=(
+                        "none",
+                        "sway",
+                        "vibrate",
+                        "pulse",
+                        "gentle_rocking",
+                        "light_halo",
+                        "ghostly",
+                        "energy_blast",
+                    ),
+                ),
+                PredicateQuestion(
+                    name="needs_foreground_layer",
+                    instructions="Does the scene describe distinct foreground atmosphere (fog, wisps, rain, embers) that benefits from a separate foreground layer?",
+                ),
+                ChoiceQuestion(
+                    name="foreground_effect",
+                    instructions="Select the shader animation effect for the foreground atmosphere layer.",
+                    choices=("none", "sway", "pulse", "ghostly", "light_halo", "mirage"),
+                ),
+            ),
+        )
+        result = decision_provider.decide(request)
+        technique_choice = result.get_choice("technique").choice
+        technique = TypeAdapter(AnimationTechnique).validate_python(technique_choice)
+        subject_effect = result.get_choice("subject_effect").choice
+        needs_fg = result.get_predicate("needs_foreground_layer")
+        foreground_effect = result.get_choice("foreground_effect").choice
+        metadata: dict[str, JsonValue] = {
+            "provider": result.provider,
+            "model": result.model,
+            "request_id": result.request_id,
+            "usage": dict(result.usage),
+            "subject_effect": subject_effect,
+            "needs_foreground_layer": needs_fg.passed(0.5),
+            "foreground_effect": foreground_effect,
+        }
+        return technique, metadata
 
     @staticmethod
     def plan_animation_technique_with_provider(

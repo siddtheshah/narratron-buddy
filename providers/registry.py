@@ -50,6 +50,7 @@ def get_animation_provider(
     text_response_provider: TextResponseProvider | None = None,
     layered_provider: FalQwenLayeredProvider | None = None,
     video_provider: VideoProvider | None = None,
+    decision_provider: DecisionProvider | None = None,
 ) -> AnimationProvider:
     """Resolve animation generation with no server state or output location."""
     if provider_id != AnimationProvider.id:
@@ -60,6 +61,7 @@ def get_animation_provider(
         text_response_provider=text_response_provider,
         layered_provider=layered_provider,
         video_provider=video_provider,
+        decision_provider=decision_provider,
     )
 
 

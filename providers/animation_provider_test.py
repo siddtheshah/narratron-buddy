@@ -16,6 +16,15 @@ from providers.image_provider import ImageGenerationResult
 from providers.fal_qwen_layered_provider import LayeredImageResult
 from providers.video_provider import VideoGenerationResult
 from providers.animation_provider import AnimationProvider, AnimationTechnique
+from providers.decision_provider import (
+    ChoiceAnswer,
+    ChoiceQuestion,
+    DecisionProvider,
+    DecisionResult,
+    PredicateAnswer,
+    PredicateQuestion,
+)
+from providers.text_response_provider import TextResponseResult
 from testing.reference_images import png_bytes
 
 
@@ -290,4 +299,156 @@ def test_registry_resolves_image_to_video_provider() -> None:
     spec_ids = [s["id"] for s in specs]
     assert "fal-minimax-h3-turbo" in spec_ids
     assert "fal-minimax-h3-image-to-video" in spec_ids
+
+
+def test_plan_technique_with_decision_provider() -> None:
+    decision_provider = MagicMock(spec=DecisionProvider)
+    decision_provider.decide.return_value = DecisionResult(
+        provider="fake-decisions",
+        model="fake-decision-model",
+        answers={
+            "technique": ChoiceAnswer(name="technique", choice="layered"),
+            "subject_effect": ChoiceAnswer(name="subject_effect", choice="sway"),
+            "needs_foreground_layer": PredicateAnswer(
+                name="needs_foreground_layer", probability=0.85
+            ),
+            "foreground_effect": ChoiceAnswer(
+                name="foreground_effect", choice="ghostly"
+            ),
+        },
+        request_id="req-dec-123",
+        usage={"input_tokens": 50},
+    )
+
+    technique, metadata = AnimationProvider.plan_technique_with_decision_provider(
+        decision_provider, "An ancient lantern hanging from a branch"
+    )
+
+    assert technique == "layered"
+    assert metadata["provider"] == "fake-decisions"
+    assert metadata["model"] == "fake-decision-model"
+    assert metadata["subject_effect"] == "sway"
+    assert metadata["needs_foreground_layer"] is True
+    assert metadata["foreground_effect"] == "ghostly"
+
+    decision_provider.decide.assert_called_once()
+    req = decision_provider.decide.call_args[0][0]
+    assert req.input_text == "An ancient lantern hanging from a branch"
+    assert len(req.questions) == 4
+    names = [q.name for q in req.questions]
+    assert names == [
+        "technique",
+        "subject_effect",
+        "needs_foreground_layer",
+        "foreground_effect",
+    ]
+
+    # Verify questions match animation-technique-planner scenario specs
+    tech_q: ChoiceQuestion = req.questions[0]
+    assert tech_q.choices == ("triframe", "layered", "video")
+
+    subj_q: ChoiceQuestion = req.questions[1]
+    assert subj_q.choices == (
+        "none",
+        "sway",
+        "vibrate",
+        "pulse",
+        "gentle_rocking",
+        "light_halo",
+        "ghostly",
+        "energy_blast",
+    )
+
+    fg_pred_q: PredicateQuestion = req.questions[2]
+    assert fg_pred_q.name == "needs_foreground_layer"
+
+    fg_q: ChoiceQuestion = req.questions[3]
+    assert fg_q.choices == ("none", "sway", "pulse", "ghostly", "light_halo", "mirage")
+
+
+def test_create_animation_with_decision_provider(tmp_path: Path) -> None:
+    decision_provider = MagicMock(spec=DecisionProvider)
+    decision_provider.decide.return_value = DecisionResult(
+        provider="fake-decisions",
+        model="fake-decision-model",
+        answers={
+            "technique": ChoiceAnswer(name="technique", choice="video"),
+            "subject_effect": ChoiceAnswer(name="subject_effect", choice="none"),
+            "needs_foreground_layer": PredicateAnswer(
+                name="needs_foreground_layer", probability=0.1
+            ),
+            "foreground_effect": ChoiceAnswer(
+                name="foreground_effect", choice="none"
+            ),
+        },
+    )
+    video = MagicMock()
+    video.generate.return_value = VideoGenerationResult(
+        video_bytes=b"video",
+        mime_type="video/mp4",
+        provider="fake",
+        model="fake",
+    )
+    planner = MagicMock()
+
+    provider = AnimationProvider(
+        {},
+        decision_provider=decision_provider,
+        video_provider=video,
+        text_response_provider=planner,
+    )
+
+    selected = provider.create_animation(
+        "A soaring falcon over canyon walls", "falcon_anim", output_dir=tmp_path
+    )
+
+    assert selected == "video"
+    decision_provider.decide.assert_called_once()
+    planner.generate.assert_not_called()
+    video.generate.assert_called_once()
+    assert (tmp_path / "animations/falcon_anim/video.json").is_file()
+
+
+def test_create_animation_without_decision_provider_fallback(tmp_path: Path) -> None:
+    video = MagicMock()
+    video.generate.return_value = VideoGenerationResult(
+        video_bytes=b"video",
+        mime_type="video/mp4",
+        provider="fake",
+        model="fake",
+    )
+    planner = MagicMock()
+    planner.generate.return_value = TextResponseResult(
+        text='{"technique": "video", "reasoning": "High speed motion"}',
+        parsed={"technique": "video", "reasoning": "High speed motion"},
+        provider="fake-llm",
+        model="fake-model",
+    )
+
+    provider = AnimationProvider(
+        {},
+        decision_provider=None,
+        video_provider=video,
+        text_response_provider=planner,
+    )
+
+    selected = provider.create_animation(
+        "A galloping horse", "horse_anim", output_dir=tmp_path
+    )
+
+    assert selected == "video"
+    planner.generate.assert_called_once()
+    video.generate.assert_called_once()
+    assert (tmp_path / "animations/horse_anim/video.json").is_file()
+
+
+def test_registry_animation_provider_wires_decision_provider() -> None:
+    mock_decision = MagicMock(spec=DecisionProvider)
+    provider_with_decision = get_animation_provider(
+        "default", decision_provider=mock_decision
+    )
+    assert provider_with_decision.decision_provider is mock_decision
+
+    provider_without_decision = get_animation_provider("default")
+    assert provider_without_decision.decision_provider is None
 
