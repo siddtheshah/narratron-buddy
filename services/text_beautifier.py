@@ -21,6 +21,7 @@ from providers.decision_provider import (
     ChoiceQuestion,
     DecisionProvider,
     DecisionRequest,
+    MAX_CHOICE_OPTIONS,
 )
 from providers.text_response_provider import (
     TextResponseRequest,
@@ -141,6 +142,13 @@ def _generate_candidate_spans(text: str) -> list[_CandidateSpan]:
                 start=0,
                 end=len(text),
             )
+        )
+
+    if len(candidates) + 1 > MAX_CHOICE_OPTIONS:
+        raise ValueError(
+            f"Text generates {len(candidates)} candidate spans ({len(candidates) + 1} options including 'none'), "
+            f"exceeding the maximum of {MAX_CHOICE_OPTIONS} options supported by DecisionProvider. "
+            "Shorten the input text."
         )
 
     return candidates

@@ -487,6 +487,19 @@ class TestTextBeautifier(unittest.TestCase):
         self.assertEqual(res["dialogue"][0]["spans"][0]["effect"], "none")
         self.assertEqual(res["dialogue"][0]["spans"][0]["text"], "Stay back.")
 
+    def test_decision_provider_rejects_spans_exceeding_decision_provider_limit(self) -> None:
+        mock_decision_provider = MagicMock(spec=DecisionProvider)
+        beautifier = TextBeautifier(decision_provider=mock_decision_provider)
+
+        # Generate text with 300 distinct clause/punctuation segments so candidates exceed MAX_CHOICE_OPTIONS (255)
+        excessive_text = ", ".join(f"clause {i}" for i in range(300))
+
+        with self.assertRaises(ValueError) as ctx:
+            beautifier.beautify_text(excessive_text)
+
+        self.assertIn("exceeding the maximum", str(ctx.exception))
+        mock_decision_provider.decide.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()
