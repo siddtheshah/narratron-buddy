@@ -1436,9 +1436,8 @@
                             <div style="font-size: 0.85rem; font-weight: 700; color: #34d399;">💾 Persistent storage
                             </div>
                             <div style="font-size: 1rem; font-weight: 700; color: #f8fafc;"><span
-                                    id="rateStorageMonthly">1.0</span> Cr / GB / mo</div>
-                            <div style="font-size: 0.8rem; color: var(--text-secondary);">Daily rate: ~<span
                                     id="rateStorageDaily">0.033</span> Cr / GB / day</div>
+                            <div style="font-size: 0.8rem; color: var(--text-secondary);">Daily storage rate for persistent theaters past 50 MB</div>
                         </div>
                         <div
                             style="padding: 0.5rem 1rem; background: rgba(124, 58, 237, 0.12); border-bottom: 1px solid rgba(168, 85, 247, 0.25); color: #d8b4fe; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;">
@@ -2192,9 +2191,6 @@
                 }
                 if (document.getElementById('rateLayeredAnimationUsd')) {
                     document.getElementById('rateLayeredAnimationUsd').innerText = `$${(layeredAnimationRate * data.usd_per_credit).toFixed(2)}`;
-                }
-                if (document.getElementById('rateStorageMonthly')) {
-                    document.getElementById('rateStorageMonthly').innerText = data.storage_gb_monthly_rate.toFixed(1);
                 }
                 if (document.getElementById('rateStorageDaily')) {
                     document.getElementById('rateStorageDaily').innerText = data.storage_gb_daily_rate.toFixed(3);

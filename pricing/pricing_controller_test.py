@@ -37,7 +37,6 @@ class TestPricingController(BaseTestCase):
         self.assertEqual(rates["image_credit_rate"], 1.0)
         self.assertEqual(rates["music_credit_rate"], 2.0)
         self.assertEqual(rates["story_planning_credit_rate"], 0.5)
-        self.assertEqual(rates["storage_gb_monthly_rate"], 1.0)
         self.assertEqual(rates["storage_gb_daily_rate"], 0.033)
         self.assertEqual(rates["credits_per_usd"], 20.0)
         self.assertEqual(rates["usd_per_credit"], 0.05)
@@ -56,7 +55,6 @@ class TestPricingController(BaseTestCase):
             "IMAGE_CREDIT_RATE": "0.5",
             "MUSIC_CREDIT_RATE": "1.5",
             "STORY_PLANNING_CREDIT_RATE": "0.75",
-            "STORAGE_GB_MONTHLY_CREDIT_RATE": "1.5",
             "STORAGE_GB_DAILY_CREDIT_RATE": "0.05",
             "CREDITS_PER_USD": "10.0",
             "ADVENTURE_MODE_TOKENS_PER_CALL": "5000",
@@ -71,7 +69,6 @@ class TestPricingController(BaseTestCase):
             self.assertEqual(rates["image_credit_rate"], 0.5)
             self.assertEqual(rates["music_credit_rate"], 1.5)
             self.assertEqual(rates["story_planning_credit_rate"], 0.75)
-            self.assertEqual(rates["storage_gb_monthly_rate"], 1.5)
             self.assertEqual(rates["storage_gb_daily_rate"], 0.05)
             self.assertEqual(rates["credits_per_usd"], 10.0)
             self.assertEqual(rates["usd_per_credit"], 0.10)

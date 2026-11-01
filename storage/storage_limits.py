@@ -10,6 +10,7 @@ if TYPE_CHECKING:
 
 MAX_FILE_UPLOAD_BYTES: int = 10 * 1024 * 1024  # 10 MB
 MAX_USER_THEATER_STORAGE_BYTES: int = 500 * 1024 * 1024  # 500 MB
+FREE_USER_THEATER_STORAGE_BYTES: int = 50 * 1024 * 1024  # 50 MB
 
 
 def get_directory_size_bytes(directory: Path) -> int:

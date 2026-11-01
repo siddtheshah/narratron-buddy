@@ -24,7 +24,6 @@ class PricingController:
         image_credit_rate: Optional[float] = None,
         music_credit_rate: Optional[float] = None,
         story_planning_credit_rate: Optional[float] = None,
-        storage_gb_monthly_rate: Optional[float] = None,
         storage_gb_daily_rate: Optional[float] = None,
         credits_per_usd: Optional[float] = None,
         adventure_mode_tokens_per_call: Optional[int] = None,
@@ -46,7 +45,6 @@ class PricingController:
         self.image_credit_rate = image_credit_rate if image_credit_rate is not None else 1.0
         self.music_credit_rate = music_credit_rate if music_credit_rate is not None else 2.0
         self.story_planning_credit_rate = story_planning_credit_rate if story_planning_credit_rate is not None else 0.5
-        self.storage_gb_monthly_rate = storage_gb_monthly_rate if storage_gb_monthly_rate is not None else 1.0
         self.storage_gb_daily_rate = storage_gb_daily_rate if storage_gb_daily_rate is not None else 0.033
         self.credits_per_usd = credits_per_usd if credits_per_usd is not None else 20.0
         self.adventure_mode_tokens_per_call = (
@@ -121,7 +119,6 @@ class PricingController:
             story_planning_credit_rate=_get_float_env(
                 ["STORY_PLANNING_CREDIT_RATE", "PRICING_STORY_PLANNING_CREDIT_RATE"], 0.5
             ),
-            storage_gb_monthly_rate=_get_float_env(["STORAGE_GB_MONTHLY_CREDIT_RATE", "PRICING_STORAGE_GB_MONTHLY_CREDIT_RATE"], 1.0),
             storage_gb_daily_rate=_get_float_env(["STORAGE_GB_DAILY_CREDIT_RATE", "PRICING_STORAGE_GB_DAILY_CREDIT_RATE"], 0.033),
             credits_per_usd=_get_float_env(["CREDITS_PER_USD", "PRICING_CREDITS_PER_USD"], 20.0),
             adventure_mode_tokens_per_call=_get_int_env(
@@ -162,7 +159,6 @@ class PricingController:
             "image_credit_rate": self.image_credit_rate,
             "music_credit_rate": self.music_credit_rate,
             "story_planning_credit_rate": self.story_planning_credit_rate,
-            "storage_gb_monthly_rate": self.storage_gb_monthly_rate,
             "storage_gb_daily_rate": self.storage_gb_daily_rate,
             "credits_per_usd": self.credits_per_usd,
             "usd_per_credit": self.usd_per_credit,

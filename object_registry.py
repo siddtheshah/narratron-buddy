@@ -11,6 +11,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 import logging
 from pathlib import Path
+import os
 import sys
 import uuid
 
@@ -88,6 +89,28 @@ def shutdown_database_connection() -> None:
     db.close()
 
 
+STORAGE_BILLING_CHECK_INTERVAL_SECONDS: float = float(
+    os.getenv("STORAGE_BILLING_CHECK_INTERVAL_SECONDS", "3600.0")
+)
+
+
+async def run_storage_billing_loop(stop: asyncio.Event) -> None:
+    """Periodically charge storage billing and advance the watermark without blocking the event loop."""
+    try:
+        await asyncio.to_thread(db.run_storage_billing_tick)
+    except Exception:
+        logging.getLogger(__name__).exception("Initial storage billing tick failed.")
+
+    while not stop.is_set():
+        try:
+            await asyncio.wait_for(stop.wait(), timeout=STORAGE_BILLING_CHECK_INTERVAL_SECONDS)
+        except asyncio.TimeoutError:
+            try:
+                await asyncio.to_thread(db.run_storage_billing_tick)
+            except Exception:
+                logging.getLogger(__name__).exception("Storage billing tick failed.")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Route modules are loaded by the time the ASGI lifespan begins. Rebuild
@@ -100,6 +123,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await asyncio.to_thread(adventure_service.list_adventures, force_refresh=True)
     stop = asyncio.Event()
     monitor = asyncio.create_task(monitor_adventure_catalog(stop))
+    storage_billing_task = asyncio.create_task(run_storage_billing_loop(stop))
     try:
         yield
     finally:
@@ -107,7 +131,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         try:
             await monitor
         finally:
-            shutdown_database_connection()
+            try:
+                await storage_billing_task
+            finally:
+                shutdown_database_connection()
 
 
 async def monitor_adventure_catalog(stop: asyncio.Event) -> None:

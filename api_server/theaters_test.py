@@ -262,7 +262,6 @@ class TestTheaterAPI(BaseTestCase):
         data = response.json()
         self.assertIn("voice_credit_rate", data)
         self.assertIn("image_credit_rate", data)
-        self.assertIn("storage_gb_monthly_rate", data)
         self.assertIn("storage_gb_daily_rate", data)
         self.assertIn("credits_per_usd", data)
         self.assertIn("usd_per_credit", data)

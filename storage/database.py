@@ -35,6 +35,21 @@ class DatabaseOperationTimeout(TimeoutError):
     """Raised after a live database operation exceeds its deadline."""
 
 
+class StorageChargeRecord(TypedDict):
+    user_id: int
+    storage_bytes: int
+    chargeable_bytes: int
+    chargeable_gb: float
+    hours: int
+    amount: float
+
+
+class StorageBillingTickResult(TypedDict):
+    watermark: str
+    hours_billed: int
+    charges: list[StorageChargeRecord]
+
+
 class TheaterStorageRecord(TypedDict):
     theater_id: str
     storage_bytes: int | None
@@ -1258,7 +1273,9 @@ class _DatabaseManagerBase:
             cursor = conn.cursor()
             cursor.execute("SELECT credits FROM users WHERE id = ?", (user_id,))
             user = cursor.fetchone()
-            if not user or user["credits"] < cost:
+            if not user:
+                raise ValueError(f"User {user_id} not found.")
+            if cost > 0.0 and user["credits"] < cost:
                 raise ValueError("Insufficient credits for theater deployment.")
 
             persistent_val = 1 if is_persistent else 0
@@ -1269,10 +1286,11 @@ class _DatabaseManagerBase:
                 "INSERT INTO theaters (theater_id, user_id, name, join_key, cost, created_at, is_persistent, last_billed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 (theater_id, user_id, name, join_key, cost, now_iso, persistent_val, last_billed_val)
             )
-            cursor.execute(
-                "UPDATE users SET credits = credits - ?, lifetime_credits_used = lifetime_credits_used + ? WHERE id = ?",
-                (cost, cost, user_id)
-            )
+            if cost > 0.0:
+                cursor.execute(
+                    "UPDATE users SET credits = credits - ?, lifetime_credits_used = lifetime_credits_used + ? WHERE id = ?",
+                    (cost, cost, user_id),
+                )
             conn.commit()
             return True
 
@@ -1798,134 +1816,156 @@ class _DatabaseManagerBase:
             val = row["is_persistent"] if isinstance(row, dict) else row[0]
             return bool(val)
 
-    def storage_daemon(
-        self,
-        theater_repository: Any = None,
-        theater_manager: Any = None,
-        ttl_seconds: float = 604800.0,
-        hourly_cost: float = 0.004167,
-        current_time: Optional[datetime.datetime] = None,
-    ) -> Dict[str, Any]:
-        """Alias for run_database_daemon: process non-persistent storage cleanup and persistent session billing."""
-        return self.run_database_daemon(
-            theater_repository=theater_repository,
-            theater_manager=theater_manager,
-            ttl_seconds=ttl_seconds,
-            hourly_cost=hourly_cost,
-            current_time=current_time,
-        )
+    def get_storage_billing_watermark(self) -> Optional[str]:
+        """Return the current storage billing watermark ISO timestamp, or None if not set."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT watermark FROM storage_billing_watermark WHERE id = 1")
+            row = cursor.fetchone()
+            if not row:
+                return None
+            return str(row["watermark"])
 
-    def run_database_daemon(
+    def set_storage_billing_watermark(self, watermark: str) -> bool:
+        """Set or update the storage billing watermark timestamp."""
+        now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                INSERT INTO storage_billing_watermark (id, watermark, updated_at)
+                VALUES (1, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    watermark = excluded.watermark,
+                    updated_at = excluded.updated_at
+                """,
+                (watermark, now_iso),
+            )
+            conn.commit()
+            return True
+
+    def get_all_theater_owner_ids(self) -> list[int]:
+        """Return distinct user IDs who own at least one theater."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT DISTINCT user_id FROM theaters WHERE user_id IS NOT NULL")
+            rows = cursor.fetchall()
+            return [int(row["user_id"]) for row in rows]
+
+    def run_storage_billing_tick(
         self,
-        theater_repository: Any = None,
-        theater_manager: Any = None,
-        ttl_seconds: float = 604800.0,
-        hourly_cost: float = 0.004167,
         current_time: Optional[datetime.datetime] = None,
-    ) -> Dict[str, Any]:
-        """Database daemon logic to clean up expired non-persistent sessions and accrue charges for persistent sessions."""
+        theaters_root: Optional[Path] = None,
+        checkouts_root: Optional[Path] = None,
+    ) -> StorageBillingTickResult:
+        """Idempotently charge billing and advance the storage billing watermark.
+
+        If the server was offline, this bills assuming the storage use over the offline
+        time on its next storage tick.
+        The first 50 MB per user is free; storage exceeding 50 MB is billed at the
+        marketed credit rate for the elapsed hours.
+        """
         now = current_time or datetime.datetime.now(datetime.timezone.utc)
         if now.tzinfo is None:
             now = now.replace(tzinfo=datetime.timezone.utc)
 
-        cleaned_up_sessions = []
-        accrued_charges = []
+        watermark_str = self.get_storage_billing_watermark()
+        if watermark_str is None:
+            now_iso = now.isoformat()
+            self.set_storage_billing_watermark(now_iso)
+            return StorageBillingTickResult(
+                watermark=now_iso,
+                hours_billed=0,
+                charges=[],
+            )
+
+        try:
+            watermark_dt = datetime.datetime.fromisoformat(watermark_str)
+            if watermark_dt.tzinfo is None:
+                watermark_dt = watermark_dt.replace(tzinfo=datetime.timezone.utc)
+        except Exception:
+            watermark_dt = now
+
+        elapsed_seconds = (now - watermark_dt).total_seconds()
+        elapsed_hours = elapsed_seconds / 3600.0
+        if elapsed_hours < 1.0:
+            return StorageBillingTickResult(
+                watermark=watermark_str,
+                hours_billed=0,
+                charges=[],
+            )
+
+        hours_to_bill = int(elapsed_hours)
+        new_watermark_dt = watermark_dt + datetime.timedelta(hours=hours_to_bill)
+        new_watermark = new_watermark_dt.isoformat()
+
+        owner_ids = self.get_all_theater_owner_ids()
+        user_charges: list[StorageChargeRecord] = []
+
+        from storage.storage_limits import FREE_USER_THEATER_STORAGE_BYTES, calculate_user_theaters_storage_bytes
+
+        for uid in owner_ids:
+            total_bytes = calculate_user_theaters_storage_bytes(
+                uid, db=self, theaters_root=theaters_root, checkouts_root=checkouts_root
+            )
+            if total_bytes > FREE_USER_THEATER_STORAGE_BYTES:
+                chargeable_bytes = total_bytes - FREE_USER_THEATER_STORAGE_BYTES
+                chargeable_gb = chargeable_bytes / (1024.0 * 1024.0 * 1024.0)
+                cost = self.pricing_controller.calculate_storage_cost(chargeable_gb, days=hours_to_bill / 24.0)
+                user_charges.append(
+                    StorageChargeRecord(
+                        user_id=uid,
+                        storage_bytes=total_bytes,
+                        chargeable_bytes=chargeable_bytes,
+                        chargeable_gb=chargeable_gb,
+                        hours=hours_to_bill,
+                        amount=cost,
+                    )
+                )
 
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT theater_id, user_id, is_persistent, created_at, last_billed_at FROM theaters")
-            rows = cursor.fetchall()
-            deployments = [dict(r) if isinstance(r, dict) else dict(r) for r in rows]
+            cursor.execute(
+                "UPDATE storage_billing_watermark SET watermark = ?, updated_at = ? WHERE id = 1 AND watermark = ?",
+                (new_watermark, now.isoformat(), watermark_str),
+            )
+            if cursor.rowcount == 0:
+                return StorageBillingTickResult(
+                    watermark=watermark_str,
+                    hours_billed=0,
+                    charges=[],
+                )
 
-            for dep in deployments:
-                theater_id = dep["theater_id"]
-                user_id = dep["user_id"]
-                is_persistent = bool(dep.get("is_persistent", 0))
-                created_at_str = dep.get("created_at")
-
-                try:
-                    created_at_dt = datetime.datetime.fromisoformat(created_at_str)
-                    if created_at_dt.tzinfo is None:
-                        created_at_dt = created_at_dt.replace(tzinfo=datetime.timezone.utc)
-                except Exception:
-                    created_at_dt = now
-
-                if not is_persistent:
-                    # Clean up if older than ttl_seconds
-                    age_seconds = (now - created_at_dt).total_seconds()
-                    if age_seconds > ttl_seconds:
-                        logger.info(f"[DatabaseDaemon] Auto-cleaning expired non-persistent theater_id={theater_id}")
-                        cursor.execute("DELETE FROM theaters WHERE theater_id = ?", (theater_id,))
-                        cleaned_up_sessions.append(theater_id)
-                else:
-                    # Accrue charges for persistent session
-                    last_billed_str = dep.get("last_billed_at") or created_at_str
-                    try:
-                        last_billed_dt = datetime.datetime.fromisoformat(last_billed_str)
-                        if last_billed_dt.tzinfo is None:
-                            last_billed_dt = last_billed_dt.replace(tzinfo=datetime.timezone.utc)
-                    except Exception:
-                        last_billed_dt = created_at_dt
-
-                    elapsed_seconds = (now - last_billed_dt).total_seconds()
-                    elapsed_hours = elapsed_seconds / 3600.0
-
-                    if elapsed_hours >= 1.0:
-                        hours_to_bill = int(elapsed_hours)
-                        charge_amount = round(hours_to_bill * hourly_cost, 4)
-
-                        cursor.execute("SELECT credits FROM users WHERE id = ?", (user_id,))
-                        user_row = cursor.fetchone()
-                        user_credits = user_row["credits"] if user_row else 0.0
-
-                        if user_credits >= charge_amount:
-                            new_last_billed = (last_billed_dt + datetime.timedelta(hours=hours_to_bill)).isoformat()
-                            # Advance the billing cursor conditionally before
-                            # debiting.  A concurrent run or retry that already
-                            # committed this interval sees rowcount == 0 and
-                            # cannot charge it again.
-                            cursor.execute(
-                                "UPDATE theaters SET last_billed_at = ? "
-                                "WHERE theater_id = ? AND COALESCE(last_billed_at, created_at) = ?",
-                                (new_last_billed, theater_id, last_billed_str or created_at_str),
-                            )
-                            if cursor.rowcount:
-                                cursor.execute(
-                                    "UPDATE users SET credits = credits - ?, lifetime_credits_used = lifetime_credits_used + ? WHERE id = ?",
-                                    (charge_amount, charge_amount, user_id),
-                                )
-                                accrued_charges.append({
-                                    "theater_id": theater_id,
-                                    "user_id": user_id,
-                                    "amount": charge_amount,
-                                    "hours": hours_to_bill,
-                                })
-                                logger.info(f"[DatabaseDaemon] Accrued {charge_amount} credits charge for persistent theater_id={theater_id}")
-                        else:
-                            logger.warning(f"[DatabaseDaemon] User user_id={user_id} has insufficient credits ({user_credits}) for persistent theater_id={theater_id}. Expiring session.")
-                            cursor.execute("DELETE FROM theaters WHERE theater_id = ?", (theater_id,))
-                            cleaned_up_sessions.append(theater_id)
-
+            for charge in user_charges:
+                cost = charge["amount"]
+                uid = charge["user_id"]
+                if cost > 0.0:
+                    cursor.execute(
+                        "UPDATE users SET credits = credits - ?, lifetime_credits_used = lifetime_credits_used + ? WHERE id = ?",
+                        (cost, cost, uid),
+                    )
+                cursor.execute(
+                    "UPDATE theaters SET last_billed_at = ? WHERE user_id = ?",
+                    (new_watermark, uid),
+                )
             conn.commit()
 
-        # Storage callbacks may update the quota index using another connection.
-        # Release deleted-row locks before invoking filesystem cleanup.
-        for theater_id in cleaned_up_sessions:
-            if theater_repository is not None:
-                try:
-                    theater_repository.delete_theater(theater_id)
-                except Exception as error:
-                    logger.warning("[DatabaseDaemon] Error deleting repository files for %s: %s", theater_id, error)
-            if theater_manager is not None:
-                try:
-                    theater_manager.destroy_theater(theater_id)
-                except Exception as error:
-                    logger.warning("[DatabaseDaemon] Error destroying theater files for %s: %s", theater_id, error)
+        return StorageBillingTickResult(
+            watermark=new_watermark,
+            hours_billed=hours_to_bill,
+            charges=user_charges,
+        )
 
-        return {
-            "cleaned_up_sessions": cleaned_up_sessions,
-            "accrued_charges": accrued_charges,
-        }
+    async def run_storage_billing_tick_async(
+        self,
+        current_time: Optional[datetime.datetime] = None,
+        theaters_root: Optional[Path] = None,
+        checkouts_root: Optional[Path] = None,
+    ) -> StorageBillingTickResult:
+        """Run storage billing tick asynchronously without blocking the event loop."""
+        return await asyncio.to_thread(
+            self.run_storage_billing_tick, current_time, theaters_root, checkouts_root
+        )
 
     def get_theater_by_join_key(self, join_key: str) -> Optional[Dict]:
         clean_key = join_key.strip().upper()

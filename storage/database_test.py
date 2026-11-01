@@ -981,8 +981,8 @@ class TestTheaterExportAndReconstruction(BaseTestCase):
         ids = self.db.get_all_exported_theater_ids()
         self.assertIn("theater_in_deployments", ids)
         self.assertIn("theater_in_exports", ids)
-class TestDatabaseDaemonLogic(BaseTestCase):
-    """Test edge cases in DatabaseDaemon / run_database_daemon logic."""
+class TestCreditGiftExpiry(BaseTestCase):
+    """Test edge cases in credit gift expiry logic."""
 
     def setUp(self):
         super().setUp()

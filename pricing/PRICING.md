@@ -8,7 +8,7 @@
 * **Music Generated:** 2.0 Credits / track ($0.10 / track)
 * **Animations:** 6.5 Credits / successful animation ($0.325 / animation)
 * **Adventure Mode / Story Planning:** 0.5 Credits / action ($0.025 / action, or ~2.5 Credits / min at 5 calls/min)
-* **Storage Used:** 1.0 Credit / GB / month ($0.05 / GB / month, or ~0.033 Credits / GB / day)
+* **Storage Used:** 0.033 Credits / GB / day (~$0.00165 / GB / day)
 
 ---
 
@@ -28,7 +28,7 @@
 | **3) Music Generated** | **Lyria Music API** (`gemini-2.5-flash-lyria`) | ~$0.030 – $0.050 / track | $0.10 / track | **2.0 Credits per music track** |
 | **4) Animations** | **Animation tool providers** | Varies by technique | $0.325 / animation | **6.5 Credits per successful animation** |
 | **5) Adventure Mode / Story Planning** | **Gemini 3.7 Flash API** (`gemini-3.8-flash`) <br>*(4k tokens/call, ~5 calls/min = 20k tokens/min)* | ~$0.0006 – $0.0012 / action <br>*(~$0.003 – $0.006 / min)* | $0.025 / action <br>*(~$0.125 / min at 5 calls/min)* | **0.5 Credits per action / plan turn** <br>*(~2.5 Cr / min at 5 calls/min)* |
-| **6) Storage Used** | **Google Cloud Storage (GCS) / S3** *(Persistent assets, audio, snapshots)* | ~$0.023 / GB / month <br>*(~$0.00077 / GB / day)* | $0.05 / GB / month | **1.0 Credit per GB per month** <br>*(or ~0.033 Credits / GB / day)* |
+| **6) Storage Used** | **Google Cloud Storage (GCS) / S3** *(Persistent assets, audio, snapshots)* | ~$0.00077 / GB / day | $0.00165 / GB / day | **0.033 Credits per GB per day** |
 
 ---
 
@@ -93,11 +93,11 @@ This code change does not apply migrations to a live database or deploy the app.
 
 ### 5. Storage Used (Persistent Theater Storage)
 * **Raw Cloud Storage Pricing:**
-  * GCS Standard Storage: **~$0.023 per GB / month** ($0.00077 per GB / day).
+  * GCS Standard Storage: **~$0.00077 per GB / day** (~$0.023 per GB / month).
 * **Proposed Rates:**
-  * **Monthly GB Billing:** **1 Credit per GB per month** ($0.05 / GB / month).
-  * **Daily Fee (for DB Daemon / Cleanup Billing):** **0.033 Credits per GB / day**.
-  * **Flat Base Storage for Persistent Theaters (< 500 MB):** **0.1 Credits / day** (~3 Credits / month = $0.15 / month).
+  * **Free Storage Allowance:** First **50 MB** free per user.
+  * **Daily Storage Billing:** **0.033 Credits per GB / day** (~$0.00165 / GB / day) for storage past 50 MB.
+  * **Flat Base Storage for Persistent Theaters (< 500 MB):** **0.1 Credits / day** ($0.005 / day).
   * **Margin:** ~2x margin over cloud storage rates.
 
 ---
@@ -110,6 +110,6 @@ If a Theater Owner runs a **30-minute interactive live session** with 5 particip
 * **Images:** 30 dynamic scene images generated × 1 Cr/img = **30 Credits** ($1.50)
 * **Music:** 8 dynamic background music tracks generated × 2 Cr/track = **16 Credits** ($0.80)
 * **Adventure Mode Actions:** 150 action calls (30 mins @ 5 calls/min × 4k tokens) × 0.5 Cr/action = **75 Credits** ($3.75)
-* **Storage:** 500 MB theater assets saved for 1 month = **0.5 Credits** ($0.025)
+* **Storage:** 500 MB theater assets past 50 MB free allowance (450 MB = ~0.439 GB) for 1 day = **~0.0145 Credits**
 * **Total Session Cost to Theater Owner:** **211.5 Credits** (~$10.58 USD total)
 

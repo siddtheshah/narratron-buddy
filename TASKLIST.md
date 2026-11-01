@@ -62,5 +62,5 @@ These measurements exclude network/AI latency and the cost of a replacement fron
 - [ ] Refactor canvas.html to be more modular.
 
 ## Billing
-- [ ] Storage Daemon is not checking file sizes of owned theaters. Need to fix.
+- [x] Storage Daemon replaced by server-driven hourly watermark billing loop.
 
