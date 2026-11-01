@@ -39,7 +39,18 @@ from api_server.canvas import broadcast_baton_update, _broadcast_doodle
 from services.theater_image_generation import generate_theater_image
 from services.theater_media_generation import generate_theater_media
 from services.theater_checkout import checkout_locks, save_theater_checkout
-from services.theater_assets import Playlist, AnimationAsset, playlists, animations
+from providers.image_provider import ImageReference
+from services.theater_assets import (
+    Playlist,
+    AnimationAsset,
+    ReferenceIntentDecision,
+    TheaterReferenceEntry,
+    playlists,
+    animations,
+    classify_reference_intent,
+    extract_and_resolve_references,
+    next_reference_iteration,
+)
 from components.theater_package import safe_asset_path
 from services.generation_billing import (
     billing_locks as _billing_locks,
@@ -69,6 +80,7 @@ logger = logging.getLogger(__name__)
 class GenerateTheaterStampRequest(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     prompt: str = Field(min_length=1, max_length=4000)
+    references: list[str] = Field(default_factory=list, max_length=4)
 
     def generation_prompt(self) -> str:
         return self.prompt.strip()
@@ -192,6 +204,30 @@ async def generate_theater_scene(
     return await _generate_canvas_asset(request, theater_id, body, "scene")
 
 
+def _select_target_reference_entry(
+    decision: ReferenceIntentDecision,
+    entries: list[TheaterReferenceEntry],
+    kind: Literal["stamp", "scene", "character", "animation"],
+) -> TheaterReferenceEntry | None:
+    if not entries:
+        return None
+    target_norm = re.sub(r"[\s_-]+", " ", decision.target_reference.strip().lstrip("@").lower()).strip()
+    if target_norm:
+        for entry in entries:
+            entry_norm = re.sub(r"[\s_-]+", " ", entry.name.lower()).strip()
+            folder_norm = re.sub(r"[\s_-]+", " ", entry.folder.lower()).strip() if entry.folder else ""
+            if entry_norm == target_norm or (folder_norm and folder_norm == target_norm):
+                return entry
+    for entry in entries:
+        if entry.kind == kind:
+            return entry
+    if kind == "scene":
+        for entry in entries:
+            if entry.kind == "reference":
+                return entry
+    return entries[0]
+
+
 async def _generate_canvas_asset(
     request: Request, theater_id: str, body: GenerateTheaterStampRequest,
     kind: Literal["stamp", "scene", "character", "music", "animation"],
@@ -238,26 +274,86 @@ async def _generate_canvas_asset(
         save = {"stamp": _save_generated_stamp, "scene": _save_generated_scene}.get(kind, _save_generated_file)
         remove = {"stamp": _remove_generated_stamp, "scene": _remove_generated_scene}.get(kind, _remove_generated_file)
         try:
+            resolved_entries: list[TheaterReferenceEntry] = []
+            image_references: list[ImageReference] = []
+            decision: ReferenceIntentDecision | None = None
+            if kind != "music":
+                resolved_entries, image_references = await asyncio.to_thread(
+                    extract_and_resolve_references, root, body.prompt, body.references
+                )
+                if resolved_entries and kind in ("stamp", "scene", "character"):
+                    decision = await asyncio.to_thread(
+                        classify_reference_intent,
+                        root,
+                        kind=kind,
+                        prompt=body.prompt,
+                        tagged_references=resolved_entries,
+                    )
+                    if decision.action == "create_new" and decision.target_reference.strip():
+                        suggested = re.sub(r"[^a-zA-Z0-9_-]", "_", decision.target_reference.strip()).strip("_")
+                        if suggested:
+                            identifier = f"{suggested}_{uuid.uuid4().hex[:12]}"
             if kind == "animation":
+                media_kwargs: dict[str, list[ImageReference]] = {"references": image_references} if image_references else {}
                 files = await asyncio.to_thread(
                     generate_theater_media, root, kind=kind, prompt=prompt,
                     identifier=identifier, animation_type=animation_type,
+                    **media_kwargs,
                 )
             elif kind == "music":
                 files = await asyncio.to_thread(generate_theater_media, root, kind=kind, prompt=prompt, identifier=identifier)
             else:
                 image = await asyncio.to_thread(
                     generate_theater_image, root, kind="reference" if kind == "scene" else kind,
-                    prompt=prompt, references=[], use_visual_style=body.use_visual_style(),
+                    prompt=prompt, references=image_references, use_visual_style=body.use_visual_style(),
                 )
                 if not image.image_bytes or image.mime_type != "image/webp":
                     raise ValueError(f"{kind.title()} generation must return a WebP image.")
-                filename = f"{identifier}.webp"
-                files = {filename: image.image_bytes}
+                target_entry = _select_target_reference_entry(decision, resolved_entries, kind) if decision is not None else None
+                is_modify = decision is not None and decision.action == "modify" and target_entry is not None
                 if kind == "character":
-                    folder = f"references/characters/{identifier}"
-                    files = {f"{folder}/1.webp": image.image_bytes,
-                             f"{folder}/character.yaml": yaml.safe_dump({"description": prompt}).encode("utf-8")}
+                    if is_modify and target_entry is not None and target_entry.kind == "character":
+                        char_folder = target_entry.folder or target_entry.name
+                        next_iter = next_reference_iteration(root, "characters", char_folder)
+                        folder = f"references/characters/{char_folder}"
+                        char_meta: dict[str, JsonValue] = {"description": prompt}
+                        existing_yaml = root / folder / "character.yaml"
+                        if existing_yaml.is_file():
+                            loaded_yaml = yaml.safe_load(existing_yaml.read_text(encoding="utf-8"))
+                            if type(loaded_yaml) is dict:
+                                for k, v in loaded_yaml.items():
+                                    char_meta[str(k)] = v
+                                char_meta["description"] = prompt
+                        files = {
+                            f"{folder}/{next_iter}.webp": image.image_bytes,
+                            f"{folder}/character.yaml": yaml.safe_dump(char_meta, sort_keys=False).encode("utf-8"),
+                        }
+                    else:
+                        folder = f"references/characters/{identifier}"
+                        files = {
+                            f"{folder}/1.webp": image.image_bytes,
+                            f"{folder}/character.yaml": yaml.safe_dump({"description": prompt}).encode("utf-8"),
+                        }
+                elif kind == "scene":
+                    if is_modify and target_entry is not None and target_entry.kind in ("scene", "reference"):
+                        if target_entry.folder:
+                            next_iter = next_reference_iteration(root, "scenes", target_entry.folder)
+                            filename = f"{target_entry.folder}/{next_iter}.webp"
+                        elif target_entry.path.startswith("references/scenes/"):
+                            rel_scene = target_entry.path.removeprefix("references/scenes/")
+                            filename = f"{Path(rel_scene).stem}.webp"
+                        else:
+                            filename = f"{identifier}.webp"
+                    else:
+                        filename = f"{identifier}.webp"
+                    files = {filename: image.image_bytes}
+                else:
+                    if is_modify and target_entry is not None and target_entry.kind == "stamp":
+                        rel_stamp = target_entry.path.removeprefix("stamps/")
+                        filename = f"{Path(rel_stamp).stem}.webp"
+                    else:
+                        filename = f"{identifier}.webp"
+                    files = {filename: image.image_bytes}
         except Exception as error:
             logger.exception("Theater %s generation failed", kind)
             raise HTTPException(status_code=502, detail=f"{kind.title()} generation failed; no credits were charged.") from error
@@ -297,7 +393,10 @@ async def _generate_canvas_asset(
             assets = {"animations": [animation.model_dump(mode="json") for animation in animations(theater_manager.theater(theater_id))]}
         collection = "playlists" if kind == "music" else f"{kind}s"
         await _broadcast_doodle(canvas_states.get(theater_id), {"type": f"theater_{collection}_updated", **assets})
-        return {**assets, "credits_charged": cost, "credits": float(updated["credits"])}
+        result_payload: dict[str, JsonValue] = {**assets, "credits_charged": cost, "credits": float(updated["credits"])}
+        if decision is not None:
+            result_payload["reference_action"] = decision.action
+        return result_payload
     finally:
         await asyncio.to_thread(db.release_generation_slot, slot_id)
 

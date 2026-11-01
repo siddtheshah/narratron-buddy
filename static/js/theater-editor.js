@@ -769,6 +769,214 @@
   el('google-link-url').addEventListener('input', updateGoogleDialogState);
   el('google-doc-harvest').addEventListener('change', updateGoogleDialogState);
   el('google-link-form').addEventListener('submit', event => { event.preventDefault(); submitGoogleLink(); });
+  function getAvailableReferences() {
+    if (!state || !Array.isArray(state.files)) return [];
+    const imageFiles = state.files.filter(f => f.kind === 'image' && !f.path.toLowerCase().endsWith('.svg'));
+    const charGroups = new Map();
+    const sceneGroups = new Map();
+    const flatScenes = [];
+    const generalRefs = [];
+    const iterScore = path => {
+      const base = (path.split('/').pop() || '').replace(/\.[^.]+$/, '');
+      return /^\d+$/.test(base) ? parseInt(base, 10) : -1;
+    };
+    for (const file of imageFiles) {
+      const parts = file.path.split('/');
+      if (parts[0] !== 'references') continue;
+      if (parts[1] === 'characters' && parts.length >= 4) {
+        const charName = parts[2];
+        const prev = charGroups.get(charName);
+        if (!prev || iterScore(file.path) > iterScore(prev.path) || (iterScore(file.path) === iterScore(prev.path) && file.path > prev.path)) {
+          charGroups.set(charName, file);
+        }
+      } else if (parts[1] === 'scenes') {
+        if (parts.length >= 4) {
+          const sceneName = parts[2];
+          const prev = sceneGroups.get(sceneName);
+          if (!prev || iterScore(file.path) > iterScore(prev.path) || (iterScore(file.path) === iterScore(prev.path) && file.path > prev.path)) {
+            sceneGroups.set(sceneName, file);
+          }
+        } else if (parts.length === 3) {
+          const stem = parts[2].replace(/\.[^.]+$/, '');
+          if (stem) flatScenes.push({ name: stem, kind: 'scene', path: file.path });
+        }
+      } else if (parts.length >= 2) {
+        const filename = parts[parts.length - 1];
+        const stem = filename.replace(/\.[^.]+$/, '');
+        if (stem) generalRefs.push({ name: stem, kind: 'reference', path: file.path });
+      }
+    }
+    const entries = [];
+    const seen = new Set();
+    const pushEntry = entry => {
+      const key = entry.name.toLowerCase();
+      if (!key || seen.has(key)) return;
+      seen.add(key);
+      entries.push(entry);
+    };
+    for (const [name, file] of [...charGroups.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
+      pushEntry({ name, kind: 'character', path: file.path });
+    }
+    for (const [name, file] of [...sceneGroups.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
+      pushEntry({ name, kind: 'scene', path: file.path });
+    }
+    for (const item of flatScenes.sort((a, b) => a.name.localeCompare(b.name))) pushEntry(item);
+    for (const item of generalRefs.sort((a, b) => a.name.localeCompare(b.name))) pushEntry(item);
+    return entries;
+  }
+  function escapeRegex(str) {
+    return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+  function extractPromptReferences(promptText) {
+    if (!promptText || !promptText.includes('@')) return [];
+    const available = getAvailableReferences();
+    if (!available.length) return [];
+    const sorted = [...available].sort((a, b) => b.name.length - a.name.length);
+    const hits = [];
+    for (const entry of sorted) {
+      const tokens = entry.name.trim().split(/[\s_-]+/).filter(Boolean).map(escapeRegex);
+      if (!tokens.length) continue;
+      const pattern = new RegExp(`(?:^|[\\s([{"',;:])@(${tokens.join('[\\s_-]+')})(?=$|[\\s.,!?;:)\\]}"'])`, 'gi');
+      let match;
+      while ((match = pattern.exec(promptText)) !== null) {
+        hits.push({ index: match.index, path: entry.path });
+      }
+    }
+    hits.sort((a, b) => a.index - b.index);
+    const result = [];
+    for (const hit of hits) {
+      if (!result.includes(hit.path)) {
+        result.push(hit.path);
+        if (result.length >= 4) break;
+      }
+    }
+    return result;
+  }
+  function attachReferenceAutocomplete(textarea) {
+    if (!textarea) return;
+    const wrapper = document.createElement('div');
+    wrapper.className = 'reference-mention-wrapper';
+    textarea.parentNode.insertBefore(wrapper, textarea);
+    wrapper.appendChild(textarea);
+    const menu = document.createElement('div');
+    menu.className = 'reference-mention-menu';
+    menu.setAttribute('role', 'listbox');
+    menu.hidden = true;
+    wrapper.appendChild(menu);
+
+    let filtered = [];
+    let activeIndex = 0;
+    let mentionStart = -1;
+
+    function closeMenu() {
+      menu.hidden = true;
+      menu.replaceChildren();
+      filtered = [];
+      activeIndex = 0;
+      mentionStart = -1;
+    }
+
+    function applySelection(entry) {
+      if (!entry || mentionStart < 0) return;
+      const caret = typeof textarea.selectionStart === 'number' ? textarea.selectionStart : textarea.value.length;
+      const before = textarea.value.slice(0, mentionStart);
+      const after = textarea.value.slice(caret);
+      const insertion = `@${entry.name} `;
+      textarea.value = before + insertion + after.replace(/^\s+/, '');
+      const nextCaret = before.length + insertion.length;
+      textarea.focus();
+      textarea.setSelectionRange(nextCaret, nextCaret);
+      closeMenu();
+    }
+
+    function renderMenu() {
+      menu.replaceChildren();
+      if (!filtered.length) {
+        closeMenu();
+        return;
+      }
+      menu.hidden = false;
+      filtered.forEach((entry, idx) => {
+        const option = document.createElement('button');
+        option.type = 'button';
+        option.className = 'reference-mention-option' + (idx === activeIndex ? ' active' : '');
+        option.setAttribute('role', 'option');
+        option.setAttribute('aria-selected', idx === activeIndex ? 'true' : 'false');
+        option.dataset.referenceName = entry.name;
+        option.dataset.referencePath = entry.path;
+        option.dataset.referenceKind = entry.kind;
+        const nameSpan = document.createElement('span');
+        nameSpan.className = 'reference-mention-name';
+        nameSpan.textContent = `@${entry.name}`;
+        const kindSpan = document.createElement('span');
+        kindSpan.className = 'reference-mention-kind';
+        kindSpan.textContent = entry.kind;
+        option.append(nameSpan, kindSpan);
+        option.addEventListener('mousedown', e => {
+          e.preventDefault();
+          applySelection(entry);
+        });
+        option.addEventListener('click', e => {
+          e.preventDefault();
+          applySelection(entry);
+        });
+        menu.appendChild(option);
+      });
+    }
+
+    function updateMenu() {
+      const caret = typeof textarea.selectionStart === 'number' ? textarea.selectionStart : textarea.value.length;
+      const beforeCaret = textarea.value.slice(0, caret);
+      const match = /(?:^|[\s([{"',;:])@([^@\r\n]*)$/.exec(beforeCaret);
+      if (!match) {
+        closeMenu();
+        return;
+      }
+      const query = match[1].toLowerCase();
+      mentionStart = caret - match[1].length - 1;
+      const available = getAvailableReferences();
+      const prefixMatches = [];
+      const substringMatches = [];
+      for (const entry of available) {
+        const lower = entry.name.toLowerCase();
+        if (lower.startsWith(query)) prefixMatches.push(entry);
+        else if (lower.includes(query)) substringMatches.push(entry);
+      }
+      filtered = [...prefixMatches, ...substringMatches];
+      if (!filtered.length) {
+        closeMenu();
+        return;
+      }
+      if (activeIndex >= filtered.length) activeIndex = 0;
+      renderMenu();
+    }
+
+    textarea.addEventListener('input', updateMenu);
+    textarea.addEventListener('click', updateMenu);
+    textarea.addEventListener('keydown', event => {
+      if (menu.hidden || !filtered.length) return;
+      if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        activeIndex = (activeIndex + 1) % filtered.length;
+        renderMenu();
+      } else if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        activeIndex = (activeIndex - 1 + filtered.length) % filtered.length;
+        renderMenu();
+      } else if (event.key === 'Tab' || event.key === 'Enter') {
+        event.preventDefault();
+        applySelection(filtered[activeIndex]);
+      } else if (event.key === 'Escape') {
+        event.preventDefault();
+        closeMenu();
+      }
+    });
+    textarea.addEventListener('blur', () => {
+      setTimeout(closeMenu, 150);
+    });
+  }
+  attachReferenceAutocomplete(el('generation-prompt'));
+  attachReferenceAutocomplete(el('assistant-input'));
   el('generation-kind').addEventListener('change', updateGenerationCost);
   el('generation-form').addEventListener('submit', event => {
     event.preventDefault();
@@ -779,7 +987,7 @@
       playlist: el('generation-playlist').value || 'ambient',
       animation_type: el('generation-animation-type').value,
       prompt: el('generation-prompt').value,
-      references: []
+      references: extractPromptReferences(el('generation-prompt').value)
     }, el('generation-submit'));
   });
   el('new-file').addEventListener('click', () => {

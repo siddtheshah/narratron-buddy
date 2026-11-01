@@ -19,6 +19,7 @@ from pricing.pricing_controller import PricingController
 from providers.image_provider import ImageGenerationRequest, ImageGenerationResult
 from providers.music_provider import MusicGenerationResult
 from providers.video_provider import VideoGenerationResult
+from services.theater_assets import ReferenceIntentDecision
 from storage.theater_repository import TheaterRepository
 
 
@@ -366,3 +367,126 @@ def test_no_scene_preset_preserves_user_prompt_and_theater_style(
     assert result.status_code == 200, result.text
     request = stamps.provider.generate.call_args.args[0]
     assert request.prompt == "A forest clearing\nStyle: Fantasy"
+
+
+def test_canvas_character_reference_intent_modify_updates_existing_character(stamps: StampHarness) -> None:
+    root = stamps.manager.theater("stage").directory()
+    char_dir = root / "references" / "characters" / "Captain Zara"
+    char_dir.mkdir(parents=True, exist_ok=True)
+    (char_dir / "1.webp").write_bytes(b"zara-iter-1")
+    (char_dir / "character.yaml").write_text("name: Captain Zara\ndescription: Original Zara\n", encoding="utf-8")
+
+    decision = ReferenceIntentDecision(
+        action="modify",
+        target_reference="Captain Zara",
+        reasoning="User asked to add an eyepatch to Captain Zara.",
+    )
+    mock_text_provider = MagicMock()
+    mock_text_provider.generate.return_value = MagicMock(parsed=decision, text="")
+
+    with patch("services.theater_assets.get_text_response_provider", return_value=mock_text_provider):
+        response = stamps.client.post("/api/theaters/stage/characters/generate", json={
+            "name": "Captain Zara",
+            "prompt": "Update @Captain Zara to wear a gold eyepatch",
+        })
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["reference_action"] == "modify"
+    assert (char_dir / "2.webp").is_file()
+    assert "Update @Captain Zara to wear a gold eyepatch" in (char_dir / "character.yaml").read_text(encoding="utf-8")
+    request = stamps.provider.generate.call_args.args[0]
+    assert len(request.references) == 1
+    assert request.references[0].data == b"zara-iter-1"
+
+
+def test_canvas_character_reference_intent_create_new_saves_separate_character(stamps: StampHarness) -> None:
+    root = stamps.manager.theater("stage").directory()
+    char_dir = root / "references" / "characters" / "Captain Zara"
+    char_dir.mkdir(parents=True, exist_ok=True)
+    (char_dir / "1.webp").write_bytes(b"zara-iter-1")
+
+    decision = ReferenceIntentDecision(
+        action="create_new",
+        target_reference="Lieutenant Kael",
+        reasoning="User wants a new character who is Captain Zara's twin brother.",
+    )
+    mock_text_provider = MagicMock()
+    mock_text_provider.generate.return_value = MagicMock(parsed=decision, text="")
+
+    with patch("services.theater_assets.get_text_response_provider", return_value=mock_text_provider):
+        response = stamps.client.post("/api/theaters/stage/characters/generate", json={
+            "name": "Lieutenant Kael",
+            "prompt": "Create @Captain Zara's younger brother Lieutenant Kael in similar armor",
+        })
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["reference_action"] == "create_new"
+    assert not (char_dir / "2.webp").exists()
+    kael_dirs = list((root / "references" / "characters").glob("Lieutenant_Kael_*"))
+    assert len(kael_dirs) == 1
+    assert (kael_dirs[0] / "1.webp").is_file()
+    request = stamps.provider.generate.call_args.args[0]
+    assert len(request.references) == 1
+    assert request.references[0].data == b"zara-iter-1"
+
+
+def test_canvas_scene_and_stamp_reference_tagging_and_intent_classification(stamps: StampHarness) -> None:
+    root = stamps.manager.theater("stage").directory()
+    scene_dir = root / "references" / "scenes" / "Harbor Dock"
+    scene_dir.mkdir(parents=True, exist_ok=True)
+    (scene_dir / "1.webp").write_bytes(b"harbor-iter-1")
+    stamp_dir = root / "stamps"
+    stamp_dir.mkdir(parents=True, exist_ok=True)
+    (stamp_dir / "goblin.webp").write_bytes(b"goblin-stamp-1")
+
+    modify_scene = ReferenceIntentDecision(
+        action="modify",
+        target_reference="Harbor Dock",
+        reasoning="Modify Harbor Dock to night time.",
+    )
+    with patch("api_server.theaters.classify_reference_intent", return_value=modify_scene):
+        scene_res = stamps.client.post("/api/theaters/stage/scenes/generate", json={
+            "name": "Harbor Dock",
+            "prompt": "Change @Harbor Dock to midnight under a blood moon",
+        })
+    assert scene_res.status_code == 200, scene_res.text
+    assert scene_res.json()["reference_action"] == "modify"
+    assert (scene_dir / "2.webp").is_file()
+    scene_req = stamps.provider.generate.call_args.args[0]
+    assert [ref.data for ref in scene_req.references] == [b"harbor-iter-1"]
+
+    modify_stamp = ReferenceIntentDecision(
+        action="modify",
+        target_reference="goblin",
+        reasoning="Modify existing goblin stamp.",
+    )
+    with patch("api_server.theaters.classify_reference_intent", return_value=modify_stamp):
+        stamp_res = stamps.client.post("/api/theaters/stage/stamps/generate", json={
+            "name": "goblin",
+            "prompt": "Give @goblin a glowing torch",
+        })
+    assert stamp_res.status_code == 200, stamp_res.text
+    assert stamp_res.json()["reference_action"] == "modify"
+    assert (stamp_dir / "goblin.webp").read_bytes() != b"goblin-stamp-1"
+
+
+def test_canvas_animation_forwards_tagged_references_to_video_provider(stamps: StampHarness) -> None:
+    root = stamps.manager.theater("stage").directory()
+    char_dir = root / "references" / "characters" / "Captain Zara"
+    char_dir.mkdir(parents=True, exist_ok=True)
+    (char_dir / "1.webp").write_bytes(b"zara-video-ref")
+
+    video_provider = MagicMock()
+    video_provider.generate.return_value = VideoGenerationResult(
+        video_bytes=b"video-bytes", mime_type="video/mp4", provider="mock", model="mock",
+    )
+    with patch("providers.registry.get_video_provider", return_value=video_provider), patch("providers.registry.get_image_provider", return_value=stamps.provider):
+        response = stamps.client.post("/api/theaters/stage/animations/generate", json={
+            "name": "Zara Charge",
+            "prompt": "@Captain Zara charges into battle",
+        })
+    assert response.status_code == 200, response.text
+    start_img_req = stamps.provider.generate.call_args.args[0]
+    assert len(start_img_req.references) == 1
+    assert start_img_req.references[0].data == b"zara-video-ref"
+

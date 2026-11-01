@@ -27,6 +27,7 @@ from api_server.theater_access_cache import theater_access_cache
 from providers.image_provider import ImageReference
 from providers.music_provider import MusicGenerationRequest
 from providers.registry import get_music_provider
+from services.theater_assets import extract_and_resolve_references
 from services.theater_image_generation import generate_theater_image
 from services.theater_media_generation import generate_theater_media
 from services.theater_checkout import checkout_locks as _draft_locks, refresh_checkout_metadata, save_theater_checkout
@@ -459,18 +460,42 @@ async def remove_draft_file(theater_id: str, path: str, revision: int, request: 
         return await asyncio.to_thread(response, info)
 
 
+def resolve_editor_references(root: Path, body: GenerationRequest) -> list[ImageReference]:
+    references: list[ImageReference] = []
+    seen_paths: set[Path] = set()
+    for relative in body.references:
+        if relative.startswith("references/") or "/" in relative:
+            path = safe_asset_path(root, relative)
+            if not relative.startswith("references/") or not path.is_file():
+                raise ValueError("Generation references must be existing reference, scene, or character images.")
+            resolved = path.resolve()
+            if resolved not in seen_paths:
+                seen_paths.add(resolved)
+                references.append(ImageReference(name=path.name, data=path.read_bytes(), mime_type=asset_mime(path)))
+        else:
+            entries, resolved_refs = extract_and_resolve_references(root, "", [relative], include_stamps=False)
+            if not entries or not resolved_refs:
+                raise ValueError("Generation references must be existing reference, scene, or character images.")
+            for entry, ref in zip(entries, resolved_refs):
+                resolved = (root / entry.path).resolve()
+                if resolved not in seen_paths:
+                    seen_paths.add(resolved)
+                    references.append(ref)
+    prompt_entries, prompt_refs = extract_and_resolve_references(root, body.prompt, [], include_stamps=False)
+    for entry, ref in zip(prompt_entries, prompt_refs):
+        resolved = (root / entry.path).resolve()
+        if resolved not in seen_paths and len(references) < 4:
+            seen_paths.add(resolved)
+            references.append(ref)
+    return references[:4]
+
+
 def generate_asset(info: DraftInfo, body: GenerationRequest) -> tuple[str, bytes]:
     root = store().directory(info.theater_id)
     name = re.sub(r"[^a-zA-Z0-9_-]", "_", body.name).strip("_") or "asset"
     identifier = uuid.uuid4().hex[:12]
     if body.kind in ("reference", "stamp", "character", "scene"):
-        references: list[ImageReference] = []
-        for relative in body.references:
-            path = safe_asset_path(root, relative)
-            if not relative.startswith("references/") or not path.is_file():
-                raise ValueError("Generation references must be existing reference, scene, or character images.")
-            references.append(ImageReference(name=path.name, data=path.read_bytes(), mime_type=asset_mime(path)))
-        result = generate_theater_image(root, kind=body.kind, prompt=body.prompt, references=references)
+        result = generate_theater_image(root, kind=body.kind, prompt=body.prompt, references=resolve_editor_references(root, body))
         extension = {"image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp"}.get(result.mime_type)
         if not result.image_bytes or extension is None:
             raise ValueError("Image provider returned no supported image.")
@@ -519,9 +544,13 @@ def generate_assets(info: DraftInfo, body: GenerationRequest) -> tuple[str, dict
     if body.kind == "animation":
         name = re.sub(r"[^a-zA-Z0-9_-]", "_", body.name).strip("_") or "animation"
         identifier = f"{name}_{uuid.uuid4().hex[:12]}"
+        root = store().directory(info.theater_id)
+        references = resolve_editor_references(root, body)
+        media_kwargs: dict[str, list[ImageReference]] = {"references": references} if references else {}
         files = generate_theater_media(
-            store().directory(info.theater_id), kind="animation", prompt=body.prompt,
+            root, kind="animation", prompt=body.prompt,
             identifier=identifier, animation_type=body.animation_type,
+            **media_kwargs,
         )
         return f"animations/{identifier}/{body.animation_type}.json", files
     path, content = generate_asset(info, body)

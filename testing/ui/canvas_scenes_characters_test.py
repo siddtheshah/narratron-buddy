@@ -1,12 +1,13 @@
 """Tests for Stamp Manager tabs (Scenes & Characters) and pushing scenes to canvas."""
 
 import sys
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 
 import pytest
 from playwright.sync_api import Page, Route, sync_playwright
 from playwright.sync_api import expect
+from pydantic import JsonValue
 from testing.reference_images import png_bytes
 
 
@@ -825,6 +826,84 @@ def test_scene_generator_preserves_prompt_after_failure(scenes_chars_page: Page)
     expect(page.locator('#scene-generation-form')).to_have_attribute('aria-busy', 'false')
 
 
+def test_canvas_asset_manager_reference_tagging_autocomplete_and_submission(scenes_chars_page: Page) -> None:
+    page = scenes_chars_page
+    page.evaluate("""
+        isTheaterStampOwner = true;
+        cachedTheaterScenes = [{ id: 'pier', name: 'Moonlit Pier', description: 'Misty pier' }];
+        cachedTheaterCharacters = [{ id: 'zara', name: 'Captain Zara', description: 'Pirate captain' }];
+        cachedTheaterStamps = [{ id: 'theater:stage:goblin.webp', name: 'goblin', is_theater_stamp: true }];
+        applyRoleUI(true);
+        setStampManagerOpen(true);
+    """)
+
+    submitted: dict[str, dict[str, JsonValue]] = {}
+
+    def make_handler(kind_key: str) -> Callable[[Route], None]:
+        def handler(route: Route) -> None:
+            submitted[kind_key] = route.request.post_data_json
+            route.fulfill(json={kind_key: [{"id": "new1", "name": "New Asset"}], "credits_charged": 4})
+        return handler
+
+    page.route("**/api/theaters/*/scenes/generate", make_handler("scenes"))
+    page.route("**/api/theaters/*/characters/generate", make_handler("characters"))
+    page.route("**/api/theaters/*/animations/generate", make_handler("animations"))
+    page.route("**/api/theaters/*/stamps/generate", make_handler("stamps"))
+    page.route("**/api/theaters/*/animations", lambda r: r.fulfill(json=[]))
+
+    # 1. Scenes tab: Tab completion on @Cap -> @Captain Zara
+    page.evaluate("switchStampManagerTab('scenes')")
+    scene_prompt = page.locator("#scene-generation-prompt")
+    scene_prompt.focus()
+    page.keyboard.type("Show @Cap")
+    menu = page.locator(".reference-mention-menu:visible")
+    expect(menu).to_be_visible()
+    expect(menu.locator(".reference-mention-name")).to_have_text(["@Captain Zara"])
+    page.keyboard.press("Tab")
+    expect(scene_prompt).to_have_value("Show @Captain Zara ")
+    page.keyboard.type("on @Moon")
+    expect(menu).to_be_visible()
+    menu.locator(".reference-mention-option", has_text="Moonlit Pier").click()
+    expect(scene_prompt).to_have_value("Show @Captain Zara on @Moonlit Pier ")
+    scene_prompt.press("Enter")
+    expect(page.locator("#scene-generation-status")).to_contain_text("Charged 4 credits")
+    assert submitted["scenes"]["references"] == ["Captain Zara", "Moonlit Pier"]
+
+    # 2. Characters tab: option selection
+    page.evaluate("switchStampManagerTab('characters')")
+    char_prompt = page.locator("#character-generation-prompt")
+    char_prompt.focus()
+    page.keyboard.type("Update @Cap")
+    page.keyboard.press("Tab")
+    page.keyboard.type("with a tricorne hat")
+    char_prompt.press("Enter")
+    expect(page.locator("#asset-generation-status")).to_contain_text("Charged 4 credits")
+    assert submitted["characters"]["references"] == ["Captain Zara"]
+
+    # 3. Animations tab: Tab completion and submission
+    page.evaluate("switchStampManagerTab('animations')")
+    anim_prompt = page.locator("#animation-generation-prompt")
+    anim_prompt.focus()
+    page.keyboard.type("@Cap")
+    page.keyboard.press("Tab")
+    page.keyboard.type("dueling on @Moon")
+    page.keyboard.press("Tab")
+    anim_prompt.press("Enter")
+    assert submitted["animations"]["references"] == ["Captain Zara", "Moonlit Pier"]
+
+    # 4. Stamps tab: Tab completion and reference extraction
+    page.evaluate("switchStampManagerTab('stamps')")
+    stamp_prompt = page.locator("#stamp-generation-prompt")
+    stamp_prompt.focus()
+    page.keyboard.type("Give @gob")
+    page.keyboard.press("Tab")
+    page.keyboard.type("a golden crown")
+    expect(stamp_prompt).to_have_value("Give @goblin a golden crown")
+    assert page.evaluate("extractTaggedCanvasReferences(document.getElementById('stamp-generation-prompt').value)") == ["goblin"]
+
+
+
+
 @pytest.mark.parametrize(("tab", "kind"), [("characters", "character"), ("animations", "animation"), ("playlists", "music")])
 def test_asset_generation_permissions_pending_and_retry(scenes_chars_page: Page, tab: str, kind: str) -> None:
     page = scenes_chars_page
@@ -1001,3 +1080,4 @@ def test_scene_generation_pending_cards_and_overlapping_jobs(
     expect(page.locator('#scenes-manager-grid .scene-card')).to_have_count(2 if older_succeeds else 1)
     expect(prompt).to_have_value('Next scene draft')
     expect(page.locator('#scene-generation-form')).to_have_attribute('aria-busy', 'false')
+

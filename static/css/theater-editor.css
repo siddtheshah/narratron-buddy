@@ -46,6 +46,12 @@
 .png-files-summary{font-size:.78rem;color:var(--accent);background:#0d111a;border:1px solid var(--line);border-radius:8px;padding:.6rem .8rem;margin:.5rem 0 1rem;max-height:100px;overflow-y:auto;word-break:break-word}
 .png-dialog-options{margin-bottom:1rem;display:flex;flex-direction:column;gap:.4rem}
 .png-dialog-options label{font-size:.76rem;color:var(--muted)}
+.reference-mention-wrapper{position:relative;display:flex;flex-direction:column;width:100%}
+.reference-mention-menu{position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:120;max-height:190px;overflow-y:auto;background:#141923;border:1px solid var(--line);border-radius:8px;box-shadow:0 10px 25px -5px rgba(0,0,0,.65);padding:.25rem;display:flex;flex-direction:column;gap:2px}
+.reference-mention-option{display:flex;align-items:center;justify-content:space-between;gap:.5rem;width:100%;text-align:left;background:transparent;border:0;border-radius:6px;padding:.45rem .6rem;font-size:.78rem;color:var(--text);cursor:pointer}
+.reference-mention-option:hover,.reference-mention-option.active{background:#292e4e;color:#c7d2fe}
+.reference-mention-name{font-weight:500;overflow-wrap:anywhere}
+.reference-mention-kind{font-size:.66rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);background:#0e121b;border:1px solid var(--line);border-radius:4px;padding:.1rem .35rem;flex-shrink:0}
 
 
 

@@ -1031,7 +1031,9 @@ class TheaterManager:
             if not file.is_file() or reference_dir.resolve() not in file.resolve().parents or file.suffix.lower() not in {".png", ".jpg", ".jpeg", ".webp", ".gif"}:
                 continue
             filename = file.relative_to(reference_dir).as_posix()
-            references.append({"name": file.stem, "filename": filename, "url": f"/theaters/{theater_id}/references/{quote(filename, safe='/')}", "size_bytes": file.stat().st_size})
+            parts = file.relative_to(reference_dir).parts
+            ref_name = parts[1] if len(parts) >= 3 and parts[0] in ("characters", "scenes") else file.stem
+            references.append({"name": ref_name, "filename": filename, "url": f"/theaters/{theater_id}/references/{quote(filename, safe='/')}", "size_bytes": file.stat().st_size})
         return references
 
     def get_theater_playlists(self, theater_id: str) -> dict[str, list[dict[str, str | int]]]:

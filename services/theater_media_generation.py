@@ -7,6 +7,7 @@ from typing import Literal
 from pydantic import JsonValue, TypeAdapter
 import yaml
 
+from providers.image_provider import ImageReference
 from providers.music_provider import MusicGenerationRequest
 from providers.registry import get_music_provider, get_animation_provider
 from utils.config_loader import apply_app_config
@@ -15,6 +16,7 @@ from utils.config_loader import apply_app_config
 def generate_theater_media(
     root: Path, *, kind: Literal["music", "animation"], prompt: str, identifier: str,
     animation_type: Literal["video", "layered", "triframe"] = "video",
+    references: list[ImageReference] | None = None,
 ) -> dict[str, bytes]:
     settings = TypeAdapter(dict[str, JsonValue]).validate_python(
         apply_app_config(yaml.safe_load((root / "theater.yaml").read_text(encoding="utf-8")) or {})
@@ -37,7 +39,7 @@ def generate_theater_media(
     with TemporaryDirectory(prefix="narratron-animation-") as staging:
         output = Path(staging)
         provider = get_animation_provider(options=settings)
-        provider.create_animation(prompt, identifier, output_dir=output, technique=animation_type)
+        provider.create_animation(prompt, identifier, output_dir=output, technique=animation_type, references=references)
         folder = output / "animations" / identifier
         return {
             f"animations/{identifier}/{path.name}": path.read_bytes()

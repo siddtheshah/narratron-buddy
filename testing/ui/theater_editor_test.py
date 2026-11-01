@@ -1227,3 +1227,41 @@ def test_manual_animation_presets_send_selected_technique_and_show_price(editor_
     page.locator("#generation-submit").click()
     page.wait_for_function("window.lastGenerationRequest?.kind === 'animation'")
     assert page.evaluate("window.lastGenerationRequest.animation_type") == technique
+
+
+def test_reference_tagging_autocomplete_and_submission_in_editor(editor_page: Page) -> None:
+    page = editor_page
+    page.locator(".manual-generation summary").click()
+    prompt = page.locator("#generation-prompt")
+
+    # Typing @ opens the reference mention dropdown containing 'captain' (from references/people/captain.png)
+    prompt.focus()
+    page.keyboard.type("Show @cap")
+    menu = page.locator(".reference-mention-menu:visible")
+    expect(menu).to_be_visible()
+    expect(menu.locator(".reference-mention-option")).to_have_count(1)
+    expect(menu.locator(".reference-mention-name")).to_have_text("@captain")
+
+    # Tab completes @captain
+    page.keyboard.press("Tab")
+    expect(prompt).to_have_value("Show @captain ")
+    expect(menu).to_be_hidden()
+
+    # Submitting for scene, character, animation, and stamp passes resolved references
+    for kind in ("scene", "character", "animation", "stamp"):
+        page.locator("#generation-kind").select_option(kind)
+        page.locator("#generation-name").fill(f"test_{kind}")
+        prompt.fill("Show @captain at the helm")
+        page.locator("#generation-submit").click()
+        page.wait_for_function(f"window.lastGenerationRequest?.kind === '{kind}'")
+        assert page.evaluate("window.lastGenerationRequest.references") == ["references/people/captain.png"]
+
+    # Clicking an option in #assistant-input also completes the @X reference
+    assistant_input = page.locator("#assistant-input")
+    assistant_input.focus()
+    page.keyboard.type("Create a scene with @")
+    assistant_menu = page.locator(".reference-mention-menu:visible")
+    expect(assistant_menu).to_be_visible()
+    assistant_menu.locator(".reference-mention-option", has_text="captain").click()
+    expect(assistant_input).to_have_value("Create a scene with @captain ")
+

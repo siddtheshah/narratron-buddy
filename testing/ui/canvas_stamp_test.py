@@ -1026,6 +1026,44 @@ def test_stamps_always_under_doodles_layering(stamp_page: Page) -> None:
     assert "z-index: 4;" in chat_css
 
 
+def test_stamp_generation_reference_tagging_autocomplete_and_submission(stamp_page: Page) -> None:
+    html = Path("templates/canvas.html").read_text(encoding="utf-8")
+    start = html.index('            <div id="stamp-generation-status"')
+    footer = html[start:html.index('    <script type="module">', start)]
+    stamp_page.locator(".stamp-manager-footer").evaluate("(element, footer) => element.outerHTML = footer", footer)
+    generation = html[html.index("        let isTheaterStampOwner = false;"):html.index("        function setStampManagerOpen(open) {")]
+    render = html[html.index("        function renderStampManagerGrid(stamps) {"):html.index("        // Canvas-state notifications")]
+    stamp_page.add_script_tag(content="""
+        const theaterId = 'stage';
+        let activeStampManagerTab = 'stamps';
+        let cachedTheaterStamps = [{id: 'theater:stage:goblin.webp', name: 'goblin', url: '/theaters/stage/stamps/goblin.webp'}];
+        let stampLoadError = '';
+        const stampManagerEmpty = document.getElementById('stamp-manager-empty');
+        const stampEmptyMessage = null;
+        window.generationRequests = [];
+        window.fetch = async (url, options) => {
+            window.generationRequests.push({url, ...options});
+            return {ok: true, json: async () => ({stamps: cachedTheaterStamps, credits_charged: 4})};
+        };
+        function redrawAllDoodles() { renderer.redraw(doodleActions); }
+    """ + generation + render)
+    stamp_page.locator("#chat-open-stamps-btn").click()
+    stamp_page.evaluate("isTheaterStampOwner = true; updateStampGenerationPermission()")
+    prompt = stamp_page.locator("#stamp-generation-prompt")
+    prompt.focus()
+    stamp_page.keyboard.type("Give @gob")
+    menu = stamp_page.locator(".reference-mention-menu:visible")
+    expect(menu).to_be_visible()
+    expect(menu.locator(".reference-mention-name")).to_have_text(["@goblin"])
+    stamp_page.keyboard.press("Tab")
+    expect(prompt).to_have_value("Give @goblin ")
+    stamp_page.keyboard.type("a golden crown")
+    prompt.press("Enter")
+    stamp_page.wait_for_function("window.generationRequests.length === 1")
+    assert stamp_page.evaluate("JSON.parse(window.generationRequests[0].body).references") == ["goblin"]
+
+
+
 
 
 

@@ -1388,3 +1388,58 @@ def test_editor_animation_billing_failure_removes_every_generated_file(builder: 
     assert result.status_code == 503
     for filename in files:
         assert not (builder.manager.theater(identifier).directory() / filename).exists()
+
+
+@pytest.mark.parametrize("kind", ["scene", "character", "stamp", "reference"])
+def test_editor_resolves_tagged_references_for_image_generations(builder: BuilderHarness, kind: str) -> None:
+    data = builder.create()
+    identifier = data["draft"]["theater_id"]
+    root = builder.manager.theater(identifier).directory()
+    char_dir = root / "references" / "characters" / "Captain Zara"
+    char_dir.mkdir(parents=True, exist_ok=True)
+    (char_dir / "1.png").write_bytes(b"old-zara")
+    (char_dir / "2.webp").write_bytes(b"latest-zara")
+    scene_dir = root / "references" / "scenes" / "Moonlit Pier"
+    scene_dir.mkdir(parents=True, exist_ok=True)
+    (scene_dir / "1.webp").write_bytes(b"pier-scene")
+
+    mock_image = ImageGenerationResult(image_bytes=png_bytes(), mime_type="image/png", provider="mock", model="mock")
+    with patch("api_server.theater_editor.generate_theater_image", return_value=mock_image) as generate:
+        result = builder.client.post(f"/api/theater-editor/{identifier}/generate", json={
+            "revision": data["draft"]["revision"],
+            "kind": kind,
+            "name": "Battle Pier",
+            "prompt": "Show @Captain Zara standing on @Moonlit Pier",
+        })
+    assert result.status_code == 200, result.text
+    references = generate.call_args.kwargs["references"]
+    assert len(references) == 2
+    assert [ref.data for ref in references] == [b"latest-zara", b"pier-scene"]
+    assert [ref.mime_type for ref in references] == ["image/webp", "image/webp"]
+
+
+def test_editor_resolves_tagged_references_for_animation_generation(builder: BuilderHarness) -> None:
+    data = builder.create()
+    identifier = data["draft"]["theater_id"]
+    root = builder.manager.theater(identifier).directory()
+    char_dir = root / "references" / "characters" / "Captain Zara"
+    char_dir.mkdir(parents=True, exist_ok=True)
+    (char_dir / "1.webp").write_bytes(b"zara-bytes")
+    files = {
+        "animations/zara_leap/video.json": b'{"scene_prompt":"Leap"}',
+        "animations/zara_leap/video.mp4": b"video",
+    }
+    with patch("api_server.theater_editor.generate_theater_media", return_value=files) as generate:
+        result = builder.client.post(f"/api/theater-editor/{identifier}/generate", json={
+            "revision": data["draft"]["revision"],
+            "kind": "animation",
+            "name": "zara_leap",
+            "prompt": "@Captain Zara leaps across the deck",
+            "animation_type": "video",
+        })
+    assert result.status_code == 200, result.text
+    references = generate.call_args.kwargs["references"]
+    assert len(references) == 1
+    assert references[0].data == b"zara-bytes"
+    assert references[0].mime_type == "image/webp"
+
