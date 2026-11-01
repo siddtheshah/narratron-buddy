@@ -37,12 +37,15 @@ class TestFullscreenPopout(UITestCase):
             "showCinematicUI",
             'id="chat-side-toggle-btn"',
             'id="popout-expand-btn"',
-            'id="popout-window-btn"',
-            'id="popped-out-placeholder"',
-            "narratron_popout_channel",
-            "openPopoutWindow",
         ):
             self.assertIn(element, html)
+
+        for element in (
+            'id="popout-window-btn"',
+            'id="popped-out-placeholder"',
+            "openPopoutWindow",
+        ):
+            self.assertNotIn(element, html)
 
     def test_popout_route_serves_chat_template(self):
         response = self.client.get("/popout?theater_id=test_theater")

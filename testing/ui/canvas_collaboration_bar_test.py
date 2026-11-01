@@ -45,9 +45,7 @@ def test_viewer_collaboration_bar_and_help(viewport_width: int) -> None:
         bar = page.locator("#viewer-collab-bar")
         expect(bar).to_be_visible()
         expect(page.locator("#viewer-collab-bar-status")).to_have_text("Collaboration: Off")
-        popout = page.get_by_role("button", name="Pop out chat into separate window")
-        expect(popout).to_have_text("")
-        expect(popout.locator("svg")).to_be_visible()
+        expect(page.get_by_role("button", name="Pop out chat into separate window")).to_have_count(0)
         page.locator("#chat-name-input").fill("Moonlit Wanderer 42")
         page.locator("#chat-login-chip").evaluate("element => element.style.display = 'inline-flex'")
         assert page.locator("#chat-name-input").evaluate("element => element.clientWidth") > 80

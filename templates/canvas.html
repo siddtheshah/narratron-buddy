@@ -3547,27 +3547,7 @@
                     style="display: none;">
                     🙈
                 </button>
-                <button class="panel-btn" id="popout-window-btn" aria-label="Pop out chat into separate window"
-                    title="Pop out into separate window">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                        aria-hidden="true" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-                        <polyline points="15 3 21 3 21 9" />
-                        <line x1="10" x2="21" y1="14" y2="3" />
-                    </svg>
-                </button>
             </div>
-        </div>
-
-        <div id="popped-out-placeholder"
-            style="display: none; padding: 2rem 1rem; text-align: center; color: #94a3b8; flex: 1; flex-direction: column; align-items: center; justify-content: center; gap: 1rem;">
-            <div style="font-size: 2rem;">🗗</div>
-            <p style="font-size: 0.9rem; margin: 0; color: #cbd5e1;">Chat is currently popped out in a separate window.
-            </p>
-            <button id="dock-panel-btn" class="panel-btn"
-                style="padding: 6px 14px; background: rgba(99, 102, 241, 0.2); border-color: rgba(99, 102, 241, 0.4); color: #a5b4fc;">
-                📥 Dock Back Here
-            </button>
         </div>
 
         <div id="chat-user-bar" class="canvas-panel-tabs" role="tablist" aria-label="Canvas panel">
@@ -4517,8 +4497,6 @@
                 actionWheel.updateState(canvasPinned, musicPinned);
             },
         });
-        const popoutBroadcast = new BroadcastChannel('narratron_popout_channel');
-
         // Modular Chat Controller
         const chatController = initializeChatController({
             messagesContainer: chatMessages,
@@ -4536,7 +4514,6 @@
             isCurrentOrator: () => isCurrentOrator(),
             getAgentWs: () => ((isCurrentOrator() && agentWs) ? agentWs : null),
             getAuthState: () => getCanvasAuthState(),
-            popoutBroadcast: popoutBroadcast,
         });
 
         function isCollabModeEnabled() {
@@ -4569,7 +4546,7 @@
             getAgentWs: () => ((isCurrentOrator() && agentWs) ? agentWs : null),
         });
 
-        // Backward compatibility helpers for canvas state refresh and popout
+        // Backward compatibility helpers for canvas state refresh
         function fetchChat() {
             return chatController.fetchChat();
         }
@@ -6687,7 +6664,6 @@
         const charactersEmptyMessage = document.getElementById('characters-empty-message');
 
         let isStampManagerOpen = false;
-        let isChatPoppedOut = false;
         let activeStampManagerTab = 'stamps';
         let cachedUserStamps = null;
         let cachedTheaterStamps = [];
@@ -7259,10 +7235,8 @@
                 stampPrompt.style.padding = promptStyle.padding;
                 stampPrompt.style.font = promptStyle.font;
             }
-            if (panelBody) panelBody.style.display = isStampManagerOpen || isChatPoppedOut ? 'none' : 'flex';
+            if (panelBody) panelBody.style.display = isStampManagerOpen ? 'none' : 'flex';
             if (stampManagerPane) stampManagerPane.style.display = isStampManagerOpen ? 'flex' : 'none';
-            const poppedOutChat = document.getElementById('popped-out-placeholder');
-            if (poppedOutChat) poppedOutChat.style.display = isChatPoppedOut && !isStampManagerOpen ? 'flex' : 'none';
             chatOpenStampsBtn?.classList.toggle('active', isStampManagerOpen);
             chatOpenStampsBtn?.setAttribute('aria-selected', String(isStampManagerOpen));
             chatPanelTabBtn?.setAttribute('aria-selected', String(!isStampManagerOpen));
@@ -10280,17 +10254,12 @@
             document.addEventListener(evt, updateFullscreenUI);
         });
 
-        // Pop-out Panel drawer & standalone window logic
+        // Panel drawer collapse/expand logic
         const popoutExpandBtn = document.getElementById('popout-expand-btn');
-        const popoutWindowBtn = document.getElementById('popout-window-btn');
-        const poppedOutPlaceholder = document.getElementById('popped-out-placeholder');
-        const panelBody = document.getElementById('panel-body');
-        const dockPanelBtn = document.getElementById('dock-panel-btn');
 
         const SMALL_WINDOW_BREAKPOINT = 1280;
         let userToggledPanel = false;
         let isPanelCollapsed = window.innerWidth <= SMALL_WINDOW_BREAKPOINT;
-        let popoutWindowRef = null;
 
         // Cover intermediate layouts so image effects never visibly fold during resizing.
         const canvasContainer = document.getElementById('image-container');
@@ -10370,49 +10339,8 @@
             }
         });
 
-        function openPopoutWindow() {
-            const width = 400;
-            const height = 680;
-            const left = window.screen.width - width - 50;
-            const top = 100;
-
-            const url = `/popout?theater_id=${encodeURIComponent(theaterId)}&role=${isCurrentOrator() ? 'orator' : 'viewer'}`;
-            popoutWindowRef = window.open(url, 'NarratronPopoutPanel', `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes`);
-
-            if (popoutWindowRef) {
-                isChatPoppedOut = true;
-                if (panelBody) panelBody.style.display = 'none';
-                if (poppedOutPlaceholder) poppedOutPlaceholder.style.display = isStampManagerOpen ? 'none' : 'flex';
-            }
-        }
-
-        function dockPanelBack() {
-            if (popoutWindowRef && !popoutWindowRef.closed) {
-                popoutWindowRef.close();
-            }
-            popoutWindowRef = null;
-            isChatPoppedOut = false;
-            if (panelBody) panelBody.style.display = isStampManagerOpen ? 'none' : 'flex';
-            if (poppedOutPlaceholder) poppedOutPlaceholder.style.display = 'none';
-        }
-
-        if (popoutWindowBtn) popoutWindowBtn.addEventListener('click', openPopoutWindow);
-        if (dockPanelBtn) dockPanelBtn.addEventListener('click', dockPanelBack);
-
-        popoutBroadcast.onmessage = (event) => {
-            if (event.data.type === 'dock_panel' || event.data.type === 'popout_closed') {
-                dockPanelBack();
-            } else if (event.data.type === 'chat_sent') {
-                fetchChat();
-            } else if (event.data.type === 'name_updated') {
-                chatController.setChatUsername(event.data.name);
-            }
-        };
-
         window.toggleFullScreen = toggleFullScreen;
         window.togglePopoutPanel = () => setPanelCollapsed(!isPanelCollapsed, true);
-        window.openPopoutWindow = openPopoutWindow;
-        window.dockPanelBack = dockPanelBack;
 
         // Chat side arrow toggle tab listener
         const chatSideToggleBtn = document.getElementById('chat-side-toggle-btn');

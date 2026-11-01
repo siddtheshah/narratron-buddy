@@ -293,14 +293,7 @@ def test_canvas_panel_tabs_remain_visible_and_preserve_stamp_composer(
     assert stamp_page.locator("#panel-body").is_visible()
     assert not stamp_page.locator("#stamp-manager-pane").is_visible()
     expect(stamp_page.locator("#chat-show-chat-btn")).to_have_attribute("aria-selected", "true")
-    stamp_page.evaluate("isChatPoppedOut = true; setStampManagerOpen(false)")
-    assert stamp_page.locator("#popped-out-placeholder").is_visible()
-    assert not stamp_page.locator("#panel-body").is_visible()
-    stamp_page.locator("#chat-open-stamps-btn").click()
-    assert not stamp_page.locator("#popped-out-placeholder").is_visible()
-    assert stamp_page.locator("#stamp-manager-pane").is_visible()
-    stamp_page.evaluate("isChatPoppedOut = false; setStampManagerOpen(false)")
-    assert stamp_page.locator("#panel-body").is_visible()
+
 
 
 @pytest.fixture
