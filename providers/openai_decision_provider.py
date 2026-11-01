@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import os
+from typing import Literal
 
 from openai import BaseModel as OpenAIBaseModel, OpenAI
 from pydantic import Field, JsonValue
@@ -17,14 +18,57 @@ from providers.decision_provider import (
     DecisionWireAnswer,
 )
 
-DEFAULT_OPENAI_DECISION_MODEL = "gpt-5-luna"
+DEFAULT_OPENAI_DECISION_MODEL = "gpt-6-luna"
+
+
+class OpenAIDecisionProbability(OpenAIBaseModel):
+    """One choice or score probability in the API's array representation."""
+
+    value: str | int
+    probability: float
+    label: str | None = None
+
+
+class OpenAIDecisionWireAnswer(OpenAIBaseModel):
+    """API answer converted to the provider-neutral representation at the boundary."""
+
+    type: Literal["predicate", "choice", "score", "refusal"]
+    name: str
+    probability: float | None = None
+    choice: str | None = None
+    score: float | None = None
+    probabilities: list[OpenAIDecisionProbability] | None = None
+    confidence: float | None = None
+
+    def to_normalized_answer(self) -> DecisionWireAnswer:
+        if self.type == "refusal":
+            raise DecisionProviderError(
+                f"OpenAI refused to answer decision question '{self.name}'."
+            )
+        probabilities = {
+            (
+                entry.label
+                if self.type == "score" and entry.label is not None
+                else str(entry.value)
+            ): entry.probability
+            for entry in self.probabilities or []
+        }
+        return DecisionWireAnswer(
+            type=self.type,
+            name=self.name,
+            probability=self.probability,
+            choice=self.choice,
+            score=self.score,
+            probabilities=probabilities,
+            confidence=self.confidence,
+        )
 
 
 class OpenAIDecisionsWireResponse(OpenAIBaseModel):
     """Wire schema returned by POST /v1/decisions."""
 
     model: str | None = None
-    answers: list[DecisionWireAnswer] = Field(default_factory=list)
+    answers: list[OpenAIDecisionWireAnswer] = Field(default_factory=list)
     usage: dict[str, JsonValue] | None = None
     _request_id: str | None = None
 
@@ -33,7 +77,7 @@ class OpenAIDecisionProvider(DecisionProvider):
     """Evaluates predicate, choice, and score questions via OpenAI's /v1/decisions endpoint."""
 
     id = "openai-decisions"
-    display_name = "OpenAI Decisions (gpt-5-luna)"
+    display_name = f"OpenAI Decisions ({DEFAULT_OPENAI_DECISION_MODEL})"
 
     def __init__(
         self,
@@ -78,7 +122,7 @@ class OpenAIDecisionProvider(DecisionProvider):
             raise DecisionProviderError("OpenAI returned no decision answers.")
 
         wire_by_name: dict[str, DecisionWireAnswer] = {
-            answer.name: answer for answer in response.answers
+            answer.name: answer.to_normalized_answer() for answer in response.answers
         }
 
         parsed_answers: dict[str, DecisionAnswer] = {}
@@ -120,4 +164,4 @@ class OpenAIDecisionProvider(DecisionProvider):
                     "image_url": f"data:{attachment.mime_type};base64,{encoded}",
                 }
             )
-        return parts
+        return [{"role": "user", "content": parts}]

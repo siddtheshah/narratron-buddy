@@ -35,6 +35,7 @@ from providers.openai_decision_provider import (
     DEFAULT_OPENAI_DECISION_MODEL,
     OpenAIDecisionProvider,
 )
+from providers.text_response_decision_provider import TextResponseDecisionProvider
 
 
 def list_animation_provider_specs() -> list[dict[str, JsonValue]]:
@@ -486,11 +487,27 @@ def get_video_provider(provider_id: str, options: dict[str, JsonValue] | None = 
 _DECISION_SPECS: tuple[dict[str, JsonValue], ...] = (
     {
         "id": "openai-decisions",
-        "name": "OpenAI Decisions (gpt-5-luna)",
+        "name": OpenAIDecisionProvider.display_name,
         "model": DEFAULT_OPENAI_DECISION_MODEL,
         "model_options": [DEFAULT_OPENAI_DECISION_MODEL],
         "status": "unconfigured",
         "notes": "Low-latency structured decisions via OpenAI /v1/decisions (predicate, choice, score).",
+    },
+    {
+        "id": "gemini-2-5-decisions",
+        "name": "Gemini Flash-Lite JSON (Baseline)",
+        "model": "gemini-2.5-flash-lite",
+        "model_options": ["gemini-2.5-flash-lite", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite"],
+        "status": "unconfigured",
+        "notes": "Current Narratron baseline: evaluates decisions via Gemini Flash-Lite constrained JSON schema.",
+    },
+    {
+        "id": "gemini-3-decisions",
+        "name": "Gemini 3 Flash JSON (Baseline)",
+        "model": "gemini-3.8-flash",
+        "model_options": ["gemini-3.8-flash", "gemini-3.5-flash", "gemini-3.0-flash"],
+        "status": "unconfigured",
+        "notes": "Evaluates decisions via Gemini 3 Flash constrained JSON schema for latency/accuracy comparison.",
     },
 )
 
@@ -498,9 +515,19 @@ _DECISION_SPECS: tuple[dict[str, JsonValue], ...] = (
 def list_decision_provider_specs() -> list[dict[str, JsonValue]]:
     specs = [dict(spec) for spec in _DECISION_SPECS]
     has_openai = bool(os.getenv("OPENAI_API_KEY") or os.getenv("OPEN_API_KEY"))
+    has_vertex = bool(
+        os.getenv("GOOGLE_CLOUD_PROJECT")
+        or os.getenv("GCP_PROJECT")
+        or os.getenv("GOOGLE_PROJECT_ID")
+        or os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+        or os.getenv("GEMINI_API_KEY")
+        or os.getenv("GOOGLE_API_KEY")
+    )
     for spec in specs:
         if spec["id"] == "openai-decisions":
             spec["status"] = "available" if has_openai else "unconfigured"
+        elif spec["id"] in ("gemini-2-5-decisions", "gemini-3-decisions"):
+            spec["status"] = "available" if has_vertex else "unconfigured"
     return specs
 
 
@@ -509,10 +536,34 @@ def get_decision_provider(
     options: dict[str, JsonValue] | None = None,
 ) -> DecisionProvider:
     options = options or {}
-    if provider_id in ("openai-decisions", "openai", "gpt-5-luna"):
-        model_opt = options.get("model")
+    model_opt = options.get("model")
+    if provider_id in ("openai-decisions", "openai", "gpt-5-luna", DEFAULT_OPENAI_DECISION_MODEL):
         model = str(model_opt) if model_opt is not None else DEFAULT_OPENAI_DECISION_MODEL
         return OpenAIDecisionProvider(model=model)
+    if provider_id in ("gemini-2-5-decisions", "gemini-2-5"):
+        model = str(model_opt) if model_opt is not None else "gemini-2.5-flash-lite"
+        try:
+            text_provider = get_text_response_provider("gemini-2-5", options={"model": model})
+        except TextResponseProviderError as exc:
+            raise DecisionProviderError(str(exc)) from exc
+        return TextResponseDecisionProvider(
+            text_provider,
+            provider_id="gemini-2-5-decisions",
+            display_name="Gemini Flash-Lite JSON (Baseline)",
+            model=model,
+        )
+    if provider_id in ("gemini-3-decisions", "gemini-3"):
+        model = str(model_opt) if model_opt is not None else "gemini-3.8-flash"
+        try:
+            text_provider = get_text_response_provider("gemini-3", options={"model": model})
+        except TextResponseProviderError as exc:
+            raise DecisionProviderError(str(exc)) from exc
+        return TextResponseDecisionProvider(
+            text_provider,
+            provider_id="gemini-3-decisions",
+            display_name="Gemini 3 Flash JSON (Baseline)",
+            model=model,
+        )
     spec = next((item for item in _DECISION_SPECS if item["id"] == provider_id), None)
     if spec:
         raise DecisionProviderError(

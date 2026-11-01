@@ -7,7 +7,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Literal
 
-from pydantic import BaseModel, Field, JsonValue
+from pydantic import BaseModel, Field, JsonValue, TypeAdapter, ValidationError
 
 MAX_DECISION_QUESTIONS = 400
 MAX_CHOICE_OPTIONS = 255
@@ -64,6 +64,10 @@ class DecisionAnswer(ABC):
             f"Question '{self.name}' returned a '{self.answer_type}' answer, expected 'score'."
         )
 
+    @abstractmethod
+    def to_dict(self) -> dict[str, JsonValue]:
+        """Serialize the typed answer to a JSON-compatible dictionary."""
+
 
 @dataclass(frozen=True)
 class PredicateAnswer(DecisionAnswer):
@@ -88,6 +92,14 @@ class PredicateAnswer(DecisionAnswer):
 
     def as_predicate(self) -> PredicateAnswer:
         return self
+
+    def to_dict(self) -> dict[str, JsonValue]:
+        return {
+            "type": "predicate",
+            "name": self.name,
+            "probability": self.probability,
+            "passed": self.passed(0.5),
+        }
 
 
 @dataclass(frozen=True)
@@ -118,6 +130,15 @@ class ChoiceAnswer(DecisionAnswer):
     def as_choice(self) -> ChoiceAnswer:
         return self
 
+    def to_dict(self) -> dict[str, JsonValue]:
+        return {
+            "type": "choice",
+            "name": self.name,
+            "choice": self.choice,
+            "probabilities": {k: float(v) for k, v in self.probabilities.items()},
+            "confidence": self.confidence,
+        }
+
 
 @dataclass(frozen=True)
 class ScoreAnswer(DecisionAnswer):
@@ -145,6 +166,15 @@ class ScoreAnswer(DecisionAnswer):
     def as_score(self) -> ScoreAnswer:
         return self
 
+    def to_dict(self) -> dict[str, JsonValue]:
+        return {
+            "type": "score",
+            "name": self.name,
+            "score": self.score,
+            "probabilities": {k: float(v) for k, v in self.probabilities.items()},
+            "confidence": self.confidence,
+        }
+
 
 class DecisionQuestion(ABC):
     """A typed question evaluated against shared decision evidence."""
@@ -160,6 +190,14 @@ class DecisionQuestion(ABC):
     @abstractmethod
     def parse_wire_answer(self, raw: DecisionWireAnswer) -> DecisionAnswer:
         """Validate and convert a wire answer into a typed DecisionAnswer."""
+
+    @abstractmethod
+    def to_json_schema_property(self) -> dict[str, JsonValue]:
+        """Build a JSON Schema property definition for generative structured-output baselines."""
+
+    @abstractmethod
+    def parse_structured_json_value(self, raw_value: JsonValue) -> DecisionAnswer:
+        """Convert a generative JSON field value into a typed DecisionAnswer."""
 
 
 @dataclass(frozen=True)
@@ -197,6 +235,21 @@ class PredicateQuestion(DecisionQuestion):
         except ValueError as exc:
             raise DecisionProviderError(str(exc)) from exc
 
+    def to_json_schema_property(self) -> dict[str, JsonValue]:
+        return {
+            "type": "number",
+            "description": f"{self.instructions} Return a probability between 0.0 and 1.0.",
+        }
+
+    def parse_structured_json_value(self, raw_value: JsonValue) -> PredicateAnswer:
+        try:
+            prob = TypeAdapter(float).validate_python(raw_value)
+            return PredicateAnswer(name=self.name, probability=prob)
+        except (ValidationError, ValueError) as exc:
+            raise DecisionProviderError(
+                f"Invalid predicate probability for '{self.name}': {exc}"
+            ) from exc
+
 
 @dataclass(frozen=True)
 class ChoiceQuestion(DecisionQuestion):
@@ -230,7 +283,7 @@ class ChoiceQuestion(DecisionQuestion):
             "type": "choice",
             "name": self.name,
             "instructions": self.instructions,
-            "choices": list(self.choices),
+            "choices": [{"value": choice} for choice in self.choices],
         }
 
     def parse_wire_answer(self, raw: DecisionWireAnswer) -> ChoiceAnswer:
@@ -256,6 +309,31 @@ class ChoiceQuestion(DecisionQuestion):
         except ValueError as exc:
             raise DecisionProviderError(str(exc)) from exc
 
+    def to_json_schema_property(self) -> dict[str, JsonValue]:
+        return {
+            "type": "string",
+            "enum": list(self.choices),
+            "description": self.instructions,
+        }
+
+    def parse_structured_json_value(self, raw_value: JsonValue) -> ChoiceAnswer:
+        try:
+            choice_str = TypeAdapter(str).validate_python(raw_value)
+        except ValidationError as exc:
+            raise DecisionProviderError(
+                f"Invalid choice value for '{self.name}': {exc}"
+            ) from exc
+        if choice_str not in self.choices:
+            raise DecisionProviderError(
+                f"Choice answer '{choice_str}' for question '{self.name}' is not in allowed choices {list(self.choices)}."
+            )
+        return ChoiceAnswer(
+            name=self.name,
+            choice=choice_str,
+            probabilities={opt: (1.0 if opt == choice_str else 0.0) for opt in self.choices},
+            confidence=1.0,
+        )
+
 
 @dataclass(frozen=True)
 class ScoreQuestion(DecisionQuestion):
@@ -274,6 +352,8 @@ class ScoreQuestion(DecisionQuestion):
             raise ValueError(f"ScoreQuestion '{self.name}' instructions cannot be empty.")
         if len(self.levels) < 2:
             raise ValueError(f"ScoreQuestion '{self.name}' requires at least 2 rubric levels.")
+        if len(self.levels) > 10:
+            raise ValueError(f"ScoreQuestion '{self.name}' supports at most 10 rubric levels.")
         normalized = [level.strip() for level in self.levels]
         if any(not level for level in normalized):
             raise ValueError(f"ScoreQuestion '{self.name}' cannot contain empty level names.")
@@ -302,13 +382,13 @@ class ScoreQuestion(DecisionQuestion):
         if self.level_descriptions is not None:
             wire_levels: list[JsonValue] = [
                 {
-                    "value": level,
+                    "label": level,
                     "description": self.level_descriptions.get(level, ""),
                 }
                 for level in self.levels
             ]
         else:
-            wire_levels = list(self.levels)
+            wire_levels = [{"label": level} for level in self.levels]
         return {
             "type": "score",
             "name": self.name,
@@ -334,6 +414,39 @@ class ScoreQuestion(DecisionQuestion):
             )
         except ValueError as exc:
             raise DecisionProviderError(str(exc)) from exc
+
+    def to_json_schema_property(self) -> dict[str, JsonValue]:
+        scale_summary = ", ".join(f"{idx}={lvl}" for idx, lvl in enumerate(self.levels))
+        return {
+            "type": "number",
+            "description": (
+                f"{self.instructions} Return a numeric score from 0.0 to {len(self.levels) - 1}.0 "
+                f"across rubric levels ({scale_summary})."
+            ),
+        }
+
+    def parse_structured_json_value(self, raw_value: JsonValue) -> ScoreAnswer:
+        raw_str = str(raw_value).strip()
+        if raw_str in self.levels:
+            level_idx = float(self.levels.index(raw_str))
+            return ScoreAnswer(
+                name=self.name,
+                score=level_idx,
+                probabilities={lvl: (1.0 if lvl == raw_str else 0.0) for lvl in self.levels},
+                confidence=1.0,
+            )
+        try:
+            score_val = TypeAdapter(float).validate_python(raw_value)
+            return ScoreAnswer(
+                name=self.name,
+                score=score_val,
+                probabilities={lvl: 0.0 for lvl in self.levels},
+                confidence=1.0,
+            )
+        except (ValidationError, ValueError) as exc:
+            raise DecisionProviderError(
+                f"Invalid score value for '{self.name}': {exc}"
+            ) from exc
 
 
 @dataclass(frozen=True)
