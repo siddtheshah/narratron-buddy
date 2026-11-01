@@ -452,6 +452,8 @@ def test_canvas_scene_and_stamp_reference_tagging_and_intent_classification(stam
     assert scene_res.status_code == 200, scene_res.text
     assert scene_res.json()["reference_action"] == "modify"
     assert (scene_dir / "2.webp").is_file()
+    assert (scene_dir / "scene.yaml").is_file()
+    assert "Change @Harbor Dock to midnight under a blood moon" in (scene_dir / "scene.yaml").read_text(encoding="utf-8")
     scene_req = stamps.provider.generate.call_args.args[0]
     assert [ref.data for ref in scene_req.references] == [b"harbor-iter-1"]
 
@@ -489,4 +491,61 @@ def test_canvas_animation_forwards_tagged_references_to_video_provider(stamps: S
     start_img_req = stamps.provider.generate.call_args.args[0]
     assert len(start_img_req.references) == 1
     assert start_img_req.references[0].data == b"zara-video-ref"
+
+
+def test_canvas_scene_reference_intent_modify_general_reference_saves_folder_format(stamps: StampHarness) -> None:
+    root = stamps.manager.theater("stage").directory()
+    ref_dir = root / "references"
+    ref_dir.mkdir(parents=True, exist_ok=True)
+    (ref_dir / "Desk of Origins.png").write_bytes(b"desk-ref-bytes")
+
+    modify_scene = ReferenceIntentDecision(
+        action="modify",
+        target_reference="Desk of Origins",
+        reasoning="Modify Desk of Origins to an ancient ruined desk.",
+    )
+    with patch("api_server.theaters.classify_reference_intent", return_value=modify_scene):
+        scene_res = stamps.client.post("/api/theaters/stage/scenes/generate", json={
+            "name": "Desk of Origins",
+            "prompt": "Modify @Desk of Origins into an ancient ruined desk",
+        })
+    assert scene_res.status_code == 200, scene_res.text
+    assert scene_res.json()["reference_action"] == "modify"
+    target_folder = root / "references" / "scenes" / "Desk of Origins"
+    assert target_folder.is_dir()
+    assert (target_folder / "1.webp").is_file()
+    assert (target_folder / "scene.yaml").is_file()
+    assert "Modify @Desk of Origins into an ancient ruined desk" in (target_folder / "scene.yaml").read_text(encoding="utf-8")
+    scene_req = stamps.provider.generate.call_args.args[0]
+    assert [ref.data for ref in scene_req.references] == [b"desk-ref-bytes"]
+
+
+def test_canvas_scene_reference_intent_modify_flat_scene_migrates_to_folder_format(stamps: StampHarness) -> None:
+    root = stamps.manager.theater("stage").directory()
+    scenes_dir = root / "references" / "scenes"
+    scenes_dir.mkdir(parents=True, exist_ok=True)
+    (scenes_dir / "Moonlit Beach.png").write_bytes(b"flat-beach-bytes")
+
+    modify_scene = ReferenceIntentDecision(
+        action="modify",
+        target_reference="Moonlit Beach",
+        reasoning="Modify Moonlit Beach to daytime stormy weather.",
+    )
+    with patch("api_server.theaters.classify_reference_intent", return_value=modify_scene):
+        scene_res = stamps.client.post("/api/theaters/stage/scenes/generate", json={
+            "name": "Moonlit Beach",
+            "prompt": "Change @Moonlit Beach into a stormy daytime beach",
+        })
+    assert scene_res.status_code == 200, scene_res.text
+    assert scene_res.json()["reference_action"] == "modify"
+    target_folder = scenes_dir / "Moonlit Beach"
+    assert target_folder.is_dir()
+    assert (target_folder / "1.png").is_file()
+    assert (target_folder / "1.png").read_bytes() == b"flat-beach-bytes"
+    assert (target_folder / "2.webp").is_file()
+    assert (target_folder / "scene.yaml").is_file()
+    assert "Change @Moonlit Beach into a stormy daytime beach" in (target_folder / "scene.yaml").read_text(encoding="utf-8")
+    scene_req = stamps.provider.generate.call_args.args[0]
+    assert [ref.data for ref in scene_req.references] == [b"flat-beach-bytes"]
+
 

@@ -335,18 +335,37 @@ async def _generate_canvas_asset(
                             f"{folder}/character.yaml": yaml.safe_dump({"description": prompt}).encode("utf-8"),
                         }
                 elif kind == "scene":
-                    if is_modify and target_entry is not None and target_entry.kind in ("scene", "reference"):
-                        if target_entry.folder:
-                            next_iter = next_reference_iteration(root, "scenes", target_entry.folder)
-                            filename = f"{target_entry.folder}/{next_iter}.webp"
-                        elif target_entry.path.startswith("references/scenes/"):
-                            rel_scene = target_entry.path.removeprefix("references/scenes/")
-                            filename = f"{Path(rel_scene).stem}.webp"
-                        else:
-                            filename = f"{identifier}.webp"
+                    if is_modify and target_entry is not None:
+                        raw_scene_folder = target_entry.folder or target_entry.name
+                        scene_folder = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "", raw_scene_folder).strip(". ") or identifier
+                        next_iter = next_reference_iteration(root, "scenes", scene_folder)
+                        files = {}
+                        loose_source = root / target_entry.path
+                        if (
+                            target_entry.path.startswith("references/scenes/")
+                            and loose_source.is_file()
+                            and next_iter == 1
+                        ):
+                            suffix = loose_source.suffix.lower()
+                            files[f"{scene_folder}/1{suffix}"] = loose_source.read_bytes()
+                            next_iter = 2
+                        scene_meta: dict[str, JsonValue] = {"description": prompt}
+                        existing_yaml = root / "references" / "scenes" / scene_folder / "scene.yaml"
+                        if not existing_yaml.is_file():
+                            existing_yaml = root / "output" / "artifacts" / "updated_references" / "scenes" / scene_folder / "scene.yaml"
+                        if existing_yaml.is_file():
+                            loaded_yaml = yaml.safe_load(existing_yaml.read_text(encoding="utf-8"))
+                            if type(loaded_yaml) is dict:
+                                for k, v in loaded_yaml.items():
+                                    scene_meta[str(k)] = v
+                                scene_meta["description"] = prompt
+                        files[f"{scene_folder}/{next_iter}.webp"] = image.image_bytes
+                        files[f"{scene_folder}/scene.yaml"] = yaml.safe_dump(
+                            scene_meta, sort_keys=False, allow_unicode=True
+                        ).encode("utf-8")
                     else:
                         filename = f"{identifier}.webp"
-                    files = {filename: image.image_bytes}
+                        files = {filename: image.image_bytes}
                 else:
                     if is_modify and target_entry is not None and target_entry.kind == "stamp":
                         rel_stamp = target_entry.path.removeprefix("stamps/")
