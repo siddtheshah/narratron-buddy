@@ -30,6 +30,11 @@ from providers.fal_minimax_video_provider import FalMinimaxVideoProvider
 from providers.gemini_live_agent_provider import GeminiLiveAgentProvider
 from providers.openai_live_agent_provider import OpenAILiveAgentProvider
 from providers.live_agent_provider import LiveAgentProvider, LiveAgentProviderError
+from providers.decision_provider import DecisionProvider, DecisionProviderError
+from providers.openai_decision_provider import (
+    DEFAULT_OPENAI_DECISION_MODEL,
+    OpenAIDecisionProvider,
+)
 
 
 def list_animation_provider_specs() -> list[dict[str, JsonValue]]:
@@ -476,6 +481,45 @@ def get_video_provider(provider_id: str, options: dict[str, JsonValue] | None = 
     if spec:
         raise VideoProviderError(f"{spec['name']} is listed for comparison but its adapter is not configured yet.")
     raise VideoProviderError(f"Unknown video provider: {provider_id}")
+
+
+_DECISION_SPECS: tuple[dict[str, JsonValue], ...] = (
+    {
+        "id": "openai-decisions",
+        "name": "OpenAI Decisions (gpt-5-luna)",
+        "model": DEFAULT_OPENAI_DECISION_MODEL,
+        "model_options": [DEFAULT_OPENAI_DECISION_MODEL],
+        "status": "unconfigured",
+        "notes": "Low-latency structured decisions via OpenAI /v1/decisions (predicate, choice, score).",
+    },
+)
+
+
+def list_decision_provider_specs() -> list[dict[str, JsonValue]]:
+    specs = [dict(spec) for spec in _DECISION_SPECS]
+    has_openai = bool(os.getenv("OPENAI_API_KEY") or os.getenv("OPEN_API_KEY"))
+    for spec in specs:
+        if spec["id"] == "openai-decisions":
+            spec["status"] = "available" if has_openai else "unconfigured"
+    return specs
+
+
+def get_decision_provider(
+    provider_id: str = "openai-decisions",
+    options: dict[str, JsonValue] | None = None,
+) -> DecisionProvider:
+    options = options or {}
+    if provider_id in ("openai-decisions", "openai", "gpt-5-luna"):
+        model_opt = options.get("model")
+        model = str(model_opt) if model_opt is not None else DEFAULT_OPENAI_DECISION_MODEL
+        return OpenAIDecisionProvider(model=model)
+    spec = next((item for item in _DECISION_SPECS if item["id"] == provider_id), None)
+    if spec:
+        raise DecisionProviderError(
+            f"{spec['name']} is listed for comparison but its adapter is not configured yet."
+        )
+    raise DecisionProviderError(f"Unknown decision provider: {provider_id}")
+
 
 
 
