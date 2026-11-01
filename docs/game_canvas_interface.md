@@ -17,6 +17,8 @@ remove stamps managed by the game. A dedicated game-overlay layer adds symbols,
 text, highlights, and visual filters. These writes commit with the game action
 and remain visible with the game panel closed. The game panel remains the primary
 entry point for starting play, choosing actions, and inspecting game state.
+Optional keyboard bindings provide shortcuts to those same game actions,
+including discrete movement with the arrow keys.
 
 ## Package declaration
 
@@ -30,6 +32,13 @@ The declaration opts into the binding and lists permitted output operations.
 An empty `effects` list enables observation only. Unsupported interface versions
 or operations fail package validation. Existing packages without this declaration
 retain their current behavior. No game-specific fields are added to the contract.
+
+## Panel and canvas boundary
+
+The game panel and the main canvas are separate frontend surfaces. Click-and-drag
+interactions in the game panel stay within that panel. They submit ordinary game
+actions; communication with the main canvas flows through committed game state
+and the engine's canvas API. There is no direct cross-surface interaction path.
 
 ## Read interface
 
@@ -80,7 +89,9 @@ are explicitly nullable. IDs are opaque strings, never filesystem paths or URLs.
     "canvas_revision": 42,
     "object_ids": ["placement-3"],
     "point": {"x": 7200, "y": 4800},
-    "region_ids": ["door-lock"]
+    "region_ids": ["door-lock"],
+    "key": null,
+    "binding_id": null
   }
 }
 ```
@@ -150,14 +161,16 @@ not. Rendering sees `event: null`; it must never consume an interaction.
 
 Event kinds in v1 are `stamp_placed`, `stamp_moved`, `stamp_removed`,
 `drawing_completed`, `annotation_changed`, `annotation_removed`, and
-`region_activated`. Each event has exactly the fields shown above. `point` is
-nullable; `object_ids` and `region_ids` are always lists. The host supplies the
+`region_activated`, and `key_pressed`. Each event has exactly the fields shown
+above. `point`, `key`, and `binding_id` are nullable; `object_ids` and `region_ids`
+are always lists. `key` and `binding_id` are non-null only for `key_pressed`.
+`page_id` is nullable for keyboard input with no active page. The host supplies the
 authenticated `actor` (`player`, `contributor`, or `narratron`) and retains the
 principal identity internally for permissions and evidence ownership checks.
 
-Events describe completed edits, not every pointer movement. Their snapshot is
-after the edit, before any game response; removed IDs are consequently absent
-from the snapshot. `point` is the final pointer location when available.
+Canvas edit events describe completed edits, not every pointer movement.
+Their snapshot is after the edit, before any game response; removed IDs are
+consequently absent from the snapshot. `point` is the final pointer location when available.
 `region_ids` contains every visible region containing that point, ordered by ID,
 with edges included. Overlap is not an implicit choice of target. Region
 activation supplies the explicitly activated region and its center as the point.
@@ -198,6 +211,103 @@ geometry explicitly. The host also verifies that the event's principal was
 permitted to manipulate the placement. This guard establishes an attempt to
 install the owned key; its result must record installation, without implicitly
 turning it or moving through the door.
+
+## Keyboard input
+
+An opted-in game may declare `keyboard` next to `transitions` and `view` in its
+package. This is an input declaration, independent of `canvas_api.effects`.
+Keys dispatch existing named transitions; packages do not supply keyboard
+handlers or JavaScript. Arrow-key movement remains a sequence of discrete,
+validated moves under the game's turn rules.
+
+```yaml
+keyboard:
+  enabled: 'state.phase == "exploring" && state.turn == "player"'
+  bindings:
+    - id: move-north
+      key: ArrowUp
+      label: Move north
+      action: {name: '"move"', arguments: '{"direction": "north"}'}
+    - id: move-south
+      key: ArrowDown
+      label: Move south
+      action: {name: '"move"', arguments: '{"direction": "south"}'}
+    - id: move-west
+      key: ArrowLeft
+      label: Move west
+      action: {name: '"move"', arguments: '{"direction": "west"}'}
+    - id: move-east
+      key: ArrowRight
+      label: Move east
+      action: {name: '"move"', arguments: '{"direction": "east"}'}
+```
+
+`keyboard.enabled` is an optional CEL boolean expression, defaulting to `true`.
+Each binding has required literal `id`, `key`, and player-visible `label`, an
+optional CEL boolean `enabled` expression defaulting to `true`, and an `action`
+using the existing view-action contract. Its `name` and `arguments` are CEL
+expressions; its permission and confirmation behavior match a panel button.
+Keyboard bindings can reference only player/contributor transitions, never
+Narratron-only transitions. Binding IDs and keys must be unique in the package.
+
+V1 supports the logical keys `ArrowUp`, `ArrowDown`, `ArrowLeft`, `ArrowRight`,
+`Enter`, a single space (`" "`), and single ASCII letters or digits. Letter
+bindings are normalized to lowercase, including incoming key values. Keys with
+Shift, Control, Alt, or Meta modifiers are ignored, as are composition input and
+reserved navigation keys such as Tab and Escape. A package may define at most
+64 bindings. ID and label lengths are limited to 128 characters.
+
+`enabled`, action names, and arguments evaluate against the current committed
+state and canvas snapshot, with `canvas.event: null`. They refresh whenever
+either revision changes. The host renders a bounded list of resolved shortcuts
+and labels to the client, exposing no additional hidden state. Disabled or
+unauthorized bindings are inactive. Disabling a binding is a UI aid; transition
+guards and permission checks remain authoritative.
+Resolved shortcuts share the existing 128 KiB materialized-view budget and
+4 KiB individual-action limit; overflow reports an error without truncation.
+
+### Focus and dispatch
+
+Opening the game panel activates its keyboard shortcuts for the current tab.
+Closing the panel leaves them available when the canvas itself has focus.
+The panel lists the shortcuts, and a focused canvas shows a small controls hint.
+Escape releases game-key capture; opening the panel again reactivates it. This
+is local focus state and changes neither game nor canvas revision.
+
+The keyboard router handles a key only when the canvas surface or game-panel
+background has focus. Text inputs, chat, textareas, contenteditable areas,
+buttons, tabs, sliders, stamp rotation handles, menus, dialogs, and other
+interactive descendants retain their own keyboard behavior. A pointer drag,
+selection transform, or active canvas text edit also suspends game shortcuts.
+Other focused applications and background browser tabs never dispatch them.
+
+One key press produces at most one action: ignore native key-repeat events
+until release, and permit only one outstanding keyboard submission per client.
+Additional presses during submission or confirmation are dropped, not queued or
+replayed after a state change. The router prevents default scrolling only for
+an enabled binding it owns in the current focus context. It does not also move
+a selected stamp, change tabs, or navigate image history for that same key.
+Blur, page hiding, Escape, or package reset clears held-key tracking; resuming
+requires a fresh non-repeated press. V1 has no key-up actions or held-key state.
+
+For a matched key, the client submits the binding ID, observed game and canvas
+revisions, and a unique client input ID. The host resolves the binding and its
+arguments against that snapshot, records a `key_pressed` event, and dispatches
+the ordinary game action. It derives actor and permissions from the session,
+not from client fields. The event has the canonical `key` and `binding_id`,
+empty `object_ids` and `region_ids`, and `point: null`; it carries the current
+page ID or `null` if there is no page. Input registration alone does not advance
+canvas revision. Retries reuse the same input/event identity and cannot move twice.
+
+The browser reports input; this is not proof of a physical key press. The host
+validates the declared shortcut and resulting action just as it validates a
+button click. It accepts no arbitrary client-supplied trusted event contents.
+Only matched game shortcuts enter this flow; ordinary typing is not recorded.
+Stale or illegal movement returns ordinary action feedback and does not retry
+against a newer position automatically. A `move` transition still checks route,
+obstacles, movement budget, actor, and turn ownership, and can publish stamp or
+overlay changes with the same commit. Its `triggering` flag determines whether
+the committed move prompts narration.
 
 ## Output interface
 
@@ -496,5 +606,12 @@ state and canvas revision unchanged.
 Overlay checks cover all item and filter kinds, normalized text sizing, filter
 order, composition over animations, capture parity, pointer pass-through, panel
 closure, page history/reset behavior, and atomic replacement or clearing.
+Keyboard checks cover all four arrow directions, panel shortcuts and canvas
+focus, typing and nested-control exclusion, Escape/blur, held-key repeats,
+in-flight input dropping, disabled bindings, contributor permissions, stale
+revisions, duplicate submissions, and guards enforcing blocked routes and turns.
+Boundary checks cover panel-only drags, rejected-preview restoration, panel
+actions producing committed canvas effects, canvas inputs refreshing the panel
+through game state, and operation without frontend access between the surfaces.
 The Waking Room is a suitable first integration: inspect, acquire, place,
 operate, and move while the game panel remains closed.
