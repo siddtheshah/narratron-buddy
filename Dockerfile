@@ -1,5 +1,16 @@
 # syntax=docker/dockerfile:1
-FROM python:3.11-slim
+FROM golang:1.25-bookworm AS cel-worker
+WORKDIR /src
+COPY game/cel_go_worker/go.mod game/cel_go_worker/go.sum ./
+RUN go mod download
+COPY game/cel_go_worker/ ./
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /cel-go-worker .
+
+FROM python:3.13-slim
+COPY --from=cel-worker /cel-go-worker /usr/local/bin/cel-go-worker
+ENV NARRATRON_CEL_BACKEND=go \
+    NARRATRON_CEL_GO_WORKER=/usr/local/bin/cel-go-worker \
+    NARRATRON_CEL_GO_POOL_SIZE=2
 
 # Install uv from official distroless image
 COPY --from=ghcr.io/astral-sh/uv:0.6.5 /uv /uvx /bin/
@@ -26,14 +37,17 @@ ENV PATH="/opt/venv/bin:$PATH"
 
 # Copy application source
 COPY main.py .
+COPY object_registry.py .
+COPY ABOUT.md LICENSE ./
 COPY app.yaml .
 COPY theater_default.yaml .
 COPY adventures/ adventures/
 COPY api_server/ api_server/
 COPY components/ components/
 COPY game/ game/
-COPY modules/ modules/
 COPY services/ services/
+COPY storage/ storage/
+COPY testlab/ testlab/
 COPY tools/ tools/
 COPY utils/ utils/
 COPY templates/ templates/

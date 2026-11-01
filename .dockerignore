@@ -6,6 +6,7 @@ __pycache__/
 
 # Git
 .git/
+.worktrees/
 .gitignore
 
 # IDE

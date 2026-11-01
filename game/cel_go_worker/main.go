@@ -117,6 +117,7 @@ type execution struct {
 	pkg                     *compiled
 	cache                   map[string]ref.Val
 	nextID, nodes, svgBytes int
+	convertedBytes          int
 	costLimit               uint64
 	callCost                uint64
 	exhausted               error
@@ -495,7 +496,21 @@ func (e *execution) convert(v ref.Val) (interface{}, error) {
 	start := clockNS()
 	defer func() { e.stats.ConversionNS += clockNS() - start }()
 	budget := maxValue
-	return plainValue(v, &budget, 0)
+	value, err := plainValue(v, &budget, 0)
+	e.convertedBytes += maxValue - budget
+	if limitErr := e.checkOutputBudget(); limitErr != nil {
+		return nil, limitErr
+	}
+	return value, err
+}
+
+// This operation-wide budget includes repeated conversions and authorization
+// renders. Do not reset it between candidates or before preparing the final state.
+func (e *execution) checkOutputBudget() error {
+	if e.convertedBytes+e.svgBytes >= maxFrame {
+		e.exhausted = fmt.Errorf("aggregate output size budget exceeded")
+	}
+	return e.exhausted
 }
 
 // Package helpers cross the same JSON-to-signed-int boundary as Python
@@ -594,6 +609,10 @@ func (e *execution) render(node view, s scope) ([]rendered, error) {
 			return nil, err
 		}
 		e.nodes++
+		e.convertedBytes += len(node.Kind) + 64 // node envelope and separators
+		if err := e.checkOutputBudget(); err != nil {
+			return nil, err
+		}
 		if e.nodes > 1024 {
 			return nil, fmt.Errorf("view node budget exceeded")
 		}
@@ -669,9 +688,17 @@ func (e *execution) render(node view, s scope) ([]rendered, error) {
 						props[k] = v
 					}
 					props["src"] = src
+					data, err := json.Marshal(asset.Props)
+					if err != nil {
+						return nil, err
+					}
+					e.convertedBytes += len(data) + len(src)
 					r.Props = props
 					r.Children = append(append([]rendered{}, asset.Children...), r.Children...)
 					e.svgBytes += e.pkg.assetBytes[src]
+					if err := e.checkOutputBudget(); err != nil {
+						return nil, err
+					}
 				}
 				break
 			}
@@ -717,12 +744,12 @@ func (e *execution) prepare(state map[string]interface{}) (prepared, error) {
 		return out, err
 	}
 	e.nodes = 0
-	e.svgBytes = 0
+	svgStart := e.svgBytes
 	out.View, err = e.render(e.pkg.def.View, s)
 	if err != nil {
 		return out, err
 	}
-	out.SVGExpandedBytes = e.svgBytes
+	out.SVGExpandedBytes = e.svgBytes - svgStart
 	out.ModelState = state
 	if e.pkg.def.ModelState != nil {
 		out.ModelState, err = e.value(*e.pkg.def.ModelState, s)
@@ -791,7 +818,6 @@ func (e *execution) operate(req request) (interface{}, error) {
 		}
 		if req.Actor == "contributor" && t.Actor != "contributor" && t.Permission != "contributor" {
 			e.nodes = 0
-			e.svgBytes = 0
 			viewNodes, err := e.render(e.pkg.def.View, s)
 			if err != nil {
 				return nil, err

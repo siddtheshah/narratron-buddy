@@ -1,8 +1,10 @@
 """Offline worker compatibility, complete-operation parity and deadline probes."""
 from collections.abc import Callable, Iterator
+from concurrent.futures import ThreadPoolExecutor
 import os
 from pathlib import Path
 import sys
+from threading import Barrier
 from unittest.mock import Mock, patch
 
 from pydantic import JsonValue
@@ -11,7 +13,7 @@ import pytest
 from game.game_runtime import FunctionDefinition, GameAction, GameProgram, GameStep, GameWorkBudgetExceeded
 from testing.game_fixtures import counter_definition, exchange_definition
 from testlab.game_benchmark import sample
-from game.go_cel import DEFAULT_COST_LIMIT, GoGameState, GoWorker
+from game.go_cel import DEFAULT_COST_LIMIT, GoGameState, GoWorker, GoWorkerPool
 
 
 @pytest.fixture
@@ -317,3 +319,71 @@ def test_go_parent_validates_draft_candidate_schema_before_commit(worker: GoWork
         game.act(GameAction(name="clear", revision=0, draft=[GameStep(name="add", arguments={"amount": 1})]))
     assert game.serialize() == previous
     persist.assert_not_called()
+
+
+def test_pool_runs_workers_concurrently_and_bounds_wait(worker: GoWorker) -> None:
+    pool = GoWorkerPool(worker.executable, size=2)
+    barrier = Barrier(2)
+
+    def ping(index: int) -> int:
+        with pool.borrow() as borrowed:
+            borrowed.ensure_started()
+            barrier.wait(timeout=5)
+            borrowed.request({"op": "ping"})
+            assert borrowed.process is not None
+            return borrowed.process.pid
+
+    try:
+        with ThreadPoolExecutor(max_workers=2) as threads:
+            assert len(set(threads.map(ping, range(2)))) == 2
+        pool.timeout = 0.02
+        with pool.borrow(), pool.borrow():
+            with pytest.raises(GameWorkBudgetExceeded, match="waiting for a worker"):
+                with pool.borrow():
+                    pytest.fail("exhausted pool lent a worker")
+        with pool.borrow() as borrowed:
+            borrowed.close()
+            borrowed.ensure_started()
+            assert borrowed.request({"op": "ping"}) is not None
+    finally:
+        pool.close()
+
+
+def test_game_operations_move_between_pool_workers(worker: GoWorker, tmp_path: Path) -> None:
+    pool = GoWorkerPool(worker.executable, size=2)
+    directory = tmp_path / "game"
+    directory.mkdir()
+    (directory / "game.json").write_text(counter_definition().model_dump_json(), encoding="utf-8")
+    try:
+        with patch("game.go_cel.shared_go_worker_pool", return_value=pool):
+            game = GoGameState(tmp_path, Mock(), Mock())
+            first = game.worker
+            game.act(GameAction(name="add", arguments={"amount": 1}, revision=0))
+            assert game.worker is not first
+            game.act(GameAction(name="add", arguments={"amount": 1}, revision=1))
+            assert game.worker is first
+            assert game.state == {"count": 2}
+            assert all(game._package_key in borrowed.loaded_packages for borrowed in pool.workers)
+            assert game.worker is not None
+            game.worker.close()
+            game.act(GameAction(name="clear", revision=2))
+            game.act(GameAction(name="add", arguments={"amount": 1}, revision=3))
+            assert game.state == {"count": 1}
+    finally:
+        pool.close()
+
+
+def test_candidate_output_budget_stops_operation_and_preserves_worker(worker: GoWorker) -> None:
+    definition = counter_definition()
+    definition.initial = {"count": 0, "text": "x" * 100000}
+    definition.state_schema = {"type": "object"}
+    definition.invariants = []
+    definition.view.props = {}
+    definition.transitions["clear"].result = "state"
+    worker.load(GameProgram(definition))
+    with pytest.raises(ValueError, match="aggregate output size budget"):
+        worker.request({
+            "op": "act", "state": definition.initial,
+            "steps": [{"name": "clear", "arguments": {}} for _ in range(65)],
+        })
+    assert worker.request({"op": "ping"}) is not None

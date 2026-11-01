@@ -31,6 +31,8 @@ logger = logging.getLogger(__name__)
 MAX_MODEL_STATE_BYTES = 16_384
 MAX_SVG_NODES = 512
 MAX_SVG_DEPTH = 12
+MAX_SVG_ASSETS = 64
+MAX_SVG_ASSET_BYTES = 1_048_576
 BOOL_ADAPTER = TypeAdapter(bool)
 STRING_ADAPTER = TypeAdapter(str)
 MAP_ADAPTER = TypeAdapter(dict[str, JsonValue])
@@ -277,13 +279,31 @@ def load_game_svg_assets(game_dir: Path | None) -> dict[str, RenderedNode]:
     if game_dir is None or not game_dir.is_dir():
         return assets
     resolved_dir = game_dir.resolve()
-    for path in sorted(game_dir.rglob("*")):
+    paths: list[Path] = []
+    total_bytes = 0
+    for path in game_dir.rglob("*"):
         if not path.is_file() or path.suffix.lower() != ".svg":
             continue
-        if not path.resolve().is_relative_to(resolved_dir) or path.stat().st_size > MAX_GAME_BYTES:
+        size = path.stat().st_size
+        if not path.resolve().is_relative_to(resolved_dir) or size > MAX_GAME_BYTES:
             raise ValueError(f"Game SVG path or size is invalid: {path.name}")
+        paths.append(path)
+        total_bytes += size
+        if len(paths) > MAX_SVG_ASSETS or total_bytes > MAX_SVG_ASSET_BYTES:
+            raise ValueError("Game SVG assets exceed their count or total size budget.")
+    # Preflight the complete package before parsing even its first XML document.
+    contents: dict[str, bytes] = {}
+    total_bytes = 0
+    for path in sorted(paths):
         rel = normalize_game_svg_path(path.relative_to(game_dir).as_posix())
-        assets[rel] = validate_game_svg(path.read_bytes())
+        with path.open("rb") as stream:
+            content = stream.read(min(MAX_GAME_BYTES, MAX_SVG_ASSET_BYTES - total_bytes) + 1)
+        total_bytes += len(content)
+        if len(content) > MAX_GAME_BYTES or total_bytes > MAX_SVG_ASSET_BYTES:
+            raise ValueError("Game SVG assets exceed their total size budget.")
+        contents[rel] = content
+    for rel, content in contents.items():
+        assets[rel] = validate_game_svg(content)
     return assets
 
 

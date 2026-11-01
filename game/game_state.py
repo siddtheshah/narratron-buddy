@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 from threading import RLock
 from typing import TYPE_CHECKING, Literal
+from uuid import uuid4
 
 from jsonschema import ValidationError as SchemaValidationError
 from pydantic import Field, JsonValue, TypeAdapter
@@ -22,7 +23,7 @@ from game.game_runtime import (
 )
 
 if TYPE_CHECKING:
-    from game.go_cel import GoWorker
+    from game.go_cel import GoWorker, GoWorkerPool
 
 logger = logging.getLogger(__name__)
 
@@ -98,17 +99,22 @@ class GameState:
         self._client: dict[str, JsonValue] | None = None
         self._dedicated_worker = worker is not None
         self._worker: GoWorker | None = worker
+        self._worker_pool: GoWorkerPool | None = None
         self._package_key = ""
         self.operation_metrics: dict[str, int] = {}
 
         if self._worker is None:
-            selected = backend if backend != "auto" else os.environ.get("NARRATRON_CEL_BACKEND", "auto").strip().lower()
+            selected = backend if backend != "auto" else os.environ.get("NARRATRON_CEL_BACKEND", "go").strip().lower()
+            if selected not in ("auto", "go", "python"):
+                raise ValueError(f"Unknown CEL backend: {selected}")
             if selected in ("auto", "go"):
-                from game.go_cel import shared_go_worker
+                from game.go_cel import shared_go_worker_pool
 
-                self._worker = shared_go_worker()
+                self._worker_pool = shared_go_worker_pool()
+                if self._worker_pool is not None:
+                    self._worker = self._worker_pool.workers[0]
                 if selected == "go" and self._worker is None:
-                    raise RuntimeError("CEL-Go worker binary is not available.")
+                    raise RuntimeError("CEL-Go worker binary is not available. Build game/cel_go_worker or set NARRATRON_CEL_GO_WORKER.")
 
         try:
             path = find_game_file(directory)
@@ -122,15 +128,21 @@ class GameState:
             if self._worker is not None:
                 from game.go_cel import load_go_package
 
-                self._package_key = "" if self._dedicated_worker else self.definition_hash
-                self.program = load_go_package(
-                    self._worker,
-                    content,
-                    filename=path.name,
-                    game_dir=path.parent,
-                    package_key=self._package_key,
-                    auto_start=not self._dedicated_worker,
-                )
+                # Assets are part of a package too. Separate instances must not
+                # alias cached definitions with different or updated SVG files.
+                self._package_key = "" if self._dedicated_worker else uuid4().hex
+                if self._worker_pool is not None:
+                    with self._worker_pool.borrow() as pooled_worker:
+                        self._worker = pooled_worker
+                        self.program = load_go_package(
+                            pooled_worker, content, filename=path.name, game_dir=path.parent,
+                            package_key=self._package_key, auto_start=True,
+                        )
+                else:
+                    self.program = load_go_package(
+                        self._worker, content, filename=path.name, game_dir=path.parent,
+                        package_key=self._package_key,
+                    )
                 self.operation_metrics = dict(self._worker.last_metrics)
             else:
                 self.definition_hash = ""
@@ -158,14 +170,22 @@ class GameState:
     def worker(self) -> GoWorker | None:
         return self._worker
 
-    def _ensure_worker_loaded(self) -> None:
+    def _go_request(self, message: dict[str, JsonValue]) -> JsonValue:
         assert self._worker is not None and self.program is not None
-        if self._dedicated_worker:
-            return
-        with self._worker.lock:
-            self._worker.ensure_started()
-            if self._package_key and self._package_key not in self._worker.loaded_packages:
-                self._worker.load(self.program, package=self._package_key)
+        if self._worker_pool is None:
+            try:
+                return self._worker.request(message)
+            finally:
+                self.operation_metrics = dict(self._worker.last_metrics)
+        with self._worker_pool.borrow() as worker:
+            self._worker = worker
+            worker.ensure_started()
+            if self._package_key not in worker.loaded_packages:
+                worker.load(self.program, package=self._package_key)
+            try:
+                return worker.request(message)
+            finally:
+                self.operation_metrics = dict(worker.last_metrics)
 
     def _prepare(self, state: dict[str, JsonValue], budget: Budget | None = None) -> list[JsonValue]:
         assert self.program is not None
@@ -173,17 +193,15 @@ class GameState:
             from game.go_cel import Prepared, validate_prepared
 
             logger.debug("[GameState] Preparing state (revision=%d): %s", self.revision, state)
-            self._ensure_worker_loaded()
             message: dict[str, JsonValue] = {"op": "prepare", "state": state}
             if self._package_key:
                 message["package"] = self._package_key
-            result = self._worker.request(message)
+            result = self._go_request(message)
             prepared = Prepared.model_validate(result)
             view = validate_prepared(self.program, prepared)
             self._view = view
             self._model_state = prepared.model_state
             self._narratron_actions = prepared.actions
-            self.operation_metrics = dict(self._worker.last_metrics)
             logger.debug(
                 "[GameState] Prepared state successfully (nodes=%d, actions=%s)",
                 len(view),
@@ -383,7 +401,6 @@ class GameState:
             except SchemaValidationError as exc:
                 raise InvalidGameInput(f"Invalid input: {exc.message[:200]}") from exc
 
-        self._ensure_worker_loaded()
         try:
             try:
                 message: dict[str, JsonValue] = {
@@ -394,7 +411,7 @@ class GameState:
                 }
                 if self._package_key:
                     message["package"] = self._package_key
-                result = self._worker.request(message)
+                result = self._go_request(message)
             except ValueError as exc:
                 if str(exc) == "Only the active orator can take this game action.":
                     raise UnauthorizedGameAction(str(exc)) from exc
@@ -428,12 +445,10 @@ class GameState:
             }
             if self._package_key:
                 recover_msg["package"] = self._package_key
-            recovered_result = self._worker.request(recover_msg)
+            recovered_result = self._go_request(recover_msg)
             proposal = Prepared.model_validate(recovered_result)
             view = validate_prepared(self.program, proposal)
             logger.warning("Game action %s failed; applied its declared recovery", action.name, exc_info=True)
-        finally:
-            self.operation_metrics = dict(self._worker.last_metrics)
 
         self.state = proposal.state
         self._view = view

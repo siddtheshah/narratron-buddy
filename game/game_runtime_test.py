@@ -1,5 +1,6 @@
 """Random CEL calls must draw afresh, including through cached helper expressions."""
 from functools import partial
+from pathlib import Path
 from unittest.mock import Mock, patch
 
 import pytest
@@ -9,8 +10,25 @@ from game.game_runtime import (
     Budget, FunctionDefinition, GameProgram, GameWorkBudgetExceeded,
     MAX_STEPS, MAX_SECONDS, RECOVERY_MAX_STEPS, RECOVERY_MAX_SECONDS,
     evaluate_with_recovery, validate_game_package,
+    load_game_svg_assets,
 )
 from testing.game_fixtures import counter_definition
+
+
+@pytest.mark.parametrize("count,size,count_limit,byte_limit", [(3, 6, 2, 100), (2, 6, 5, 10)])
+def test_svg_package_limits_apply_before_parsing(
+    tmp_path: Path, count: int, size: int, count_limit: int, byte_limit: int,
+) -> None:
+    for index in range(count):
+        (tmp_path / f"{index}.svg").write_bytes(b"x" * size)
+    with (
+        patch("game.game_runtime.MAX_SVG_ASSETS", count_limit),
+        patch("game.game_runtime.MAX_SVG_ASSET_BYTES", byte_limit),
+        patch("game.game_runtime.validate_game_svg") as parse,
+    ):
+        with pytest.raises(ValueError, match="count or total size budget"):
+            load_game_svg_assets(tmp_path)
+        parse.assert_not_called()
 
 
 @pytest.mark.parametrize("value", [None, {}, {"kind": "wrap"}, [], [None], "white", 0, False])

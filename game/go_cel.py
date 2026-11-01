@@ -9,11 +9,13 @@ receipts, and persistence.
 from __future__ import annotations
 
 import atexit
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
 import json
 import os
 from pathlib import Path
+from queue import Empty, Queue
 import shutil
 import subprocess
 import sys
@@ -219,21 +221,50 @@ def find_go_worker_executable() -> Path | None:
     return None
 
 
+class GoWorkerPool:
+    """Bounded, lazy subprocess pool; a lease covers package load and operation."""
+
+    def __init__(self, executable: Path, size: int = 2, timeout: float = 5.0) -> None:
+        if not 1 <= size <= 32:
+            raise ValueError("Go worker pool size must be between 1 and 32")
+        self.timeout = timeout
+        self.workers = [GoWorker(executable, timeout=timeout, serialize_calls=True) for _ in range(size)]
+        self.available: Queue[GoWorker] = Queue(maxsize=size)
+        for worker in self.workers:
+            self.available.put_nowait(worker)
+
+    @contextmanager
+    def borrow(self) -> Iterator[GoWorker]:
+        try:
+            worker = self.available.get(timeout=self.timeout)
+        except Empty as exc:
+            raise GameWorkBudgetExceeded("CEL-Go operation exceeded its deadline waiting for a worker") from exc
+        try:
+            yield worker
+        finally:
+            self.available.put_nowait(worker)
+
+    def close(self) -> None:
+        for worker in self.workers:
+            worker.close()
+
+
 _shared_worker_lock = Lock()
-_shared_worker: GoWorker | None = None
+_shared_pool: GoWorkerPool | None = None
 
 
-def shared_go_worker() -> GoWorker | None:
-    global _shared_worker
+def shared_go_worker_pool() -> GoWorkerPool | None:
+    global _shared_pool
     with _shared_worker_lock:
-        if _shared_worker is not None:
-            return _shared_worker
+        if _shared_pool is not None:
+            return _shared_pool
         executable = find_go_worker_executable()
         if executable is None:
             return None
-        _shared_worker = GoWorker(executable, serialize_calls=True)
-        atexit.register(_shared_worker.close)
-        return _shared_worker
+        size = int(os.environ.get("NARRATRON_CEL_GO_POOL_SIZE", "2"))
+        _shared_pool = GoWorkerPool(executable, size=size)
+        atexit.register(_shared_pool.close)
+        return _shared_pool
 
 
 def validate_prepared(program: GameProgram, prepared: Prepared) -> list[JsonValue]:

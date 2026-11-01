@@ -10,6 +10,12 @@ __pycache__/
 
 # Git
 .git/
+.worktrees/
+.pytest_cache/
+.ruff_cache/
+ephemeral/
+stamps/
+music_catalog/
 
 # IDE
 .vscode/

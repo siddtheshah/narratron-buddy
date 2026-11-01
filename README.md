@@ -66,6 +66,27 @@ To get started with GCloud, complete the following steps:
 
 ## Running the App
 
+Games use the CEL-Go worker by default. Build the local binary before starting:
+
+```powershell
+go -C game/cel_go_worker build -trimpath -o ../../scratch/cel-go-worker.exe .
+```
+
+On Linux/macOS, omit `.exe`. Go 1.23 or newer is required to build the worker.
+`NARRATRON_CEL_GO_WORKER` can point to another binary. The app uses a lazy pool
+of two workers per Python process; set `NARRATRON_CEL_GO_POOL_SIZE` (1–32) to
+change its size. Operations borrow an idle worker with a bounded wait, and
+packages are cached independently on each worker. Dead workers restart on reuse.
+Set `NARRATRON_CEL_BACKEND=python` to explicitly select the legacy backend, or
+`auto` to allow fallback when the binary is absent. The default `go` setting
+requires the binary. The Dockerfile builds and installs the Linux worker and
+selects the same Go backend and pool size for Cloud Run.
+
+SVG packages are limited to 64 assets and 1 MiB of source data before parsing,
+with the existing 128 KiB per-file limit. Go operations share a 4 MiB aggregate
+conversion and SVG expansion budget across rendering, model state and draft
+candidates, in addition to the wire-frame and individual-value limits.
+
 ### Start the Combined Web Canvas
 This runs both the web viewer and the bidi agent WebSocket server on port 8000:
 ```powershell
