@@ -110,26 +110,17 @@ def test_upload_rejects_outdated_layouts_instead_of_rewriting_paths(tmp_path: Pa
         safe_asset_path(tmp_path, upload_path(filename, False))
 
 
-def test_default_draft_has_separate_role_guides_and_preserves_them_on_publish(tmp_path: Path) -> None:
+def test_default_draft_matches_example_theater_and_preserves_assets_on_publish(tmp_path: Path) -> None:
     store = TheaterBuilderStore(tmp_path / "repository")
     info = store.create(7, "World", "live_agent: {}\n")
     target = tmp_path / "runtime"
     target.mkdir()
     assert TheaterRepository(target.parent).export_theater(target.name, store.directory(info.theater_id))
-    assert "immediate scene" in (target / "lore/RESPONDER.md").read_text(encoding="utf-8")
-    assert "conditional off-screen intentions" in (target / "lore/PLANNER.md").read_text(encoding="utf-8")
-    assert "Reconcile established facts" in (target / "lore/RECORDER.md").read_text(encoding="utf-8")
-    assert not list((target / "lore").glob("read*"))
-    definitions = parse_planning_schema(yaml.safe_load((target / "planning.yaml").read_text(encoding="utf-8")))
-    assert definitions["Player Character"]["owner"] == "recorder"
-    assert definitions["Current Scene"]["owner"] == "recorder"
-    encounter = definitions["Upcoming Encounter Suggestion"]
-    assert encounter["owner"] == "planner"
-    assert set(encounter["fields"]) == {"encounter", "story_goal", "drama"}
-    assert set(encounter["initial"]) == set(encounter["fields"])
-    config = yaml.safe_load((target / "theater.yaml").read_text(encoding="utf-8"))
-    assert encounter["hidden"] is True
-    assert "hidden_stickies" not in config.get("story_planning", {})
+    assert (target / "theater.yaml").is_file()
+    assert (target / "references" / "narratron_avatar.webp").is_file()
+    assert (target / "playlists" / "default" / "new_story.mp3").is_file()
+    assert not (target / "planning.yaml").exists()
+    assert not (target / "lore" / "RESPONDER.md").exists()
 
 
 
@@ -154,7 +145,14 @@ def test_game_format_replacement_is_atomic_and_multiple_declarations_are_rejecte
 def test_assistant_keeps_role_guides_and_planning_context_ahead_of_bulk_lore(tmp_path: Path) -> None:
     store = TheaterBuilderStore(tmp_path)
     info = store.create(7, "World", "live_agent: {}\n")
-    store.write_files(info, {f"lore/aaa_{index}.txt": b"x" * 20_000 for index in range(5)})
+    adventure_files: dict[str, bytes] = {
+        "planning.yaml": b"Player: {owner: recorder}\n",
+        "lore/RESPONDER.md": b"guide",
+        "lore/PLANNER.md": b"guide",
+        "lore/RECORDER.md": b"guide",
+        **{f"lore/aaa_{index}.txt": b"x" * 20_000 for index in range(5)},
+    }
+    store.write_files(info, adventure_files)
     client = MagicMock()
     client.models.generate_content.return_value.text = '{"message":"Ready"}'
     with patch("services.theater_builder.genai.Client", return_value=client):

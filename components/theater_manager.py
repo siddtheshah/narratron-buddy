@@ -855,7 +855,9 @@ class TheaterManager:
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(content)
             mounted_references.append(relative_path.as_posix())
-        default_references = Path(__file__).parent.parent / "reference_library"
+        default_references = Path(__file__).parent.parent / "example_theater" / "references"
+        if not default_references.exists():
+            default_references = Path(__file__).parent.parent / "reference_library"
         if default_references.exists():
             for reference in default_references.iterdir():
                 if reference.is_file() and reference.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp"}:

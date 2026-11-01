@@ -211,20 +211,25 @@ class TheaterBuilderStore:
             raise ValueError("No eligible theater files were found to import.")
         files.setdefault("theater.yaml", b"live_agent: {}\n" if importing else default_yaml.encode("utf-8"))
         if not importing and populate_default:
-            defaults = Path(__file__).with_name("theater_builder_defaults")
-            for template in defaults.rglob("*"):
-                if template.is_file():
-                    files[template.relative_to(defaults).as_posix()] = template.read_bytes()
             project_root = Path(__file__).resolve().parent.parent
-            for asset in (project_root / "reference_library").glob("*"):
-                if asset.is_file() and asset.suffix.lower() in IMAGE_EXTENSIONS:
-                    data = asset.read_bytes()
-                    files[f"references/{asset.name}"] = data
-                    if "avatar" in asset.stem.lower():
-                        files[f"references/characters/Narratron/1{asset.suffix.lower()}"] = data
-            default_track = project_root / "playlists" / "default" / "new story.mp3"
-            if default_track.is_file():
-                files["playlists/default/new_story.mp3"] = default_track.read_bytes()
+            example_theater = project_root / "example_theater"
+            if example_theater.is_dir():
+                for template in example_theater.rglob("*"):
+                    if template.is_file():
+                        rel = template.relative_to(example_theater).as_posix()
+                        if rel == "theater.yaml":
+                            continue
+                        if rel == "playlists/default/new story.mp3":
+                            files["playlists/default/new_story.mp3"] = template.read_bytes()
+                        else:
+                            files[rel] = template.read_bytes()
+            else:
+                for asset in (project_root / "reference_library").glob("*"):
+                    if asset.is_file() and asset.suffix.lower() in IMAGE_EXTENSIONS:
+                        files[f"references/{asset.name}"] = asset.read_bytes()
+                default_track = project_root / "playlists" / "default" / "new story.mp3"
+                if default_track.is_file():
+                    files["playlists/default/new_story.mp3"] = default_track.read_bytes()
         self.write_files(info, files)
         self.ensure_directories(identifier)
         return info

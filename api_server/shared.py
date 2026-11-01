@@ -52,13 +52,19 @@ app.mount("/static", StaticFiles(directory=static_dir), name="static")
 # Screenshots and diagrams embedded in the public documentation.
 app.mount("/docs/images", StaticFiles(directory=PROJECT_ROOT / "docs" / "images"), name="docs-images")
 
-# Public playlists always live in the project's fixed playlists directory.
-playlists_folder = str((PROJECT_ROOT / "playlists").resolve())
+# Public playlists live in the example_theater or fixed playlists directory.
+playlists_dir_path = PROJECT_ROOT / "example_theater" / "playlists"
+if not playlists_dir_path.exists():
+    playlists_dir_path = PROJECT_ROOT / "playlists"
+playlists_folder = str(playlists_dir_path.resolve())
 os.makedirs(playlists_folder, exist_ok=True)
 app.mount("/playlists", StaticFiles(directory=playlists_folder), name="playlists")
 
 # Reference library folder (absolute path resolution)
-ref_library_folder = str((PROJECT_ROOT / "reference_library").resolve())
+ref_library_dir_path = PROJECT_ROOT / "example_theater" / "references"
+if not ref_library_dir_path.exists():
+    ref_library_dir_path = PROJECT_ROOT / "reference_library"
+ref_library_folder = str(ref_library_dir_path.resolve())
 os.makedirs(ref_library_folder, exist_ok=True)
 app.mount("/reference_library", StaticFiles(directory=ref_library_folder), name="reference_library")
 

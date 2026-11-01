@@ -38,13 +38,15 @@ def get_app_config(config_filename: str = "app.yaml") -> Dict[str, Any]:
     return config_data
 
 def get_theater_default_config() -> Dict[str, Any]:
-    """Loads default configuration for theater sessions from theater_default.yaml."""
+    """Loads default configuration for theater sessions from example_theater/theater.yaml or theater_default.yaml."""
     global _THEATER_DEFAULT_CACHE
     if _THEATER_DEFAULT_CACHE is not None:
         return deepcopy(_THEATER_DEFAULT_CACHE)
 
     root_dir = Path(__file__).parent.parent.resolve()
-    config_path = root_dir / "theater_default.yaml"
+    config_path = root_dir / "example_theater" / "theater.yaml"
+    if not config_path.exists():
+        config_path = root_dir / "theater_default.yaml"
 
     config_data = {}
     if config_path.exists():

@@ -46,6 +46,7 @@ extend-exclude = [
     "adventures",
     "demos",
     "evaluation_results",
+    "example_theater",
     "output",
     "playlists",
     "reference_library",

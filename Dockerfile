@@ -1,57 +1,38 @@
-# ---- Build stage: compile CEL-Go worker ----
-FROM golang:1.23-bookworm AS go-builder
+# syntax=docker/dockerfile:1
+FROM python:3.11-slim
 
-WORKDIR /src/game/cel_go_worker
-COPY game/cel_go_worker/go.mod game/cel_go_worker/go.sum ./
-RUN go mod download
-COPY game/cel_go_worker/*.go ./
-RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/cel-go-worker .
+# Install uv from official distroless image
+COPY --from=ghcr.io/astral-sh/uv:0.6.5 /uv /uvx /bin/
 
-# ---- Build stage: install Python dependencies with uv ----
-FROM python:3.12-slim AS builder
+# Install system dependencies (curl for healthchecks)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Install build-essential for any native extensions
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends build-essential curl ca-certificates && \
-    rm -rf /var/lib/apt/lists/*
+# Enable bytecode compilation
+ENV UV_COMPILE_BYTECODE=1
 
-# Install a pinned uv release without depending on the container registry.
-ADD https://astral.sh/uv/0.8.20/install.sh /tmp/uv-installer.sh
-RUN UV_INSTALL_DIR=/bin UV_NO_MODIFY_PATH=1 sh /tmp/uv-installer.sh && \
-    rm /tmp/uv-installer.sh
-
-# Sync dependencies into /opt/venv exactly as resolved in uv.lock
-ENV UV_PROJECT_ENVIRONMENT=/opt/venv
+# Copy dependency definition files first for caching
 COPY pyproject.toml uv.lock ./
+
+# Install dependencies into a persistent virtual environment
+ENV UV_PROJECT_ENVIRONMENT="/opt/venv"
 RUN uv sync --frozen --no-dev --no-install-project
 
-# ---- Runtime stage ----
-FROM python:3.12-slim
-
-WORKDIR /app
-
-RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/*
-
-# Copy compiled CEL-Go worker binary and Python virtual environment
-COPY --from=go-builder /out/cel-go-worker /usr/local/bin/cel-go-worker
-COPY --from=builder /opt/venv /opt/venv
-COPY --from=builder /bin/uv /bin/uv
+# Place virtualenv executables at the front of PATH
 ENV PATH="/opt/venv/bin:$PATH"
 
 # Copy application source
-COPY object_registry.py .
 COPY main.py .
 COPY app.yaml .
 COPY theater_default.yaml .
-COPY ABOUT.md .
-
-# Copy package directories
+COPY adventures/ adventures/
+COPY api_server/ api_server/
 COPY components/ components/
 COPY game/ game/
-COPY api_server/ api_server/
-COPY storage/ storage/
+COPY modules/ modules/
 COPY services/ services/
 COPY tools/ tools/
 COPY utils/ utils/
@@ -62,9 +43,8 @@ COPY providers/ providers/
 COPY models/ models/
 COPY docs/ docs/
 
-# Copy default playlist and reference library assets that are checked in
-COPY playlists/ playlists/
-COPY reference_library/ reference_library/
+# Copy default theater assets that are checked in
+COPY example_theater/ example_theater/
 
 EXPOSE 8080
 

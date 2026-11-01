@@ -678,7 +678,7 @@ class TestImageTools(BaseTestCase):
         self.manager.create_theater(name="Preserve workspace", theater_id=theater_id)
         theater_dir = self.manager.theater(theater_id).directory()
         config_path = theater_dir / "theater.yaml"
-        reference_path = theater_dir / "references" / "narratron_avatar.jpg"
+        reference_path = theater_dir / "references" / "narratron_avatar.webp"
 
         tools = self.make_image_tools(self.config, theater_id=theater_id, theater_manager=self.manager)
         tools.create_image("a moonlit observatory", image_name="observatory", display=False)
@@ -1204,6 +1204,7 @@ class TestImageTools(BaseTestCase):
         variations = [
             "narratron_avatar",
             "narratron_avatar.jpg",
+            "narratron_avatar.webp",
             "narratron-avatar",
             "narratron-avatar.png",
             "narratron avatar",
