@@ -19,6 +19,7 @@ from providers.fal_qwen_layered_provider import LayeredImageResult
 from testing.base import BaseTestCase
 from testing.reference_manager_fixture import make_reference_manager
 from tools.animation_tool import AnimationTools
+from providers.animation_provider import AnimationProvider
 from tools.image import ImageTools
 from tools.base_tool import CANVAS_PINNED_MESSAGE
 from components.reference_manager import Character, CharacterLookupResult
@@ -1777,9 +1778,11 @@ class TestAnimationTools(BaseTestCase):
 
         animation_id = re.search(r"Animation ID: '([^']+)'", result).group(1)
 
-        # Decision provider should have been asked if new base image is necessary
-        mock_decision_provider.decide.assert_called_once()
-        req = mock_decision_provider.decide.call_args[0][0]
+        # Decision provider should have been asked if loop and if new base image is necessary
+        self.assertEqual(mock_decision_provider.decide.call_count, 2)
+        loop_req = mock_decision_provider.decide.call_args_list[0][0][0]
+        self.assertEqual(loop_req.questions[0].name, "loop_animation")
+        req = mock_decision_provider.decide.call_args_list[1][0][0]
         self.assertIn("Ancient stone castle under star-filled sky", req.input_text)
         self.assertIn("Ancient stone castle under a starry night sky", req.input_text)
 
@@ -1790,6 +1793,7 @@ class TestAnimationTools(BaseTestCase):
         video_provider.generate.assert_called_once()
         vid_req = video_provider.generate.call_args[0][0]
         self.assertEqual(vid_req.image_bytes, raw_scene_bytes)
+        self.assertEqual(vid_req.end_image_bytes, raw_scene_bytes)
 
         # Manifest contains start_image and video files
         manifest = animation_tools._find_video_animation(animation_id)
@@ -1799,4 +1803,181 @@ class TestAnimationTools(BaseTestCase):
         self.assertEqual(manifest["start_image"], expected_start_frame)
         self.assertEqual(manifest["start_frame"], expected_start_frame)
         self.assertEqual(manifest["provider"]["start_image_reference"], "castle.png")
+
+    @patch("tools.image.image_tool.get_image_provider")
+    def test_create_animation_video_with_decision_provider_loop_sets_ending_frame_equal_to_start_frame(self, mock_get_provider):
+        raw_scene_bytes = fake_image_bytes()
+        image_provider = MagicMock()
+        video_provider = MagicMock()
+        video_provider.generate.return_value = VideoGenerationResult(
+            video_bytes=fake_video_bytes(),
+            mime_type="video/mp4",
+            provider="fal-minimax-h3-turbo",
+            model="minimax/h3-max-turbo/image-to-video",
+            request_id="vid-dp-loop-true",
+            video_url="https://fal.media/loop_true.mp4",
+        )
+        video_provider.model = "minimax/h3-max-turbo/image-to-video"
+        video_provider.is_image_to_video = True
+
+        mock_decision_provider = MagicMock(spec=DecisionProvider)
+        mock_decision_provider.decide.side_effect = [
+            DecisionResult(
+                provider="test-decisions",
+                model="test-model",
+                answers={
+                    "loop_animation": PredicateAnswer(
+                        name="loop_animation", probability=0.95
+                    ),
+                },
+            ),
+            DecisionResult(
+                provider="test-decisions",
+                model="test-model",
+                answers={
+                    "new_base_image_necessary": PredicateAnswer(
+                        name="new_base_image_necessary", probability=0.1
+                    ),
+                },
+            ),
+        ]
+
+        canvas_state_service = CanvasStateService(self.manager)
+        image_tools = self.make_image_tools(self.config, "loop_true_theater", self.manager, canvas_state_service=canvas_state_service)
+        reference_manager = MagicMock()
+        ref = ImageReference(
+            name="pond.png",
+            data=raw_scene_bytes,
+            mime_type="image/png",
+            label="Pond",
+            description="A serene koi pond with gentle water ripples",
+        )
+        reference_manager.resolve_provider_references.return_value = ([ref], None)
+        reference_manager.decision_provider = mock_decision_provider
+
+        animation_tools = self.make_animation_tools(
+            image_tools,
+            image_provider,
+            MagicMock(),
+            MagicMock(),
+            {"forced_technique": "video", "cooldown_duration": 0},
+            video_provider=video_provider,
+            reference_manager=reference_manager,
+            decision_provider=mock_decision_provider,
+        )
+
+        result = animation_tools.create_animation(
+            "Koi fish swimming calmly in a circular ripple pattern.",
+            "koi_loop",
+            reference_images="pond",
+            technique="video",
+        )
+        animation_tools.join_generation()
+
+        animation_id = re.search(r"Animation ID: '([^']+)'", result).group(1)
+
+        self.assertEqual(mock_decision_provider.decide.call_count, 2)
+        video_provider.generate.assert_called_once()
+        vid_req = video_provider.generate.call_args[0][0]
+        # Ending frame must be equal to starting frame
+        self.assertEqual(vid_req.image_bytes, raw_scene_bytes)
+        self.assertEqual(vid_req.end_image_bytes, vid_req.image_bytes)
+
+        manifest = animation_tools._find_video_animation(animation_id)
+        self.assertIsNotNone(manifest)
+        self.assertTrue(manifest["loop"])
+        expected_frame = str(Path(animation_tools.animations_dir) / animation_id / "start_frame.webp")
+        self.assertEqual(manifest["start_frame"], expected_frame)
+        self.assertEqual(manifest["end_frame"], expected_frame)
+        self.assertIsNotNone(animation_tools.visual.resolve_image_path(f"{animation_id}_end_frame"))
+
+    @patch("tools.image.image_tool.get_image_provider")
+    def test_create_animation_video_with_decision_provider_no_loop_does_not_set_ending_frame(self, mock_get_provider):
+        raw_scene_bytes = fake_image_bytes()
+        image_provider = MagicMock()
+        video_provider = MagicMock()
+        video_provider.generate.return_value = VideoGenerationResult(
+            video_bytes=fake_video_bytes(),
+            mime_type="video/mp4",
+            provider="fal-minimax-h3-turbo",
+            model="minimax/h3-max-turbo/image-to-video",
+            request_id="vid-dp-no-loop",
+            video_url="https://fal.media/no_loop.mp4",
+        )
+        video_provider.model = "minimax/h3-max-turbo/image-to-video"
+        video_provider.is_image_to_video = True
+
+        mock_decision_provider = MagicMock(spec=DecisionProvider)
+        mock_decision_provider.decide.side_effect = [
+            DecisionResult(
+                provider="test-decisions",
+                model="test-model",
+                answers={
+                    "loop_animation": PredicateAnswer(
+                        name="loop_animation", probability=0.05
+                    ),
+                },
+            ),
+            DecisionResult(
+                provider="test-decisions",
+                model="test-model",
+                answers={
+                    "new_base_image_necessary": PredicateAnswer(
+                        name="new_base_image_necessary", probability=0.1
+                    ),
+                },
+            ),
+        ]
+
+        canvas_state_service = CanvasStateService(self.manager)
+        image_tools = self.make_image_tools(self.config, "no_loop_theater", self.manager, canvas_state_service=canvas_state_service)
+        reference_manager = MagicMock()
+        ref = ImageReference(
+            name="gate.png",
+            data=raw_scene_bytes,
+            mime_type="image/png",
+            label="Gate",
+            description="A grand castle gate about to be breached",
+        )
+        reference_manager.resolve_provider_references.return_value = ([ref], None)
+        reference_manager.decision_provider = mock_decision_provider
+
+        animation_tools = self.make_animation_tools(
+            image_tools,
+            image_provider,
+            MagicMock(),
+            MagicMock(),
+            {"forced_technique": "video", "cooldown_duration": 0},
+            video_provider=video_provider,
+            reference_manager=reference_manager,
+            decision_provider=mock_decision_provider,
+        )
+
+        result = animation_tools.create_animation(
+            "The iron gate shatters as a battering ram crashes through.",
+            "gate_breach",
+            reference_images="gate",
+            technique="video",
+        )
+        animation_tools.join_generation()
+
+        animation_id = re.search(r"Animation ID: '([^']+)'", result).group(1)
+
+        self.assertEqual(mock_decision_provider.decide.call_count, 2)
+        video_provider.generate.assert_called_once()
+        vid_req = video_provider.generate.call_args[0][0]
+        # Ending frame must NOT be set when decision returns False
+        self.assertEqual(vid_req.image_bytes, raw_scene_bytes)
+        self.assertIsNone(vid_req.end_image_bytes)
+
+        manifest = animation_tools._find_video_animation(animation_id)
+        self.assertIsNotNone(manifest)
+        self.assertFalse(manifest["loop"])
+        self.assertNotIn("end_frame", manifest)
+
+    def test_animation_tools_exposes_loop_decision_helpers(self):
+        self.assertIs(AnimationTools.check_loop_animation, AnimationProvider.check_loop_animation)
+        self.assertIs(AnimationTools.should_loop_animation, AnimationProvider.check_loop_animation)
+        self.assertIs(AnimationTools.is_loop_animation, AnimationProvider.check_loop_animation)
+        self.assertIs(AnimationTools.decide_loop_animation, AnimationProvider.check_loop_animation)
 

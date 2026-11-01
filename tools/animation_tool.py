@@ -179,6 +179,10 @@ class AnimationTools(BaseTools):
     _apply_video_style = AnimationProvider._apply_video_style
     check_new_base_image_necessary = staticmethod(AnimationProvider.check_new_base_image_necessary)
     is_new_base_image_necessary = staticmethod(AnimationProvider.check_new_base_image_necessary)
+    check_loop_animation = staticmethod(AnimationProvider.check_loop_animation)
+    is_loop_animation = staticmethod(AnimationProvider.check_loop_animation)
+    should_loop_animation = staticmethod(AnimationProvider.check_loop_animation)
+    decide_loop_animation = staticmethod(AnimationProvider.check_loop_animation)
 
     def _generate_animation(
         self, scene_prompt: str, animation_id: str,
@@ -202,6 +206,7 @@ class AnimationTools(BaseTools):
                 self.visual.register_image(str(Path(self.animations_dir) / animation_id / "video.mp4"), f"{animation_id}_video", animation_id)
                 if start_frame_path.is_file():
                     self.visual.register_image(str(start_frame_path), f"{animation_id}_start_frame")
+                    self.visual.register_image(str(start_frame_path), f"{animation_id}_end_frame")
             if start_frame_path.is_file():
                 self._notify_image_created(str(start_frame_path))
         self._notify_animation_created(animation_id)
@@ -298,6 +303,11 @@ class AnimationTools(BaseTools):
                     abs_sfp = (output_dir_path / sfp) if not sfp.is_absolute() else sfp
                     if abs_sfp.is_file():
                         manifest["start_frame"] = str(abs_sfp)
+                if "end_frame" in manifest:
+                    efp = Path(manifest["end_frame"])
+                    abs_efp = (output_dir_path / efp) if not efp.is_absolute() else efp
+                    if abs_efp.is_file():
+                        manifest["end_frame"] = str(abs_efp)
                 manifest.setdefault(
                     "video_duration_seconds",  5
                 )
@@ -552,6 +562,8 @@ class AnimationTools(BaseTools):
                         "video_url": manifest.get("video_url"),
                         "video_duration_seconds": manifest.get("video_duration_seconds", manifest.get("duration_seconds", manifest.get("duration", 5))),
                         "start_image": manifest.get("start_image", manifest.get("start_frame")),
+                        "end_frame": manifest.get("end_frame"),
+                        "loop": manifest.get("loop", True),
                     }
             except (OSError, json.JSONDecodeError):
                 pass

@@ -390,9 +390,18 @@ def test_create_animation_with_decision_provider(tmp_path: Path) -> None:
         model="fake",
     )
     planner = MagicMock()
+    image = MagicMock()
+    image_bytes = png_bytes()
+    image.generate.return_value = ImageGenerationResult(
+        image_bytes=image_bytes,
+        mime_type="image/png",
+        provider="mock-image",
+        model="mock-model",
+    )
 
     provider = AnimationProvider(
         {},
+        image_provider=image,
         decision_provider=decision_provider,
         video_provider=video,
         text_response_provider=planner,
@@ -403,9 +412,14 @@ def test_create_animation_with_decision_provider(tmp_path: Path) -> None:
     )
 
     assert selected == "video"
-    decision_provider.decide.assert_called_once()
+    assert decision_provider.decide.call_count == 2
+    assert decision_provider.decide.call_args_list[0][0][0].questions[0].name == "technique"
+    assert decision_provider.decide.call_args_list[1][0][0].questions[0].name == "loop_animation"
     planner.generate.assert_not_called()
     video.generate.assert_called_once()
+    vid_req = video.generate.call_args[0][0]
+    assert vid_req.image_bytes == image_bytes
+    assert vid_req.end_image_bytes == image_bytes
     assert (tmp_path / "animations/falcon_anim/video.json").is_file()
 
 
@@ -501,8 +515,10 @@ def test_video_technique_decision_provider_checks_base_image_necessary_and_reuse
     )
 
     assert selected == "video"
-    mock_decision.decide.assert_called_once()
-    decision_req = mock_decision.decide.call_args[0][0]
+    assert mock_decision.decide.call_count == 2
+    loop_req = mock_decision.decide.call_args_list[0][0][0]
+    assert loop_req.questions[0].name == "loop_animation"
+    decision_req = mock_decision.decide.call_args_list[1][0][0]
     assert "Docked boats gently swaying in harbor sunset" in decision_req.input_text
     assert "A peaceful harbor with docked wooden boats at sunset" in decision_req.input_text
     assert decision_req.questions[0].name == "new_base_image_necessary"
@@ -514,6 +530,7 @@ def test_video_technique_decision_provider_checks_base_image_necessary_and_reuse
     mock_video.generate.assert_called_once()
     vid_req = mock_video.generate.call_args[0][0]
     assert vid_req.image_bytes == raw_bytes
+    assert vid_req.end_image_bytes == raw_bytes
     assert vid_req.image_mime_type == "image/png"
 
     anim_dir = tmp_path / "animations/harbor_anim"
@@ -584,11 +601,16 @@ def test_video_technique_decision_provider_generates_new_image_when_necessary(
     )
 
     assert selected == "video"
-    mock_decision.decide.assert_called_once()
+    assert mock_decision.decide.call_count == 2
+    loop_req = mock_decision.decide.call_args_list[0][0][0]
+    assert loop_req.questions[0].name == "loop_animation"
+    base_req = mock_decision.decide.call_args_list[1][0][0]
+    assert base_req.questions[0].name == "new_base_image_necessary"
     mock_image.generate.assert_called_once()
     mock_video.generate.assert_called_once()
     vid_req = mock_video.generate.call_args[0][0]
     assert vid_req.image_bytes == new_img_bytes
+    assert vid_req.end_image_bytes == new_img_bytes
 
 
 def test_check_new_base_image_necessary_helper() -> None:
@@ -625,4 +647,191 @@ def test_check_new_base_image_necessary_helper() -> None:
         base_reference_description="Misty river bank with morning light",
     )
     assert result_needed is True
+
+
+def test_check_loop_animation_helper() -> None:
+    mock_decision = MagicMock(spec=DecisionProvider)
+    mock_decision.decide.return_value = DecisionResult(
+        provider="test-decisions",
+        model="test-model",
+        answers={
+            "loop_animation": PredicateAnswer(
+                name="loop_animation", probability=0.85
+            ),
+        },
+    )
+
+    result_loop = AnimationProvider.check_loop_animation(
+        mock_decision,
+        scene_prompt="A gentle campfire crackles under starry skies.",
+    )
+    assert result_loop is True
+    mock_decision.decide.assert_called_once()
+    req = mock_decision.decide.call_args[0][0]
+    assert req.questions[0].name == "loop_animation"
+    assert "A gentle campfire crackles under starry skies." in req.input_text
+
+    mock_decision.decide.return_value = DecisionResult(
+        provider="test-decisions",
+        model="test-model",
+        answers={
+            "loop_animation": PredicateAnswer(
+                name="loop_animation", probability=0.15
+            ),
+        },
+    )
+    result_no_loop = AnimationProvider.check_loop_animation(
+        mock_decision,
+        scene_prompt="A meteor explodes upon hitting the desert dunes.",
+    )
+    assert result_no_loop is False
+
+
+def test_video_technique_decision_provider_chooses_loop_sets_ending_frame_equal_to_starting_frame(
+    tmp_path: Path,
+) -> None:
+    raw_bytes = png_bytes()
+    ref = ImageReference(
+        name="campfire.png",
+        data=raw_bytes,
+        mime_type="image/png",
+        description="A glowing campfire in a forest clearing",
+    )
+
+    mock_decision = MagicMock(spec=DecisionProvider)
+    # First call: loop_animation (True); Second call: new_base_image_necessary (False)
+    mock_decision.decide.side_effect = [
+        DecisionResult(
+            provider="test-decisions",
+            model="test-model",
+            answers={
+                "loop_animation": PredicateAnswer(
+                    name="loop_animation", probability=0.9
+                ),
+            },
+        ),
+        DecisionResult(
+            provider="test-decisions",
+            model="test-model",
+            answers={
+                "new_base_image_necessary": PredicateAnswer(
+                    name="new_base_image_necessary", probability=0.1
+                ),
+            },
+        ),
+    ]
+
+    mock_image = MagicMock()
+    mock_video = MagicMock()
+    mock_video.generate.return_value = VideoGenerationResult(
+        video_bytes=b"fake-video-bytes",
+        mime_type="video/mp4",
+        provider="mock-video-prov",
+        model="mock-video-model",
+        request_id="vid-loop-true",
+    )
+
+    provider = AnimationProvider(
+        {},
+        image_provider=mock_image,
+        video_provider=mock_video,
+        decision_provider=mock_decision,
+    )
+
+    selected = provider.create_animation(
+        "Campfire flames dance gently in the evening breeze.",
+        "campfire_anim",
+        technique="video",
+        output_dir=tmp_path,
+        references=[ref],
+    )
+
+    assert selected == "video"
+    assert mock_decision.decide.call_count == 2
+    mock_video.generate.assert_called_once()
+    vid_req = mock_video.generate.call_args[0][0]
+    # Ending frame MUST be equal to starting frame when loop decision returns True
+    assert vid_req.image_bytes == raw_bytes
+    assert vid_req.end_image_bytes == vid_req.image_bytes
+    assert "loopable" in vid_req.prompt
+
+    anim_dir = tmp_path / "animations/campfire_anim"
+    manifest = json.loads((anim_dir / "video.json").read_text(encoding="utf-8"))
+    assert manifest["loop"] is True
+    assert manifest["start_frame"] == "animations/campfire_anim/start_frame.webp"
+    assert manifest["end_frame"] == manifest["start_frame"]
+
+
+def test_video_technique_decision_provider_chooses_not_to_loop(
+    tmp_path: Path,
+) -> None:
+    raw_bytes = png_bytes()
+    ref = ImageReference(
+        name="tower.png",
+        data=raw_bytes,
+        mime_type="image/png",
+        description="An ancient stone tower crumbling into rubble",
+    )
+
+    mock_decision = MagicMock(spec=DecisionProvider)
+    # First call: loop_animation (False); Second call: new_base_image_necessary (False)
+    mock_decision.decide.side_effect = [
+        DecisionResult(
+            provider="test-decisions",
+            model="test-model",
+            answers={
+                "loop_animation": PredicateAnswer(
+                    name="loop_animation", probability=0.1
+                ),
+            },
+        ),
+        DecisionResult(
+            provider="test-decisions",
+            model="test-model",
+            answers={
+                "new_base_image_necessary": PredicateAnswer(
+                    name="new_base_image_necessary", probability=0.1
+                ),
+            },
+        ),
+    ]
+
+    mock_image = MagicMock()
+    mock_video = MagicMock()
+    mock_video.generate.return_value = VideoGenerationResult(
+        video_bytes=b"fake-video-bytes",
+        mime_type="video/mp4",
+        provider="mock-video-prov",
+        model="mock-video-model",
+        request_id="vid-loop-false",
+    )
+
+    provider = AnimationProvider(
+        {},
+        image_provider=mock_image,
+        video_provider=mock_video,
+        decision_provider=mock_decision,
+    )
+
+    selected = provider.create_animation(
+        "A giant boulder crashes through the tower, bringing it down.",
+        "tower_collapse",
+        technique="video",
+        output_dir=tmp_path,
+        references=[ref],
+    )
+
+    assert selected == "video"
+    assert mock_decision.decide.call_count == 2
+    mock_video.generate.assert_called_once()
+    vid_req = mock_video.generate.call_args[0][0]
+    # Ending frame should NOT be set when loop decision is False
+    assert vid_req.image_bytes == raw_bytes
+    assert vid_req.end_image_bytes is None
+    assert "loopable" not in vid_req.prompt
+
+    anim_dir = tmp_path / "animations/tower_collapse"
+    manifest = json.loads((anim_dir / "video.json").read_text(encoding="utf-8"))
+    assert manifest["loop"] is False
+    assert "end_frame" not in manifest
 

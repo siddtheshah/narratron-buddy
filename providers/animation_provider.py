@@ -385,23 +385,28 @@ class AnimationProvider:
             manifest_path,
         )
 
-    def _apply_video_style(self, prompt: str) -> str:
-        """Apply the theater's image style with a loopable constraint to the video prompt."""
+    def _apply_video_style(self, prompt: str, loop: bool = True) -> str:
+        """Apply the theater's image style with an optional loopable constraint to the video prompt."""
         prompt = prompt.strip()
         base_style = self.default_style.strip()
 
-        if base_style:
-            if re.search(r"\bloopable\b", base_style, flags=re.IGNORECASE):
-                combined_style = base_style
+        if loop:
+            if base_style:
+                if re.search(r"\bloopable\b", base_style, flags=re.IGNORECASE):
+                    combined_style = base_style
+                else:
+                    combined_style = f"{base_style}, loopable"
             else:
-                combined_style = f"{base_style}, loopable"
+                combined_style = "loopable"
         else:
-            combined_style = "loopable"
+            combined_style = base_style
 
         if not re.search(r"\bstyle\b", prompt, flags=re.IGNORECASE):
-            return f"{prompt}\n\nStyle: {combined_style}"
+            if combined_style:
+                return f"{prompt}\n\nStyle: {combined_style}"
+            return prompt
 
-        if not re.search(r"\bloopable\b", prompt, flags=re.IGNORECASE):
+        if loop and not re.search(r"\bloopable\b", prompt, flags=re.IGNORECASE):
             return f"{prompt}, loopable"
         return prompt
 
@@ -412,7 +417,14 @@ class AnimationProvider:
         output_dir: Path,
         provider_references: list[ImageReference] | None = None,
     ) -> None:
-        effective_prompt = self._apply_video_style(scene_prompt)
+        should_loop = True
+        if self.decision_provider is not None:
+            should_loop = self.check_loop_animation(
+                self.decision_provider,
+                scene_prompt=scene_prompt,
+            )
+
+        effective_prompt = self._apply_video_style(scene_prompt, loop=should_loop)
         animation_dir = output_dir / "animations" / animation_id
         animation_dir.mkdir(parents=True, exist_ok=False)
         video_duration_seconds = int(
@@ -422,7 +434,7 @@ class AnimationProvider:
         is_i2v = (self.video_provider.is_image_to_video is True) or (
             "image-to-video" in str(self.video_provider.model)
         )
-        needs_start_image = bool(references) or is_i2v
+        needs_start_image = bool(references) or is_i2v or (should_loop and self.decision_provider is not None)
 
         start_image_path: Path | None = None
         start_image_result: ImageGenerationResult | None = None
@@ -480,6 +492,8 @@ class AnimationProvider:
                 start_image_bytes = base_ref.data
                 start_image_mime_type = base_ref.mime_type or "image/webp"
 
+        end_image_bytes = start_image_bytes if should_loop else None
+
         result = self.video_provider.generate(
             VideoGenerationRequest(
                 prompt=effective_prompt,
@@ -487,6 +501,7 @@ class AnimationProvider:
                 video_duration_seconds=video_duration_seconds,
                 image_bytes=start_image_bytes,
                 image_mime_type=start_image_mime_type,
+                end_image_bytes=end_image_bytes,
             )
         )
         if not result.video_bytes or result.mime_type != "video/mp4":
@@ -518,13 +533,15 @@ class AnimationProvider:
             "video_url": result.video_url or "",
             "mime_type": result.mime_type or "video/mp4",
             "video_duration_seconds": video_duration_seconds,
-            "loop": True,
+            "loop": should_loop,
             "muted": True,
             "provider": provider_info,
         }
         if start_image_path is not None:
             manifest["start_image"] = self._to_relative_path(start_image_path, output_dir)
             manifest["start_frame"] = self._to_relative_path(start_image_path, output_dir)
+            if should_loop:
+                manifest["end_frame"] = self._to_relative_path(start_image_path, output_dir)
         manifest_path = animation_dir / "video.json"
         manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
         logger.debug(
@@ -532,6 +549,39 @@ class AnimationProvider:
             animation_id,
             video_path,
         )
+
+    @staticmethod
+    def check_loop_animation(
+        decision_provider: DecisionProvider,
+        scene_prompt: str,
+    ) -> bool:
+        """Use DecisionProvider to decide whether a video animation should loop."""
+        clean_prompt = scene_prompt.strip()
+        request = DecisionRequest(
+            input_text=f"Scene Prompt: {clean_prompt}",
+            questions=(
+                PredicateQuestion(
+                    name="loop_animation",
+                    instructions=(
+                        "Determine whether this video animation should seamlessly loop back to its starting frame. "
+                        "Return true if the motion is cyclic, repetitive, ambient, or meant to repeat continuously (e.g. swaying trees, burning campfire, gentle waves, idle breathing, walking cycles). "
+                        "Return false if the scene depicts a one-off linear event, finite action, or dramatic progression with a clear beginning and end (e.g. an explosion, falling down, a projectile striking a target)."
+                    ),
+                ),
+            ),
+        )
+        result = decision_provider.decide(request)
+        if "loop_animation" in result.answers:
+            return result.get_predicate("loop_animation").passed(0.5)
+        if "loop" in result.answers:
+            return result.get_predicate("loop").passed(0.5)
+        if "should_loop" in result.answers:
+            return result.get_predicate("should_loop").passed(0.5)
+        return True
+
+    is_loop_animation = check_loop_animation
+    should_loop_animation = check_loop_animation
+    decide_loop_animation = check_loop_animation
 
     @staticmethod
     def check_new_base_image_necessary(
