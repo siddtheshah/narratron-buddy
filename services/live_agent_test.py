@@ -837,6 +837,7 @@ class TestCreateAgent(unittest.TestCase):
         self.assertNotIn("* generate_character", instruction)
         self.assertNotIn("## Character Management", instruction)
         self.assertNotIn("* create_or_update_character", instruction)
+        self.assertIn("Assume that all communication is assumed to be a story action unless the user addresses 'Narratron', or uses [brackets]", instruction)
         self.assertIn("process_user_action", instruction)
         self.assertIn("never speak, act, decide, think, or feel for the orator", instruction)
         self.assertIn("Wait for `[Story Planner Result]` before staging visuals or changing music", instruction)
@@ -863,6 +864,7 @@ class TestCreateAgent(unittest.TestCase):
         self.assertIn("`lookup_character`", instruction)
         self.assertIn("`clear_characters`", instruction)
         self.assertNotIn("process_user_action", instruction)
+        self.assertNotIn("unless the user addresses 'Narratron'", instruction)
         self.assertIn("## Preloaded References Context", instruction)
 
     @patch("services.live_agent.get_text_response_provider")
