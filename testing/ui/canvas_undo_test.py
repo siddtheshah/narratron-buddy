@@ -237,6 +237,19 @@ def test_undo_drawing_segment_deletion_restores_segments(undo_page: Page) -> Non
     assert last_msg["color"] == "#ef4444"
 
 
+def test_restoring_disconnected_segments_does_not_send_a_fabricated_bridge(undo_page: Page) -> None:
+    restored = undo_page.evaluate("""() => {
+        const messages = [];
+        restoreSegmentsToServer([
+            {stroke_id:'one',x0:.1,y0:.1,x1:.2,y1:.2,color:'red',size:3},
+            {stroke_id:'one',x0:.8,y0:.8,x1:.9,y1:.9,color:'red',size:3}
+        ], message => messages.push(message));
+        return messages;
+    }""")
+    assert len(restored) == 2
+    assert [message["points"] for message in restored] == [[0.1, 0.1, 0.2, 0.2], [0.8, 0.8, 0.9, 0.9]]
+
+
 def test_undo_text_placement_removes_text(undo_page: Page) -> None:
     page = undo_page
     page.evaluate("""() => {

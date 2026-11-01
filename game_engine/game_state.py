@@ -468,6 +468,8 @@ class GameState:
             if self.program is None:
                 logger.debug("[GameState] Act rejected: no playable game")
                 raise ValueError("This theater has no playable game.")
+            if self.program.definition.canvas_api is not None:
+                raise ValueError("Canvas-enabled actions require the shared canvas commit host.")
             if action.revision != self.revision:
                 logger.debug(
                     "[GameState] Act rejected: stale revision (action_revision=%d, current_revision=%d)",

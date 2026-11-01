@@ -8,8 +8,11 @@ from __future__ import annotations
 
 import json
 import logging
+from hashlib import sha256
 from pathlib import Path
 from typing import Optional, cast
+
+from pydantic import JsonValue, TypeAdapter
 
 from components.canvas import AudioState, ChatManager, ConnectionState, DoodleState, StoryState, ToolResponseState, UIState, VisualState
 from components.theater_manager import Theater
@@ -18,6 +21,10 @@ from game_engine.game_state import GameState
 from components.notepad import Notepad
 from components.story.input_gathering_cycle import story_input_cycle_duration
 from components.story.output_display_cycle import story_output_cycle_duration
+from utils.atomic_file import atomic_write_text
+from components.canvas.canvas_assets import CanvasAssetCatalog
+from components.canvas.canvas_observation import ObservationClock, observe_page
+from game_engine.canvas_contract import CanvasSnapshot, Page, Region
 
 logger = logging.getLogger("components.canvas_state")
 MAX_AGENT_THOUGHT_LENGTH = 360
@@ -43,6 +50,10 @@ class CanvasStateManager:
         self.theater_id = theater.theater_id
         self.theater_manager = getattr(theater, "manager", None)
         self.connections = ConnectionState()
+        self.canvas_clock = ObservationClock()
+        self.canvas_clock_error = ""
+        self._invalid_canvas_clock: JsonValue = None
+        self._storage_notification_pending = False
         self._initialize_state()
         self.load_state_from_disk()
         self.visual.initialize_starting_image()
@@ -134,6 +145,14 @@ class CanvasStateManager:
             data = json.loads(source.read_text(encoding="utf-8"))
             state = data.get("canvas_state", data)
             self.visual.load(state)
+            try:
+                self.canvas_clock = ObservationClock.model_validate(state.get("canvas_api_state", {}))
+                self.canvas_clock_error = ""
+                self._invalid_canvas_clock = None
+            except ValueError as exc:
+                self.canvas_clock_error = "Saved canvas observation revision is invalid."
+                self._invalid_canvas_clock = cast(JsonValue, state.get("canvas_api_state"))
+                logger.warning("Failed to load canvas observation revision: %s", exc)
             self.audio.load(state)
             self.doodles.load(state)
             self.ui.load(state)
@@ -158,10 +177,62 @@ class CanvasStateManager:
             **self.visual.serialize(), **audio_serialized, **self.doodles.serialize(),
             **self.ui.serialize(), **self.story.serialize(), **self.game.serialize(),
             "suggestions": self.chat.export_suggestions(), "chat_messages": self.chat.get_messages(),
+            "canvas_api_state": self._invalid_canvas_clock if self.canvas_clock_error else self.canvas_clock.model_dump(mode="json"),
         }
         if self.notepad is not None:
             serialized["notepad"] = self.notepad.export_state()
         return serialized
+
+    def canvas_observation(self) -> CanvasSnapshot:
+        """Observe the actual shared page, migrating legacy geometry once.
+
+        This is the host adapter, not an evaluator binding supplied by a caller.
+        Its revision tracks the exposed projection instead of viewer focus or
+        animation frame clocks. The future commit host shares this projection.
+        """
+        assert self.visual is not None and self.theater is not None
+        if self.canvas_clock_error:
+            raise ValueError(self.canvas_clock_error)
+        history = self.visual.shown_images_history
+        if not history:
+            observed = CanvasSnapshot.empty(self.canvas_clock.revision)
+        else:
+            index = self.visual.orator_cursor
+            native = cast(dict[str, JsonValue], history[-1 if index is None else index])
+            if native.get("animation"):
+                raise ValueError("Canvas animation observations require the animation catalog adapter.")
+            if "canvas_page" not in native:
+                source_path = str(native.get("path", ""))
+                catalog = CanvasAssetCatalog(self.theater.directory(), self.theater.get_url_for_path)
+                asset = catalog.observe_image(source_path)
+                page = Page(
+                    id=str(native["page_id"]), scene_id=asset.scene_id, asset_id=asset.asset_id,
+                    media_kind="image", animation=None, width=asset.width, height=asset.height,
+                )
+                native["canvas_page"] = page.model_dump(mode="json")
+                native["canvas_regions"] = {key: region.model_dump(mode="json") for key, region in asset.regions.items()}
+                native["path"], native["url"] = asset.path, asset.url
+                if self.visual.shown_image_path == source_path:
+                    self.visual.shown_image_path = asset.path
+            page = Page.model_validate(native["canvas_page"])
+            regions = TypeAdapter(dict[str, Region]).validate_python(native.get("canvas_regions", {}), strict=True)
+            doodles = self.doodles_for_page(page.id)
+            assert doodles is not None
+            doodles.canonicalize_canvas_objects(page, str(native["path"]))
+            observed = observe_page(page, doodles.doodles, revision=self.canvas_clock.revision, regions=regions)
+        projection = observed.model_dump(mode="json")
+        projection.pop("revision")
+        fingerprint = sha256(json.dumps(projection, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+        if fingerprint != self.canvas_clock.fingerprint:
+            previous_clock = self.canvas_clock
+            self.canvas_clock = ObservationClock(revision=self.canvas_clock.revision + 1, fingerprint=fingerprint)
+            try:
+                self.persist()
+            except Exception:
+                self.canvas_clock = previous_clock
+                raise
+            observed = CanvasSnapshot.model_validate({**observed.model_dump(mode="json"), "revision": self.canvas_clock.revision})
+        return observed
 
     def save_local_theater_data(self, theater_dir: Optional[Path] = None) -> tuple[dict[str, object], list[dict[str, object]]]:
         directory = theater_dir or self.theater.directory()
@@ -176,9 +247,23 @@ class CanvasStateManager:
         document.setdefault("theater_id", self.theater_id)
         document.setdefault("name", self.theater_id)
         document["canvas_state"] = self.serialized_state()
-        target.write_text(json.dumps(document, indent=2), encoding="utf-8")
-        self.theater.storage_changed()
+        atomic_write_text(target, json.dumps(document, indent=2))
+        self._storage_notification_pending = True
+        self.retry_storage_notification()
         return document, []
+
+    def retry_storage_notification(self) -> bool:
+        """A mirror failure after local commitment must not undo committed state."""
+        if not self._storage_notification_pending:
+            return True
+        assert self.theater is not None
+        try:
+            self.theater.storage_changed()
+        except Exception:
+            logger.exception("Theater %s was saved; its storage notification will be retried", self.theater_id)
+            return False
+        self._storage_notification_pending = False
+        return True
 
     def get_latest_state(self) -> dict[str, object]:
         visual = self.visual.payload()

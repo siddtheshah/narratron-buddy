@@ -1,8 +1,13 @@
 # CEL canvas interface, version 1
 
-Status: proposed contract. This document defines the interface; the runtime does
-not implement these bindings or package fields yet. Existing version-2 games
-continue to work without opting in.
+Status: proposed contract, partially implemented. Package validation, strict
+observation/command models, and pure Python/Go CEL evaluation are implemented.
+The still-image observation adapter, pinned image catalog, canonical object
+geometry, and atomic local saves are also implemented. The shared commit host,
+animation adapter, input integration, and remaining acceptance gates are unfinished;
+canvas-enabled actions are not enabled in the live game host.
+See [implementation and review notes](game_canvas_implementation.md). Existing
+version-2 games continue to work without opting in.
 
 Every game uses the same host-provided `canvas` value. It describes the shared
 canvas, while `state` remains the game's authoritative inventory, mechanics,
@@ -138,6 +143,32 @@ Scene IDs identify authored views, asset IDs identify exact artwork, page IDs
 identify history instances, and placement/stroke/annotation IDs identify objects.
 None of these identities is interchangeable. A new artwork revision requires its
 own region geometry; regions are never silently reused across asset revisions.
+
+### Still-image catalog and authored regions
+
+The still-image adapter uses the scene directory name as `scene_id`, such as
+`references/scenes/waking-room-door/`. Game stamp handles use `stamp:<image-stem>`
+under the theater's `stamps/` directory; ambiguous stems fail resolution. These
+are catalog lookups, not filesystem paths accepted from CEL. Exact page media
+uses an opaque content-addressed handle and an immutable theater-local copy.
+
+Author regions in that scene's `scene.yaml`, keyed by the selected image's exact
+SHA-256 digest. An artwork revision with no matching entry exposes no regions.
+For example, replacing the example digest with the actual artwork digest:
+
+```yaml
+canvas:
+  artwork:
+    "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa":
+      door-lock:
+        id: door-lock
+        bounds: {x: 6800, y: 4200, width: 1000, height: 1600}
+```
+
+Region mapping keys must match their IDs. Geometry is validated before exposing
+it. The catalog retains exact bytes for an already selected page even when the
+source scene image is replaced later. Catalogued animations require the separate
+animation adapter described below.
 
 ### Evaluation scope
 

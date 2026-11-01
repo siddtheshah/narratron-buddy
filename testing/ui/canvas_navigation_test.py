@@ -124,6 +124,8 @@ def test_navigation_keeps_rendered_content_aligned_and_resets_locally() -> None:
             let isDrawing = false, lastNormX = 0, lastNormY = 0, currentStrokeId = null;
             let pendingDrawBatch = null, drawBatchFrame = null;
             const displayedDoodlePageId = "navigation-page";
+            const imageHistory = [{page_id: displayedDoodlePageId}];
+            const currentViewIndex = 0;
             window.sentDraws = [];
             function sendOrQueueDoodleMessage(message) { sentDraws.push(message); }
         '''
@@ -137,7 +139,8 @@ def test_navigation_keeps_rendered_content_aligned_and_resets_locally() -> None:
         cycle = template[template.index("        function cycleCanvasCursor("):template.index("        document.addEventListener('click', (event) => {", template.index("        function cycleCanvasCursor("))]
         context_menu = template[template.index("        document.addEventListener('contextmenu', (event) => {"):template.index("        textAnnotationToggle?.addEventListener('click',")]
         handlers = template[template.index("        canvas.addEventListener('mousedown',"):template.index("        clearBtn.addEventListener('click'")]
-        page.add_script_tag(content=drawing_setup + flush_function + draw_functions + handlers + tool_interaction + marker_selection + text_selection + marker_controls + text_control)
+        end_drawing = template[template.index("        function endDrawingStroke() {"):template.index("        canvas.addEventListener('mousedown',")]
+        page.add_script_tag(content=drawing_setup + flush_function + draw_functions + end_drawing + handlers + tool_interaction + marker_selection + text_selection + marker_controls + text_control)
         page.evaluate("canvasCursorState.subscribe(applyCanvasCursorState); applyCanvasCursorState(canvasCursorState.current)")
         states = [
             {"type": "select"}, {"type": "marker", "color": "#ff0000"},

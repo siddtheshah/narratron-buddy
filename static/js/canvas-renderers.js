@@ -879,7 +879,51 @@ export function createImageRenderer({
     };
 }
 
-export function createDoodleRenderer({ canvas, isVisible = () => true, textLayer = null, canEditText = () => false, onEditText = () => {}, onMoveText = () => {}, onRemoveText = () => {}, onSelectText = () => {}, stampLayer = null, canMoveStamp = () => false, onMoveStamp = () => {}, onRemoveStamp = () => {}, onSelectStamp = () => {}, canSelectSegment = () => true, onSelectSegment = () => {}, onRemoveSegment = () => {} }) {
+export function createDoodleRenderer({ canvas, isVisible = () => true, textLayer = null, canEditText = () => false, onEditText = () => {}, onMoveText = () => {}, onRemoveText = () => {}, onSelectText = () => {}, stampLayer = null, canMoveStamp = () => false, onMoveStamp = () => {}, onRemoveStamp = () => {}, onSelectStamp = () => {}, canSelectSegment = () => true, onSelectSegment = () => {}, onRemoveSegment = () => {}, getPage = () => null, fitMode = "contain" }) {
+    function imagePlane(action = null) {
+        const page = getPage();
+        const pageWidth = action?.canvas_page_width || page?.width;
+        const pageHeight = action?.canvas_page_height || page?.height;
+        const width = canvas?.clientWidth || 0;
+        const height = canvas?.clientHeight || 0;
+        if (!(pageWidth > 0 && pageHeight > 0)) return {x: 0, y: 0, width, height};
+        const scale = fitMode === "cover" ? Math.max(width / pageWidth, height / pageHeight) : Math.min(width / pageWidth, height / pageHeight);
+        const imageWidth = pageWidth * scale;
+        const imageHeight = pageHeight * scale;
+        return {x: (width - imageWidth) / 2, y: (height - imageHeight) / 2, width: imageWidth, height: imageHeight};
+    }
+
+    function screenPlane(action = null) {
+        const rect = canvas.getBoundingClientRect();
+        const plane = imagePlane(action);
+        const sx = rect.width / canvas.clientWidth;
+        const sy = rect.height / canvas.clientHeight;
+        return {left: rect.left + plane.x * sx, top: rect.top + plane.y * sy, width: plane.width * sx, height: plane.height * sy};
+    }
+
+    function normalizedPoint(event) {
+        const plane = screenPlane();
+        const pointer = event.touches ? event.touches[0] : event;
+        return {x: Math.max(0, Math.min(1, (pointer.clientX - plane.left) / plane.width)),
+            y: Math.max(0, Math.min(1, (pointer.clientY - plane.top) / plane.height))};
+    }
+
+    function textSize(action) {
+        return Number.isInteger(action.canvas_font_size)
+            ? action.canvas_font_size * imagePlane(action).height / 10000
+            : Math.max(12, Number(action.size) || 32);
+    }
+
+    function resizedStamp(action, size) {
+        const resized = {...action, size};
+        if (Number.isInteger(action.canvas_width) && Number.isInteger(action.canvas_height)) {
+            const ratio = size / (Number(action.size) || 80);
+            resized.canvas_width = Math.max(1, Math.round(action.canvas_width * ratio));
+            resized.canvas_height = Math.max(1, Math.round(action.canvas_height * ratio));
+            resized.canvas_size = size;
+        }
+        return resized;
+    }
     const context = canvas?.getContext("2d");
 
     const selectedSegmentIds = new Set();
@@ -1019,10 +1063,11 @@ export function createDoodleRenderer({ canvas, isVisible = () => true, textLayer
             const action = lastDoodleActions[i];
             if (action.type !== "draw") continue;
             ensureSegmentId(action);
-            const x0 = Number(action.x0) * rect.width;
-            const y0 = Number(action.y0) * rect.height;
-            const x1 = Number(action.x1) * rect.width;
-            const y1 = Number(action.y1) * rect.height;
+            const plane = screenPlane(action);
+            const x0 = plane.left - rect.left + Number(action.x0) * plane.width;
+            const y0 = plane.top - rect.top + Number(action.y0) * plane.height;
+            const x1 = plane.left - rect.left + Number(action.x1) * plane.width;
+            const y1 = plane.top - rect.top + Number(action.y1) * plane.height;
             const limit = threshold !== null ? threshold : Math.max(8, (Number(action.size) || 3) / 2 + 5);
             if (distanceToSegment(px, py, x0, y0, x1, y1) <= limit) {
                 return action;
@@ -1049,10 +1094,11 @@ export function createDoodleRenderer({ canvas, isVisible = () => true, textLayer
         return lastDoodleActions.filter(action => {
             if (action.type !== "draw") return false;
             ensureSegmentId(action);
-            const ax = Number(action.x0);
-            const ay = Number(action.y0);
-            const bx = Number(action.x1);
-            const by = Number(action.y1);
+            const plane = screenPlane(action);
+            const ax = (plane.left - rect.left + Number(action.x0) * plane.width) / rect.width;
+            const ay = (plane.top - rect.top + Number(action.y0) * plane.height) / rect.height;
+            const bx = (plane.left - rect.left + Number(action.x1) * plane.width) / rect.width;
+            const by = (plane.top - rect.top + Number(action.y1) * plane.height) / rect.height;
             const segMinX = Math.min(ax, bx);
             const segMaxX = Math.max(ax, bx);
             const segMinY = Math.min(ay, by);
@@ -1538,7 +1584,7 @@ export function createDoodleRenderer({ canvas, isVisible = () => true, textLayer
                 event.stopPropagation();
                 if (event.button !== 0 || !canMoveStamp() || !item.classList.contains("movable")) return;
                 event.preventDefault();
-                const rect = stampLayer.getBoundingClientRect();
+                const rect = screenPlane(item.annotation);
                 const centerX = rect.left + Number(item.annotation.x) * rect.width;
                 const centerY = rect.top + Number(item.annotation.y) * rect.height;
                 rotateDrag = {
@@ -1598,7 +1644,7 @@ export function createDoodleRenderer({ canvas, isVisible = () => true, textLayer
             resizeHandle.addEventListener("pointermove", event => {
                 if (!resizeDrag || !canMoveStamp()) return;
                 const rect = (canvas && canvas.getBoundingClientRect().width > 0)
-                    ? canvas.getBoundingClientRect()
+                    ? screenPlane(resizeDrag.original)
                     : (stampLayer?.getBoundingClientRect() || null);
                 if (!rect || !rect.width || !rect.height) return;
                 const centerX = rect.left + Number(resizeDrag.original.x) * rect.width;
@@ -1615,7 +1661,7 @@ export function createDoodleRenderer({ canvas, isVisible = () => true, textLayer
                 if (Math.abs(newSize - resizeDrag.startSize) > 2) {
                     resizeDrag.moved = true;
                 }
-                onMoveStamp({ ...resizeDrag.original, size: newSize }, resizeDrag.original, false);
+                onMoveStamp(resizedStamp(resizeDrag.original, newSize), resizeDrag.original, false);
             });
 
             const finishResize = event => {
@@ -1642,7 +1688,7 @@ export function createDoodleRenderer({ canvas, isVisible = () => true, textLayer
                 const currentSize = Math.max(24, Number(item.annotation.size) || 80);
                 const nextSize = Math.max(24, Math.min(512, currentSize + step));
                 if (nextSize !== currentSize) {
-                    onMoveStamp({ ...item.annotation, size: nextSize }, item.annotation, true);
+                    onMoveStamp(resizedStamp(item.annotation, nextSize), item.annotation, true);
                 }
             }, { passive: false });
 
@@ -1664,7 +1710,7 @@ export function createDoodleRenderer({ canvas, isVisible = () => true, textLayer
                 const dx = event.clientX - drag.x;
                 const dy = event.clientY - drag.y;
                 if (!drag.moved && Math.hypot(dx, dy) < 4) return;
-                const rect = canvas.getBoundingClientRect();
+                const rect = screenPlane(drag.original);
                 if (!rect.width || !rect.height) return;
                 drag.moved = true;
                 item.classList.add("dragging");
@@ -1694,15 +1740,17 @@ export function createDoodleRenderer({ canvas, isVisible = () => true, textLayer
         }
         item.annotation = action;
         // Size in layout pixels; the viewer transform scales the whole layer.
-        const width = canvas?.clientWidth || stampLayer?.clientWidth || 1000;
+        const plane = imagePlane(action);
+        const width = plane.width || stampLayer?.clientWidth || 1000;
         const refWidth = 1000;
         const scale = width / refWidth;
         const baseSize = Math.max(16, Number(action.size) || 80);
         const renderedSize = Math.max(16, Math.round(baseSize * scale));
-        item.style.width = `${renderedSize}px`;
-        item.style.height = `${renderedSize}px`;
-        item.style.left = `${Number(action.x) * 100}%`;
-        item.style.top = `${Number(action.y) * 100}%`;
+        item.style.width = `${Number.isInteger(action.canvas_width) ? action.canvas_width * width / 10000 : renderedSize}px`;
+        item.style.height = `${Number.isInteger(action.canvas_height) ? action.canvas_height * plane.height / 10000 : renderedSize}px`;
+        const canonical = action.canvas_page_width > 0 || getPage()?.width > 0;
+        item.style.left = canonical ? `${plane.x + Number(action.x) * plane.width}px` : `${Number(action.x) * 100}%`;
+        item.style.top = canonical ? `${plane.y + Number(action.y) * plane.height}px` : `${Number(action.y) * 100}%`;
         item.style.transform = `translate(-50%, -50%) rotate(${Number(action.rotation) || 0}deg)`;
         const img = item.querySelector("img");
         if (img && img.getAttribute("src") !== action.url) {
@@ -1759,7 +1807,7 @@ export function createDoodleRenderer({ canvas, isVisible = () => true, textLayer
                 const dx = event.clientX - drag.x;
                 const dy = event.clientY - drag.y;
                 if (!drag.moved && Math.hypot(dx, dy) < 4) return;
-                const rect = canvas.getBoundingClientRect();
+                const rect = screenPlane(drag.original);
                 if (!rect.width || !rect.height) return;
                 drag.moved = true;
                 label.classList.add("dragging");
@@ -1804,23 +1852,34 @@ export function createDoodleRenderer({ canvas, isVisible = () => true, textLayer
         }
         label.annotation = action;
         label.textContent = String(action.text).split("\n").slice(0, 4).join("\n");
-        label.style.left = `${Number(action.x) * 100}%`;
-        label.style.top = `${Number(action.y) * 100}%`;
-        label.style.font = `600 ${Math.max(12, Number(action.size) || 32)}px "${String(action.font || "Outfit").replace(/["'`;{}]/g, "")}", sans-serif`;
+        const plane = imagePlane(action);
+        const canonical = action.canvas_page_width > 0 || getPage()?.width > 0;
+        label.style.left = canonical ? `${plane.x + Number(action.x) * plane.width}px` : `${Number(action.x) * 100}%`;
+        label.style.top = canonical ? `${plane.y + Number(action.y) * plane.height}px` : `${Number(action.y) * 100}%`;
+        label.style.font = `600 ${textSize(action)}px "${String(action.font || "Outfit").replace(/["'`;{}]/g, "")}", sans-serif`;
         label.style.lineHeight = "1.15";
+        label.style.width = Number.isInteger(action.canvas_width) ? `${action.canvas_width * plane.width / 10000}px` : "";
+        label.style.height = Number.isInteger(action.canvas_height) ? `${action.canvas_height * plane.height / 10000}px` : "";
+        label.style.overflow = Number.isInteger(action.canvas_width) ? "hidden" : "";
     }
 
     function renderText(action) {
         if (!context || !canvas || !action?.text) return;
 
         const rect = { width: canvas.clientWidth, height: canvas.clientHeight };
-        const size = Math.max(12, Number(action.size) || 32);
+        const size = textSize(action);
         const font = String(action.font || "Outfit").replace(/["'`;{}]/g, "");
         const lines = String(action.text).split("\n").slice(0, 4);
-        const x = Number(action.x) * rect.width;
-        const y = Number(action.y) * rect.height;
+        const plane = imagePlane(action);
+        const x = plane.x + Number(action.x) * plane.width;
+        const y = plane.y + Number(action.y) * plane.height;
 
         context.save();
+        if (Number.isInteger(action.canvas_width) && Number.isInteger(action.canvas_height)) {
+            context.beginPath();
+            context.rect(x, y, action.canvas_width * plane.width / 10000, action.canvas_height * plane.height / 10000);
+            context.clip();
+        }
         context.globalCompositeOperation = "source-over";
         context.font = `600 ${size}px "${font}", sans-serif`;
         context.textBaseline = "top";
@@ -1890,6 +1949,15 @@ export function createDoodleRenderer({ canvas, isVisible = () => true, textLayer
 
     let lastDoodleActions = [];
 
+    function renderStrokeSegment(action, selected = false) {
+        const plane = imagePlane(action);
+        const lineWidth = Number.isInteger(action.canvas_line_width)
+            ? action.canvas_line_width * plane.width / 10000
+            : (getPage()?.width > 0 ? (Number(action.size) || 3) * plane.width / 1000 : (Number(action.size) || 3));
+        renderSegment(plane.x + action.x0 * plane.width, plane.y + action.y0 * plane.height,
+            plane.x + action.x1 * plane.width, plane.y + action.y1 * plane.height, action.color, lineWidth, selected);
+    }
+
     function redraw(actions) {
         if (!canvas || !context) return;
         if (actions) lastDoodleActions = actions;
@@ -1924,15 +1992,7 @@ export function createDoodleRenderer({ canvas, isVisible = () => true, textLayer
             if (action.type === "draw") {
                 ensureSegmentId(action);
                 const isSelected = isSegmentSelected(action);
-                renderSegment(
-                    action.x0 * rect.width,
-                    action.y0 * rect.height,
-                    action.x1 * rect.width,
-                    action.y1 * rect.height,
-                    action.color,
-                    action.size || 3,
-                    isSelected
-                );
+                renderStrokeSegment(action, isSelected);
             } else if (action.type === "text") {
                 renderText(action);
             } else if (action.type === "stamp") {
@@ -1997,6 +2057,9 @@ export function createDoodleRenderer({ canvas, isVisible = () => true, textLayer
 
     return {
         renderSegment,
+        renderStrokeSegment,
+        normalizedPoint,
+        imagePlane,
         renderText,
         renderStamp: renderSelectableStamp,
         redraw,

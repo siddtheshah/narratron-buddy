@@ -6009,7 +6009,7 @@
                     color: data.color, size: data.size || 3
                 };
                 doodleActions.push(action);
-                renderSegment(action.x0 * rect.width, action.y0 * rect.height, action.x1 * rect.width, action.y1 * rect.height, action.color, action.size);
+                doodleRenderer.renderStrokeSegment(action);
             }
         }
 
@@ -6189,6 +6189,7 @@
 
         const doodleRenderer = createDoodleRenderer({
             canvas,
+            getPage: () => imageHistory[currentViewIndex]?.canvas_page || null,
             isVisible: () => doodlesEnabled,
             textLayer: document.getElementById('canvas-text-layer'),
             canEditText: () => canAddTextAnnotation() && !isPagedBack && canvasCursorState.current.type === 'select',
@@ -6565,7 +6566,7 @@
 
             doodleActions.push(action);
             const rect = { width: canvas.clientWidth, height: canvas.clientHeight };
-            renderSegment(nx0 * rect.width, ny0 * rect.height, nx1 * rect.width, ny1 * rect.height, color, size);
+            doodleRenderer.renderStrokeSegment(action);
 
             if (!emit) return;
 
@@ -6581,13 +6582,7 @@
         }
 
         function getNormalizedCoords(e) {
-            const rect = canvas.getBoundingClientRect();
-            const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-            const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-            return {
-                x: Math.max(0, Math.min(1, (clientX - rect.left) / rect.width)),
-                y: Math.max(0, Math.min(1, (clientY - rect.top) / rect.height))
-            };
+            return doodleRenderer.normalizedPoint(e);
         }
 
         function beginTextAnnotation(event) {
@@ -6759,10 +6754,13 @@
             editor.className = 'canvas-text-editor';
             editor.setAttribute('aria-label', 'Text annotation');
             editor.placeholder = 'Type annotation…';
-            editor.style.left = `${coords.x * 100}%`;
-            editor.style.top = `${coords.y * 100}%`;
+            const plane = typeof imageHistory !== 'undefined' && imageHistory[currentViewIndex]?.canvas_page
+                ? doodleRenderer.imagePlane(existing) : null;
+            editor.style.left = plane ? `${plane.x + coords.x * plane.width}px` : `${coords.x * 100}%`;
+            editor.style.top = plane ? `${plane.y + coords.y * plane.height}px` : `${coords.y * 100}%`;
             editor.style.fontFamily = `"${existing?.font || textAnnotationFont?.value || 'Outfit'}", sans-serif`;
-            editor.style.fontSize = `${existing?.size || textAnnotationSize?.value || 32}px`;
+            const editingSize = Number(existing?.size || textAnnotationSize?.value || 32);
+            editor.style.fontSize = `${plane ? editingSize * plane.width / 1000 : editingSize}px`;
             editor.style.color = existing?.color || currentTextColor;
             imgContainer.appendChild(editor);
             activeTextEditor = editor;
@@ -7871,8 +7869,10 @@
                                 upEvt.clientX >= rect.left && upEvt.clientX <= rect.right &&
                                 upEvt.clientY >= rect.top && upEvt.clientY <= rect.bottom
                             ) {
-                                const normX = Math.max(0, Math.min(1, (upEvt.clientX - rect.left) / rect.width));
-                                const normY = Math.max(0, Math.min(1, (upEvt.clientY - rect.top) / rect.height));
+                                const projected = typeof imageHistory !== 'undefined' && imageHistory[currentViewIndex]?.canvas_page
+                                    ? doodleRenderer.normalizedPoint(upEvt) : null;
+                                const normX = projected?.x ?? Math.max(0, Math.min(1, (upEvt.clientX - rect.left) / rect.width));
+                                const normY = projected?.y ?? Math.max(0, Math.min(1, (upEvt.clientY - rect.top) / rect.height));
                                 placeStampOnCanvas({ stamp_id: stamp.id, name: stamp.name, url: stamp.url }, normX, normY);
                             }
                         };
@@ -8006,8 +8006,10 @@
                         : (imgContainer || canvas);
                     const rect = targetEl ? targetEl.getBoundingClientRect() : null;
                     if (!rect || !rect.width || !rect.height) return;
-                    const normX = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-                    const normY = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height));
+                    const projected = typeof imageHistory !== 'undefined' && imageHistory[currentViewIndex]?.canvas_page
+                        ? doodleRenderer.normalizedPoint(e) : null;
+                    const normX = projected?.x ?? Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+                    const normY = projected?.y ?? Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height));
                     placeStampOnCanvas(stampData, normX, normY);
                 } catch (err) {
                     console.error('Error dropping stamp onto canvas:', err);

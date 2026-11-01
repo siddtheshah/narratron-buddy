@@ -21,14 +21,11 @@ export function restoreSegmentsToServer(segments, sendFn) {
             currentBatch.color === color &&
             currentBatch.size === size &&
             currentBatch.stroke_id === stroke_id &&
-            currentBatch.points.length <= 396
+            currentBatch.points.length <= 396 &&
+            currentBatch.points[currentBatch.points.length - 2] === seg.x0 &&
+            currentBatch.points[currentBatch.points.length - 1] === seg.y0
         ) {
-            const pts = currentBatch.points;
-            if (pts[pts.length - 2] === seg.x0 && pts[pts.length - 1] === seg.y0) {
-                pts.push(seg.x1, seg.y1);
-            } else {
-                pts.push(seg.x0, seg.y0, seg.x1, seg.y1);
-            }
+            currentBatch.points.push(seg.x1, seg.y1);
         } else {
             if (currentBatch) send(currentBatch);
             currentBatch = {

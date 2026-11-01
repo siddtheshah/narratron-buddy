@@ -14,6 +14,7 @@ from uuid import uuid4
 
 if TYPE_CHECKING:
     from components.theater_manager import Theater
+    from game_engine.canvas_contract import Page
 
 logger = logging.getLogger(__name__)
 
@@ -51,13 +52,17 @@ def doodle_snapshot_batches(doodles: list[DoodleAction]) -> list[DoodleAction]:
             batches
             and batches[-1]["color"] == color
             and batches[-1]["size"] == size
+            and batches[-1].get("stroke_id") == action.get("stroke_id")
             and batches[-1]["points"][-2:] == [x0, y0]
         ):
             points = batches[-1]["points"]
             if type(points) is list:
                 points.extend([x1, y1])
         else:
-            batches.append({"color": color, "size": size, "points": [x0, y0, x1, y1]})
+            batch: DoodleAction = {"color": color, "size": size, "points": [x0, y0, x1, y1]}
+            if action.get("stroke_id"):
+                batch["stroke_id"] = action["stroke_id"]
+            batches.append(batch)
     return batches
 
 
@@ -120,6 +125,20 @@ class DoodleState:
 
     def snapshot_batches(self) -> list[DoodleAction]:
         return doodle_snapshot_batches(self.doodles)
+
+    def canonicalize_canvas_objects(self, page: Page, image_path: str | None = None) -> bool:
+        """Persist image-plane dimensions and stable IDs on the original page."""
+        from components.canvas.canvas_observation import canonicalize_actions
+
+        def resolve(action: DoodleAction) -> bytes | None:
+            return self.resolve_stamp_image(action, image_path=image_path)
+
+        migrated = canonicalize_actions(self.doodles, page, resolve)
+        if migrated == self.doodles:
+            return False
+        self.doodles = migrated
+        self._persist()
+        return True
 
     def text_annotations(self) -> list[DoodleAction]:
         """Return persisted text actions for websocket snapshot replay."""
@@ -444,14 +463,19 @@ class DoodleState:
                         stamp_scale = width / ref_width
                         base_size = max(16.0, float(str(action.get("size") or 80.0)))
                         target_size = max(16, round(base_size * stamp_scale))
-                        stamp_img.thumbnail((target_size, target_size), Image.Resampling.LANCZOS)
+                        if "canvas_width" in action and "canvas_height" in action:
+                            target_width = max(1, round(float(str(action["canvas_width"])) * width / 10_000))
+                            target_height = max(1, round(float(str(action["canvas_height"])) * height / 10_000))
+                            stamp_img = stamp_img.resize((target_width, target_height), Image.Resampling.LANCZOS)
+                        else:
+                            stamp_img.thumbnail((target_size, target_size), Image.Resampling.LANCZOS)
                         rotation = float(str(action.get("rotation") or 0)) % 360
                         if rotation:
                             stamp_img = stamp_img.rotate(-rotation, resample=Image.Resampling.BICUBIC, expand=True)
                         stamp_w, stamp_h = stamp_img.size
 
-                        center_x = float(str(action.get("x") or 0.5)) * width
-                        center_y = float(str(action.get("y") or 0.5)) * height
+                        center_x = float(str(action.get("x", 0.5))) * width
+                        center_y = float(str(action.get("y", 0.5))) * height
                         top_left_x = round(center_x - stamp_w / 2.0)
                         top_left_y = round(center_y - stamp_h / 2.0)
 
@@ -477,15 +501,23 @@ class DoodleState:
                         draw.line(
                             points,
                             fill=str(action.get("color", "#ffffff")),
-                            width=max(1, round(float(str(action.get("size") or 3)) * scale)),
+                            width=max(1, round(
+                                float(str(action["canvas_line_width"])) * width / 10_000
+                                if "canvas_line_width" in action else float(str(action.get("size") or 3)) * scale
+                            )),
                         )
                     elif action.get("type") == "text":
-                        font_size = max(12, round(float(str(action.get("size") or 32)) * scale))
+                        font_size = max(1, round(
+                            float(str(action["canvas_font_size"])) * height / 10_000
+                            if "canvas_font_size" in action else max(12, float(str(action.get("size") or 32)) * scale)
+                        ))
                         try:
                             font = ImageFont.truetype("DejaVuSans.ttf", font_size)
                         except OSError:
                             font = ImageFont.load_default()
-                        draw.multiline_text(
+                        text_image = Image.new("RGBA", image.size) if "canvas_width" in action else image
+                        text_draw = ImageDraw.Draw(text_image) if text_image is not image else draw
+                        text_draw.multiline_text(
                             (float(str(action["x"])) * width, float(str(action["y"])) * height),
                             str(action.get("text", "")),
                             fill=str(action.get("color", "#ffffff")),
@@ -494,6 +526,13 @@ class DoodleState:
                             stroke_fill="#000000",
                             spacing=max(2, round(font_size * 0.15)),
                         )
+                        if text_image is not image:
+                            x, y = float(str(action["x"])) * width, float(str(action["y"])) * height
+                            left, top = max(0, round(x)), max(0, round(y))
+                            right = min(width, round(x + float(str(action["canvas_width"])) * width / 10_000))
+                            bottom = min(height, round(y + float(str(action["canvas_height"])) * height / 10_000))
+                            if right > left and bottom > top:
+                                image.alpha_composite(text_image.crop((left, top, right, bottom)), (left, top))
                 except (KeyError, TypeError, ValueError):
                     continue
             output = io.BytesIO()

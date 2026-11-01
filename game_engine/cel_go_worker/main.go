@@ -43,6 +43,20 @@ type transition struct {
 	Bindings                                                 []binding
 	Triggering                                               bool
 	OnError                                                  json.RawMessage `json:"on_error"`
+	CanvasEffects                                            *string         `json:"canvas_effects"`
+}
+
+type canvasAPI struct {
+	Version int
+	Effects []string
+}
+type keyboardBinding struct {
+	ID, Key, Label, Enabled string
+	Action                  viewAction
+}
+type keyboard struct {
+	Enabled  string
+	Bindings []keyboardBinding
 }
 type viewAction struct {
 	Name, Arguments, Confirmation string
@@ -64,6 +78,8 @@ type definition struct {
 	ModelState         *string `json:"model_state"`
 	Transitions        map[string]transition
 	View               view
+	CanvasAPI          *canvasAPI `json:"canvas_api"`
+	Keyboard           *keyboard
 }
 type rendered struct {
 	Kind     string                 `json:"kind"`
@@ -82,6 +98,7 @@ type request struct {
 	Random                            []string
 	Assets                            map[string]rendered
 	State                             map[string]interface{}
+	Canvas                            map[string]interface{}
 	Steps                             []step
 	Context                           map[string]interface{}
 	TimeoutMS                         int    `json:"timeout_ms"`
@@ -94,6 +111,8 @@ type prepared struct {
 	Actions          map[string]interface{}   `json:"actions"`
 	Candidates       []map[string]interface{} `json:"candidates"`
 	SVGExpandedBytes int                      `json:"svg_expanded_bytes"`
+	CanvasEffects    []interface{}            `json:"canvas_effects,omitempty"`
+	Shortcuts        []map[string]interface{} `json:"shortcuts,omitempty"`
 }
 type metrics struct {
 	OperationNS  int64  `json:"operation_ns"`
@@ -122,6 +141,7 @@ type execution struct {
 	callCost                uint64
 	exhausted               error
 	stats                   metrics
+	canvas                  map[string]interface{}
 }
 type compiled struct {
 	def          definition
@@ -572,6 +592,85 @@ func (e *execution) bindings(bindings []binding, s scope) (scope, error) {
 func (e *execution) stateScope(state map[string]interface{}) (scope, error) {
 	return e.bindings(e.pkg.def.Derived, e.newScope(map[string]interface{}{"state": state, "constants": e.pkg.def.Constants, "initial": e.pkg.def.Initial}))
 }
+func (e *execution) canvasScope(s scope, event bool) (scope, error) {
+	if e.pkg.def.CanvasAPI == nil {
+		return s, nil
+	}
+	if e.canvas == nil {
+		return s, fmt.Errorf("canvas-enabled evaluation requires a captured observation")
+	}
+	observed := make(map[string]interface{}, len(e.canvas))
+	for key, value := range e.canvas {
+		observed[key] = value
+	}
+	if !event {
+		observed["event"] = nil
+	}
+	return e.extend(s, "canvas", observed), nil
+}
+
+func (e *execution) shortcuts(s scope) ([]map[string]interface{}, error) {
+	resolved := []map[string]interface{}{}
+	k := e.pkg.def.Keyboard
+	if k == nil {
+		return resolved, nil
+	}
+	enabled, err := e.eval(k.Enabled, s)
+	if err != nil {
+		return nil, err
+	}
+	if enabled == types.False {
+		return resolved, nil
+	}
+	if enabled != types.True {
+		return nil, fmt.Errorf("keyboard enabled must be boolean")
+	}
+	for _, binding := range k.Bindings {
+		enabled, err := e.eval(binding.Enabled, s)
+		if err != nil {
+			return nil, err
+		}
+		if enabled == types.False {
+			continue
+		}
+		if enabled != types.True {
+			return nil, fmt.Errorf("keyboard binding enabled must be boolean")
+		}
+		name, err := e.value(binding.Action.Name, s)
+		if err != nil {
+			return nil, err
+		}
+		n, ok := name.(string)
+		if !ok {
+			return nil, fmt.Errorf("keyboard action name must be string")
+		}
+		t, exists := e.pkg.def.Transitions[n]
+		if !exists || t.Actor == "narratron" {
+			return nil, fmt.Errorf("keyboard shortcuts must resolve to player/contributor transitions")
+		}
+		args, err := e.value(binding.Action.Arguments, s)
+		if err != nil {
+			return nil, err
+		}
+		if _, ok := args.(map[string]interface{}); !ok {
+			return nil, fmt.Errorf("keyboard action arguments must be map")
+		}
+		permission := "orator"
+		if t.Permission == "contributor" || t.Actor == "contributor" {
+			permission = "contributor"
+		}
+		if binding.Action.Permission != nil {
+			permission = *binding.Action.Permission
+		}
+		action := map[string]interface{}{"name": name, "arguments": args, "confirmation": binding.Action.Confirmation, "permission": permission}
+		data, err := json.Marshal(action)
+		if err != nil || len(data) > 4096 {
+			return nil, fmt.Errorf("keyboard action exceeds its 4 KiB size limit")
+		}
+		resolved = append(resolved, map[string]interface{}{"id": binding.ID, "key": binding.Key, "label": binding.Label, "action": action})
+	}
+	return resolved, nil
+}
 func (e *execution) validate(s scope) error {
 	for _, source := range e.pkg.def.Invariants {
 		v, err := e.eval(source, s)
@@ -743,6 +842,11 @@ func (e *execution) prepare(state map[string]interface{}) (prepared, error) {
 	if err := e.validate(s); err != nil {
 		return out, err
 	}
+	modelScope := s
+	s, err = e.canvasScope(s, false)
+	if err != nil {
+		return out, err
+	}
 	e.nodes = 0
 	svgStart := e.svgBytes
 	out.View, err = e.render(e.pkg.def.View, s)
@@ -752,7 +856,7 @@ func (e *execution) prepare(state map[string]interface{}) (prepared, error) {
 	out.SVGExpandedBytes = e.svgBytes - svgStart
 	out.ModelState = state
 	if e.pkg.def.ModelState != nil {
-		out.ModelState, err = e.value(*e.pkg.def.ModelState, s)
+		out.ModelState, err = e.value(*e.pkg.def.ModelState, modelScope)
 		if err != nil {
 			return out, err
 		}
@@ -771,9 +875,21 @@ func (e *execution) prepare(state map[string]interface{}) (prepared, error) {
 			return out, fmt.Errorf("availability must be boolean")
 		}
 	}
+	out.Shortcuts, err = e.shortcuts(s)
+	if err != nil {
+		return out, err
+	}
+	if e.pkg.def.CanvasAPI != nil {
+		viewData, viewErr := json.Marshal(out.View)
+		shortcutData, shortcutErr := json.Marshal(out.Shortcuts)
+		if viewErr != nil || shortcutErr != nil || len(viewData)-out.SVGExpandedBytes+len(shortcutData) > maxValue {
+			return out, fmt.Errorf("rendered view and keyboard shortcuts exceed their size budget")
+		}
+	}
 	return out, nil
 }
 func (e *execution) operate(req request) (interface{}, error) {
+	e.canvas = req.Canvas
 	if req.Op == "eval" {
 		return e.value(req.Source, e.newScope(req.Context))
 	}
@@ -807,6 +923,10 @@ func (e *execution) operate(req request) (interface{}, error) {
 		state = e.pkg.def.Initial
 	}
 	candidates := []map[string]interface{}{}
+	effects := []interface{}{}
+	if e.pkg.def.CanvasAPI != nil && len(req.Steps) > 1 {
+		return nil, fmt.Errorf("canvas-enabled games cannot submit local drafts")
+	}
 	for _, action := range req.Steps {
 		t, exists := e.pkg.def.Transitions[action.Name]
 		if !exists {
@@ -818,13 +938,31 @@ func (e *execution) operate(req request) (interface{}, error) {
 		}
 		if req.Actor == "contributor" && t.Actor != "contributor" && t.Permission != "contributor" {
 			e.nodes = 0
-			viewNodes, err := e.render(e.pkg.def.View, s)
+			viewScope, err := e.canvasScope(s, false)
 			if err != nil {
 				return nil, err
 			}
-			if !viewNodesAllowContributor(viewNodes, action.Name, action.Arguments) {
+			viewNodes, err := e.render(e.pkg.def.View, viewScope)
+			if err != nil {
+				return nil, err
+			}
+			allowed := viewNodesAllowContributor(viewNodes, action.Name, action.Arguments)
+			shortcuts, err := e.shortcuts(viewScope)
+			if err != nil {
+				return nil, err
+			}
+			for _, shortcut := range shortcuts {
+				if viewNodesAllowContributor([]rendered{{Action: shortcut["action"]}}, action.Name, action.Arguments) {
+					allowed = true
+				}
+			}
+			if !allowed {
 				return nil, fmt.Errorf("Only the active orator can take this game action.")
 			}
+		}
+		s, err = e.canvasScope(s, true)
+		if err != nil {
+			return nil, err
 		}
 		s = e.extend(s, "action", action.Arguments)
 		guard, err := e.eval(t.Guard, s)
@@ -853,10 +991,25 @@ func (e *execution) operate(req request) (interface{}, error) {
 		if err := e.validate(candidateScope); err != nil {
 			return nil, err
 		}
+		if t.CanvasEffects != nil {
+			if e.pkg.def.CanvasAPI == nil {
+				return nil, fmt.Errorf("canvas_effects requires a canvas_api declaration")
+			}
+			value, err := e.value(*t.CanvasEffects, e.extend(s, "next_state", state))
+			if err != nil {
+				return nil, err
+			}
+			var ok bool
+			effects, ok = value.([]interface{})
+			if !ok {
+				return nil, fmt.Errorf("canvas_effects must return a command list")
+			}
+		}
 		candidates = append(candidates, state)
 	}
 	out, err := e.prepare(state)
 	out.Candidates = candidates
+	out.CanvasEffects = effects
 	return out, err
 }
 
@@ -876,7 +1029,7 @@ func main() {
 		decoder.UseNumber()
 		err := decoder.Decode(&req)
 		if err == nil {
-			for _, value := range []interface{}{req.Definition.Initial, req.Definition.Constants, req.State, req.Context} {
+			for _, value := range []interface{}{req.Definition.Initial, req.Definition.Constants, req.State, req.Context, req.Canvas} {
 				_, err = normalize(value)
 				if err != nil {
 					break

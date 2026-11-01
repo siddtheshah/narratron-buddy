@@ -17,7 +17,9 @@ from celpy.adapter import json_to_cel
 from celpy.evaluation import Activation, CELEvalError, Evaluator, Result, bool_eq, bool_ne
 from jsonschema import Draft202012Validator
 from lark import Token, Tree
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, ValidationError, field_validator, model_validator
+from typing_extensions import Self
+from game_engine.canvas_contract import CanvasAPI, CanvasSnapshot, canonical_key
 from game_engine.game_values import MAX_VALUE_BYTES, checked_json
 from game_engine.game_source import game_source_json
 
@@ -90,6 +92,7 @@ class TransitionDefinition(GameModel):
     guard: str = Field(default="true", max_length=4000)
     bindings: list[Binding] = Field(default_factory=list, max_length=32)
     result: str = Field(min_length=1, max_length=4000)
+    canvas_effects: str | None = Field(default=None, min_length=1, max_length=4000)
     triggering: bool = Field(default=True)
     preview: bool = False
     on_error: GameErrorRecovery | None = None
@@ -110,6 +113,32 @@ class ViewAction(GameModel):
     permission: Literal["orator", "contributor"] | None = None
 
 
+class KeyboardBinding(GameModel):
+    id: str = Field(min_length=1, max_length=128)
+    key: str
+    label: str = Field(min_length=1, max_length=128)
+    enabled: str = Field(default="true", min_length=1, max_length=4000)
+    action: ViewAction
+
+    @field_validator("key")
+    @classmethod
+    def normalize_key(cls, value: str) -> str:
+        return canonical_key(value)
+
+
+class KeyboardDefinition(GameModel):
+    enabled: str = Field(default="true", min_length=1, max_length=4000)
+    bindings: list[KeyboardBinding] = Field(max_length=64)
+
+    @model_validator(mode="after")
+    def unique_bindings(self) -> Self:
+        if len({binding.id for binding in self.bindings}) != len(self.bindings):
+            raise ValueError("Keyboard binding IDs must be unique.")
+        if len({binding.key for binding in self.bindings}) != len(self.bindings):
+            raise ValueError("Keyboard binding keys must be unique after normalization.")
+        return self
+
+
 class ViewNode(GameModel):
     kind: Literal[
         "column", "row", "grid", "tabs", "text", "button",
@@ -125,6 +154,8 @@ class ViewNode(GameModel):
 class GameDefinition(GameModel):
     version: Literal[2]
     local_preview: bool = False
+    canvas_api: CanvasAPI | None = None
+    keyboard: KeyboardDefinition | None = None
     instructions: str = Field(default="", max_length=4000)
     model_state: str | None = Field(default=None, min_length=1, max_length=4000)
     initial: dict[str, JsonValue]
@@ -421,29 +452,62 @@ class GameProgram:
             if len(set(function.parameters)) != len(function.parameters) or any(not re.fullmatch(r"[a-zA-Z][a-zA-Z0-9_]{0,39}", param) for param in function.parameters):
                 raise ValueError("Invalid function parameters.")
             self.compile(function.expr, allowed_functions)
+            if definition.canvas_api is not None:
+                for reserved in ("canvas", "next_state"):
+                    if reserved in self.dependencies[function.expr] and reserved not in function.parameters:
+                        raise ValueError(f"Author functions require an explicit {reserved} parameter.")
             if function.expr in self.random_expressions:
                 self.random_functions.add(name)
             allowed_functions.add(name)
         for binding in definition.derived:
-            self.compile(binding.expr, allowed_functions)
+            self.check_binding_name(binding.name)
+            self.compile_scoped(binding.expr, allowed_functions)
         for expression in definition.invariants:
-            self.compile(expression, allowed_functions)
+            self.compile_scoped(expression, allowed_functions)
         if definition.model_state is not None:
-            self.compile(definition.model_state, allowed_functions)
+            self.compile_scoped(definition.model_state, allowed_functions)
         for transition in definition.transitions.values():
             if transition.actor == "narratron" and transition.permission != "orator":
                 raise ValueError("Narratron transitions cannot declare contributor permission.")
-            self.compile(transition.available, allowed_functions)
+            self.compile_scoped(transition.available, allowed_functions, canvas=True)
             if "action" in self.dependencies[transition.available]:
                 raise ValueError("Action availability cannot depend on action arguments.")
-            self.compile(transition.guard, allowed_functions)
-            self.compile(transition.result, allowed_functions)
+            self.compile_scoped(transition.guard, allowed_functions, canvas=True)
+            self.compile_scoped(transition.result, allowed_functions, canvas=True)
+            if transition.canvas_effects is not None:
+                if definition.canvas_api is None:
+                    raise ValueError("canvas_effects requires a canvas_api declaration.")
+                self.compile_scoped(transition.canvas_effects, allowed_functions, canvas=True, next_state=True)
             if transition.on_error is not None:
-                self.compile(transition.on_error.guard, allowed_functions)
-                self.compile(transition.on_error.result, allowed_functions)
+                self.compile_scoped(transition.on_error.guard, allowed_functions)
+                self.compile_scoped(transition.on_error.result, allowed_functions)
             for binding in transition.bindings:
-                self.compile(binding.expr, allowed_functions)
+                self.check_binding_name(binding.name)
+                self.compile_scoped(binding.expr, allowed_functions, canvas=True)
+        if definition.keyboard is not None:
+            if definition.canvas_api is None:
+                raise ValueError("Keyboard shortcuts require a canvas_api declaration.")
+            self.compile_scoped(definition.keyboard.enabled, allowed_functions, canvas=True)
+            for shortcut in definition.keyboard.bindings:
+                self.compile_scoped(shortcut.enabled, allowed_functions, canvas=True)
+                self.compile_scoped(shortcut.action.name, allowed_functions, canvas=True)
+                self.compile_scoped(shortcut.action.arguments, allowed_functions, canvas=True)
         self.compile_view(definition.view, allowed_functions, 0)
+
+    def check_binding_name(self, name: str) -> None:
+        if self.definition.canvas_api is not None and name in {"canvas", "next_state"}:
+            raise ValueError(f"Package bindings cannot shadow reserved {name}.")
+
+    def compile_scoped(
+        self, source: str, functions: set[str], *, canvas: bool = False, next_state: bool = False,
+    ) -> None:
+        self.compile(source, functions)
+        if self.definition.canvas_api is not None:
+            dependencies = self.dependencies[source]
+            if not canvas and "canvas" in dependencies:
+                raise ValueError("This expression must remain independent of canvas.")
+            if not next_state and "next_state" in dependencies:
+                raise ValueError("next_state is available only in canvas_effects.")
 
     def compile(self, source: str, functions: set[str]) -> None:
         if len(source) > 4000:
@@ -468,12 +532,13 @@ class GameProgram:
         if depth > 12:
             raise ValueError("View nesting exceeds its budget.")
         for source in node.props.values():
-            self.compile(source, functions)
+            self.compile_scoped(source, functions, canvas=True)
         if node.repeat is not None:
-            self.compile(node.repeat, functions)
+            self.check_binding_name(node.binding)
+            self.compile_scoped(node.repeat, functions, canvas=True)
         if node.action is not None:
-            self.compile(node.action.name, functions)
-            self.compile(node.action.arguments, functions)
+            self.compile_scoped(node.action.name, functions, canvas=True)
+            self.compile_scoped(node.action.arguments, functions, canvas=True)
         for child in node.children:
             self.compile_view(child, functions, depth + 1)
 
@@ -571,7 +636,9 @@ class Execution:
             if not BOOL_ADAPTER.validate_python(self.evaluate(expression, context), strict=True):
                 raise ValueError("Game state invariant failed.")
 
-    def model_context(self, context: dict[str, JsonValue]) -> tuple[JsonValue, dict[str, JsonValue]]:
+    def model_context(
+        self, context: dict[str, JsonValue], canvas: CanvasSnapshot | None = None,
+    ) -> tuple[JsonValue, dict[str, JsonValue]]:
         """Render package-selected model facts and currently available Narratron actions."""
         definition = self.program.definition
         model_state = (
@@ -584,7 +651,8 @@ class Execution:
         for name, transition in definition.transitions.items():
             if transition.actor != "narratron":
                 continue
-            if BOOL_ADAPTER.validate_python(self.evaluate(transition.available, context), strict=True):
+            action_context = context if canvas is None else {**context, "canvas": canvas.model_dump(mode="json")}
+            if BOOL_ADAPTER.validate_python(self.evaluate(transition.available, action_context), strict=True):
                 actions[name] = {"description": transition.description, "parameters": transition.parameters}
         if len(json.dumps(actions, ensure_ascii=False).encode("utf-8")) > MAX_VALUE_BYTES:
             raise ValueError("Model-facing game actions exceed their size budget.")
@@ -667,8 +735,17 @@ def validate_game_package(
             execution.budget = budget
             context = execution.context(definition.initial)
             execution.validate(definition.initial, context)
-            view = [node.model_dump(mode="json") for node in execution.render(definition.view, context)]
-            model_state, actions = execution.model_context(context)
+            canvas = CanvasSnapshot.empty() if definition.canvas_api is not None else None
+            view_context = context if canvas is None else {**context, "canvas": canvas.model_dump(mode="json")}
+            view = [node.model_dump(mode="json") for node in execution.render(definition.view, view_context)]
+            model_state, actions = execution.model_context(context, canvas)
+            if canvas is not None:
+                from game_engine.canvas_evaluation import CanvasEvaluation, check_evaluation_limits, resolve_shortcuts
+
+                shortcuts = resolve_shortcuts(execution, view_context)
+                check_evaluation_limits(CanvasEvaluation(
+                    state=definition.initial, view=view, model_state=model_state, actions=actions, shortcuts=shortcuts,
+                ), execution.svg_expanded_bytes)
             if len(json.dumps(view).encode("utf-8")) - execution.svg_expanded_bytes > MAX_VALUE_BYTES:
                 raise ValueError("Rendered view exceeds its size budget.")
             program.initial_view = view

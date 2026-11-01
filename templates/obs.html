@@ -350,6 +350,7 @@
         });
         const doodleRenderer = createDoodleRenderer({
             canvas: doodleCanvas,
+            fitMode: "cover",
             isVisible: () => doodlesEnabled,
             stampLayer: document.getElementById('canvas-stamp-layer'),
             canSelectSegment: () => false,

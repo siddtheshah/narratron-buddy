@@ -56,6 +56,8 @@ class Prepared(GameModel):
     actions: dict[str, JsonValue]
     candidates: list[dict[str, JsonValue]] = Field(default_factory=list)
     svg_expanded_bytes: int = 0
+    canvas_effects: list[JsonValue] = Field(default_factory=list)
+    shortcuts: list[dict[str, JsonValue]] = Field(default_factory=list)
 
 
 class GoWorker:
@@ -193,6 +195,10 @@ class GoWorker:
         }
         if package:
             message["package"] = package
+        if program.definition.canvas_api is not None:
+            from game_engine.canvas_contract import CanvasSnapshot
+
+            message["canvas"] = CanvasSnapshot.empty().model_dump(mode="json")
         prepared = Prepared.model_validate(self.request(message))
         if package:
             if len(self.loaded_packages) >= MAX_CACHED_PACKAGES:
