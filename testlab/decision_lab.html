@@ -820,6 +820,18 @@ function renderBenchmarkRun(run) {
 
   container.innerHTML = '';
   container.append(summaryTable, scenarioTable);
+  providerIds.forEach(pid => {
+    Object.values(byScenario).forEach(scEntry => {
+      const item = [...(run.items || [])].reverse().find(it =>
+        it.provider_id === pid && it.scenario_id === scEntry.scenario_id &&
+        it.status === 'completed' && it.narratron_outcome?.candidate_ranking
+      );
+      if (item) container.append(el('details', { style: 'margin-top:16px' }, [
+        el('summary', { textContent: `${providerCatalogById[pid]?.name || pid} · ${scEntry.title} · latest result` }),
+        renderSpanRanking(item.narratron_outcome),
+      ]));
+    });
+  });
 }
 
 async function startBenchmarkRun() {
@@ -1018,6 +1030,28 @@ async function selectScenario(scenarioId) {
   await evaluateCurrent('walkthrough');
 }
 
+function renderSpanRanking(outcome) {
+  const preview = el('div', { style: 'white-space:pre-wrap;line-height:1.9;margin:12px 0' });
+  (outcome.preview_segments || []).forEach(segment => preview.append(
+    el(segment.highlight ? 'mark' : 'span', { textContent: segment.text })
+  ));
+  return el('div', {}, [
+    preview,
+    el('p', { textContent: outcome.explanation }),
+    el('div', { className: 'bench-table-wrap' }, [el('table', { className: 'bench-table' }, [
+      el('thead', {}, [el('tr', {}, ['Candidate', 'Line', 'Probability', 'Selection'].map(
+        label => el('th', { textContent: label })
+      ))]),
+      el('tbody', {}, (outcome.candidate_ranking || []).map(candidate => el('tr', {}, [
+        el('td', { textContent: candidate.text }),
+        el('td', { textContent: String(candidate.line) }),
+        el('td', { textContent: `${(candidate.probability * 100).toFixed(1)}%` }),
+        el('td', { textContent: candidate.reason }),
+      ]))),
+    ])]),
+  ]);
+}
+
 function renderEvaluation(data) {
   document.querySelector('#evalMeta').textContent =
     `${data.mode === 'live' ? `LIVE (${data.provider})` : 'WALKTHROUGH'} · ${data.model} · ${data.latency_ms} ms`;
@@ -1038,6 +1072,7 @@ function renderEvaluation(data) {
   }
 
   const answersContainer = document.querySelector('#answersContainer');
+  if (outcome?.candidate_ranking) outcomeContainer.append(renderSpanRanking(outcome));
   answersContainer.innerHTML = '';
   (data.answers || []).forEach(ans => {
     const cardChildren = [];

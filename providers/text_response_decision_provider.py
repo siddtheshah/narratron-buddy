@@ -64,7 +64,7 @@ class TextResponseDecisionProvider(DecisionProvider):
             model=target_model,
             system_instruction=_SYSTEM_INSTRUCTION,
             temperature=0.0,
-            max_output_tokens=256,
+            max_output_tokens=max(256, 24 * len(request.questions)),
             response_json_schema=json_schema,
             attachments=attachments,
         )

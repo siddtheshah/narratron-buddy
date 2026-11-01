@@ -8,6 +8,7 @@ import pytest
 from providers.decision_provider import (
     ChoiceAnswer,
     DecisionProvider,
+    DecisionRequest,
     DecisionResult,
     PredicateAnswer,
 )
@@ -22,7 +23,7 @@ from testlab.server import app
 
 def test_decision_scenario_catalog() -> None:
     catalog = decision_scenario_catalog()
-    assert len(catalog) == 7
+    assert len(catalog) == 10
     scenario = get_decision_scenario("hybrid-image-router-complex")
     assert scenario.id == "hybrid-image-router-complex"
     assert len(scenario.questions) == 4
@@ -45,7 +46,7 @@ def test_decision_lab_page_and_catalog_routes() -> None:
     data = cat_res.json()
     provider_ids = {p["id"] for p in data["providers"]}
     assert {"openai-decisions", "gemini-2-5-decisions", "gemini-3-decisions"}.issubset(provider_ids)
-    assert len(data["scenarios"]) == 7
+    assert len(data["scenarios"]) == 10
 
 
 def test_decision_lab_walkthrough_evaluates_all_scenarios() -> None:
@@ -58,6 +59,9 @@ def test_decision_lab_walkthrough_evaluates_all_scenarios() -> None:
         "reference-tag-and-voice-casting": "REFERENCES CAST",
         "game-move-narration-gate": "NARRATION TRIGGERED",
         "text-beautifier-span-selector": "SPAN: SPAN_2",
+        "beautifier-ranked-short": "SPANS: DEAFENING CRACK | RUN NOW",
+        "beautifier-ranked-line": "SPANS: YOU SHALL NOT PASS!",
+        "beautifier-ranked-quiet": "SPANS: NONE",
     }
 
     for scenario in DECISION_SCENARIOS:
@@ -268,3 +272,49 @@ def test_decision_lab_validation_errors() -> None:
     )
     assert bad_bench.status_code == 400
     assert "Unknown decision provider" in bad_bench.json()["detail"]
+
+
+def test_ranked_span_live_mode_regenerates_candidates_for_edited_text() -> None:
+    def decide(request: DecisionRequest) -> DecisionResult:
+        assert request.input_text == "Quiet daylight."
+        assert len(request.questions) == 3
+        return DecisionResult(
+            provider="test", model="test",
+            answers={question.name: PredicateAnswer(name=question.name, probability=0.1)
+                     for question in request.questions},
+        )
+
+    provider = MagicMock(spec=DecisionProvider)
+    provider.decide.side_effect = decide
+    with patch("testlab.decision_lab.get_decision_provider", return_value=provider):
+        response = TestClient(app).post("/api/decision-lab/evaluate", json={
+            "mode": "live", "scenario_id": "beautifier-ranked-short",
+            "input_text": "Quiet daylight.",
+        })
+    assert response.status_code == 200
+    outcome = response.json()["narratron_outcome"]
+    assert outcome["badge"] == "SPANS: NONE"
+    assert len(outcome["candidate_ranking"]) == 3
+    assert outcome["preview_segments"] == [{"text": "Quiet daylight.", "highlight": False}]
+
+
+def test_ranked_span_benchmark_retains_rankings_and_preview() -> None:
+    scenario = get_decision_scenario("beautifier-ranked-short")
+    provider = MagicMock(spec=DecisionProvider)
+    provider.decide.return_value = DecisionResult(
+        provider="test", model="test",
+        answers={q.name: q.parse_wire_answer(answer)
+                 for q, answer in zip(scenario.questions, scenario.sample_wire_answers, strict=True)},
+    )
+    with patch("testlab.decision_lab.get_decision_provider", return_value=provider):
+        response = TestClient(app).post("/api/decision-lab/benchmark/runs", json={
+            "provider_ids": ["openai-decisions"], "scenario_ids": [scenario.id],
+            "repetitions": 1, "synchronous": True,
+        })
+    assert response.status_code == 200
+    item = response.json()["items"][0]
+    assert item["status"] == "completed"
+    assert item["outcome_badge"] == scenario.expected_badge
+    outcome = item["narratron_outcome"]
+    assert len(outcome["candidate_ranking"]) == 38
+    assert sum(segment["highlight"] for segment in outcome["preview_segments"]) == 2

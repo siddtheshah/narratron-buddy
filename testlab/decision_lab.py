@@ -27,6 +27,7 @@ from providers.decision_provider import (
 )
 from providers.openai_decision_provider import DEFAULT_OPENAI_DECISION_MODEL
 from providers.registry import get_decision_provider, list_decision_provider_specs
+from testlab.beautifier_span_benchmark import build_span_candidates, build_span_questions, rank_span_outcome
 
 ROOT = Path(__file__).resolve().parent
 router = APIRouter()
@@ -563,6 +564,56 @@ DECISION_SCENARIOS: tuple[DecisionScenario, ...] = (
 )
 
 
+# Keep the original hand-authored span-choice example for comparison.
+SPAN_BENCHMARK_CASES: tuple[tuple[str, str, str, tuple[str, ...]], ...] = (
+    (
+        "beautifier-ranked-short", "8. Ranked Emphasis: Two Short Highlights",
+        "The cavern splits with a DEAFENING CRACK as dust falls.\n"
+        "Beyond the gate, RUN NOW echoes through the dark.",
+        ("DEAFENING CRACK", "RUN NOW"),
+    ),
+    (
+        "beautifier-ranked-line", "9. Ranked Emphasis: Whole Line",
+        "The guard reads the inscription.\nYOU SHALL NOT PASS!",
+        ("YOU SHALL NOT PASS!",),
+    ),
+    (
+        "beautifier-ranked-quiet", "10. Ranked Emphasis: Quiet Narration",
+        "Morning light rests on the table.\nA cup stands beside the folded cloth.",
+        (),
+    ),
+)
+
+
+def _build_span_benchmark_scenario(
+    scenario_id: str, title: str, text: str, expected: tuple[str, ...],
+) -> DecisionScenario:
+    return DecisionScenario(
+        id=scenario_id, title=title, subsystem="services/text_beautifier.py",
+        category="UI & Typography",
+        description=(
+            "Generate every one-word, adjacent two-word, and whole-line candidate from source text. "
+            "Evaluate independent emphasis suitability predicates in one request, then rank their "
+            "probabilities and select up to two nonoverlapping highlights above 60%. "
+            "Questions regenerate from edited text in live mode. Walkthrough probabilities are "
+            "illustrative. Agreement measures exact reference spans; alternative valid highlights may differ."
+        ),
+        decision_rule="Sort by probability; accept >= 0.60; skip overlaps; stop after two spans.",
+        expected_badge="SPANS: " + (" | ".join(expected) or "NONE"),
+        input_text=text,
+        questions=build_span_questions(text),
+        sample_wire_answers=tuple(DecisionWireAnswer(
+            type="predicate", name=candidate.name,
+            probability=0.96 if candidate.text in expected else 0.12,
+        ) for candidate in build_span_candidates(text)),
+    )
+
+
+DECISION_SCENARIOS += tuple(
+    _build_span_benchmark_scenario(*case) for case in SPAN_BENCHMARK_CASES
+)
+
+
 class DecisionQuestionSpec(BaseModel):
     """JSON request schema for a single question submitted from the Test Lab UI."""
 
@@ -665,8 +716,12 @@ def get_decision_scenario(scenario_id: str) -> DecisionScenario:
 def synthesize_narratron_outcome(
     scenario_id: str | None,
     result: DecisionResult,
+    input_text: str | None = None,
 ) -> dict[str, JsonValue]:
     """Translate raw decision answers into the concrete runtime action Narratron takes."""
+    if scenario_id and scenario_id.startswith("beautifier-ranked-"):
+        text = input_text if input_text is not None else get_decision_scenario(scenario_id).input_text
+        return rank_span_outcome(text, result)
     answers = result.answers
 
     if scenario_id in ("hybrid-image-router-complex", "hybrid-image-router-fast") and {
@@ -1084,7 +1139,7 @@ def _benchmark_one_decision(
                 model=model_override,
             )
             result = provider.decide(req)
-            outcome = synthesize_narratron_outcome(scenario.id, result)
+            outcome = synthesize_narratron_outcome(scenario.id, result, req.input_text)
             item.update(
                 {
                     "status": "completed",
@@ -1183,7 +1238,11 @@ def evaluate_decision_lab(body: DecisionLabEvaluateRequest) -> dict[str, JsonVal
         raise HTTPException(status_code=400, detail="input_text cannot be empty.")
 
     try:
-        if body.questions is not None:
+        if body.scenario_id and body.scenario_id.startswith("beautifier-ranked-"):
+            questions = build_span_questions(input_text)
+            if body.mode == "walkthrough" and scenario is not None and input_text != scenario.input_text:
+                raise HTTPException(status_code=400, detail="Use live mode to score edited narration; walkthrough samples use the original text.")
+        elif body.questions is not None:
             questions: tuple[DecisionQuestion, ...] = tuple(spec.to_question() for spec in body.questions)
         elif scenario is not None:
             questions = scenario.questions
@@ -1260,7 +1319,7 @@ def evaluate_decision_lab(body: DecisionLabEvaluateRequest) -> dict[str, JsonVal
         "latency_ms": latency_ms,
         "request_wire": request_wire,
         "answers": serialized_answers,
-        "narratron_outcome": synthesize_narratron_outcome(body.scenario_id, result),
+        "narratron_outcome": synthesize_narratron_outcome(body.scenario_id, result, input_text),
         "usage": dict(result.usage),
     }
 
