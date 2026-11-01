@@ -478,6 +478,8 @@ async def _apply_doodle_message(state: CanvasStateManager, data: dict[str, JsonV
 
     if data.get("type") == "draw_batch":
         color, size, points = data.get("color"), data.get("size", 3), data.get("points")
+        stroke_id = data.get("stroke_id")
+        stroke_id_str = str(stroke_id) if type(stroke_id) is str and stroke_id else None
         if not isinstance(points, list) or len(points) < 4 or len(points) % 2 or len(points) > 400:
             return
         try:
@@ -490,11 +492,22 @@ async def _apply_doodle_message(state: CanvasStateManager, data: dict[str, JsonV
         doodles.add([
             {"type": "draw", "x0": normalized_points[index], "y0": normalized_points[index + 1],
              "x1": normalized_points[index + 2], "y1": normalized_points[index + 3],
-             "color": color, "size": normalized_size}
+             "color": color, "size": normalized_size,
+             **({"stroke_id": stroke_id_str} if stroke_id_str else {})}
             for index in range(0, len(normalized_points) - 2, 2)
         ])
         await broadcast({"type": "draw_batch", "color": color, "size": normalized_size,
-                                        "points": normalized_points}, sender)
+                         "points": normalized_points,
+                         **({"stroke_id": stroke_id_str} if stroke_id_str else {})}, sender)
+        await acknowledge()
+        return
+
+    if data.get("type") == "remove_draw":
+        stroke_id = str(data.get("stroke_id") or "")
+        ids = data.get("ids")
+        id_list: list[str] | None = [str(i) for i in ids] if type(ids) is list else None
+        doodles.remove_draw(stroke_id=stroke_id if stroke_id else None, ids=id_list)
+        await broadcast(data, sender)
         await acknowledge()
         return
 

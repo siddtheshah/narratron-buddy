@@ -2940,7 +2940,8 @@
             background: rgba(255, 255, 255, 0.3);
         }
 
-        #clear-doodle-btn {
+        #clear-doodle-btn,
+        #undo-doodle-btn {
             background: rgba(255, 255, 255, 0.1);
             color: white;
             border: 1px solid var(--glass-border);
@@ -2949,11 +2950,17 @@
             cursor: pointer;
             font-family: inherit;
             margin-left: 0.5rem;
-            transition: background 0.2s;
+            transition: background 0.2s, opacity 0.2s;
         }
 
-        #clear-doodle-btn:hover {
+        #clear-doodle-btn:hover,
+        #undo-doodle-btn:hover:not(:disabled) {
             background: rgba(255, 255, 255, 0.2);
+        }
+
+        #undo-doodle-btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
         }
 
         .share-toast {
@@ -3487,6 +3494,7 @@
                                 then press Enter.</span>
                         </div>
                     </div>
+                    <button id="undo-doodle-btn" type="button" title="Undo last doodle action (Ctrl+Z)" disabled>Undo</button>
                     <button id="clear-doodle-btn">Clear</button>
                 </div>
             </div>
@@ -3712,6 +3720,22 @@
         import { canvasCursorState } from '/static/js/canvas-cursor-state.js?v=20261028-1';
         import { initializeChatController } from "/static/js/chat-controller.js";
         import { initializeBeyond20Listener } from "/static/js/beyond20-listener.js";
+        import {
+            DoodleAction,
+            DrawStrokeDoodleAction,
+            DeleteSegmentsDoodleAction,
+            PlaceTextDoodleAction,
+            EditTextDoodleAction,
+            MoveTextDoodleAction,
+            DeleteTextDoodleAction,
+            PlaceStampDoodleAction,
+            TransformStampDoodleAction,
+            DeleteStampDoodleAction,
+            CompoundDeleteDoodleAction,
+            ClearCanvasDoodleAction,
+            restoreSegmentsToServer,
+            createDoodleUndoManager
+        } from '/static/js/canvas-doodle-actions.js?v=20261101-1';
 
         // Plain Space is reserved for typing, never canvas shortcuts or button activation.
         function ignorePlainSpace(event) {
@@ -5841,6 +5865,7 @@
         const ctx = canvas ? canvas.getContext('2d') : null;
         const colorBtns = document.querySelectorAll('.color-btn');
         const clearBtn = document.getElementById('clear-doodle-btn');
+        const undoBtn = document.getElementById('undo-doodle-btn');
         const brushSizeSlider = document.getElementById('brush-size');
         const doodleToolbar = document.getElementById('doodle-toolbar');
         const doodlesToggleBtn = document.getElementById('doodles-toggle-btn');
@@ -5869,6 +5894,8 @@
 
         // Stores all active doodle stroke segments for replay across window resizes
         let doodleActions = [];
+        let doodleUndoStack = [];
+        let activeDeleteTransaction = null;
         let pendingDrawBatch = null;
         let drawBatchFrame = null;
         // Keep drawing responsive even while reconnecting.  The queue
@@ -5882,6 +5909,91 @@
         let doodleSocketReady = false;
         let doodleReconnectTimer = null;
         const DOODLE_RECONNECT_DELAY_MS = 5000;
+
+        function updateUndoButtonState() {
+            if (!undoBtn) return;
+            const canUndo = (doodleUndoManager ? doodleUndoManager.canUndo() : (doodleUndoStack && doodleUndoStack.length > 0)) && doodlesEnabled && !isPagedBack;
+            undoBtn.disabled = !canUndo;
+            undoBtn.style.opacity = canUndo ? '1' : '0.4';
+            undoBtn.style.cursor = canUndo ? 'pointer' : 'not-allowed';
+        }
+
+        function getDoodleUndoContext() {
+            return {
+                get doodleActions() { return doodleActions; },
+                set doodleActions(val) { doodleActions = val; },
+                doodleRenderer: typeof doodleRenderer !== 'undefined' ? doodleRenderer : null,
+                redrawAllDoodles: typeof redrawAllDoodles === 'function' ? redrawAllDoodles : () => {},
+                sendOrQueueDoodleMessage: typeof sendOrQueueDoodleMessage === 'function' ? sendOrQueueDoodleMessage : () => {},
+                restoreSegmentsToServer: typeof restoreSegmentsToServer === 'function' ? restoreSegmentsToServer : () => {},
+            };
+        }
+
+        const doodleUndoManager = typeof createDoodleUndoManager === 'function'
+            ? createDoodleUndoManager({
+                getStack: () => doodleUndoStack,
+                getContext: getDoodleUndoContext,
+                onStateChange: () => updateUndoButtonState(),
+                isEnabled: () => doodlesEnabled && !isPagedBack
+            })
+            : null;
+
+        function pushUndoAction(action) {
+            if (doodleUndoManager) {
+                doodleUndoManager.push(action);
+            } else {
+                const doodleAction = (action instanceof DoodleAction || (action && typeof action.undo === 'function'))
+                    ? action
+                    : (typeof DoodleAction !== 'undefined' ? DoodleAction.from(action) : action);
+                if (!doodleAction) return;
+                doodleUndoStack.push(doodleAction);
+                if (doodleUndoStack.length > 100) doodleUndoStack.shift();
+                if (typeof updateUndoButtonState === 'function') updateUndoButtonState();
+            }
+        }
+
+        function undoLastDoodleAction() {
+            if (doodleUndoManager) {
+                return doodleUndoManager.undo();
+            }
+            if (doodleUndoStack.length === 0) return false;
+            const action = doodleUndoStack.pop();
+            if (typeof updateUndoButtonState === 'function') updateUndoButtonState();
+            if (action && typeof action.undo === 'function') {
+                const context = getDoodleUndoContext();
+                return action.undo(context);
+            }
+            return false;
+        }
+
+        window.doodleUndoManager = doodleUndoManager;
+        try {
+            Object.defineProperty(window, 'doodleUndoStack', {
+                get() { return doodleUndoManager ? doodleUndoManager.stack : doodleUndoStack; },
+                set(val) {
+                    if (doodleUndoManager) doodleUndoManager.stack = val;
+                    doodleUndoStack = val;
+                },
+                configurable: true
+            });
+        } catch (_) {
+            window.doodleUndoStack = doodleUndoStack;
+        }
+        window.undoLastDoodleAction = undoLastDoodleAction;
+        window.undoDoodleAction = undoLastDoodleAction;
+        window.DoodleAction = typeof DoodleAction !== 'undefined' ? DoodleAction : undefined;
+        window.DrawStrokeDoodleAction = typeof DrawStrokeDoodleAction !== 'undefined' ? DrawStrokeDoodleAction : undefined;
+        window.DeleteSegmentsDoodleAction = typeof DeleteSegmentsDoodleAction !== 'undefined' ? DeleteSegmentsDoodleAction : undefined;
+        window.PlaceTextDoodleAction = typeof PlaceTextDoodleAction !== 'undefined' ? PlaceTextDoodleAction : undefined;
+        window.EditTextDoodleAction = typeof EditTextDoodleAction !== 'undefined' ? EditTextDoodleAction : undefined;
+        window.MoveTextDoodleAction = typeof MoveTextDoodleAction !== 'undefined' ? MoveTextDoodleAction : undefined;
+        window.DeleteTextDoodleAction = typeof DeleteTextDoodleAction !== 'undefined' ? DeleteTextDoodleAction : undefined;
+        window.PlaceStampDoodleAction = typeof PlaceStampDoodleAction !== 'undefined' ? PlaceStampDoodleAction : undefined;
+        window.TransformStampDoodleAction = typeof TransformStampDoodleAction !== 'undefined' ? TransformStampDoodleAction : undefined;
+        window.DeleteStampDoodleAction = typeof DeleteStampDoodleAction !== 'undefined' ? DeleteStampDoodleAction : undefined;
+        window.CompoundDeleteDoodleAction = typeof CompoundDeleteDoodleAction !== 'undefined' ? CompoundDeleteDoodleAction : undefined;
+        window.ClearCanvasDoodleAction = typeof ClearCanvasDoodleAction !== 'undefined' ? ClearCanvasDoodleAction : undefined;
+        window.restoreSegmentsToServer = typeof restoreSegmentsToServer !== 'undefined' ? restoreSegmentsToServer : undefined;
 
         function renderDoodleBatch(data) {
             const points = data.points;
@@ -5910,6 +6022,8 @@
             activeTextEditor = null;
             displayedDoodlePageId = pageId;
             doodleActions = [];
+            if (typeof doodleUndoStack !== 'undefined') doodleUndoStack = [];
+            if (typeof updateUndoButtonState === 'function') updateUndoButtonState();
             doodleRenderer?.clearSelectedSegments();
             setDoodlesDisplay(item.doodles_enabled !== false);
             redrawAllDoodles();
@@ -5994,6 +6108,31 @@
                 if (message.type === 'toggle_doodles') setDoodlesDisplay(message.enabled);
                 if (message.type === 'text') applyTextAnnotation(message);
                 if (message.type === 'stamp') applyStampAnnotation(message);
+                if (message.type === 'remove_stamp') {
+                    const idx = doodleActions.findIndex(a => a.type === 'stamp' && a.id === message.id);
+                    if (idx >= 0) {
+                        doodleActions.splice(idx, 1);
+                        redrawAllDoodles();
+                    }
+                }
+                if (message.type === 'remove_text') {
+                    const idx = doodleActions.findIndex(a => a.type === 'text' && a.id === message.id);
+                    if (idx >= 0) {
+                        doodleActions.splice(idx, 1);
+                        redrawAllDoodles();
+                    }
+                }
+                if (message.type === 'remove_draw') {
+                    const strokeId = message.stroke_id;
+                    const ids = Array.isArray(message.ids) ? new Set(message.ids) : null;
+                    doodleActions = doodleActions.filter(a => {
+                        if (a.type !== 'draw') return true;
+                        if (strokeId && a.stroke_id === strokeId) return false;
+                        if (ids && a.id && ids.has(a.id)) return false;
+                        return true;
+                    });
+                    redrawAllDoodles();
+                }
             }
         }
 
@@ -6025,6 +6164,7 @@
                 doodlesToggleBtn.style.borderColor = doodlesEnabled ? 'rgba(99, 102, 241, 0.4)' : 'var(--glass-border)';
             }
             updateTextAnnotationAvailability();
+            if (typeof updateUndoButtonState === 'function') updateUndoButtonState();
             refreshCanvasToolInteraction();
             if (typeof isStampManagerOpen !== 'undefined' && isStampManagerOpen) {
                 updateStampManagerPermissionBanner();
@@ -6063,7 +6203,24 @@
             canSelectSegment: () => doodlesEnabled && !isPagedBack && canvasCursorState.current.type === 'select',
             onRemoveSegment: (removed) => {
                 const removedSet = new Set((removed || []).map(r => r.id || r));
+                const removedSegments = doodleActions.filter(a => removedSet.has(a.id) || removedSet.has(a));
                 doodleActions = doodleActions.filter(a => !removedSet.has(a.id) && !removedSet.has(a));
+                if (removedSegments.length > 0) {
+                    if (typeof activeDeleteTransaction !== 'undefined' && activeDeleteTransaction) {
+                        activeDeleteTransaction.segments.push(...removedSegments);
+                    } else if (typeof pushUndoAction === 'function') {
+                        pushUndoAction(typeof DeleteSegmentsDoodleAction === 'function'
+                            ? new DeleteSegmentsDoodleAction(removedSegments)
+                            : {
+                                type: 'delete_segments',
+                                segments: removedSegments
+                            });
+                    }
+                    sendOrQueueDoodleMessage({
+                        type: 'remove_draw',
+                        ids: removedSegments.map(s => s.id).filter(Boolean)
+                    });
+                }
                 redrawAllDoodles();
             },
         });
@@ -6365,6 +6522,16 @@
                         doodleActions.splice(idx, 1);
                         redrawAllDoodles();
                     }
+                } else if (data.type === 'remove_draw') {
+                    const strokeId = data.stroke_id;
+                    const ids = Array.isArray(data.ids) ? new Set(data.ids) : null;
+                    doodleActions = doodleActions.filter(a => {
+                        if (a.type !== 'draw') return true;
+                        if (strokeId && a.stroke_id === strokeId) return false;
+                        if (ids && a.id && ids.has(a.id)) return false;
+                        return true;
+                    });
+                    redrawAllDoodles();
                 } else if (data.type === 'toggle_mic') {
                     if (isCurrentOrator() && agentConnectBtn && !agentConnectBtn.disabled) {
                         agentConnectBtn.click();
@@ -6384,9 +6551,10 @@
         connectDoodleSocket(true);
 
         function drawLine(nx0, ny0, nx1, ny1, color, size, emit) {
+            const strokeId = currentStrokeId || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : ('stroke-' + Date.now()));
             const action = {
                 type: 'draw',
-                stroke_id: currentStrokeId || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : ('stroke-' + Date.now())),
+                stroke_id: strokeId,
                 x0: nx0,
                 y0: ny0,
                 x1: nx1,
@@ -6402,10 +6570,11 @@
             if (!emit) return;
 
             if (!pendingDrawBatch || pendingDrawBatch.color !== color || pendingDrawBatch.size !== size ||
+                pendingDrawBatch.stroke_id !== strokeId ||
                 pendingDrawBatch.points[pendingDrawBatch.points.length - 2] !== nx0 ||
                 pendingDrawBatch.points[pendingDrawBatch.points.length - 1] !== ny0) {
                 flushDrawBatch();
-                pendingDrawBatch = { type: 'draw_batch', page_id: displayedDoodlePageId, color, size, points: [nx0, ny0] };
+                pendingDrawBatch = { type: 'draw_batch', stroke_id: strokeId, page_id: displayedDoodlePageId, color, size, points: [nx0, ny0] };
             }
             pendingDrawBatch.points.push(nx1, ny1);
             if (!drawBatchFrame) drawBatchFrame = requestAnimationFrame(flushDrawBatch);
@@ -6440,6 +6609,17 @@
                 delete action.client_message_id;
                 sendOrQueueDoodleMessage(action);
                 pendingTextEdits.set(action.client_message_id, previous);
+                if (previous && (previous.x !== action.x || previous.y !== action.y)) {
+                    if (typeof pushUndoAction === 'function') {
+                        pushUndoAction(typeof MoveTextDoodleAction === 'function'
+                            ? new MoveTextDoodleAction(previous, action)
+                            : {
+                                type: 'move_text',
+                                before: { ...previous },
+                                after: { ...action }
+                            });
+                    }
+                }
             }
             applyTextAnnotation(action);
         }
@@ -6494,6 +6674,25 @@
                 delete action.client_message_id;
                 sendOrQueueDoodleMessage(action);
                 if (action.client_message_id) pendingTextEdits.set(action.client_message_id, previous);
+                if (previous) {
+                    const moved = previous.x !== action.x || previous.y !== action.y;
+                    const resized = previous.size !== action.size;
+                    const rotated = previous.rotation !== action.rotation;
+                    if (moved || resized || rotated) {
+                        if (typeof pushUndoAction === 'function') {
+                            const transformType = resized && !moved && !rotated ? 'resize_stamp'
+                                : rotated && !moved && !resized ? 'rotate_stamp'
+                                : 'transform_stamp';
+                            pushUndoAction(typeof TransformStampDoodleAction === 'function'
+                                ? new TransformStampDoodleAction(previous, action, transformType)
+                                : {
+                                    type: transformType,
+                                    before: { ...previous },
+                                    after: { ...action }
+                                });
+                        }
+                    }
+                }
             }
             applyStampAnnotation(action);
         }
@@ -6503,24 +6702,48 @@
                 existing => existing.type === 'stamp' && existing.id === action.id
             );
             if (index >= 0) {
-                doodleActions.splice(index, 1);
+                const [removed] = doodleActions.splice(index, 1);
                 sendOrQueueDoodleMessage({ type: 'remove_stamp', id: action.id });
+                if (typeof activeDeleteTransaction !== 'undefined' && activeDeleteTransaction) {
+                    activeDeleteTransaction.stamps.push(removed);
+                } else if (typeof pushUndoAction === 'function') {
+                    pushUndoAction(typeof DeleteStampDoodleAction === 'function'
+                        ? new DeleteStampDoodleAction([removed])
+                        : {
+                            type: 'delete_stamp',
+                            items: [removed]
+                        });
+                }
                 redrawAllDoodles();
             }
         }
 
         function removeTextAnnotation(action) {
             const list = Array.isArray(action) ? action : (action ? [action] : []);
+            const removedItems = [];
             list.forEach(item => {
                 const annotationId = item?.id || item;
                 const index = doodleActions.findIndex(
                     existing => existing.type === 'text' && existing.id === annotationId
                 );
                 if (index >= 0) {
-                    doodleActions.splice(index, 1);
+                    const [removed] = doodleActions.splice(index, 1);
+                    removedItems.push(removed);
                     sendOrQueueDoodleMessage({ type: 'remove_text', id: annotationId });
                 }
             });
+            if (removedItems.length > 0) {
+                if (typeof activeDeleteTransaction !== 'undefined' && activeDeleteTransaction) {
+                    activeDeleteTransaction.texts.push(...removedItems);
+                } else if (typeof pushUndoAction === 'function') {
+                    pushUndoAction(typeof DeleteTextDoodleAction === 'function'
+                        ? new DeleteTextDoodleAction(removedItems)
+                        : {
+                            type: 'delete_text',
+                            items: removedItems
+                        });
+                }
+            }
             redrawAllDoodles();
         }
 
@@ -6551,7 +6774,7 @@
                 const text = editor.value.trim();
                 if (commit && text && canAddTextAnnotation()) {
                     const action = {
-                        id: existing?.id || crypto.randomUUID(),
+                        id: existing?.id || ((typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : ('text-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7))),
                         type: 'text', x: coords.x, y: coords.y, text,
                         color: existing?.color || currentTextColor,
                         size: Number(existing?.size || textAnnotationSize?.value || 32),
@@ -6560,6 +6783,24 @@
                     sendOrQueueDoodleMessage(action);
                     if (existing) pendingTextEdits.set(action.client_message_id, existing);
                     applyTextAnnotation(action);
+                    if (typeof pushUndoAction === 'function') {
+                        if (existing) {
+                            pushUndoAction(typeof EditTextDoodleAction === 'function'
+                                ? new EditTextDoodleAction(existing, action)
+                                : {
+                                    type: 'edit_text',
+                                    before: { ...existing },
+                                    after: { ...action }
+                                });
+                        } else {
+                            pushUndoAction(typeof PlaceTextDoodleAction === 'function'
+                                ? new PlaceTextDoodleAction(action)
+                                : {
+                                    type: 'place_text',
+                                    action: { ...action }
+                                });
+                        }
+                    }
                 }
                 editor.remove();
                 if (activeTextEditor === editor) activeTextEditor = null;
@@ -6581,6 +6822,28 @@
 
         canvas.addEventListener('click', beginTextAnnotation);
 
+        function endDrawingStroke() {
+            if (!isDrawing && !currentStrokeId) return;
+            const strokeId = currentStrokeId;
+            isDrawing = false;
+            currentStrokeId = null;
+            flushDrawBatch();
+            if (strokeId) {
+                const strokeSegments = doodleActions.filter(a => a.type === 'draw' && a.stroke_id === strokeId);
+                if (strokeSegments.length > 0) {
+                    if (typeof pushUndoAction === 'function') {
+                        pushUndoAction(typeof DrawStrokeDoodleAction === 'function'
+                            ? new DrawStrokeDoodleAction(strokeId, strokeSegments)
+                            : {
+                                type: 'draw_stroke',
+                                stroke_id: strokeId,
+                                segments: [...strokeSegments]
+                            });
+                    }
+                }
+            }
+        }
+
         canvas.addEventListener('mousedown', (e) => {
             if (e.button !== 0) return;
             if (!doodlesEnabled || !currentColor) return;
@@ -6601,8 +6864,8 @@
             lastNormY = coords.y;
         });
 
-        canvas.addEventListener('mouseup', () => { isDrawing = false; currentStrokeId = null; flushDrawBatch(); });
-        canvas.addEventListener('mouseout', () => { isDrawing = false; currentStrokeId = null; flushDrawBatch(); });
+        canvas.addEventListener('mouseup', endDrawingStroke);
+        canvas.addEventListener('mouseout', endDrawingStroke);
 
         // Touch support for tablets/mobile
         canvas.addEventListener('touchstart', (e) => {
@@ -6626,10 +6889,10 @@
             lastNormY = coords.y;
         }, { passive: false });
 
-        canvas.addEventListener('touchend', () => { isDrawing = false; currentStrokeId = null; flushDrawBatch(); });
+        canvas.addEventListener('touchend', endDrawingStroke);
 
         clearBtn.addEventListener('click', () => {
-            flushDrawBatch();
+            endDrawingStroke();
             activeTextEditor?.remove();
             activeTextEditor = null;
             for (let index = pendingDoodleMessages.length - 1; index >= 0; index--) {
@@ -6639,10 +6902,66 @@
                 if (message.page_id === displayedDoodlePageId) inFlightDoodleMessages.delete(id);
             }
             doodleRenderer?.clearSelectedSegments();
+            const previous = [...doodleActions];
+            if (previous.length > 0) {
+                if (typeof pushUndoAction === 'function') {
+                    pushUndoAction(typeof ClearCanvasDoodleAction === 'function'
+                        ? new ClearCanvasDoodleAction(previous)
+                        : {
+                            type: 'clear',
+                            previousActions: previous
+                        });
+                }
+            }
             doodleActions = [];
             redrawAllDoodles();
             sendOrQueueDoodleMessage({ type: 'clear' });
         });
+
+        undoBtn?.addEventListener('click', () => {
+            if (!doodlesEnabled || isPagedBack) return;
+            undoLastDoodleAction();
+        });
+
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Delete' || event.key === 'Backspace') {
+                const active = document.activeElement;
+                if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable)) return;
+                activeDeleteTransaction = {
+                    type: 'compound_delete',
+                    segments: [],
+                    stamps: [],
+                    texts: []
+                };
+                queueMicrotask(() => {
+                    if (activeDeleteTransaction) {
+                        const tx = activeDeleteTransaction;
+                        activeDeleteTransaction = null;
+                        if (tx.segments.length > 0 || tx.stamps.length > 0 || tx.texts.length > 0) {
+                            if (typeof pushUndoAction === 'function') {
+                                pushUndoAction(typeof CompoundDeleteDoodleAction === 'function'
+                                    ? new CompoundDeleteDoodleAction(tx.segments, tx.stamps, tx.texts)
+                                    : tx);
+                            }
+                        }
+                    }
+                });
+            }
+        }, true);
+
+        window.addEventListener('keydown', (event) => {
+            const isZ = event.key === 'z' || event.key === 'Z' || event.code === 'KeyZ';
+            if ((event.ctrlKey || event.metaKey) && isZ && !event.shiftKey && !event.altKey) {
+                const active = document.activeElement;
+                if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable || (typeof active.getAttribute === 'function' && active.getAttribute('contenteditable') === 'true'))) return;
+                if (typeof doodlesEnabled !== 'undefined' && !doodlesEnabled) return;
+                if (typeof isPagedBack !== 'undefined' && isPagedBack) return;
+                event.preventDefault();
+                if (typeof undoLastDoodleAction === 'function') {
+                    undoLastDoodleAction();
+                }
+            }
+        }, true);
 
         resizeDoodleCanvas();
 
@@ -7609,7 +7928,7 @@
             const myId = (typeof currentUser !== 'undefined' && currentUser && currentUser.id) ? currentUser.id : myUserId;
             const action = {
                 type: 'stamp',
-                id: crypto.randomUUID(),
+                id: (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : ('stamp-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7)),
                 stamp_id: stampData.stamp_id,
                 user_id: myId,
                 url: stampData.url,
@@ -7622,6 +7941,7 @@
 
             // Enforce that a user can only have one stamp of a kind on the canvas at a time.
             // Pulling another of the same will just replace it.
+            let replacedStamp = null;
             const existingIndex = doodleActions.findIndex(
                 item => item.type === 'stamp' &&
                     String(item.stamp_id) === String(action.stamp_id) &&
@@ -7629,7 +7949,7 @@
             );
             if (existingIndex >= 0) {
                 action.id = doodleActions[existingIndex].id || action.id;
-                doodleActions.splice(existingIndex, 1);
+                [replacedStamp] = doodleActions.splice(existingIndex, 1);
             }
             const firstNonStamp = doodleActions.findIndex(item => item.type !== 'stamp');
             if (firstNonStamp >= 0) doodleActions.splice(firstNonStamp, 0, action);
@@ -7638,6 +7958,16 @@
             recordStampUsage(stampData.stamp_id);
             sendOrQueueDoodleMessage(action);
             redrawAllDoodles();
+
+            if (typeof pushUndoAction === 'function') {
+                pushUndoAction(typeof PlaceStampDoodleAction === 'function'
+                    ? new PlaceStampDoodleAction(action, replacedStamp)
+                    : {
+                        type: 'place_stamp',
+                        action: { ...action },
+                        replaced: replacedStamp ? { ...replacedStamp } : null
+                    });
+            }
         }
 
         if (imgContainer) {

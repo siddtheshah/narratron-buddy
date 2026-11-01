@@ -221,6 +221,24 @@ class DoodleState:
         if len(self.doodles) != original_len:
             self._persist()
 
+    def remove_draw(self, stroke_id: str | None = None, ids: list[str] | None = None) -> None:
+        """Remove drawing segments matching stroke_id or IDs."""
+        id_set: set[str] = set(ids) if ids is not None else set()
+        original_len = len(self.doodles)
+        self.doodles = [
+            action
+            for action in self.doodles
+            if not (
+                action.get("type") == "draw"
+                and (
+                    (stroke_id is not None and action.get("stroke_id") == stroke_id)
+                    or (action.get("id") is not None and str(action.get("id")) in id_set)
+                )
+            )
+        ]
+        if len(self.doodles) != original_len:
+            self._persist()
+
     def has_visible_annotations(self) -> bool:
         """Return whether the canvas has a stroke, non-empty text, or stamp annotation."""
         return any(
