@@ -199,6 +199,9 @@ class TestTheaterAPI(BaseTestCase):
         self.test_dir = tempfile.mkdtemp()
         theater_manager.base_dir = Path(self.test_dir).resolve()
         theater_manager.base_dir.mkdir(parents=True, exist_ok=True)
+        self._original_repo_dir = object_registry.theater_repository._base_dir
+        object_registry.theater_repository._base_dir = (Path(self.test_dir) / "repository").resolve()
+        object_registry.theater_repository._base_dir.mkdir(parents=True, exist_ok=True)
         # The app module is already imported when these tests run, so switch its
         # shared manager to the local database selected by the testing flag.
         db.is_live = False
@@ -212,6 +215,7 @@ class TestTheaterAPI(BaseTestCase):
         db.close()
         db.is_live = self._original_db_is_live
         db.db_path = self._original_db_path
+        object_registry.theater_repository._base_dir = self._original_repo_dir
         shutil.rmtree(self.test_dir, ignore_errors=True)
 
     def test_root_and_join_serves_splash_page(self) -> None:
@@ -1151,6 +1155,42 @@ music:
         # Verify theater and deployment still exist
         self.assertIsNotNone(db.get_deployment(theater_id))
         self.assertTrue(theater_manager.theater(theater_id).directory().exists())
+
+    def test_destroy_theater_deletes_ephemeral_and_repository_dirs(self) -> None:
+        reg_res = self.client.post("/api/auth/register", json={
+            "age_attested": True,
+            "username": "delete_check_user",
+            "email": "delete_check@example.com",
+            "password": "Password123",
+        })
+        self.assertEqual(reg_res.status_code, 200)
+
+        response = self.client.post(
+            "/api/theaters/create-and-deploy",
+            data={"name": "Delete Target Theater", "style": "cyberpunk"},
+        )
+        self.assertEqual(response.status_code, 200)
+        theater_id: str = response.json()["theater_id"]
+
+        ephemeral_dir: Path = theater_manager.theater(theater_id).directory()
+        self.assertTrue(ephemeral_dir.exists())
+
+        # Ensure the theater is also present in TheaterRepository
+        repo_dir: Path = object_registry.theater_repository.theater_path(theater_id)
+        object_registry.theater_repository.export_theater(theater_id, ephemeral_dir)
+        self.assertTrue(repo_dir.exists())
+
+        # Issue DELETE request matching frontend destroyTheater action
+        del_res = self.client.delete(f"/api/theaters/{theater_id}")
+        self.assertEqual(del_res.status_code, 200)
+        self.assertEqual(del_res.json()["status"], "ok")
+
+        # Ephemeral dir must be deleted
+        self.assertFalse(ephemeral_dir.exists())
+        # Repository dir must also be deleted
+        self.assertFalse(repo_dir.exists())
+        # Deployment record must be removed
+        self.assertIsNone(db.get_deployment(theater_id))
 
     def test_export_assets_no_duplication(self):
         import zipfile

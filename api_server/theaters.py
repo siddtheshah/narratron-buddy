@@ -1629,11 +1629,13 @@ def destroy_theater(theater_id: str, request: Request) -> dict[str, str]:
 
     live_agent_manager.stop_session(theater_id=theater_id)
     disk_removed = theater_manager.destroy_theater(theater_id)
+    repo_removed = theater_repository.delete_theater(theater_id)
     db_deleted = db.delete_deployment(theater_id)
     theater_access_cache.invalidate_theater(theater_id)
     canvas_states.states.pop(theater_id, None)
+    checkout_locks.pop(theater_id, None)
 
-    if not (disk_removed or db_deleted):
+    if not (disk_removed or repo_removed or db_deleted):
         raise HTTPException(status_code=404, detail="Theater not found or could not be removed")
 
     return {"status": "ok", "theater_id": theater_id}
