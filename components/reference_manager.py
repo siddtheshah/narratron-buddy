@@ -41,7 +41,12 @@ from components.canvas.story_state import CharacterState, PlayerCharacterState, 
 from services.quirk_service import get_quirk_generator_service
 from components.notepad import Notepad
 from components.theater_manager import Theater
-from utils.image_utils import embed_image_metadata, extract_image_metadata_description, extract_image_metadata_title
+from utils.image_utils import (
+    embed_image_metadata,
+    extract_image_metadata_description,
+    extract_image_metadata_title,
+    extract_image_prompt,
+)
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
@@ -2526,6 +2531,83 @@ class ReferenceManager:
             return stem
         return Path(ref_clean).stem or ref_clean
 
+    def get_reference_description(
+        self,
+        ref: str,
+        resolved_path: Optional[str] = None,
+        lookup_result: Optional[CharacterLookupResult] = None,
+    ) -> str:
+        """Return the authored or inferred visual description for a reference."""
+        ref_clean = str(ref).strip()
+        ref_norm = ref_clean.lower()
+        ref_stem = Path(ref_clean).stem.lower()
+        resolved_norm = os.path.normcase(os.path.abspath(resolved_path)) if resolved_path is not None else None
+
+        if lookup_result is not None:
+            if lookup_result.player is not None:
+                player = lookup_result.player
+                player_name = (player.name or "").strip()
+                player_ref = (player.reference or "").strip().lower()
+                player_path = (player.reference_path or "").strip().lower()
+                norm_player_path = (
+                    os.path.normcase(os.path.abspath(player.reference_path))
+                    if player.reference_path is not None
+                    else None
+                )
+                if (
+                    ref_norm in (player_name.lower(), player_ref, player_path)
+                    or ref_stem in (Path(player_ref).stem.lower(), Path(player_path).stem.lower())
+                    or (resolved_norm is not None and resolved_norm == norm_player_path)
+                ):
+                    desc = player.image_description.strip()
+                    if desc:
+                        return desc
+
+            for char in lookup_result.characters:
+                char_name = char.name.strip()
+                char_alias = char.alias.strip().lower()
+                char_img_ref = (char.image_reference or "").strip().lower()
+                char_path = (char.image_reference_path or "").strip().lower()
+                norm_char_path = (
+                    os.path.normcase(os.path.abspath(char.image_reference_path))
+                    if char.image_reference_path is not None
+                    else None
+                )
+                parent_norm = (
+                    os.path.normcase(Path(resolved_path).parent.name)
+                    if resolved_path is not None
+                    else ""
+                )
+                if (
+                    ref_norm in (char_name.lower(), char_alias, char_img_ref, char_path)
+                    or ref_stem in (char_alias, Path(char_img_ref).stem.lower(), Path(char_path).stem.lower())
+                    or (resolved_norm is not None and resolved_norm == norm_char_path)
+                    or (parent_norm and parent_norm in (char_name.lower(), char_alias))
+                ):
+                    desc = char.description.strip()
+                    if desc:
+                        return desc
+
+        key = self._slug_key(ref_clean)
+        if key in self._scene_descriptions and self._scene_descriptions[key].strip():
+            return self._scene_descriptions[key].strip()
+
+        if resolved_path is not None:
+            resolved_p = Path(resolved_path)
+            if resolved_p.is_file():
+                parent_dir = resolved_p.parent
+                traits = self._read_character_traits(parent_dir)
+                if traits.description.strip():
+                    return traits.description.strip()
+                metadata_desc = extract_image_metadata_description(str(resolved_p)).strip()
+                if metadata_desc:
+                    return metadata_desc
+                prompt_desc = extract_image_prompt(str(resolved_p)).strip()
+                if prompt_desc:
+                    return prompt_desc
+
+        return ""
+
     def _heuristic_classify_reference_tag(
         self,
         tag: str,
@@ -2892,6 +2974,7 @@ class ReferenceManager:
                     data=data,
                     mime_type=mime_type,
                     label=label,
+                    description=self.get_reference_description(ref=ref_name, resolved_path=reference_path, lookup_result=lookup_result) or None,
                 )
             )
 

@@ -49,6 +49,7 @@ class ImageReference:
     data: bytes
     mime_type: str
     label: str | None = None
+    description: str | None = None
 
 
 @dataclass(frozen=True)

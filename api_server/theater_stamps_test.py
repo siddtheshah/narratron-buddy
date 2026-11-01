@@ -12,6 +12,7 @@ from fastapi import Request
 from fastapi.testclient import TestClient
 from PIL import Image
 import pytest
+import yaml
 
 import api_server.theaters as theaters
 from components.theater_manager import TheaterManager
@@ -393,10 +394,16 @@ def test_canvas_character_reference_intent_modify_updates_existing_character(sta
     payload = response.json()
     assert payload["reference_action"] == "modify"
     assert (char_dir / "2.webp").is_file()
-    assert "Update @Captain Zara to wear a gold eyepatch" in (char_dir / "character.yaml").read_text(encoding="utf-8")
+    char_yaml_text = (char_dir / "character.yaml").read_text(encoding="utf-8")
+    loaded_char_yaml = yaml.safe_load(char_yaml_text)
+    assert loaded_char_yaml["description"] == "Original Zara\nUpdate @Captain Zara to wear a gold eyepatch"
+    assert char_yaml_text.index("Original Zara") < char_yaml_text.index("Update @Captain Zara to wear a gold eyepatch")
     request = stamps.provider.generate.call_args.args[0]
     assert len(request.references) == 1
     assert request.references[0].data == b"zara-iter-1"
+    assert "Original Zara" in request.prompt
+    assert "Update @Captain Zara to wear a gold eyepatch" in request.prompt
+    assert request.prompt.index("Original Zara") < request.prompt.index("Update @Captain Zara to wear a gold eyepatch")
 
 
 def test_canvas_character_reference_intent_create_new_saves_separate_character(stamps: StampHarness) -> None:
@@ -435,6 +442,7 @@ def test_canvas_scene_and_stamp_reference_tagging_and_intent_classification(stam
     scene_dir = root / "references" / "scenes" / "Harbor Dock"
     scene_dir.mkdir(parents=True, exist_ok=True)
     (scene_dir / "1.webp").write_bytes(b"harbor-iter-1")
+    (scene_dir / "scene.yaml").write_text("description: Original Harbor at dawn\n", encoding="utf-8")
     stamp_dir = root / "stamps"
     stamp_dir.mkdir(parents=True, exist_ok=True)
     (stamp_dir / "goblin.webp").write_bytes(b"goblin-stamp-1")
@@ -453,9 +461,15 @@ def test_canvas_scene_and_stamp_reference_tagging_and_intent_classification(stam
     assert scene_res.json()["reference_action"] == "modify"
     assert (scene_dir / "2.webp").is_file()
     assert (scene_dir / "scene.yaml").is_file()
-    assert "Change @Harbor Dock to midnight under a blood moon" in (scene_dir / "scene.yaml").read_text(encoding="utf-8")
+    scene_yaml_text = (scene_dir / "scene.yaml").read_text(encoding="utf-8")
+    loaded_scene_yaml = yaml.safe_load(scene_yaml_text)
+    assert loaded_scene_yaml["description"] == "Original Harbor at dawn\nChange @Harbor Dock to midnight under a blood moon"
+    assert scene_yaml_text.index("Original Harbor at dawn") < scene_yaml_text.index("Change @Harbor Dock to midnight under a blood moon")
     scene_req = stamps.provider.generate.call_args.args[0]
     assert [ref.data for ref in scene_req.references] == [b"harbor-iter-1"]
+    assert "Original Harbor at dawn" in scene_req.prompt
+    assert "Change @Harbor Dock to midnight under a blood moon" in scene_req.prompt
+    assert scene_req.prompt.index("Original Harbor at dawn") < scene_req.prompt.index("Change @Harbor Dock to midnight under a blood moon")
 
     modify_stamp = ReferenceIntentDecision(
         action="modify",

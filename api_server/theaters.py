@@ -204,6 +204,37 @@ async def generate_theater_scene(
     return await _generate_canvas_asset(request, theater_id, body, "scene")
 
 
+def _extract_existing_reference_description(
+    root: Path,
+    target_entry: TheaterReferenceEntry,
+    kind: str,
+    identifier: str,
+) -> str:
+    """Retrieve existing reference description from character.yaml or scene.yaml."""
+    if kind == "character" and target_entry.kind == "character":
+        char_folder = target_entry.folder or target_entry.name
+        existing_yaml = root / "references" / "characters" / char_folder / "character.yaml"
+        if existing_yaml.is_file():
+            loaded_yaml = yaml.safe_load(existing_yaml.read_text(encoding="utf-8"))
+            if type(loaded_yaml) is dict:
+                return str(loaded_yaml.get("description") or "").strip()
+    elif kind == "scene":
+        raw_scene_folder = target_entry.folder or target_entry.name
+        scene_folder = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "", raw_scene_folder).strip(". ") or identifier
+        existing_yaml = root / "references" / "scenes" / scene_folder / "scene.yaml"
+        if not existing_yaml.is_file():
+            existing_yaml = root / "output" / "artifacts" / "updated_references" / "scenes" / scene_folder / "scene.yaml"
+        if not existing_yaml.is_file() and target_entry.path:
+            cand = (root / target_entry.path).parent / "scene.yaml"
+            if cand.is_file():
+                existing_yaml = cand
+        if existing_yaml.is_file():
+            loaded_yaml = yaml.safe_load(existing_yaml.read_text(encoding="utf-8"))
+            if type(loaded_yaml) is dict:
+                return str(loaded_yaml.get("description") or "").strip()
+    return ""
+
+
 def _select_target_reference_entry(
     decision: ReferenceIntentDecision,
     entries: list[TheaterReferenceEntry],
@@ -277,6 +308,8 @@ async def _generate_canvas_asset(
             resolved_entries: list[TheaterReferenceEntry] = []
             image_references: list[ImageReference] = []
             decision: ReferenceIntentDecision | None = None
+            target_entry: TheaterReferenceEntry | None = None
+            is_modify: bool = False
             if kind != "music":
                 resolved_entries, image_references = await asyncio.to_thread(
                     extract_and_resolve_references, root, body.prompt, body.references
@@ -293,6 +326,22 @@ async def _generate_canvas_asset(
                         suggested = re.sub(r"[^a-zA-Z0-9_-]", "_", decision.target_reference.strip()).strip("_")
                         if suggested:
                             identifier = f"{suggested}_{uuid.uuid4().hex[:12]}"
+            target_entry = (
+                _select_target_reference_entry(decision, resolved_entries, kind)
+                if decision is not None
+                else None
+            )
+            is_modify = (
+                decision is not None
+                and decision.action == "modify"
+                and target_entry is not None
+            )
+            if is_modify and target_entry is not None:
+                existing_desc = _extract_existing_reference_description(
+                    root, target_entry, kind, identifier
+                )
+                if existing_desc and existing_desc.lower() not in prompt.lower():
+                    prompt = f"{existing_desc}\n{prompt}"
             if kind == "animation":
                 media_kwargs: dict[str, list[ImageReference]] = {"references": image_references} if image_references else {}
                 files = await asyncio.to_thread(
@@ -309,8 +358,8 @@ async def _generate_canvas_asset(
                 )
                 if not image.image_bytes or image.mime_type != "image/webp":
                     raise ValueError(f"{kind.title()} generation must return a WebP image.")
-                target_entry = _select_target_reference_entry(decision, resolved_entries, kind) if decision is not None else None
-                is_modify = decision is not None and decision.action == "modify" and target_entry is not None
+
+
                 if kind == "character":
                     if is_modify and target_entry is not None and target_entry.kind == "character":
                         char_folder = target_entry.folder or target_entry.name

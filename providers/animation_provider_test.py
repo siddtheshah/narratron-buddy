@@ -12,7 +12,7 @@ from providers import (
     get_animation_provider,
     list_animation_provider_specs,
 )
-from providers.image_provider import ImageGenerationResult
+from providers.image_provider import ImageGenerationResult, ImageReference
 from providers.fal_qwen_layered_provider import LayeredImageResult
 from providers.video_provider import VideoGenerationResult
 from providers.animation_provider import AnimationProvider, AnimationTechnique
@@ -238,7 +238,7 @@ def test_video_technique_with_references_generates_starting_image_via_image_prov
 def test_video_technique_with_image_to_video_provider_generates_starting_image_without_references(tmp_path: Path) -> None:
     from PIL import Image as PILImage
     import io
-    from providers.image_provider import ImageGenerationResult
+    from providers.image_provider import ImageGenerationResult, ImageReference
 
     img = PILImage.new("RGB", (32, 32), color="red")
     buf = io.BytesIO()
@@ -451,4 +451,178 @@ def test_registry_animation_provider_wires_decision_provider() -> None:
 
     provider_without_decision = get_animation_provider("default")
     assert provider_without_decision.decision_provider is None
+
+
+def test_video_technique_decision_provider_checks_base_image_necessary_and_reuses_reference(
+    tmp_path: Path,
+) -> None:
+    raw_bytes = png_bytes()
+    ref = ImageReference(
+        name="harbor.png",
+        data=raw_bytes,
+        mime_type="image/png",
+        description="A peaceful harbor with docked wooden boats at sunset",
+    )
+
+    mock_decision = MagicMock(spec=DecisionProvider)
+    mock_decision.decide.return_value = DecisionResult(
+        provider="test-decisions",
+        model="test-model",
+        answers={
+            "new_base_image_necessary": PredicateAnswer(
+                name="new_base_image_necessary", probability=0.1
+            ),
+        },
+    )
+
+    mock_image = MagicMock()
+    mock_video = MagicMock()
+    mock_video.generate.return_value = VideoGenerationResult(
+        video_bytes=b"fake-video-bytes",
+        mime_type="video/mp4",
+        provider="mock-video-prov",
+        model="mock-video-model",
+        request_id="vid-req-reuse",
+    )
+
+    provider = AnimationProvider(
+        {},
+        image_provider=mock_image,
+        video_provider=mock_video,
+        decision_provider=mock_decision,
+    )
+
+    selected = provider.create_animation(
+        "Docked boats gently swaying in harbor sunset.",
+        "harbor_anim",
+        technique="video",
+        output_dir=tmp_path,
+        references=[ref],
+    )
+
+    assert selected == "video"
+    mock_decision.decide.assert_called_once()
+    decision_req = mock_decision.decide.call_args[0][0]
+    assert "Docked boats gently swaying in harbor sunset" in decision_req.input_text
+    assert "A peaceful harbor with docked wooden boats at sunset" in decision_req.input_text
+    assert decision_req.questions[0].name == "new_base_image_necessary"
+
+    # Image provider generate should NOT be called because new base image is unnecessary
+    mock_image.generate.assert_not_called()
+
+    # Video provider received the base reference bytes directly
+    mock_video.generate.assert_called_once()
+    vid_req = mock_video.generate.call_args[0][0]
+    assert vid_req.image_bytes == raw_bytes
+    assert vid_req.image_mime_type == "image/png"
+
+    anim_dir = tmp_path / "animations/harbor_anim"
+    assert (anim_dir / "start_frame.webp").is_file()
+    assert (anim_dir / "video.mp4").is_file()
+
+    manifest = json.loads((anim_dir / "video.json").read_text(encoding="utf-8"))
+    assert manifest["start_image"] == "animations/harbor_anim/start_frame.webp"
+    assert manifest["start_frame"] == "animations/harbor_anim/start_frame.webp"
+    assert manifest["provider"]["start_image_reference"] == "harbor.png"
+
+
+def test_video_technique_decision_provider_generates_new_image_when_necessary(
+    tmp_path: Path,
+) -> None:
+    ref_bytes = png_bytes()
+    new_img_bytes = png_bytes()
+
+    ref = ImageReference(
+        name="hero.png",
+        data=ref_bytes,
+        mime_type="image/png",
+        description="Close-up portrait of knight",
+    )
+
+    mock_decision = MagicMock(spec=DecisionProvider)
+    mock_decision.decide.return_value = DecisionResult(
+        provider="test-decisions",
+        model="test-model",
+        answers={
+            "new_base_image_necessary": PredicateAnswer(
+                name="new_base_image_necessary", probability=0.9
+            ),
+        },
+    )
+
+    mock_image = MagicMock()
+    mock_image.generate.return_value = ImageGenerationResult(
+        image_bytes=new_img_bytes,
+        mime_type="image/png",
+        provider="mock-image-prov",
+        model="mock-image-model",
+        request_id="img-req-gen",
+    )
+
+    mock_video = MagicMock()
+    mock_video.generate.return_value = VideoGenerationResult(
+        video_bytes=b"fake-video-bytes",
+        mime_type="video/mp4",
+        provider="mock-video-prov",
+        model="mock-video-model",
+        request_id="vid-req-gen",
+    )
+
+    provider = AnimationProvider(
+        {},
+        image_provider=mock_image,
+        video_provider=mock_video,
+        decision_provider=mock_decision,
+    )
+
+    selected = provider.create_animation(
+        "A knight charges through a fiery battlefield.",
+        "knight_battle",
+        technique="video",
+        output_dir=tmp_path,
+        references=[ref],
+    )
+
+    assert selected == "video"
+    mock_decision.decide.assert_called_once()
+    mock_image.generate.assert_called_once()
+    mock_video.generate.assert_called_once()
+    vid_req = mock_video.generate.call_args[0][0]
+    assert vid_req.image_bytes == new_img_bytes
+
+
+def test_check_new_base_image_necessary_helper() -> None:
+    mock_decision = MagicMock(spec=DecisionProvider)
+    mock_decision.decide.return_value = DecisionResult(
+        provider="test-decisions",
+        model="test-model",
+        answers={
+            "new_base_image_necessary": PredicateAnswer(
+                name="new_base_image_necessary", probability=0.2
+            ),
+        },
+    )
+
+    result = AnimationProvider.check_new_base_image_necessary(
+        mock_decision,
+        scene_prompt="River bank at dawn",
+        base_reference_description="Misty river bank with morning light",
+    )
+    assert result is False
+
+    mock_decision.decide.return_value = DecisionResult(
+        provider="test-decisions",
+        model="test-model",
+        answers={
+            "new_base_image_necessary": PredicateAnswer(
+                name="new_base_image_necessary", probability=0.8
+            ),
+        },
+    )
+    result_needed = AnimationProvider.check_new_base_image_necessary(
+        mock_decision,
+        scene_prompt="Spaceship battle in deep space",
+        base_reference_description="Misty river bank with morning light",
+    )
+    assert result_needed is True
 

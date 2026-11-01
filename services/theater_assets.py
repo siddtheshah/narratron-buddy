@@ -33,6 +33,7 @@ class TheaterReferenceEntry:
     path: str
     kind: ReferenceKind
     folder: str = ""
+    description: str = ""
 
 
 class ReferenceIntentDecision(BaseModel):
@@ -127,12 +128,24 @@ def list_theater_reference_entries(
         folder_name = folders[0].name
         display_name = folder_name.replace("_", " ")
         rel_path = latest.resolve().relative_to(resolved_root).as_posix()
+        char_desc = ""
+        for fld in folders:
+            char_yaml = fld / "character.yaml"
+            if char_yaml.is_file():
+                try:
+                    loaded = yaml.safe_load(char_yaml.read_text(encoding="utf-8"))
+                    if type(loaded) is dict and loaded.get("description"):
+                        char_desc = str(loaded["description"]).strip()
+                        break
+                except Exception:
+                    pass
         entries.append(
             TheaterReferenceEntry(
                 name=display_name,
                 path=rel_path,
                 kind="character",
                 folder=folder_name,
+                description=char_desc,
             )
         )
         seen_keys.add(("character", display_name.lower()))
@@ -160,12 +173,24 @@ def list_theater_reference_entries(
         folder_name = folders[0].name
         display_name = folder_name.replace("_", " ")
         rel_path = latest.resolve().relative_to(resolved_root).as_posix()
+        scene_desc = ""
+        for fld in folders:
+            scene_yaml = fld / "scene.yaml"
+            if scene_yaml.is_file():
+                try:
+                    loaded = yaml.safe_load(scene_yaml.read_text(encoding="utf-8"))
+                    if type(loaded) is dict and loaded.get("description"):
+                        scene_desc = str(loaded["description"]).strip()
+                        break
+                except Exception:
+                    pass
         entries.append(
             TheaterReferenceEntry(
                 name=display_name,
                 path=rel_path,
                 kind="scene",
                 folder=folder_name,
+                description=scene_desc,
             )
         )
         seen_keys.add(("scene", display_name.lower()))
@@ -365,6 +390,7 @@ def extract_and_resolve_references(
                     data=full_path.read_bytes(),
                     mime_type=asset_mime_type(full_path),
                     label=entry.name,
+                    description=entry.description if entry.description else None,
                 )
             )
     return resolved_entries, image_references

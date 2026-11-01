@@ -13,7 +13,7 @@ import pytest
 
 from components.theater_manager import TheaterManager
 from components.canvas.canvas_state_service import CanvasStateService
-from providers import ImageGenerationResult
+from providers import DecisionProvider, DecisionResult, ImageGenerationResult, ImageReference, PredicateAnswer
 from providers.video_provider import VideoGenerationResult
 from providers.fal_qwen_layered_provider import LayeredImageResult
 from testing.base import BaseTestCase
@@ -1715,4 +1715,88 @@ class TestAnimationTools(BaseTestCase):
         self.assertEqual(manifest["start_image"], f"animations/{animation_id}/start_frame.webp")
         self.assertEqual(manifest["start_frame"], f"animations/{animation_id}/start_frame.webp")
         self.assertEqual(manifest["provider"]["start_image_provider"], "mock-image-prov")
+
+    @patch("tools.image.image_tool.get_image_provider")
+    def test_create_animation_video_with_decision_provider_skips_generation_when_unnecessary(self, mock_get_provider):
+        raw_scene_bytes = fake_image_bytes()
+        image_provider = MagicMock()
+        video_provider = MagicMock()
+        video_provider.generate.return_value = VideoGenerationResult(
+            video_bytes=fake_video_bytes(),
+            mime_type="video/mp4",
+            provider="fal-minimax-h3-turbo",
+            model="minimax/h3-max-turbo/image-to-video",
+            request_id="vid-dp-1",
+            video_url="https://fal.media/dp1.mp4",
+        )
+        video_provider.model = "minimax/h3-max-turbo/image-to-video"
+        video_provider.is_image_to_video = True
+
+        mock_decision_provider = MagicMock(spec=DecisionProvider)
+        mock_decision_provider.decide.return_value = DecisionResult(
+            provider="test-decisions",
+            model="test-model",
+            answers={
+                "new_base_image_necessary": PredicateAnswer(
+                    name="new_base_image_necessary", probability=0.1
+                ),
+            },
+        )
+
+        canvas_state_service = CanvasStateService(self.manager)
+        image_tools = self.make_image_tools(self.config, "dp_video_theater", self.manager, canvas_state_service=canvas_state_service)
+        reference_manager = MagicMock()
+        ref = ImageReference(
+            name="castle.png",
+            data=raw_scene_bytes,
+            mime_type="image/png",
+            label="Castle",
+            description="Ancient stone castle under a starry night sky",
+        )
+        reference_manager.resolve_provider_references.return_value = ([ref], None)
+        reference_manager.decision_provider = mock_decision_provider
+
+        animation_tools = self.make_animation_tools(
+            image_tools,
+            image_provider,
+            MagicMock(),
+            MagicMock(),
+            {"forced_technique": "video", "cooldown_duration": 0},
+            video_provider=video_provider,
+            reference_manager=reference_manager,
+            decision_provider=mock_decision_provider,
+        )
+
+        result = animation_tools.create_animation(
+            "Ancient stone castle under star-filled sky.",
+            "castle_stars",
+            reference_images="castle",
+            technique="video",
+        )
+        animation_tools.join_generation()
+
+        animation_id = re.search(r"Animation ID: '([^']+)'", result).group(1)
+
+        # Decision provider should have been asked if new base image is necessary
+        mock_decision_provider.decide.assert_called_once()
+        req = mock_decision_provider.decide.call_args[0][0]
+        self.assertIn("Ancient stone castle under star-filled sky", req.input_text)
+        self.assertIn("Ancient stone castle under a starry night sky", req.input_text)
+
+        # Image provider should NOT have generated a new image
+        image_provider.generate.assert_not_called()
+
+        # Video provider should receive the existing base reference bytes directly
+        video_provider.generate.assert_called_once()
+        vid_req = video_provider.generate.call_args[0][0]
+        self.assertEqual(vid_req.image_bytes, raw_scene_bytes)
+
+        # Manifest contains start_image and video files
+        manifest = animation_tools._find_video_animation(animation_id)
+        self.assertIsNotNone(manifest)
+        self.assertEqual(manifest["type"], "video")
+        expected_start_frame = str(Path(animation_tools.animations_dir) / animation_id / "start_frame.webp")
+        self.assertEqual(manifest["start_image"], expected_start_frame)
+        self.assertEqual(manifest["start_frame"], expected_start_frame)
+        self.assertEqual(manifest["provider"]["start_image_reference"], "castle.png")
 

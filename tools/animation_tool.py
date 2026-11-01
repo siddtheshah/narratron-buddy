@@ -14,6 +14,7 @@ from pydantic import TypeAdapter
 from providers.animation_provider import AnimationProvider, AnimationTechnique, AnimationLayer as AnimationLayer
 
 from providers import (
+    DecisionProvider,
     ImageProvider,
     ImageReference,
     TextResponseProvider,
@@ -44,6 +45,7 @@ class AnimationTools(BaseTools):
         image_provider: Optional[ImageProvider] = None,
         video_provider: Optional[VideoProvider] = None,
         reference_manager: Optional[ReferenceManager] = None,
+        decision_provider: Optional[DecisionProvider] = None,
     ) -> None:
         super().__init__(
             theater=theater,
@@ -52,10 +54,14 @@ class AnimationTools(BaseTools):
         self.reference_manager: Optional[ReferenceManager] = (
             reference_manager if reference_manager is not None else (ReferenceManager(theater=theater) if theater is not None else None)
         )
+        resolved_decision_provider = decision_provider
+        if resolved_decision_provider is None and self.reference_manager is not None:
+            resolved_decision_provider = self.reference_manager.decision_provider
         self.animation_provider = get_animation_provider(
             options=self.config,
             image_provider=image_provider, text_response_provider=text_response_provider,
             layered_provider=layered_provider, video_provider=video_provider,
+            decision_provider=resolved_decision_provider,
         )
         self.animation_config = self.animation_provider.animation_config
         self.cooldown_duration = float(self.animation_config.get("cooldown_duration") or 0)
@@ -72,6 +78,10 @@ class AnimationTools(BaseTools):
         self.on_image_created: Callable[..., None] | None = None
         self.is_generating: bool = False
         self._last_generation_thread: threading.Thread | None = None
+
+    @property
+    def decision_provider(self) -> Optional[DecisionProvider]:
+        return self.animation_provider.decision_provider
 
     @property
     def visual(self) -> Optional[VisualState]:
@@ -167,6 +177,8 @@ class AnimationTools(BaseTools):
     _flatten_layer_plan = staticmethod(AnimationProvider._flatten_layer_plan)
     _decomposition_prompt = staticmethod(AnimationProvider._decomposition_prompt)
     _apply_video_style = AnimationProvider._apply_video_style
+    check_new_base_image_necessary = staticmethod(AnimationProvider.check_new_base_image_necessary)
+    is_new_base_image_necessary = staticmethod(AnimationProvider.check_new_base_image_necessary)
 
     def _generate_animation(
         self, scene_prompt: str, animation_id: str,

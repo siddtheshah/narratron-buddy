@@ -37,7 +37,7 @@ from providers.decision_provider import (
     DecisionRequest,
     PredicateQuestion,
 )
-from utils.image_utils import embed_image_metadata
+from utils.image_utils import embed_image_metadata, extract_image_metadata_description
 
 logger = logging.getLogger(__name__)
 AnimationTechnique = Literal["triframe", "layered", "video"]
@@ -116,7 +116,17 @@ class AnimationProvider:
 
     @property
     def decision_provider(self) -> DecisionProvider | None:
+        if self._decision_provider is None:
+            provider_id = self.animation_config.get("decision_provider")
+            if provider_id:
+                from providers.registry import get_decision_provider
+
+                self._decision_provider = get_decision_provider(str(provider_id))
         return self._decision_provider
+
+    @decision_provider.setter
+    def decision_provider(self, value: DecisionProvider | None) -> None:
+        self._decision_provider = value
 
     @property
     def image_provider(self) -> ImageProvider:
@@ -416,35 +426,67 @@ class AnimationProvider:
 
         start_image_path: Path | None = None
         start_image_result: ImageGenerationResult | None = None
+        start_image_bytes: bytes | None = None
+        start_image_mime_type: str | None = None
 
         if needs_start_image:
-            image_prompt = (
-                f"{self._apply_default_style(scene_prompt.strip())}\n\n"
-                "Return exactly one full-bleed scene image for this request. "
-                "Do not create a collage, triptych, storyboard, contact sheet, split panels, "
-                "borders, or multiple views in one image. Render one cinematic still image only."
-            )
-            start_image_result = self.image_provider.generate(
-                ImageGenerationRequest(
-                    prompt=image_prompt,
-                    aspect_ratio="16:9",
-                    references=references,
+            generate_new_base = True
+            if references and self.decision_provider is not None:
+                base_ref = references[0]
+                base_desc = (base_ref.description or "").strip()
+                if not base_desc:
+                    base_desc = extract_image_metadata_description(
+                        base_ref.name
+                    ).strip()
+                if not base_desc:
+                    base_desc = (base_ref.label or base_ref.name or "").strip()
+                if base_desc:
+                    generate_new_base = self.check_new_base_image_necessary(
+                        self.decision_provider,
+                        scene_prompt=scene_prompt,
+                        base_reference_description=base_desc,
+                    )
+
+            if generate_new_base:
+                image_prompt = (
+                    f"{self._apply_default_style(scene_prompt.strip())}\n\n"
+                    "Return exactly one full-bleed scene image for this request. "
+                    "Do not create a collage, triptych, storyboard, contact sheet, split panels, "
+                    "borders, or multiple views in one image. Render one cinematic still image only."
                 )
-            )
-            saved_start_path = self._save_named_image(
-                start_image_result.image_bytes,
-                animation_dir / "start_frame.webp",
-                image_prompt,
-            )
-            start_image_path = Path(saved_start_path)
+                start_image_result = self.image_provider.generate(
+                    ImageGenerationRequest(
+                        prompt=image_prompt,
+                        aspect_ratio="16:9",
+                        references=references,
+                    )
+                )
+                saved_start_path = self._save_named_image(
+                    start_image_result.image_bytes,
+                    animation_dir / "start_frame.webp",
+                    image_prompt,
+                )
+                start_image_path = Path(saved_start_path)
+                start_image_bytes = start_image_result.image_bytes
+                start_image_mime_type = start_image_result.mime_type or "image/webp"
+            else:
+                base_ref = references[0]
+                saved_start_path = self._save_named_image(
+                    base_ref.data,
+                    animation_dir / "start_frame.webp",
+                    base_desc or scene_prompt.strip(),
+                )
+                start_image_path = Path(saved_start_path)
+                start_image_bytes = base_ref.data
+                start_image_mime_type = base_ref.mime_type or "image/webp"
 
         result = self.video_provider.generate(
             VideoGenerationRequest(
                 prompt=effective_prompt,
                 aspect_ratio="16:9",
                 video_duration_seconds=video_duration_seconds,
-                image_bytes=start_image_result.image_bytes if start_image_result is not None else None,
-                image_mime_type=(start_image_result.mime_type or "image/webp") if start_image_result is not None else None,
+                image_bytes=start_image_bytes,
+                image_mime_type=start_image_mime_type,
             )
         )
         if not result.video_bytes or result.mime_type != "video/mp4":
@@ -463,6 +505,8 @@ class AnimationProvider:
             provider_info["start_image_model"] = start_image_result.model
             if start_image_result.request_id:
                 provider_info["start_image_request_id"] = start_image_result.request_id
+        elif start_image_bytes is not None and references:
+            provider_info["start_image_reference"] = references[0].name
 
         manifest: dict[str, JsonValue] = {
             "version": 1,
@@ -488,6 +532,42 @@ class AnimationProvider:
             animation_id,
             video_path,
         )
+
+    @staticmethod
+    def check_new_base_image_necessary(
+        decision_provider: DecisionProvider,
+        scene_prompt: str,
+        base_reference_description: str,
+    ) -> bool:
+        """Use DecisionProvider to check if a new base image is necessary given the base reference description."""
+        clean_prompt = scene_prompt.strip()
+        clean_desc = base_reference_description.strip()
+        request = DecisionRequest(
+            input_text=(
+                f"Scene Prompt: {clean_prompt}\n\n"
+                f"Base Reference Description: {clean_desc}"
+            ),
+            questions=(
+                PredicateQuestion(
+                    name="new_base_image_necessary",
+                    instructions=(
+                        "Determine whether generating a new base image is necessary for this video animation given the description of the base reference. "
+                        "Return true if a new base image must be generated (for example if the scene differs significantly from the reference or the reference is only a character portrait when a full scene is required). "
+                        "Return false if the existing base reference already matches the scene prompt and can serve directly as the base frame."
+                    ),
+                ),
+            ),
+        )
+        result = decision_provider.decide(request)
+        if "new_base_image_necessary" in result.answers:
+            return result.get_predicate("new_base_image_necessary").passed(0.5)
+        if "needs_new_base_image" in result.answers:
+            return result.get_predicate("needs_new_base_image").passed(0.5)
+        for answer in result.answers.values():
+            return answer.as_predicate().passed(0.5)
+        return True
+
+    is_new_base_image_necessary = check_new_base_image_necessary
 
     @staticmethod
     def plan_technique_with_decision_provider(
