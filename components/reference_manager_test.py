@@ -14,6 +14,10 @@ from PIL import Image
 import yaml
 
 from providers import (
+    ChoiceAnswer,
+    DecisionProvider,
+    DecisionRequest,
+    DecisionResult,
     ImageGenerationRequest,
     ImageGenerationResult,
     ImageProvider,
@@ -1616,6 +1620,93 @@ class TestReferenceManager(unittest.TestCase):
             manager = ReferenceManager(theater, None)
             with self.assertRaises(ValueError):
                 manager.generate_references_from_context(123)  # type: ignore[arg-type]
+
+    def test_generate_references_from_context_routes_to_decision_provider(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            theater = Theater(TheaterManager(directory), "stage")
+            payload = BytesIO()
+            Image.new("RGB", (8, 8), "green").save(payload, "PNG")
+            image_provider = MagicMock(spec=ImageProvider)
+            image_provider.generate.return_value = ImageGenerationResult(
+                image_bytes=payload.getvalue(), mime_type="image/png", provider="fake", model="gen",
+            )
+            mock_decision_provider = MagicMock(spec=DecisionProvider)
+            mock_decision_provider.decide.return_value = DecisionResult(
+                provider="test_provider",
+                model="test_model",
+                answers={
+                    "tag_ObsidianSanctum": ChoiceAnswer(name="tag_ObsidianSanctum", choice="scene"),
+                    "ObsidianSanctum_gender": ChoiceAnswer(name="ObsidianSanctum_gender", choice="nonbinary"),
+                    "ObsidianSanctum_pitch": ChoiceAnswer(name="ObsidianSanctum_pitch", choice="medium"),
+                    "ObsidianSanctum_quirk": ChoiceAnswer(
+                        name="ObsidianSanctum_quirk", choice="Speaks in hushed, measured cadences"
+                    ),
+                    "tag_LadyVespera": ChoiceAnswer(name="tag_LadyVespera", choice="character"),
+                    "LadyVespera_gender": ChoiceAnswer(name="LadyVespera_gender", choice="female"),
+                    "LadyVespera_pitch": ChoiceAnswer(name="LadyVespera_pitch", choice="low"),
+                    "LadyVespera_quirk": ChoiceAnswer(
+                        name="LadyVespera_quirk", choice="Clips every sentence with icy precision"
+                    ),
+                },
+            )
+            manager = ReferenceManager(
+                theater,
+                decision_provider=mock_decision_provider,
+                image_provider=image_provider,
+            )
+            self.assertIs(manager.decision_provider, mock_decision_provider)
+
+            context = (
+                "Inside the <ObsidianSanctum>, <LadyVespera>, an elderly high inquisitor with a raspy "
+                "aristocratic voice and icy composure, raises her staff to seal the vault."
+            )
+            generated = manager.generate_references_from_context(context)
+
+            mock_decision_provider.decide.assert_called_once()
+            decision_request: DecisionRequest = mock_decision_provider.decide.call_args[0][0]
+            self.assertEqual(decision_request.input_text, context)
+            question_names = {q.name for q in decision_request.questions}
+            self.assertIn("tag_ObsidianSanctum", question_names)
+            self.assertIn("tag_LadyVespera", question_names)
+            self.assertIn("LadyVespera_gender", question_names)
+            self.assertIn("LadyVespera_pitch", question_names)
+            self.assertIn("LadyVespera_quirk", question_names)
+
+            # LadyVespera should be registered as character with cast voice_tags and quirk
+            lookup = manager.lookup_character("LadyVespera")
+            self.assertEqual(len(lookup.characters), 1)
+            char = lookup.characters[0]
+            self.assertEqual(char.gender, "female")
+            self.assertEqual(char.quirk, "Clips every sentence with icy precision")
+            self.assertIn("female", char.voice_tags)
+            self.assertIn("low", char.voice_tags)
+
+            # ObsidianSanctum should be registered as a scene
+            scene_path = theater.updated_scenes_dir() / "ObsidianSanctum" / "scene.yaml"
+            self.assertTrue(scene_path.exists())
+            self.assertIn("ObsidianSanctum", generated)
+            self.assertIn("LadyVespera", generated)
+
+    def test_generate_references_from_context_fallback_when_decision_provider_is_none(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            theater = Theater(TheaterManager(directory), "stage")
+            text_provider = MagicMock(spec=TextResponseProvider)
+            text_provider.generate.return_value = TextResponseResult(
+                text=json.dumps({
+                    "classifications": [
+                        {"name": "LadyVespera", "type": "character", "description": "High inquisitor"},
+                    ]
+                }),
+                provider="mock",
+                model="test",
+            )
+            manager = ReferenceManager(theater, text_response_provider=text_provider, decision_provider=None)
+            self.assertIsNone(manager.decision_provider)
+
+            manager.generate_references_from_context("<LadyVespera> enters the hall.")
+            text_provider.generate.assert_called_once()
+            lookup = manager.lookup_character("LadyVespera")
+            self.assertEqual(len(lookup.characters), 1)
 
 
 if __name__ == "__main__":

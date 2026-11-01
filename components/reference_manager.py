@@ -23,6 +23,10 @@ from jinja2 import Template
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from providers import (
+    ChoiceQuestion,
+    DecisionProvider,
+    DecisionQuestion,
+    DecisionRequest,
     ImageGenerationRequest,
     ImageProvider,
     ImageProviderError,
@@ -46,6 +50,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_MAX_ACTIVE_CHARACTERS = 5
 MAX_ACTIVE_CHARACTERS = 10
 SUPPORTED_VOICE_TAGS = {"male", "female", "nonbinary"}
+SUPPORTED_PITCH_TAGS = {"low", "medium", "high"}
 IMAGE_EXTENSIONS: set[str] = {".png", ".jpg", ".jpeg", ".webp"}
 
 
@@ -516,6 +521,20 @@ def normalize_voice_tags(
         if mapped and mapped in SUPPORTED_VOICE_TAGS and mapped not in seen:
             seen.add(mapped)
             result.append(mapped)
+            continue
+        lowered = candidate.lower()
+        if lowered in SUPPORTED_PITCH_TAGS and lowered not in seen:
+            seen.add(lowered)
+            result.append(lowered)
+            continue
+        for supp_key, supp_values in supported.items():
+            match = next((item for item in supp_values if item.lower() == lowered), None)
+            if match:
+                val = match.lower()
+                if val not in seen:
+                    seen.add(val)
+                    result.append(val)
+                break
     return result
 
 
@@ -548,6 +567,7 @@ class ReferenceManager:
         speech_provider: Optional[SpeechProvider] = None,
         character_image_style: str = "",
         scene_image_style: str = "",
+        decision_provider: Optional[DecisionProvider] = None,
     ) -> None:
         if theater is None:
             raise ValueError("theater is required.")
@@ -564,6 +584,7 @@ class ReferenceManager:
         self.speech_provider: Optional[SpeechProvider] = speech_provider
         self.character_image_style = str(character_image_style or "").strip()
         self.scene_image_style = scene_image_style.strip()
+        self._decision_provider: Optional[DecisionProvider] = decision_provider
         self._scene_descriptions: dict[str, str] = {}
         self._scene_images_lock = Lock()
         self._reference_updates_lock = Lock()
@@ -1162,6 +1183,10 @@ class ReferenceManager:
             raise ValueError("story_state cannot be None.")
         self._story_state = value
         self._sync_story_state()
+
+    @property
+    def decision_provider(self) -> Optional[DecisionProvider]:
+        return self._decision_provider
 
     def _sync_story_state(self) -> None:
         if self._initializing_references or self._story_state is None:
@@ -2235,12 +2260,18 @@ class ReferenceManager:
 
     def _supported_voice_tags(self) -> Mapping[str, tuple[str, ...]]:
         if self.speech_provider is None:
-            return {"gender": ("female", "male", "nonbinary")}
+            return {
+                "gender": ("female", "male", "nonbinary"),
+                "pitch": ("low", "medium", "high"),
+            }
         try:
             return self.speech_provider.get_supported_voice_tags()
         except Exception as exc:
             logger.warning("[ReferenceManager] Unable to list speech voice tags: %s", exc)
-            return {"gender": ("female", "male", "nonbinary")}
+            return {
+                "gender": ("female", "male", "nonbinary"),
+                "pitch": ("low", "medium", "high"),
+            }
 
     @staticmethod
     def _format_voice_tag_options(tags: Mapping[str, tuple[str, ...]]) -> str:
@@ -2542,6 +2573,92 @@ class ReferenceManager:
 
         if not new_tags:
             return {}
+
+        if self._decision_provider is not None:
+            questions: list[DecisionQuestion] = []
+            clean_tags: dict[str, str] = {}
+            for tag in new_tags:
+                clean = re.sub(r"[^a-zA-Z0-9_]", "", tag)
+                clean_tags[tag] = clean
+                questions.append(
+                    ChoiceQuestion(
+                        name=f"tag_{clean}",
+                        instructions=f"Classify whether <{tag}> refers to a character/creature or a location/scene.",
+                        choices=("character", "scene"),
+                    )
+                )
+                questions.append(
+                    ChoiceQuestion(
+                        name=f"{clean}_gender",
+                        instructions=f"Select <{tag}>'s vocal gender presentation for speech synthesis.",
+                        choices=("female", "male", "nonbinary"),
+                    )
+                )
+                questions.append(
+                    ChoiceQuestion(
+                        name=f"{clean}_pitch",
+                        instructions=f"Select the best vocal pitch register for <{tag}>.",
+                        choices=("low", "medium", "high"),
+                    )
+                )
+                questions.append(
+                    ChoiceQuestion(
+                        name=f"{clean}_quirk",
+                        instructions=f"Choose the most fitting roleplay quirk for <{tag}> from the available pool.",
+                        choices=(
+                            "Speaks in hushed, measured cadences",
+                            "Constantly clears throat nervously",
+                            "Laughs boisterously at inappropriate moments",
+                            "Clips every sentence with icy precision",
+                        ),
+                    )
+                )
+
+            request = DecisionRequest(
+                input_text=context,
+                questions=questions,
+            )
+            decision_result = self._decision_provider.decide(request)
+
+            def _register_decision_reference(tag: str) -> tuple[str, Optional[str]]:
+                clean = clean_tags[tag]
+                _, desc = self._heuristic_classify_reference_tag(tag, context)
+                tag_choice = decision_result.get_choice(f"tag_{clean}").choice.strip().lower()
+                if tag_choice == "character":
+                    gender = decision_result.get_choice(f"{clean}_gender").choice
+                    pitch = decision_result.get_choice(f"{clean}_pitch").choice
+                    quirk = decision_result.get_choice(f"{clean}_quirk").choice
+                    char = self.create_or_update_character(
+                        name=tag,
+                        description=desc,
+                        personality=desc or f"Adventure character {tag}.",
+                        motivation="Participate in the adventure scene.",
+                        quirk=quirk,
+                        gender=gender,
+                        voice_tags=[gender, pitch],
+                    )
+                    if char is not None:
+                        return tag, self.get_character_visual_path(char.name)
+                    return tag, None
+                elif tag_choice == "scene":
+                    entry = self.create_or_update_scene(name=tag, description=desc)
+                    path: Optional[str] = None
+                    if entry is not None:
+                        path = entry.get("path")
+                        if path is None:
+                            path = self.get_scene_visual_path(tag)
+                    return tag, path
+                return tag, None
+
+            generated_references: dict[str, str] = {}
+            max_workers = min(len(new_tags), 8)
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                futures = [executor.submit(_register_decision_reference, tag) for tag in new_tags]
+                for future in futures:
+                    tag, path = future.result()
+                    if path is not None:
+                        generated_references[tag] = path
+            return generated_references
 
         llm_classifications: dict[str, tuple[Literal["character", "scene"], str]] = {}
         if self.text_response_provider is not None:
