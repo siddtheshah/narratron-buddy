@@ -921,7 +921,7 @@
         #prompt-toggle-btn {
             position: absolute;
             top: 1.5rem;
-            left: 1.5rem;
+            left: 4.8rem;
             z-index: 15;
             min-height: 44px;
             height: 44px;
@@ -1450,8 +1450,8 @@
 
         #canvas-pin-btn {
             position: absolute;
-            right: 1.5rem;
-            bottom: 1.5rem;
+            top: 1.5rem;
+            left: 1.5rem;
             z-index: 25;
             display: none;
             align-items: center;
@@ -1494,6 +1494,47 @@
             border-color: rgba(251, 146, 60, 0.8);
             background: rgba(124, 45, 18, 0.9);
             color: #ffedd5;
+        }
+
+        #latest-speech-replay-btn {
+            position: absolute;
+            right: 1.5rem;
+            bottom: 1.5rem;
+            z-index: 25;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 44px;
+            height: 44px;
+            min-height: 44px;
+            padding: 0;
+            border: 1px solid rgba(148, 163, 184, 0.45);
+            border-radius: 22px;
+            background: rgba(15, 23, 42, 0.82);
+            color: #e2e8f0;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.4);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            cursor: pointer;
+            transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease, transform 0.2s ease;
+        }
+
+        #latest-speech-replay-btn:hover:not(:disabled) {
+            transform: translateY(-1px);
+            border-color: rgba(99, 102, 241, 0.6);
+            color: #a5b4fc;
+        }
+
+        #latest-speech-replay-btn:disabled {
+            cursor: not-allowed;
+            opacity: 0.45;
+        }
+
+        #latest-speech-replay-btn.playing {
+            border-color: rgba(129, 140, 248, 0.85);
+            background: rgba(49, 46, 129, 0.9);
+            color: #e0e7ff;
+            box-shadow: 0 0 16px rgba(99, 102, 241, 0.5);
         }
 
         .agent-activity-icon {
@@ -3243,6 +3284,13 @@
             <button id="canvas-pin-btn" type="button" aria-pressed="false" title="Pin the current image and music">
                 <span id="canvas-pin-icon" aria-hidden="true">📌</span>
             </button>
+            <button id="latest-speech-replay-btn" type="button" aria-label="Replay latest speech" title="No speech to replay" disabled>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M1 4v6h6" />
+                    <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
+                    <polygon points="10 9 15 12 10 15 10 9" fill="currentColor" />
+                </svg>
+            </button>
             <!-- Hide All Text On Canvas Floating Button (Lower Right) -->
             <button id="hide-canvas-text-btn" type="button" aria-pressed="false"
                 title="Hide all text on canvas" aria-label="Hide all text on canvas">
@@ -4428,10 +4476,60 @@
             surfaceUrl: surfaceId => `/api/a2ui/surfaces/${encodeURIComponent(surfaceId)}?theater_id=${encodeURIComponent(currenttheaterId || '')}`,
             canEdit: () => isCurrentOrator(),
         });
-        const { updateSceneDialogue, enqueueSceneSpeech, stopSceneSpeech } = createCanvasScene({
+        const latestSpeechReplayBtn = document.getElementById('latest-speech-replay-btn');
+        function updateSpeechReplayButtonUI(state) {
+            if (!latestSpeechReplayBtn) return;
+            const hasLatest = Boolean(state && state.hasLatestSpeech);
+            const isPlaying = Boolean(state && state.playing);
+            latestSpeechReplayBtn.disabled = !hasLatest;
+            latestSpeechReplayBtn.classList.toggle('playing', isPlaying);
+            latestSpeechReplayBtn.title = hasLatest
+                ? (isPlaying ? 'Replaying latest speech… (click to restart)' : 'Replay latest speech')
+                : 'No speech to replay';
+        }
+
+        const { updateSceneDialogue, enqueueSceneSpeech, stopSceneSpeech, replayLatestSpeech } = createCanvasScene({
             narrationPane,
             audioEnabled: () => !isMuted,
+            onSpeechStateChange: updateSpeechReplayButtonUI,
         });
+
+        latestSpeechReplayBtn?.addEventListener('click', () => {
+            replayLatestSpeech();
+        });
+        latestSpeechReplayBtn?.addEventListener('pointerdown', (e) => e.stopPropagation());
+        latestSpeechReplayBtn?.addEventListener('mousedown', (e) => e.stopPropagation());
+
+        let vadSpeechTimer = null;
+        let isVadSpeaking = false;
+
+        function handleVadSpeechStart() {
+            if (micMode === 'push-to-talk') return;
+            if (isVadSpeaking) return;
+            isVadSpeaking = true;
+            if (vadSpeechTimer) {
+                clearTimeout(vadSpeechTimer);
+                vadSpeechTimer = null;
+            }
+            vadSpeechTimer = setTimeout(() => {
+                if (isVadSpeaking && micMode !== 'push-to-talk') {
+                    stopSceneSpeech();
+                }
+            }, 1000);
+        }
+
+        function handleVadSpeechEnd() {
+            isVadSpeaking = false;
+            if (vadSpeechTimer) {
+                clearTimeout(vadSpeechTimer);
+                vadSpeechTimer = null;
+            }
+        }
+
+        window.addEventListener('narratron:speech-start', handleVadSpeechStart);
+        window.addEventListener('narratron:speech-end', handleVadSpeechEnd);
+        window.addEventListener('vadstart', handleVadSpeechStart);
+        window.addEventListener('vadstop', handleVadSpeechEnd);
 
         // Generate anonymous user ID and read theater context
         const myUserId = "Viewer_" + Math.floor(Math.random() * 10000);
@@ -4527,6 +4625,7 @@
             },
         });
         // Modular Chat Controller
+        chatInput?.addEventListener('focus', () => stopSceneSpeech());
         const chatController = initializeChatController({
             messagesContainer: chatMessages,
             chatForm: chatForm,
@@ -4603,6 +4702,7 @@
 
         function openOratorCommand() {
             if (!isCurrentOrator() || !oratorCommandOverlay) return;
+            stopSceneSpeech();
             oratorCommandOverlay.classList.add('active');
             oratorCommandOverlay.setAttribute('aria-hidden', 'false');
             oratorCommandStatus.textContent = '';
@@ -6782,6 +6882,7 @@
 
         function openTextAnnotationEditor(existing, placement = existing) {
             if (!canAddTextAnnotation() || isPagedBack) return;
+            stopSceneSpeech();
             activeTextEditor?.remove();
 
             const coords = placement;
@@ -10045,6 +10146,7 @@
 
         function beginMicPress(source) {
             if (micMode !== 'push-to-talk' || micPressHeld || !isCurrentOrator()) return;
+            stopSceneSpeech();
             micPressHeld = true;
             micPressSource = source;
             if (micCaptureReady) {

@@ -216,6 +216,89 @@ def test_dispatch_synthesizes_and_publishes_audio_as_data_uri() -> None:
     assert published[0]["speech_generation"] == 1
 
 
+def test_dispatch_narration_voicing_synthesizes_narrator_line() -> None:
+    mock_provider = MagicMock(spec=SpeechProvider)
+    mock_provider.select_voice.return_value = "voice_narrator"
+    mock_provider.synthesize.return_value = SpeechSynthesisResult(
+        audio_bytes=b"narrator-audio",
+        mime_type="audio/mpeg",
+        provider="mock-provider",
+        model="mock-model",
+    )
+
+    published: list[dict[str, str | int]] = []
+    state = StoryState(publish_audio_fn=published.append)
+    state.enable_scene_speech(mock_provider, character_voicing=False, narration_voicing=True)
+
+    state.dispatch([], scene_narration="The night was dark and full of stars.")
+    state._executor.shutdown(wait=True)
+
+    mock_provider.synthesize.assert_called_once()
+    assert len(published) == 1
+    assert published[0]["type"] == "scene_speech_ready"
+    assert published[0]["speaker"] == "Narrator"
+    assert published[0]["voice"] == "voice_narrator"
+
+
+def test_dispatch_separate_narration_and_character_speech_providers() -> None:
+    char_provider = MagicMock(spec=SpeechProvider)
+    char_provider.select_voice.return_value = "voice_gemini"
+    char_provider.synthesize.return_value = SpeechSynthesisResult(
+        audio_bytes=b"char-audio",
+        mime_type="audio/mpeg",
+        provider="gemini-flash-tts",
+        model="gemini-3.1-flash-tts-preview",
+    )
+
+    chirp_provider = MagicMock(spec=SpeechProvider)
+    chirp_provider.select_voice.return_value = "en-US-Chirp3-HD-Laomedeia"
+    chirp_provider.synthesize.return_value = SpeechSynthesisResult(
+        audio_bytes=b"chirp-audio",
+        mime_type="audio/mpeg",
+        provider="google-chirp-3-hd",
+        model="en-US-Chirp3-HD-Laomedeia",
+    )
+
+    published: list[dict[str, str | int]] = []
+    state = StoryState(publish_audio_fn=published.append)
+    state.enable_scene_speech(
+        char_provider,
+        character_voicing=True,
+        narration_voicing=True,
+        narration_provider=chirp_provider,
+    )
+
+    state.dispatch(
+        [{"speaker": "Alice", "text": "I see the gate ahead.", "kind": "speech"}],
+        scene_narration="The wind howled across the plain.",
+    )
+    state._executor.shutdown(wait=True)
+
+    chirp_provider.synthesize.assert_called_once()
+    char_provider.synthesize.assert_called_once()
+    assert len(published) == 2
+    assert published[0]["speaker"] == "Narrator"
+    assert published[0]["voice"] == "en-US-Chirp3-HD-Laomedeia"
+    assert published[1]["speaker"] == "Alice"
+    assert published[1]["voice"] == "voice_gemini"
+
+
+def test_narrator_voice_selection_uses_laomedeia_consistently() -> None:
+    from providers.google_chirp_speech_provider import GoogleChirpSpeechProvider
+    from providers.gemini_speech_provider import GeminiSpeechProvider
+
+    chirp = GoogleChirpSpeechProvider()
+    gemini = GeminiSpeechProvider()
+
+    state = StoryState()
+    state.enable_scene_speech(gemini, narration_voicing=True, narration_provider=chirp)
+    assert state._voice_for("Narrator") == "en-US-Chirp3-HD-Laomedeia"
+
+    state_gemini = StoryState()
+    state_gemini.enable_scene_speech(gemini, narration_voicing=True, narration_provider=gemini)
+    assert state_gemini._voice_for("Narrator") == "Laomedeia"
+
+
 def test_dispatch_newer_scene_aborts_previous_scene_synthesis() -> None:
     mock_provider = MagicMock(spec=SpeechProvider)
     mock_provider.select_voice.return_value = "voice_alpha"

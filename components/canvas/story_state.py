@@ -117,7 +117,10 @@ class StoryState:
         self.character_voice_tags: dict[str, list[str]] = {}
         self._text_beautifier: Any = None
         self._speech_provider: SpeechProvider | None = None
+        self._narration_speech_provider: SpeechProvider | None = None
         self._scene_speech_enabled = False
+        self._character_voicing_enabled = True
+        self._narration_voicing_enabled = False
         self._accent_augmentation = True
         self._speech_executor: ThreadPoolExecutor | None = None
         self._speech_lock = threading.Lock()
@@ -298,9 +301,19 @@ class StoryState:
         logger.info("[StoryState] New scene: %s", scene_narration)
         logger.info("[StoryState] New dialogue: %s", scene_dialogue)
 
-        speech_enabled = bool(self._scene_speech_enabled and self._speech_provider)
+        narrator_can_speak = bool(
+            self._scene_speech_enabled
+            and self._narration_voicing_enabled
+            and (self._narration_speech_provider is not None or self._speech_provider is not None)
+        )
+        character_can_speak = bool(
+            self._scene_speech_enabled
+            and self._character_voicing_enabled
+            and self._speech_provider is not None
+        )
+        speech_enabled = narrator_can_speak or character_can_speak
         if speech_enabled:
-            generation = self.dispatch(scene_dialogue)
+            generation = self.dispatch(scene_dialogue, scene_narration=scene_narration)
         else:
             # A silent scene must still invalidate audio being synthesized for
             # its predecessor and give canvas a newer generation to render.
@@ -439,19 +452,47 @@ class StoryState:
             return next((character for character in characters if isinstance(character, dict) and str(character.get("name") or "").strip().lower() == normalized), None)
         return None
 
-    def enable_scene_speech(self, provider: SpeechProvider, *, accent_augmentation: bool = True) -> None:
-        if provider is None:
+    def enable_scene_speech(
+        self,
+        provider: SpeechProvider | None = None,
+        *,
+        accent_augmentation: bool = True,
+        character_voicing: bool = True,
+        narration_voicing: bool = False,
+        narration_provider: SpeechProvider | None = None,
+    ) -> None:
+        if provider is None and narration_provider is None:
             raise TypeError("enable_scene_speech requires a SpeechProvider")
         self._accent_augmentation = bool(accent_augmentation)
-        if self._scene_speech_enabled and self._speech_provider is not None:
-            return
-        self._speech_provider = provider
+        self._character_voicing_enabled = bool(character_voicing)
+        self._narration_voicing_enabled = bool(narration_voicing)
+        if provider is not None:
+            self._speech_provider = provider
+        if narration_provider is not None:
+            self._narration_speech_provider = narration_provider
+        elif self._narration_speech_provider is None and provider is not None:
+            self._narration_speech_provider = provider
         self._scene_speech_enabled = True
 
     @property
+    def character_voicing_enabled(self) -> bool:
+        """Whether character dialogue lines are synthesized."""
+        return self._character_voicing_enabled
+
+    @property
+    def narration_voicing_enabled(self) -> bool:
+        """Whether scene narration is synthesized alongside dialogue."""
+        return self._narration_voicing_enabled
+
+    @property
     def speech_provider(self) -> SpeechProvider | None:
-        """The provider used for scene voices, when character voicing is enabled."""
+        """The provider used for character dialogue voices."""
         return self._speech_provider
+
+    @property
+    def narration_speech_provider(self) -> SpeechProvider | None:
+        """The provider used for scene narration voices."""
+        return self._narration_speech_provider
 
     def cancel(self) -> int:
         """Invalidates any pending or in-flight scene synthesis."""
@@ -459,17 +500,30 @@ class StoryState:
             self._active_speech_generation += 1
             return self._active_speech_generation
 
-    def dispatch(self, dialogue: list[dict[str, str]]) -> int:
+    def dispatch(self, dialogue: list[dict[str, str]], *, scene_narration: str = "") -> int:
         logger.debug("[StoryState] Dispatching scene speech for generation %d", self._active_speech_generation)
         with self._speech_lock:
             self._active_speech_generation += 1
             generation = self._active_speech_generation
 
-        spoken = [
-            {**line, "voice": self._voice_for(str(line.get("speaker") or "Narrator"))}
-            for line in dialogue
-            if line.get("kind") != "thought" and str(line.get("text") or "").strip()
-        ]
+        spoken: list[dict[str, str]] = []
+        has_narr_provider = bool(
+            self._narration_speech_provider is not None or self._speech_provider is not None
+        )
+        if self._narration_voicing_enabled and scene_narration.strip() and has_narr_provider:
+            spoken.append({
+                "speaker": "Narrator",
+                "text": scene_narration.strip(),
+                "kind": "narration",
+                "voice": self._voice_for("Narrator"),
+            })
+        if self._character_voicing_enabled and self._speech_provider is not None:
+            for line in dialogue:
+                if line.get("kind") != "thought" and str(line.get("text") or "").strip():
+                    spoken.append({
+                        **line,
+                        "voice": self._voice_for(str(line.get("speaker") or "Narrator")),
+                    })
         if spoken:
             self._get_executor().submit(self._synthesize_scene_speech, spoken, generation)
         return generation
@@ -479,15 +533,33 @@ class StoryState:
         if existing:
             return existing
 
+        is_narrator = bool(key == "narrator" or speaker.strip().lower() == "narrator")
+        provider = (
+            self._narration_speech_provider
+            if is_narrator and self._narration_speech_provider is not None
+            else self._speech_provider
+        )
+
         tags = self.get_character_voice_tags(speaker)
         used = set(self.character_voice_assignments.values())
-        if self._speech_provider is not None:
-            voice = self._speech_provider.select_voice({
-                "voice_tags": tags,
-                "description": self.get_character_description(speaker),
-            }, exclude=used)
+        if provider is not None:
+            if is_narrator:
+                voice = provider.select_voice({
+                    "name": "Narrator",
+                    "speaker": "Narrator",
+                    "voice": "Laomedeia",
+                    "preferred_voice": "Laomedeia",
+                    "persona": "Narrator",
+                    "voice_tags": ["female", "voice=Laomedeia", "persona=Narrator"] + tags,
+                    "description": "Narrator",
+                }, exclude=used)
+            else:
+                voice = provider.select_voice({
+                    "voice_tags": tags,
+                    "description": self.get_character_description(speaker),
+                }, exclude=used)
         else:
-            voice = "default"
+            voice = "en-US-Chirp3-HD-Laomedeia" if is_narrator else "default"
 
         self.character_voice_assignments[key] = voice
         if self._persist:
@@ -503,16 +575,23 @@ class StoryState:
             if generation != self._active_speech_generation:
                 return line, None
         speaker = str(line.get("speaker") or "Narrator").strip()[:80] or "Narrator"
+        key = speaker_key(speaker)
+        is_narrator = bool(key == "narrator" or line.get("kind") == "narration")
+        provider = (
+            self._narration_speech_provider
+            if is_narrator and self._narration_speech_provider is not None
+            else self._speech_provider
+        )
         try:
             voice = str(line["voice"])
-            if self._speech_provider is None:
+            if provider is None:
                 return line, None
-            result = self._speech_provider.synthesize(SpeechSynthesisRequest(
+            result = provider.synthesize(SpeechSynthesisRequest(
                 text=str(line["text"]),
                 voice=voice,
                 voice_tags=tuple(self.get_character_voice_tags(speaker)),
                 voice_instruction=str(line.get("voice_instruction") or "").strip() or None,
-                accent_augmentation=getattr(self, "_accent_augmentation", True),
+                accent_augmentation=self._accent_augmentation,
             ))
             with self._speech_lock:
                 if generation != self._active_speech_generation:
