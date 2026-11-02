@@ -41,7 +41,7 @@
 
         body {
             margin: 0;
-            padding: 1.5rem;
+            padding: 0.35rem 0;
             width: 100vw;
             height: 100vh;
             font-family: 'Outfit', sans-serif;
@@ -49,7 +49,7 @@
             color: var(--text-color);
             overflow: hidden;
             display: flex;
-            gap: 1.5rem;
+            gap: 0;
             box-sizing: border-box;
         }
 
@@ -97,7 +97,7 @@
             flex-direction: column;
             flex: 1;
             height: 100%;
-            gap: 1rem;
+            gap: 0.35rem;
             min-width: 0;
             container-type: inline-size;
         }
@@ -109,7 +109,7 @@
             background: var(--glass-bg);
             backdrop-filter: blur(12px);
             -webkit-backdrop-filter: blur(12px);
-            padding: 0.6rem 1.5rem;
+            padding: 0.45rem 1.25rem;
             border-radius: 50px;
             border: 1px solid var(--glass-border);
             display: flex;
@@ -205,13 +205,13 @@
             background: var(--glass-bg);
             backdrop-filter: blur(12px);
             -webkit-backdrop-filter: blur(12px);
-            padding: 0.6rem 1.5rem;
+            padding: 0.25rem 0.75rem;
             border-radius: 50px;
             border: 1px solid var(--glass-border);
             display: flex;
             align-items: center;
             justify-content: center;
-            gap: 1.5rem;
+            gap: 0.75rem;
             box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
             align-self: center;
             max-width: 100%;
@@ -223,7 +223,7 @@
             z-index: 1;
             width: 100%;
             flex: 1;
-            border-radius: 20px;
+            border-radius: 16px;
             overflow: hidden;
             box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
             background: var(--glass-bg);
@@ -699,14 +699,7 @@
         }
 
         #chat-sidebar.collapsed .chat-side-toggle-tab {
-            left: auto;
-            right: 0;
-            position: fixed;
-            top: 50%;
-            border-radius: 12px 0 0 12px;
-            border-right: none;
-            border-left: 1px solid var(--glass-border);
-            box-shadow: -6px 0 20px rgba(0, 0, 0, 0.5);
+            left: -24px;
             pointer-events: auto;
         }
 
@@ -1636,7 +1629,11 @@
             background: var(--glass-bg);
             backdrop-filter: blur(15px);
             border: 1px solid var(--glass-border);
-            border-radius: 20px;
+            border-right: none;
+            border-top-right-radius: 0;
+            border-bottom-right-radius: 0;
+            border-top-left-radius: 16px;
+            border-bottom-left-radius: 16px;
             display: flex;
             flex-direction: column;
             overflow: visible;
@@ -1647,10 +1644,24 @@
         }
 
         #chat-sidebar.collapsed {
-            transform: translateX(120%);
-            opacity: 0;
             margin-right: -320px;
+            box-shadow: none;
+            border-color: transparent;
             pointer-events: none;
+        }
+
+        #chat-sidebar.collapsed > :not(.chat-side-toggle-tab) {
+            opacity: 0;
+            pointer-events: none;
+            visibility: hidden;
+        }
+
+        #popout-expand-btn {
+            display: none !important;
+        }
+
+        #chat-form {
+            margin-top: auto;
         }
 
         /* Responsive chat styling for smaller monitors */
@@ -1840,6 +1851,10 @@
             transition: opacity 0.4s ease, transform 0.4s ease;
         }
 
+        body.fullscreen-cinematic #history-paging-controls {
+            top: calc(1.5rem + 50px + 0.4rem) !important;
+        }
+
         /* Reveal UI on mouseover / mouse move in cinematic fullscreen */
         body.fullscreen-cinematic.ui-visible header,
         body.fullscreen-cinematic.ui-visible #bottom-bar,
@@ -1878,7 +1893,7 @@
 
         #history-paging-controls {
             position: absolute;
-            top: 1.25rem;
+            top: 0.4rem;
             left: 50%;
             transform: translateX(-50%);
             z-index: 20;
@@ -1886,8 +1901,8 @@
             align-items: center;
             flex-direction: column;
             font-family: 'Outfit', sans-serif;
-            padding: 10px 20px;
-            margin-top: -10px;
+            padding: 0 20px 10px;
+            margin-top: 0;
             opacity: 0;
             pointer-events: none;
             transition: opacity 0.25s ease;
@@ -2664,20 +2679,22 @@
 
         #doodle-toolbar {
             position: absolute;
-            bottom: calc(100% + 8px);
+            bottom: calc(100% + 1px);
             left: 50%;
             transform: translateX(-50%);
             width: max-content;
             max-width: calc(100vw - 3rem);
             flex-wrap: wrap;
             justify-content: center;
-            padding: 0.6rem 1rem;
+            padding: 0.25rem 0.5rem;
             background: var(--glass-bg);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
             border: 1px solid var(--glass-border);
-            border-radius: 24px;
+            border-radius: 16px;
             box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
             display: flex;
-            gap: 0.5rem;
+            gap: 0.35rem;
             align-items: center;
         }
 
@@ -2945,11 +2962,12 @@
             background: rgba(255, 255, 255, 0.1);
             color: white;
             border: 1px solid var(--glass-border);
-            padding: 0.25rem 0.75rem;
-            border-radius: 10px;
+            padding: 0.2rem 0.5rem;
+            border-radius: 8px;
             cursor: pointer;
             font-family: inherit;
-            margin-left: 0.5rem;
+            margin-left: 0.25rem;
+            font-size: 0.78rem;
             transition: background 0.2s, opacity 0.2s;
         }
 
@@ -3375,7 +3393,7 @@
                     style="font-size: 0.8rem; color: #a5b4fc; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">🎵
                     Silent</span>
                 <button id="music-mute-btn"
-                    style="background: rgba(255,255,255,0.08); border: 1px solid var(--glass-border); color: #fff; border-radius: 20px; padding: 4px 12px; font-size: 0.8rem; cursor: pointer; transition: all 0.2s; font-family: inherit; display: flex; align-items: center; gap: 5px;">🔊
+                    style="background: rgba(255,255,255,0.08); border: 1px solid var(--glass-border); color: #fff; border-radius: 20px; padding: 3px 10px; font-size: 0.78rem; cursor: pointer; transition: all 0.2s; font-family: inherit; display: flex; align-items: center; gap: 5px;">🔊
                     Mute</button>
                 <div id="volume-container" style="display: flex; align-items: center; gap: 8px;">
                     <input type="range" id="music-volume-slider" min="0" max="1" step="0.01" value="0.5" title="Volume">
@@ -3385,9 +3403,9 @@
 
             <!-- Doodle mode (Orator control) and a separate floating tools bar above the menu -->
             <div id="doodle-section"
-                style="display: flex; align-items: center; gap: 10px; border-left: 1px solid var(--glass-border); padding-left: 1.5rem;">
+                style="display: flex; align-items: center; gap: 8px; border-left: 1px solid var(--glass-border); padding-left: 0.75rem;">
                 <button id="doodles-toggle-btn" title="Toggle doodle display on canvas"
-                    style="display: none; background: rgba(99, 102, 241, 0.2); border: 1px solid rgba(99, 102, 241, 0.4); color: #a5b4fc; border-radius: 20px; padding: 4px 12px; font-size: 0.8rem; font-weight: 600; cursor: pointer; align-items: center; gap: 5px; transition: all 0.2s; font-family: inherit;">
+                    style="display: none; background: rgba(99, 102, 241, 0.2); border: 1px solid rgba(99, 102, 241, 0.4); color: #a5b4fc; border-radius: 20px; padding: 3px 10px; font-size: 0.78rem; font-weight: 600; cursor: pointer; align-items: center; gap: 5px; transition: all 0.2s; font-family: inherit;">
                     ✏️ Doodles: On
                 </button>
                 <div id="doodle-toolbar" role="toolbar" aria-label="Doodle and text tools"
@@ -3499,7 +3517,7 @@
                 </div>
             </div>
             <div id="collab-section"
-                style="display: none; align-items: center; gap: 10px; border-left: 1px solid var(--glass-border); padding-left: 1.5rem;">
+                style="display: none; align-items: center; gap: 8px; border-left: 1px solid var(--glass-border); padding-left: 0.75rem;">
                 <button id="viewer-collab-toggle-btn" class="collab-toggle-btn"
                     title="Toggle Viewer Collaboration Mode">
                     👥 Collab: Off
