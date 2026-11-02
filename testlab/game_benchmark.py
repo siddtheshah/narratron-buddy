@@ -4,13 +4,15 @@ from __future__ import annotations
 from collections.abc import Callable
 import json
 from pathlib import Path
+from shutil import copytree
 from tempfile import TemporaryDirectory
 from time import perf_counter
 from unittest.mock import patch
 
 from pydantic import JsonValue
 
-from game_engine.game_runtime import GameAction, GameStep
+from game_engine.game_runtime import GameAction, GameDefinition, GameStep
+from game_engine.game_source import find_game_file, game_source_json
 from game_engine.game_state import GameState
 
 GameFactory = Callable[[Path, Callable[[], None], Callable[..., None]], GameState]
@@ -34,6 +36,20 @@ def sample(directory: Path, game_factory: GameFactory = GameState) -> tuple[dict
     times: dict[str, float] = {}
     results: dict[str, JsonValue] = {}
     with TemporaryDirectory(prefix="narratron-cel-") as saved:
+        # This workload deliberately measures legacy batched drafts. Preserve it
+        # using an isolated canvas-free copy of the authored checkers package.
+        source = find_game_file(directory)
+        if source is not None:
+            definition = GameDefinition.model_validate_json(game_source_json(source.read_bytes(), source.name))
+            if definition.canvas_api is not None:
+                target = Path(saved) / "package"
+                copytree(source.parent, target / "game")
+                definition.canvas_api = None
+                for transition in definition.transitions.values():
+                    transition.canvas_effects = None
+                (target / "game" / source.name).unlink()
+                (target / "game" / "game.json").write_text(definition.model_dump_json(), encoding="utf-8")
+                directory = target
         path = Path(saved) / "game.json"
         game: GameState
 

@@ -5581,6 +5581,11 @@
                 );
                 a2uiCanvasRenderer.render(data.interactive_surfaces);
                 gameRenderer.render(data.game_state);
+                const gameCanvasRevision = data.game_state?.canvas_revision;
+                if (gameCanvasRevision !== undefined && gameCanvasRevision !== lastGameCanvasRevision) {
+                    lastGameCanvasRevision = gameCanvasRevision;
+                    void requestPageDoodles();
+                }
                 if (data.sticky_notes !== undefined && typeof window.updateCanvasStickyNotes === 'function') {
                     window.updateCanvasStickyNotes(data.sticky_notes, data.hidden_stickies);
                 }
@@ -5888,6 +5893,7 @@
         let doodlesEnabled = true;
         let displayedDoodlePageId = null;
         let doodlePageRequestSequence = 0;
+        let lastGameCanvasRevision = null;
         let textAnnotationMode = false;
         let currentTextColor = '#ffffff';
         let activeTextEditor = null;

@@ -49,6 +49,24 @@ example_adventure/
 
 ## Testing This Example
 
+### Checkers victory stamp
+
+Play Red against Narratron's Ivory in the Checkers Club panel. Winning by
+capturing the final Ivory piece or blocking all Ivory moves adds a gold crown
+stamp near the upper-right of the current canvas page. The stamp persists with
+that page when the game panel closes or the session reloads. Crowning an
+individual checker, drawing, or losing does not award it. Reset removes the
+game's crown from the current page so you can repeat the test.
+
+The declaration in `game/game.yaml` uses `canvas_api` and the move transition's
+`canvas_effects` to place `stamps/crown.png` under a stable placement key.
+Canvas-enabled moves commit on the server as soon as they are selected.
+Keep a still-image page visible and the canvas unpinned for the stamp test.
+
+On Ivory's turn, you can ask Narratron to concede. Its `narratron_concede` action
+ends the game with Red winning and awards the same crown without changing the
+piece positions. Concession is unavailable after a win or draw.
+
 ### 1. Automated Smoke Test
 ```powershell
 uv run python testlab/adventure_runner.py --adventure example_adventure --smoke

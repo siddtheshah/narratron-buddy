@@ -682,7 +682,7 @@ def test_non_triggering_player_action_does_not_wake_story_callback(tmp_path: Pat
     assert game.revision == 1
 
 
-def test_example_adventure_checkers_narratron_interaction(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_example_adventure_checkers_narratron_interaction(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     def evaluate_interactive(operation: Callable[[Budget], BudgetResult]) -> BudgetResult:
         # Bound algorithmic work independently of host speed. The old per-square
         # move scans exceeded this ceiling during initial rendering alone.
@@ -690,8 +690,10 @@ def test_example_adventure_checkers_narratron_interaction(monkeypatch: pytest.Mo
 
     monkeypatch.setattr("game_engine.game_runtime.evaluate_with_recovery", evaluate_interactive)
     monkeypatch.setattr("game_engine.game_state.evaluate_with_recovery", evaluate_interactive)
-    example_path = Path("adventures/example_adventure")
-    game = GameState(example_path, Mock(), Mock())
+    monkeypatch.setattr("game_engine.canvas_evaluation.evaluate_with_recovery", evaluate_interactive)
+    from testing.game_fixtures import make_example_canvas
+
+    game = make_example_canvas(tmp_path).game
     assert game.error == ""
     callback = Mock()
     game.on_player_action = callback

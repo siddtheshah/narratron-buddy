@@ -176,6 +176,7 @@ class GameStep(GameModel):
 class GameAction(GameStep):
     revision: int = Field(ge=0)
     draft: list[GameStep] = Field(default_factory=list, max_length=64)
+    canvas_revision: int | None = Field(default=None, ge=0)
 
 
 class RenderedAction(GameModel):

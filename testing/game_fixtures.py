@@ -1,10 +1,33 @@
 """Small non-board game used to exercise the generic game contracts."""
 from pathlib import Path
+from shutil import copytree
 from typing import Literal
 from unittest.mock import Mock
 
 from game_engine.game_runtime import GameDefinition
+from game_engine.game_source import game_source_json
 from game_engine.game_state import GameState
+from components.canvas.canvas_state_manager import CanvasStateManager
+from components.theater_manager import TheaterManager
+
+
+def make_example_canvas(tmp_path: Path) -> CanvasStateManager:
+    theater = TheaterManager(tmp_path).theater("checkers")
+    copytree(Path("adventures/example_adventure"), theater.directory(), dirs_exist_ok=True)
+    return CanvasStateManager(theater)
+
+
+def make_preview_checkers_game(tmp_path: Path) -> GameState:
+    """Keep legacy local-preview coverage separate from the canvas-enabled example."""
+    source = Path("adventures/example_adventure/game/game.yaml")
+    definition = GameDefinition.model_validate_json(game_source_json(source.read_bytes(), source.name))
+    definition.canvas_api = None
+    for transition in definition.transitions.values():
+        transition.canvas_effects = None
+    game_dir = tmp_path / "game"
+    game_dir.mkdir(parents=True, exist_ok=True)
+    (game_dir / "crest.svg").write_bytes(source.with_name("crest.svg").read_bytes())
+    return make_game(tmp_path, definition)
 
 
 def counter_definition() -> GameDefinition:

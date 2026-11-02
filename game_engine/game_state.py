@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from contextlib import ExitStack, contextmanager
+from collections.abc import Iterator
 from copy import deepcopy
 from hashlib import sha256
 import json
@@ -16,6 +18,8 @@ from jsonschema import ValidationError as SchemaValidationError
 from pydantic import Field, JsonValue, TypeAdapter
 
 from game_engine.game_client import browser_compatible, browser_program
+from game_engine.canvas_host import CanvasHost
+from game_engine.canvas_evaluation import CanvasEvaluator
 from game_engine.game_source import find_game_file
 from game_engine.game_runtime import (
     Budget, GameAction, GameStep, GameModel, GameProgram, MAX_GAME_BYTES, MAX_VALUE_BYTES,
@@ -80,8 +84,12 @@ class GameState:
         *,
         worker: GoWorker | None = None,
         backend: Literal["auto", "go", "python"] = "auto",
+        canvas_host: CanvasHost | None = None,
     ) -> None:
-        self._lock = RLock()
+        self._lock = canvas_host.canvas_lock if canvas_host is not None else RLock()
+        self._canvas_host = canvas_host
+        self._canvas_revision = -1
+        self._canvas_evaluation: CanvasEvaluator | None = None
         self._persist = persist
         self._notify = notify
         self.on_player_action: Callable[[GameAction, dict[str, JsonValue]], None] | None = None
@@ -189,6 +197,13 @@ class GameState:
 
     def _prepare(self, state: dict[str, JsonValue], budget: Budget | None = None) -> list[JsonValue]:
         assert self.program is not None
+        if self.program.definition.canvas_api is not None and self._canvas_host is not None:
+            snapshot = self._canvas_host.canvas_observation()
+            with self._canvas_engine() as evaluator:
+                prepared = evaluator.prepare(state, snapshot)
+            self._view, self._model_state, self._narratron_actions = prepared.view, prepared.model_state, prepared.actions
+            self._canvas_revision = snapshot.revision
+            return self._view
         if self._worker is not None:
             from game_engine.go_cel import Prepared, validate_prepared
 
@@ -345,6 +360,15 @@ class GameState:
             if self.program is None:
                 return {"error": self.error} if self.error else None
             payload: dict[str, JsonValue] = {"definition_hash": self.definition_hash, "revision": self.revision, "view": self._view, "error": self.error}
+            if self.program.definition.canvas_api is not None and self._canvas_host is not None:
+                try:
+                    snapshot = self._canvas_host.canvas_observation()
+                    if snapshot.revision != self._canvas_revision:
+                        self._prepare(self.state)
+                    payload["view"] = self._view
+                    payload["canvas_revision"] = self._canvas_revision
+                except ValueError as exc:
+                    payload["error"] = str(exc)
             if self._client is not None and browser_compatible(self.state):
                 payload["client"] = self._client
                 payload["state"] = self.state
@@ -376,6 +400,19 @@ class GameState:
             self._notify("latest")
         except Exception:
             logger.exception("Game update notification failed at revision %s", self.revision)
+
+    @contextmanager
+    def _canvas_engine(self) -> Iterator[CanvasEvaluator]:
+        assert self.program is not None
+        if self._canvas_evaluation is None:
+            self._canvas_evaluation = CanvasEvaluator(self.program, self._worker)
+        if self._worker_pool is not None:
+            with self._worker_pool.borrow() as worker:
+                worker.ensure_started()
+                self._canvas_evaluation.worker = worker
+                yield self._canvas_evaluation
+        else:
+            yield self._canvas_evaluation
 
     def _act_go(
         self,
@@ -468,8 +505,11 @@ class GameState:
             if self.program is None:
                 logger.debug("[GameState] Act rejected: no playable game")
                 raise ValueError("This theater has no playable game.")
-            if self.program.definition.canvas_api is not None:
+            canvas_enabled = self.program.definition.canvas_api is not None
+            if canvas_enabled and self._canvas_host is None:
                 raise ValueError("Canvas-enabled actions require the shared canvas commit host.")
+            if canvas_enabled and action.draft:
+                raise ValueError("Canvas-enabled games do not accept private drafts.")
             if action.revision != self.revision:
                 logger.debug(
                     "[GameState] Act rejected: stale revision (action_revision=%d, current_revision=%d)",
@@ -479,6 +519,12 @@ class GameState:
                 raise StaleGameAction(
                     f"The game changed (action revision {action.revision} != current revision {self.revision}). Review its current state and try again."
                 )
+            observed = None
+            if canvas_enabled:
+                assert self._canvas_host is not None
+                observed = self._canvas_host.canvas_observation()
+                if action.canvas_revision is not None and action.canvas_revision != observed.revision:
+                    raise StaleGameAction("The canvas changed. Review the current page and try again.")
             if len(action.model_dump_json().encode("utf-8")) > 32768:
                 logger.debug("[GameState] Act rejected: action exceeds size budget")
                 raise ValueError("Game action exceeds its size budget.")
@@ -518,22 +564,41 @@ class GameState:
             )
             event_id = story_event_id or f"player:{self.definition_hash}:{action.revision}"
 
+            previous_canvas_revision = self._canvas_revision
             try:
-                if self._worker is not None:
-                    self._act_go(action, actor)
-                else:
-                    for step in action.draft:
-                        self._apply_step(step, actor, exploratory=True)
-                    self._apply_step(GameStep(name=action.name, arguments=action.arguments), actor)
-                self.revision += 1
-                snapshot = self.story_snapshot("narratron")
-                assert snapshot is not None
-                snapshot["story_event_id"] = event_id
-                self._story_commits[event_id] = StoryGameCommit(
-                    action=action, receipt=snapshot,
-                    pending=actor in ("player", "contributor") and transition.triggering,
-                )
-                self._persist()
+                with ExitStack() as transaction:
+                    if canvas_enabled:
+                        assert self._canvas_host is not None and observed is not None
+                        with self._canvas_engine() as evaluator:
+                            try:
+                                proposal = evaluator.attempt(self.state, observed, GameStep(name=action.name, arguments=action.arguments), actor)
+                            except ValueError as exc:
+                                if str(exc) == "Only the active orator can take this game action.":
+                                    raise UnauthorizedGameAction(str(exc)) from exc
+                                raise
+                            try:
+                                staged = transaction.enter_context(self._canvas_host.stage_canvas_effects(proposal.canvas_effects, observed))
+                            except ValueError as exc:
+                                raise InvalidGameInput(str(exc)) from exc
+                            prepared = evaluator.prepare(proposal.state, staged)
+                        self.state = prepared.state
+                        self._view, self._model_state, self._narratron_actions = prepared.view, prepared.model_state, prepared.actions
+                        self._canvas_revision = staged.revision
+                    elif self._worker is not None:
+                        self._act_go(action, actor)
+                    else:
+                        for step in action.draft:
+                            self._apply_step(step, actor, exploratory=True)
+                        self._apply_step(GameStep(name=action.name, arguments=action.arguments), actor)
+                    self.revision += 1
+                    snapshot = self.story_snapshot("narratron")
+                    assert snapshot is not None
+                    snapshot["story_event_id"] = event_id
+                    self._story_commits[event_id] = StoryGameCommit(
+                        action=action, receipt=snapshot,
+                        pending=actor in ("player", "contributor") and transition.triggering,
+                    )
+                    self._persist()
                 logger.debug(
                     "[GameState] Action '%s' applied: revision advanced to %d, new state=%s",
                     action.name,
@@ -541,6 +606,7 @@ class GameState:
                     self.state,
                 )
             except Exception as exc:
+                self._canvas_revision = previous_canvas_revision
                 self._story_commits.pop(event_id, None)
                 self.state, self._view, self._model_state, self._narratron_actions, self.revision = (
                     previous, previous_view, previous_model_state, previous_actions, revision

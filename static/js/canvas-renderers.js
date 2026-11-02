@@ -1271,7 +1271,8 @@ export function createDoodleRenderer({ canvas, isVisible = () => true, textLayer
     function selectMovableStamp(item, multi = false) {
         if (!stampLayer) return;
         const previous = selectedStampItem;
-        const items = Array.isArray(item) ? item : (item ? [item] : []);
+        const items = (Array.isArray(item) ? item : (item ? [item] : []))
+            .filter(node => node.annotation?.draggable !== false);
         if (!multi) {
             selectedStampItems.clear();
         }
@@ -1739,6 +1740,8 @@ export function createDoodleRenderer({ canvas, isVisible = () => true, textLayer
             stampLayer.appendChild(item);
         }
         item.annotation = action;
+        item.style.pointerEvents = action.draggable === false ? "none" : "";
+        item.tabIndex = action.draggable === false ? -1 : 0;
         // Size in layout pixels; the viewer transform scales the whole layer.
         const plane = imagePlane(action);
         const width = plane.width || stampLayer?.clientWidth || 1000;

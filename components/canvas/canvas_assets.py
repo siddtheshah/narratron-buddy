@@ -33,7 +33,7 @@ class CanvasAssetCatalog:
     def __init__(self, directory: Path, url_for_path: Callable[[str], str]) -> None:
         self.directory = directory.resolve()
         self.url_for_path = url_for_path
-        self.cache = (self.directory / "artifacts" / "canvas_assets").resolve()
+        self.cache = (self.directory / "output" / "artifacts" / "canvas_assets").resolve()
         if not self.cache.is_relative_to(self.directory):
             raise ValueError("Pinned canvas media cannot escape the theater directory.")
 

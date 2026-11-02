@@ -13,7 +13,7 @@ from services.adventure_service import AdventureService
 from services.theater_builder import safe_asset_path, upload_path, validate_text
 from game_engine.game_state import GameAction, GameState
 from game_engine.game_source import GAME_FILENAMES
-from testing.game_fixtures import counter_definition, exchange_definition, make_game
+from testing.game_fixtures import counter_definition, exchange_definition, make_example_canvas, make_game
 
 
 def test_game_survives_adventure_mount_and_canvas_reload(tmp_path: Path) -> None:
@@ -126,8 +126,8 @@ def move(game: GameState, source: int, target: int) -> None:
     game.act(GameAction(name="move", arguments={"source": source, "target": target}, revision=game.revision))
 
 
-def test_package_cel_enforces_captures_and_continuation() -> None:
-    game = GameState(Path("adventures/example_adventure"), Mock(), Mock())
+def test_package_cel_enforces_captures_and_continuation(tmp_path: Path) -> None:
+    game = make_example_canvas(tmp_path).game
     assert game.error == ""
     set_position(game, {42: 1, 46: 1, 35: -1, 21: -1, 1: -1})
     with pytest.raises(ValueError):
@@ -144,8 +144,8 @@ def test_package_cel_enforces_captures_and_continuation() -> None:
     assert game.state["turn"] == -1
 
 
-def test_package_cel_crowns_and_ends_turn_then_kings_move_backwards() -> None:
-    game = GameState(Path("adventures/example_adventure"), Mock(), Mock())
+def test_package_cel_crowns_and_ends_turn_then_kings_move_backwards(tmp_path: Path) -> None:
+    game = make_example_canvas(tmp_path).game
     set_position(game, {17: 1, 10: -1, 12: -1})
     move(game, 17, 3)
     assert game.state["board"][3] == 2
@@ -156,8 +156,8 @@ def test_package_cel_crowns_and_ends_turn_then_kings_move_backwards() -> None:
     assert game.state["board"][35] == 2
 
 
-def test_package_cel_declares_wins_draws_and_reset() -> None:
-    game = GameState(Path("adventures/example_adventure"), Mock(), Mock())
+def test_package_cel_declares_wins_draws_and_reset(tmp_path: Path) -> None:
+    game = make_example_canvas(tmp_path).game
     set_position(game, {42: 1, 35: -1})
     move(game, 42, 28)
     assert game.state["winner"] == 1

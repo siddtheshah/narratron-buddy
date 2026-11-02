@@ -19,6 +19,7 @@ from providers.text_response_provider import TextResponseProvider
 from testlab.game_harness import (
     DEFAULT_GAME_MODEL, GameModel, GameReport, GameScenario, Move, PlayerStep, TurnTrace,
     no_notify, no_persist, play_turn, run_game_test,
+    PanelOnlyCanvas,
 )
 
 ROOT = Path(__file__).resolve().parent
@@ -65,7 +66,7 @@ class GameSession:
                     target_svg = (root / "game") / svg_file.relative_to(path.parent)
                     target_svg.parent.mkdir(parents=True, exist_ok=True)
                     target_svg.write_bytes(svg_file.read_bytes())
-            self.game = GameState(root, no_persist, no_notify)
+            self.game = GameState(root, no_persist, no_notify, canvas_host=PanelOnlyCanvas())
             if self.game.program is None:
                 raise ValueError(self.game.error)
         except Exception:

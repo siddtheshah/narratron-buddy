@@ -1,13 +1,12 @@
 from collections.abc import Iterator
 from pathlib import Path
-from unittest.mock import Mock
 
 import pytest
 from playwright.sync_api import Error, Page, Request, Route, expect, sync_playwright
 
 from game_engine.game_runtime import ViewNode
-from game_engine.game_state import GameAction, GameState
-from testing.game_fixtures import counter_definition, make_game
+from game_engine.game_state import GameAction
+from testing.game_fixtures import counter_definition, make_example_canvas, make_game, make_preview_checkers_game
 
 
 @pytest.fixture
@@ -230,7 +229,7 @@ def test_canvas_game_permissions_do_not_interrupt_startup() -> None:
 
 
 def test_checkers_renderer_moves_and_viewer_permissions(tmp_path: Path) -> None:
-    game = GameState(Path("adventures/example_adventure"), Mock(), Mock())
+    game = make_example_canvas(tmp_path).game
     html = """<!doctype html><html><head></head><body style="background:#101827">
     <button id="game-state-toggle-btn" hidden aria-label="Toggle game" aria-expanded="false"></button>
     <div id="game-state-layer" hidden></div><script type="module">
@@ -281,8 +280,8 @@ def test_checkers_renderer_moves_and_viewer_permissions(tmp_path: Path) -> None:
         expect(page.locator('[data-game-id="square-33"]')).to_be_enabled()
         page.locator('[data-game-id="square-33"]').click()
         expect(page.locator('[data-game-id="status"]')).to_have_text("Ivory to move")
-        assert game.revision == 0
-        page.get_by_role('button', name='Submit', exact=True).click()
+        assert game.revision == 2
+        expect(page.get_by_role('button', name='Submit', exact=True)).to_have_count(0)
         assert game.state["board"][33] == 1
         toggle.click()
         page.evaluate("window.refresh()")
@@ -306,7 +305,6 @@ def test_checkers_renderer_moves_and_viewer_permissions(tmp_path: Path) -> None:
         expect(page.locator('[data-game-id="square-26"]')).to_be_enabled()
         page.locator('[data-game-id="square-26"]').click()
         expect(page.locator('[data-game-id="status"]')).to_have_text("Red to move")
-        page.get_by_role('button', name='Submit', exact=True).click()
         assert game.state["board"][26] == -1
         # A different state schema and SVG view (including game/*.svg asset) work without another renderer.
         counter_dir = tmp_path / "counter"
@@ -346,8 +344,8 @@ def test_checkers_renderer_moves_and_viewer_permissions(tmp_path: Path) -> None:
 
 
 @pytest.fixture
-def movable_game_page() -> Iterator[Page]:
-    game = GameState(Path("adventures/example_adventure"), Mock(), Mock())
+def movable_game_page(tmp_path: Path) -> Iterator[Page]:
+    game = make_preview_checkers_game(tmp_path)
     html = """<!doctype html><html><head></head><body style="background:#101827; margin:0; padding:0; width:1000px; height:800px; position:relative;">
     <button id="game-state-toggle-btn" hidden aria-label="Toggle game" aria-expanded="false"></button>
     <div id="game-state-layer" hidden></div><script type="module">

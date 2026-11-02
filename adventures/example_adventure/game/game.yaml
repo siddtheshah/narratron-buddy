@@ -3,6 +3,11 @@
 
 version: 2
 
+# Commit the victory reward to the shared page through the game/canvas API.
+canvas_api:
+  version: 1
+  effects: [put_stamp, remove_stamp]
+
 # Starting position and UI state. Piece values: Red 1, Ivory -1; kings use 2 and -2.
 initial:
   # Eight rows, from rank 8 at the top to rank 1 at the bottom.
@@ -334,12 +339,25 @@ transitions:
       "quiet": quiet, "receipt": coordinate(action.source) + " → " + coordinate(action.target) + (chosen.jump ? " · captured a piece" : "") + (promoted ? " · crowned king" : "") + (continuing ? " · continue jumping" : "")}
     triggering: true
     preview: true
+    # Red is the player; promoting a checker alone is not a game victory.
+    canvas_effects: |-
+      state.winner == 0 && next_state.winner == 1 && canvas.page != null ? [{
+        "op": "put_stamp", "target": {"page_id": canvas.page.id},
+        "key": "checkers-victory-crown", "asset_id": "stamp:crown",
+        "center": {"x": 8500, "y": 1800}, "width": 1600,
+        "rotation": 0, "draggable": false
+      }] : []
   reset:
     parameters:
       type: object
       additionalProperties: false
     result: initial
     triggering: true
+    canvas_effects: |-
+      canvas.page != null ? [{
+        "op": "remove_stamp", "target": {"page_id": canvas.page.id},
+        "key": "checkers-victory-crown"
+      }] : []
   narratron_move:
     actor: narratron
     description: Make an Ivory move on Narratron's turn (turn == -1).
@@ -381,6 +399,26 @@ transitions:
       {"board": board, "turn": nextTurn, "forced": forced, "selected": -1,
       "winner": won ? -nextTurn : 0, "draw": !won && quiet >= 80,
       "quiet": quiet, "receipt": "Ivory: " + coordinate(action.source) + " → " + coordinate(action.target) + (chosen.jump ? " · captured a piece" : "") + (promoted ? " · crowned king" : "") + (continuing ? " · continue jumping" : "")}
+
+  narratron_concede:
+    actor: narratron
+    description: Concede as Ivory on Narratron's turn, awarding Red the win and the victory crown.
+    available: state.turn == -1 && state.winner == 0 && !state.draw
+    parameters:
+      type: object
+      additionalProperties: false
+    guard: state.turn == -1 && state.winner == 0 && !state.draw
+    result: |-
+      {"board": state.board, "turn": state.turn, "forced": -1, "selected": -1,
+      "winner": 1, "draw": false, "quiet": state.quiet,
+      "receipt": "Ivory concedes · Red wins"}
+    canvas_effects: |-
+      canvas.page != null ? [{
+        "op": "put_stamp", "target": {"page_id": canvas.page.id},
+        "key": "checkers-victory-crown", "asset_id": "stamp:crown",
+        "center": {"x": 8500, "y": 1800}, "width": 1600,
+        "rotation": 0, "draggable": false
+      }] : []
 
 # Board layout. Values under props are CEL expressions; literal text keeps its CEL quotes.
 view:
@@ -477,6 +515,7 @@ view:
 # Guidance and a concise state projection for Narratron.
 instructions: |-
   Checkers game in the Library of Origins. You play Ivory (turn == -1) against the player's Red (turn == 1). When turn == -1 and moves are available, use 'narratron_move' to advance an Ivory piece.
+  On your turn in an unfinished game, you may instead use 'narratron_concede' with no arguments to resign, including when the player asks you to concede. This awards Red the win and the victory crown on the current canvas page. Commit the action before describing the concession as completed.
 model_state: |-
   {"board": state.board, "turn": state.turn, "turn_name": sideName(state.turn),
   "winner": state.winner, "draw": state.draw, "receipt": state.receipt,

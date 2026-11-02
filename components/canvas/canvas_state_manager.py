@@ -6,8 +6,13 @@ hydrates/persists the theater document and assembles the browser payload.
 
 from __future__ import annotations
 
+from components.canvas.locking import synchronized
+
 import json
 import logging
+from collections.abc import Iterator
+from contextlib import contextmanager
+from threading import RLock
 from hashlib import sha256
 from pathlib import Path
 from typing import Optional, cast
@@ -24,6 +29,7 @@ from components.story.output_display_cycle import story_output_cycle_duration
 from utils.atomic_file import atomic_write_text
 from components.canvas.canvas_assets import CanvasAssetCatalog
 from components.canvas.canvas_observation import ObservationClock, observe_page
+from components.canvas.game_stamps import stage_stamps
 from game_engine.canvas_contract import CanvasSnapshot, Page, Region
 
 logger = logging.getLogger("components.canvas_state")
@@ -46,6 +52,7 @@ class CanvasStateManager:
     notepad: Optional[Notepad] = None
 
     def __init__(self, theater: Theater) -> None:
+        self.canvas_lock = RLock()
         self.theater = theater
         self.theater_id = theater.theater_id
         self.theater_manager = getattr(theater, "manager", None)
@@ -64,9 +71,10 @@ class CanvasStateManager:
             self.theater,
             notify_changed_fn=self.notify_changed,
             on_visual_changed_fn=self._on_visual_changed,
+            lock=self.canvas_lock,
         )
         self.audio = AudioState(self.notify_changed)
-        self.doodles = DoodleState(self.persist, theater=self.theater, page_provider=self._doodle_page)
+        self.doodles = DoodleState(self.persist, theater=self.theater, page_provider=self._doodle_page, lock=self.canvas_lock)
         self.ui = UIState(self.persist, self.notify_changed)
         self.tool_response = ToolResponseState(self.notify_changed)
         story_planning_config = theater.config().get("story_planning", {})
@@ -80,7 +88,7 @@ class CanvasStateManager:
             output_cycle_duration=story_output_cycle_duration(story_planning_config),
         )
         self.chat = ChatManager(self.theater)
-        self.game = GameState(self.theater.directory(), self.persist, self.notify_changed)
+        self.game = GameState(self.theater.directory(), self.persist, self.notify_changed, canvas_host=self)
         enforce_structured = bool(story_planning_config.get("enforce_structured", True)) if adventure_mode else False
         self.notepad = Notepad(
             self.theater,
@@ -117,7 +125,7 @@ class CanvasStateManager:
         for item in self.visual.shown_images_history:
             if item.get("page_id") == page_id:
                 page = cast(DoodlePage, item)
-                return DoodleState(self.persist, theater=self.theater, page_provider=lambda: page)
+                return DoodleState(self.persist, theater=self.theater, page_provider=lambda: page, lock=self.canvas_lock)
         return None
 
     def _on_visual_changed(self, changed: bool = True) -> None:
@@ -131,6 +139,7 @@ class CanvasStateManager:
     def notify_changed(self, *domains: str) -> None:
         self.connections.notify(*domains)
 
+    @synchronized
     def persist(self) -> None:
         self.save_local_theater_data(self.theater.directory())
 
@@ -171,6 +180,7 @@ class CanvasStateManager:
         except (OSError, ValueError, TypeError) as exc:
             logger.warning("Failed to load canvas state for %s: %s", self.theater_id, exc)
 
+    @synchronized
     def serialized_state(self) -> dict[str, object]:
         audio_serialized = {k: v for k, v in self.audio.serialize().items() if k != "orator_cursor"}
         serialized = {
@@ -183,6 +193,7 @@ class CanvasStateManager:
             serialized["notepad"] = self.notepad.export_state()
         return serialized
 
+    @synchronized
     def canvas_observation(self) -> CanvasSnapshot:
         """Observe the actual shared page, migrating legacy geometry once.
 
@@ -234,6 +245,41 @@ class CanvasStateManager:
             observed = CanvasSnapshot.model_validate({**observed.model_dump(mode="json"), "revision": self.canvas_clock.revision})
         return observed
 
+    @contextmanager
+    def stage_canvas_effects(self, effects: list[JsonValue], snapshot: CanvasSnapshot) -> Iterator[CanvasSnapshot]:
+        """Install output until the caller saves game and canvas in one document.
+
+        The game, visual cycle, and native doodle writers share canvas_lock.
+        Exceptions from evaluation or persistence restore the original page.
+        """
+        with self.canvas_lock:
+            if not effects:
+                yield snapshot
+                return
+            if self.visual.pinned:
+                raise ValueError("Unpin the canvas before applying game output.")
+            assert self.theater is not None and self.game is not None
+            native = self._doodle_page()
+            if native is None or snapshot.page is None or native["page_id"] != snapshot.page.id:
+                raise ValueError("The shared canvas page changed.")
+            catalog = CanvasAssetCatalog(self.theater.directory(), self.theater.get_url_for_path)
+            actions, staged = stage_stamps(effects, snapshot, self.doodles.doodles, catalog, self.game.definition_hash)
+            previous, previous_clock = self.doodles.doodles, self.canvas_clock
+            projection = staged.model_dump(mode="json")
+            projection.pop("revision")
+            fingerprint = sha256(json.dumps(projection, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+            self.canvas_clock = ObservationClock(
+                revision=previous_clock.revision + (fingerprint != previous_clock.fingerprint), fingerprint=fingerprint,
+            )
+            self.doodles.doodles = actions
+            staged = CanvasSnapshot.model_validate({**staged.model_dump(mode="json"), "revision": self.canvas_clock.revision})
+            try:
+                yield staged
+            except BaseException:
+                self.doodles.doodles, self.canvas_clock = previous, previous_clock
+                raise
+
+    @synchronized
     def save_local_theater_data(self, theater_dir: Optional[Path] = None) -> tuple[dict[str, object], list[dict[str, object]]]:
         directory = theater_dir or self.theater.directory()
         directory.mkdir(parents=True, exist_ok=True)
@@ -265,6 +311,7 @@ class CanvasStateManager:
         self._storage_notification_pending = False
         return True
 
+    @synchronized
     def get_latest_state(self) -> dict[str, object]:
         visual = self.visual.payload()
         sticky_notes = self.notepad.get_present_sticky_notes() if self.notepad is not None else []

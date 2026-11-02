@@ -23,6 +23,7 @@ import object_registry
 from api_server.shared import app
 from components.canvas.canvas_state_service import CanvasStateService
 from components.canvas.visual_state import VisualState
+from components.theater_package import IneligibleAssetError, safe_asset_path
 from components.theater_manager import TheaterManager
 from pricing.pricing_controller import PricingController
 from testing.reference_images import png_bytes
@@ -355,10 +356,19 @@ def test_example_adventure_folder_survives_editor_upload_and_download(builder: B
     data = builder.create()
     base = f"/api/theater-editor/{data['draft']['theater_id']}"
     source = Path("adventures/example_adventure")
-    expected = {path.relative_to(source).as_posix(): path.read_bytes() for path in source.rglob("*") if path.is_file()}
+    source_files = {path.relative_to(source).as_posix(): path.read_bytes() for path in source.rglob("*") if path.is_file()}
+    expected: dict[str, bytes] = {}
+    for path, content in source_files.items():
+        try:
+            safe_asset_path(source, path)
+        except IneligibleAssetError:
+            # Development tests and bytecode are not deployable adventure assets.
+            continue
+        expected[path] = content
+    assert "stamps/crown.png" in expected
     uploaded = builder.client.post(
         f"{base}/upload", data={"revision": data["draft"]["revision"], "folder": "true"},
-        files=[("files", (f"example_adventure/{path}", content)) for path, content in expected.items()],
+        files=[("files", (f"example_adventure/{path}", content)) for path, content in source_files.items()],
     )
     assert uploaded.status_code == 200, uploaded.text
     assert {item["path"] for item in uploaded.json()["files"]} == expected.keys()

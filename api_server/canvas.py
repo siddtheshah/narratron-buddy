@@ -587,7 +587,11 @@ async def _apply_doodle_message(state: CanvasStateManager, data: dict[str, JsonV
             "size": size,
             "rotation": rotation % 360,
         }
-        doodles.save_stamp(stamp_action)
+        if doodles.save_stamp(stamp_action) is False:
+            await sender.send_json({"type": "stamp_rejected", "client_message_id": message_id})
+            await sender.send_json(doodles.snapshot())
+            await acknowledge()
+            return
         await broadcast(stamp_action, sender)
         await acknowledge()
         return
@@ -619,8 +623,10 @@ async def _apply_doodle_message(state: CanvasStateManager, data: dict[str, JsonV
             return
         action_id = str(data.get("id", ""))
         if action_id:
-            doodles.remove_stamp(action_id)
-            await broadcast({"type": "remove_stamp", "id": action_id}, sender)
+            if doodles.remove_stamp(action_id) is not False:
+                await broadcast({"type": "remove_stamp", "id": action_id}, sender)
+            else:
+                await sender.send_json(doodles.snapshot())
         await acknowledge()
         return
 
@@ -643,7 +649,10 @@ async def _apply_doodle_message(state: CanvasStateManager, data: dict[str, JsonV
 
     if data.get("type") in {"clear", "draw"}:
         doodles.add([data])
-        await broadcast(data, sender)
+        if data.get("type") == "clear" and any(item.get("managed_by") == "game" for item in doodles.doodles):
+            await broadcast(doodles.snapshot())
+        else:
+            await broadcast(data, sender)
         await acknowledge()
 
 @app.websocket("/ws/doodle")
@@ -862,6 +871,8 @@ def post_game_action(
     state = _state(theater_id)
     if state.game is None:
         raise HTTPException(status_code=404, detail="This theater has no game.")
+    if state.game.program is not None and state.game.program.definition.canvas_api is not None and payload.canvas_revision is None:
+        raise HTTPException(status_code=400, detail="Canvas-enabled actions require the displayed canvas revision.")
     try:
         is_orator = can_control_agent_websocket(deployment, current_user=get_current_user(request))
         return state.game.act(payload) if is_orator else state.game.act(payload, actor="contributor")

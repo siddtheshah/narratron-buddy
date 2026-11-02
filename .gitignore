@@ -19,6 +19,7 @@ adventures/*
 !adventures/README.md
 !adventures/example_adventure/
 !adventures/example_adventure/**
+adventures/example_adventure/**/__pycache__/
 demos/
 music_catalog/
 evaluation_results/

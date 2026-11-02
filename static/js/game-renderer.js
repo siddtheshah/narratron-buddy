@@ -146,7 +146,8 @@ export function createGameRenderer({ container, toggleButton, actionUrl, canEdit
             const response = await fetch(actionUrl(), {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ name: action.name, arguments: action.arguments, revision,
-                    draft: committing ? draft.slice(0, -1) : draft }),
+                    draft: committing ? draft.slice(0, -1) : draft,
+                    ...(game.canvas_revision !== undefined ? { canvas_revision: game.canvas_revision } : {}) }),
             });
             const result = await response.json();
             if (!response.ok) throw new Error(typeof result.detail === 'string' ? result.detail : 'Action rejected.');

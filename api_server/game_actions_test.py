@@ -1,17 +1,19 @@
 from collections.abc import Iterator
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 from fastapi import HTTPException, Request
+from fastapi.testclient import TestClient
 
-from api_server import canvas
+from api_server import canvas, theaters
 from game_engine.game_state import GameAction, GameState
+from testing.game_fixtures import make_example_canvas, make_preview_checkers_game
 
 
 @pytest.fixture
-def game_route() -> Iterator[GameState]:
-    game = GameState(Path("adventures/example_adventure"), Mock(), Mock())
+def game_route(tmp_path: Path) -> Iterator[GameState]:
+    game = make_preview_checkers_game(tmp_path)
     ui = Mock(viewer_collab_enabled=False)
     state = Mock(game=game, ui=ui)
     with patch.object(canvas, "_require_canvas_access"), patch.object(canvas, "db") as mock_db, \
@@ -46,8 +48,8 @@ def test_game_action_rejects_viewers_and_illegal_moves(game_route: GameState) ->
     assert game_route.revision == 0
 
 
-def test_contributor_can_take_annotated_actions_when_collab_enabled() -> None:
-    game = GameState(Path("adventures/example_adventure"), Mock(), Mock())
+def test_contributor_can_take_annotated_actions_when_collab_enabled(tmp_path: Path) -> None:
+    game = make_preview_checkers_game(tmp_path)
     callback = Mock()
     game.on_player_action = callback
     ui = Mock(viewer_collab_enabled=True)
@@ -116,3 +118,38 @@ def test_unexpected_game_failure_is_a_controlled_http_error(game_route: GameStat
     res = canvas.post_game_action(action, request, "checkers")
     assert res is not None
     assert res["revision"] == 1
+
+
+def test_canvas_game_requires_fresh_canvas_revision_and_commits_victory_stamp(tmp_path: Path) -> None:
+    state = make_example_canvas(tmp_path)
+    game = state.game
+    assert game is not None and game.program is not None
+    game.load({"definition_hash": game.definition_hash, "revision": 0, "state": {
+        **game.program.definition.initial, "board": [1 if i == 42 else -1 if i == 35 else 0 for i in range(64)],
+    }})
+    action = GameAction(name="move", arguments={"source": 42, "target": 28}, revision=0)
+    request = Request({"type": "http"})
+    with patch.object(canvas, "_require_canvas_access"), patch.object(canvas, "db"), \
+            patch.object(canvas, "get_current_user"), \
+            patch.object(canvas, "can_control_agent_websocket", return_value=True), \
+            patch.object(canvas, "_state", return_value=state):
+        with pytest.raises(HTTPException) as error:
+            canvas.post_game_action(action, request, "checkers")
+        assert error.value.status_code == 400
+        action.canvas_revision = state.canvas_observation().revision
+        state.doodles.save_text({"type": "text", "id": "note", "text": "Updated page", "x": 0.1, "y": 0.1, "size": 32})
+        with pytest.raises(HTTPException) as error:
+            canvas.post_game_action(action, request, "checkers")
+        assert error.value.status_code == 409
+        assert game.revision == 0 and state.canvas_observation().stamps == {}
+        action.canvas_revision = state.canvas_observation().revision
+        result = canvas.post_game_action(action, request, "checkers")
+        assert result is not None and result["revision"] == 1
+        assert game.state["winner"] == 1
+        assert len(state.canvas_observation().stamps) == 1
+    stamp, = state.doodles.stamp_annotations()
+    with patch.object(theaters, "_require_canvas_access_async", AsyncMock()), \
+            patch.object(theaters, "theater_manager", state.theater.manager):
+        response = TestClient(canvas.app).get(str(stamp["url"]))
+    assert response.status_code == 200
+    assert response.content == (state.theater.directory() / "stamps" / "crown.png").read_bytes()

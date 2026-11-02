@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from _thread import RLock
+from components.canvas.locking import synchronized
+
 import glob
 import logging
 import os
@@ -59,6 +62,7 @@ class VisualState:
         theater: Theater,
         notify_changed_fn: Optional[Callable[..., None]] = None,
         on_visual_changed_fn: Optional[Callable[[bool], None]] = None,
+        lock: RLock | None = None,
     ) -> None:
         self.theater = theater
         self.theater_id: str | None = theater.theater_id
@@ -75,7 +79,8 @@ class VisualState:
             visuals_config = {}
         self.visuals_config = visuals_config
         self.cycle_length: float = float(self.visuals_config.get("cycle_length", 60.0))
-        self._cycle_lock = threading.RLock()
+        self.canvas_lock = lock if lock is not None else threading.RLock()
+        self._cycle_lock = self.canvas_lock
         self._cycle_timer: Optional[threading.Timer] = None
         self._cycle_active: bool = False
         self.current_cycle_visual: Optional[VisualResource] = None
@@ -800,6 +805,7 @@ class VisualState:
                 return image_path
         return None
 
+    @synchronized
     def show_image(
         self, file_path: str, *, transition: str = "crossfade", effect: str = "gleam3",
         prompt: str = "", clear_animation: bool = True,

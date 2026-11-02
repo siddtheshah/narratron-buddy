@@ -172,7 +172,8 @@ class CanvasEvaluator:
         from game_engine.go_cel import Prepared, validate_prepared
 
         assert self.worker is not None
-        self.worker.load(self.program, package=self._package_key)
+        if self._package_key not in self.worker.loaded_packages:
+            self.worker.load(self.program, package=self._package_key)
         response = Prepared.model_validate(self.worker.request({
             "op": op, "state": state, "canvas": snapshot.model_dump(mode="json"),
             "steps": [step.model_dump(mode="json")] if step is not None else [], "actor": actor,

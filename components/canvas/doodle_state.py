@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+from components.canvas.locking import synchronized
+
 import base64
+from _thread import RLock
 from collections.abc import Callable
 import io
 import logging
@@ -73,8 +76,10 @@ class DoodleState:
         theater: Optional[Theater] = None,
         stamp_resolver: Optional[Callable[[DoodleAction], bytes | None]] = None,
         page_provider: Callable[[], DoodlePage | None] | None = None,
+        lock: RLock | None = None,
     ) -> None:
         self._persist = persist
+        self.canvas_lock = lock if lock is not None else RLock()
         self.theater = theater
         self.stamp_resolver = stamp_resolver
         self._page_provider = page_provider
@@ -105,19 +110,22 @@ class DoodleState:
     def enabled(self, enabled: bool) -> None:
         self.page["doodles_enabled"] = enabled
 
+    @synchronized
     def add(self, doodles: list[DoodleAction] | DoodleAction) -> None:
         if type(doodles) is dict:
             doodles = [doodles]
         if any(doodle.get("type") == "clear" for doodle in doodles):
-            self.doodles.clear()
+            self.doodles = [item for item in self.doodles if item.get("managed_by") == "game"]
         else:
             self.doodles.extend(doodles)
         self._persist()
 
+    @synchronized
     def set_enabled(self, enabled: bool) -> None:
         self.enabled = bool(enabled)
         self._persist()
 
+    @synchronized
     def snapshot(self) -> DoodleSnapshot:
         return {"type": "doodle_snapshot", "page_id": self.page_id, "enabled": self.enabled,
                 "batches": self.snapshot_batches(), "annotations": self.text_annotations(),
@@ -126,6 +134,7 @@ class DoodleState:
     def snapshot_batches(self) -> list[DoodleAction]:
         return doodle_snapshot_batches(self.doodles)
 
+    @synchronized
     def canonicalize_canvas_objects(self, page: Page, image_path: str | None = None) -> bool:
         """Persist image-plane dimensions and stable IDs on the original page."""
         from components.canvas.canvas_observation import canonicalize_actions
@@ -140,6 +149,7 @@ class DoodleState:
         self._persist()
         return True
 
+    @synchronized
     def text_annotations(self) -> list[DoodleAction]:
         """Return persisted text actions for websocket snapshot replay."""
         changed = False
@@ -151,6 +161,7 @@ class DoodleState:
             self._persist()
         return [dict(action) for action in self.doodles if action.get("type") == "text"]
 
+    @synchronized
     def stamp_annotations(self) -> list[DoodleAction]:
         """Return persisted stamp actions for websocket snapshot replay."""
         changed = False
@@ -162,6 +173,7 @@ class DoodleState:
             self._persist()
         return [dict(action) for action in self.doodles if action.get("type") == "stamp"]
 
+    @synchronized
     def save_text(self, action: dict[str, str | float]) -> None:
         """Replace a text annotation in place, preserving its drawing order."""
         for index, existing in enumerate(self.doodles):
@@ -172,7 +184,8 @@ class DoodleState:
         self.doodles.append(dict(action))
         self._persist()
 
-    def save_stamp(self, action: DoodleAction) -> None:
+    @synchronized
+    def save_stamp(self, action: DoodleAction) -> bool:
         """Replace or add a stamp on the canvas.
 
         Enforces that a user can only have one stamp of a kind on the canvas at a time.
@@ -186,6 +199,8 @@ class DoodleState:
         for index, existing in enumerate(self.doodles):
             if existing.get("type") == "stamp":
                 if stamp_uuid and existing.get("id") == stamp_uuid:
+                    if existing.get("managed_by") == "game" and existing.get("draggable") is False:
+                        return False
                     self.doodles.pop(index)
                     break
                 elif (
@@ -203,11 +218,15 @@ class DoodleState:
         )
         self.doodles.insert(first_non_stamp, dict(action))
         self._persist()
+        return True
 
+    @synchronized
     def select_stamp(self, stamp_annotation_id: str) -> bool:
         """Move a stamp to the front of stamps (under doodles) when selected."""
         for index, action in enumerate(self.doodles):
             if action.get("type") == "stamp" and action.get("id") == stamp_annotation_id:
+                if action.get("managed_by") == "game" and action.get("draggable") is False:
+                    return False
                 stamp = self.doodles.pop(index)
                 first_non_stamp = next(
                     (idx for idx, item in enumerate(self.doodles) if item.get("type") != "stamp"),
@@ -218,6 +237,7 @@ class DoodleState:
                 return True
         return False
 
+    @synchronized
     def remove_text(self, text_annotation_id: str) -> None:
         """Remove a text annotation by its unique annotation ID."""
         original_len = len(self.doodles)
@@ -229,17 +249,21 @@ class DoodleState:
         if len(self.doodles) != original_len:
             self._persist()
 
-    def remove_stamp(self, stamp_annotation_id: str) -> None:
+    @synchronized
+    def remove_stamp(self, stamp_annotation_id: str) -> bool:
         """Remove a stamp annotation by its unique annotation ID."""
         original_len = len(self.doodles)
         self.doodles = [
             action
             for action in self.doodles
-            if not (action.get("type") == "stamp" and action.get("id") == stamp_annotation_id)
+            if not (action.get("type") == "stamp" and action.get("id") == stamp_annotation_id and action.get("managed_by") != "game")
         ]
         if len(self.doodles) != original_len:
             self._persist()
+            return True
+        return False
 
+    @synchronized
     def remove_draw(self, stroke_id: str | None = None, ids: list[str] | None = None) -> None:
         """Remove drawing segments matching stroke_id or IDs."""
         id_set: set[str] = set(ids) if ids is not None else set()
@@ -279,6 +303,14 @@ class DoodleState:
             resolved = resolver(action)
             if resolved is not None:
                 return resolved
+
+        if action.get("managed_by") == "game" and action.get("asset_path"):
+            assert self.theater is not None
+            path = Path(str(action["asset_path"])).resolve()
+            root = (self.theater.output_dir() / "artifacts" / "canvas_assets").resolve()
+            if not path.is_relative_to(root):
+                raise ValueError("Game stamp media must be pinned in the theater catalog.")
+            return path.read_bytes()
 
         raw_bytes = action.get("image_bytes")
         if type(raw_bytes) is bytes:
@@ -542,6 +574,7 @@ class DoodleState:
             logger.warning("Failed to render viewer doodle snapshot: %s", exc)
             return None
 
+    @synchronized
     def load(self, data: dict[str, DoodleValue | list[DoodleAction]]) -> None:
         # Older saves stored just the active page's doodles at the top level.
         # Never replace explicit page state with that compatibility snapshot.
@@ -551,5 +584,6 @@ class DoodleState:
         if "doodles_enabled" not in self.page:
             self.enabled = bool(data.get("doodles_enabled", True))
 
+    @synchronized
     def serialize(self) -> dict[str, list[DoodleAction] | bool]:
         return {"doodles": self.doodles, "doodles_enabled": self.enabled}

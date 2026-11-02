@@ -1,13 +1,12 @@
 """Compare browser previews with the authoritative CEL runtime."""
 from pathlib import Path
-from unittest.mock import Mock
 
 from playwright.sync_api import Route, expect, sync_playwright
 import pytest
 
 from game_engine.game_runtime import GameStep
 from game_engine.game_state import GameAction, GameState
-from testing.game_fixtures import counter_definition, make_game
+from testing.game_fixtures import counter_definition, make_game, make_preview_checkers_game
 
 
 def assert_browser_matches_server(game: GameState, steps: list[GameStep]) -> None:
@@ -65,7 +64,7 @@ def test_browser_preview_matches_cel_state_and_view(tmp_path: Path, package: str
         game = make_game(tmp_path, definition)
         steps = [GameStep(name='add', arguments={'amount': 2}), GameStep(name='add', arguments={'amount': 3}), GameStep(name='clear')]
     else:
-        game = GameState(Path('adventures/example_adventure'), Mock(), Mock())
+        game = make_preview_checkers_game(tmp_path)
         steps = [GameStep(name='select', arguments={'index': 40}), GameStep(name='select', arguments={'index': 42}), GameStep(name='move', arguments={'source': 42, 'target': 35})]
     assert_browser_matches_server(game, steps)
 

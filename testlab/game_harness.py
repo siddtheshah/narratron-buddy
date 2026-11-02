@@ -6,6 +6,9 @@ from __future__ import annotations
 
 import argparse
 import json
+from collections.abc import Iterator
+from contextlib import contextmanager
+from threading import RLock
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from time import perf_counter
@@ -15,9 +18,26 @@ from pydantic import Field, JsonValue
 
 from game_engine.game_runtime import GameAction, GameModel, MAX_GAME_BYTES, validate_game_package
 from game_engine.game_state import GameState
+from game_engine.canvas_contract import CanvasSnapshot
 from providers.text_response_provider import TextResponseProvider, TextResponseRequest
 
 DEFAULT_GAME_MODEL = "gemini-3.5-flash-lite"
+
+
+class PanelOnlyCanvas:
+    """Expose an empty canvas in labs that have no shared page to write to."""
+
+    def __init__(self) -> None:
+        self.canvas_lock = RLock()
+
+    def canvas_observation(self) -> CanvasSnapshot:
+        return CanvasSnapshot.empty()
+
+    @contextmanager
+    def stage_canvas_effects(self, effects: list[JsonValue], snapshot: CanvasSnapshot) -> Iterator[CanvasSnapshot]:
+        if effects:
+            raise ValueError("This lab has no shared canvas. Use the adventure runner to test canvas output.")
+        yield snapshot
 
 
 class Move(GameModel):
@@ -204,7 +224,7 @@ def run_game_test(
                     target_svg = (directory / "game") / svg_file.relative_to(game_path.parent)
                     target_svg.parent.mkdir(parents=True, exist_ok=True)
                     target_svg.write_bytes(svg_file.read_bytes())
-            game = GameState(directory, no_persist, no_notify)
+            game = GameState(directory, no_persist, no_notify, canvas_host=PanelOnlyCanvas())
             if game.program is None:
                 raise ValueError(game.error)
             for step in scenario.steps:

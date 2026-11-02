@@ -64,9 +64,9 @@ protocol; they do not by themselves make game actions transactional.
   action evaluation. Both engines read one snapshot, expose `next_state` only to
   output evaluation, return commands, and render with `event: null`. Shortcuts
   resolve through the existing action contract and share the view budget.
-- Canvas-enabled packages do not export browser preview programs. The legacy
-  `GameState.act` path rejects canvas-enabled actions until a shared commit host
-  is connected, so it cannot accept a move while silently discarding commands.
+- Canvas-enabled packages do not export browser preview programs. `GameState.act`
+  requires a canvas host and commits stamp output and game state in one theater
+  document. Standalone runtimes still reject canvas actions without a host.
 - `components/canvas/canvas_assets.py`: exact content-addressed still-image
   revisions, scene and stamp handle resolution, and region catalogs pinned to
   an artwork digest. Replacing source art cannot change an already observed page.
@@ -89,7 +89,22 @@ protocol; they do not by themselves make game actions transactional.
 The stashed changes were restored after the engine package rename to
 `game_engine`; the newer doodle action/undo refactor remains in place.
 
-These modules do not yet make game output visible on the shared canvas.
+### First visible integration: checkers victory crown
+
+The example adventure opts into `put_stamp` and `remove_stamp`. A Red victory
+places `stamp:crown` on the current still-image page; reset removes that page's
+reward. The canvas coordinator stages native stamps, validates the resulting
+observation, and saves them atomically with game state. Game actions, native
+doodle writers, and visual changes share a reentrant lock. A failed save restores
+both game and output; the browser refreshes native stamps on canvas revisions.
+Game stamps use catalog-pinned media and stable placement keys. Fixed stamps
+are protected from user moves, deletion, and clearing.
+
+This is a limited panel-to-canvas stamp integration. The host explicitly rejects
+other output operations. Animation observations, canvas input events, request
+receipts for exact network retries, and complete package/reset lifecycle rules
+remain work for the full interface. Panel-only game labs expose an empty canvas
+and reject any actual output; use the adventure runner to test the crown.
 
 Verification on 2026-11-01 after restoring the stash and completing the geometry
 work: `uv run pytest` passed all 3,609 core tests. `go test ./...` in
