@@ -15,7 +15,6 @@ class TestHideCanvasTextUI(unittest.TestCase):
         self.assertIn('initHideCanvasTextHandler', content)
         self.assertIn('setCanvasTextHidden', content)
         self.assertIn('#hide-canvas-text-btn {', content)
-        self.assertIn('right: 4.8rem;', content)
         self.assertIn('#image-container.hide-canvas-text #scene-dialogue-overlay', content)
         self.assertIn('#image-container.hide-canvas-text #canvas-text-layer', content)
         self.assertIn('display: none !important;', content)
@@ -45,18 +44,6 @@ class TestHideCanvasTextUI(unittest.TestCase):
         # Canvas selection box pointerdown and drag listeners exclude hide canvas text button
         self.assertIn('event.target.closest("#hide-canvas-text-btn")', renderer_content)
 
-    def test_hide_text_button_role_positioning(self) -> None:
-        canvas_path = Path("templates/canvas.html")
-        content = canvas_path.read_text(encoding="utf-8")
-
-        self.assertIn("hideCanvasTextBtn.style.right = '4.8rem';", content)
-        self.assertIn("hideCanvasTextBtn.style.right = '1.5rem';", content)
-
-    def test_game_renderer_css_positioning(self) -> None:
-        css_path = Path("static/css/game-renderer.css")
-        self.assertTrue(css_path.exists(), "game-renderer.css should exist")
-        css_content = css_path.read_text(encoding="utf-8")
-        self.assertIn("left: 8.1rem;", css_content)
 
 
 if __name__ == "__main__":

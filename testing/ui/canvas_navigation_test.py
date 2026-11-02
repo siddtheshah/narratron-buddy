@@ -13,7 +13,7 @@ def test_navigation_keeps_rendered_content_aligned_and_resets_locally() -> None:
     root = Path(__file__).resolve().parents[2]
     template = (root / "templates/canvas.html").read_text(encoding="utf-8")
     controls = re.search(
-        r'(<div id="canvas-navigation-surface".*?</button>)', template, re.DOTALL
+        r'(<button id="canvas-navigation-toggle".*?</button>)', template, re.DOTALL
     )
     assert controls is not None
 
@@ -30,6 +30,7 @@ def test_navigation_keeps_rendered_content_aligned_and_resets_locally() -> None:
                 <canvas id="canvas-renderer"></canvas><img id="current-image" hidden>
                 <div id="canvas-stamp-layer"></div><canvas id="doodle-canvas"></canvas>
                 <div id="canvas-text-layer"></div>
+                <div id="canvas-navigation-surface" aria-hidden="true"></div>
             ''' + controls.group(1) + '''</div>
             <button class="color-btn" data-color="#ff0000">Red marker</button>
             <button class="color-btn" data-color="#00ff00">Green marker</button>

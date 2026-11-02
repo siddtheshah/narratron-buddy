@@ -16,7 +16,6 @@ class TestStickyNotesUI(unittest.TestCase):
         self.assertIn('initStickyNotesHandler', content)
         self.assertIn('updateCanvasStickyNotes', content)
         self.assertIn('bottom: 1.5rem', content)
-        self.assertIn('left: 4.8rem', content)
         self.assertIn('display: none;', content)
         self.assertIn('z-index: 24', content)
         self.assertIn('z-index: 30', content)

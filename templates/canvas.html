@@ -911,10 +911,28 @@
             box-shadow: 0 6px 20px rgba(168, 85, 247, 0.5);
         }
 
-        #prompt-toggle-btn {
+        /* Hidden controls take no space; visible controls pack against each corner. */
+        .canvas-corner-controls {
             position: absolute;
-            top: 1.5rem;
             left: 1.5rem;
+            right: 1.5rem;
+            display: flex;
+            gap: 8px;
+            pointer-events: none;
+        }
+
+        .canvas-corner-top-left { top: 1.5rem; align-items: flex-start; }
+        .canvas-corner-bottom-left { bottom: 1.5rem; align-items: flex-end; }
+        .canvas-corner-bottom-right { bottom: 1.5rem; align-items: flex-end; justify-content: flex-end; }
+
+        #image-container > .canvas-corner-controls > * {
+            position: relative;
+            inset: auto;
+            flex-shrink: 0;
+            pointer-events: auto;
+        }
+
+        #prompt-toggle-btn {
             z-index: 15;
             min-height: 44px;
             height: 44px;
@@ -1004,9 +1022,6 @@
 
         /* Suggestions Floating Button (Lower Left, Expands Upwards, Orator Only) */
         #suggestions-toggle-btn {
-            position: absolute;
-            bottom: 1.5rem;
-            left: 1.5rem;
             z-index: 25;
             min-height: 44px;
             height: 44px;
@@ -1142,9 +1157,6 @@
 
         /* Sticky Notes Floating Button (Lower Left, Next to Suggestions, Expands Upwards, Orator Only) */
         #sticky-notes-toggle-btn {
-            position: absolute;
-            bottom: 1.5rem;
-            left: 4.8rem;
             z-index: 24;
             min-height: 44px;
             height: 44px;
@@ -1374,9 +1386,6 @@
 
         /* Hide Canvas Text Floating Button (Lower Right) */
         #hide-canvas-text-btn {
-            position: absolute;
-            bottom: 1.5rem;
-            right: 4.8rem;
             z-index: 25;
             display: flex;
             align-items: center;
@@ -1442,9 +1451,6 @@
         }
 
         #canvas-pin-btn {
-            position: absolute;
-            top: 1.5rem;
-            left: calc(1.5rem + 104px);
             z-index: 25;
             display: none;
             align-items: center;
@@ -1490,9 +1496,6 @@
         }
 
         #latest-speech-replay-btn {
-            position: absolute;
-            right: 1.5rem;
-            bottom: 1.5rem;
             z-index: 25;
             display: inline-flex;
             align-items: center;
@@ -3183,13 +3186,7 @@
 
         <div id="image-container">
             <div id="canvas-navigation-surface" aria-hidden="true"></div>
-            <button id="canvas-navigation-toggle" type="button" aria-pressed="false"
-                aria-label="Zoom and pan" title="Enable zoom and pan">
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                    stroke-width="2" stroke-linecap="round" aria-hidden="true">
-                    <circle cx="10" cy="10" r="6" /><path d="m15 15 6 6M7 10h6M10 7v6" />
-                </svg>
-            </button>
+
             <canvas id="canvas-renderer"
                 style="position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1;"></canvas>
             <img id="current-image" src="" alt="Narratron Generation"
@@ -3299,96 +3296,102 @@
                     </svg>
                 </div>
             </div>
-            <button id="canvas-pin-btn" type="button" aria-pressed="false" title="Pin the current image and music">
-                <span id="canvas-pin-icon" aria-hidden="true">📌</span>
-            </button>
-            <button id="latest-speech-replay-btn" type="button" aria-label="Replay latest speech" title="No speech to replay" disabled>
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                    <path d="M1 4v6h6" />
-                    <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
-                    <polygon points="10 9 15 12 10 15 10 9" fill="currentColor" />
-                </svg>
-            </button>
-            <!-- Hide All Text On Canvas Floating Button (Lower Right) -->
-            <button id="hide-canvas-text-btn" type="button" aria-pressed="false"
-                title="Hide all text on canvas" aria-label="Hide all text on canvas">
-                <svg class="hide-text-icon-visible" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                    <polyline points="4 7 4 4 20 4 20 7" />
-                    <line x1="9" y1="20" x2="15" y2="20" />
-                    <line x1="12" y1="4" x2="12" y2="20" />
-                </svg>
-                <svg class="hide-text-icon-hidden" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display: none;">
-                    <polyline points="4 7 4 4 20 4 20 7" />
-                    <line x1="9" y1="20" x2="15" y2="20" />
-                    <line x1="12" y1="4" x2="12" y2="20" />
-                    <line x1="3" y1="3" x2="21" y2="21" stroke="#f87171" stroke-width="2.2" />
-                </svg>
-            </button>
-            <div id="canvas-bookmarks" hidden></div>
-            <div id="prompt-toggle-btn" title="View Prompt">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                    stroke-linecap="round" stroke-linejoin="round">
-                    <path
-                        d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3L12 3Z" />
-                </svg>
-                <span id="prompt-text"></span>
-            </div>
 
-            <!-- NamedElement Scene Suggestions Floating Button -->
-            <div id="suggestions-toggle-btn" title="Scene Suggestions (Hover to expand)">
-                <div class="suggestions-header-bar">
+            <div class="canvas-corner-controls canvas-corner-top-left">
+                <div id="prompt-toggle-btn" title="View Prompt">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
                         stroke-linecap="round" stroke-linejoin="round">
                         <path
-                            d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5" />
-                        <path d="M9 18h6" />
-                        <path d="M10 22h4" />
+                            d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3L12 3Z" />
                     </svg>
-                    <span class="suggestions-header-title">Scene Suggestions</span>
+                    <span id="prompt-text"></span>
                 </div>
-                <div class="suggestions-body">
-                    <div id="suggestions-loading" class="suggestions-spinner" style="display: none;">
-                        <span>✨ Generating suggestions...</span>
-                    </div>
-                    <div id="suggestions-list" style="display: flex; flex-direction: column; gap: 8px;">
-                        <div style="font-size: 0.78rem; color: #94a3b8;">Hover to generate scene suggestions.</div>
-                    </div>
-                </div>
+                <div id="canvas-bookmarks" hidden></div>
+                <button id="canvas-pin-btn" type="button" aria-pressed="false" title="Pin the current image and music">
+                    <span id="canvas-pin-icon" aria-hidden="true">📌</span>
+                </button>
             </div>
-
-            <button id="game-state-toggle-btn" type="button" hidden title="Open game"
-                aria-label="Toggle game" aria-controls="game-state-layer" aria-expanded="false">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                    <rect x="3" y="3" width="18" height="18" rx="3" />
-                    <path d="M9 3v18M15 3v18M3 9h18M3 15h18" />
-                </svg>
-            </button>
-
-            <!-- Story Planning Sticky Notes Floating Button -->
-            <div id="sticky-notes-toggle-btn" title="Story Sticky Notes (Hover to expand)">
-                <div class="sticky-notes-header-bar">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                        stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M16 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8Z" />
-                        <path d="M15 3v5h5" />
-                        <path d="M9 13h6" />
-                        <path d="M9 17h4" />
+            <div class="canvas-corner-controls canvas-corner-bottom-left">
+                <div id="suggestions-toggle-btn" title="Scene Suggestions (Hover to expand)">
+                    <div class="suggestions-header-bar">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                            stroke-linecap="round" stroke-linejoin="round">
+                            <path
+                                d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5" />
+                            <path d="M9 18h6" />
+                            <path d="M10 22h4" />
+                        </svg>
+                        <span class="suggestions-header-title">Scene Suggestions</span>
+                    </div>
+                    <div class="suggestions-body">
+                        <div id="suggestions-loading" class="suggestions-spinner" style="display: none;">
+                            <span>✨ Generating suggestions...</span>
+                        </div>
+                        <div id="suggestions-list" style="display: flex; flex-direction: column; gap: 8px;">
+                            <div style="font-size: 0.78rem; color: #94a3b8;">Hover to generate scene suggestions.</div>
+                        </div>
+                    </div>
+                </div>
+                <div id="sticky-notes-toggle-btn" title="Story Sticky Notes (Hover to expand)">
+                    <div class="sticky-notes-header-bar">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                            stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M16 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8Z" />
+                            <path d="M15 3v5h5" />
+                            <path d="M9 13h6" />
+                            <path d="M9 17h4" />
+                        </svg>
+                        <span class="sticky-notes-header-title">Sticky Notes</span>
+                        <span id="sticky-notes-count-badge" class="sticky-notes-count-badge" style="display: none;">0</span>
+                    </div>
+                    <div class="sticky-notes-body">
+                        <div id="sticky-notes-loading" class="sticky-notes-spinner" style="display: none;">
+                            <span>📝 Loading sticky notes...</span>
+                        </div>
+                        <div id="sticky-notes-list" style="display: flex; flex-direction: column; gap: 8px;">
+                            <div style="font-size: 0.78rem; color: #94a3b8;">No sticky notes active for this scene.</div>
+                        </div>
+                    </div>
+                </div>
+                <button id="game-state-toggle-btn" type="button" hidden title="Open game"
+                    aria-label="Toggle game" aria-controls="game-state-layer" aria-expanded="false">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                        stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <rect x="3" y="3" width="18" height="18" rx="3" />
+                        <path d="M9 3v18M15 3v18M3 9h18M3 15h18" />
                     </svg>
-                    <span class="sticky-notes-header-title">Sticky Notes</span>
-                    <span id="sticky-notes-count-badge" class="sticky-notes-count-badge" style="display: none;">0</span>
-                </div>
-                <div class="sticky-notes-body">
-                    <div id="sticky-notes-loading" class="sticky-notes-spinner" style="display: none;">
-                        <span>📝 Loading sticky notes...</span>
-                    </div>
-                    <div id="sticky-notes-list" style="display: flex; flex-direction: column; gap: 8px;">
-                        <div style="font-size: 0.78rem; color: #94a3b8;">No sticky notes active for this scene.</div>
-                    </div>
-                </div>
+                </button>
             </div>
-
-
+            <div class="canvas-corner-controls canvas-corner-bottom-right">
+                <button id="canvas-navigation-toggle" type="button" aria-pressed="false"
+                    aria-label="Zoom and pan" title="Enable zoom and pan">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                        stroke-width="2" stroke-linecap="round" aria-hidden="true">
+                        <circle cx="10" cy="10" r="6" /><path d="m15 15 6 6M7 10h6M10 7v6" />
+                    </svg>
+                </button>
+                <button id="hide-canvas-text-btn" type="button" aria-pressed="false"
+                    title="Hide all text on canvas" aria-label="Hide all text on canvas">
+                    <svg class="hide-text-icon-visible" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <polyline points="4 7 4 4 20 4 20 7" />
+                        <line x1="9" y1="20" x2="15" y2="20" />
+                        <line x1="12" y1="4" x2="12" y2="20" />
+                    </svg>
+                    <svg class="hide-text-icon-hidden" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display: none;">
+                        <polyline points="4 7 4 4 20 4 20 7" />
+                        <line x1="9" y1="20" x2="15" y2="20" />
+                        <line x1="12" y1="4" x2="12" y2="20" />
+                        <line x1="3" y1="3" x2="21" y2="21" stroke="#f87171" stroke-width="2.2" />
+                    </svg>
+                </button>
+                <button id="latest-speech-replay-btn" type="button" aria-label="Replay latest speech" title="No speech to replay" disabled>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M1 4v6h6" />
+                        <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
+                        <polygon points="10 9 15 12 10 15 10 9" fill="currentColor" />
+                    </svg>
+                </button>
+            </div>
 
             <!-- Image History Paging Controls -->
             <div id="history-paging-controls">
@@ -9202,7 +9205,6 @@
         const backBtn = document.getElementById('back-btn');
         const suggestionsToggleBtn = document.getElementById('suggestions-toggle-btn');
         const stickyNotesToggleBtn = document.getElementById('sticky-notes-toggle-btn');
-        const hideCanvasTextBtn = document.getElementById('hide-canvas-text-btn');
         const gameStateToggleBtn = document.getElementById('game-state-toggle-btn');
 
         if (hideSuggestionsBtn) {
@@ -9239,10 +9241,6 @@
                 if (doodlesToggleBtn) doodlesToggleBtn.style.display = 'inline-flex';
                 if (suggestionsToggleBtn) suggestionsToggleBtn.style.display = 'flex';
                 if (stickyNotesToggleBtn) stickyNotesToggleBtn.style.display = 'flex';
-                if (hideCanvasTextBtn) {
-                    hideCanvasTextBtn.style.left = '';
-                    hideCanvasTextBtn.style.right = '4.8rem';
-                }
                 if (collabSection) collabSection.style.display = 'flex';
                 if (hideSuggestionsBtn) hideSuggestionsBtn.style.display = 'inline-flex';
 
@@ -9272,10 +9270,6 @@
                 if (doodlesToggleBtn) doodlesToggleBtn.style.display = 'none';
                 if (suggestionsToggleBtn) suggestionsToggleBtn.style.display = 'none';
                 if (stickyNotesToggleBtn) stickyNotesToggleBtn.style.display = 'none';
-                if (hideCanvasTextBtn) {
-                    hideCanvasTextBtn.style.left = '';
-                    hideCanvasTextBtn.style.right = '1.5rem';
-                }
                 if (collabSection) collabSection.style.display = 'none';
                 if (hideSuggestionsBtn) hideSuggestionsBtn.style.display = 'none';
 
