@@ -708,6 +708,106 @@ class TestLiveAgentSessionManager(unittest.TestCase):
     @patch("services.live_agent_manager.create_tool_bundle_for_session")
     @patch("services.live_agent_manager.LiveAgentSession.start_background_tasks")
     @patch("services.live_agent_manager.create_agent")
+    def test_creates_session_with_chirp_scene_speech_provider(
+        self, mock_create_agent, mock_tasks, mock_create_bundle
+    ):
+        mock_agent = MagicMock()
+        mock_agent.tools = []
+        mock_create_agent.return_value = mock_agent
+
+        canvas_manager = MagicMock()
+        canvas_manager.story = MagicMock()
+        canvas_state_service = MagicMock()
+        canvas_state_service.get.return_value = canvas_manager
+        configured_provider = MagicMock()
+
+        config = {
+            "story_planning": {
+                "adventure_mode": True,
+                "character_voicing": True,
+            },
+            "speech": {
+                "provider": "google-chirp-3-hd",
+            },
+        }
+
+        with (
+            patch("services.live_agent_manager.get_theater_config", return_value=config),
+            patch(
+                "services.live_agent_manager.get_speech_provider",
+                return_value=configured_provider,
+            ) as get_provider,
+        ):
+            manager = LiveAgentSessionManager(
+                theater_manager=TheaterManager(),
+                database_manager=MagicMock(),
+            )
+            manager.get_or_create_session(
+                theater_id="chirp-voicing",
+                canvas_state_service=canvas_state_service,
+            )
+
+        get_provider.assert_called_once_with("google-chirp-3-hd", config["speech"])
+        canvas_manager.story.enable_scene_speech.assert_called_once_with(
+            configured_provider
+        )
+
+    @patch("services.live_agent_manager.create_tool_bundle_for_session")
+    @patch("services.live_agent_manager.LiveAgentSession.start_background_tasks")
+    @patch("services.live_agent_manager.create_agent")
+    def test_creates_session_with_separate_character_and_narration_speech_providers(
+        self, mock_create_agent, mock_tasks, mock_create_bundle
+    ):
+        mock_agent = MagicMock()
+        mock_agent.tools = []
+        mock_create_agent.return_value = mock_agent
+
+        canvas_manager = MagicMock()
+        canvas_manager.story = MagicMock()
+        canvas_state_service = MagicMock()
+        canvas_state_service.get.return_value = canvas_manager
+        gemini_provider = MagicMock(id="gemini-flash-tts")
+        chirp_provider = MagicMock(id="google-chirp-3-hd")
+
+        def mock_get_provider(provider_id, options):
+            if provider_id == "google-chirp-3-hd":
+                return chirp_provider
+            return gemini_provider
+
+        config = {
+            "story_planning": {
+                "adventure_mode": True,
+                "character_voicing": True,
+                "narration_voicing": True,
+            },
+            "speech": {
+                "character_provider": "gemini-flash-tts",
+                "narration_provider": "google-chirp-3-hd",
+            },
+        }
+
+        with (
+            patch("services.live_agent_manager.get_theater_config", return_value=config),
+            patch("services.live_agent_manager.get_speech_provider", side_effect=mock_get_provider),
+        ):
+            manager = LiveAgentSessionManager(
+                theater_manager=TheaterManager(),
+                database_manager=MagicMock(),
+            )
+            manager.get_or_create_session(
+                theater_id="separate-providers",
+                canvas_state_service=canvas_state_service,
+            )
+
+        canvas_manager.story.enable_scene_speech.assert_called_once_with(
+            gemini_provider,
+            narration_voicing=True,
+            narration_provider=chirp_provider,
+        )
+
+    @patch("services.live_agent_manager.create_tool_bundle_for_session")
+    @patch("services.live_agent_manager.LiveAgentSession.start_background_tasks")
+    @patch("services.live_agent_manager.create_agent")
     def test_stop_session(self, mock_create_agent, mock_tasks, mock_create_bundle):
         mock_agent = MagicMock()
         mock_agent.tools = []
@@ -1750,6 +1850,19 @@ class TestLiveAgentSessionManager(unittest.TestCase):
 
         self.assertFalse(session.character_voicing_enabled)
         self.assertEqual(mock_db.record_user_usage.call_args.kwargs["character_voiced_turns"], 0)
+
+        # Narration voicing enabled debits character_voiced_turns
+        mock_db.reset_mock()
+        session_narration = LiveAgentSession(
+            theater_id="test_narration_usage",
+            runner=mock_runner,
+            tool_bundle=MagicMock(),
+            database_manager=mock_db,
+            config={"story_planning": {"adventure_mode": True, "character_voicing": False, "narration_voicing": True}},
+        )
+        session_narration.record_story_plan_completed()
+        self.assertTrue(session_narration.narration_voicing_enabled)
+        self.assertEqual(mock_db.record_user_usage.call_args.kwargs["character_voiced_turns"], 1)
 
     def test_inject_tool_definitions(self) -> None:
         import asyncio

@@ -607,6 +607,8 @@ story_planning:
               <dt><code>character_voicing</code> <span class="type">boolean</span></dt>
               <dd>With Adventure Mode, synthesizes generated NPC dialogue with stable assigned voices. It is ignored
                 unless <code>adventure_mode</code> is true and contributes to voice usage.</dd>
+              <dt><code>narration_voicing</code> <span class="type">boolean</span></dt>
+              <dd>With Adventure Mode, synthesizes scene narration alongside character dialogue with a stable narrator voice. Default: <code>false</code>.</dd>
               <dt><code>text_beautification</code> <span class="type">boolean</span></dt>
               <dd>In Adventure Mode, applies expressive visual text effects (vibrating, glitch, fonts) to high-energy
                 narration and dialogue spans using TextBeautifier. Default: <code>true</code>.</dd>
@@ -678,6 +680,19 @@ story_planning:
                 <code>accent=Scottish</code>) are automatically duplicated into structured delivery direction and style
                 instructions for the speech synthesizer so subtle accents are clearly pronounced throughout delivery.
                 Default: <code>true</code>.
+              </dd>
+              <dt><code>narration_voicing</code> <span class="type">boolean</span></dt>
+              <dd>When enabled, synthesizes scene narration using the speech provider alongside character lines.
+                Default: <code>false</code>.
+              </dd>
+              <dt><code>character_provider</code> <span class="type">string or null</span></dt>
+              <dd>TTS provider ID used specifically for character dialogue (e.g. <code>gemini-flash-tts</code>).
+                When omitted, falls back to <code>provider</code>.
+              </dd>
+              <dt><code>narration_provider</code> <span class="type">string or null</span></dt>
+              <dd>TTS provider ID used specifically for scene narration (e.g. <code>google-chirp-3-hd</code>).
+                Allows using Google Cloud Chirp 3: HD for narration while reserving Gemini TTS for character voicing.
+                When omitted, falls back to <code>provider</code>.
               </dd>
             </dl>
             <h3>Example: character speech delivery</h3>

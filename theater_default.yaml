@@ -89,6 +89,8 @@ story_planning:
     # When Adventure Mode NPC dialogue is enabled, synthesize each spoken line
     # with a stable, automatically assigned application-level speech voice.
     character_voicing: false
+    # When enabled, synthesize scene narration alongside character dialogue lines.
+    narration_voicing: false
     # In Adventure Mode, apply dynamic visual text effects (vibrating,
     # glitch, flame, fonts) to high-energy spans using TextBeautifier.
     text_beautification: true
@@ -125,3 +127,9 @@ speech:
     # When true, duplicates accent voice tags into delivery direction so accents
     # remain clearly pronounced without altering the transcript text.
     accent_augmentation: true
+    # When true, synthesizes scene narration using the speech provider.
+    narration_voicing: false
+    # Speech provider for character dialogue (defaults to provider, e.g. "gemini-flash-tts").
+    character_provider: null
+    # Speech provider for scene narration (e.g. "google-chirp-3-hd").
+    narration_provider: null

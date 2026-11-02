@@ -1,5 +1,5 @@
 /** Shared scene captions, dialogue effects, and generation-aware speech playback. */
-export function createCanvasScene({ narrationPane, resolveUrl = url => url, audioEnabled = () => true }) {
+export function createCanvasScene({ narrationPane, resolveUrl = url => url, audioEnabled = () => true, onSpeechStateChange = () => {} }) {
     const sceneDialogueOverlay = narrationPane.element;
     let sceneDialogueSignature = '';
     let sceneDialogueRenderId = 0;
@@ -9,8 +9,27 @@ export function createCanvasScene({ narrationPane, resolveUrl = url => url, audi
     let sceneSpeechPlaying = false;
     let currentSceneAudio = null;
     let committedSceneSpeechGeneration = null;
+    let silencedSceneSpeechGeneration = null;
+    let latestSpeechClips = [];
+    let latestSpeechGeneration = null;
+
+    function notifySpeechState() {
+        if (typeof onSpeechStateChange === 'function') {
+            try {
+                onSpeechStateChange({
+                    playing: Boolean(sceneSpeechPlaying),
+                    hasLatestSpeech: latestSpeechClips.length > 0,
+                });
+            } catch (err) {
+                console.warn('[canvas-scene] onSpeechStateChange error:', err);
+            }
+        }
+    }
 
     function stopSceneSpeech() {
+        if (committedSceneSpeechGeneration !== null) {
+            silencedSceneSpeechGeneration = committedSceneSpeechGeneration;
+        }
         sceneSpeechQueue.length = 0;
         sceneSpeechPlaying = false;
         if (currentSceneAudio) {
@@ -23,6 +42,32 @@ export function createCanvasScene({ narrationPane, resolveUrl = url => url, audi
                 audio.src = '';
             } catch (_) { }
         }
+        notifySpeechState();
+    }
+
+    function replayLatestSpeech() {
+        if (!latestSpeechClips.length || !audioEnabled()) return;
+        silencedSceneSpeechGeneration = null;
+        if (currentSceneAudio) {
+            const audio = currentSceneAudio;
+            currentSceneAudio = null;
+            audio.onended = null;
+            audio.onerror = null;
+            try {
+                audio.pause();
+                audio.src = '';
+            } catch (_) { }
+        }
+        sceneSpeechQueue.length = 0;
+        sceneSpeechPlaying = false;
+        const targetGen = committedSceneSpeechGeneration !== null
+            ? committedSceneSpeechGeneration
+            : (latestSpeechGeneration !== null ? latestSpeechGeneration : 0);
+        for (const url of latestSpeechClips) {
+            sceneSpeechQueue.push({ audioUrl: url, speechGeneration: targetGen });
+        }
+        playQueuedSceneSpeech();
+        notifySpeechState();
     }
 
     function playQueuedSceneSpeech() {
@@ -31,6 +76,7 @@ export function createCanvasScene({ narrationPane, resolveUrl = url => url, audi
             if (!audioEnabled()) {
                 sceneSpeechPlaying = false;
                 currentSceneAudio = null;
+                notifySpeechState();
                 return;
             }
             // Keep audio from a future generation queued: synthesis can
@@ -47,10 +93,12 @@ export function createCanvasScene({ narrationPane, resolveUrl = url => url, audi
             if (nextIndex < 0) {
                 sceneSpeechPlaying = false;
                 currentSceneAudio = null;
+                notifySpeechState();
                 return;
             }
             const [next] = sceneSpeechQueue.splice(nextIndex, 1);
             sceneSpeechPlaying = true;
+            notifySpeechState();
             const audio = new Audio(next.audioUrl);
             currentSceneAudio = audio;
             audio.onended = audio.onerror = () => {
@@ -70,9 +118,22 @@ export function createCanvasScene({ narrationPane, resolveUrl = url => url, audi
     }
 
     function enqueueSceneSpeech(audioUrl, speechGeneration) {
-        if (!audioEnabled() || !audioUrl || !Number.isInteger(speechGeneration)) return;
+        if (!audioUrl || !Number.isInteger(speechGeneration)) return;
+        const resolved = resolveUrl(audioUrl);
+        if (latestSpeechGeneration === null || speechGeneration > latestSpeechGeneration) {
+            latestSpeechGeneration = speechGeneration;
+            latestSpeechClips = [resolved];
+        } else if (speechGeneration === latestSpeechGeneration) {
+            if (!latestSpeechClips.includes(resolved)) {
+                latestSpeechClips.push(resolved);
+            }
+        }
+        notifySpeechState();
+
+        if (!audioEnabled()) return;
         if (committedSceneSpeechGeneration !== null && speechGeneration < committedSceneSpeechGeneration) return;
-        sceneSpeechQueue.push({ audioUrl: resolveUrl(audioUrl), speechGeneration });
+        if (silencedSceneSpeechGeneration !== null && speechGeneration <= silencedSceneSpeechGeneration) return;
+        sceneSpeechQueue.push({ audioUrl: resolved, speechGeneration });
         playQueuedSceneSpeech();
     }
 
@@ -85,12 +146,17 @@ export function createCanvasScene({ narrationPane, resolveUrl = url => url, audi
         if (committedSceneSpeechGeneration !== null && speechGeneration < committedSceneSpeechGeneration) return;
 
         committedSceneSpeechGeneration = speechGeneration;
+        if (silencedSceneSpeechGeneration !== null && speechGeneration > silencedSceneSpeechGeneration) {
+            silencedSceneSpeechGeneration = null;
+        }
         // Interrupt older speech, retaining audio for this scene and any
         // future scene whose synthesis finished before its state arrived.
         const pendingAudio = sceneSpeechQueue.filter(item => item.speechGeneration >= speechGeneration);
         stopSceneSpeech();
-        sceneSpeechQueue.push(...pendingAudio);
-        playQueuedSceneSpeech();
+        if (silencedSceneSpeechGeneration !== speechGeneration) {
+            sceneSpeechQueue.push(...pendingAudio);
+            playQueuedSceneSpeech();
+        }
     }
 
     function getDialogueSpeakerColor(speaker) {
@@ -212,5 +278,12 @@ export function createCanvasScene({ narrationPane, resolveUrl = url => url, audi
         })();
     }
 
-    return { updateSceneDialogue, enqueueSceneSpeech, stopSceneSpeech };
+    return {
+        updateSceneDialogue,
+        enqueueSceneSpeech,
+        stopSceneSpeech,
+        replayLatestSpeech,
+        hasLatestSpeech: () => latestSpeechClips.length > 0,
+        isSpeechPlaying: () => Boolean(sceneSpeechPlaying),
+    };
 }

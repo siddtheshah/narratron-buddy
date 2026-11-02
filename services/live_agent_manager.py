@@ -130,11 +130,17 @@ class LiveAgentSession:
         # acknowledged, so a timeout can retry the exact same debit safely.
         self.story_plans_count: int = 0
         self.unbilled_story_plans: int = 0
-        story_planning_config = self.config.get("story_planning", {})
+        story_planning_config = self.config.get("story_planning")
+        story_plan_map = story_planning_config if type(story_planning_config) is dict else {}
+        speech_config = self.config.get("speech")
+        speech_map = speech_config if type(speech_config) is dict else {}
         self.character_voicing_enabled = bool(
-            isinstance(story_planning_config, dict)
-            and story_planning_config.get("adventure_mode", False)
-            and story_planning_config.get("character_voicing", False)
+            (story_plan_map.get("adventure_mode", False) and story_plan_map.get("character_voicing", False))
+            or speech_map.get("character_voicing", False)
+        )
+        self.narration_voicing_enabled = bool(
+            (story_plan_map.get("adventure_mode", False) and story_plan_map.get("narration_voicing", False))
+            or speech_map.get("narration_voicing", False)
         )
         self.character_voiced_turns_count: int = 0
         self.unbilled_character_voiced_turns: int = 0
@@ -1226,7 +1232,7 @@ class LiveAgentSession:
             self.interactive_canvas_tools.record_story_plan_completed()
         self.story_plans_count += 1
         self.unbilled_story_plans += 1
-        if self.character_voicing_enabled:
+        if self.character_voicing_enabled or self.narration_voicing_enabled:
             self.character_voiced_turns_count += 1
             self.unbilled_character_voiced_turns += 1
         logger.info(
@@ -1512,28 +1518,68 @@ class LiveAgentSessionManager:
 
         theater_config = get_theater_config(theater_id, theater_manager=self.theater_manager)
         story_planning_config = theater_config.get("story_planning", {})
-        if (
-            canvas_mgr
-            and isinstance(story_planning_config, dict)
-            and bool(story_planning_config.get("adventure_mode", False))
-            and bool(story_planning_config.get("character_voicing", False))
-        ):
-            speech_config = theater_config.get("speech", {})
-            if not isinstance(speech_config, dict):
-                speech_config = {}
-            provider_id = str(speech_config.get("provider") or "gemini-flash-tts")
-            accent_aug = speech_config.get("accent_augmentation")
+        story_plan_dict = (
+            story_planning_config
+            if type(story_planning_config) is dict
+            else {}
+        )
+        speech_conf = theater_config.get("speech")
+        speech_dict = (
+            speech_conf
+            if type(speech_conf) is dict
+            else {}
+        )
+
+        char_voicing = bool(
+            (story_plan_dict.get("adventure_mode", False) and story_plan_dict.get("character_voicing", False))
+            or speech_dict.get("character_voicing", False)
+        )
+        narr_voicing = bool(
+            (story_plan_dict.get("adventure_mode", False) and story_plan_dict.get("narration_voicing", False))
+            or speech_dict.get("narration_voicing", False)
+        )
+
+        if canvas_mgr and (char_voicing or narr_voicing):
+            char_provider_id = str(
+                speech_dict.get("character_provider")
+                or speech_dict.get("provider")
+                or "gemini-flash-tts"
+            )
+            narr_provider_id = str(
+                speech_dict.get("narration_provider")
+                or speech_dict.get("character_provider")
+                or speech_dict.get("provider")
+                or "google-chirp-3-hd"
+            )
+
+            primary_provider = get_speech_provider(char_provider_id, speech_dict)
+            narration_provider = (
+                get_speech_provider(narr_provider_id, speech_dict)
+                if narr_provider_id != char_provider_id
+                else primary_provider
+            )
+
+            accent_aug = speech_dict.get("accent_augmentation")
             if accent_aug is None and "accent_augmentation" in theater_config:
                 accent_aug = theater_config.get("accent_augmentation")
+
+            speech_kwargs = {}
             if accent_aug is not None:
+                speech_kwargs["accent_augmentation"] = bool(accent_aug)
+            if not char_voicing:
+                speech_kwargs["character_voicing"] = False
+            if narr_voicing:
+                speech_kwargs["narration_voicing"] = True
+            if narration_provider is not primary_provider:
+                speech_kwargs["narration_provider"] = narration_provider
+
+            if speech_kwargs:
                 canvas_mgr.story.enable_scene_speech(
-                    get_speech_provider(provider_id, speech_config),
-                    accent_augmentation=bool(accent_aug),
+                    primary_provider,
+                    **speech_kwargs,
                 )
             else:
-                canvas_mgr.story.enable_scene_speech(
-                    get_speech_provider(provider_id, speech_config)
-                )
+                canvas_mgr.story.enable_scene_speech(primary_provider)
         theater = self.theater_manager.theater(theater_id)
         if canvas_mgr is None:
             canvas_mgr = CanvasStateManager(theater)

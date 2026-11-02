@@ -406,7 +406,7 @@ def get_speech_provider(provider_id: str, options: dict[str, Any] | None = None)
             output_format=str(options.get("output_format") or "mp3"),
             sample_rate_hz=int(options.get("sample_rate_hz") or 24_000),
         )
-    if provider_id == "google-chirp-3-hd":
+    if provider_id in ("google-chirp-3-hd", "chirp3", "chirp", "google-chirp"):
         return GoogleChirpSpeechProvider(model=str(options.get("model") or "en-US-Chirp3-HD-Charon"))
     spec = next((item for item in _SPEECH_SPECS if item["id"] == provider_id), None)
     if spec:

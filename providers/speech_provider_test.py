@@ -148,12 +148,13 @@ def test_google_chirp_speech_uses_chirp_voice_and_mp3():
     class Client:
         def synthesize_speech(self, **kwargs):
             self.kwargs = kwargs
-            return type("Response", (), {"audio_content": b"mp3"})()
+            return type("Response", (), {"audio_content": b"mp3", "request_id": "chirp-123"})()
 
     client = Client()
-    provider = GoogleChirpSpeechProvider(client=client, texttospeech_module=Types)
+    provider = GoogleChirpSpeechProvider(model="en-US-Chirp3-HD-Charon", client=client, texttospeech_module=Types)
     result = provider.synthesize(SpeechSynthesisRequest(text="Hello.", speed=1.25))
     assert result.audio_bytes == b"mp3"
+    assert result.request_id == "chirp-123"
     assert client.kwargs["voice"].kwargs["name"] == "en-US-Chirp3-HD-Charon"
     assert client.kwargs["audio_config"].kwargs["speaking_rate"] == 1.25
 
@@ -318,6 +319,10 @@ def test_google_chirp_speech_voice_selection():
 
     nb_voice = provider.select_voice(["nonbinary"])
     assert nb_voice in CHIRP_VOICES
+
+    assert provider.select_voice({"name": "Narrator"}) == "en-US-Chirp3-HD-Laomedeia"
+    assert provider.select_voice({"voice": "Laomedeia"}) == "en-US-Chirp3-HD-Laomedeia"
+    assert provider.select_voice(["voice=Laomedeia"]) == "en-US-Chirp3-HD-Laomedeia"
 
 
 def test_speech_provider_synthesize_uses_selected_voice():
