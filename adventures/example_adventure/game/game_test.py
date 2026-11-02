@@ -123,13 +123,14 @@ def test_narratron_can_concede_and_award_the_victory_crown(
     canvas = make_example_canvas(tmp_path)
     move(canvas, 40, 33)
     game = canvas.game
-    assert game is not None
+    assert game is not None and game.program is not None
     assert "narratron_concede" in game.story_snapshot("narratron")["actions"]
     board = list(game.state["board"])
     before = canvas.canvas_observation()
     game.act(GameAction(name="narratron_concede", revision=game.revision), actor="narratron")
     assert game.state["winner"] == 1 and game.state["draw"] is False
-    assert game.state["board"] == board
+    assert game.state["board"] == game.program.definition.initial["board"]
+    assert game.state["board"] != board
     assert game.state["forced"] == game.state["selected"] == -1
     assert game.state["receipt"] == "Ivory concedes · Red wins"
     assert game.revision == 2

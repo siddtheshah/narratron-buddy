@@ -409,7 +409,7 @@ transitions:
       additionalProperties: false
     guard: state.turn == -1 && state.winner == 0 && !state.draw
     result: |-
-      {"board": state.board, "turn": state.turn, "forced": -1, "selected": -1,
+      {"board": initial.board, "turn": state.turn, "forced": -1, "selected": -1,
       "winner": 1, "draw": false, "quiet": state.quiet,
       "receipt": "Ivory concedes · Red wins"}
     canvas_effects: |-

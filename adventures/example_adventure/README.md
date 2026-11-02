@@ -64,8 +64,8 @@ Canvas-enabled moves commit on the server as soon as they are selected.
 Keep a still-image page visible and the canvas unpinned for the stamp test.
 
 On Ivory's turn, you can ask Narratron to concede. Its `narratron_concede` action
-ends the game with Red winning and awards the same crown without changing the
-piece positions. Concession is unavailable after a win or draw.
+ends the game with Red winning, resets the board, and awards the same crown.
+Concession is unavailable after a win or draw.
 
 ### 1. Automated Smoke Test
 ```powershell
