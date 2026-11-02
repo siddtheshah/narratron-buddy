@@ -3,7 +3,7 @@ from pathlib import Path
 
 
 class TestCanvasSpeechReplayUI(unittest.TestCase):
-    def test_canvas_pin_shifted_to_upper_left_corner(self) -> None:
+    def test_canvas_pin_follows_description_and_bookmark_in_upper_left(self) -> None:
         canvas_path = Path("templates/canvas.html")
         self.assertTrue(canvas_path.exists(), "canvas.html should exist")
         content = canvas_path.read_text(encoding="utf-8")
@@ -13,7 +13,7 @@ class TestCanvasSpeechReplayUI(unittest.TestCase):
             content.find("#canvas-pin-btn {") : content.find("#canvas-pin-btn {") + 600
         ]
         self.assertIn("top: 1.5rem;", pin_css_snippet)
-        self.assertIn("left: 1.5rem;", pin_css_snippet)
+        self.assertIn("left: calc(1.5rem + 104px);", pin_css_snippet)
 
     def test_canvas_contains_latest_speech_replay_button_in_lower_right(self) -> None:
         canvas_path = Path("templates/canvas.html")
