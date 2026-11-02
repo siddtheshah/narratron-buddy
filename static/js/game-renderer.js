@@ -1,6 +1,6 @@
 // Generic declarative views with optional data-only local exploration.
 import { createLocalGame } from './game-runtime.js?v=1';
-import { createPanelFrame } from './game-panel.js?v=1';
+import { createPanelFrame } from './game-panel.js?v=2';
 const TAGS = {
     column: 'div', row: 'div', grid: 'div', tabs: 'div', text: 'p', button: 'button',
     svg: 'svg', g: 'g', path: 'path', rect: 'rect', circle: 'circle', ellipse: 'ellipse',

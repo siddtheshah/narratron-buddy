@@ -58,17 +58,33 @@ such as expanded `<details>` is reset.
 
 ## HTML restrictions
 
+Use standard image elements to display the game's SVG assets:
+
+```html
+<img src="pieces/token.svg" alt="Player token" width="48" height="48">
+```
+
+Paths resolve within `game/`; the optional `game/` prefix is also accepted.
+Nested folders and repeated images are supported. Assets use the same SVG
+validation as structured views and are embedded as SVG data images, without
+network requests. Missing assets, traversal, absolute paths, external URLs,
+authored data URLs, `srcset`, and non-SVG images are rejected. Image elements
+support `alt`, `width`, `height`, and the usual panel attributes and bindings.
+Inline SVG markup remains unsupported. The expanded panel, including embedded
+images, is limited to 1 MiB. Changes to referenced SVGs change package identity.
+
 Panels are passive HTML with inline CSS. Standard text, section, list, table,
 button, details, progress, and meter elements are supported. The loader rejects
-scripts, event handlers, links, forms, images, SVG, embeds, resource attributes,
+scripts, event handlers, links, forms, inline SVG, embeds, other resource attributes,
 and authored metadata. The file must be UTF-8, at most 128 KiB, and contain at
 most 2,048 elements. A declared panel requires its HTML file at runtime and on
 theater import. ZIP and folder imports preserve `game/panel.html`.
 
 The browser renders the validated HTML in a sandboxed iframe with an opaque
-origin. Its content security policy blocks every resource type, connections,
-base URL changes, and form submissions. Inline CSS is allowed; CSS imports,
-fonts, and background images cannot load resources. Only a host-generated,
+origin. Its content security policy permits data images while blocking other
+resource types, network connections, base URL changes, and form submissions.
+Inline CSS is allowed; CSS imports, fonts, and remote background images cannot
+load resources. Only a host-generated,
 nonce-authorized binding/action bridge executes JavaScript. Authored JavaScript
 is unsupported. Panel parameters are JSON data and are never interpolated as
 markup. Changes to panel HTML change the package identity, invalidating saved

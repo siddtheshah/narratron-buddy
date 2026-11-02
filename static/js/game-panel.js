@@ -32,7 +32,7 @@ export function createPanelFrame(html, parameters, actions) {
             });
         }
     `;
-    const policy = `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'`;
+    const policy = `default-src 'none'; img-src data:; script-src 'nonce-${nonce}'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'`;
     frame.srcdoc = `<!doctype html><meta http-equiv="Content-Security-Policy" content="${policy}"><meta charset="utf-8">${html}<script nonce="${nonce}">${bridge}</script>`;
     return frame;
 }

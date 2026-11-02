@@ -761,7 +761,7 @@ def validate_game_package(
         definition = GameDefinition.model_validate_json(normalized)
         from game_engine.panel_html import load_panel_html
 
-        panel_html = load_panel_html(game_dir) if definition.panel is not None and game_dir is not None else None
+        panel_html = load_panel_html(game_dir, resolved_svgs) if definition.panel is not None and game_dir is not None else None
         program = GameProgram(definition, svg_assets=resolved_svgs, panel_html=panel_html)
 
         def prepare_initial(budget: Budget) -> None:

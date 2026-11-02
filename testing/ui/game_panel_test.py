@@ -11,6 +11,11 @@ from testing.game_fixtures import panel_definition
 def test_html_panel_binding_actions_permissions_and_network_isolation(tmp_path: Path) -> None:
     game_dir = tmp_path / "game"
     game_dir.mkdir()
+    (game_dir / "pieces").mkdir()
+    (game_dir / "pieces/token.svg").write_text(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><circle cx="16" cy="16" r="12" fill="red" /></svg>',
+        encoding="utf-8",
+    )
     definition = panel_definition()
     definition.constants["unsafe"] = '</script><script>parent.compromised = true</script><img src="https://evil.test/injected">'
     assert definition.panel is not None
@@ -23,6 +28,7 @@ def test_html_panel_binding_actions_permissions_and_network_isolation(tmp_path: 
         @font-face {font-family: remote; src: url(https://evil.test/font);}
         </style></head><body>
         <p data-panel-text="count"></p><pre data-panel-text="unsafe"></pre>
+        <img src="pieces/token.svg" alt="Token" width="32" height="32">
         <button data-panel-action="increment" data-panel-disabled="full">Add one</button>
         <button data-panel-action="unknown">Unknown action</button>
         </body></html>''', encoding="utf-8")
@@ -61,6 +67,8 @@ def test_html_panel_binding_actions_permissions_and_network_isolation(tmp_path: 
         frame = page.frame_locator("iframe.game-html-panel")
         expect(frame.locator("p")).to_have_text("0")
         expect(frame.locator("pre")).to_have_text(definition.constants["unsafe"])
+        expect(frame.get_by_role("img", name="Token")).to_be_visible()
+        expect(frame.get_by_role("img", name="Token")).to_have_js_property("naturalWidth", 32)
         assert page.evaluate("window.compromised === undefined")
         expect(frame.get_by_role("button", name="Unknown action")).to_be_disabled()
         assert frame.locator("body").evaluate("() => {try {return parent.document.body !== null} catch {return false}}") is False
@@ -69,6 +77,7 @@ def test_html_panel_binding_actions_permissions_and_network_isolation(tmp_path: 
         expect(frame.locator("p")).to_have_text("0")
         frame.get_by_role("button", name="Add one").click()
         expect(frame.locator("p")).to_have_text("1")
+        expect(frame.get_by_role("img", name="Token")).to_have_js_property("naturalWidth", 32)
         assert game.state == {"count": 1}
         page.evaluate("window.editable = false; renderer.render()")
         expect(frame.get_by_role("button", name="Add one")).to_be_disabled()

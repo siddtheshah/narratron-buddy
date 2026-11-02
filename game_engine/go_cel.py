@@ -309,9 +309,10 @@ def load_go_package(
     definition = GameDefinition.model_validate_json(normalized)
     from game_engine.panel_html import load_panel_html
 
+    svg_assets = load_game_svg_assets(game_dir) if game_dir is not None else None
     program = GameProgram(
-        definition, load_game_svg_assets(game_dir) if game_dir is not None else None,
-        panel_html=load_panel_html(game_dir) if definition.panel is not None and game_dir is not None else None,
+        definition, svg_assets,
+        panel_html=load_panel_html(game_dir, svg_assets) if definition.panel is not None and game_dir is not None else None,
     )
     if auto_start:
         worker.ensure_started()

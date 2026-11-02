@@ -730,6 +730,8 @@ class TheaterManager:
         game_declaration: str | None = None
         needs_panel = False
         has_panel = False
+        panel_content: bytes | None = None
+        svg_contents: dict[str, bytes] = {}
         for filename, content in reference_files or []:
             if len(content) > MAX_FILE_BYTES:
                 raise ValueError(f"File '{filename}' exceeds maximum allowed size of 10MB.")
@@ -751,6 +753,7 @@ class TheaterManager:
                 from game_engine.panel_html import validate_panel_html
 
                 validate_panel_html(content)
+                panel_content = content
                 has_panel = True
                 continue
             if "game" in parts and parts.index("game") < len(parts) - 1 and parts[-1].lower().endswith(".svg"):
@@ -758,6 +761,7 @@ class TheaterManager:
 
                 asset_destination(theater_dir / "game", "/".join(parts[parts.index("game") + 1:]))
                 validate_game_svg(content)
+                svg_contents["/".join(parts[parts.index("game") + 1:])] = content
                 continue
             if "stamps" in parts or parts[-1].lower() in {"metadata.json", "planning.yaml", "planning.yml"}:
                 if "stamps" in parts:
@@ -781,6 +785,14 @@ class TheaterManager:
                 reference_image_type(filename, content)
         if needs_panel and not has_panel:
             raise ValueError("A panel declaration requires game/panel.html.")
+        if panel_content is not None:
+            from game_engine.game_runtime import normalize_game_svg_path, validate_game_svg
+            from game_engine.panel_html import validate_panel_html
+
+            validate_panel_html(panel_content, {
+                normalize_game_svg_path(name): validate_game_svg(content)
+                for name, content in svg_contents.items()
+            })
         for playlist_name, files in (playlists_data or {}).items():
             if len(validate_asset_path(playlist_name)) != 1:
                 raise ValueError("Playlist names must be a single path component.")
