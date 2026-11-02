@@ -151,6 +151,23 @@ class ViewNode(GameModel):
     action: ViewAction | None = None
 
 
+class PanelDefinition(GameModel):
+    """CEL parameters and named actions consumed by game/panel.html."""
+
+    parameters: dict[str, str] = Field(default_factory=dict, max_length=24)
+    actions: dict[str, ViewAction] = Field(default_factory=dict, max_length=64)
+
+    def as_view(self) -> ViewNode:
+        return ViewNode(kind="column", props=self.parameters, children=[
+            ViewNode(kind="button", props={"id": json.dumps(name)}, action=action)
+            for name, action in self.actions.items()
+        ])
+
+
+def empty_view() -> ViewNode:
+    return ViewNode(kind="column")
+
+
 class GameDefinition(GameModel):
     version: Literal[2]
     local_preview: bool = False
@@ -165,7 +182,19 @@ class GameDefinition(GameModel):
     derived: list[Binding] = Field(default_factory=list, max_length=24)
     invariants: list[str] = Field(default_factory=list, max_length=16)
     transitions: dict[str, TransitionDefinition] = Field(min_length=1, max_length=32)
-    view: ViewNode
+    view: ViewNode = Field(default_factory=empty_view)
+    panel: PanelDefinition | None = None
+
+    @model_validator(mode="after")
+    def panel_view(self) -> Self:
+        if self.panel is not None:
+            view = self.panel.as_view()
+            if "view" in self.model_fields_set and self.view != view:
+                raise ValueError("Specify a panel or structured view, not both.")
+            self.view = view
+        elif "view" not in self.model_fields_set:
+            raise ValueError("A game requires a view or panel declaration.")
+        return self
 
 
 class GameStep(GameModel):
@@ -432,8 +461,9 @@ def random_int(lower: celtypes.IntType, upper: celtypes.IntType) -> celtypes.Int
 class GameProgram:
     """Compile a package once. No game names, field names or move types live here."""
 
-    def __init__(self, definition: GameDefinition, svg_assets: dict[str, RenderedNode] | None = None) -> None:
+    def __init__(self, definition: GameDefinition, svg_assets: dict[str, RenderedNode] | None = None, panel_html: str | None = None) -> None:
         self.definition = definition
+        self.panel_html = panel_html
         self.svg_assets = svg_assets
         self.environment = Environment()
         self.programs: dict[str, Runner] = {}
@@ -729,7 +759,10 @@ def validate_game_package(
         if len(normalized) > MAX_GAME_BYTES:
             raise ValueError("Game definition exceeds size limit after decoding.")
         definition = GameDefinition.model_validate_json(normalized)
-        program = GameProgram(definition, svg_assets=resolved_svgs)
+        from game_engine.panel_html import load_panel_html
+
+        panel_html = load_panel_html(game_dir) if definition.panel is not None and game_dir is not None else None
+        program = GameProgram(definition, svg_assets=resolved_svgs, panel_html=panel_html)
 
         def prepare_initial(budget: Budget) -> None:
             execution = program.execution()

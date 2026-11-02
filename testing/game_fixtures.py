@@ -48,6 +48,17 @@ def counter_definition() -> GameDefinition:
     })
 
 
+def panel_definition() -> GameDefinition:
+    """Counter with CEL parameters and a passive authored HTML panel."""
+    data = counter_definition().model_dump(mode="json")
+    data.pop("view")
+    data["panel"] = {
+        "parameters": {"count": "state.count", "doubled": "doubled", "full": "state.count >= 10"},
+        "actions": {"increment": {"name": '"add"', "arguments": '{"amount": 1}'}},
+    }
+    return GameDefinition.model_validate(data)
+
+
 def exchange_definition() -> GameDefinition:
     """Small temporary package for actor, inventory and two-party commit tests."""
     initial = {

@@ -49,13 +49,14 @@ def test_story_log_output_is_fresh_after_append(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize("source", ["adventure", "folder", "zip"])
 @pytest.mark.parametrize("game_filename", ["game.yaml", "game.yml", "game.json"])
-def test_deployment_preserves_character_folders_and_game(tmp_path: Path, source: str, game_filename: str) -> None:
+@pytest.mark.parametrize("html_panel", [False, True])
+def test_deployment_preserves_character_folders_and_game(tmp_path: Path, source: str, game_filename: str, html_panel: bool) -> None:
     from absl.testing import flagsaver
     from PIL import Image
     from components.theater_manager import TheaterManager
     from services.adventure_service import AdventureService
     from game_engine.game_state import GameAction, GameState
-    from testing.game_fixtures import counter_definition
+    from testing.game_fixtures import counter_definition, panel_definition
 
     manager = TheaterManager(base_theaters_dir=tmp_path / "theaters")
     adventures_root = tmp_path / "adventures"
@@ -71,7 +72,9 @@ def test_deployment_preserves_character_folders_and_game(tmp_path: Path, source:
         "lore/characters/arthur.txt": b"Arthur guards the forest.",
         "theater.yaml": b"live_agent:\n  special_instructions: Guide the quest.\n",
     }
-    definition = counter_definition()
+    definition = panel_definition() if html_panel else counter_definition()
+    if html_panel:
+        assets["game/panel.html"] = b'<p data-panel-text="count"></p><button data-panel-action="increment">Add</button>'
     game_content = (
         definition.model_dump_json() if game_filename == "game.json"
         else yaml.safe_dump(definition.model_dump(mode="json"))

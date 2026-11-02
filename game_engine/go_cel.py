@@ -307,7 +307,12 @@ def load_go_package(
     if len(normalized) > MAX_GAME_BYTES:
         raise ValueError("Game definition exceeds size limit after decoding.")
     definition = GameDefinition.model_validate_json(normalized)
-    program = GameProgram(definition, load_game_svg_assets(game_dir) if game_dir is not None else None)
+    from game_engine.panel_html import load_panel_html
+
+    program = GameProgram(
+        definition, load_game_svg_assets(game_dir) if game_dir is not None else None,
+        panel_html=load_panel_html(game_dir) if definition.panel is not None and game_dir is not None else None,
+    )
     if auto_start:
         worker.ensure_started()
     prepared = worker.load(program, package=package_key)

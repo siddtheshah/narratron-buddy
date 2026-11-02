@@ -526,7 +526,7 @@ def extract_asset_package(
                     raise ValueError(f"File '{filename}' exceeds maximum allowed size of 10MB.")
                 if "/".join(parts[-2:]) in GAME_FILES:
                     reference_files.append((f"game/{parts[-1]}", content))
-                elif "game" in parts and parts.index("game") < len(parts) - 1 and filename.lower().endswith(".svg"):
+                elif "game" in parts and parts.index("game") < len(parts) - 1 and (filename.lower().endswith(".svg") or parts[parts.index("game") + 1:] == ["panel.html"]):
                     reference_files.append(("/".join(parts[parts.index("game"):]), content))
                 elif filename.lower() in ("planning.yaml", "planning.yml"):
                     reference_files.append(("planning.yaml", content))
@@ -728,6 +728,8 @@ class TheaterManager:
         lore_dir = theater_dir / "lore"
         characters_dir = theater_dir / "references" / "characters"
         game_declaration: str | None = None
+        needs_panel = False
+        has_panel = False
         for filename, content in reference_files or []:
             if len(content) > MAX_FILE_BYTES:
                 raise ValueError(f"File '{filename}' exceeds maximum allowed size of 10MB.")
@@ -743,7 +745,13 @@ class TheaterManager:
                 game_declaration = parts[-1]
                 if len(content) > MAX_GAME_BYTES:
                     raise ValueError("Game definition exceeds size limit.")
-                validate_game_package(content, filename=parts[-1])
+                needs_panel = validate_game_package(content, filename=parts[-1]).definition.panel is not None
+                continue
+            if "game" in parts and parts[parts.index("game") + 1:] == ["panel.html"]:
+                from game_engine.panel_html import validate_panel_html
+
+                validate_panel_html(content)
+                has_panel = True
                 continue
             if "game" in parts and parts.index("game") < len(parts) - 1 and parts[-1].lower().endswith(".svg"):
                 from game_engine.game_runtime import validate_game_svg
@@ -771,6 +779,8 @@ class TheaterManager:
             scene_parts = relative_name.split("/")
             if not (len(scene_parts) == 3 and scene_parts[0] == "scenes" and scene_parts[-1] == "scene.yaml"):
                 reference_image_type(filename, content)
+        if needs_panel and not has_panel:
+            raise ValueError("A panel declaration requires game/panel.html.")
         for playlist_name, files in (playlists_data or {}).items():
             if len(validate_asset_path(playlist_name)) != 1:
                 raise ValueError("Playlist names must be a single path component.")
@@ -835,6 +845,11 @@ class TheaterManager:
                 game_path = asset_destination(theater_dir, f"game/{parts[-1]}")
                 game_path.parent.mkdir(parents=True, exist_ok=True)
                 game_path.write_bytes(content)
+                continue
+            if "game" in parts and parts[parts.index("game") + 1:] == ["panel.html"]:
+                panel_path = asset_destination(theater_dir, "game/panel.html")
+                panel_path.parent.mkdir(parents=True, exist_ok=True)
+                panel_path.write_bytes(content)
                 continue
             if "game" in parts and parts.index("game") < len(parts) - 1 and parts[-1].lower().endswith(".svg"):
                 svg_path = asset_destination(theater_dir / "game", "/".join(parts[parts.index("game") + 1:]))

@@ -157,6 +157,8 @@ class GameState:
                 self.program = validate_game_package(content, filename=path.name, game_dir=path.parent)
                 self.definition_hash = sha256(content).hexdigest()
             self._client = browser_program(self.program)
+            if self.program.panel_html is not None:
+                self.definition_hash = sha256(content + b"\x00panel\x00" + self.program.panel_html.encode("utf-8")).hexdigest()
             self.state = json.loads(json.dumps(self.program.definition.initial))
             self._view = json.loads(json.dumps(self.program.initial_view))
             self._model_state = json.loads(json.dumps(self.program.initial_model_state))
@@ -360,6 +362,8 @@ class GameState:
             if self.program is None:
                 return {"error": self.error} if self.error else None
             payload: dict[str, JsonValue] = {"definition_hash": self.definition_hash, "revision": self.revision, "view": self._view, "error": self.error}
+            if self.program.panel_html is not None:
+                payload["panel_html"] = self.program.panel_html
             if self.program.definition.canvas_api is not None and self._canvas_host is not None:
                 try:
                     snapshot = self._canvas_host.canvas_observation()

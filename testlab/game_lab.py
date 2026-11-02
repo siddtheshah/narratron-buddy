@@ -55,12 +55,14 @@ class GameSession:
     def __init__(self, path: Path, provider: TextResponseProvider, config: GameSessionRequest) -> None:
         with path.open("rb") as source:
             content = source.read(MAX_GAME_BYTES + 1)
-        validate_game_package(content, filename=path.name)
+        program = validate_game_package(content, filename=path.name, game_dir=path.parent)
         self.directory: TemporaryDirectory[str] = TemporaryDirectory(prefix="narratron-manual-game-")
         try:
             root = Path(self.directory.name)
             (root / "game").mkdir()
             (root / "game" / path.name).write_bytes(content)
+            if program.panel_html is not None:
+                (root / "game" / "panel.html").write_text(program.panel_html, encoding="utf-8")
             for svg_file in path.parent.rglob("*.svg"):
                 if svg_file.is_file():
                     target_svg = (root / "game") / svg_file.relative_to(path.parent)
@@ -110,7 +112,7 @@ def get_session(session_id: str) -> GameSession:
 
 @router.get("/game-lab-assets/{kind}/{name}", include_in_schema=False)
 def game_renderer_asset(kind: str, name: str) -> FileResponse:
-    if (kind, name) not in (("js", "game-renderer.js"), ("js", "game-runtime.js"), ("css", "game-renderer.css")):
+    if (kind, name) not in (("js", "game-renderer.js"), ("js", "game-runtime.js"), ("js", "game-panel.js"), ("css", "game-renderer.css")):
         raise HTTPException(404, "Unknown game asset.")
     return FileResponse(
         PROJECT_ROOT / "static" / kind / name,

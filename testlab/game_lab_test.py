@@ -9,6 +9,22 @@ from pytest import MonkeyPatch, fixture
 from providers.text_response_provider import TextResponseProvider
 from testlab import game_lab
 from testlab.game_harness_test import response, scenario
+from testing.game_fixtures import panel_definition
+
+
+def test_manual_session_copies_html_panel_and_serves_bridge(tmp_path: Path) -> None:
+    path = tmp_path / "game.json"
+    path.write_text(panel_definition().model_dump_json(), encoding="utf-8")
+    (tmp_path / "panel.html").write_text('<p data-panel-text="count"></p>', encoding="utf-8")
+    provider = create_autospec(TextResponseProvider, instance=True)
+    session = game_lab.GameSession(path, provider, game_lab.GameSessionRequest(game_path=str(path)))
+    try:
+        payload = session.game.payload()
+        assert payload is not None
+        assert payload["panel_html"] == '<p data-panel-text="count"></p>'
+        assert Path(game_lab.game_renderer_asset("js", "game-panel.js").path).is_file()
+    finally:
+        session.directory.cleanup()
 
 
 @fixture

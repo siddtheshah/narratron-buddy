@@ -1,5 +1,6 @@
 // Generic declarative views with optional data-only local exploration.
 import { createLocalGame } from './game-runtime.js?v=1';
+import { createPanelFrame } from './game-panel.js?v=1';
 const TAGS = {
     column: 'div', row: 'div', grid: 'div', tabs: 'div', text: 'p', button: 'button',
     svg: 'svg', g: 'g', path: 'path', rect: 'rect', circle: 'circle', ellipse: 'ellipse',
@@ -58,6 +59,13 @@ export function createGameRenderer({ container, toggleButton, actionUrl, canEdit
     let draftPermission = '';
     const selectedTabs = new Map();
     const rendererId = `game-renderer-${++rendererSequence}`;
+    let panelFrame = null;
+    let panelActions = new Map();
+    window.addEventListener('message', event => {
+        if (!panelFrame || event.source !== panelFrame.contentWindow || event.data?.type !== 'game-panel-action') return;
+        const action = panelActions.get(event.data.id);
+        if (action) send(action);
+    });
 
     function clearDraft() {
         draft = [];
@@ -268,6 +276,8 @@ export function createGameRenderer({ container, toggleButton, actionUrl, canEdit
     }
 
     function draw() {
+        panelFrame = null;
+        panelActions = new Map();
         if (!game) open = false;
         toggleButton.hidden = !game;
         toggleButton.setAttribute('aria-expanded', String(open));
@@ -372,7 +382,17 @@ export function createGameRenderer({ container, toggleButton, actionUrl, canEdit
         panel.addEventListener('pointercancel', finishDrag);
         panel.addEventListener('lostpointercapture', finishDrag);
 
-        (currentView() || []).forEach((node, index) => panel.append(nodeView(node, 0, String(index))));
+        if (typeof game.panel_html === 'string') {
+            const root = currentView()?.[0];
+            for (const node of root?.children || []) {
+                if (node.action && typeof node.props?.id === 'string') panelActions.set(node.props.id, node.action);
+            }
+            panelFrame = createPanelFrame(game.panel_html, root?.props || {},
+                Object.fromEntries([...panelActions].map(([id, action]) => [id, !pending && canAct(action)])));
+            panel.append(panelFrame);
+        } else {
+            (currentView() || []).forEach((node, index) => panel.append(nodeView(node, 0, String(index))));
+        }
         const feedback = panel.querySelector('[data-game-layout="sidebar"] > .game-column') || panel;
         if (draft.length) {
             const controls = document.createElement('div');

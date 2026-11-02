@@ -1513,7 +1513,7 @@ async def create_and_deploy_theater(request: Request):
                         reference_files.append(("metadata.json", content))
                     elif "/".join(parts[-2:]) in GAME_FILES:
                         reference_files.append((f"game/{parts[-1]}", content))
-                    elif "game" in parts and parts.index("game") < len(parts) - 1 and clean_name.lower().endswith(".svg"):
+                    elif "game" in parts and parts.index("game") < len(parts) - 1 and (clean_name.lower().endswith(".svg") or parts[parts.index("game") + 1:] == ["panel.html"]):
                         reference_files.append(("/".join(parts[parts.index("game"):]), content))
                     elif "animations" in parts:
                         reference_files.append(("/".join(parts[parts.index("animations"):]), content))

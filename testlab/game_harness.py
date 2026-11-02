@@ -214,11 +214,13 @@ def run_game_test(
     try:
         with game_path.open("rb") as source:
             content = source.read(MAX_GAME_BYTES + 1)
-        validate_game_package(content, filename=game_path.name)
+        program = validate_game_package(content, filename=game_path.name, game_dir=game_path.parent)
         with TemporaryDirectory(prefix="narratron-game-lab-") as temporary:
             directory = Path(temporary)
             (directory / "game").mkdir()
             (directory / "game" / game_path.name).write_bytes(content)
+            if program.panel_html is not None:
+                (directory / "game" / "panel.html").write_text(program.panel_html, encoding="utf-8")
             for svg_file in game_path.parent.rglob("*.svg"):
                 if svg_file.is_file():
                     target_svg = (directory / "game") / svg_file.relative_to(game_path.parent)
