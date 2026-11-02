@@ -6,8 +6,8 @@
 
 ## Game Engine Upgrades
 
-- [ ] Input and canvas API
-- [ ] Allow direct HTML for game panel.
+- [x] Input and canvas API
+- [x] Allow direct HTML for game panel.
 - [ ] Game storage repository and attachability in theater-editor.
 
 ## Remote
@@ -18,7 +18,7 @@
 
 ## Adventure Mode
 
-- [ ] Enable narration, not just character voicing as an option.
+- [x] Enable narration, not just character voicing as an option.
 - [ ] Investigate image gen release on story turn completion.
 
 ## Theater Builder
