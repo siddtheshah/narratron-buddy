@@ -345,7 +345,7 @@ transitions:
         "op": "put_stamp", "target": {"page_id": canvas.page.id},
         "key": "checkers-victory-crown", "asset_id": "stamp:crown",
         "center": {"x": 8500, "y": 1800}, "width": 1600,
-        "rotation": 0, "draggable": false
+        "rotation": 0, "draggable": true
       }] : []
   reset:
     parameters:
@@ -417,7 +417,7 @@ transitions:
         "op": "put_stamp", "target": {"page_id": canvas.page.id},
         "key": "checkers-victory-crown", "asset_id": "stamp:crown",
         "center": {"x": 8500, "y": 1800}, "width": 1600,
-        "rotation": 0, "draggable": false
+        "rotation": 0, "draggable": true
       }] : []
 
 # Board layout. Values under props are CEL expressions; literal text keeps its CEL quotes.

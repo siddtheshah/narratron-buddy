@@ -23,16 +23,25 @@ def stage_stamps(
         page = snapshot.page
         if page is None or command.target.model_dump() != {"page_id": page.id}:
             raise ValueError("Stamp output must target the current shared page.")
+        asset = catalog.stamp(command.asset_id) if command.op == "put_stamp" else None
+        stamp_name = asset.asset_id.removeprefix("stamp:") if asset is not None else None
+        theater_stamp_id = asset.stamp_id if asset is not None else None
         previous = next((item for item in staged if item.get("managed_by") == "game" and item.get("game_key") == command.key), None)
-        if previous is not None and previous.get("game_package") != package_id:
+        if command.op == "put_stamp" and previous is None and theater_stamp_id is not None:
+            previous = next(
+                (item for item in staged if item.get("type") == "stamp" and item.get("stamp_id") == theater_stamp_id),
+                None,
+            )
+        if previous is not None and previous.get("managed_by") == "game" and previous.get("game_package") != package_id:
             raise ValueError("A game cannot change another package's stamps.")
         if previous is not None:
             staged.remove(previous)
         if command.op == "put_stamp":
-            asset = catalog.stamp(command.asset_id)
+            assert asset is not None
             height = max(1, rounded(command.width * asset.height * page.width / (asset.width * page.height)))
             stamp: DoodleAction = {
-                "type": "stamp", "id": str(previous["id"]) if previous is not None else uuid4().hex,
+                "type": "stamp", "id": str(previous["id"]) if previous is not None and previous.get("id") else uuid4().hex,
+                "name": stamp_name, "stamp_id": theater_stamp_id,
                 "managed_by": "game", "game_key": command.key, "game_package": package_id,
                 "draggable": command.draggable, "canvas_asset_id": asset.asset_id,
                 "canvas_asset_revision": asset.revision, "url": asset.url, "asset_path": asset.path,

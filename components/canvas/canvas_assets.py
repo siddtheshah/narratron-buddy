@@ -27,6 +27,7 @@ class CatalogImage(CanvasModel):
     url: str
     scene_id: Identifier | None = None
     regions: dict[Identifier, Region] = Field(default_factory=dict, max_length=128)
+    stamp_id: Identifier | None = None
 
 
 class CanvasAssetCatalog:
@@ -37,7 +38,7 @@ class CanvasAssetCatalog:
         if not self.cache.is_relative_to(self.directory):
             raise ValueError("Pinned canvas media cannot escape the theater directory.")
 
-    def _image(self, path: Path, *, asset_id: str = "", scene_id: str | None = None) -> CatalogImage:
+    def _image(self, path: Path, *, asset_id: str = "", scene_id: str | None = None, stamp_id: str | None = None) -> CatalogImage:
         path = path.resolve()
         if not path.is_relative_to(self.directory) or path.suffix.lower() not in IMAGE_SUFFIXES:
             raise ValueError("Canvas media must be an image inside the selected theater.")
@@ -58,7 +59,7 @@ class CanvasAssetCatalog:
         return CatalogImage(
             asset_id=asset_id or f"image:{digest}", revision=f"sha256:{digest}",
             width=width, height=height, path=str(pinned), url=self.url_for_path(str(pinned)),
-            scene_id=scene_id, regions=regions,
+            scene_id=scene_id, regions=regions, stamp_id=stamp_id,
         )
 
     def observe_image(self, path: str) -> CatalogImage:
@@ -69,7 +70,11 @@ class CanvasAssetCatalog:
                 relative = image.relative_to(root.resolve())
                 scene_id = relative.parts[0] if len(relative.parts) > 1 else image.stem
                 break
-        return self._image(image, scene_id=scene_id)
+        stamp_id: str | None = None
+        stamps_root = (self.directory / "stamps").resolve()
+        if stamps_root.is_dir() and image.is_relative_to(stamps_root):
+            stamp_id = f"theater:{self.directory.name}:{image.relative_to(stamps_root).as_posix()}"
+        return self._image(image, scene_id=scene_id, stamp_id=stamp_id)
 
     def scene(self, scene_id: str) -> CatalogImage:
         if not scene_id or "/" in scene_id or "\\" in scene_id or scene_id in {".", ".."}:
@@ -96,7 +101,9 @@ class CanvasAssetCatalog:
         matches = [path for path in root.rglob("*") if path.is_file() and path.stem == name and path.suffix.lower() in IMAGE_SUFFIXES] if root.is_dir() else []
         if len(matches) != 1:
             raise ValueError(f"Unknown or ambiguous canvas stamp: {asset_id}")
-        return self._image(matches[0], asset_id=asset_id)
+        image_relative = matches[0].relative_to(root).as_posix()
+        theater_stamp_id = f"theater:{self.directory.name}:{image_relative}"
+        return self._image(matches[0], asset_id=asset_id, stamp_id=theater_stamp_id)
 
     def _regions(self, image: Path, digest: str) -> dict[str, Region]:
         declaration = image.parent / "scene.yaml"

@@ -6652,12 +6652,44 @@
             sendOrQueueDoodleMessage({ type: 'select_stamp', id: action.id });
         }
 
+        function isSameStampKind(item, action) {
+            if (!item || !action || item.type !== 'stamp' || action.type !== 'stamp') return false;
+            if (item.id && action.id && String(item.id) === String(action.id)) return true;
+            if (item.user_id && action.user_id && String(item.user_id) === String(action.user_id)) {
+                if (item.stamp_id && action.stamp_id && String(item.stamp_id) === String(action.stamp_id)) return true;
+            }
+            const itemIsTheaterOrGame = item.managed_by === 'game' ||
+                (item.stamp_id && String(item.stamp_id).startsWith('theater:')) ||
+                (item.canvas_asset_id && String(item.canvas_asset_id).startsWith('stamp:'));
+            const actionIsTheaterOrGame = action.managed_by === 'game' ||
+                (action.stamp_id && String(action.stamp_id).startsWith('theater:')) ||
+                (action.canvas_asset_id && String(action.canvas_asset_id).startsWith('stamp:'));
+
+            if (itemIsTheaterOrGame || actionIsTheaterOrGame) {
+                if (item.stamp_id && action.stamp_id && String(item.stamp_id) === String(action.stamp_id)) return true;
+                if (item.canvas_asset_id && action.canvas_asset_id && String(item.canvas_asset_id) === String(action.canvas_asset_id)) return true;
+                const getStem = (d) => {
+                    const assetId = d.canvas_asset_id ? String(d.canvas_asset_id) : '';
+                    if (assetId.startsWith('stamp:')) return assetId.replace(/^stamp:/, '');
+                    const sid = d.stamp_id ? String(d.stamp_id) : '';
+                    if (sid.startsWith('theater:')) {
+                        const parts = sid.split(':');
+                        const last = parts[parts.length - 1];
+                        return last.replace(/\.[^/.]+$/, '');
+                    }
+                    if (d.managed_by === 'game') return String(d.name || '');
+                    return '';
+                };
+                const itemStem = getStem(item);
+                const actionStem = getStem(action);
+                if (itemStem && actionStem && itemStem === actionStem) return true;
+            }
+            return false;
+        }
+
         function applyStampAnnotation(action) {
             const index = doodleActions.findIndex(
-                existing => existing.type === 'stamp' && (
-                    (existing.id && existing.id === action.id) ||
-                    (String(existing.stamp_id) === String(action.stamp_id) && String(existing.user_id) === String(action.user_id))
-                )
+                existing => isSameStampKind(existing, action)
             );
             if (index >= 0) doodleActions.splice(index, 1);
             const firstNonStamp = doodleActions.findIndex(existing => existing.type !== 'stamp');
@@ -7949,9 +7981,7 @@
             // Pulling another of the same will just replace it.
             let replacedStamp = null;
             const existingIndex = doodleActions.findIndex(
-                item => item.type === 'stamp' &&
-                    String(item.stamp_id) === String(action.stamp_id) &&
-                    String(item.user_id) === String(action.user_id)
+                item => isSameStampKind(item, action)
             );
             if (existingIndex >= 0) {
                 action.id = doodleActions[existingIndex].id || action.id;

@@ -69,6 +69,56 @@ def doodle_snapshot_batches(doodles: list[DoodleAction]) -> list[DoodleAction]:
     return batches
 
 
+def is_same_stamp_kind(existing: DoodleAction, action: DoodleAction) -> bool:
+    """Determine whether two stamp actions represent the same kind under the one-at-a-time rule."""
+    if existing.get("type") != "stamp" or action.get("type") != "stamp":
+        return False
+    if existing.get("id") and action.get("id") and existing.get("id") == action.get("id"):
+        return True
+    existing_user = existing.get("user_id")
+    action_user = action.get("user_id")
+    existing_stamp_id = existing.get("stamp_id")
+    action_stamp_id = action.get("stamp_id")
+    if existing_user is not None and action_user is not None and existing_user == action_user:
+        if existing_stamp_id is not None and action_stamp_id is not None and existing_stamp_id == action_stamp_id:
+            return True
+
+    existing_is_theater_or_game = (
+        existing.get("managed_by") == "game"
+        or str(existing_stamp_id or "").startswith("theater:")
+        or str(existing.get("canvas_asset_id") or "").startswith("stamp:")
+    )
+    action_is_theater_or_game = (
+        action.get("managed_by") == "game"
+        or str(action_stamp_id or "").startswith("theater:")
+        or str(action.get("canvas_asset_id") or "").startswith("stamp:")
+    )
+    if existing_is_theater_or_game or action_is_theater_or_game:
+        if existing_stamp_id and action_stamp_id and existing_stamp_id == action_stamp_id:
+            return True
+        existing_canvas_asset = existing.get("canvas_asset_id")
+        action_canvas_asset = action.get("canvas_asset_id")
+        if existing_canvas_asset and action_canvas_asset and existing_canvas_asset == action_canvas_asset:
+            return True
+
+        def _theater_or_game_stem(d: DoodleAction) -> str:
+            asset_id = str(d.get("canvas_asset_id") or "")
+            if asset_id.startswith("stamp:"):
+                return asset_id.removeprefix("stamp:")
+            sid = str(d.get("stamp_id") or "")
+            if sid.startswith("theater:"):
+                return Path(sid.split(":")[-1]).stem
+            if d.get("managed_by") == "game":
+                return str(d.get("name") or "")
+            return ""
+
+        existing_stem = _theater_or_game_stem(existing)
+        action_stem = _theater_or_game_stem(action)
+        if existing_stem and action_stem and existing_stem == action_stem:
+            return True
+    return False
+
+
 class DoodleState:
     def __init__(
         self,
@@ -193,8 +243,6 @@ class DoodleState:
         Stamps are layered under doodles, with the most recent stamp at the front of the stamp layer.
         """
         stamp_uuid = action.get("id")
-        user_id = action.get("user_id")
-        stamp_id = action.get("stamp_id")
 
         for index, existing in enumerate(self.doodles):
             if existing.get("type") == "stamp":
@@ -203,12 +251,9 @@ class DoodleState:
                         return False
                     self.doodles.pop(index)
                     break
-                elif (
-                    user_id is not None
-                    and stamp_id is not None
-                    and existing.get("user_id") == user_id
-                    and existing.get("stamp_id") == stamp_id
-                ):
+                elif is_same_stamp_kind(existing, action):
+                    if existing.get("managed_by") == "game" and existing.get("draggable") is False:
+                        return False
                     self.doodles.pop(index)
                     break
 

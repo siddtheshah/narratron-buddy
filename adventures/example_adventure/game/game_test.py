@@ -42,7 +42,7 @@ def test_red_win_stamps_the_current_page_and_survives_reload(tmp_path: Path, pie
     after = canvas.canvas_observation()
     assert after.page == before.page and after.revision == before.revision + 1
     stamp, = after.stamps.values()
-    assert (stamp.asset_id, stamp.game_key, stamp.managed_by, stamp.draggable) == ("stamp:crown", "checkers-victory-crown", "game", False)
+    assert (stamp.asset_id, stamp.game_key, stamp.managed_by, stamp.draggable) == ("stamp:crown", "checkers-victory-crown", "game", True)
     assert stamp.center.model_dump() == {"x": 8500, "y": 1800}
     assert canvas.doodles.resolve_stamp_image(canvas.doodles.stamp_annotations()[0]) is not None
     restored = CanvasStateManager(canvas.theater)
