@@ -44,10 +44,13 @@ music:
     catalog_reranker_provider: "gemini-2-5"
     catalog_reranker_model: "gemini-2.5-flash-lite"
 
-# Application-wide text-to-speech backend for Adventure Mode character voices.
+# Application-wide speech providers and narrator voice.
 speech:
     provider: "gemini-flash-tts"
     model: "gemini-3.8-flash-lite-tts"
+    narration_provider: "google-chirp-3-hd"
+    # Use a voice ID supported by narration_provider.
+    narration_voice: "en-US-Chirp3-HD-Laomedeia"
 
 smtp:
     from_email: "noreply@narratron.io"

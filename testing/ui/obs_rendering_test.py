@@ -202,3 +202,27 @@ def test_canvas_scene_speech_silenced_when_muted(obs_page: Page) -> None:
         return { playedWhileMuted, playedAfterUnmute, playedAfterMuteAgain };
     }""")
     assert result == {"playedWhileMuted": 0, "playedAfterUnmute": 1, "playedAfterMuteAgain": 1}
+
+
+
+def test_scene_speech_interrupt_replay_and_next_scene(obs_page: Page) -> None:
+    obs_page.goto("http://narratron.test/obs/test")
+    result = obs_page.evaluate("""async () => {
+        const { createCanvasScene } = await import('/static/js/canvas-scene.js');
+        const scene = createCanvasScene({
+            narrationPane: { element: document.createElement('div'), prepare: () => {} },
+        });
+        scene.updateSceneDialogue([], 'First scene', null, 1);
+        scene.enqueueSceneSpeech('/first.mp3', 1);
+        scene.stopSceneSpeech();
+        scene.enqueueSceneSpeech('/second.mp3', 1);
+        const afterInterrupt = window.playedAudio.length;
+        scene.replayLatestSpeech();
+        const afterReplay = window.playedAudio.length;
+        scene.updateSceneDialogue([], 'Next scene', null, 2);
+        scene.enqueueSceneSpeech('/next.mp3', 2);
+        return { afterInterrupt, afterReplay, finalCount: window.playedAudio.length,
+            lastSource: window.playedAudio.at(-1).src };
+    }""")
+    assert result == {"afterInterrupt": 1, "afterReplay": 2, "finalCount": 3,
+                      "lastSource": "http://narratron.test/next.mp3"}

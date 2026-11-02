@@ -663,10 +663,10 @@ class TestLiveAgentSessionManager(unittest.TestCase):
     @patch("services.live_agent_manager.create_agent")
     def test_character_voicing_uses_configured_speech_provider(
         self,
-        mock_create_agent,
-        mock_tasks,
-        mock_create_bundle,
-    ):
+        mock_create_agent: MagicMock,
+        mock_tasks: MagicMock,
+        mock_create_bundle: MagicMock,
+    ) -> None:
         mock_agent = MagicMock(tools=[])
         mock_create_agent.return_value = mock_agent
         canvas_manager = MagicMock()
@@ -702,15 +702,20 @@ class TestLiveAgentSessionManager(unittest.TestCase):
 
         get_provider.assert_called_once_with("gemini-flash-tts", config["speech"])
         canvas_manager.story.enable_scene_speech.assert_called_once_with(
-            configured_provider
+            configured_provider,
+            accent_augmentation=True,
+            character_voicing=True,
+            narration_voicing=False,
+            narration_provider=configured_provider,
+            narration_voice=None,
         )
 
     @patch("services.live_agent_manager.create_tool_bundle_for_session")
     @patch("services.live_agent_manager.LiveAgentSession.start_background_tasks")
     @patch("services.live_agent_manager.create_agent")
     def test_creates_session_with_chirp_scene_speech_provider(
-        self, mock_create_agent, mock_tasks, mock_create_bundle
-    ):
+        self, mock_create_agent: MagicMock, mock_tasks: MagicMock, mock_create_bundle: MagicMock
+    ) -> None:
         mock_agent = MagicMock()
         mock_agent.tools = []
         mock_create_agent.return_value = mock_agent
@@ -749,15 +754,20 @@ class TestLiveAgentSessionManager(unittest.TestCase):
 
         get_provider.assert_called_once_with("google-chirp-3-hd", config["speech"])
         canvas_manager.story.enable_scene_speech.assert_called_once_with(
-            configured_provider
+            configured_provider,
+            accent_augmentation=True,
+            character_voicing=True,
+            narration_voicing=False,
+            narration_provider=configured_provider,
+            narration_voice=None,
         )
 
     @patch("services.live_agent_manager.create_tool_bundle_for_session")
     @patch("services.live_agent_manager.LiveAgentSession.start_background_tasks")
     @patch("services.live_agent_manager.create_agent")
     def test_creates_session_with_separate_character_and_narration_speech_providers(
-        self, mock_create_agent, mock_tasks, mock_create_bundle
-    ):
+        self, mock_create_agent: MagicMock, mock_tasks: MagicMock, mock_create_bundle: MagicMock
+    ) -> None:
         mock_agent = MagicMock()
         mock_agent.tools = []
         mock_create_agent.return_value = mock_agent
@@ -769,7 +779,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
         gemini_provider = MagicMock(id="gemini-flash-tts")
         chirp_provider = MagicMock(id="google-chirp-3-hd")
 
-        def mock_get_provider(provider_id, options):
+        def mock_get_provider(provider_id: str, options: dict[str, str]) -> MagicMock:
             if provider_id == "google-chirp-3-hd":
                 return chirp_provider
             return gemini_provider
@@ -783,6 +793,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
             "speech": {
                 "character_provider": "gemini-flash-tts",
                 "narration_provider": "google-chirp-3-hd",
+                "narration_voice": "en-US-Chirp3-HD-Kore",
             },
         }
 
@@ -801,8 +812,11 @@ class TestLiveAgentSessionManager(unittest.TestCase):
 
         canvas_manager.story.enable_scene_speech.assert_called_once_with(
             gemini_provider,
+            accent_augmentation=True,
+            character_voicing=True,
             narration_voicing=True,
             narration_provider=chirp_provider,
+            narration_voice="en-US-Chirp3-HD-Kore",
         )
 
     @patch("services.live_agent_manager.create_tool_bundle_for_session")

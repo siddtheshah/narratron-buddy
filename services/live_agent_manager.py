@@ -1555,7 +1555,7 @@ class LiveAgentSessionManager:
             primary_provider = get_speech_provider(char_provider_id, speech_dict)
             narration_provider = (
                 get_speech_provider(narr_provider_id, speech_dict)
-                if narr_provider_id != char_provider_id
+                if narr_voicing and narr_provider_id != char_provider_id
                 else primary_provider
             )
 
@@ -1563,23 +1563,14 @@ class LiveAgentSessionManager:
             if accent_aug is None and "accent_augmentation" in theater_config:
                 accent_aug = theater_config.get("accent_augmentation")
 
-            speech_kwargs = {}
-            if accent_aug is not None:
-                speech_kwargs["accent_augmentation"] = bool(accent_aug)
-            if not char_voicing:
-                speech_kwargs["character_voicing"] = False
-            if narr_voicing:
-                speech_kwargs["narration_voicing"] = True
-            if narration_provider is not primary_provider:
-                speech_kwargs["narration_provider"] = narration_provider
-
-            if speech_kwargs:
-                canvas_mgr.story.enable_scene_speech(
-                    primary_provider,
-                    **speech_kwargs,
-                )
-            else:
-                canvas_mgr.story.enable_scene_speech(primary_provider)
+            canvas_mgr.story.enable_scene_speech(
+                primary_provider,
+                accent_augmentation=True if accent_aug is None else bool(accent_aug),
+                character_voicing=char_voicing,
+                narration_voicing=narr_voicing,
+                narration_provider=narration_provider,
+                narration_voice=str(speech_dict.get("narration_voice") or "").strip() or None,
+            )
         theater = self.theater_manager.theater(theater_id)
         if canvas_mgr is None:
             canvas_mgr = CanvasStateManager(theater)

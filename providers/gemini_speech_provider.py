@@ -143,11 +143,6 @@ class GeminiSpeechProvider(SpeechProvider):
         **kwargs: JsonValue,
     ) -> str:
         profile, tags = self._normalize_profile(voice_tags)
-        preferred = str(profile.get("voice") or profile.get("preferred_voice") or "").strip()
-        if preferred in GEMINI_VOICES:
-            return preferred
-        if str(profile.get("name") or "").strip().casefold() == "narrator" and not profile.get("accent"):
-            return "Laomedeia"
         filters = self._voice_library_filters(profile, tags, self.voice_language_code)
         canonical = repr(tuple(sorted((key, tuple(sorted(value.casefold() for value in values))) for key, values in filters.items())))
         canonical += repr(sorted({tag.strip().casefold() for tag in tags if "=" not in tag and ":" not in tag and tag.strip().casefold().replace("-", "") not in {"male", "female", "nonbinary", "nb", "neutral"}}))

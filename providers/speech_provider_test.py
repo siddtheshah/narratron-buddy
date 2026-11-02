@@ -131,32 +131,21 @@ def test_fal_seed_speech_uses_documented_payload_and_downloads_audio():
     assert result.request_id == "fal-request"
 
 
-def test_google_chirp_speech_uses_chirp_voice_and_mp3():
-    class Types:
-        class AudioEncoding:
-            MP3 = "MP3"
+def test_google_chirp_speech_uses_chirp_voice_and_mp3() -> None:
+    from unittest.mock import MagicMock
+    from google.cloud import texttospeech
+    from providers.google_chirp_speech_provider import ChirpClient
 
-        class SynthesisInput:
-            def __init__(self, **kwargs): self.kwargs = kwargs
-
-        class VoiceSelectionParams:
-            def __init__(self, **kwargs): self.kwargs = kwargs
-
-        class AudioConfig:
-            def __init__(self, **kwargs): self.kwargs = kwargs
-
-    class Client:
-        def synthesize_speech(self, **kwargs):
-            self.kwargs = kwargs
-            return type("Response", (), {"audio_content": b"mp3", "request_id": "chirp-123"})()
-
-    client = Client()
-    provider = GoogleChirpSpeechProvider(model="en-US-Chirp3-HD-Charon", client=client, texttospeech_module=Types)
-    result = provider.synthesize(SpeechSynthesisRequest(text="Hello.", speed=1.25))
+    client = MagicMock(spec=ChirpClient)
+    client.synthesize_speech.return_value = texttospeech.SynthesizeSpeechResponse(audio_content=b"mp3")
+    provider = GoogleChirpSpeechProvider(client=client, texttospeech_module=texttospeech)
+    result = provider.synthesize(SpeechSynthesisRequest(
+        text="Hello.", voice="en-US-Chirp3-HD-Kore", speed=1.25,
+    ))
     assert result.audio_bytes == b"mp3"
-    assert result.request_id == "chirp-123"
-    assert client.kwargs["voice"].kwargs["name"] == "en-US-Chirp3-HD-Charon"
-    assert client.kwargs["audio_config"].kwargs["speaking_rate"] == 1.25
+    assert result.request_id is None
+    assert client.synthesize_speech.call_args.kwargs["voice"].name == "en-US-Chirp3-HD-Kore"
+    assert client.synthesize_speech.call_args.kwargs["audio_config"].speaking_rate == 1.25
 
 
 def test_fal_seed_speech_voice_selection_cues_and_exclusion():
@@ -303,7 +292,7 @@ def test_gemini_speech_extended_library_respects_excluded_voices():
     assert provider.select_voice(["male"], exclude=["voice_one"]) == "voice_two"
 
 
-def test_google_chirp_speech_voice_selection():
+def test_google_chirp_speech_voice_selection() -> None:
     from providers.google_chirp_speech_provider import (
         CHIRP_FEMALE_VOICES,
         CHIRP_MALE_VOICES,
@@ -320,9 +309,8 @@ def test_google_chirp_speech_voice_selection():
     nb_voice = provider.select_voice(["nonbinary"])
     assert nb_voice in CHIRP_VOICES
 
-    assert provider.select_voice({"name": "Narrator"}) == "en-US-Chirp3-HD-Laomedeia"
-    assert provider.select_voice({"voice": "Laomedeia"}) == "en-US-Chirp3-HD-Laomedeia"
-    assert provider.select_voice(["voice=Laomedeia"]) == "en-US-Chirp3-HD-Laomedeia"
+    assert provider.select_voice({"voice_tags": ["female"]}) in CHIRP_FEMALE_VOICES
+    assert provider.select_voice(["female"], exclude=[female_voice]) != female_voice
 
 
 def test_speech_provider_synthesize_uses_selected_voice():

@@ -55,6 +55,7 @@ def undo_page() -> Iterator[Page]:
         page.add_script_tag(content=renderer.replace("export function", "function"))
         page.add_script_tag(content=doodle_actions_module.replace("export function", "function").replace("export class", "class").replace("export const", "const"))
         page.add_script_tag(content="""
+            const stopSceneSpeech = () => {};
             const canvas = document.getElementById('doodle-canvas');
             const imgContainer = document.getElementById('image-container');
             const undoBtn = document.getElementById('undo-doodle-btn');

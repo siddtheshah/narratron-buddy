@@ -121,6 +121,7 @@ class StoryState:
         self._scene_speech_enabled = False
         self._character_voicing_enabled = True
         self._narration_voicing_enabled = False
+        self._narration_voice: str | None = None
         self._accent_augmentation = True
         self._speech_executor: ThreadPoolExecutor | None = None
         self._speech_lock = threading.Lock()
@@ -460,18 +461,16 @@ class StoryState:
         character_voicing: bool = True,
         narration_voicing: bool = False,
         narration_provider: SpeechProvider | None = None,
+        narration_voice: str | None = None,
     ) -> None:
         if provider is None and narration_provider is None:
             raise TypeError("enable_scene_speech requires a SpeechProvider")
         self._accent_augmentation = bool(accent_augmentation)
         self._character_voicing_enabled = bool(character_voicing)
         self._narration_voicing_enabled = bool(narration_voicing)
-        if provider is not None:
-            self._speech_provider = provider
-        if narration_provider is not None:
-            self._narration_speech_provider = narration_provider
-        elif self._narration_speech_provider is None and provider is not None:
-            self._narration_speech_provider = provider
+        self._speech_provider = provider
+        self._narration_speech_provider = narration_provider or provider
+        self._narration_voice = narration_voice.strip() if narration_voice else None
         self._scene_speech_enabled = True
 
     @property
@@ -529,6 +528,8 @@ class StoryState:
         return generation
     def _voice_for(self, speaker: str) -> str:
         key = speaker_key(speaker)
+        if key == "narrator" and self._narration_voice:
+            return self._narration_voice
         existing = self.character_voice_assignments.get(key)
         if existing:
             return existing
@@ -543,23 +544,12 @@ class StoryState:
         tags = self.get_character_voice_tags(speaker)
         used = set(self.character_voice_assignments.values())
         if provider is not None:
-            if is_narrator:
-                voice = provider.select_voice({
-                    "name": "Narrator",
-                    "speaker": "Narrator",
-                    "voice": "Laomedeia",
-                    "preferred_voice": "Laomedeia",
-                    "persona": "Narrator",
-                    "voice_tags": ["female", "voice=Laomedeia", "persona=Narrator"] + tags,
-                    "description": "Narrator",
-                }, exclude=used)
-            else:
-                voice = provider.select_voice({
-                    "voice_tags": tags,
-                    "description": self.get_character_description(speaker),
-                }, exclude=used)
+            voice = provider.select_voice({
+                "voice_tags": tags,
+                "description": self.get_character_description(speaker),
+            }, exclude=used)
         else:
-            voice = "en-US-Chirp3-HD-Laomedeia" if is_narrator else "default"
+            voice = "default"
 
         self.character_voice_assignments[key] = voice
         if self._persist:

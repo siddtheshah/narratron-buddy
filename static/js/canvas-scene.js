@@ -30,6 +30,10 @@ export function createCanvasScene({ narrationPane, resolveUrl = url => url, audi
         if (committedSceneSpeechGeneration !== null) {
             silencedSceneSpeechGeneration = committedSceneSpeechGeneration;
         }
+        resetSceneSpeech();
+    }
+
+    function resetSceneSpeech() {
         sceneSpeechQueue.length = 0;
         sceneSpeechPlaying = false;
         if (currentSceneAudio) {
@@ -48,18 +52,7 @@ export function createCanvasScene({ narrationPane, resolveUrl = url => url, audi
     function replayLatestSpeech() {
         if (!latestSpeechClips.length || !audioEnabled()) return;
         silencedSceneSpeechGeneration = null;
-        if (currentSceneAudio) {
-            const audio = currentSceneAudio;
-            currentSceneAudio = null;
-            audio.onended = null;
-            audio.onerror = null;
-            try {
-                audio.pause();
-                audio.src = '';
-            } catch (_) { }
-        }
-        sceneSpeechQueue.length = 0;
-        sceneSpeechPlaying = false;
+        resetSceneSpeech();
         const targetGen = committedSceneSpeechGeneration !== null
             ? committedSceneSpeechGeneration
             : (latestSpeechGeneration !== null ? latestSpeechGeneration : 0);
@@ -152,7 +145,7 @@ export function createCanvasScene({ narrationPane, resolveUrl = url => url, audi
         // Interrupt older speech, retaining audio for this scene and any
         // future scene whose synthesis finished before its state arrived.
         const pendingAudio = sceneSpeechQueue.filter(item => item.speechGeneration >= speechGeneration);
-        stopSceneSpeech();
+        resetSceneSpeech();
         if (silencedSceneSpeechGeneration !== speechGeneration) {
             sceneSpeechQueue.push(...pendingAudio);
             playQueuedSceneSpeech();

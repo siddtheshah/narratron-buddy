@@ -160,7 +160,7 @@ class TestConfigLoader(BaseTestCase):
         finally:
             shutil.rmtree(temp_dir, ignore_errors=True)
 
-    def test_app_config_overrides_speech_fields_in_theater_default(self):
+    def test_app_config_overrides_speech_fields_in_theater_default(self) -> None:
         config = get_theater_default_config()
         self.assertIn("speech", config)
         self.assertEqual(config["speech"].get("voice_language_code"), "en-US")
@@ -170,6 +170,7 @@ class TestConfigLoader(BaseTestCase):
             "speech": {
                 "provider": "custom-tts",
                 "model": "custom-model",
+                "narration_voice": "en-US-Chirp3-HD-Kore",
                 "voice_language_code": "en-GB",
                 "accent_augmentation": False,
             }
@@ -177,6 +178,7 @@ class TestConfigLoader(BaseTestCase):
         merged = apply_app_config(config, app_override)
         self.assertEqual(merged["speech"]["provider"], "custom-tts")
         self.assertEqual(merged["speech"]["model"], "custom-model")
+        self.assertEqual(merged["speech"]["narration_voice"], "en-US-Chirp3-HD-Kore")
         self.assertEqual(merged["speech"]["voice_language_code"], "en-GB")
         self.assertEqual(merged["speech"]["accent_augmentation"], False)
 

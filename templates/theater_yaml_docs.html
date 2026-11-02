@@ -689,6 +689,10 @@ story_planning:
               <dd>TTS provider ID used specifically for character dialogue (e.g. <code>gemini-flash-tts</code>).
                 When omitted, falls back to <code>provider</code>.
               </dd>
+              <dt><code>narration_voice</code> <span class="type">string or null</span></dt>
+              <dd>Application-wide narrator voice ID, configured in <code>app.yaml</code>.
+                Use an ID supported by <code>narration_provider</code>; when omitted, the provider selects a voice.
+              </dd>
               <dt><code>narration_provider</code> <span class="type">string or null</span></dt>
               <dd>TTS provider ID used specifically for scene narration (e.g. <code>google-chirp-3-hd</code>).
                 Allows using Google Cloud Chirp 3: HD for narration while reserving Gemini TTS for character voicing.

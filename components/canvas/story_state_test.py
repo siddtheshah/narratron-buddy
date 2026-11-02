@@ -283,20 +283,27 @@ def test_dispatch_separate_narration_and_character_speech_providers() -> None:
     assert published[1]["voice"] == "voice_gemini"
 
 
-def test_narrator_voice_selection_uses_laomedeia_consistently() -> None:
-    from providers.google_chirp_speech_provider import GoogleChirpSpeechProvider
-    from providers.gemini_speech_provider import GeminiSpeechProvider
-
-    chirp = GoogleChirpSpeechProvider()
-    gemini = GeminiSpeechProvider()
-
+@pytest.mark.parametrize("voice", ["en-US-Chirp3-HD-Kore", "Aoede"])
+def test_configured_narration_voice_overrides_persisted_assignment(voice: str) -> None:
+    provider = MagicMock(spec=SpeechProvider)
     state = StoryState()
-    state.enable_scene_speech(gemini, narration_voicing=True, narration_provider=chirp)
-    assert state._voice_for("Narrator") == "en-US-Chirp3-HD-Laomedeia"
+    state.character_voice_assignments["narrator"] = "old-voice"
+    state.enable_scene_speech(provider, narration_voicing=True, narration_voice=voice)
 
-    state_gemini = StoryState()
-    state_gemini.enable_scene_speech(gemini, narration_voicing=True, narration_provider=gemini)
-    assert state_gemini._voice_for("Narrator") == "Laomedeia"
+    assert state._voice_for("Narrator") == voice
+    provider.select_voice.assert_not_called()
+
+
+def test_reconfiguring_narration_replaces_provider_and_voice() -> None:
+    first = MagicMock(spec=SpeechProvider)
+    second = MagicMock(spec=SpeechProvider)
+    second.select_voice.return_value = "new-voice"
+    state = StoryState()
+    state.enable_scene_speech(first, narration_voicing=True, narration_voice="configured")
+    state.enable_scene_speech(second, narration_voicing=True)
+
+    assert state.narration_speech_provider is second
+    assert state._voice_for("Narrator") == "new-voice"
 
 
 def test_dispatch_newer_scene_aborts_previous_scene_synthesis() -> None:
