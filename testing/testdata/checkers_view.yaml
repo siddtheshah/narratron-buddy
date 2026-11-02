@@ -1,0 +1,92 @@
+# Board layout. Values under props are CEL expressions; literal text keeps its CEL quotes.
+view:
+  kind: column
+  props:
+    gap: '"10px"'
+  children:
+  - kind: row
+    children:
+    - kind: text
+      props:
+        text: '"Checkers Club"'
+        fontSize: '"20px"'
+    - kind: svg
+      props:
+        id: '"club-crest"'
+        src: '"crest.svg"'
+        width: '"32"'
+        height: '"32"'
+        label: '"Checkers Club crest"'
+    - kind: button
+      props:
+        text: '"New game"'
+        label: '"New game"'
+      action:
+        name: '"reset"'
+        confirmation: Start a new game? This replaces the current position.
+  - kind: text
+    props:
+      id: '"status"'
+      text: |-
+        state.winner != 0 ? sideName(state.winner) + " wins" : state.draw ? "Draw — quiet-turn limit reached" : sideName(state.turn) + " to move" + (state.forced >= 0 ? " · continue the jump" : "")
+      color: '"#f8d887"'
+  - kind: grid
+    props:
+      columns: '8'
+      gap: '"0px"'
+      label: '"Checkers board"'
+    children:
+    - kind: button
+      repeat: constants.indices
+      binding: cell
+      props:
+        id: '"square-" + string(cell)'
+        label: |-
+          coordinate(cell) + (state.board[cell] == 0 ? " empty" : " " + sideName(state.board[cell] > 0 ? 1 : -1) + (state.board[cell] == 2 || state.board[cell] == -2 ? " king" : " piece"))
+        background: '(cell / 8 + cell % 8) % 2 == 0 ? "#9aa8b7" : "#34465c"'
+        color: 'state.board[cell] == 0 ? "#fde047" : state.board[cell] > 0 ? "#e05252" : "#d6bd8a"'
+        outline: 'cell == state.selected ? "3px solid #facc15" : "none"'
+        aspectRatio: '"1"'
+        padding: '"0px"'
+        borderRadius: '"0px"'
+        disabled: '!(cell in sources || cell in targets)'
+        pressed: cell == state.selected
+      action:
+        name: 'cell in targets ? "move" : "select"'
+        arguments: |-
+          cell in targets ? {"source": state.selected,
+          "target": cell} : {"index": cell}
+      children:
+      - kind: svg
+        props:
+          viewBox: '"0 0 100 100"'
+        children:
+        - kind: circle
+          props:
+            cx: '50'
+            cy: '50'
+            r: |-
+              state.board[cell] != 0 ? 35 : cell in targets ? 12 : 0
+            fill: 'state.board[cell] == 0 ? "#fde047" : state.board[cell] > 0 ? "#e05252" : "#d6bd8a"'
+            stroke: '"#ffffff66"'
+            stroke-width: '3'
+        - kind: svg_text
+          props:
+            x: '50'
+            y: '54'
+            text-anchor: '"middle"'
+            dominant-baseline: '"middle"'
+            fontSize: '"60px"'
+            fill: '"#ffffff"'
+            text: 'state.board[cell] == 2 || state.board[cell] == -2 ? "♛" : ""'
+  - kind: text
+    props:
+      text: state.receipt
+      fontSize: '"14px"'
+  - kind: text
+    props:
+      text: |-
+        "Two-player hot seat. Red moves toward rank 8. Select a piece, then a highlighted destination. Captures and continued jumps are mandatory. Kings move both ways. Crowning ends the turn."
+      fontSize: '"13px"'
+      color: '"#b9c6d8"'
+

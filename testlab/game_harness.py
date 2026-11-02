@@ -220,7 +220,7 @@ def run_game_test(
             (directory / "game").mkdir()
             (directory / "game" / game_path.name).write_bytes(content)
             if program.panel_html is not None:
-                (directory / "game" / "panel.html").write_text(program.panel_html, encoding="utf-8")
+                (directory / "game" / "panel.html").write_bytes(game_path.with_name("panel.html").read_bytes())
             for svg_file in game_path.parent.rglob("*.svg"):
                 if svg_file.is_file():
                     target_svg = (directory / "game") / svg_file.relative_to(game_path.parent)

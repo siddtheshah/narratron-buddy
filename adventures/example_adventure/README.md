@@ -20,6 +20,10 @@ example_adventure/
 │   └── book_of_origins_portal/
 │       ├── video.json
 │       └── video.mp4
+├── game/                   # CEL checkers rules and a direct HTML panel
+│   ├── game.yaml            # State, transitions, panel parameters and named actions
+│   ├── panel.html           # Passive HTML/CSS board bound to CEL values
+│   └── crest.svg            # Embedded panel image
 ├── lore/                   # Contextual lore injected into the story modules
 │   ├── RESPONDER.md         # Pinned immediate-response instructions
 │   ├── RECORDER.md          # Pinned factual-recording and game-control instructions
@@ -48,6 +52,19 @@ example_adventure/
 ---
 
 ## Testing This Example
+
+### Direct HTML checkers panel
+
+Checkers uses `panel` in `game/game.yaml` and `game/panel.html` instead of a
+structured `view`. Edit the HTML/CSS to change the layout. The `cells` parameter
+supplies nested text, piece, selection and destination bindings; 32 named square
+actions resolve selection or movement in CEL. The reset action retains its
+confirmation, and square actions retain contributor permissions.
+
+See [Authored game panels](../../docs/game_html_panels.md) for the binding syntax
+and restrictions. HTML panels evaluate on the server: selecting a piece updates
+the shared selection, and clicking a highlighted destination commits the move
+immediately. There is no local preview or Submit step.
 
 ### Checkers victory stamp
 

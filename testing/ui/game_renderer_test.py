@@ -274,12 +274,13 @@ def test_checkers_renderer_moves_and_viewer_permissions(tmp_path: Path) -> None:
         toggle.click()
         expect(page.locator("#game-state-layer")).to_be_visible()
         expect(toggle).to_have_attribute("aria-expanded", "true")
-        expect(page.locator('[data-game-id="club-crest"]')).to_have_attribute("data-game-svg", "crest.svg")
-        expect(page.locator(".game-grid .game-button")).to_have_count(64)
-        page.locator('[data-game-id="square-40"]').click()
-        expect(page.locator('[data-game-id="square-33"]')).to_be_enabled()
-        page.locator('[data-game-id="square-33"]').click()
-        expect(page.locator('[data-game-id="status"]')).to_have_text("Ivory to move")
+        frame = page.frame_locator("iframe.game-html-panel")
+        expect(frame.get_by_role("img", name="Checkers Club crest")).to_be_visible()
+        expect(frame.locator(".board button")).to_have_count(32)
+        frame.locator('#square-40').click()
+        expect(frame.locator('#square-33')).to_be_enabled()
+        frame.locator('#square-33').click()
+        expect(frame.locator('#status')).to_have_text("Ivory to move")
         assert game.revision == 2
         expect(page.get_by_role('button', name='Submit', exact=True)).to_have_count(0)
         assert game.state["board"][33] == 1
@@ -289,22 +290,38 @@ def test_checkers_renderer_moves_and_viewer_permissions(tmp_path: Path) -> None:
         page.reload()
         expect(page.locator("#game-state-layer")).to_be_hidden()
         toggle.click()
-        expect(page.locator('[data-game-id="square-33"] circle')).to_have_attribute("fill", "#e05252")
+        expect(frame.locator("#square-33 .piece.red")).to_be_visible()
         page.set_viewport_size({"width": 390, "height": 844})
+        # Disc geometry and the full board must fit inside the HTML frame.
+        geometry = frame.locator("#square-33").evaluate("""square => {
+            const cell = square.getBoundingClientRect();
+            const piece = square.querySelector('.piece.red').getBoundingClientRect();
+            const board = document.querySelector('.board').getBoundingClientRect();
+            return {diameter: piece.width / cell.width,
+                height: piece.height / cell.height,
+                centerX: (piece.left + piece.width / 2 - cell.left) / cell.width,
+                centerY: (piece.top + piece.height / 2 - cell.top) / cell.height,
+                boardTop: board.top, boardBottom: board.bottom, frameHeight: innerHeight};
+        }""")
+        assert geometry["diameter"] == pytest.approx(0.8, abs=0.01)
+        assert geometry["height"] == pytest.approx(0.8, abs=0.01)
+        assert geometry["centerX"] == pytest.approx(0.5, abs=0.01)
+        assert geometry["centerY"] == pytest.approx(0.5, abs=0.01)
+        assert 0 <= geometry["boardTop"] < geometry["boardBottom"] <= geometry["frameHeight"]
         page.screenshot(path=str(tmp_path / "checkers-mobile.png"))
         bounds = page.locator(".game-panel").bounding_box()
         assert bounds is not None and bounds["x"] >= 0 and bounds["x"] + bounds["width"] <= 390
         page.evaluate("window.editable = false; window.refresh()")
-        expect(page.get_by_role("button", name="New game")).to_be_disabled()
-        assert page.locator(".game-grid button:enabled").count() == 0
+        expect(frame.get_by_role("button", name="New game")).to_be_disabled()
+        assert frame.locator(".board button:enabled").count() == 0
         # When collaboration is enabled for a contributor, contributor actions are enabled while orator-only actions stay disabled.
         page.evaluate("window.contributable = true; window.refresh()")
-        expect(page.get_by_role("button", name="New game")).to_be_disabled()
-        expect(page.locator('[data-game-id="square-17"]')).to_be_enabled()
-        page.locator('[data-game-id="square-17"]').click()
-        expect(page.locator('[data-game-id="square-26"]')).to_be_enabled()
-        page.locator('[data-game-id="square-26"]').click()
-        expect(page.locator('[data-game-id="status"]')).to_have_text("Red to move")
+        expect(frame.get_by_role("button", name="New game")).to_be_disabled()
+        expect(frame.locator('#square-17')).to_be_enabled()
+        frame.locator('#square-17').click()
+        expect(frame.locator('#square-26')).to_be_enabled()
+        frame.locator('#square-26').click()
+        expect(frame.locator('#status')).to_have_text("Red to move")
         assert game.state["board"][26] == -1
         # A different state schema and SVG view (including game/*.svg asset) work without another renderer.
         counter_dir = tmp_path / "counter"

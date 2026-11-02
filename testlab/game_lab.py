@@ -62,7 +62,7 @@ class GameSession:
             (root / "game").mkdir()
             (root / "game" / path.name).write_bytes(content)
             if program.panel_html is not None:
-                (root / "game" / "panel.html").write_text(program.panel_html, encoding="utf-8")
+                (root / "game" / "panel.html").write_bytes(path.with_name("panel.html").read_bytes())
             for svg_file in path.parent.rglob("*.svg"):
                 if svg_file.is_file():
                     target_svg = (root / "game") / svg_file.relative_to(path.parent)

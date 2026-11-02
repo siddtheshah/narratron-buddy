@@ -1,4 +1,5 @@
 """Small non-board game used to exercise the generic game contracts."""
+import json
 from pathlib import Path
 from shutil import copytree
 from typing import Literal
@@ -21,6 +22,13 @@ def make_preview_checkers_game(tmp_path: Path) -> GameState:
     """Keep legacy local-preview coverage separate from the canvas-enabled example."""
     source = Path("adventures/example_adventure/game/game.yaml")
     definition = GameDefinition.model_validate_json(game_source_json(source.read_bytes(), source.name))
+    # Freeze the structured layout for legacy renderer/local-preview coverage.
+    view_source = Path("testing/testdata/checkers_view.yaml")
+    view_data = game_source_json(view_source.read_bytes(), "game.yaml")
+    data = definition.model_dump(mode="json", exclude={"panel", "view"})
+    data["view"] = json.loads(view_data)["view"]
+    data["local_preview"] = True
+    definition = GameDefinition.model_validate(data)
     definition.canvas_api = None
     for transition in definition.transitions.values():
         transition.canvas_effects = None

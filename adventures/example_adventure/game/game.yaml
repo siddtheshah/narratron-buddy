@@ -420,97 +420,187 @@ transitions:
         "rotation": 0, "draggable": true
       }] : []
 
-# Board layout. Values under props are CEL expressions; literal text keeps its CEL quotes.
-view:
-  kind: column
-  props:
-    gap: '"10px"'
-  children:
-  - kind: row
-    children:
-    - kind: text
-      props:
-        text: '"Checkers Club"'
-        fontSize: '"20px"'
-    - kind: svg
-      props:
-        id: '"club-crest"'
-        src: '"crest.svg"'
-        width: '"32"'
-        height: '"32"'
-        label: '"Checkers Club crest"'
-    - kind: button
-      props:
-        text: '"New game"'
-        label: '"New game"'
-      action:
-        name: '"reset"'
-        confirmation: Start a new game? This replaces the current position.
-  - kind: text
-    props:
-      id: '"status"'
-      text: |-
-        state.winner != 0 ? sideName(state.winner) + " wins" : state.draw ? "Draw — quiet-turn limit reached" : sideName(state.turn) + " to move" + (state.forced >= 0 ? " · continue the jump" : "")
-      color: '"#f8d887"'
-  - kind: grid
-    props:
-      columns: '8'
-      gap: '"0px"'
-      label: '"Checkers board"'
-    children:
-    - kind: button
-      repeat: constants.indices
-      binding: cell
-      props:
-        id: '"square-" + string(cell)'
-        label: |-
-          coordinate(cell) + (state.board[cell] == 0 ? " empty" : " " + sideName(state.board[cell] > 0 ? 1 : -1) + (state.board[cell] == 2 || state.board[cell] == -2 ? " king" : " piece"))
-        background: '(cell / 8 + cell % 8) % 2 == 0 ? "#9aa8b7" : "#34465c"'
-        color: 'state.board[cell] == 0 ? "#fde047" : state.board[cell] > 0 ? "#e05252" : "#d6bd8a"'
-        outline: 'cell == state.selected ? "3px solid #facc15" : "none"'
-        aspectRatio: '"1"'
-        padding: '"0px"'
-        borderRadius: '"0px"'
-        disabled: '!(cell in sources || cell in targets)'
-        pressed: cell == state.selected
-      action:
-        name: 'cell in targets ? "move" : "select"'
-        arguments: |-
-          cell in targets ? {"source": state.selected,
-          "target": cell} : {"index": cell}
-      children:
-      - kind: svg
-        props:
-          viewBox: '"0 0 100 100"'
-        children:
-        - kind: circle
-          props:
-            cx: '50'
-            cy: '50'
-            r: |-
-              state.board[cell] != 0 ? 35 : cell in targets ? 12 : 0
-            fill: 'state.board[cell] == 0 ? "#fde047" : state.board[cell] > 0 ? "#e05252" : "#d6bd8a"'
-            stroke: '"#ffffff66"'
-            stroke-width: '3'
-        - kind: svg_text
-          props:
-            x: '50'
-            y: '54'
-            text-anchor: '"middle"'
-            dominant-baseline: '"middle"'
-            fontSize: '"60px"'
-            fill: '"#ffffff"'
-            text: 'state.board[cell] == 2 || state.board[cell] == -2 ? "♛" : ""'
-  - kind: text
-    props:
-      text: state.receipt
-      fontSize: '"14px"'
-  - kind: text
-    props:
-      text: |-
-        "Two-player hot seat. Red moves toward rank 8. Select a piece, then a highlighted destination. Captures and continued jumps are mandatory. Kings move both ways. Crowning ends the turn."
-      fontSize: '"13px"'
-      color: '"#b9c6d8"'
+# Passive HTML layout lives in panel.html; all bindings and actions remain CEL.
+# See docs/game_html_panels.md. Only the 32 playable squares need named actions.
+panel:
+  parameters:
+    status: |-
+      state.winner != 0 ? sideName(state.winner) + " wins" : state.draw ? "Draw — quiet-turn limit reached" : sideName(state.turn) + " to move" + (state.forced >= 0 ? " · continue the jump" : "")
+    receipt: state.receipt
+    cells: |-
+      constants.indices.map(cell, {
+        "label": coordinate(cell) + (state.board[cell] == 0 ? " empty" : " " + sideName(state.board[cell] > 0 ? 1 : -1) + (state.board[cell] == 2 || state.board[cell] == -2 ? " king" : " piece")) + (cell == state.selected ? " selected" : ""),
+        "disabled": !(cell in sources || cell in targets),
+        "unselected": cell != state.selected,
+        "not_target": !(cell in targets),
+        "not_red": state.board[cell] <= 0,
+        "not_ivory": state.board[cell] >= 0,
+        "symbol": state.board[cell] == 2 || state.board[cell] == -2 ? "♛" : ""
+      })
+  actions:
+    reset:
+      name: '"reset"'
+      confirmation: Start a new game? This replaces the current position.
+    square_1:
+      permission: contributor
+      name: '1 in targets ? "move" : "select"'
+      arguments: |-
+        1 in targets ? {"source": state.selected, "target": 1} : {"index": 1}
+    square_3:
+      permission: contributor
+      name: '3 in targets ? "move" : "select"'
+      arguments: |-
+        3 in targets ? {"source": state.selected, "target": 3} : {"index": 3}
+    square_5:
+      permission: contributor
+      name: '5 in targets ? "move" : "select"'
+      arguments: |-
+        5 in targets ? {"source": state.selected, "target": 5} : {"index": 5}
+    square_7:
+      permission: contributor
+      name: '7 in targets ? "move" : "select"'
+      arguments: |-
+        7 in targets ? {"source": state.selected, "target": 7} : {"index": 7}
+    square_8:
+      permission: contributor
+      name: '8 in targets ? "move" : "select"'
+      arguments: |-
+        8 in targets ? {"source": state.selected, "target": 8} : {"index": 8}
+    square_10:
+      permission: contributor
+      name: '10 in targets ? "move" : "select"'
+      arguments: |-
+        10 in targets ? {"source": state.selected, "target": 10} : {"index": 10}
+    square_12:
+      permission: contributor
+      name: '12 in targets ? "move" : "select"'
+      arguments: |-
+        12 in targets ? {"source": state.selected, "target": 12} : {"index": 12}
+    square_14:
+      permission: contributor
+      name: '14 in targets ? "move" : "select"'
+      arguments: |-
+        14 in targets ? {"source": state.selected, "target": 14} : {"index": 14}
+    square_17:
+      permission: contributor
+      name: '17 in targets ? "move" : "select"'
+      arguments: |-
+        17 in targets ? {"source": state.selected, "target": 17} : {"index": 17}
+    square_19:
+      permission: contributor
+      name: '19 in targets ? "move" : "select"'
+      arguments: |-
+        19 in targets ? {"source": state.selected, "target": 19} : {"index": 19}
+    square_21:
+      permission: contributor
+      name: '21 in targets ? "move" : "select"'
+      arguments: |-
+        21 in targets ? {"source": state.selected, "target": 21} : {"index": 21}
+    square_23:
+      permission: contributor
+      name: '23 in targets ? "move" : "select"'
+      arguments: |-
+        23 in targets ? {"source": state.selected, "target": 23} : {"index": 23}
+    square_24:
+      permission: contributor
+      name: '24 in targets ? "move" : "select"'
+      arguments: |-
+        24 in targets ? {"source": state.selected, "target": 24} : {"index": 24}
+    square_26:
+      permission: contributor
+      name: '26 in targets ? "move" : "select"'
+      arguments: |-
+        26 in targets ? {"source": state.selected, "target": 26} : {"index": 26}
+    square_28:
+      permission: contributor
+      name: '28 in targets ? "move" : "select"'
+      arguments: |-
+        28 in targets ? {"source": state.selected, "target": 28} : {"index": 28}
+    square_30:
+      permission: contributor
+      name: '30 in targets ? "move" : "select"'
+      arguments: |-
+        30 in targets ? {"source": state.selected, "target": 30} : {"index": 30}
+    square_33:
+      permission: contributor
+      name: '33 in targets ? "move" : "select"'
+      arguments: |-
+        33 in targets ? {"source": state.selected, "target": 33} : {"index": 33}
+    square_35:
+      permission: contributor
+      name: '35 in targets ? "move" : "select"'
+      arguments: |-
+        35 in targets ? {"source": state.selected, "target": 35} : {"index": 35}
+    square_37:
+      permission: contributor
+      name: '37 in targets ? "move" : "select"'
+      arguments: |-
+        37 in targets ? {"source": state.selected, "target": 37} : {"index": 37}
+    square_39:
+      permission: contributor
+      name: '39 in targets ? "move" : "select"'
+      arguments: |-
+        39 in targets ? {"source": state.selected, "target": 39} : {"index": 39}
+    square_40:
+      permission: contributor
+      name: '40 in targets ? "move" : "select"'
+      arguments: |-
+        40 in targets ? {"source": state.selected, "target": 40} : {"index": 40}
+    square_42:
+      permission: contributor
+      name: '42 in targets ? "move" : "select"'
+      arguments: |-
+        42 in targets ? {"source": state.selected, "target": 42} : {"index": 42}
+    square_44:
+      permission: contributor
+      name: '44 in targets ? "move" : "select"'
+      arguments: |-
+        44 in targets ? {"source": state.selected, "target": 44} : {"index": 44}
+    square_46:
+      permission: contributor
+      name: '46 in targets ? "move" : "select"'
+      arguments: |-
+        46 in targets ? {"source": state.selected, "target": 46} : {"index": 46}
+    square_49:
+      permission: contributor
+      name: '49 in targets ? "move" : "select"'
+      arguments: |-
+        49 in targets ? {"source": state.selected, "target": 49} : {"index": 49}
+    square_51:
+      permission: contributor
+      name: '51 in targets ? "move" : "select"'
+      arguments: |-
+        51 in targets ? {"source": state.selected, "target": 51} : {"index": 51}
+    square_53:
+      permission: contributor
+      name: '53 in targets ? "move" : "select"'
+      arguments: |-
+        53 in targets ? {"source": state.selected, "target": 53} : {"index": 53}
+    square_55:
+      permission: contributor
+      name: '55 in targets ? "move" : "select"'
+      arguments: |-
+        55 in targets ? {"source": state.selected, "target": 55} : {"index": 55}
+    square_56:
+      permission: contributor
+      name: '56 in targets ? "move" : "select"'
+      arguments: |-
+        56 in targets ? {"source": state.selected, "target": 56} : {"index": 56}
+    square_58:
+      permission: contributor
+      name: '58 in targets ? "move" : "select"'
+      arguments: |-
+        58 in targets ? {"source": state.selected, "target": 58} : {"index": 58}
+    square_60:
+      permission: contributor
+      name: '60 in targets ? "move" : "select"'
+      arguments: |-
+        60 in targets ? {"source": state.selected, "target": 60} : {"index": 60}
+    square_62:
+      permission: contributor
+      name: '62 in targets ? "move" : "select"'
+      arguments: |-
+        62 in targets ? {"source": state.selected, "target": 62} : {"index": 62}
 
 # Guidance and a concise state projection for Narratron.
 instructions: |-
@@ -524,4 +614,4 @@ model_state: |-
   "legal_moves": moves.map(m, {"source": m.source, "target": m.target,
   "from": coordinate(m.source), "to": coordinate(m.target),
   "jump": m.jump})}
-local_preview: true
+# HTML panels evaluate each selection and move on the server.

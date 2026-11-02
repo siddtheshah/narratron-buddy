@@ -44,6 +44,7 @@ def sample(directory: Path, game_factory: GameFactory = GameState) -> tuple[dict
             if definition.canvas_api is not None:
                 target = Path(saved) / "package"
                 copytree(source.parent, target / "game")
+                definition.local_preview = True
                 definition.canvas_api = None
                 for transition in definition.transitions.values():
                     transition.canvas_effects = None
