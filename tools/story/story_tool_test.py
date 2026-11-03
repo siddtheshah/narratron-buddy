@@ -2,14 +2,23 @@
 
 import unittest
 import tempfile
+import threading
 from pathlib import Path
 from unittest.mock import MagicMock, patch
+
+from pydantic import JsonValue
 
 from components.canvas.story_state import StoryState
 from components.canvas_state import CanvasStateManager
 from components.reference_manager import ReferenceManager
 from components.theater_manager import Theater, TheaterManager
-from providers import ImageProvider, SpeechProvider, TextResponseProvider
+from providers import (
+    ImageProvider,
+    SpeechProvider,
+    SpeechSynthesisRequest,
+    SpeechSynthesisResult,
+    TextResponseProvider,
+)
 from tools.story.story_tool import StoryTool
 
 
@@ -44,6 +53,7 @@ class TestStoryToolStateIntegration(unittest.TestCase):
         self.story_state.text_beautifier = self.text_beautifier
         self.canvas = MagicMock(spec=CanvasStateManager)
         self.canvas.notepad = None
+        self.canvas.game = None
         self.canvas.story = self.story_state
         self.canvas.tool_response = MagicMock()
 
@@ -83,6 +93,8 @@ class TestStoryToolStateIntegration(unittest.TestCase):
 
     def tearDown(self) -> None:
         self.tool.close()
+        if self.story_state._speech_executor is not None:
+            self.story_state._speech_executor.shutdown(wait=True)
 
     def test_saves_and_reloads_story_planning_state(self) -> None:
         self.tool.create_or_update_character(
@@ -255,6 +267,116 @@ class TestStoryToolStateIntegration(unittest.TestCase):
             result = self.tool.create_or_update_scene("Citadel", "Ancient fortress")
             mock_scene.assert_called_once_with(name="Citadel", description="Ancient fortress")
             self.assertEqual(result, "Scene 'Citadel' is set.")
+
+    def test_story_response_pushed_to_canvas_without_waiting_on_speech_generation(self) -> None:
+        speech_started = threading.Event()
+        speech_release = threading.Event()
+        speech_completed = threading.Event()
+
+        def slow_synthesize(req: SpeechSynthesisRequest) -> SpeechSynthesisResult:
+            speech_started.set()
+            speech_release.wait(timeout=5.0)
+            speech_completed.set()
+            return SpeechSynthesisResult(
+                audio_bytes=b"synth_bytes",
+                mime_type="audio/mpeg",
+                provider="mock",
+                model="mock",
+            )
+
+        self.speech_provider.synthesize.side_effect = slow_synthesize
+        self.story_state.enable_scene_speech(self.speech_provider, narration_voicing=True)
+        mock_notify = MagicMock()
+        self.story_state._notify_changed = mock_notify
+
+        narration_text = "The ancient stone door slowly grinds open."
+        dialogue_lines: list[dict[str, JsonValue]] = [
+            {"speaker": "Lyra", "text": "Stay behind me.", "kind": "speech"}
+        ]
+        scene_delta: dict[str, JsonValue] = {
+            "narration": narration_text,
+            "dialogue": dialogue_lines,
+            "planning_signals": [],
+            "scene_reference": "Stone Chamber",
+        }
+
+        with (
+            patch.object(self.tool.response_module, "_generate_response", return_value=scene_delta),
+            patch.object(self.tool.recorder_module, "record", return_value=1),
+        ):
+            self.tool.request_orator_bypass({"process_user_action"})
+            queued = self.tool.process_user_action("I push open the stone door.")
+            self.assertEqual(queued.get("status"), "processing")
+            self.tool.cycle.flush()
+            self.assertTrue(self.tool.cycle.wait(timeout=5.0))
+
+        # Verify speech synthesis was triggered concurrently
+        self.assertTrue(speech_started.wait(timeout=2.0))
+        # Verify speech synthesis is still in-flight
+        self.assertFalse(speech_completed.is_set())
+
+        # Verify story response (narration and character dialogue) was already pushed to canvas
+        self.assertEqual(self.story_state.narration, narration_text)
+        self.assertEqual(len(self.story_state.scene_dialogue), 1)
+        self.assertEqual(self.story_state.scene_dialogue[0]["speaker"], "Lyra")
+        self.assertEqual(self.story_state.scene_dialogue[0]["text"], "Stay behind me.")
+        mock_notify.assert_called_with("latest")
+
+        speech_release.set()
+        self.assertTrue(speech_completed.wait(timeout=2.0))
+
+    def test_story_response_via_resolve_action_pushed_to_canvas_without_waiting_on_speech(self) -> None:
+        speech_started = threading.Event()
+        speech_release = threading.Event()
+        speech_completed = threading.Event()
+
+        def slow_synthesize(req: SpeechSynthesisRequest) -> SpeechSynthesisResult:
+            speech_started.set()
+            speech_release.wait(timeout=5.0)
+            speech_completed.set()
+            return SpeechSynthesisResult(
+                audio_bytes=b"synth_bytes",
+                mime_type="audio/mpeg",
+                provider="mock",
+                model="mock",
+            )
+
+        self.speech_provider.synthesize.side_effect = slow_synthesize
+        self.story_state.enable_scene_speech(self.speech_provider, narration_voicing=True)
+        mock_notify = MagicMock()
+        self.story_state._notify_changed = mock_notify
+
+        narration_text = "A gust of wind extinguishes the torch."
+        dialogue_lines: list[dict[str, JsonValue]] = [
+            {"speaker": "Lyra", "text": "Do not panic.", "kind": "speech"}
+        ]
+        scene_delta: dict[str, JsonValue] = {
+            "narration": narration_text,
+            "dialogue": dialogue_lines,
+            "planning_signals": [],
+            "scene_reference": "Dark Tunnel",
+        }
+
+        with (
+            patch.object(self.tool.response_module, "_generate_response", return_value=scene_delta),
+            patch.object(self.tool.recorder_module, "record", return_value=1),
+        ):
+            result = self.tool.resolve_action("I step into the tunnel.")
+            self.assertEqual(result.get("narration"), narration_text)
+
+        # Verify speech synthesis was dispatched in background and has not finished
+        self.assertTrue(speech_started.wait(timeout=2.0))
+        self.assertFalse(speech_completed.is_set())
+
+        # Verify story response was already pushed to canvas before speech generation completed
+        self.assertEqual(self.story_state.narration, narration_text)
+        self.assertEqual(len(self.story_state.scene_dialogue), 1)
+        self.assertEqual(self.story_state.scene_dialogue[0]["speaker"], "Lyra")
+        self.assertEqual(self.story_state.scene_dialogue[0]["text"], "Do not panic.")
+        mock_notify.assert_called_with("latest")
+
+        speech_release.set()
+        self.assertTrue(speech_completed.wait(timeout=2.0))
 
 
 if __name__ == "__main__":

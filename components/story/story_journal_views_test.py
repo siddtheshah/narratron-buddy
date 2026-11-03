@@ -99,6 +99,20 @@ def test_lore_errors_searches_and_listings_do_not_enter_history(
     assert journal.prompt_context("recorder", 20, 10) == original
 
 
+def test_context_snapshot_tracks_only_retained_role_visible_lore(journal: StoryRecordingJournal) -> None:
+    journal.record_lore_read("recorder", "rules.txt", "Lore document: rules.txt\n\nSHARED_RULES")
+    journal.record_lore_read("recorder", "RECORDER.md", "Lore document: RECORDER.md\n\nPRIVATE_RULES")
+    context, documents = journal.prompt_context_snapshot("responder", 2, 1)
+    assert documents == frozenset({"rules.txt"})
+    assert "SHARED_RULES" in context and "PRIVATE_RULES" not in context
+    assert context == journal.prompt_context("responder", 2, 1)
+    journal.complete_history([output(0)])
+    context, documents = journal.prompt_context_snapshot("responder", 2, 1)
+    assert not documents
+    assert "SHARED_RULES" not in context
+    assert journal.prompt_context_snapshot("responder", 0, 1) == ("", frozenset())
+
+
 def test_event_views_and_chunk_boundary_survive_restart(tmp_path: Path) -> None:
     path = tmp_path / "story.sqlite"
     journal = StoryRecordingJournal(path)

@@ -25,7 +25,7 @@ from components.reference_manager import (
     PlayerCharacter,
     normalize_voice_tags,
 )
-from components.lore_library import LoreLibrary
+from components.lore_library import LoreLibrary, ROLE_DOCUMENTS
 from components.story.story_recording_journal import (
     DEFAULT_HISTORY_EVENT_LIMIT, StoryRecordingJournal, default_history_chunk_size,
 )
@@ -127,9 +127,9 @@ Respond ONLY with valid JSON conforming to the scene reaction schema.
 # Supplied Context
 - **Grounded Lore**: Ground the story in the relevant lore supplied with the turn. Invent details only where they do not contradict established facts.
 {% if enable_dice -%}
-- **Dice Results**: Use only the application-supplied dice results to resolve uncertain outcomes. Never invent additional rolls. The result includes its low, middle, or high tier.
+- **Dice Results**: A provisional application-supplied d20 is available. Decide whether the action needs a check from the established fiction, independently of the roll's value. Certain outcomes need no check: set dice_used=false and ignore the roll. For a genuinely uncertain outcome, set dice_used=true and resolve it using the supplied roll and its low, middle, or high tier. Set dice_procedural=true only for a hidden background world check; otherwise false. Include a concise dice_reason when used. Never invent additional rolls or alter the supplied result.
 {% else -%}
-- Dice rolling is disabled. Resolve outcomes through established lore and narrative consequences without inventing rolls.
+- Dice rolling is disabled. Set dice_used=false and resolve outcomes through established lore and narrative consequences without inventing rolls.
 {% endif -%}
 - **Character Profiles**: Use the supplied known character profiles for NPC continuity. No tools are available.
 - Canonical character and scene updates belong to the recorder. Describe established changes in the structured response for reconciliation.
@@ -211,6 +211,9 @@ class ResponseDialogue(BaseModel):
 
 class SceneReaction(BaseModel):
     narration: str = Field(description="Scene narration focusing on visual consequence and immediate narrative outcome.")
+    dice_used: bool = Field(default=False, description="Whether the supplied provisional roll resolved a genuinely uncertain outcome.")
+    dice_procedural: bool = Field(default=False, description="True only when the used roll is a hidden background world check.")
+    dice_reason: str = Field(default="", description="Concise reason for using the supplied roll, or empty if unused.")
     dialogue: List[ResponseDialogue] = Field(default_factory=list, description="At most three NPC lines; never for the player.")
     manifested_characters: List[str] = Field(default_factory=list, description="Names of NPCs that entered or became prominent.")
     planning_signals: List[str] = Field(default_factory=list, description="Direct internal communication to deep planner, including sticky note update cues.")
@@ -521,11 +524,16 @@ class StoryResponseModule:
         user_action: str,
         nudge: str = "",
         sticky_snapshot: Optional[NoteSnapshot] = None,
+        contextual_documents: frozenset[str] = frozenset(),
     ) -> str:
         if self._decision_provider is None:
             return ""
         visible_docs = self.lore_library._visible_documents("responder")
-        candidate_docs = [doc for doc in visible_docs if not doc.endswith("/")]
+        # The role guide is already pinned in the system instruction every turn.
+        candidate_docs = [
+            doc for doc in visible_docs
+            if not doc.endswith("/") and doc != ROLE_DOCUMENTS["responder"]
+        ]
         if not candidate_docs:
             return ""
 
@@ -583,6 +591,8 @@ class StoryResponseModule:
 
         sections: list[str] = []
         for doc_path in selected_docs:
+            if doc_path in contextual_documents:
+                continue
             content = self.read_lore(doc_path)
             if content and not content.startswith("Error:"):
                 sections.append(f"## Lore Document: {doc_path}\n{content.strip()}")
@@ -714,51 +724,60 @@ class StoryResponseModule:
         clean_reason = str(reason or "").strip()[:100]
         is_procedural = bool(procedural)
 
-        import random
-        rolls = [random.randint(1, safe_sides) for _ in range(safe_count)]
-        total = sum(rolls) + safe_modifier
+        result = self._sample_dice(safe_sides, safe_count, safe_modifier)
+        result.update(reason=clean_reason, procedural=is_procedural)
+        self._record_die_roll(result)
+        return result
 
-        maximum_total = safe_count * safe_sides
+    @staticmethod
+    def _sample_dice(sides: int = 20, count: int = 1, modifier: int = 0) -> dict[str, JsonValue]:
+        """Sample an authoritative roll without publishing or recording it."""
+        import random
+        rolls = [random.randint(1, sides) for _ in range(count)]
+        total = sum(rolls) + modifier
+
+        maximum_total = count * sides
         tier = (
             "low" if total * 3 <= maximum_total
             else "middle" if total * 3 <= maximum_total * 2
             else "high"
         )
-        notation = f"{safe_count}d{safe_sides}" + (f"{safe_modifier:+d}" if safe_modifier else "")
+        notation = f"{count}d{sides}" + (f"{modifier:+d}" if modifier else "")
 
-        result = {
+        return {
             "notation": notation,
             "tier": tier,
-            "sides": safe_sides,
-            "count": safe_count,
+            "sides": sides,
+            "count": count,
             "rolls": rolls,
-            "modifier": safe_modifier,
+            "modifier": modifier,
             "total": total,
-            "reason": clean_reason,
-            "procedural": is_procedural,
+            "reason": "",
+            "procedural": False,
         }
+
+    def _record_die_roll(self, result: dict[str, JsonValue]) -> None:
         with self._die_rolls_lock:
             self._die_rolls_this_turn.append(result)
 
-        if not is_procedural:
-            if self.canvas_manager and hasattr(self.canvas_manager, "tool_response"):
+        if not result["procedural"]:
+            if self.canvas_manager.tool_response is not None:
                 self.canvas_manager.tool_response.set_activity(
                     "dice",
                     active=True,
                     recent_seconds=5.0,
                     result=result,
                 )
-            if self.canvas_manager and hasattr(self.canvas_manager, "story") and hasattr(self.canvas_manager.story, "record_die_roll"):
+            if self.canvas_manager.story is not None:
                 self.canvas_manager.story.record_die_roll(result)
 
         logger.debug(
             "[StoryResponseModule] Dice roll (theater=%s, reason=%s, procedural=%s): %s",
             self.theater_id or "default",
-            clean_reason or "general",
-            is_procedural,
+            result["reason"] or "general",
+            result["procedural"],
             result,
         )
-        return result
 
     # Character Management
     @property
@@ -948,36 +967,22 @@ class StoryResponseModule:
         self._planning_request_reason = clean_reason
         return "Story planning requested. The planner will receive the completed turn and your reason after this response."
 
-    def _prepare_dice(self, prompt: str) -> None:
-        if self._decision_provider is None or self._game_entry or self.config.get("enable_dice", True) is False:
-            return
-        result = self._decision_provider.decide(DecisionRequest(
-            input_text=prompt,
-            questions=(ChoiceQuestion(
-                name="dice_roll",
-                instructions=(
-                    "Choose none for certain outcomes or actions needing no check; player for a "
-                    "genuinely uncertain player action, skill check, or contest; procedural for a "
-                    "hidden background world check. The application rolls one d20 if needed."
-                ),
-                choices=("none", "player", "procedural"),
-            ),),
-        ))
-        choice = result.get_choice("dice_roll").choice
-        if choice != "none":
-            self.roll_dice(reason="Immediate action resolution", procedural=choice == "procedural")
+    def _prepare_dice(self) -> dict[str, JsonValue] | None:
+        if self._game_entry or self.config.get("enable_dice", True) is False:
+            return None
+        return self._sample_dice()
 
     def _generate_response(self, user_action: str, nudge: str = "") -> dict[str, JsonValue]:
         """Prepare context with decisions, then request exactly one scene delta."""
+        started = time.perf_counter()
         self.reset_lore_call_counts()
         if self._decision_provider is None:
             self._decision_provider = TextResponseDecisionProvider(self.text_response_provider)
         prompt = self._build_responder_turn_prompt(user_action, nudge=nudge)
-        relevant_lore = self.collect_relevant_lore(
-            user_action, nudge=nudge, sticky_snapshot=self._turn_note_snapshot,
-        )
-        if relevant_lore:
-            prompt += f"\n\n# Relevant Lore Context\n{relevant_lore}"
+        # Freeze the exact context before recording new reads. They must neither
+        # duplicate lore in this prompt nor evict a document we decided to reuse.
+        history = ""
+        contextual_documents: frozenset[str] = frozenset()
         if self.recording_journal is not None:
             event_limit = TypeAdapter(int).validate_python(
                 self.config.get("history_event_limit", DEFAULT_HISTORY_EVENT_LIMIT),
@@ -987,23 +992,35 @@ class StoryResponseModule:
                 default_history_chunk_size(event_limit) if configured_chunk_size is None
                 else TypeAdapter(int).validate_python(configured_chunk_size)
             )
-            history = self.recording_journal.prompt_context("responder", event_limit, chunk_size)
-            if history:
-                prompt = f"{history}\n\n{prompt}"
+            history, contextual_documents = self.recording_journal.prompt_context_snapshot(
+                "responder", event_limit, chunk_size,
+            )
+        lore_started = time.perf_counter()
+        relevant_lore = self.collect_relevant_lore(
+            user_action, nudge=nudge, sticky_snapshot=self._turn_note_snapshot,
+            contextual_documents=contextual_documents,
+        )
+        lore_seconds = time.perf_counter() - lore_started
+        if relevant_lore:
+            prompt += f"\n\n# Relevant Lore Context\n{relevant_lore}"
         profiles = self.lookup_character()
-        prompt += f"\n\n# Known Character Profiles\n{profiles.model_dump_json()}"
-        self._prepare_dice(prompt)
-        prompt += f"\n\n# Application Dice Results\n{json.dumps(self.get_die_rolls_this_turn())}"
+        prompt = f"# Known Character Profiles\n{profiles.model_dump_json()}\n\n{prompt}"
+        if history:
+            prompt = f"{history}\n\n{prompt}"
+        provisional_roll = self._prepare_dice()
+        prompt += f"\n\n# Application Dice Results (provisional; report dice_used)\n{json.dumps([provisional_roll] if provisional_roll is not None else [])}"
         request = TextResponseRequest(
             prompt=prompt, system_instruction=self._build_responder_instruction(),
             model=self.responder_model, response_schema=SceneReaction,
         )
 
+        generation_started = time.perf_counter()
         executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="story-response")
         pending = executor.submit(self.text_response_provider.generate, request)
         try:
             response = pending.result(timeout=self.user_action_timeout_seconds)
         except (FutureTimeoutError, TimeoutError):
+            logger.warning("[StoryResponseModule] Generation timed out after %.3fs", time.perf_counter() - generation_started)
             return {"error": f"Story responder timed out after {self.user_action_timeout_seconds} seconds."}
         finally:
             executor.shutdown(wait=False, cancel_futures=True)
@@ -1011,6 +1028,24 @@ class StoryResponseModule:
         reaction = (
             SceneReaction.model_validate(response.parsed) if response.parsed is not None
             else SceneReaction.model_validate_json(response.text)
+        )
+        if reaction.dice_used:
+            if self._game_entry:
+                raise GameEntryNarrationRejected("Game-entry narration cannot use dice.")
+            if provisional_roll is None:
+                raise ValueError("Story responder used dice when no application roll was supplied.")
+            provisional_roll.update(
+                reason=reaction.dice_reason.strip()[:100] or "Immediate action resolution",
+                procedural=reaction.dice_procedural,
+            )
+            self._record_die_roll(provisional_roll)
+        logger.info(
+            "[StoryResponseModule] Latency total=%.3fs lore=%.3fs generation=%.3fs "
+            "model=%s prompt_tokens=%s cached_tokens=%s thought_tokens=%s output_tokens=%s",
+            time.perf_counter() - started, lore_seconds, time.perf_counter() - generation_started,
+            response.model, response.usage.get("prompt_token_count"),
+            response.usage.get("cached_content_token_count"), response.usage.get("thoughts_token_count"),
+            response.usage.get("candidates_token_count"),
         )
         return reaction.model_dump(mode="json")
 

@@ -22,7 +22,7 @@ from providers.decision_provider import (
 from components.reference_manager import Character, ReferenceManager, PlayerCharacter
 from components.lore_library import LoreLibrary
 from components.notepad import Notepad
-from components.story.story_recording_journal import StoryRecordingJournal
+from components.story.story_recording_journal import StoryHistoryEvent, StoryRecordingJournal
 from components.story.story_response_module import (
     ResponseCharacter,
     ResponseDialogue,
@@ -148,7 +148,7 @@ class TestStoryResponseModuleBehavior(unittest.TestCase):
             text='', provider='test', model='test', parsed=SceneReaction(narration='The gate opens.'),
         )
         journal = MagicMock(spec=StoryRecordingJournal)
-        journal.prompt_context.return_value = 'Recent story: A locked gate.'
+        journal.prompt_context_snapshot.return_value = ('Recent story: A locked gate.', frozenset())
         self.module.recording_journal = journal
         self.module.config['history_event_limit'] = 6
         self.module.config['history_chunk_size'] = 3
@@ -158,9 +158,10 @@ class TestStoryResponseModuleBehavior(unittest.TestCase):
         request = self.provider.generate.call_args.args[0]
         self.assertIs(request.response_schema, SceneReaction)
         self.assertIn('Recent story: A locked gate.', request.prompt)
-        journal.prompt_context.assert_called_once_with('responder', 6, 3)
+        journal.prompt_context_snapshot.assert_called_once_with('responder', 6, 3)
         self.assertIn('I turn the key.', request.prompt)
         self.assertIn('# Known Character Profiles', request.prompt)
+        self.assertLess(request.prompt.index('# Known Character Profiles'), request.prompt.index('# Current Story State'))
         self.assertIn('No tools are available', request.system_instruction)
         self.provider.generate.return_value = TextResponseResult(text='{}', provider='test', model='test')
         with self.assertRaises(ValueError):
@@ -172,16 +173,14 @@ class TestStoryResponseModuleBehavior(unittest.TestCase):
         self.provider.model = "test"
         self.provider.generate.side_effect = [
             TextResponseResult(text="", provider="test", model="test", parsed={"primary_lore_document": "none"}),
-            TextResponseResult(text="", provider="test", model="test", parsed={"dice_roll": "none"}),
             TextResponseResult(text='{"narration":"The door opens."}', provider="test", model="test"),
         ]
         result = self.module._resolve_user_action('I open the door.', publish=False)
         self.assertEqual(result['narration'], 'The door opens.')
         requests = [call.args[0] for call in self.provider.generate.call_args_list]
-        self.assertEqual(len(requests), 3)
+        self.assertEqual(len(requests), 2)
         self.assertIsNotNone(requests[0].response_json_schema)
-        self.assertIsNotNone(requests[1].response_json_schema)
-        self.assertIs(requests[2].response_schema, SceneReaction)
+        self.assertIs(requests[1].response_schema, SceneReaction)
 
     def test_generation_failure_is_not_retried_or_published(self) -> None:
         self.provider.generate.side_effect = RuntimeError('provider unavailable')
@@ -189,6 +188,8 @@ class TestStoryResponseModuleBehavior(unittest.TestCase):
             self.module._resolve_user_action('I wait.', publish=False)
         self.provider.generate.assert_called_once()
         self.story_state.set_scene.assert_not_called()
+        self.story_state.record_die_roll.assert_not_called()
+        self.assertEqual(self.module.get_die_rolls_this_turn(), [])
 
     def test_decisions_supply_lore_and_real_dice_before_one_generation(self) -> None:
         decisions = MagicMock(spec=DecisionProvider)
@@ -196,23 +197,139 @@ class TestStoryResponseModuleBehavior(unittest.TestCase):
             DecisionResult(provider="test", model="test", answers={
                 "primary_lore_document": ChoiceAnswer(name="primary_lore_document", choice="lore.txt"),
             }),
-            DecisionResult(provider="test", model="test", answers={
-                "dice_roll": ChoiceAnswer(name="dice_roll", choice="player"),
-            }),
         ]
         self.module.decision_provider = decisions
         self.provider.generate.return_value = TextResponseResult(
-            text='{"narration":"The gate opens."}', provider='test', model='test',
+            text='{"narration":"The gate opens.","dice_used":true,"dice_reason":"Force the gate"}', provider='test', model='test',
         )
         with patch('random.randint', return_value=17):
             result = self.module._resolve_user_action('I force the gate.', publish=False)
-        self.assertEqual(decisions.decide.call_count, 2)
+        self.assertEqual(decisions.decide.call_count, 1)
         self.provider.generate.assert_called_once()
         prompt = self.provider.generate.call_args.args[0].prompt
         self.assertIn('Lore details about the realm.', prompt)
         self.assertIn('"rolls": [17]', prompt)
         self.assertEqual(result['die_rolls'][0]['total'], 17)
+        self.assertEqual(result['die_rolls'][0]['reason'], 'Force the gate')
         self.assertEqual(result['lore_docs_browsed'], ['lore.txt'])
+
+    def test_unused_provisional_roll_is_not_recorded_or_published(self) -> None:
+        self.provider.generate.return_value = TextResponseResult(
+            text='{"narration":"The door is already open.","dice_used":false}', provider='test', model='test',
+        )
+        with patch('random.randint', return_value=1) as randint:
+            result = self.module._resolve_user_action('I enter.', publish=False)
+        randint.assert_called_once_with(1, 20)
+        self.assertIn('"rolls": [1]', self.provider.generate.call_args.args[0].prompt)
+        self.assertEqual(result['die_rolls'], [])
+        self.story_state.record_die_roll.assert_not_called()
+        self.assertFalse(any(call.args[0] == 'dice' for call in self.canvas.tool_response.set_activity.call_args_list))
+
+    def test_provisional_roll_is_published_only_after_validated_use(self) -> None:
+        def generate(request: TextResponseRequest) -> TextResponseResult:
+            self.assertEqual(self.module.get_die_rolls_this_turn(), [])
+            self.story_state.record_die_roll.assert_not_called()
+            return TextResponseResult(
+                text='{"narration":"A storm approaches.","dice_used":true,"dice_procedural":true}',
+                provider='test', model='test',
+            )
+
+        self.provider.generate.side_effect = generate
+        with patch('random.randint', return_value=8):
+            result = self.module._resolve_user_action('I wait.', publish=False)
+        self.assertEqual(result['die_rolls'][0]['total'], 8)
+        self.assertTrue(result['die_rolls'][0]['procedural'])
+        self.story_state.record_die_roll.assert_not_called()
+
+    def test_disabled_dice_never_sample_and_reject_claimed_use(self) -> None:
+        self.module.config['enable_dice'] = False
+        self.provider.generate.return_value = TextResponseResult(
+            text='{"narration":"The door opens."}', provider='test', model='test',
+        )
+        with patch('random.randint') as randint:
+            result = self.module._resolve_user_action('I enter.', publish=False)
+        randint.assert_not_called()
+        self.assertEqual(result['die_rolls'], [])
+        self.provider.generate.return_value = TextResponseResult(
+            text='{"narration":"The door opens.","dice_used":true}', provider='test', model='test',
+        )
+        with self.assertRaisesRegex(ValueError, 'no application roll'):
+            self.module._resolve_user_action('I enter.', publish=False)
+        self.story_state.record_die_roll.assert_not_called()
+
+    def test_lore_is_reused_until_it_leaves_retained_history(self) -> None:
+        journal = StoryRecordingJournal(Path(self.theater_directory.name) / 'history.sqlite')
+        self.addCleanup(journal.close)
+        self.module.recording_journal = journal
+        self.module.config.update(history_event_limit=2, history_chunk_size=1, enable_dice=False)
+        decisions = MagicMock(spec=DecisionProvider)
+        decisions.decide.return_value = DecisionResult(provider='test', model='test', answers={
+            'primary_lore_document': ChoiceAnswer(name='primary_lore_document', choice='lore.txt'),
+        })
+        self.module.decision_provider = decisions
+        self.provider.generate.return_value = TextResponseResult(
+            text='{"narration":"The gate opens."}', provider='test', model='test',
+        )
+        for _ in range(2):
+            self.module._resolve_user_action('I inspect the gate.', publish=False)
+            prompt = self.provider.generate.call_args.args[0].prompt
+            self.assertEqual(prompt.count('Lore details about the realm.'), 1)
+        self.theater.read_lore_document.assert_called_once_with('lore.txt')
+        self.assertEqual(len(journal.recent_history(kinds=('lore_read',))), 1)
+        journal.complete_history([
+            StoryHistoryEvent(event_id=f'output-{index}', action_id=f'action-{index}', kind='story_output', payload={'narration': 'Time passes.'})
+            for index in range(2)
+        ])
+        self.module._resolve_user_action('I inspect the gate again.', publish=False)
+        self.assertEqual(self.theater.read_lore_document.call_count, 2)
+        self.assertEqual(self.provider.generate.call_args.args[0].prompt.count('Lore details about the realm.'), 1)
+
+    def test_new_lore_read_does_not_evict_reused_lore_from_current_prompt(self) -> None:
+        journal = StoryRecordingJournal(Path(self.theater_directory.name) / 'history.sqlite')
+        self.addCleanup(journal.close)
+        self.module.recording_journal = journal
+        self.module.config.update(history_event_limit=1, history_chunk_size=1, enable_dice=False)
+        journal.record_lore_read('recorder', 'old.txt', 'Lore document: old.txt\n\nEXISTING_LORE')
+        self.theater.lore_documents.return_value = ['old.txt', 'new.txt']
+        decisions = MagicMock(spec=DecisionProvider)
+        decisions.decide.return_value = DecisionResult(provider='test', model='test', answers={
+            'primary_lore_document': ChoiceAnswer(name='primary_lore_document', choice='old.txt'),
+            'secondary_lore_document': ChoiceAnswer(name='secondary_lore_document', choice='new.txt'),
+        })
+        self.module.decision_provider = decisions
+        self.provider.generate.return_value = TextResponseResult(text='{"narration":"The gate opens."}', provider='test', model='test')
+        self.module._resolve_user_action('I inspect both.', publish=False)
+        prompt = self.provider.generate.call_args.args[0].prompt
+        self.assertEqual(prompt.count('EXISTING_LORE'), 1)
+        self.assertEqual(prompt.count('Lore details about the realm.'), 1)
+        self.theater.read_lore_document.assert_called_once_with('new.txt')
+
+    def test_disabled_history_reinserts_lore_each_turn_without_duplicates(self) -> None:
+        journal = StoryRecordingJournal(Path(self.theater_directory.name) / 'history.sqlite')
+        self.addCleanup(journal.close)
+        self.module.recording_journal = journal
+        self.module.config.update(history_event_limit=0, enable_dice=False)
+        decisions = MagicMock(spec=DecisionProvider)
+        decisions.decide.return_value = DecisionResult(provider='test', model='test', answers={
+            'primary_lore_document': ChoiceAnswer(name='primary_lore_document', choice='lore.txt'),
+        })
+        self.module.decision_provider = decisions
+        self.provider.generate.return_value = TextResponseResult(text='{"narration":"The gate opens."}', provider='test', model='test')
+        for _ in range(2):
+            self.module._resolve_user_action('I inspect the gate.', publish=False)
+            self.assertEqual(self.provider.generate.call_args.args[0].prompt.count('Lore details about the realm.'), 1)
+        self.assertEqual(self.theater.read_lore_document.call_count, 2)
+
+    def test_pinned_role_guide_needs_no_lore_selection_or_second_insertion(self) -> None:
+        self.theater.lore_documents.return_value = ['RESPONDER.md']
+        self.provider.generate.return_value = TextResponseResult(text='{"narration":"The gate opens."}', provider='test', model='test')
+        decisions = MagicMock(spec=DecisionProvider)
+        self.module.decision_provider = decisions
+        self.module._resolve_user_action('I inspect the gate.', publish=False)
+        decisions.decide.assert_not_called()
+        request = self.provider.generate.call_args.args[0]
+        self.assertEqual(request.system_instruction.count('Lore details about the realm.'), 1)
+        self.assertNotIn('Lore details about the realm.', request.prompt)
 
     def test_game_entry_skips_dice_decision(self) -> None:
         decisions = MagicMock(spec=DecisionProvider)
@@ -244,7 +361,7 @@ class TestStoryResponseModuleBehavior(unittest.TestCase):
         def generate(request: TextResponseRequest) -> TextResponseResult:
             try:
                 release.wait(5)
-                return TextResponseResult(text='{"narration":"Late result"}', provider='test', model='test')
+                return TextResponseResult(text='{"narration":"Late result","dice_used":true}', provider='test', model='test')
             finally:
                 finished.set()
         self.provider.generate.side_effect = generate
@@ -258,6 +375,8 @@ class TestStoryResponseModuleBehavior(unittest.TestCase):
             release.set()
             self.assertTrue(finished.wait(2))
         self.story_state.set_scene.assert_not_called()
+        self.story_state.record_die_roll.assert_not_called()
+        self.assertEqual(self.module.get_die_rolls_this_turn(), [])
 
     def test_planning_cues_do_not_expose_peer_trigger_tools(self) -> None:
         self.assertIn("planning_request is advisory", self.module._build_responder_instruction())
@@ -737,6 +856,7 @@ class TestBuildSceneReactionPrompt(unittest.TestCase):
             {
                 "narration", "dialogue", "manifested_characters", "planning_signals",
                 "scene_reference", "proposed_factual_changes", "planning_request",
+                "dice_used", "dice_procedural", "dice_reason",
             },
         )
         self.assertNotIn("character_updates", fields)
