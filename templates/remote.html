@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#10141b">
     <meta name="robots" content="noindex, nofollow">
     <meta name="referrer" content="no-referrer">
-    <title>Narratron Remote</title>
+    <title>Narratron Mobile</title>
     <script src="/static/js/device-navigation.js"></script>
     <link rel="icon" type="image/png" href="/favicon.png">
     <link rel="stylesheet" href="/static/css/chat.css">
@@ -15,10 +15,10 @@
 </head>
 <body>
 <main>
-    <header><a href="/" class="brand-link" aria-label="Narratron home"><img src="/static/narratron-avatar.png" alt="" class="brand-avatar brand-mark" aria-hidden="true"><span class="brand-text">Narratron Remote</span></a><div class="theater-meta"><span id="theater-id" aria-label="Theater ID"></span><span id="theater-key" aria-label="Theater Key" hidden></span></div><a id="canvas-link" hidden>Open canvas ↗</a></header>
+    <header><a href="/" class="brand-link" aria-label="Narratron home"><img src="/static/narratron-avatar.png" alt="" class="brand-avatar brand-mark" aria-hidden="true"><span class="brand-text">Narratron Mobile</span></a><div class="theater-meta"><span id="theater-id" aria-label="Theater ID"></span><span id="theater-key" aria-label="Theater Key" hidden></span></div><a id="canvas-link" hidden>Open canvas ↗</a></header>
     <nav class="remote-tabs" role="tablist" aria-label="Remote screens">
         <button id="assets-tab" role="tab" aria-controls="asset-manager" aria-selected="false" tabindex="-1" data-view="assets">Assets</button>
-        <button id="inputs-tab" role="tab" aria-controls="remote-controls" aria-selected="true" data-view="inputs">Inputs</button>
+        <button id="inputs-tab" role="tab" aria-controls="remote-controls" aria-selected="true" data-view="inputs">Remote</button>
         <button id="preview-tab" role="tab" aria-controls="canvas-preview" aria-selected="false" tabindex="-1" data-view="preview">Watch</button>
         <button id="party-tab" role="tab" aria-controls="remote-baton" aria-selected="false" tabindex="-1" data-view="party">Party</button>
     </nav>
@@ -108,8 +108,8 @@
         </div>
         <nav class="remote-tabs preview-tabs" role="tablist" aria-label="Watch screens">
             <button id="preview-chat-tab" role="tab" aria-controls="preview-chat-panel" aria-selected="true">Chat</button>
-            <button id="preview-thought-tab" role="tab" aria-controls="preview-thought-panel" aria-selected="false" tabindex="-1">Thought</button>
-            <button id="preview-story-tab" role="tab" aria-controls="preview-story-panel" aria-selected="false" tabindex="-1" hidden>Story log</button>
+            <button id="preview-thought-tab" role="tab" aria-controls="preview-thought-panel" aria-selected="false" tabindex="-1">Agent</button>
+            <button id="preview-story-tab" role="tab" aria-controls="preview-story-panel" aria-selected="false" tabindex="-1" hidden>Story</button>
         </nav>
         <section id="preview-chat-panel" class="preview-chat" role="tabpanel" aria-labelledby="preview-chat-tab">
             <div class="preview-chat-heading">
@@ -141,11 +141,7 @@
             </form>
         </section>
         <section id="preview-thought-panel" class="preview-thought" role="tabpanel" aria-labelledby="preview-thought-tab" hidden>
-            <div class="preview-thought-heading">
-                <h2 id="preview-thought-title">Thought</h2>
-            </div>
             <div id="agent-thought-card" class="agent-thought-card" aria-live="polite">
-                <div class="agent-thought-label">📌 Narratron's current thought</div>
                 <div id="agent-thought-text" class="agent-thought-text">Waiting for Narratron to think…</div>
             </div>
         </section>

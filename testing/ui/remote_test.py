@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import importlib
 import json
+import re
 import pytest
 from fastapi.testclient import TestClient
 from playwright.sync_api import Page, Route, WebSocketRoute, expect, sync_playwright
@@ -88,7 +89,7 @@ def test_adventure_controls_follow_theater_mode(remote_page: Page, adventure_mod
     if not adventure_mode:
         page.get_by_role("tab", name="Chat", exact=True).press("ArrowRight")
         expect(page.locator("#preview-thought-panel")).to_be_visible()
-        page.get_by_role("tab", name="Thought", exact=True).press("ArrowRight")
+        page.get_by_role("tab", name="Agent", exact=True).press("ArrowRight")
         expect(page.locator("#preview-chat-panel")).to_be_visible()
         expect(page.locator("#preview-story-panel")).to_be_hidden()
 
@@ -110,14 +111,20 @@ def test_watch_tab_displays_narratron_thought(remote_page: Page) -> None:
     page.goto("http://remote.test/remote?theater_id=stage#preview")
     page.wait_for_function("!document.getElementById('controls').disabled")
 
-    thought_tab = page.get_by_role("tab", name="Thought", exact=True)
-    expect(thought_tab).to_be_visible()
+    agent_tab = page.get_by_role("tab", name="Agent", exact=True)
+    expect(agent_tab).to_be_visible()
+    expect(agent_tab).to_have_class(re.compile(r"is-highlighted"))
     expect(page.locator("#preview-chat-panel")).to_be_visible()
     expect(page.locator("#preview-thought-panel")).to_be_hidden()
 
-    thought_tab.click()
+    agent_tab.click()
     expect(page.locator("#preview-thought-panel")).to_be_visible()
     expect(page.locator("#preview-chat-panel")).to_be_hidden()
+
+    panel_text = page.locator("#preview-thought-panel").inner_text()
+    assert "Narratron's current thought" not in panel_text
+    assert "Narratron Current Thought" not in panel_text
+    assert "Thought" not in panel_text
 
     card = page.locator("#agent-thought-card")
     expect(card).to_have_class("agent-thought-card is-highlighted")
@@ -135,6 +142,7 @@ def test_watch_tab_displays_narratron_thought(remote_page: Page) -> None:
     expect(text_el).to_have_text("Narratron has wandered away. (Try resummoning?)")
     expect(text_el).to_have_class("agent-thought-text is-wandering")
     expect(card).not_to_have_class("agent-thought-card is-highlighted")
+    expect(agent_tab).not_to_have_class(re.compile(r"is-highlighted"))
 
 
 def install_watch_audio_stub(page: Page) -> None:
@@ -194,13 +202,13 @@ def test_watch_audio_defaults_muted_and_follows_music(remote_page: Page, tmp_pat
     music["tracks"] = ["/audio/forest.mp3"]
     page.wait_for_function("watchAudio[0].getAttribute('src') === '/audio/forest.mp3' && !watchAudio[0].paused")
     assert page.evaluate("!watchAudio[0].muted")
-    page.get_by_role("tab", name="Inputs", exact=True).click()
+    page.get_by_role("tab", name="Remote", exact=True).click()
     assert page.evaluate("!watchAudio[0].paused && !watchAudio[0].muted")
     page.get_by_role("tab", name="Watch", exact=True).click()
     assert page.evaluate("!watchAudio[0].paused && !watchAudio[0].muted")
     frame.tap()
     assert page.evaluate("watchAudio.every(audio => audio.muted)")
-    page.get_by_role("tab", name="Inputs", exact=True).click()
+    page.get_by_role("tab", name="Remote", exact=True).click()
     page.wait_for_function("watchAudio.every(audio => audio.paused)")
     page.get_by_role("tab", name="Watch", exact=True).click()
     page.wait_for_function("!watchAudio[0].paused")
@@ -277,13 +285,13 @@ def test_watch_audio_queues_matching_live_speech(remote_page: Page) -> None:
     socket.send(json.dumps({"type": "scene_speech_ready", "speech_generation": 2, "audio_url": "/speech/stale.mp3"}))
     page.wait_for_timeout(100)
     assert page.evaluate("!watchAudio[1].getAttribute('src')")
-    page.get_by_role("tab", name="Inputs", exact=True).click()
+    page.get_by_role("tab", name="Remote", exact=True).click()
     socket.send(json.dumps({"type": "scene_speech_ready", "speech_generation": 3, "audio_url": "/speech/hidden.mp3"}))
     page.get_by_role("tab", name="Watch", exact=True).click()
     assert page.evaluate("watchAudio[1].getAttribute('src') === '/speech/hidden.mp3' && !watchAudio[1].paused")
     page.get_by_role("button", name="Mute canvas audio").tap()
     assert page.evaluate("watchAudio.every(audio => audio.muted)")
-    page.get_by_role("tab", name="Inputs", exact=True).click()
+    page.get_by_role("tab", name="Remote", exact=True).click()
     socket.send(json.dumps({"type": "scene_speech_ready", "speech_generation": 3, "audio_url": "/speech/muted_hidden.mp3"}))
     page.get_by_role("tab", name="Watch", exact=True).click()
     assert page.evaluate("watchAudio[1].paused && !watchAudio[1].getAttribute('src')")
@@ -305,7 +313,7 @@ def test_story_preview_reads_updates_and_sends_instructions(remote_page: Page, t
 
     page.route("**/output/story_log.jsonl", serve_log)
     page.get_by_role("tab", name="Watch", exact=True).click()
-    page.get_by_role("tab", name="Story log", exact=True).click()
+    page.get_by_role("tab", name="Story", exact=True).click()
     log = page.get_by_role("log", name="Story log", exact=True)
     expect(log).to_contain_text("Open the gate")
     expect(log).to_contain_text("Guard: Welcome, traveler.")
@@ -325,7 +333,7 @@ def test_story_preview_reads_updates_and_sends_instructions(remote_page: Page, t
     expect(log).to_contain_text("The guard points north.")
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
     page.screenshot(path=str(tmp_path / "remote-story-mobile.png"))
-    page.get_by_role("tab", name="Inputs", exact=True).click()
+    page.get_by_role("tab", name="Remote", exact=True).click()
     expect(page.locator("#controls #mic-btn")).to_be_visible()
     page.get_by_role("tab", name="Watch", exact=True).click()
     expect(log).to_be_visible()
@@ -335,7 +343,7 @@ def test_story_preview_empty_errors_and_disabled_input(remote_page: Page) -> Non
     page = remote_page
     page.route("**/output/story_log.jsonl", lambda route: route.fulfill(status=503))
     page.get_by_role("tab", name="Watch", exact=True).click()
-    page.get_by_role("tab", name="Story log", exact=True).click()
+    page.get_by_role("tab", name="Story", exact=True).click()
     log = page.get_by_role("log", name="Story log", exact=True)
     expect(log).to_have_text("The story log could not be loaded.")
     page.route("**/output/story_log.jsonl", lambda route: route.fulfill(status=404))
@@ -366,7 +374,7 @@ def test_story_preview_remains_readable_without_baton(remote_page: Page) -> None
         "contributors": [], "active_viewers": [], "baton_request": None,
     }))
     page.get_by_role("tab", name="Watch", exact=True).click()
-    page.get_by_role("tab", name="Story log", exact=True).click()
+    page.get_by_role("tab", name="Story", exact=True).click()
     expect(page.get_by_role("log", name="Story log", exact=True)).to_contain_text("The adventure continues.")
     expect(page.locator("#story-input-status")).to_have_text("The baton holder controls story input.")
     expect(page.locator("#mic-btn")).to_be_hidden()
@@ -476,7 +484,7 @@ def test_preview_chat_sends_emotes_suggestions_and_private_help(
         });
     }""")
     if not is_orator:
-        expect(page.get_by_role("tab", name="Inputs", exact=True)).to_be_hidden()
+        expect(page.get_by_role("tab", name="Remote", exact=True)).to_be_hidden()
         expect(chat_input).to_be_enabled()
     page.screenshot(path=str(tmp_path / "remote-chat.png"), full_page=True)
     assert errors == []
@@ -540,7 +548,7 @@ def test_phone_baton_holder_with_no_credits_starts_using_owner_balance(
         expect(page.locator("#baton-request-modal")).to_be_visible()
         page.locator("#accept-baton-btn").click()
         expect(page.locator("#controls")).to_be_enabled()
-        page.get_by_role("tab", name="Inputs", exact=True).click()
+        page.get_by_role("tab", name="Remote", exact=True).click()
         page.get_by_role("button", name="Turn agent on").click()
         expect(page.locator("#controls")).to_be_enabled()
         if owner_credits > 0:
@@ -590,7 +598,7 @@ def test_preview_tracks_scene_changes_without_reloading_unchanged_images(remote_
     page.get_by_role("tab", name="Watch", exact=True).click()
     page.get_by_text("Current scene", exact=True).wait_for()
     assert page.locator("#preview-image").is_visible()
-    page.get_by_role("tab", name="Inputs", exact=True).click()
+    page.get_by_role("tab", name="Remote", exact=True).click()
     page.get_by_role("button", name="Pin scene", exact=True).click()
     page.wait_for_function("!document.getElementById('controls').disabled")
     assert len(images) == 1
@@ -606,7 +614,7 @@ def test_preview_tracks_scene_changes_without_reloading_unchanged_images(remote_
         route.fulfill(status=403, json={"detail": "Only the active orator can use this remote."})
 
     page.route("**/api/theaters/stage/remote", revoked)
-    page.get_by_role("tab", name="Inputs", exact=True).click()
+    page.get_by_role("tab", name="Remote", exact=True).click()
     page.get_by_role("button", name="Next scene", exact=True).click()
     page.wait_for_function("document.getElementById('controls').disabled && document.getElementById('connection-status').dataset.connected === 'false'")
     page.get_by_role("tab", name="Watch", exact=True).click()
@@ -620,7 +628,7 @@ def test_preview_empty_state_keeps_controls_available(remote_page: Page) -> None
     page.get_by_role("tab", name="Watch", exact=True).click()
     page.get_by_text("No scene on the canvas yet.").wait_for()
     assert page.locator("#preview-image").is_hidden()
-    page.get_by_role("tab", name="Inputs", exact=True).click()
+    page.get_by_role("tab", name="Remote", exact=True).click()
     assert page.get_by_role("button", name="Next scene", exact=True).is_enabled()
 
 
@@ -645,7 +653,7 @@ def test_preview_is_a_separate_view_with_back_navigation(remote_page: Page, widt
     expect(page.locator("#canvas-preview")).to_be_visible()
     page.reload()
     expect(page.locator("#canvas-preview")).to_be_visible()
-    page.get_by_role("tab", name="Inputs", exact=True).click()
+    page.get_by_role("tab", name="Remote", exact=True).click()
     expect(page.locator("#remote-controls")).to_be_visible()
     assert page.url == "http://remote.test/remote?theater_id=stage#inputs"
 
@@ -676,11 +684,11 @@ def test_horizontal_swipes_switch_all_tabs_and_preserve_draft(remote_page: Page)
     page.locator("#command-modal-close").click()
     page.get_by_role('tab', name='Watch', exact=True).click()
     swipe_preview(page, 140, 10)
-    expect(page.get_by_role('tab', name='Inputs')).to_have_attribute('aria-selected', 'true')
+    expect(page.get_by_role('tab', name='Remote')).to_have_attribute('aria-selected', 'true')
     swipe_panel(page, 140, 10)
     expect(page.get_by_role('tab', name='Assets')).to_have_attribute('aria-selected', 'true')
     swipe_panel(page, -140, 10)
-    expect(page.get_by_role('tab', name='Inputs')).to_have_attribute('aria-selected', 'true')
+    expect(page.get_by_role('tab', name='Remote')).to_have_attribute('aria-selected', 'true')
     assert page.locator('#command').input_value() == 'Keep my draft'
     swipe_panel(page, -140, 10)
     expect(page.get_by_role('tab', name='Watch', exact=True)).to_have_attribute('aria-selected', 'true')
@@ -732,7 +740,7 @@ def test_preview_retries_failed_image_without_disabling_controls(remote_page: Pa
     page.reload()
     page.get_by_role("tab", name="Watch", exact=True).click()
     page.get_by_text("Scene could not load. Retrying…").wait_for()
-    page.get_by_role("tab", name="Inputs", exact=True).click()
+    page.get_by_role("tab", name="Remote", exact=True).click()
     assert page.get_by_role("button", name="Next scene", exact=True).is_enabled()
     failed = False
     page.get_by_role("button", name="Next scene", exact=True).click()
@@ -816,11 +824,11 @@ def test_remote_header_branding_and_key(remote_page: Page) -> None:
     page = remote_page
     page.goto("http://remote.test/remote?theater_id=stage&join_key=mykey123")
     brand = page.locator("header a[aria-label='Narratron home']")
-    assert "Narratron Remote" in brand.inner_text()
+    assert "Narratron Mobile" in brand.inner_text()
     avatar_el = page.locator("header a img.brand-avatar")
     assert avatar_el.is_visible()
     brand_text_el = page.locator("header a .brand-text")
-    assert brand_text_el.inner_text() == "Narratron Remote"
+    assert brand_text_el.inner_text() == "Narratron Mobile"
     gradient = brand_text_el.evaluate("el => getComputedStyle(el).backgroundImage")
     assert "linear-gradient" in gradient
     assert page.locator("header .badge").count() == 0
@@ -1062,9 +1070,9 @@ def test_asset_loading_failure_can_be_retried(remote_page: Page) -> None:
 
 def test_tabs_support_keyboard_navigation(remote_page: Page) -> None:
     page = remote_page
-    expect(page.get_by_role('tab', name='Inputs')).to_have_attribute('aria-selected', 'true')
+    expect(page.get_by_role('tab', name='Remote')).to_have_attribute('aria-selected', 'true')
     assert page.locator('#open-preview').count() == 0
-    page.get_by_role('tab', name='Inputs').focus()
+    page.get_by_role('tab', name='Remote').focus()
     page.keyboard.press('ArrowLeft')
     expect(page.get_by_role('tab', name='Assets')).to_be_focused()
     page.keyboard.press('End')
@@ -1156,7 +1164,7 @@ def test_microphone_button_streams_audio_and_stops_on_release(remote_page: Page,
     page = remote_page
     if story_preview:
         page.get_by_role("tab", name="Watch", exact=True).click()
-        page.get_by_role("tab", name="Story log", exact=True).click()
+        page.get_by_role("tab", name="Story", exact=True).click()
     messages: list[str] = []
 
     def mock_agent_socket(ws: WebSocketRoute) -> None:

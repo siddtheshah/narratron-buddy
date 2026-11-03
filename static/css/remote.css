@@ -340,6 +340,28 @@ body[data-owner-idle="true"] #remote-controls {
 #canvas-preview { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: #10151f; }
 .preview-tabs { margin: 8px; }
 .preview-tabs button { min-height: 44px; height: auto; font-size: 14px; }
+#preview-thought-tab.is-highlighted {
+    color: #fef08a;
+    border-color: #fbbf24;
+    background: linear-gradient(135deg, rgba(180, 83, 9, 0.65), rgba(92, 50, 16, 0.85));
+    box-shadow: 0 0 14px rgba(245, 158, 11, 0.55);
+    animation: thought-tab-glow 1.8s ease-in-out infinite alternate;
+}
+@keyframes thought-tab-glow {
+    from {
+        box-shadow: 0 0 6px rgba(245, 158, 11, 0.35);
+        border-color: rgba(251, 191, 36, 0.7);
+    }
+    to {
+        box-shadow: 0 0 16px rgba(245, 158, 11, 0.8);
+        border-color: #fbbf24;
+    }
+}
+@media (prefers-reduced-motion: reduce) {
+    #preview-thought-tab.is-highlighted {
+        animation: none;
+    }
+}
 #remote-story-log { height: clamp(180px, 32svh, 400px); overflow-y: auto; padding: 12px; overflow-wrap: anywhere; overscroll-behavior: contain; }
 #remote-story-log .story-log-turn { display: grid; gap: 8px; margin-bottom: 16px; }
 #remote-story-log .story-log-entry { padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: #ffffff04; }

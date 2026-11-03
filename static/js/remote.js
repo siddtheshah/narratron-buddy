@@ -43,6 +43,7 @@ import { initializeRemoteAudio } from './remote-audio.js';
     const theaterId = new URLSearchParams(location.search).get('theater_id');
     const storyLog = initializeStoryLogInspector(theaterId, { embedded: true });
     const previewTabs = [...document.querySelectorAll('.preview-tabs [role="tab"]')];
+    const previewThoughtTab = document.getElementById('preview-thought-tab');
     const storyControls = document.getElementById('story-input-controls');
     const composer = document.getElementById('remote-composer');
     const agentThoughtCard = document.getElementById('agent-thought-card');
@@ -56,10 +57,12 @@ import { initializeRemoteAudio } from './remote-audio.js';
 
     function updateAgentThought(thought) {
         const text = thought && thought.text ? thought.text.trim() : '';
+        const isHighlighted = Boolean(thought && thought.highlighted && text);
         if (agentThoughtCard) {
-            agentThoughtCard.classList.toggle(
-                'is-highlighted', Boolean(thought && thought.highlighted && text)
-            );
+            agentThoughtCard.classList.toggle('is-highlighted', isHighlighted);
+        }
+        if (previewThoughtTab) {
+            previewThoughtTab.classList.toggle('is-highlighted', isHighlighted);
         }
         if (text === lastAgentThought) return;
         const isWandering = text.toLowerCase() === 'wandering';
@@ -379,7 +382,7 @@ import { initializeRemoteAudio } from './remote-audio.js';
                 views[index].hidden = index !== selected;
             }
         });
-        document.title = `${tabs[selected].textContent} · Narratron Remote`;
+        document.title = `${tabs[selected].textContent} · Narratron Mobile`;
         renderPreviewTab();
         previewAudio.update(state, isAudioActive());
         if (focus && !tabs[selected].hidden) tabs[selected].focus();

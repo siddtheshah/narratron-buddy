@@ -73,7 +73,7 @@ def test_mobile_theater_actions_open_remote_instead_of_canvas(deploy_page: Page)
         loadTheaters();
     }""")
     canvas = page.get_by_role("button", name="Launch Canvas", exact=True)
-    remote = page.get_by_role("link", name="Open remote", exact=True)
+    remote = page.get_by_role("link", name="Open Mobile", exact=True)
     export_btn = page.get_by_role("link", name="Export Assets", exact=True)
     builder_btn = page.get_by_role("link", name="Edit in Builder", exact=True)
     destroy_btn = page.get_by_role("button", name="Destroy", exact=True)

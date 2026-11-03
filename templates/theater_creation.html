@@ -1954,7 +1954,7 @@
                     }
 
                     let actionsHtml = `<button class="btn-sm btn-success theater-action-icon canvas-launch" title="Launch Canvas" aria-label="Launch Canvas" onclick="openCanvas('${s.theater_id}', ${s.is_owner ? 'true' : 'false'}, '${s.join_key || ''}')"><span aria-hidden="true">▶</span></button>`;
-                    actionsHtml += ` <a href="/remote?theater_id=${encodeURIComponent(s.theater_id)}" class="btn-sm btn-success theater-action-icon remote-launch" title="Open remote" aria-label="Open remote"><span aria-hidden="true">📱</span><span>Open remote</span></a>`;
+                    actionsHtml += ` <a href="/remote?theater_id=${encodeURIComponent(s.theater_id)}" class="btn-sm btn-success theater-action-icon remote-launch" title="Open Mobile" aria-label="Open Mobile"><span aria-hidden="true">📱</span><span>Open Mobile</span></a>`;
                     actionsHtml += ` <a href="/api/theaters/${s.theater_id}/export-assets" class="btn-sm btn-secondary theater-action-icon export-theater-btn" title="Export Assets" aria-label="Export Assets" download><span aria-hidden="true">📦</span></a>`;
                     if (s.is_owner) {
                         actionsHtml += ` <a href="/theater-editor?theater_id=${encodeURIComponent(s.theater_id)}" class="btn-sm btn-secondary theater-action-icon builder-launch" title="Edit in Builder" aria-label="Edit in Builder"><span aria-hidden="true">✦</span></a>`;
