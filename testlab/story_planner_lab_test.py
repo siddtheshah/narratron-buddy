@@ -69,7 +69,7 @@ def test_story_planner_lab_submits_action_and_records_event() -> None:
 
     with (
         patch(
-            "components.story.story_response_module.StoryResponseModule._run_responder_agent",
+            "components.story.story_response_module.StoryResponseModule._generate_response",
             return_value=mock_reaction,
         ) as mock_run,
         patch.object(StorySession, "run", offline_recorder_and_planner),

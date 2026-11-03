@@ -1,12 +1,11 @@
-"""Story response module: fast turn responder and immediate scene state owner."""
+"""Single-shot story narration with application-prepared context."""
 
 from __future__ import annotations
 
-import asyncio
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from collections import OrderedDict
 import json
 import logging
-import os
 import re
 import threading
 from threading import Lock
@@ -14,20 +13,10 @@ import time
 from collections.abc import Sequence
 from typing import Any, Callable, Dict, List, Optional
 
-from absl import flags
 from jinja2 import Template
-from pydantic import BaseModel, Field, JsonValue
-from google.adk.agents import Agent
-from google.adk.agents.readonly_context import ReadonlyContext
-from google.adk.apps.app import App, EventsCompactionConfig
-from google.adk.plugins import ReflectAndRetryToolPlugin
-from google.adk.plugins.base_plugin import BasePlugin
-from google.adk.runners import RunConfig, Runner
-from google.adk.sessions import InMemorySessionService
-from google.genai import types
+from pydantic import BaseModel, Field, JsonValue, TypeAdapter
 
 from components.canvas_state import CanvasStateManager
-from game_engine.game_state import GameState
 from components.theater_manager import Theater
 from components.reference_manager import (
     Character,
@@ -37,16 +26,21 @@ from components.reference_manager import (
     normalize_voice_tags,
 )
 from components.lore_library import LoreLibrary
-from components.story.story_recording_journal import StoryRecordingJournal
+from components.story.story_recording_journal import (
+    DEFAULT_HISTORY_EVENT_LIMIT, StoryRecordingJournal, default_history_chunk_size,
+)
 from components.notepad import NoteSnapshot
 from components.story.story_handoffs import PlanningRequest, ProposedFactChange
-from components.story.story_session import StorySession
-from components.story.story_models import (
-    VertexGemini,
-    DEFAULT_COMPACTION_TRIGGER_TOKENS,
-    DEFAULT_COMPACTION_TARGET_TOKENS,
-    DEFAULT_STORY_PLANNING_STYLE,
+from providers.decision_provider import (
+    ChoiceQuestion,
+    DecisionProvider,
+    DecisionQuestion,
+    DecisionRequest,
 )
+from components.story.story_models import DEFAULT_STORY_PLANNING_STYLE
+from providers.text_response_provider import TextResponseProvider, TextResponseRequest
+from providers.text_response_decision_provider import TextResponseDecisionProvider
+
 
 # Compatibility import path.  The schema itself is owned by
 # ReferenceManager, not by this responder module.
@@ -56,16 +50,6 @@ STORY_LOG_CONTEXT_LINES = 200
 
 logger = logging.getLogger(__name__)
 
-if "disable_story_response_enterprise" not in flags.FLAGS:
-    flags.DEFINE_boolean(
-        "disable_story_response_enterprise",
-        False,
-        "Use the legacy Vertex AI client for StoryResponseModule instead of Enterprise.",
-    )
-FLAGS = flags.FLAGS
-
-
-DEFAULT_THINKING_BUDGET = 1024
 USER_ACTION_TIMEOUT_SECONDS = 35.0
 VOICE_INPUT_LOG_THROTTLE_SECONDS = 5.0
 MAX_STORY_PLANNING_STYLE_CHARS = 500
@@ -76,7 +60,6 @@ MAX_PLANNING_SIGNAL_CHARS = 500
 MAX_NAMED_ELEMENTS = 10
 MAX_READ_LORE_CALLS_PER_TURN = 3
 MAX_SEARCH_LORE_CALLS_PER_TURN = 3
-MAX_GAME_ENTRY_RESPONSE_ATTEMPTS = 3
 
 
 class GameEntryNarrationRejected(ValueError):
@@ -103,7 +86,7 @@ Active characters, personalities, motivations & distinct quirks:
 - {{ char.name }}: Personality: {{ char.personality }} | Motivation: {{ char.motivation }} | Distinct Quirk: {{ char.quirk }}{% if char.voice_tags %} | Voice Tags: {{ char.voice_tags | join(', ') }}{% endif %}{% if char.description %} (Description: {{ char.description }}){% endif %}
 {% endfor -%}
 {% if total_characters and total_characters > characters | length -%}
-(Showing {{ characters | length }} most recent of {{ total_characters }} total session characters. Use 'lookup_character' tool to look up others.)
+(Showing {{ characters | length }} most recent of {{ total_characters }} total session characters. Additional known profiles are supplied with the turn context.)
 {% endif -%}
 {% endif -%}
 
@@ -141,16 +124,14 @@ Respond ONLY with valid JSON conforming to the scene reaction schema.
 - **Death Hint**: When player death occurs, provide a subtle, witty, or possibly cryptic hint (in the narration, NPC parting words, or environmental fallout) hinting at why they died or what tactical/leverage mistake triggered it if it wasn't obvious. The player should feel that death was a fair, foreseeable possibility rooted in the world's rules and learn a valuable lesson for their next attempt.
 - If the player wishes to continue playing after death, it is a restart of the adventure from the beginning (e.g., as a fresh reset, a new incarnation, or the next candidate).
 
-# Tool Usage Guidelines
-- **Lore Search & Reading (`search_lore`, `read_lore`)**: Ground the narrative, characters, factions, and setting in established theater lore. You may call `search_lore` to perform a keyword search across all lore files and find the most relevant documents by relevance score, and `read_lore` to read full lore documents or directories. `search_lore` and `read_lore` are capped separately: you may call search_lore at most 3 times and read_lore at most 3 times in a single turn. Once you have sufficient context, proceed immediately to return the scene reaction. If no lore is available, invent the lore freely without calling search_lore or read_lore.
+# Supplied Context
+- **Grounded Lore**: Ground the story in the relevant lore supplied with the turn. Invent details only where they do not contradict established facts.
 {% if enable_dice -%}
-- **Dice Rolling (`roll_dice`)**: When an action's outcome is genuinely uncertain, call roll_dice and use the returned result to decide the consequence; do not fabricate a roll.
-  - **Player Reactionary Rolls (`procedural=False`, default)**: Use for resolving player actions, skill checks, contests, or direct consequences of player decisions. These rolls are visibly animated and displayed on the canvas for the player.
-  - **Procedural Rolls (`procedural=True`)**: Use for background procedural generation, random encounter tables, weather, NPC demeanor, or hidden world checks. These rolls are hidden from the canvas.
+- **Dice Results**: Use only the application-supplied dice results to resolve uncertain outcomes. Never invent additional rolls. The result includes its low, middle, or high tier.
 {% else -%}
-- Dice rolling is disabled. Resolve uncertain outcomes through established lore and narrative consequences without rolling dice or inventing roll results.
+- Dice rolling is disabled. Resolve outcomes through established lore and narrative consequences without inventing rolls.
 {% endif -%}
-- **Character Lookup (`lookup_character`)**: Call `lookup_character` to list all known session characters or search for a specific NPC by name, role, or trait to view their full profile, personality, motivation, and quirk when encountering or referencing characters created earlier in the story.
+- **Character Profiles**: Use the supplied known character profiles for NPC continuity. No tools are available.
 - Canonical character and scene updates belong to the recorder. Describe established changes in the structured response for reconciliation.
 
 # Scene Reaction Output Requirements
@@ -160,8 +141,7 @@ Respond ONLY with valid JSON conforming to the scene reaction schema.
 - **Planning Signals (Direct Communication to Deep Planner)**: These signals are internal communication directed solely to the deep planner (never shown to the player). You MUST use this channel to ensure high recall of sticky note updates: explicitly review your active sticky notes and call out any topics that need an update based on this turn's resolution (e.g. `[STICKY UPDATE: <Exact Topic Name>] <what changed or new value>` for stat changes, inventory items gained/lost, location shifts, quest progress, combat status, enemy stats, or lasting effects), followed by factual story fallout and thread consequences for background planning. Do not invent future player events; describe what was established this turn.
 
 # Character Generation
-- Look up important characters before writing dialogue for them. The recorder maintains canonical character profiles.
-  - You can look up the character using `lookup_character` to see if they have already been created.
+- Review supplied profiles before writing dialogue for important characters. The recorder maintains canonical character profiles.
 - Do not expose secret character information via the character name when creating a character. Everything else is otherwise private.
 - If a character is disguised, make sure you give them an alias that hides their nature, rather than using their real name.
 - Every generated character must have an explicit gender assignment ('male', 'female', or 'nonbinary') to ensure appropriate voice synthesis.
@@ -172,11 +152,11 @@ Respond ONLY with valid JSON conforming to the scene reaction schema.
 
 # Typical Response Procedure
 
-1. Search lore library for relevant context using `search_lore`
-2. Read relevant lore documents using `read_lore`
-3. Resolve the immediate action from established facts and lore.
-4. Propose factual changes for recorder reconciliation.
-5. Finalize scene reaction.
+1. Review the auto-populated relevant lore context and current story state.
+2. Resolve the immediate action from established facts and lore.
+3. Propose factual changes for recorder reconciliation.
+4. Finalize scene reaction.
+
 
 # Story-Planning Style (User Specified)
 {{ style }}
@@ -205,6 +185,11 @@ No lore documents are available for this theater. Invent the lore, world details
 _RESPONDER_TURN_PROMPT_TEMPLATE = Template(
 """# Current Story State
 {{ story_state }}
+{% if relevant_lore -%}
+
+# Relevant Lore Context
+{{ relevant_lore }}
+{% endif -%}
 
 # Player Action
 {{ user_action }}{% if nudge %}
@@ -294,17 +279,19 @@ def build_responder_turn_prompt(
     user_action: str,
     nudge: str = "",
     game_state_json: str = "",
+    relevant_lore: str = "",
 ) -> str:
     return _RESPONDER_TURN_PROMPT_TEMPLATE.render(
         story_state=story_state,
         user_action=user_action,
         nudge=nudge,
         game_state_json=game_state_json,
+        relevant_lore=relevant_lore,
     ).strip()
 
 
 class StoryResponseModule:
-    """Fast, authoritative turn responder with dependencies supplied by ``StoryTool``."""
+    """Generate one validated scene delta per turn from supplied providers and state."""
 
     def __init__(
         self,
@@ -312,11 +299,9 @@ class StoryResponseModule:
         canvas_manager: CanvasStateManager,
         lore_library: LoreLibrary,
         reference_manager: ReferenceManager,
-        session_service: InMemorySessionService,
-        session_id: str,
-        game_state: GameState | None = None,
-        story_session: StorySession | None = None,
+        text_response_provider: TextResponseProvider,
         recording_journal: StoryRecordingJournal | None = None,
+        decision_provider: Optional[DecisionProvider] = None,
     ) -> None:
         if canvas_manager is None:
             raise ValueError("canvas_manager is required.")
@@ -327,16 +312,13 @@ class StoryResponseModule:
             raise ValueError("lore_library is required.")
         if reference_manager is None:
             raise ValueError("reference_manager is required.")
-        if session_service is None:
-            raise ValueError("session_service is required.")
-        if not session_id:
-            raise ValueError("session_id is required.")
+        if text_response_provider is None:
+            raise ValueError("text_response_provider is required.")
 
         self.theater = theater
         self.canvas_manager = canvas_manager
-        self.story_session = story_session
+        self.text_response_provider = text_response_provider
         self._game_entry = False
-        self._responder_feedback = ""
         self._story_stage_id = ""
         raw_config = theater.config() or {}
         subconfig = raw_config.get("story_planning", raw_config) if "story_planning" in raw_config else raw_config
@@ -346,6 +328,7 @@ class StoryResponseModule:
 
         self.lore_library = lore_library
         self.recording_journal = recording_journal
+        self._decision_provider: Optional[DecisionProvider] = decision_provider
         self.reference_manager = reference_manager
         if self.reference_manager.story_state is None and self.canvas_manager is not None:
             self.reference_manager.story_state = self.canvas_manager.story
@@ -379,43 +362,14 @@ class StoryResponseModule:
         self.user_action_timeout_seconds: float = USER_ACTION_TIMEOUT_SECONDS
         self.on_failure: Optional[Callable[[], None]] = None
 
-        # Session & ADK
+        # Response configuration
         self.adventure_mode: bool = bool(self.config.get("adventure_mode", False))
         configured_style = self.config.get("style", DEFAULT_STORY_PLANNING_STYLE)
         self.style: str = (
             str(configured_style).strip()[:MAX_STORY_PLANNING_STYLE_CHARS]
             or DEFAULT_STORY_PLANNING_STYLE
         )
-        self.session_id = str(session_id)
-        self.session_service = session_service
-        self.compaction_config: Optional[EventsCompactionConfig] = (
-            None if story_session is not None else self._build_compaction_config()
-        )
-        self._run_compression_config: Optional[types.ContextWindowCompressionConfig] = (
-            None if story_session is not None else self._build_run_compression_config()
-        )
-        self.responder_model: str = str(
-            self.config.get("responder_model")
-            or self.config.get("model")
-            or "gemini-3.8-flash"
-        )
-        if "thinking_budget" in self.config:
-            raw_budget = self.config.get("thinking_budget")
-            self.thinking_budget: Optional[int] = int(raw_budget) if raw_budget is not None else None
-        else:
-            self.thinking_budget: Optional[int] = DEFAULT_THINKING_BUDGET
-        self.vertex_project: Optional[str] = (
-            self.config.get("vertex_project")
-            or self.config.get("gcloud", {}).get("project_id")
-            or os.getenv("GOOGLE_CLOUD_PROJECT")
-        )
-        self.priority_paygo: bool = True
-        # This is intentionally an app flag rather than GOOGLE_GENAI_USE_ENTERPRISE,
-        # which changes the SDK backend for every client in this process.
-        self.use_enterprise: bool = not bool(FLAGS["disable_story_response_enterprise"].value)
-        self.vertex_location: str = str(
-            self.config.get("vertex_location") or "global"
-        )
+        self.responder_model: str | None = self.config.get("responder_model") or self.config.get("model")
 
         # Callbacks
         self.on_scene_reaction: Optional[Callable[[Dict[str, Any]], None]] = (
@@ -425,27 +379,19 @@ class StoryResponseModule:
             self.config.get("on_story_response_completed")
         )
 
-        self.plugins: List[BasePlugin] = [ReflectAndRetryToolPlugin()]
-
-        # Fast responder runner
-        self._responder_agent: Agent = self._create_responder_agent()
-        self._responder_app: App | None = None if story_session is not None else App(
-            name="narratron_story_responder",
-            root_agent=self._responder_agent,
-            plugins=self.plugins,
-            events_compaction_config=self.compaction_config,
-        )
-        self._responder_runner: Runner | None = None if story_session is not None else Runner(
-            app=self._responder_app,
-            session_service=self.session_service,
-            auto_create_session=True,
-        )
-
         self.reload_from_session_state()
 
     @property
     def theater_id(self) -> str:
         return getattr(self.theater, "theater_id", "")
+
+    @property
+    def decision_provider(self) -> Optional[DecisionProvider]:
+        return self._decision_provider
+
+    @decision_provider.setter
+    def decision_provider(self, value: Optional[DecisionProvider]) -> None:
+        self._decision_provider = value
 
     def acquire_in_flight(self, tool_name: str) -> bool:
         with self._in_flight_lock:
@@ -569,6 +515,78 @@ class StoryResponseModule:
                         summary=f"Pinned responder instructions '{document}'",
                     )
         return context
+
+    def collect_relevant_lore(
+        self,
+        user_action: str,
+        nudge: str = "",
+        sticky_snapshot: Optional[NoteSnapshot] = None,
+    ) -> str:
+        if self._decision_provider is None:
+            return ""
+        visible_docs = self.lore_library._visible_documents("responder")
+        candidate_docs = [doc for doc in visible_docs if not doc.endswith("/")]
+        if not candidate_docs:
+            return ""
+
+        active_snapshot = sticky_snapshot if sticky_snapshot is not None else self.notepad.snapshot()
+        elements = active_snapshot.present_notes(self.notepad.max_sticky_notes)
+        sticky_lines = [f"- {elem.get('topic', '')}: {elem.get('info', '')}" for elem in elements]
+
+        input_parts: list[str] = [f"Player Action:\n{user_action.strip()}"]
+        if nudge and nudge.strip():
+            input_parts.append(f"Live Agent Nudge:\n{nudge.strip()}")
+        if sticky_lines:
+            input_parts.append("Active Sticky Notes:\n" + "\n".join(sticky_lines))
+        else:
+            input_parts.append("Active Sticky Notes:\n(No active sticky notes)")
+        input_text = "\n\n".join(input_parts)
+
+        pruned_candidates = candidate_docs[:254]
+        choices = ("none", *pruned_candidates)
+        questions: list[DecisionQuestion] = [
+            ChoiceQuestion(
+                name="primary_lore_document",
+                instructions=(
+                    "Select the single lore document most relevant to resolving this player action "
+                    "given the current sticky notes state, or 'none' if no lore document is needed."
+                ),
+                choices=choices,
+            ),
+        ]
+        if len(pruned_candidates) > 1:
+            questions.append(
+                ChoiceQuestion(
+                    name="secondary_lore_document",
+                    instructions=(
+                        "Select an additional relevant lore document if the player action or scene "
+                        "touches a second distinct subject, or 'none' if no additional lore is needed."
+                    ),
+                    choices=choices,
+                )
+            )
+
+        request = DecisionRequest(input_text=input_text, questions=tuple(questions))
+        result = self._decision_provider.decide(request)
+
+        selected_docs: list[str] = []
+        primary = result.get_choice("primary_lore_document").choice.strip()
+        if primary != "none" and primary in candidate_docs:
+            selected_docs.append(primary)
+        if len(pruned_candidates) > 1:
+            secondary = result.get_choice("secondary_lore_document").choice.strip()
+            if secondary != "none" and secondary in candidate_docs and secondary not in selected_docs:
+                selected_docs.append(secondary)
+
+        if not selected_docs:
+            return ""
+
+        sections: list[str] = []
+        for doc_path in selected_docs:
+            content = self.read_lore(doc_path)
+            if content and not content.startswith("Error:"):
+                sections.append(f"## Lore Document: {doc_path}\n{content.strip()}")
+        return "\n\n".join(sections)
 
     def _record_lore_activity(self, activity_type: str, target: str, summary: str = "", **kwargs: Any) -> None:
         with self._lore_activity_lock:
@@ -887,45 +905,8 @@ class StoryResponseModule:
         )
         return f"Canonically updated player character '{player.name}'. Visual: {player.image_description or 'N/A'}."
 
-    # ADK Responder Agent
-    def _build_compaction_config(self) -> Optional[EventsCompactionConfig]:
-        compaction = self.config.get("compaction")
-        if compaction is False:
-            return None
-        if compaction is None:
-            compaction = {}
-        compaction_interval = int(compaction.get("compaction_interval", compaction.get("interval", 3)))
-        overlap_size = int(compaction.get("overlap_size", compaction.get("overlap", 1)))
-        token_threshold = compaction.get("token_threshold", compaction.get("trigger_tokens", DEFAULT_COMPACTION_TRIGGER_TOKENS))
-        event_retention_size = compaction.get("event_retention_size", 6)
-        if token_threshold is not None and event_retention_size is None:
-            event_retention_size = max(1, overlap_size * 2)
-        elif event_retention_size is not None and token_threshold is None:
-            token_threshold = DEFAULT_COMPACTION_TRIGGER_TOKENS
-
-        return EventsCompactionConfig(
-            compaction_interval=compaction_interval,
-            overlap_size=overlap_size,
-            token_threshold=int(token_threshold) if token_threshold is not None else None,
-            event_retention_size=int(event_retention_size) if event_retention_size is not None else None,
-        )
-
-    def _build_run_compression_config(self) -> Optional[types.ContextWindowCompressionConfig]:
-        compaction = self.config.get("compaction")
-        if compaction is False:
-            return None
-        if compaction is None:
-            compaction = {}
-        trigger = compaction.get("trigger_tokens", compaction.get("token_threshold", DEFAULT_COMPACTION_TRIGGER_TOKENS))
-        target = compaction.get("target_tokens", DEFAULT_COMPACTION_TARGET_TOKENS)
-        return types.ContextWindowCompressionConfig(
-            trigger_tokens=int(trigger) if trigger is not None else None,
-            sliding_window=types.SlidingWindow(target_tokens=int(target)) if target is not None else None,
-        )
-
-    def _build_responder_instruction(
-        self, ctx: Optional[ReadonlyContext] = None
-    ) -> str:
+    # Single-shot response generation
+    def _build_responder_instruction(self) -> str:
         lore_context = self._get_lore_context()
         return build_responder_instructions(
             context="",
@@ -935,7 +916,9 @@ class StoryResponseModule:
             enable_dice=not self._game_entry and self.config.get("enable_dice", True) is not False,
         )
 
-    def _build_responder_turn_prompt(self, user_action: str, nudge: str = "") -> str:
+    def _build_responder_turn_prompt(
+        self, user_action: str, nudge: str = "", relevant_lore: str = ""
+    ) -> str:
         snapshot, changed_topics = self.notepad.consume_responder_snapshot()
         self._turn_note_snapshot = snapshot
         story_state = build_story_context_prompt(
@@ -948,10 +931,9 @@ class StoryResponseModule:
         prompt = build_responder_turn_prompt(
             story_state=story_state,
             user_action=user_action,
+            relevant_lore=relevant_lore,
             nudge=nudge,
         )
-        if self._responder_feedback:
-            prompt += f"\n\n# Application Validation Feedback\n{self._responder_feedback}"
         return prompt
 
     def trigger_story_planning(self, reason: str) -> str:
@@ -966,185 +948,71 @@ class StoryResponseModule:
         self._planning_request_reason = clean_reason
         return "Story planning requested. The planner will receive the completed turn and your reason after this response."
 
-    def _create_responder_agent(self) -> Agent:
-        config_kwargs: dict[str, Any] = {
-            "http_options": types.HttpOptions(
-                headers={
-                    # Priority PayGo is selected by these Vertex headers.
-                    # The Enterprise endpoint rejects service_tier="priority".
-                    "X-Vertex-AI-LLM-Request-Type": "shared",
-                    "X-Vertex-AI-LLM-Shared-Request-Type": "priority",
-                }
-            ),
-        }
-        if self.thinking_budget is not None:
-            config_kwargs["thinking_config"] = types.ThinkingConfig(
-                thinking_budget=self.thinking_budget
-            )
-
-        generate_content_config = types.GenerateContentConfig(**config_kwargs)
-
-        model_http_options = types.HttpOptions(
-            headers={
-                "X-Vertex-AI-LLM-Request-Type": "shared",
-                "X-Vertex-AI-LLM-Shared-Request-Type": "priority",
-            }
-        )
-
-        return Agent(
-            name="story_responder",
-            description="Authoritative responder for interactive story turns.",
-            model=VertexGemini(
-                model=self.responder_model,
-                project_id=self.vertex_project,
-                location=self.vertex_location,
-                http_options=model_http_options,
-                enterprise=self.use_enterprise,
-            ),
-            instruction=self._build_responder_instruction,
-            tools=[
-                self.search_lore,
-                self.read_lore,
-                self.lookup_character,
-                *([self.roll_dice] if self.config.get("enable_dice", True) is not False else []),
-            ],
-            output_schema=SceneReaction,
-            output_key="scene_reaction",
-            include_contents="none" if self.story_session is not None else "default",
-            disallow_transfer_to_parent=True,
-            disallow_transfer_to_peers=True,
-            generate_content_config=generate_content_config,
-        )
-
-    def restart_responder_agent(self) -> None:
-        if self.story_session is not None:
-            self.reset_lore_call_counts()
+    def _prepare_dice(self, prompt: str) -> None:
+        if self._decision_provider is None or self._game_entry or self.config.get("enable_dice", True) is False:
             return
-        logger.info(
-            "[StoryResponseModule] Resetting and restarting story responder agent for theater=%s",
-            self.theater_id,
-        )
-        self._responder_runner = None
-        self._responder_agent = None
-        self._responder_app = None
-        self._get_or_create_responder_runner()
+        result = self._decision_provider.decide(DecisionRequest(
+            input_text=prompt,
+            questions=(ChoiceQuestion(
+                name="dice_roll",
+                instructions=(
+                    "Choose none for certain outcomes or actions needing no check; player for a "
+                    "genuinely uncertain player action, skill check, or contest; procedural for a "
+                    "hidden background world check. The application rolls one d20 if needed."
+                ),
+                choices=("none", "player", "procedural"),
+            ),),
+        ))
+        choice = result.get_choice("dice_roll").choice
+        if choice != "none":
+            self.roll_dice(reason="Immediate action resolution", procedural=choice == "procedural")
 
-    def _get_or_create_responder_runner(self) -> Runner:
-        if self._responder_runner is None:
-            self._responder_agent = self._create_responder_agent()
-            self._responder_app = App(
-                name="narratron_story_responder",
-                root_agent=self._responder_agent,
-                plugins=self.plugins,
-                events_compaction_config=self.compaction_config,
-            )
-            self._responder_runner = Runner(
-                app=self._responder_app,
-                session_service=self.session_service,
-                auto_create_session=True,
-            )
-        return self._responder_runner
-
-    def _run_responder_agent(self, user_action: str, nudge: str = "") -> Dict[str, Any]:
+    def _generate_response(self, user_action: str, nudge: str = "") -> dict[str, JsonValue]:
+        """Prepare context with decisions, then request exactly one scene delta."""
         self.reset_lore_call_counts()
-        if self.story_session is not None:
-            prompt = self._build_responder_turn_prompt(user_action, nudge=nudge)
-            return SceneReaction.model_validate_json(self.story_session.run(
-                "responder", prompt, timeout=self.user_action_timeout_seconds, stage_id=self._story_stage_id,
-            )).model_dump(mode="json")
-        runner = self._get_or_create_responder_runner()
-        session_id = self.session_id
-        theater = self.theater_id or "default"
-        logger.debug(
-            "[StoryResponseModule] Running responder agent (theater=%s): user_action=%r, nudge=%r",
-            theater,
-            user_action,
-            nudge,
+        if self._decision_provider is None:
+            self._decision_provider = TextResponseDecisionProvider(self.text_response_provider)
+        prompt = self._build_responder_turn_prompt(user_action, nudge=nudge)
+        relevant_lore = self.collect_relevant_lore(
+            user_action, nudge=nudge, sticky_snapshot=self._turn_note_snapshot,
+        )
+        if relevant_lore:
+            prompt += f"\n\n# Relevant Lore Context\n{relevant_lore}"
+        if self.recording_journal is not None:
+            event_limit = TypeAdapter(int).validate_python(
+                self.config.get("history_event_limit", DEFAULT_HISTORY_EVENT_LIMIT),
+            )
+            configured_chunk_size = self.config.get("history_chunk_size")
+            chunk_size = (
+                default_history_chunk_size(event_limit) if configured_chunk_size is None
+                else TypeAdapter(int).validate_python(configured_chunk_size)
+            )
+            history = self.recording_journal.prompt_context("responder", event_limit, chunk_size)
+            if history:
+                prompt = f"{history}\n\n{prompt}"
+        profiles = self.lookup_character()
+        prompt += f"\n\n# Known Character Profiles\n{profiles.model_dump_json()}"
+        self._prepare_dice(prompt)
+        prompt += f"\n\n# Application Dice Results\n{json.dumps(self.get_die_rolls_this_turn())}"
+        request = TextResponseRequest(
+            prompt=prompt, system_instruction=self._build_responder_instruction(),
+            model=self.responder_model, response_schema=SceneReaction,
         )
 
-        async def run_turn() -> Dict[str, Any]:
-            run_config = (
-                RunConfig(context_window_compression=self._run_compression_config)
-                if self._run_compression_config
-                else None
-            )
-            prompt_input = self._build_responder_turn_prompt(user_action, nudge=nudge)
-
-            previous_session = await self.session_service.get_session(
-                app_name="narratron_story_responder",
-                user_id="story_responder",
-                session_id=session_id,
-            )
-            if previous_session and previous_session.state:
-                previous_session.state.pop("scene_reaction", None)
-
-            final_text = ""
-            async for event in runner.run_async(
-                user_id="story_responder",
-                session_id=session_id,
-                new_message=types.Content(role="user", parts=[types.Part(text=prompt_input)]),
-                run_config=run_config,
-            ):
-                if event.is_final_response() and event.content and event.content.parts:
-                    final_text = "".join(part.text or "" for part in event.content.parts)
-
-            session = await self.session_service.get_session(
-                app_name="narratron_story_responder",
-                user_id="story_responder",
-                session_id=session_id,
-            )
-            stored_reaction = (session.state or {}).get("scene_reaction") if session else None
-
-            try:
-                if isinstance(stored_reaction, BaseModel):
-                    reaction = stored_reaction.model_dump()
-                elif isinstance(stored_reaction, dict):
-                    reaction = stored_reaction
-                elif isinstance(stored_reaction, str):
-                    reaction = json.loads(stored_reaction)
-                else:
-                    reaction = {}
-            except json.JSONDecodeError as exc:
-                raise ValueError("Story responder returned invalid structured output.") from exc
-            if not isinstance(reaction, dict):
-                raise ValueError("Story responder returned an invalid scene reaction.")
-            if not reaction:
-                state_keys = sorted((session.state or {}).keys()) if session else []
-                raise ValueError(
-                    "Story responder returned no fresh scene delta for this action "
-                    f"(final_response_chars={len(final_text)}, state_keys={state_keys})."
-                )
-            try:
-                scene_delta = SceneReaction.model_validate(reaction)
-            except Exception as exc:
-                raise ValueError("Story responder returned an invalid scene delta.") from exc
-            return scene_delta.model_dump()
-
+        executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="story-response")
+        pending = executor.submit(self.text_response_provider.generate, request)
         try:
-            return asyncio.run(
-                asyncio.wait_for(run_turn(), timeout=self.user_action_timeout_seconds)
-            )
-        except (asyncio.TimeoutError, TimeoutError):
-            logger.error(
-                "[StoryResponseModule] Story responder timed out after %.1f seconds for user action: %r",
-                self.user_action_timeout_seconds,
-                user_action,
-            )
-            if self.canvas_manager is not None and self.canvas_manager.tool_response is not None:
-                self.canvas_manager.tool_response.set_activity("user_action", active=False)
-            self.restart_responder_agent()
-            if self.on_failure is not None:
-                try:
-                    self.on_failure()
-                except Exception:
-                    logger.exception("[StoryResponseModule] on_failure callback failed")
-            return {
-                "error": (
-                    f"Story responder timed out after {self.user_action_timeout_seconds} seconds. "
-                    "The story responder agent was killed and restarted. "
-                    "Please re-try the action or guide the story."
-                )
-            }
+            response = pending.result(timeout=self.user_action_timeout_seconds)
+        except (FutureTimeoutError, TimeoutError):
+            return {"error": f"Story responder timed out after {self.user_action_timeout_seconds} seconds."}
+        finally:
+            executor.shutdown(wait=False, cancel_futures=True)
+        # Validate fresh output directly; a late timed-out result cannot publish state.
+        reaction = (
+            SceneReaction.model_validate(response.parsed) if response.parsed is not None
+            else SceneReaction.model_validate_json(response.text)
+        )
+        return reaction.model_dump(mode="json")
 
     @staticmethod
     def _clean_dialogue(dialogue: Any) -> List[Dict[str, str]]:
@@ -1187,6 +1055,7 @@ class StoryResponseModule:
         return self._process_user_action(
             user_action,
             nudge=nudge,
+
             message_type=message_type,
         )
 
@@ -1267,42 +1136,21 @@ class StoryResponseModule:
             return {"error": "Adventure Mode is not enabled for this theater."}
 
         self._planning_request_reason = None
-        self._responder_feedback = ""
         self._game_entry = game_entry
         self._story_stage_id = stage_id
         self._turn_note_snapshot = self.notepad.snapshot()
         try:
-            attempts = MAX_GAME_ENTRY_RESPONSE_ATTEMPTS if game_entry else 1
-            for attempt in range(attempts):
-                parsed = self._run_responder_agent(action, nudge=nudge)
-                if not game_entry or "error" in parsed or not (
-                    parsed.get("proposed_factual_changes") or self.get_die_rolls_this_turn()
-                ):
-                    break
-                self._responder_feedback = (
-                    "Your previous game-entry narration was rejected and was not published. "
-                    "Game-entry narration cannot establish new factual or mechanical changes. "
-                    "Return corrected narration and dialogue limited to the recorder-established "
-                    "outcomes in the original brief. Return proposed_factual_changes=[]; "
-                    "do not roll dice, resolve the game again, or introduce additional outcomes. "
-                    "The rejected response below is feedback only, not established story state.\n"
-                    f"Rejected response: {json.dumps(parsed, ensure_ascii=False)}"
-                )
-                logger.warning(
-                    "[StoryResponseModule] Rejected game-entry narration "
-                    "(stage=%s, attempt=%d/%d): %s",
-                    stage_id, attempt + 1, attempts, self._responder_feedback,
-                )
-                self._planning_request_reason = None
-            else:
+            parsed = self._generate_response(action, nudge=nudge)
+            if game_entry and "error" not in parsed and (
+                parsed.get("proposed_factual_changes") or self.get_die_rolls_this_turn()
+            ):
                 raise GameEntryNarrationRejected(
-                    "Game-entry narration still requires responder correction."
+                    "Game-entry narration cannot establish new factual or mechanical changes."
                 )
             planning_request = self._planning_request_reason
             snapshot_used = self._turn_note_snapshot
         finally:
             self._planning_request_reason = None
-            self._responder_feedback = ""
             self._turn_note_snapshot = None
             self._game_entry = False
         notepad_revision_used = (

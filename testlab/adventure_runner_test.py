@@ -6,6 +6,8 @@ from unittest.mock import MagicMock, patch
 from pydantic import JsonValue
 from components.story.story_handoffs import GameControlDecision, NarrationRequest
 from components.story.story_session import StoryRole, StorySession
+from components.story.story_response_module import SceneReaction
+from providers.text_response_provider import TextResponseRequest, TextResponseResult
 from game_engine.game_runtime import GameAction
 from components.reference_manager import Character
 from testing.game_fixtures import exchange_definition
@@ -204,7 +206,7 @@ def test_synchronous_action_uses_production_order_before_deterministic_drain(sam
 
     try:
         with (
-            patch.object(session.story_tool.response_module, "_run_responder_agent", side_effect=respond),
+            patch.object(session.story_tool.response_module, "_generate_response", side_effect=respond),
             patch.object(StorySession, "run", run),
         ):
             session._process_user_action_wrapper("  Begin the hearing.  ")
@@ -217,15 +219,26 @@ def test_synchronous_action_uses_production_order_before_deterministic_drain(sam
 
 
 @pytest.fixture
-def sample_adventure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+def sample_adventure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, offline_lab_text_providers: MagicMock,
+) -> Path:
     """Create an isolated, synthetic adventure directory for unit testing without depending on disk assets."""
     def run(shared: StorySession, role: StoryRole, prompt: str, *, timeout: float = 60.0, stage_id: str = "") -> str:
         if role == "recorder":
             return GameControlDecision().model_dump_json()
-        if role == "responder":
-            return '{"narration":"The synthetic scene changes."}'
         return "No changes."
 
+    def generate(request: TextResponseRequest) -> TextResponseResult:
+        if request.response_schema is SceneReaction:
+            return TextResponseResult(text='{"narration":"The synthetic scene changes."}', provider="test", model="test")
+        assert request.response_json_schema is not None
+        return TextResponseResult(
+            text="", provider="test", model="test",
+            parsed={"primary_lore_document": "none", "secondary_lore_document": "none", "dice_roll": "none"},
+        )
+
+    offline_lab_text_providers.model = "test"
+    offline_lab_text_providers.generate.side_effect = generate
     monkeypatch.setattr(StorySession, "run", run)
     adventures_dir = tmp_path / "adventures"
     adventures_dir.mkdir(parents=True, exist_ok=True)
@@ -394,7 +407,7 @@ def test_adventure_session_turn_execution_mocked(sample_adventure):
         with (
             patch.object(
                 session.story_tool.response_module,
-                "_run_responder_agent",
+                "_generate_response",
                 return_value=mock_reaction,
             ),
             patch.object(
@@ -506,7 +519,7 @@ def test_adventure_runner_lab_api_routes(sample_adventure):
     with (
         patch.object(
             active_session.story_tool.response_module,
-            "_run_responder_agent",
+            "_generate_response",
             return_value=mock_reaction,
         ),
         patch.object(
@@ -570,7 +583,7 @@ def test_send_message_inside_running_event_loop(sample_adventure):
         with (
             patch.object(
                 session.story_tool.response_module,
-                "_run_responder_agent",
+                "_generate_response",
                 return_value=mock_reaction,
             ),
             patch.object(

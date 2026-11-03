@@ -3,21 +3,26 @@
 import unittest
 import tempfile
 from threading import Event
+import time
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from absl.testing import flagsaver
-from google.adk.plugins import ReflectAndRetryToolPlugin
-from google.adk.plugins.base_plugin import BasePlugin
-from google.adk.sessions import InMemorySessionService
 
 from components.canvas.story_state import StoryState
 from components.canvas_state import CanvasStateManager
 from components.theater_manager import Theater, TheaterManager
 from providers import ImageProvider, SpeechProvider, TextResponseProvider
+from providers.text_response_provider import TextResponseRequest, TextResponseResult
+from providers.decision_provider import (
+    ChoiceAnswer,
+    DecisionProvider,
+    DecisionRequest,
+    DecisionResult,
+)
 from components.reference_manager import Character, ReferenceManager, PlayerCharacter
 from components.lore_library import LoreLibrary
 from components.notepad import Notepad
+from components.story.story_recording_journal import StoryRecordingJournal
 from components.story.story_response_module import (
     ResponseCharacter,
     ResponseDialogue,
@@ -43,7 +48,7 @@ class TestStoryResponseModuleDependencies(unittest.TestCase):
         self.provider = MagicMock(spec=TextResponseProvider)
         self.lore_library = MagicMock(spec=LoreLibrary)
         self.reference_manager = MagicMock(spec=ReferenceManager)
-        self.session_service = MagicMock(spec=InMemorySessionService)
+        self.provider = MagicMock(spec=TextResponseProvider)
         self.session_id = "response-boundary-session"
         self.notepad = Notepad(self.theater, canvas_manager=self.canvas)
         self.canvas.notepad = self.notepad
@@ -58,189 +63,30 @@ class TestStoryResponseModuleDependencies(unittest.TestCase):
         self.assertEqual(dialogue.voice_instruction, "A hushed warning, growing urgent.")
 
     def test_uses_injected_dependencies(self) -> None:
-        with (
-            patch.object(StoryResponseModule, "_create_responder_agent"),
-            patch.object(StoryResponseModule, "reload_from_session_state"),
-            patch("components.story.story_response_module.App"),
-            patch("components.story.story_response_module.Runner"),
-        ):
-            module = StoryResponseModule(
-                theater=self.theater,
-                canvas_manager=self.canvas,
-                lore_library=self.lore_library,
-                reference_manager=self.reference_manager,
-                session_service=self.session_service,
-                session_id=self.session_id,
-            )
-
+        module = StoryResponseModule(
+            self.theater, self.canvas, self.lore_library, self.reference_manager, self.provider,
+        )
         self.assertIs(module.notepad, self.notepad)
         self.assertIs(module.lore_library, self.lore_library)
         self.assertIs(module.reference_manager, self.reference_manager)
-        self.assertIs(module.session_service, self.session_service)
-        self.assertEqual(module.session_id, self.session_id)
+        self.assertIs(module.text_response_provider, self.provider)
+        self.provider.generate.assert_not_called()
 
-    def test_initializes_with_reflect_and_retry_plugin_by_default(self) -> None:
-        with (
-            patch.object(StoryResponseModule, "_create_responder_agent"),
-            patch.object(StoryResponseModule, "reload_from_session_state"),
-            patch("components.story.story_response_module.App") as mock_app_class,
-            patch("components.story.story_response_module.Runner"),
-        ):
-            module = StoryResponseModule(
-                theater=self.theater,
-                canvas_manager=self.canvas,
-                lore_library=self.lore_library,
-                reference_manager=self.reference_manager,
-                session_service=self.session_service,
-                session_id=self.session_id,
+    def test_requires_text_provider(self) -> None:
+        with self.assertRaisesRegex(ValueError, "text_response_provider is required"):
+            StoryResponseModule(
+                self.theater, self.canvas, self.lore_library, self.reference_manager,
+                None,  # type: ignore[arg-type]
             )
 
-        self.assertEqual(len(module.plugins), 1)
-        self.assertIsInstance(module.plugins[0], ReflectAndRetryToolPlugin)
-        self.assertEqual(module.plugins[0].max_retries, 3)
-        self.assertTrue(module.plugins[0].throw_exception_if_retry_exceeded)
-        mock_app_class.assert_called_once()
-        _, kwargs = mock_app_class.call_args
-        self.assertIn("plugins", kwargs)
-        self.assertEqual(kwargs["plugins"], module.plugins)
-
-    def test_restart_responder_agent_retains_plugins(self) -> None:
-        custom_plugin = MagicMock(spec=BasePlugin)
-        with (
-            patch.object(StoryResponseModule, "_create_responder_agent"),
-            patch.object(StoryResponseModule, "reload_from_session_state"),
-            patch("components.story.story_response_module.App") as mock_app_class,
-            patch("components.story.story_response_module.Runner"),
-        ):
-            module = StoryResponseModule(
-                theater=self.theater,
-                canvas_manager=self.canvas,
-                lore_library=self.lore_library,
-                reference_manager=self.reference_manager,
-                session_service=self.session_service,
-                session_id=self.session_id,
-            )
-            module.plugins = [custom_plugin]
-            mock_app_class.reset_mock()
-            module.restart_responder_agent()
-
-        mock_app_class.assert_called_once()
-        _, kwargs = mock_app_class.call_args
-        self.assertEqual(kwargs["plugins"], [custom_plugin])
-
-    def test_enables_priority_paygo_by_default(self) -> None:
-        with (
-            patch.object(StoryResponseModule, "_create_responder_agent"),
-            patch.object(StoryResponseModule, "reload_from_session_state"),
-            patch("components.story.story_response_module.App"),
-            patch("components.story.story_response_module.Runner"),
-        ):
-            module = StoryResponseModule(
-                theater=self.theater,
-                canvas_manager=self.canvas,
-                lore_library=self.lore_library,
-                reference_manager=self.reference_manager,
-                session_service=self.session_service,
-                session_id=self.session_id,
-            )
-        self.assertTrue(module.priority_paygo)
-        self.assertTrue(module.use_enterprise)
-        self.assertEqual(module.vertex_location, "global")
-
-    @flagsaver.flagsaver(disable_story_response_enterprise=True)
-    def test_can_disable_enterprise_with_app_flag(self) -> None:
-        with (
-            patch.object(StoryResponseModule, "reload_from_session_state"),
-            patch("components.story.story_response_module.App"),
-            patch("components.story.story_response_module.Runner"),
-        ):
-            module = StoryResponseModule(
-                theater=self.theater,
-                canvas_manager=self.canvas,
-                lore_library=self.lore_library,
-                reference_manager=self.reference_manager,
-                session_service=self.session_service,
-                session_id=self.session_id,
-            )
-
-        self.assertFalse(module.use_enterprise)
-        self.assertFalse(module._responder_agent.model.enterprise)
-
-    def test_configures_agent_and_model_with_priority_paygo(self) -> None:
-        with (
-            patch.object(StoryResponseModule, "reload_from_session_state"),
-            patch("components.story.story_response_module.App"),
-            patch("components.story.story_response_module.Runner"),
-        ):
-            module = StoryResponseModule(
-                theater=self.theater,
-                canvas_manager=self.canvas,
-                lore_library=self.lore_library,
-                reference_manager=self.reference_manager,
-                session_service=self.session_service,
-                session_id=self.session_id,
-            )
-
-        agent = module._create_responder_agent()
-        # Priority PayGo is selected by Vertex headers, not service_tier.
-        self.assertIsNotNone(agent.generate_content_config)
-        self.assertIsNone(agent.generate_content_config.service_tier)
-        headers = agent.generate_content_config.http_options.headers
-        self.assertEqual(headers["X-Vertex-AI-LLM-Shared-Request-Type"], "priority")
-        self.assertEqual(headers["X-Vertex-AI-LLM-Request-Type"], "shared")
-
-        # Verify model has http_options
-        model_headers = agent.model.http_options.headers
-        self.assertEqual(model_headers["X-Vertex-AI-LLM-Shared-Request-Type"], "priority")
-        self.assertEqual(model_headers["X-Vertex-AI-LLM-Request-Type"], "shared")
-
-    def test_rejects_missing_injected_dependencies(self) -> None:
+    def test_requires_lore_and_references(self) -> None:
         with self.assertRaisesRegex(ValueError, "lore_library is required"):
-            StoryResponseModule(  # type: ignore[arg-type]
-                theater=self.theater,
-                canvas_manager=self.canvas,
-                lore_library=None,
-                reference_manager=self.reference_manager,
-                session_service=self.session_service,
-                session_id=self.session_id,
+            StoryResponseModule(
+                self.theater, self.canvas, None, self.reference_manager, self.provider,  # type: ignore[arg-type]
             )
         with self.assertRaisesRegex(ValueError, "reference_manager is required"):
-            StoryResponseModule(  # type: ignore[arg-type]
-                theater=self.theater,
-                canvas_manager=self.canvas,
-                lore_library=self.lore_library,
-                reference_manager=None,
-                session_service=self.session_service,
-                session_id=self.session_id,
-            )
-        with self.assertRaisesRegex(ValueError, "session_service is required"):
-            StoryResponseModule(  # type: ignore[arg-type]
-                theater=self.theater,
-                canvas_manager=self.canvas,
-                lore_library=self.lore_library,
-                reference_manager=self.reference_manager,
-                session_service=None,
-                session_id=self.session_id,
-            )
-        with self.assertRaisesRegex(ValueError, "session_id is required"):
             StoryResponseModule(
-                theater=self.theater,
-                canvas_manager=self.canvas,
-                lore_library=self.lore_library,
-                reference_manager=self.reference_manager,
-                session_service=self.session_service,
-                session_id="",
-            )
-        with self.assertRaisesRegex(ValueError, "canvas_manager.notepad is required"):
-            canvas_no_notepad = MagicMock(spec=CanvasStateManager)
-            canvas_no_notepad.notepad = None
-            StoryResponseModule(
-                theater=self.theater,
-                canvas_manager=canvas_no_notepad,
-                lore_library=self.lore_library,
-                reference_manager=self.reference_manager,
-                session_service=self.session_service,
-                session_id=self.session_id,
+                self.theater, self.canvas, self.lore_library, None, self.provider,  # type: ignore[arg-type]
             )
 
 
@@ -288,14 +134,132 @@ class TestStoryResponseModuleBehavior(unittest.TestCase):
             canvas_manager=self.canvas,
             lore_library=self.lore_library,
             reference_manager=self.reference_manager,
-            session_service=InMemorySessionService(),
-            session_id="response-test-session",
+            text_response_provider=self.provider,
         )
+        decisions = MagicMock(spec=DecisionProvider)
+        decisions.decide.return_value = DecisionResult(provider="test", model="test", answers={
+            "primary_lore_document": ChoiceAnswer(name="primary_lore_document", choice="none"),
+            "dice_roll": ChoiceAnswer(name="dice_roll", choice="none"),
+        })
+        self.module.decision_provider = decisions
+
+    def test_generates_once_with_fresh_structured_output_and_context(self) -> None:
+        self.provider.generate.return_value = TextResponseResult(
+            text='', provider='test', model='test', parsed=SceneReaction(narration='The gate opens.'),
+        )
+        journal = MagicMock(spec=StoryRecordingJournal)
+        journal.prompt_context.return_value = 'Recent story: A locked gate.'
+        self.module.recording_journal = journal
+        self.module.config['history_event_limit'] = 6
+        self.module.config['history_chunk_size'] = 3
+        result = self.module._resolve_user_action('I turn the key.', publish=False)
+        self.assertEqual(result['narration'], 'The gate opens.')
+        self.provider.generate.assert_called_once()
+        request = self.provider.generate.call_args.args[0]
+        self.assertIs(request.response_schema, SceneReaction)
+        self.assertIn('Recent story: A locked gate.', request.prompt)
+        journal.prompt_context.assert_called_once_with('responder', 6, 3)
+        self.assertIn('I turn the key.', request.prompt)
+        self.assertIn('# Known Character Profiles', request.prompt)
+        self.assertIn('No tools are available', request.system_instruction)
+        self.provider.generate.return_value = TextResponseResult(text='{}', provider='test', model='test')
+        with self.assertRaises(ValueError):
+            self.module._resolve_user_action('I wait.', publish=False)
+        self.assertEqual(self.provider.generate.call_count, 2)
+
+    def test_can_derive_decisions_from_only_the_text_provider(self) -> None:
+        self.module.decision_provider = None
+        self.provider.model = "test"
+        self.provider.generate.side_effect = [
+            TextResponseResult(text="", provider="test", model="test", parsed={"primary_lore_document": "none"}),
+            TextResponseResult(text="", provider="test", model="test", parsed={"dice_roll": "none"}),
+            TextResponseResult(text='{"narration":"The door opens."}', provider="test", model="test"),
+        ]
+        result = self.module._resolve_user_action('I open the door.', publish=False)
+        self.assertEqual(result['narration'], 'The door opens.')
+        requests = [call.args[0] for call in self.provider.generate.call_args_list]
+        self.assertEqual(len(requests), 3)
+        self.assertIsNotNone(requests[0].response_json_schema)
+        self.assertIsNotNone(requests[1].response_json_schema)
+        self.assertIs(requests[2].response_schema, SceneReaction)
+
+    def test_generation_failure_is_not_retried_or_published(self) -> None:
+        self.provider.generate.side_effect = RuntimeError('provider unavailable')
+        with self.assertRaisesRegex(RuntimeError, 'provider unavailable'):
+            self.module._resolve_user_action('I wait.', publish=False)
+        self.provider.generate.assert_called_once()
+        self.story_state.set_scene.assert_not_called()
+
+    def test_decisions_supply_lore_and_real_dice_before_one_generation(self) -> None:
+        decisions = MagicMock(spec=DecisionProvider)
+        decisions.decide.side_effect = [
+            DecisionResult(provider="test", model="test", answers={
+                "primary_lore_document": ChoiceAnswer(name="primary_lore_document", choice="lore.txt"),
+            }),
+            DecisionResult(provider="test", model="test", answers={
+                "dice_roll": ChoiceAnswer(name="dice_roll", choice="player"),
+            }),
+        ]
+        self.module.decision_provider = decisions
+        self.provider.generate.return_value = TextResponseResult(
+            text='{"narration":"The gate opens."}', provider='test', model='test',
+        )
+        with patch('random.randint', return_value=17):
+            result = self.module._resolve_user_action('I force the gate.', publish=False)
+        self.assertEqual(decisions.decide.call_count, 2)
+        self.provider.generate.assert_called_once()
+        prompt = self.provider.generate.call_args.args[0].prompt
+        self.assertIn('Lore details about the realm.', prompt)
+        self.assertIn('"rolls": [17]', prompt)
+        self.assertEqual(result['die_rolls'][0]['total'], 17)
+        self.assertEqual(result['lore_docs_browsed'], ['lore.txt'])
+
+    def test_game_entry_skips_dice_decision(self) -> None:
+        decisions = MagicMock(spec=DecisionProvider)
+        self.module.decision_provider = decisions
+        self.theater.lore_documents.return_value = []
+        self.provider.generate.return_value = TextResponseResult(
+            text='{"narration":"The merchant hands over the key."}', provider='test', model='test',
+        )
+        self.module._resolve_user_action('A trade completed.', game_entry=True, publish=False)
+        decisions.decide.assert_not_called()
+        self.provider.generate.assert_called_once()
+
+    def test_game_entry_rejects_factual_changes_without_retry(self) -> None:
+        from components.story.story_response_module import GameEntryNarrationRejected
+        self.provider.generate.return_value = TextResponseResult(
+            text='{"narration":"A crown appears.","proposed_factual_changes":'
+                 '[{"topic":"Inventory","info":"Crown","evidence":"Gift"}]}',
+            provider='test', model='test',
+        )
+        with self.assertRaises(GameEntryNarrationRejected):
+            self.module._resolve_user_action('A trade completed.', game_entry=True, publish=False)
+        self.provider.generate.assert_called_once()
+        self.assertFalse(self.module._game_entry)
+        self.story_state.set_scene.assert_not_called()
+
+    def test_timeout_does_not_wait_for_or_publish_late_response(self) -> None:
+        release = Event()
+        finished = Event()
+        def generate(request: TextResponseRequest) -> TextResponseResult:
+            try:
+                release.wait(5)
+                return TextResponseResult(text='{"narration":"Late result"}', provider='test', model='test')
+            finally:
+                finished.set()
+        self.provider.generate.side_effect = generate
+        self.module.user_action_timeout_seconds = 0.02
+        start = time.monotonic()
+        try:
+            result = self.module._resolve_user_action('I wait.', publish=False)
+            self.assertIn('timed out', result['error'])
+            self.assertLess(time.monotonic() - start, 1)
+        finally:
+            release.set()
+            self.assertTrue(finished.wait(2))
+        self.story_state.set_scene.assert_not_called()
 
     def test_planning_cues_do_not_expose_peer_trigger_tools(self) -> None:
-        with patch("components.story.story_response_module.Agent") as agent:
-            self.module._create_responder_agent()
-        self.assertNotIn(self.module.trigger_story_planning, agent.call_args.kwargs["tools"])
         self.assertIn("planning_request is advisory", self.module._build_responder_instruction())
 
     def test_pins_only_responder_guide_and_records_its_activity(self) -> None:
@@ -319,14 +283,14 @@ class TestStoryResponseModuleBehavior(unittest.TestCase):
             self.assertIn("already been requested", self.module.trigger_story_planning("Another reason"))
             return {"narration": "The key breaks.", "planning_signals": ["The key is unusable."]}
 
-        with patch.object(self.module, "_run_responder_agent", side_effect=resolve):
+        with patch.object(self.module, "_generate_response", side_effect=resolve):
             result = self.module._resolve_user_action("I turn the key.")
 
         self.assertEqual(result["planning_request"], "Revise the quest")
         self.assertEqual(result["user_action"], "I turn the key.")
         self.assertEqual(result["narration"], "The key breaks.")
         self.assertEqual(result["planning_signals"], ["The key is unusable.", "[PLANNING REQUEST] Revise the quest"])
-        with patch.object(self.module, "_run_responder_agent", return_value={"narration": "Stillness."}):
+        with patch.object(self.module, "_generate_response", return_value={"narration": "Stillness."}):
             next_result = self.module._resolve_user_action("I wait.")
         self.assertNotIn("planning_request", next_result)
         self.assertEqual(next_result["planning_signals"], [])
@@ -339,7 +303,7 @@ class TestStoryResponseModuleBehavior(unittest.TestCase):
             self.module.notepad.update_sticky_note("Quest", "The gate is guarded")
             return {"narration": "A guard steps into view."}
 
-        with patch.object(self.module, "_run_responder_agent", side_effect=resolve):
+        with patch.object(self.module, "_generate_response", side_effect=resolve):
             result = self.module._resolve_user_action("I approach the gate.")
         self.assertEqual(result["notepad_revision_used"], starting_revision)
         self.assertGreater(self.module.notepad.revision, starting_revision)
@@ -360,7 +324,7 @@ class TestStoryResponseModuleBehavior(unittest.TestCase):
             self.assertGreater(self.module.notepad.revision, prompt_revision)
             return {"narration": "You step toward the gate."}
 
-        with patch.object(self.module, "_run_responder_agent", side_effect=resolve):
+        with patch.object(self.module, "_generate_response", side_effect=resolve):
             result = self.module._resolve_user_action("I approach the gate.")
         self.assertIn("Open the gate", observed_prompt)
         self.assertEqual(result["notepad_revision_used"], 2)
@@ -373,7 +337,7 @@ class TestStoryResponseModuleBehavior(unittest.TestCase):
             "evidence": "The key snapped during the resolved attempt.",
         }
         before = self.module.notepad.export_state()
-        with patch.object(self.module, "_run_responder_agent", return_value={
+        with patch.object(self.module, "_generate_response", return_value={
             "narration": "The key breaks.",
             "proposed_factual_changes": [proposal],
             "planning_request": {"reason": "Find another route"},
@@ -385,7 +349,7 @@ class TestStoryResponseModuleBehavior(unittest.TestCase):
 
     def test_invalid_proposal_is_rejected_before_scene_delivery(self) -> None:
         with (
-            patch.object(self.module, "_run_responder_agent", return_value={
+            patch.object(self.module, "_generate_response", return_value={
                 "narration": "The key breaks.",
                 "proposed_factual_changes": [{"topic": "Inventory", "info": "Broken key"}],
             }),
@@ -400,7 +364,7 @@ class TestStoryResponseModuleBehavior(unittest.TestCase):
             self.module.trigger_story_planning("Revise the quest")
             raise RuntimeError("Responder failed")
 
-        with patch.object(self.module, "_run_responder_agent", side_effect=fail):
+        with patch.object(self.module, "_generate_response", side_effect=fail):
             with self.assertRaisesRegex(RuntimeError, "Responder failed"):
                 self.module._resolve_user_action("I turn the key.")
         self.assertIsNone(self.module._planning_request_reason)
@@ -419,14 +383,10 @@ class TestStoryResponseModuleBehavior(unittest.TestCase):
                     canvas_manager=self.canvas,
                     lore_library=self.lore_library,
                     reference_manager=self.reference_manager,
-                    session_service=InMemorySessionService(),
-                    session_id="dice-config-test",
+                    text_response_provider=self.provider,
                 )
-                with patch("components.story.story_response_module.Agent") as agent:
-                    module._create_responder_agent()
-                self.assertEqual(module.roll_dice in agent.call_args.kwargs["tools"], enabled)
                 instruction = module._build_responder_instruction()
-                self.assertEqual("`roll_dice`" in instruction, enabled)
+                self.assertEqual("**Dice Results**" in instruction, enabled)
                 self.assertEqual("Dice rolling is disabled" in instruction, not enabled)
                 if not enabled:
                     for procedural in (False, True):
@@ -661,7 +621,7 @@ class TestStoryResponseModuleBehavior(unittest.TestCase):
         )
         with patch.object(self.module.reference_manager, "get_player_character", return_value=player), patch.object(
             self.module,
-            "_run_responder_agent",
+            "_generate_response",
             return_value=scene_delta,
         ):
             result = self.module._resolve_user_action("I sneak into the shrine.")
@@ -713,7 +673,7 @@ class TestStoryResponseModuleBehavior(unittest.TestCase):
             "scene_reference": "Town Square",
         }
 
-        with patch.object(self.module, "_run_responder_agent", return_value=scene_delta):
+        with patch.object(self.module, "_generate_response", return_value=scene_delta):
             self.module._resolve_user_action("I look around.")
 
         self.assertEqual(call_order, ["save_to_session_state", "set_scene"])
@@ -805,15 +765,14 @@ class TestStoryResponseModulePlayerCharacter(unittest.TestCase):
         self.lore_library = MagicMock(spec=LoreLibrary)
         self.notepad = Notepad(self.theater, canvas_manager=self.canvas)
         self.canvas.notepad = self.notepad
-        self.session_service = MagicMock(spec=InMemorySessionService)
+        self.provider = MagicMock(spec=TextResponseProvider)
         self.reference_manager = MagicMock(spec=ReferenceManager)
         self.module = StoryResponseModule(
             theater=self.theater,
             canvas_manager=self.canvas,
             lore_library=self.lore_library,
             reference_manager=self.reference_manager,
-            session_service=self.session_service,
-            session_id="test_session",
+            text_response_provider=self.provider,
         )
 
     def test_delegates_player_character_management(self) -> None:
@@ -909,15 +868,14 @@ class TestResponderInstructionAndTurnPrompt(unittest.TestCase):
         self.lore_library.get_lore_context.return_value = "Lore docs: space_history.md"
         self.notepad = Notepad(self.theater, canvas_manager=self.canvas)
         self.canvas.notepad = self.notepad
-        self.session_service = MagicMock(spec=InMemorySessionService)
+        self.provider = MagicMock(spec=TextResponseProvider)
         self.reference_manager = MagicMock(spec=ReferenceManager)
         self.module = StoryResponseModule(
             theater=self.theater,
             canvas_manager=self.canvas,
             lore_library=self.lore_library,
             reference_manager=self.reference_manager,
-            session_service=self.session_service,
-            session_id="prompt_test_session",
+            text_response_provider=self.provider,
         )
 
     def test_instruction_maximizes_prefix_and_excludes_state_variables(self) -> None:
@@ -925,7 +883,7 @@ class TestResponderInstructionAndTurnPrompt(unittest.TestCase):
         self.assertIn("# Role & Mission", instruction)
         self.assertIn("# Core Improv & Player Agency Principles", instruction)
         self.assertIn("# Player Death, Lethal Consequences, Death Hints & Restarts", instruction)
-        self.assertIn("# Tool Usage Guidelines", instruction)
+        self.assertIn("# Supplied Context", instruction)
         self.assertIn("# Scene Reaction Output Requirements", instruction)
         self.assertIn("# Character Generation", instruction)
         self.assertIn("# Scene Reference", instruction)
@@ -1002,6 +960,162 @@ class TestResponderInstructionAndTurnPrompt(unittest.TestCase):
         self.assertNotIn('"board"', prompt)
         self.assertNotIn('"instructions"', prompt)
         self.assertNotIn('"actions"', prompt)
+
+
+
+
+class TestStoryResponseLoreDecisionProvider(unittest.TestCase):
+    def setUp(self) -> None:
+        self.theater_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.theater_dir.cleanup)
+        self.theater = MagicMock(
+            spec=Theater,
+            wraps=TheaterManager(Path(self.theater_dir.name)).theater("lore_decision_test"),
+        )
+        self.theater.theater_id = "lore_decision_test"
+        self.config = {
+            "adventure_mode": True,
+            "notepad": {"initial_stickies": {"location": "The Discarded Stacks", "quest": "Find the grimoire"}},
+        }
+        self.theater.config.return_value = self.config
+        self.lore_documents = ["locations/the_discarded_stacks.txt", "characters/the_caretaker.txt"]
+        self.theater.lore_documents.return_value = list(self.lore_documents)
+
+        def mock_read_lore(doc: str) -> str:
+            if doc == "locations/the_discarded_stacks.txt":
+                return "The discarded stacks contain forgotten grimoires."
+            if doc == "characters/the_caretaker.txt":
+                return "The Caretaker oversees the ancient archives."
+            return f"Content for {doc}"
+
+        self.theater.read_lore_document.side_effect = mock_read_lore
+
+        self.canvas_manager = MagicMock(spec=CanvasStateManager)
+        self.canvas_manager.story = MagicMock(spec=StoryState)
+        self.canvas_manager.tool_response = MagicMock()
+        self.notepad = Notepad(self.theater, canvas_manager=self.canvas_manager)
+        self.canvas_manager.notepad = self.notepad
+        self.lore_library = LoreLibrary(theater=self.theater)
+        self.reference_manager = MagicMock(spec=ReferenceManager)
+        self.reference_manager.story_state = None
+        self.reference_manager.count.return_value = 0
+        self.reference_manager.get_present_characters.return_value = []
+        self.reference_manager.get_player_character.return_value = None
+        self.provider = MagicMock(spec=TextResponseProvider)
+        self.provider = MagicMock(spec=TextResponseProvider)
+
+        self.module = StoryResponseModule(
+            theater=self.theater,
+            canvas_manager=self.canvas_manager,
+            lore_library=self.lore_library,
+            reference_manager=self.reference_manager,
+            text_response_provider=self.provider,
+        )
+
+    def test_collect_relevant_lore_reviews_sticky_state_and_action(self) -> None:
+        mock_decision_provider = MagicMock(spec=DecisionProvider)
+        mock_decision_provider.decide.return_value = DecisionResult(
+            provider="test_provider",
+            model="test_model",
+            answers={
+                "primary_lore_document": ChoiceAnswer(
+                    name="primary_lore_document", choice="locations/the_discarded_stacks.txt"
+                ),
+                "secondary_lore_document": ChoiceAnswer(
+                    name="secondary_lore_document", choice="none"
+                ),
+            }
+        )
+        self.module.decision_provider = mock_decision_provider
+
+        lore = self.module.collect_relevant_lore(
+            user_action="I search the shelves for the ancient book.",
+            nudge="A shadow looms behind you.",
+        )
+
+        mock_decision_provider.decide.assert_called_once()
+        req: DecisionRequest = mock_decision_provider.decide.call_args[0][0]
+
+        # Verify input_text contains player action, nudge, and active sticky notes
+        self.assertIn("Player Action:\nI search the shelves for the ancient book.", req.input_text)
+        self.assertIn("Live Agent Nudge:\nA shadow looms behind you.", req.input_text)
+        self.assertIn("Active Sticky Notes:", req.input_text)
+        self.assertIn("- location: The Discarded Stacks", req.input_text)
+        self.assertIn("- quest: Find the grimoire", req.input_text)
+
+        # Verify questions
+        q_names = [q.name for q in req.questions]
+        self.assertEqual(q_names, ["primary_lore_document", "secondary_lore_document"])
+
+        # Verify populated lore
+        self.assertIn("## Lore Document: locations/the_discarded_stacks.txt", lore)
+        self.assertIn("The discarded stacks contain forgotten grimoires.", lore)
+        self.assertNotIn("characters/the_caretaker.txt", lore)
+        self.assertIn("locations/the_discarded_stacks.txt", self.module.get_lore_docs_browsed_this_turn())
+
+    def test_collect_relevant_lore_with_secondary_lore(self) -> None:
+        mock_decision_provider = MagicMock(spec=DecisionProvider)
+        mock_decision_provider.decide.return_value = DecisionResult(
+            provider="test_provider",
+            model="test_model",
+            answers={
+                "primary_lore_document": ChoiceAnswer(
+                    name="primary_lore_document", choice="characters/the_caretaker.txt"
+                ),
+                "secondary_lore_document": ChoiceAnswer(
+                    name="secondary_lore_document", choice="locations/the_discarded_stacks.txt"
+                ),
+            }
+        )
+        self.module.decision_provider = mock_decision_provider
+
+        lore = self.module.collect_relevant_lore(user_action="I ask the Caretaker about the stacks.")
+        self.assertIn("## Lore Document: characters/the_caretaker.txt", lore)
+        self.assertIn("The Caretaker oversees the ancient archives.", lore)
+        self.assertIn("## Lore Document: locations/the_discarded_stacks.txt", lore)
+        self.assertIn("The discarded stacks contain forgotten grimoires.", lore)
+
+    def test_collect_relevant_lore_when_decision_provider_returns_none(self) -> None:
+        mock_decision_provider = MagicMock(spec=DecisionProvider)
+        mock_decision_provider.decide.return_value = DecisionResult(
+            provider="test_provider",
+            model="test_model",
+            answers={
+                "primary_lore_document": ChoiceAnswer(
+                    name="primary_lore_document", choice="none"
+                ),
+                "secondary_lore_document": ChoiceAnswer(
+                    name="secondary_lore_document", choice="none"
+                ),
+            }
+        )
+        self.module.decision_provider = mock_decision_provider
+
+        lore = self.module.collect_relevant_lore(user_action="I stretch my arms and yawn.")
+        self.assertEqual(lore, "")
+        self.assertEqual(self.module.get_lore_docs_browsed_this_turn(), [])
+
+    def test_collect_relevant_lore_without_decision_provider(self) -> None:
+        self.module.decision_provider = None
+        lore = self.module.collect_relevant_lore(user_action="I look around.")
+        self.assertEqual(lore, "")
+
+    def test_collect_relevant_lore_with_empty_candidate_docs(self) -> None:
+        self.theater.lore_documents.return_value = []
+        mock_decision_provider = MagicMock(spec=DecisionProvider)
+        self.module.decision_provider = mock_decision_provider
+
+        lore = self.module.collect_relevant_lore(user_action="I look around.")
+        self.assertEqual(lore, "")
+        mock_decision_provider.decide.assert_not_called()
+
+    def test_turn_prompt_includes_relevant_lore_section(self) -> None:
+        prompt = build_responder_turn_prompt(
+            story_state="Notes here",
+            user_action="I investigate the arch.",
+            relevant_lore="Arch lore excerpt",
+        )
+        self.assertIn("# Relevant Lore Context\nArch lore excerpt", prompt)
 
 
 if __name__ == "__main__":

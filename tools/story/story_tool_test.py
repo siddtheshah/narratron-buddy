@@ -193,7 +193,7 @@ class TestStoryToolStateIntegration(unittest.TestCase):
             self.tool.create_or_update_character(name="Vesper", gender="female")
             return scene_delta
 
-        with patch.object(self.tool.response_module, "_run_responder_agent", side_effect=fake_run):
+        with patch.object(self.tool.response_module, "_generate_response", side_effect=fake_run):
             self.tool.response_module._resolve_user_action("I call out.")
         self.tool.reference_manager.wait_for_reference_updates(["Vesper"], timeout=5)
 
@@ -225,7 +225,7 @@ class TestStoryToolStateIntegration(unittest.TestCase):
             self.tool.create_or_update_character(name="Echo", gender="nonbinary")
             return scene_delta
 
-        with patch.object(self.tool.response_module, "_run_responder_agent", side_effect=fake_run):
+        with patch.object(self.tool.response_module, "_generate_response", side_effect=fake_run):
             self.tool.response_module._resolve_user_action("I listen.")
         self.tool.reference_manager.wait_for_reference_updates(["Echo"], timeout=5)
 

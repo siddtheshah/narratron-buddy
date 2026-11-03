@@ -10,7 +10,7 @@ from components.lore_library import LoreLibrary
 from components.reference_manager import ReferenceManager
 from components.story.engine import StoryEngine, StoryLogEntry, StoryResponseOutput
 from components.theater_manager import Theater
-from providers import SpeechProvider, TextResponseProvider
+from providers import DecisionProvider, SpeechProvider, TextResponseProvider
 from tools.base_tool import BaseTools
 from tools.tool_metadata import terminal
 
@@ -26,11 +26,13 @@ class StoryTool(BaseTools):
         reference_manager: ReferenceManager,
         speech_provider: SpeechProvider | None = None,
         lore_library: Optional[LoreLibrary] = None,
+        decision_provider: Optional[DecisionProvider] = None,
     ) -> None:
         super().__init__(theater, canvas_manager)
         self.engine = StoryEngine(
             theater, canvas_manager, text_response_provider, reference_manager,
             speech_provider=speech_provider, lore_library=lore_library,
+            decision_provider=decision_provider,
         )
 
     @terminal

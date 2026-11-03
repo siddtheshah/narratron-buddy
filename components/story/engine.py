@@ -23,7 +23,7 @@ from components.story.story_snapshot import (
 )
 from components.canvas_state import CanvasStateManager
 from components.theater_manager import Theater
-from providers import SpeechProvider, TextResponseProvider
+from providers import DecisionProvider, SpeechProvider, TextResponseProvider
 from components.reference_manager import ReferenceManager
 from components.lore_library import LoreLibrary
 from components.notepad import Notepad
@@ -79,6 +79,7 @@ class StoryEngine:
         reference_manager: ReferenceManager,
         speech_provider: SpeechProvider | None = None,
         lore_library: Optional[LoreLibrary] = None,
+        decision_provider: Optional[DecisionProvider] = None,
     ) -> None:
         if text_response_provider is None:
             raise ValueError("text_response_provider is required.")
@@ -122,6 +123,7 @@ class StoryEngine:
         self.reference_manager = reference_manager
         if speech_provider is not None and self.reference_manager.speech_provider is None:
             self.reference_manager.speech_provider = speech_provider
+        self.decision_provider = decision_provider
 
         journal_path = theater.output_dir() / "story.sqlite"
         self.recording_journal = StoryRecordingJournal(journal_path)
@@ -135,9 +137,9 @@ class StoryEngine:
         self.response_module = StoryResponseModule(
             theater=theater, canvas_manager=canvas_manager, lore_library=self.lore_library,
             reference_manager=self.reference_manager,
-            session_service=self.story_session.session_service,
-            session_id=self.story_session.session_id, story_session=self.story_session,
+            text_response_provider=self.text_response_provider,
             recording_journal=self.recording_journal,
+            decision_provider=decision_provider,
         )
         self.planning_module = StoryPlanningModule(
             theater=theater, canvas_manager=canvas_manager, lore_library=self.lore_library,
@@ -153,7 +155,6 @@ class StoryEngine:
         )
         assert self.recorder_module.agent is not None
         self.story_session.bind([
-            self.response_module._responder_agent,
             self.recorder_module.agent,
             self.planning_module._deep_planner_agent,
         ])
