@@ -2,7 +2,7 @@
 
 ## Image Tools
 
-- [ ] Use Decision for safety reduction checks.
+- [x] Use Decision for safety reduction checks.
 
 ## Game Engine Upgrades
 
@@ -23,7 +23,7 @@
 
 ## Theater Builder
 
-- [ ] Move and drag files around in left hand pane. 
+- [x] Move and drag files around in left hand pane. 
 
 ### Evaluation and decision
 

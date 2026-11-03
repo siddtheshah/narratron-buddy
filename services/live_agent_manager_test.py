@@ -2115,14 +2115,14 @@ class TestLiveAgentSessionManager(unittest.TestCase):
 
         asyncio.run(run_test())
 
-    def test_animation_ready_callback_sends_system_notification(self):
+    def test_animation_ready_callback_sends_system_notification(self) -> None:
         mock_agent = MagicMock()
         mock_animation_tools = MagicMock()
         mock_agent.tools = []
 
         with patch("services.live_agent_manager.get_bound_tool_instance") as mock_get_tool:
-            def side_effect(agent, tool_name):
-                if tool_name == "create_animation":
+            def side_effect(agent: MagicMock, tool_name: str) -> MagicMock | None:
+                if tool_name == "play_animation":
                     return mock_animation_tools
                 return None
             mock_get_tool.side_effect = side_effect

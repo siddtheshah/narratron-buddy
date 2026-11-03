@@ -936,6 +936,9 @@ live_agent:
         assert "clear_characters" in tool_names
         assert "process_user_action" not in tool_names
         assert "_process_user_action_wrapper" not in tool_names
+        assert "play_animation" in tool_names
+        assert "browse_animations" in tool_names
+        assert "create_animation" not in tool_names
         assert "user_help_tool" in tool_names
         assert {"browse_images", "search_image_by_metadata"}.isdisjoint(tool_names)
         assert {"list_references", "search_references"}.issubset(tool_names)
@@ -954,7 +957,7 @@ user_help:
 music:
   use_generated_music: true
 animation:
-  enabled: true
+  generation_enabled: true
 """
     (sample_adventure / "theater.yaml").write_text(theater_yaml.strip(), encoding="utf-8")
 

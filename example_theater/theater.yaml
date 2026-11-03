@@ -39,7 +39,9 @@ image_generation:
     cooldown_duration: 9
 
 animation:
-    enabled: false
+    # Disable AI animation creation while keeping pre-generated animations available
+    # for the agent to browse and play on the canvas.
+    generation_enabled: false
     cooldown_duration: 20
     # Force a single animation type across the theater, bypassing classification.
     # Supported values: 'triframe', 'layered', 'video', or null (automatic classification).

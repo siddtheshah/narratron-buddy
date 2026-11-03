@@ -105,7 +105,7 @@ Use `show_image(reference_handle=...)` with a preloaded image alias, scene name,
 Use `list_references` to browse available reference images and `search_references` to find them by name, tag, title, or description. These return reference assets, including the latest scene and character versions; generated image outputs are excluded. Character portraits are prompt references and cannot be displayed as scenery.
 For romantic or violent requests that cannot be portrayed directly, immediately use implied staging without offering alternatives or asking for confirmation: keep the event off-screen and support the scene through atmosphere, reactions, or a moment before or after it. If an explanation is needed, use `send_chat_message` to state concisely that the content is "implied"; keep the existing silence and player-agency rules.
 State it as the user describes, but prefix with qualifiers that keep the content safe and wholesome. Do not wait for their confirmation, as fast response time is crucial.
-{% if image_generation_enabled or animation_enabled %}
+{% if image_generation_enabled or animation_generation_enabled %}
 Use the exact `<Character Name>` tags from [Available Character Visuals] in `create_image` and animation prompts, for example `<Arthur Modella> flashes a wand before stepping back from <Grim Vallos>`. ReferenceManager attaches the latest portraits automatically; character references belong in the prompt. Only use tags for available character visuals. Provide a concise unique image name. Choose visual effects only when they support the scene.
 Use the exact scene tags from [Available Scene Visuals] in visual prompts to attach scene references. Image references use names, aliases, and canvas capture handles.
 If the orator describes new imagery that has NO named characters or named locations, avoid using new references as it increases latency.
@@ -115,8 +115,9 @@ Canvas observability may supply a `[Canvas Capture]` handle. Use `<handle>` in `
 {% else %}
 Stage suitable mounted assets with `show_image`.
 {% endif %}
-{% if animation_enabled %}
 ## Animation
+Use `browse_animations` to find pre-generated animations and `play_animation` to display a suitable animation on the canvas.
+{% if animation_generation_enabled %}
 Use `create_animation` for requested motion or scenes that clearly benefit. Layered animations play automatically; play a multi-frame animation with `play_animation` when ready and still relevant.
 {% endif %}
 {% if interactive_canvas_enabled %}
@@ -425,29 +426,28 @@ def create_tool_bundle_for_session(
     if music_tools.use_generated_music:
         tools.append(music_tools.create_music)
 
-    # Animation is an independent theater capability. It can use mounted
-    # assets as references even when standalone image generation is disabled.
     animation_config = config.get("animation", {})
-    if bool(animation_config.get("enabled", False)):
-        animation_text_provider = get_text_response_provider(
-            str(animation_config.get("text_provider", "gemini-2-5")),
-            {"model": str(animation_config.get("text_model", "gemini-2.5-flash-lite"))},
-        )
-        animation_tools = AnimationTools(
-            theater,
-            canvas_manager,
-            animation_text_provider,
-            FalQwenLayeredProvider(),
-            video_provider=get_video_provider(
-                str(animation_config.get("video_provider", "fal-minimax-h3-turbo"))
-            ),
-            reference_manager=reference_manager,
-        )
-        tools.extend([
-            animation_tools.create_animation,
-            animation_tools.play_animation,
-            animation_tools.browse_animations,
-        ])
+    animation_generation_enabled = bool(animation_config.get("generation_enabled", False))
+    animation_text_provider = get_text_response_provider(
+        str(animation_config.get("text_provider", "gemini-2-5")),
+        {"model": str(animation_config.get("text_model", "gemini-2.5-flash-lite"))},
+    ) if animation_generation_enabled else None
+    animation_tools = AnimationTools(
+        theater,
+        canvas_manager,
+        animation_text_provider,
+        FalQwenLayeredProvider() if animation_generation_enabled else None,
+        video_provider=get_video_provider(
+            str(animation_config.get("video_provider", "fal-minimax-h3-turbo"))
+        ) if animation_generation_enabled else None,
+        reference_manager=reference_manager,
+    )
+    tools.extend([
+        animation_tools.play_animation,
+        animation_tools.browse_animations,
+    ])
+    if animation_generation_enabled:
+        tools.append(animation_tools.create_animation)
     observability_config = config.get("observability_tool", {})
     if observability_config and observability_config.get("enabled", False):
         observability_tools = ObservabilityTools(theater, canvas_manager)
@@ -514,7 +514,7 @@ def create_agent(
         playlist_context=playlist_context,
         special_instructions=special_instructions,
         text_only_output=selected.id == "openai",
-        animation_enabled=bool(config.get("animation", {}).get("enabled", False)),
+        animation_generation_enabled=bool(config.get("animation", {}).get("generation_enabled", False)),
         image_generation_enabled=bool(config.get("image_generation", {}).get("enabled", True)),
         use_generated_music=bool(config.get("music", {}).get("use_generated_music", False)),
         adventure_mode=adventure_mode,

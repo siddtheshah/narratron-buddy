@@ -311,7 +311,7 @@ class TestCreateAgent(unittest.TestCase):
             adventure_mode=True,
             reference_manager=ANY,
         )
-        mock_animation_cls.assert_not_called()
+        mock_animation_cls.assert_called_once()
         mock_chat_cls.assert_called_once_with(expected_theater, expected_canvas)
         mock_story_planning_cls.assert_called_once_with(
             expected_theater,
@@ -333,10 +333,13 @@ class TestCreateAgent(unittest.TestCase):
     @patch("services.live_agent.StoryTool")
     @patch("services.live_agent.MusicTools")
     @patch("services.live_agent.Agent")
-    def test_animation_tools_are_created_only_when_theater_enables_them(
-        self, mock_agent_cls, mock_music_cls, mock_story_planning_cls, mock_chat_cls, mock_animation_cls, mock_image_cls, mock_get_text_provider
-    ):
-        config = {"animation": {"enabled": True}}
+    def test_animation_tools_receive_shared_dependencies(
+        self, mock_agent_cls: MagicMock, mock_music_cls: MagicMock,
+        mock_story_planning_cls: MagicMock, mock_chat_cls: MagicMock,
+        mock_animation_cls: MagicMock, mock_image_cls: MagicMock,
+        mock_get_text_provider: MagicMock,
+    ) -> None:
+        config = {"animation": {"generation_enabled": True}}
 
         theater = make_test_theater("animated_theater", config)
         tool_bundle = create_tool_bundle_for_session(theater)
@@ -353,18 +356,52 @@ class TestCreateAgent(unittest.TestCase):
 
     @patch("services.live_agent.create_tool_bundle_for_session")
     @patch("services.live_agent.Agent")
-    def test_animation_instructions_appear_only_when_enabled(self, mock_agent_cls, mock_bundle_fn):
+    def test_animation_instructions_gate_only_generation(
+        self, mock_agent_cls: MagicMock, mock_bundle_fn: MagicMock,
+    ) -> None:
         mock_bundle = MagicMock()
         mock_bundle.tools = []
-        mock_bundle.preloaded_playlists_context = "No playlists."
         mock_bundle_fn.return_value = mock_bundle
+        for animation_config in ({}, {"generation_enabled": False}, {"generation_enabled": True}):
+            with self.subTest(animation_config=animation_config):
+                theater = make_test_theater("animated_prompt", {
+                    "animation": animation_config, "image_generation": {"enabled": False},
+                })
+                create_agent(theater=theater, tool_bundle=mock_bundle)
+                instruction = mock_agent_cls.call_args.kwargs["instruction"]
+                self.assertIn("## Animation", instruction)
+                self.assertIn("browse_animations", instruction)
+                self.assertIn("play_animation", instruction)
+                self.assertEqual("create_animation" in instruction, animation_config.get("generation_enabled", False))
 
-        theater = make_test_theater("animated_prompt", {"animation": {"enabled": True}})
-        create_agent(theater=theater, tool_bundle=mock_bundle)
-
-        instruction = mock_agent_cls.call_args.kwargs["instruction"]
-        self.assertIn("## Animation", instruction)
-        self.assertIn("create_animation", instruction)
+    @patch("services.live_agent.get_text_response_provider")
+    def test_animation_playback_available_without_generation(
+        self, mock_text_provider: MagicMock,
+    ) -> None:
+        for animation_config in ({}, {"generation_enabled": False}, {"generation_enabled": True}):
+            with self.subTest(animation_config=animation_config), TemporaryDirectory() as directory:
+                theater = make_test_theater("animation_tools", {
+                    "animation": animation_config,
+                    "visuals": {"model": "hybrid-flux-gemini"},
+                    "image_generation": {"enabled": False},
+                    "reference_generation_enabled": False,
+                }, Path(directory))
+                folder = theater.animations_dir() / "rain"
+                folder.mkdir(parents=True)
+                (folder / "video.mp4").write_bytes(b"video")
+                (folder / "video.json").write_text('{"scene_prompt":"Rain", "video_path":"video.mp4"}', encoding="utf-8")
+                with patch("services.live_agent.FalQwenLayeredProvider") as layered_provider, patch("services.live_agent.get_video_provider") as video_provider:
+                    bundle = create_tool_bundle_for_session(theater)
+                generation_enabled = animation_config.get("generation_enabled", False)
+                self.assertEqual(layered_provider.called, generation_enabled)
+                self.assertEqual(video_provider.called, generation_enabled)
+                names = {tool.name for tool in bundle.tools}
+                self.assertTrue({"play_animation", "browse_animations"}.issubset(names))
+                self.assertEqual("create_animation" in names, animation_config.get("generation_enabled", False))
+                animation_tools = next(tool.func.__self__ for tool in bundle.tools if tool.name == "play_animation")
+                self.assertEqual(animation_tools.browse_animations(), [{"id": "rain", "type": "video", "scene_prompt": "Rain"}])
+                with patch("tools.animation_tool.AnimationTools._schedule_cooldown_timer"):
+                    self.assertIn("Playing", animation_tools.play_animation("rain"))
 
     @patch("services.live_agent.create_tool_bundle_for_session")
     @patch("services.live_agent.Agent")
@@ -547,7 +584,7 @@ class TestCreateAgent(unittest.TestCase):
                 "visuals": {"model": "hybrid-flux-gemini"},
                 "image_generation": {"enabled": False},
                 "music": {"provider": "lyria"},
-                "animation": {"enabled": True},
+                "animation": {"generation_enabled": True},
             },
         )
         with patch("providers.registry.get_image_provider", return_value=MagicMock(spec=ImageProvider)):
@@ -657,7 +694,7 @@ class TestCreateAgent(unittest.TestCase):
                     "text_provider": "gemini-3",
                     "planner_model": "gemini-3.8-flash",
                 },
-                "animation": {"enabled": True},
+                "animation": {"generation_enabled": True},
             },
         )
 
