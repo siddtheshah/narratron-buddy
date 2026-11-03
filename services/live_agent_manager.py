@@ -411,9 +411,9 @@ class LiveAgentSession:
 
         def handle_scene_reaction(result: Dict[str, Any]) -> None:
             """Place asynchronous planner output onto the live queue safely."""
-            if self.image_tools and hasattr(self.image_tools, "record_story_plan_completed"):
+            if self.image_tools and not result.get("error"):
                 self.image_tools.record_story_plan_completed()
-            if self.interactive_canvas_tools and hasattr(self.interactive_canvas_tools, "record_story_plan_completed"):
+            if self.interactive_canvas_tools and not result.get("error"):
                 self.interactive_canvas_tools.record_story_plan_completed()
             message = (
                 "[System Notification] [Story Planner Result]\n"

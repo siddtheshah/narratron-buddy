@@ -524,6 +524,7 @@ class BaseTools:
         self._orator_bypass_tools: set[str] = set()
         self._orator_bypass_until: float = 0.0
         self._orator_pin_tools: set[str] = set()
+        self._orator_input_tools: set[str] = set()
         self._in_flight_tools: Set[str] = set()
         self._in_flight_lock = threading.Lock()
         self._last_call_failed: Dict[str, bool] = {}
@@ -903,12 +904,22 @@ class BaseTools:
         with self._cycle_cooldown_lock:
             self._orator_bypass_tools = set(tool_names)
             self._orator_pin_tools = set(tool_names)
+            self._orator_input_tools = set(tool_names)
             self._orator_bypass_until = time.monotonic() + 60.0
 
     def cancel_orator_bypass(self) -> None:
         with self._cycle_cooldown_lock:
             self._orator_bypass_tools.clear()
             self._orator_pin_tools.clear()
+            self._orator_input_tools.clear()
+
+    def consume_orator_input_bypass(self, tool_name: str) -> bool:
+        """Allow one wheel-requested action through input/story-result gates."""
+        with self._cycle_cooldown_lock:
+            allowed = tool_name in self._orator_input_tools and time.monotonic() <= self._orator_bypass_until
+            if tool_name in self._orator_input_tools:
+                self._orator_input_tools.clear()
+            return allowed
 
     def has_orator_pin_bypass(self, tool_name: str) -> bool:
         with self._cycle_cooldown_lock:

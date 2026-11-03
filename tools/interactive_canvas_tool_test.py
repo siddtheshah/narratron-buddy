@@ -417,6 +417,17 @@ def test_adventure_mode_locks_interactive_canvas_until_story_plan_completes():
     assert "Waiting for the story planner" in blocked_again["error"]
 
 
+def test_orator_ui_update_bypasses_story_gate_once() -> None:
+    tools, canvas = make_tools(lambda *_: valid_draft(), adventure_mode=True)
+    tools.cooldown_duration = 0
+    tools.request_orator_bypass({"update_interactive_canvas"})
+    assert tools.update_interactive_canvas("Refresh current controls")["status"] == "displayed"
+    assert not tools.is_story_plan_completed
+    assert "Waiting for the story planner" in tools.update_interactive_canvas("Refresh again")["error"]
+    assert "Waiting for the story planner" in tools.clear_interactive_canvas()["error"]
+    canvas.ui.upsert_surface.assert_called_once()
+
+
 def test_non_adventure_mode_does_not_lock_interactive_canvas_mutations():
     tools, canvas = make_tools(lambda *_: valid_draft())
 

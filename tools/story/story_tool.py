@@ -37,7 +37,9 @@ class StoryTool(BaseTools):
     def process_user_action(self, user_action: str, nudge: str = "") -> dict[str, JsonValue]:
         """Queue an action for combination with game updates in the next story cycle."""
         self.log_tool_call("process_user_action", {"user_action": user_action, "nudge": nudge})
-        return self.engine.process_user_action(user_action, nudge)
+        return self.engine.process_user_action(
+            user_action, nudge, require_input=not self.consume_orator_input_bypass("process_user_action"),
+        )
 
     def get_tools(self) -> list[Callable]:
         return [self.process_user_action]

@@ -1010,6 +1010,22 @@ class TestLiveAgentSessionManager(unittest.TestCase):
         mock_image_tools.record_story_plan_completed.assert_called_once()
         session.interactive_canvas_tools.record_story_plan_completed.assert_called_once()
 
+    def test_failed_scene_reaction_notifies_without_releasing_canvas_tools(self) -> None:
+        runner = MagicMock()
+        runner.agent.tools = []
+        session = LiveAgentSession("failed_story", runner, MagicMock())
+        session.image_tools = MagicMock(spec=ImageTools)
+        session.interactive_canvas_tools = MagicMock()
+        session.story_planning_tools = MagicMock()
+        session.live_request_queue = MagicMock()
+        session._setup_tool_callbacks()
+
+        session.story_planning_tools.on_scene_reaction({"error": "Recording failed"})
+
+        session.live_request_queue.send_notification.assert_called_once()
+        session.image_tools.record_story_plan_completed.assert_not_called()
+        session.interactive_canvas_tools.record_story_plan_completed.assert_not_called()
+
     def test_asset_only_show_image_receives_adventure_completion_callback(self):
         class PlannerTools:
             def process_user_action(self, user_action):

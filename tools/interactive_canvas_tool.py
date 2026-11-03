@@ -339,10 +339,11 @@ class InteractiveCanvasTools(BaseTools):
             self._story_plan_completed = True
         logger.debug("%s Story plan completion recorded; interactive canvas tools are re-enabled.", LOG_PREFIX)
 
-    def _consume_story_plan_completion(self, action: str) -> Optional[dict[str, str]]:
+    def _consume_story_plan_completion(self, action: str, tool_name: str) -> Optional[dict[str, str]]:
         """Consume the Adventure Mode mutation permit or return a tool error."""
+        allow_without_story = self.consume_orator_input_bypass(tool_name)
         with self._story_plan_lock:
-            if self.adventure_mode and not self._story_plan_completed:
+            if self.adventure_mode and not self._story_plan_completed and not allow_without_story:
                 return {
                     "error": (
                         f"Cannot {action}: Waiting for the story planner to complete its response to "
@@ -671,7 +672,7 @@ object interactions, clues, and flavor cards must use persistent=false."""
         """
         if not request:
             return {"error": "Describe the UI or update to apply."}
-        blocked = self._consume_story_plan_completion("update the interactive canvas")
+        blocked = self._consume_story_plan_completion("update the interactive canvas", "update_interactive_canvas")
         if blocked:
             return blocked
         logger.debug(
@@ -800,7 +801,7 @@ object interactions, clues, and flavor cards must use persistent=false."""
     @logged_tool_call
     def clear_interactive_canvas(self) -> dict[str, Any]:
         """Remove all generated A2UI surfaces from the current canvas."""
-        blocked = self._consume_story_plan_completion("clear the interactive canvas")
+        blocked = self._consume_story_plan_completion("clear the interactive canvas", "clear_interactive_canvas")
         if blocked:
             return blocked
         removed = self._canvas().ui.delete_surface("all")

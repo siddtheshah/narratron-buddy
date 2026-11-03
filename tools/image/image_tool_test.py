@@ -3,6 +3,7 @@ import os
 import shutil
 import tempfile
 import threading
+from dataclasses import replace
 from pathlib import Path
 from typing import Optional
 from unittest.mock import MagicMock, patch
@@ -377,7 +378,10 @@ class TestImageTools(BaseTestCase):
     @patch("tools.image.image_tool.get_image_provider")
     def test_orator_image_replaces_pinned_canvas_once(self, mock_get_provider: MagicMock) -> None:
         mock_get_provider.return_value.generate.return_value = self._provider_result()
-        tools = self.make_image_tools(self.config, theater_id="pinned_pass", theater_manager=self.manager)
+        tools = self.make_image_tools(
+            self.config, theater_id="pinned_pass", theater_manager=self.manager, adventure_mode=True,
+        )
+        assert not tools.is_story_plan_completed
         tools.visual.set_pinned(True)
         tools.visual.request_immediate_image()
         tools.request_orator_bypass({"create_image"})
@@ -389,6 +393,20 @@ class TestImageTools(BaseTestCase):
         assert tools.show_image("requested") == CANVAS_PINNED_MESSAGE
         mock_get_provider.return_value.generate.assert_called_once()
         assert not tools._pending_cycle_calls
+
+    @patch("tools.image.image_tool.get_image_provider")
+    def test_orator_image_bypasses_story_gate_once_without_unpinning(self, mock_get_provider: MagicMock) -> None:
+        mock_get_provider.return_value.generate.return_value = self._provider_result()
+        tools = self.make_image_tools(
+            self.config, theater_id="adventure_pass", theater_manager=self.manager, adventure_mode=True,
+        )
+        tools.request_orator_bypass({"create_image"})
+        self.assertIn("started in background", tools.create_image("requested scene", image_name="requested"))
+        tools.join_generation()
+        self.assertFalse(tools.is_story_plan_completed)
+        self.assertFalse(tools.visual.pinned)
+        self.assertIn("Waiting for the story planner", tools.create_image("another scene", image_name="another"))
+        mock_get_provider.return_value.generate.assert_called_once()
 
     @patch("tools.image.image_tool.get_image_provider")
     def test_create_image_uses_configured_provider(self, mock_get_provider):
@@ -620,6 +638,24 @@ class TestImageTools(BaseTestCase):
         prompt = "a lone samurai on a hill"
         result = tools._apply_default_style(prompt)
         self.assertEqual(result, prompt)
+
+    @patch("tools.image.image_tool.get_image_provider")
+    def test_failed_adventure_image_can_retry_without_another_story_turn(self, mock_get_provider: MagicMock) -> None:
+        provider = mock_get_provider.return_value
+        for failure in (ImageProviderError("Provider failure"), replace(self._provider_result(), image_bytes=b"")):
+            with self.subTest(failure=failure):
+                tools = self.make_image_tools(
+                    self.config, theater_id="adv_retry", theater_manager=self.manager, adventure_mode=True,
+                )
+                tools.record_story_plan_completed()
+                provider.generate.side_effect = [failure, self._provider_result()]
+                self.assertIn("started in background", tools.create_image("A mountain", image_name="mountain"))
+                tools.join_generation()
+                self.assertFalse(tools.is_in_flight("image_cycle"))
+                self.assertTrue(tools.is_story_plan_completed)
+                self.assertIn("started in background", tools.create_image("A mountain", image_name="mountain"))
+                tools.join_generation()
+                self.assertFalse(tools.is_story_plan_completed)
 
     @patch("tools.image.image_tool.get_image_provider")
     def test_adventure_mode_throttles_create_image_until_story_plan_completed(self, mock_get_provider):

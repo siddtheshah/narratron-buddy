@@ -1,24 +1,32 @@
 """Exercise the production turn scheduler and its durable failure boundaries."""
 
 from collections.abc import Iterator
+import asyncio
 from concurrent.futures import ThreadPoolExecutor
+from io import BytesIO
 import json
 from pathlib import Path
 from threading import Event
 from typing import Literal
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
 from pydantic import JsonValue
+from google.genai import types
+from PIL import Image
 
 from game_engine.game_runtime import GameAction
 from game_engine.game_state import GameState
 from components.canvas.story_state import StoryState
+from components.canvas.visual_state import VisualState
 from components.canvas_state import CanvasStateManager
 from components.notepad import NoteSnapshot
 from components.reference_manager import ReferenceManager
 from components.theater_manager import Theater, TheaterManager
-from providers import TextResponseProvider
+from providers import ImageGenerationResult, TextResponseProvider
+from services.live_agent_manager import LiveAgentSession
+from tools.image import ImageTools
 from components.story.story_handoffs import GameControlDecision, NarrationRequest
 from components.story.story_recording_journal import RecordingEvent
 from components.story.story_response_module import MAX_GAME_ENTRY_RESPONSE_ATTEMPTS
@@ -106,6 +114,72 @@ def test_communicated_turn_records_and_plans_without_request(harness: TurnHarnes
     assert tool.turn_journal.turns()[0].completed
     assert tool.turn_journal.turns()[0].entry_role == "responder"
     assert tool.recording_journal.pending() == []
+
+
+def test_required_input_releases_story_result_and_canvas_work_without_new_player_input(harness: TurnHarness) -> None:
+    harness.theater.config.return_value.update({
+        "story_planning": {"adventure_mode": True, "require_user_input": True, "input_cycle_duration": 0},
+        "visuals": {"model": "hybrid-flux-gemini", "cycle_length": 0},
+    })
+    tool = harness.new_tool()
+    canvas = tool.canvas_manager
+    canvas.visual = VisualState(harness.theater)
+    references = tool.reference_manager
+    references.available_character_images.return_value = {}
+    references.available_scene_images.return_value = {}
+    references.image_provider = None
+    references.resolve_provider_references.return_value = ([], None)
+    image_tools = ImageTools(harness.theater, canvas, adventure_mode=True, reference_manager=references)
+    runner = MagicMock()
+    runner.agent.tools = [
+        SimpleNamespace(name="process_user_action", func=tool.process_user_action),
+        SimpleNamespace(name="create_image", func=image_tools.create_image),
+    ]
+    session = LiveAgentSession(
+        "turns", runner, MagicMock(), config={"live_agent": {"live_tool_budget": 1}},
+    )
+    raster = BytesIO()
+    Image.new("RGB", (8, 8), "blue").save(raster, format="PNG")
+
+    async def run() -> None:
+        session._event_loop = asyncio.get_running_loop()
+        queue = session.live_request_queue
+        assert "error" in tool.process_user_action("Turn the key")
+        assert session.send_user_content(types.Content(parts=[types.Part(text="Turn the key")]))
+        await queue.get()
+        queue.record_model_tool_calls()
+        assert tool.process_user_action("Turn the key")["status"] == "processing"
+        assert await asyncio.to_thread(tool.wait_for_pending_events, 5)
+        result = await asyncio.wait_for(queue.get(), timeout=1)
+        assert "[Story Planner Result]" in result.content.parts[0].text
+        assert "The key breaks." in result.content.parts[0].text
+        assert canvas.story.narration == "The key breaks."
+        assert session.story_plans_count == 1
+        assert image_tools.is_story_plan_completed
+        assert not tool.response_module.is_user_input_detected
+        assert "error" in tool.process_user_action("Invent another action")
+        assert "started in background" in image_tools.create_image("A broken key", image_name="broken_key")
+        await asyncio.to_thread(image_tools.join_generation)
+        assert canvas.visual.shown_image_path is not None
+        assert Path(canvas.visual.shown_image_path).is_file()
+        assert not image_tools.is_story_plan_completed
+        assert not tool.is_action_in_flight
+        assert not image_tools.is_in_flight("image_cycle")
+        session.send_user_content(types.Content(parts=[types.Part(text="Look around")]))
+        assert tool.process_user_action("Look around")["status"] == "processing"
+        assert await asyncio.to_thread(tool.wait_for_pending_events, 5)
+        assert session.story_plans_count == 2
+        assert len(tool.turn_journal.turns()) == 2
+
+    with patch("tools.image.image_tool.get_image_provider") as provider:
+        provider.return_value.generate.return_value = ImageGenerationResult(
+            image_bytes=raster.getvalue(), mime_type="image/png", provider="test", model="test",
+        )
+        try:
+            asyncio.run(run())
+        finally:
+            image_tools.join_generation()
+            canvas.visual.stop_cycle()
 
 
 def test_zero_planning_budget_preserves_foreground_processing(harness: TurnHarness) -> None:
@@ -1292,6 +1366,23 @@ def test_legacy_partially_recorded_turns_keep_separate_saved_responses(harness: 
     assert len({turn.cycle_id for turn in turns}) == 2
     assert_foreground_calls(harness, ["recorder", "recorder"])
     assert all(turn.completed and turn.delivered for turn in turns)
+
+
+def test_orator_story_update_bypasses_required_input_once(harness: TurnHarness) -> None:
+    harness.theater.config.return_value["story_planning"]["require_user_input"] = True
+    tool = harness.new_tool()
+    assert "error" in tool.process_user_action("Unrequested update")
+    tool.request_orator_bypass({"process_user_action"})
+    request = "Update the story from the current audience intent and canvas annotations."
+    assert tool.process_user_action(request, nudge="Make the sky orange")["status"] == "processing"
+    assert tool.wait_for_pending_events(5)
+    assert not tool.response_module.is_user_input_detected
+    assert tool.turn_journal.turns()[0].action == request
+    assert tool.turn_journal.turns()[0].delivered
+    assert "error" in tool.process_user_action("Invent another action")
+    tool.record_user_input()
+    assert tool.process_user_action("Look around")["status"] == "processing"
+    assert tool.wait_for_pending_events(5)
 
 
 def test_rejected_durable_input_does_not_consume_orator_gate(harness: TurnHarness) -> None:

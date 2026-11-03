@@ -532,10 +532,10 @@ class StoryEngine:
             self.wait_for_pending_events(300)
         return result
 
-    def process_user_action(self, user_action: str, nudge: str = "") -> dict[str, JsonValue]:
+    def process_user_action(self, user_action: str, nudge: str = "", *, require_input: bool = True) -> dict[str, JsonValue]:
         """Submit a communicated action through the canvas cycle's input gate."""
         try:
-            turn_id, _ = self.submit_action(user_action, nudge)
+            turn_id, _ = self.submit_action(user_action, nudge, require_input=require_input)
         except ValueError as exc:
             return {"error": str(exc)}
         return {"status": "processing", "story_turn_id": turn_id, "message": "Story action queued for the next cycle."}

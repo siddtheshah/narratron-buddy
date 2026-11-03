@@ -90,6 +90,19 @@ class SampleTools(BaseTools):
 
 
 class TestBaseTools(BaseTestCase):
+    def test_input_pass_is_scoped_one_use_and_expires(self) -> None:
+        tools = self.base_tools
+        tools.request_orator_bypass({"create_image"})
+        assert not tools.consume_orator_input_bypass("process_user_action")
+        assert tools.consume_orator_input_bypass("create_image")
+        assert not tools.consume_orator_input_bypass("create_image")
+        tools.request_orator_bypass({"create_image"})
+        tools._orator_bypass_until = 0.0
+        assert not tools.consume_orator_input_bypass("create_image")
+        tools.request_orator_bypass({"create_image"})
+        tools.cancel_orator_bypass()
+        assert not tools.consume_orator_input_bypass("create_image")
+
     def test_pin_pass_is_scoped_shared_and_expires(self) -> None:
         tools = self.base_tools
         tools.request_orator_bypass({"create_music", "play_music"})

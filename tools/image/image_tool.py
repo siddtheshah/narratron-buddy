@@ -310,8 +310,9 @@ class ImageTools(BaseTools):
             return "Error: image_prompt must describe a scene."
         logger.debug(f"[ImageTools] create_image prompt={effective_prompt}, image_name={image_name}, display={display}")
 
+        allow_without_story = self.consume_orator_input_bypass("create_image")
         with self._story_plan_lock:
-            if self.adventure_mode and not self._story_plan_completed:
+            if self.adventure_mode and not self._story_plan_completed and not allow_without_story:
                 res = (
                     "Error: Cannot create image: Waiting for the story planner to complete its response to process_user_action. "
                     "Please wait for the '[Story Planner Result]' before creating an image."
@@ -359,6 +360,7 @@ class ImageTools(BaseTools):
                     self._story_plan_completed = False
 
             def _worker() -> None:
+                generation_succeeded = False
                 try:
                     self._set_canvas_activity(True)
                     saved_paths = []
@@ -457,6 +459,7 @@ class ImageTools(BaseTools):
                                 show_img = getattr(self.canvas_manager.visual, "show_image", None)
                                 if callable(show_img) and type(show_img).__name__ in ("MagicMock", "Mock", "AsyncMock"):
                                     show_img(filepath)
+                        generation_succeeded = True
                     else:
                         self.record_tool_failure("image_cycle")
                         logger.error("[ImageTools] Failed to generate image: provider returned no binary image data.")
@@ -467,6 +470,10 @@ class ImageTools(BaseTools):
                     self.record_tool_failure("image_cycle")
                     logger.error(f"[ImageTools] Error generating image in background: {e}")
                 finally:
+                    if not generation_succeeded:
+                        # A failed attempt must not spend the story result's
+                        # permission: the live agent may retry this scene.
+                        self.record_story_plan_completed()
                     self.theater.storage_changed()
                     self._set_canvas_activity(False)
                     self._trigger_after_tool_call("create_image")

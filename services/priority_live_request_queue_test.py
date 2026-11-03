@@ -7,6 +7,35 @@ from services.priority_live_request_queue import PriorityLiveRequestQueue
 
 
 class TestPriorityLiveRequestQueue(unittest.TestCase):
+    def test_completion_releases_staging_after_budget_expires_for_all_providers(self) -> None:
+        async def run_test(partial: bool, voice: bool) -> None:
+            queue = PriorityLiveRequestQueue(live_tool_budget=1, background_content_is_partial=partial)
+            if voice:
+                queue.send_activity_start()
+                await queue.get()
+                queue.send_activity_end()
+            else:
+                queue.send_user_input(types.Content(parts=[types.Part(text="Open door")]))
+            await queue.get()
+            turn_id = queue.user_input_turn_id
+            queue.record_model_tool_calls()
+            queue.send_notification(types.Content(parts=[types.Part(text="[Story Planner Result] Door opens")]))
+            result = await asyncio.wait_for(queue.get(), timeout=1)
+            self.assertIn("Door opens", result.content.parts[0].text)
+            self.assertFalse(result.partial)
+            self.assertEqual(queue.user_input_turn_id, turn_id)
+            self.assertEqual(queue.remaining_live_tool_budget, 1)
+            queue.send_content(types.Content(parts=[types.Part(function_response=types.FunctionResponse(
+                name="create_image", response={"status": "started"},
+            ))]))
+            response = await asyncio.wait_for(queue.get(), timeout=1)
+            self.assertEqual(response.content.parts[0].function_response.name, "create_image")
+
+        for partial in (False, True):
+            for voice in (False, True):
+                with self.subTest(partial=partial, voice=voice):
+                    asyncio.run(run_test(partial, voice))
+
     def test_user_turn_generation_changes_only_when_new_input_is_delivered(self) -> None:
         async def run_test() -> None:
             queue = PriorityLiveRequestQueue()

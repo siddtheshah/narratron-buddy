@@ -185,10 +185,9 @@ class PriorityLiveRequestQueue(LiveRequestQueue):
         if not content.role:
             content.role = "system"
         req = LiveRequest(content=content, partial=False)
-        if self._background_content_is_partial:
-            self._priority_content_queue.put_nowait(req)
-        else:
-            self._queue_non_audio(req)
+        # Completion events must wake every provider even after the input
+        # budget expires. Ordinary canvas updates remain subject to that budget.
+        self._priority_content_queue.put_nowait(req)
         self._notify_event.set()
 
     def send_user_input(self, content: types.Content) -> None:
@@ -243,7 +242,14 @@ class PriorityLiveRequestQueue(LiveRequestQueue):
         """
         while True:
             if not self._priority_content_queue.empty() and self._current_user_input_queue.empty():
-                return self._priority_content_queue.get_nowait()
+                req = self._priority_content_queue.get_nowait()
+                if req.content is not None and not any(
+                    part.function_response is not None for part in req.content.parts or []
+                ):
+                    # Allow bounded staging and its tool responses without
+                    # manufacturing a new player-input turn.
+                    self._arm_post_user_input_window()
+                return req
             if self._state == self._NON_AUDIO:
                 if not self._current_non_audio_queue.empty():
                     return self._current_non_audio_queue.get_nowait()

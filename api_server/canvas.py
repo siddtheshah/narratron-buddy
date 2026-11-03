@@ -959,32 +959,47 @@ def post_orator_action(
     if payload.action in ("update_story", "update_ui"):
         if not session or not session.is_alive:
             raise HTTPException(status_code=409, detail="Connect Narratron before requesting an update.")
+        suite = None
+        adventure_mode = session.config.get("story_planning", {}).get("adventure_mode", False)
         if payload.action == "update_story":
-            adventure_mode = session.config.get("story_planning", {}).get("adventure_mode", False)
             instruction = (
-                "Treat the audience intent and canvas annotations as an out-of-character story nudge "
-                "in Adventure Mode. Carry this nudge into the next genuine player action through the "
-                "process_user_action nudge parameter, and use it for upcoming visuals. Preserve player "
-                "agency and established continuity; do not invent a player action to advance the story."
+                "Process this explicit out-of-character story update now in Adventure Mode. Call "
+                "process_user_action with user_action='Update the story from the current audience intent "
+                "and canvas annotations.' and put the requested changes in the nudge parameter. "
+                "Wait for the story result before staging upcoming visuals. Preserve player agency "
+                "and established continuity; do not invent a player action to advance the story."
                 if adventure_mode
                 else "Update the notepad and reference manager from the audience intent and canvas "
                 "annotations using update_sticky_note and create_or_update_character as appropriate. "
                 "Register relevant scene and character changes for the ongoing story."
             )
+            if adventure_mode:
+                suite = session.story_planning_tools
+                names = {"process_user_action"}
         else:
             instruction = (
                 "Update the interactive canvas UI for the current story and audience intent using the "
                 "available interactive canvas tools. Refresh relevant controls and information."
             )
+            suite = session.interactive_canvas_tools
+            names = {"update_interactive_canvas"}
+        if (payload.action == "update_ui" or adventure_mode) and suite is None:
+            raise HTTPException(status_code=409, detail="The requested update tools are unavailable.")
         if state.ui.viewer_collab_enabled:
             if not session.send_agent_requested_observability(
                 force=True, include_capture_reference=payload.action != "update_story"
             ):
                 raise HTTPException(status_code=409, detail="Narratron could not receive the canvas capture.")
             instruction += " Use the accompanying canvas capture, including audience drawings, stamps, and text annotations."
+        if suite is not None:
+            suite.request_orator_bypass(names)
         if not session.send_notification(types.Content(role="system", parts=[types.Part(text=(
-            f"[Orator Action] {instruction} This is an explicit orator request."
+            f"[Orator Action] {instruction} This is an explicit orator request. "
+            "The requested action may run once without further speech or a new story result. "
+            "Use this one-time pass within one minute."
         ))])):
+            if suite is not None:
+                suite.cancel_orator_bypass()
             raise HTTPException(status_code=409, detail="Narratron could not receive the action.")
     elif payload.action in ("new_image", "new_music"):
         is_image = payload.action == "new_image"
@@ -1016,7 +1031,9 @@ def post_orator_action(
         logger.info(f"[Orator Action] {instruction}")
         if not session.send_notification(types.Content(role="system", parts=[types.Part(text=(
             f"[Orator Action] {instruction} This is an explicit orator request; "
-            "the next requested media action has a one-time pass through pin protection and its regular cooldown. Pin state stays unchanged; after this request, keep pinned media unchanged. Use the pass within one minute."
+            "the next requested media action has a one-time pass through pin protection, its regular cooldown, "
+            "and input/story-result requirements. Do it now without waiting for speech or another story turn. "
+            "Pin state stays unchanged; after this request, keep pinned media unchanged. Use the pass within one minute."
         ))])):
             suite.cancel_orator_bypass()
             if is_image:

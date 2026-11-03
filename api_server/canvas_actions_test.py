@@ -48,6 +48,7 @@ def test_force_action_requests_scoped_bypass(
     )
     session.send_notification.assert_called_once()
     assert session.send_notification.call_args[0][0].role == "system"
+    assert "without waiting for speech or another story turn" in session.send_notification.call_args[0][0].parts[0].text
     state.persist.assert_called_once()
     if action == "new_image":
         state.visual.set_pinned.assert_not_called()
@@ -224,19 +225,24 @@ def test_secondary_action_sends_intent_and_collaboration_capture(
     state.audio.set_pinned.assert_not_called()
     session.image_tools.request_orator_bypass.assert_not_called()
     session.music_tools.request_orator_bypass.assert_not_called()
+    if action == "update_ui":
+        session.interactive_canvas_tools.request_orator_bypass.assert_called_once_with({"update_interactive_canvas"})
 
 
-def test_adventure_story_update_is_a_nudge_for_next_action_and_visuals(
+def test_adventure_story_update_requests_immediate_out_of_character_action(
     action_services: tuple[MagicMock, MagicMock]
 ) -> None:
     _, session = action_services
-    session.config = {"story_planning": {"adventure_mode": True}}
+    session.config = {"story_planning": {"adventure_mode": True, "require_user_input": True}}
     canvas.post_orator_action("stage", canvas.OratorAction(action="update_story"), Request({"type": "http"}))
     instruction = session.send_notification.call_args[0][0].parts[0].text
-    assert "process_user_action nudge parameter" in instruction
+    assert "Process this explicit out-of-character story update now" in instruction
+    assert "process_user_action with user_action='Update the story" in instruction
+    assert "nudge parameter" in instruction
     assert "upcoming visuals" in instruction
     assert "do not invent a player action" in instruction
     assert "update_sticky_note" not in instruction
+    session.story_planning_tools.request_orator_bypass.assert_called_once_with({"process_user_action"})
 
 
 @pytest.mark.parametrize("action", ["update_story", "update_ui"])
@@ -255,6 +261,11 @@ def test_secondary_action_reports_delivery_failure(
     state.persist.assert_not_called()
     if failure != "notification":
         session.send_notification.assert_not_called()
+    if action == "update_ui":
+        if failure == "notification":
+            session.interactive_canvas_tools.cancel_orator_bypass.assert_called_once()
+        else:
+            session.interactive_canvas_tools.request_orator_bypass.assert_not_called()
 
 
 def test_previous_image_action_success_and_failure(action_services: tuple[MagicMock, MagicMock]) -> None:
