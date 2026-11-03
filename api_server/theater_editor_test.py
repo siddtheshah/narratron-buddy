@@ -178,6 +178,7 @@ def test_nonowner_cannot_reclaim_baton_by_opening_editor(builder: BuilderHarness
     ("assistant", {"prompt": "Develop the harbor"}),
     ("generate", {"kind": "reference", "name": "hero", "prompt": "Hero"}),
     ("delete", {"path": "lore/new.txt"}),
+    ("move", {"source": "lore/new.txt", "destination": "lore/sub/new.txt"}),
     ("google-link", {"url": "https://drive.google.com/file/d/example/view"}),
     ("deploy", {}),
     ("reset", {}),
@@ -1139,6 +1140,47 @@ def test_delete_via_http_delete_method(builder: BuilderHarness) -> None:
     del_result = builder.client.delete(f"{base}/file?path=lore/temp.txt&revision={rev}")
     assert del_result.status_code == 200
     assert "lore/temp.txt" not in [f["path"] for f in del_result.json()["files"]]
+
+
+def test_move_endpoint_validates_and_moves_asset(builder: BuilderHarness) -> None:
+    data = builder.create()
+    base = f"/api/theater-editor/{data['draft']['theater_id']}"
+    save_result = builder.client.post(f"{base}/save", json={
+        "revision": data["draft"]["revision"],
+        "name": data["draft"]["name"],
+        "writes": [{"path": "lore/characters/captain.txt", "content": "Captain of the crew."}],
+    })
+    assert save_result.status_code == 200
+    rev = save_result.json()["draft"]["revision"]
+
+    # Unauthorized requests
+    builder.client.headers.pop("x-test-user")
+    assert builder.client.post(f"{base}/move", json={"revision": rev, "source": "lore/characters/captain.txt", "destination": "lore/captain.txt"}).status_code == 401
+    builder.client.headers["x-test-user"] = "999"
+    assert builder.client.post(f"{base}/move", json={"revision": rev, "source": "lore/characters/captain.txt", "destination": "lore/captain.txt"}).status_code == 403
+    builder.client.headers["x-test-user"] = "7"
+
+    # Revision mismatch
+    assert builder.client.post(f"{base}/move", json={"revision": rev - 1, "source": "lore/characters/captain.txt", "destination": "lore/captain.txt"}).status_code == 409
+
+    # Cannot move theater.yaml
+    assert builder.client.post(f"{base}/move", json={"revision": rev, "source": "theater.yaml", "destination": "lore/theater.yaml"}).status_code == 400
+
+    # Nonexistent source file
+    assert builder.client.post(f"{base}/move", json={"revision": rev, "source": "lore/missing.txt", "destination": "lore/captain.txt"}).status_code == 400
+
+    # Ineligible destination
+    assert builder.client.post(f"{base}/move", json={"revision": rev, "source": "lore/characters/captain.txt", "destination": "references/captain.txt"}).status_code == 400
+
+    # Successful move
+    move_result = builder.client.post(f"{base}/move", json={"revision": rev, "source": "lore/characters/captain.txt", "destination": "lore/captain.txt"})
+    assert move_result.status_code == 200, move_result.text
+    files = [f["path"] for f in move_result.json()["files"]]
+    assert "lore/characters/captain.txt" not in files
+    assert "lore/captain.txt" in files
+    assert move_result.json()["draft"]["revision"] == rev + 1
+    assert builder.client.get(f"{base}/file?path=lore/characters/captain.txt").status_code == 404
+    assert builder.client.get(f"{base}/file?path=lore/captain.txt").status_code == 200
 
 
 def test_apply_proposal_executes_deletions(builder: BuilderHarness) -> None:

@@ -107,6 +107,18 @@ def editor_page() -> Iterator[Page]:
                     delete window.savedFiles[body.path];
                     return {ok: true, json: async () => structuredClone(draft)};
                 }
+                if (request.pathname.endsWith('/move')) {
+                    const body = JSON.parse(options.body);
+                    window.lastMoveRequest = body;
+                    const target = draft.files.find(file => file.path === body.source);
+                    if (target) target.path = body.destination;
+                    if (window.savedFiles[body.source] !== undefined) {
+                        window.savedFiles[body.destination] = window.savedFiles[body.source];
+                        delete window.savedFiles[body.source];
+                    }
+                    draft.draft.revision++;
+                    return {ok: true, json: async () => structuredClone(draft)};
+                }
                 if (request.pathname.endsWith('/apply')) {
                     const body = JSON.parse(options.body);
                     const proposal = body.proposal;
@@ -1264,4 +1276,59 @@ def test_reference_tagging_autocomplete_and_submission_in_editor(editor_page: Pa
     expect(assistant_menu).to_be_visible()
     assistant_menu.locator(".reference-mention-option", has_text="captain").click()
     expect(assistant_input).to_have_value("Create a scene with @captain ")
+
+def test_drag_and_drop_files_between_folders(editor_page: Page) -> None:
+    page = editor_page
+    # Open lore folder and nested characters/crew folders
+    page.locator('details[data-path="lore"] > summary').click()
+    page.locator('details[data-path="lore/characters"] > summary').click()
+    page.locator('details[data-path="lore/characters/crew"] > summary').click()
+
+    rookie_btn = page.locator('.file-button[data-path="lore/characters/crew/rookie.txt"]')
+    expect(rookie_btn).to_be_visible()
+    expect(rookie_btn).to_have_attribute("draggable", "true")
+
+    # theater.yaml should not be draggable
+    theater_yaml_btn = page.locator('.file-button[data-path="theater.yaml"]')
+    expect(theater_yaml_btn).not_to_have_attribute("draggable", "true")
+
+    # Drag rookie.txt from lore/characters/crew to folder lore
+    lore_folder_summary = page.locator('details[data-path="lore"] > summary')
+    rookie_btn.drag_to(lore_folder_summary)
+
+    # Verify status and move request
+    expect(page.locator("#builder-status")).to_have_text("Moved rookie.txt to lore.")
+    moved_rookie_btn = page.locator('.file-button[data-path="lore/rookie.txt"]')
+    expect(moved_rookie_btn).to_be_visible()
+    expect(page.locator('.file-button[data-path="lore/characters/crew/rookie.txt"]')).to_have_count(0)
+    expect(page.locator("#selected-path")).to_have_text("lore/rookie.txt")
+
+    # Drag rookie.txt into lore/characters
+    chars_folder_summary = page.locator('details[data-path="lore/characters"] > summary')
+    moved_rookie_btn.drag_to(chars_folder_summary)
+
+    expect(page.locator("#builder-status")).to_have_text("Moved rookie.txt to lore/characters.")
+    nested_rookie_btn = page.locator('.file-button[data-path="lore/characters/rookie.txt"]')
+    expect(nested_rookie_btn).to_be_visible()
+    expect(page.locator("#selected-path")).to_have_text("lore/characters/rookie.txt")
+
+    # Dragging a file into its own folder is a no-op
+    page.evaluate("window.lastMoveRequest = null")
+    nested_rookie_btn.drag_to(chars_folder_summary)
+    assert page.evaluate("window.lastMoveRequest") is None
+
+    # Normal clicking still selects the file
+    nested_rookie_btn.click()
+    expect(page.locator("#selected-path")).to_have_text("lore/characters/rookie.txt")
+    expect(nested_rookie_btn).to_have_class(re.compile(r"\bactive\b"))
+
+    # Create lore/characters/guide.txt using the new file dialog
+    page.locator("#new-file").click()
+    page.locator("#new-file-path").fill("lore/characters/guide.txt")
+    page.locator("#new-file-submit").click()
+    expect(page.locator('.file-button[data-path="lore/characters/guide.txt"]')).to_be_visible()
+
+    # Now drag lore/guide.txt into lore/characters - should report duplicate file error
+    page.locator('.file-button[data-path="lore/guide.txt"]').drag_to(chars_folder_summary)
+    expect(page.locator("#builder-status")).to_have_text('A file named "guide.txt" already exists in lore/characters.')
 

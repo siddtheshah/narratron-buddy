@@ -19,6 +19,8 @@
   const expandedFolders = new Map();
   let fileTreeDraftId = null;
   let lastDraftKey = null;
+  let draggedFilePath = null;
+  let dragHoverTimer = null;
 
   function status(message, error = false) {
     el('builder-status').textContent = message;
@@ -119,7 +121,30 @@
         button.classList.toggle('active', selected?.path === file.path);
         if (selected?.path === file.path) button.setAttribute('aria-current', 'true');
         button.textContent = `${file.path.startsWith('stamps/') ? '🏷️' : (file.path.startsWith('references/characters/') ? '👤' : (file.path.startsWith('references/scenes/') ? '🏞️' : (file.kind === 'image' || file.path.toLowerCase().endsWith('.svg') ? '▧' : file.kind === 'audio' ? '♫' : '≡')))} ${file.path.split('/').pop()}`;
-        button.title = file.path; button.addEventListener('click', () => selectFile(file)); parent.append(button);
+        button.title = file.path; button.addEventListener('click', () => selectFile(file));
+        if (file.path !== 'theater.yaml') {
+          button.draggable = true;
+          button.addEventListener('dragstart', event => {
+            if (busy || activeGenerations > 0) {
+              event.preventDefault();
+              return;
+            }
+            draggedFilePath = file.path;
+            event.dataTransfer.setData('text/plain', file.path);
+            event.dataTransfer.effectAllowed = 'move';
+            button.classList.add('dragging');
+          });
+          button.addEventListener('dragend', () => {
+            draggedFilePath = null;
+            button.classList.remove('dragging');
+            document.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
+            if (dragHoverTimer) {
+              clearTimeout(dragHoverTimer);
+              dragHoverTimer = null;
+            }
+          });
+        }
+        parent.append(button);
       }
     }
     function appendFolders(parent, node, prefix = '') {
@@ -132,7 +157,62 @@
         const count = document.createElement('span'); count.className = 'folder-count';
         count.textContent = child.count; count.setAttribute('aria-label', `${child.count} files`);
         summary.append(label, count);
+
+        summary.addEventListener('dragenter', event => {
+          if (!draggedFilePath && !event.dataTransfer?.types?.includes('text/plain')) return;
+          event.preventDefault();
+          summary.classList.add('drag-over');
+          if (!folder.open && !dragHoverTimer) {
+            dragHoverTimer = setTimeout(() => {
+              folder.open = true;
+              expandedFolders.set(path, true);
+            }, 500);
+          }
+        });
+        summary.addEventListener('dragover', event => {
+          if (!draggedFilePath && !event.dataTransfer?.types?.includes('text/plain')) return;
+          event.preventDefault();
+          event.dataTransfer.dropEffect = 'move';
+          if (!summary.classList.contains('drag-over')) {
+            summary.classList.add('drag-over');
+          }
+        });
+        summary.addEventListener('dragleave', event => {
+          if (event.relatedTarget && summary.contains(event.relatedTarget)) return;
+          summary.classList.remove('drag-over');
+          if (dragHoverTimer) {
+            clearTimeout(dragHoverTimer);
+            dragHoverTimer = null;
+          }
+        });
+        summary.addEventListener('drop', async event => {
+          event.preventDefault();
+          summary.classList.remove('drag-over');
+          if (dragHoverTimer) {
+            clearTimeout(dragHoverTimer);
+            dragHoverTimer = null;
+          }
+          const source = event.dataTransfer?.getData('text/plain') || draggedFilePath;
+          if (!source) return;
+          await moveFile(source, path);
+        });
+
         const contents = document.createElement('div'); contents.className = 'file-children';
+        contents.addEventListener('dragover', event => {
+          if (event.target === contents) {
+            event.preventDefault();
+            event.dataTransfer.dropEffect = 'move';
+          }
+        });
+        contents.addEventListener('drop', async event => {
+          if (event.target === contents) {
+            event.preventDefault();
+            const source = event.dataTransfer?.getData('text/plain') || draggedFilePath;
+            if (!source) return;
+            await moveFile(source, path);
+          }
+        });
+
         appendFolders(contents, child, path); appendFiles(contents, child.files);
         if (child.files.length === 0 && child.folders.size === 0) {
           const emptyHint = document.createElement('span');
@@ -142,6 +222,25 @@
             : (path === 'references/scenes'
               ? 'No scene images yet (references/scenes/<Scene>/1.webp)'
               : 'Empty folder');
+          emptyHint.addEventListener('dragenter', event => {
+            event.preventDefault();
+            emptyHint.classList.add('drag-over');
+          });
+          emptyHint.addEventListener('dragover', event => {
+            event.preventDefault();
+            event.dataTransfer.dropEffect = 'move';
+            emptyHint.classList.add('drag-over');
+          });
+          emptyHint.addEventListener('dragleave', () => {
+            emptyHint.classList.remove('drag-over');
+          });
+          emptyHint.addEventListener('drop', async event => {
+            event.preventDefault();
+            emptyHint.classList.remove('drag-over');
+            const source = event.dataTransfer?.getData('text/plain') || draggedFilePath;
+            if (!source) return;
+            await moveFile(source, path);
+          });
           contents.append(emptyHint);
         }
         folder.append(summary, contents); parent.append(folder);
@@ -241,6 +340,42 @@
     el('media-preview').replaceChildren(media);
     el('media-preview').hidden = false;
     el('file-editor').hidden = true;
+  }
+  async function moveFile(source, targetFolder) {
+    if (!source || !targetFolder) return;
+    if (busy || activeGenerations > 0) {
+      status('Please wait for current operation to finish.', true);
+      return;
+    }
+    if (source === 'theater.yaml') {
+      status('theater.yaml cannot be moved.', true);
+      return;
+    }
+    const filename = source.split('/').pop();
+    const sourceFolder = source.split('/').slice(0, -1).join('/');
+    if (sourceFolder === targetFolder) return;
+    const destination = `${targetFolder}/${filename}`;
+    if (state.files.some(file => file.path.toLowerCase() === destination.toLowerCase())) {
+      status(`A file named "${filename}" already exists in ${targetFolder}.`, true);
+      return;
+    }
+    let nextDraft = null;
+    await run(async () => {
+      captureText();
+      await save();
+      nextDraft = await post('/move', {
+        revision: state.draft.revision,
+        source,
+        destination,
+      });
+      expandedFolders.set(targetFolder, true);
+      selected = nextDraft.files.find(f => f.path === destination) || null;
+      render(nextDraft);
+      status(`Moved ${filename} to ${targetFolder}.`);
+    }, `Moving ${filename} to ${targetFolder}…`);
+    if (selected) {
+      await selectFile(selected);
+    }
   }
   async function save(persist = false) {
     captureText();

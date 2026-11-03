@@ -86,6 +86,12 @@ class DeleteDraftFileRequest(BaseModel):
     path: str = Field(min_length=1, max_length=500)
 
 
+class MoveDraftFileRequest(BaseModel):
+    revision: int
+    source: str = Field(min_length=1, max_length=500)
+    destination: str = Field(min_length=1, max_length=500)
+
+
 class GenerateDraftRequest(GenerationRequest):
     revision: int
 
@@ -447,6 +453,18 @@ async def delete_draft_file(theater_id: str, body: DeleteDraftFileRequest, reque
         check_revision(info, body.revision)
         with invalid_input():
             await asyncio.to_thread(write_checkout, info, {}, deletions=[body.path])
+        return await asyncio.to_thread(response, info)
+
+
+@app.post("/api/theater-editor/{theater_id}/move")
+async def move_draft_file(theater_id: str, body: MoveDraftFileRequest, request: Request) -> DraftResponse:
+    async with _draft_locks.setdefault(theater_id, asyncio.Lock()):
+        info = await require_draft(request, theater_id)
+        check_revision(info, body.revision)
+        if body.source == "theater.yaml":
+            raise HTTPException(status_code=400, detail="Cannot move theater.yaml.")
+        with invalid_input():
+            await asyncio.to_thread(write_checkout, info, {}, moves=[FileMove(source=body.source, destination=body.destination)])
         return await asyncio.to_thread(response, info)
 
 

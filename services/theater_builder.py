@@ -261,6 +261,8 @@ class TheaterBuilderStore:
         sources: set[str] = set()
         destinations: set[str] = set(files)
         for move in operations:
+            if move.source == "theater.yaml":
+                raise ValueError("Cannot move theater.yaml.")
             source = safe_asset_path(root, move.source)
             destination = safe_asset_path(root, move.destination)
             if move.source in sources or move.destination in destinations or source == destination:
@@ -319,9 +321,16 @@ class TheaterBuilderStore:
                     parent.rmdir()
                     parent = parent.parent
             for move in operations:
+                src_target = safe_asset_path(root, move.source)
                 destination = safe_asset_path(root, move.destination)
                 destination.parent.mkdir(parents=True, exist_ok=True)
-                safe_asset_path(root, move.source).replace(destination)
+                src_target.replace(destination)
+                parent = src_target.parent
+                while parent != resolved_root and parent.is_dir() and not any(parent.iterdir()):
+                    if parent.parent == resolved_root and parent.name in {"characters", "references", "stamps", "playlists", "animations", "lore"}:
+                        break
+                    parent.rmdir()
+                    parent = parent.parent
             for name, content in files.items():
                 target = targets[name]
                 target.parent.mkdir(parents=True, exist_ok=True)
