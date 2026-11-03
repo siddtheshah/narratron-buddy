@@ -108,6 +108,7 @@
         </div>
         <nav class="remote-tabs preview-tabs" role="tablist" aria-label="Watch screens">
             <button id="preview-chat-tab" role="tab" aria-controls="preview-chat-panel" aria-selected="true">Chat</button>
+            <button id="preview-thought-tab" role="tab" aria-controls="preview-thought-panel" aria-selected="false" tabindex="-1">Thought</button>
             <button id="preview-story-tab" role="tab" aria-controls="preview-story-panel" aria-selected="false" tabindex="-1" hidden>Story log</button>
         </nav>
         <section id="preview-chat-panel" class="preview-chat" role="tabpanel" aria-labelledby="preview-chat-tab">
@@ -138,6 +139,15 @@
                     </button>
                 </div>
             </form>
+        </section>
+        <section id="preview-thought-panel" class="preview-thought" role="tabpanel" aria-labelledby="preview-thought-tab" hidden>
+            <div class="preview-thought-heading">
+                <h2 id="preview-thought-title">Thought</h2>
+            </div>
+            <div id="agent-thought-card" class="agent-thought-card" aria-live="polite">
+                <div class="agent-thought-label">📌 Narratron's current thought</div>
+                <div id="agent-thought-text" class="agent-thought-text">Waiting for Narratron to think…</div>
+            </div>
         </section>
         <section id="preview-story-panel" role="tabpanel" aria-labelledby="preview-story-tab" hidden>
             <h2 class="sr-only">Story log</h2>
