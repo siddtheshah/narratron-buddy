@@ -12,8 +12,8 @@
 
 ## Remote
 
-- [ ] Show Narratron current thought in the remote watch tab as a separate sub-tab.
-- [ ] Keep unmuted when moving been top level tabs if a remote watcher unmuted.
+- [x] Show Narratron current thought in the remote watch tab as a separate sub-tab.
+- [x] Keep unmuted when moving been top level tabs if a remote watcher unmuted.
 - [ ] Game integration with mobile? Separate panel html required.
 
 ## Adventure Mode

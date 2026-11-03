@@ -45,16 +45,45 @@ import { initializeRemoteAudio } from './remote-audio.js';
     const previewTabs = [...document.querySelectorAll('.preview-tabs [role="tab"]')];
     const storyControls = document.getElementById('story-input-controls');
     const composer = document.getElementById('remote-composer');
-    let storySelected = false;
+    const agentThoughtCard = document.getElementById('agent-thought-card');
+    const agentThoughtText = document.getElementById('agent-thought-text');
+    let selectedPreviewIndex = 0;
+    let lastAgentThought = null;
+
+    function isAudioActive() {
+        return (!previewView.hidden || previewAudio.isUnmuted()) && !document.hidden;
+    }
+
+    function updateAgentThought(thought) {
+        const text = thought && thought.text ? thought.text.trim() : '';
+        if (agentThoughtCard) {
+            agentThoughtCard.classList.toggle(
+                'is-highlighted', Boolean(thought && thought.highlighted && text)
+            );
+        }
+        if (text === lastAgentThought) return;
+        const isWandering = text.toLowerCase() === 'wandering';
+        if (agentThoughtText) {
+            agentThoughtText.textContent = isWandering
+                ? 'Narratron has wandered away. (Try resummoning?)'
+                : (text || 'Waiting for Narratron to think…');
+            agentThoughtText.classList.toggle('is-wandering', isWandering);
+        }
+        lastAgentThought = text;
+    }
 
     function renderPreviewTab() {
+        if (previewTabs[selectedPreviewIndex]?.hidden) {
+            selectedPreviewIndex = 0;
+        }
         previewTabs.forEach((tab, index) => {
-            const selected = Boolean(index) === storySelected;
+            const selected = index === selectedPreviewIndex;
             tab.setAttribute('aria-selected', String(selected));
             tab.tabIndex = selected ? 0 : -1;
-            document.getElementById(tab.getAttribute('aria-controls')).hidden = !selected;
+            const panel = document.getElementById(tab.getAttribute('aria-controls'));
+            if (panel) panel.hidden = !selected;
         });
-        const readingStory = !previewView.hidden && storySelected;
+        const readingStory = !previewView.hidden && previewTabs[selectedPreviewIndex]?.id === 'preview-story-tab';
         storyLog?.setOpen(readingStory);
         const slot = document.getElementById(readingStory ? 'story-composer-slot' : 'inputs-composer-slot');
         if (composer.parentElement !== slot) slot.appendChild(composer);
@@ -64,17 +93,22 @@ import { initializeRemoteAudio } from './remote-audio.js';
     previewTabs.forEach((tab, index) => {
         function select() {
             if (tab.hidden) return;
-            storySelected = Boolean(index);
+            selectedPreviewIndex = index;
             renderPreviewTab();
             tab.focus();
         }
         tab.addEventListener('click', select);
         tab.addEventListener('keydown', event => {
-            const next = event.key === 'Home' ? 0 : event.key === 'End' ? 1
-                : ['ArrowLeft', 'ArrowRight'].includes(event.key) ? 1 - index : null;
-            if (next === null) return;
+            const visibleTabs = previewTabs.filter(t => !t.hidden);
+            const currentPos = visibleTabs.indexOf(tab);
+            let nextPos = null;
+            if (event.key === 'Home') nextPos = 0;
+            else if (event.key === 'End') nextPos = visibleTabs.length - 1;
+            else if (event.key === 'ArrowRight') nextPos = (currentPos + 1) % visibleTabs.length;
+            else if (event.key === 'ArrowLeft') nextPos = (currentPos - 1 + visibleTabs.length) % visibleTabs.length;
+            if (nextPos === null) return;
             event.preventDefault();
-            previewTabs[previewTabs[next].hidden ? 0 : next].click();
+            visibleTabs[nextPos].click();
         });
     });
     let theaterKey = (document.body && document.body.dataset ? document.body.dataset.joinKey : '') ||
@@ -347,7 +381,7 @@ import { initializeRemoteAudio } from './remote-audio.js';
         });
         document.title = `${tabs[selected].textContent} · Narratron Remote`;
         renderPreviewTab();
-        previewAudio.update(state, !previewView.hidden && !document.hidden);
+        previewAudio.update(state, isAudioActive());
         if (focus && !tabs[selected].hidden) tabs[selected].focus();
         if (tabs[selected].dataset.view === 'preview') {
             updatePreview();
@@ -601,7 +635,8 @@ import { initializeRemoteAudio } from './remote-audio.js';
     }
 
     function updatePreview() {
-        previewAudio.update(state, !previewView.hidden && !document.hidden);
+        previewAudio.update(state, isAudioActive());
+        updateAgentThought(state?.agent_thought);
         if (previewView.hidden && state) return;
         const nextUrl = state?.preview_url || null;
         if (nextUrl !== previewUrl) {
@@ -684,7 +719,9 @@ import { initializeRemoteAudio } from './remote-audio.js';
         const adventureMode = Boolean(state?.is_adventure_mode);
         document.getElementById('preview-story-tab').hidden = !adventureMode;
         document.getElementById('story-direction').hidden = !adventureMode;
-        if (!adventureMode) storySelected = false;
+        if (!adventureMode && previewTabs[selectedPreviewIndex]?.id === 'preview-story-tab') {
+            selectedPreviewIndex = 0;
+        }
         renderPreviewTab();
         const isOwner = Boolean(currentUser && currentBatonState?.owner && currentUser.id === currentBatonState.owner.id);
         const isActiveOrator = Boolean(currentUser && currentBatonState?.active_orator && currentUser.id === currentBatonState.active_orator.id);

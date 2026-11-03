@@ -21,6 +21,9 @@ def remote_services() -> Iterator[tuple[TestClient, MagicMock, MagicMock]]:
     state.story.committed_scene_speech_generation = 3
     state.ui.viewer_collab_enabled = True
     state.visual.preview_image_url.return_value = "/theaters/stage/output/scene.webp"
+    state.tool_response.current_agent_thought = ""
+    state.tool_response.current_agent_thought_time = 0.0
+    state.tool_response.agent_thought_highlighted = False
     manager = MagicMock()
     manager.get_session.return_value = None
     with patch.object(remote, "_require_canvas_access", return_value=deployment), \
@@ -86,6 +89,7 @@ def test_remote_returns_state_for_active_orator(
         "preview_url": "/theaters/stage/output/scene.webp",
         "music": {"music_id": "rain", "tracks": ["/audio/rain.mp3"], "paused": False},
         "committed_scene_speech_generation": 3,
+        "agent_thought": {"text": "", "time": 0.0, "highlighted": False},
         "is_contributor": True,
         "is_owner": False,
         "is_orator": True,
@@ -228,4 +232,22 @@ def test_remote_escapes_html_characters_in_authoritative_join_key(
     assert response.status_code == 200
     assert 'onload="window.auditRemote=1"' not in response.text
     assert 'data-join-key="KEY&#34; onload=&#34;window.auditRemote=1"' in response.text
+
+
+def test_remote_returns_agent_thought(
+    remote_services: tuple[TestClient, MagicMock, MagicMock],
+) -> None:
+    client, _, _ = remote_services
+    state = remote.canvas_states.get("stage")
+    state.tool_response.current_agent_thought = "Pondering the cosmos..."
+    state.tool_response.current_agent_thought_time = 12345.67
+    state.tool_response.agent_thought_highlighted = True
+    response = client.get("/api/theaters/stage/remote")
+    assert response.status_code == 200
+    assert response.json()["agent_thought"] == {
+        "text": "Pondering the cosmos...",
+        "time": 12345.67,
+        "highlighted": True,
+    }
+
 
