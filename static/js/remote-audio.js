@@ -93,6 +93,9 @@ export function initializeRemoteAudio({ frame, feedback, onError }) {
     renderMute();
 
     return {
+        isUnmuted() {
+            return !muted;
+        },
         update(state, visible) {
             active = Boolean(state && visible);
             musicState = state?.music || null;

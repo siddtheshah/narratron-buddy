@@ -87,8 +87,54 @@ def test_adventure_controls_follow_theater_mode(remote_page: Page, adventure_mod
     expect(page.locator("#preview-story-tab")).to_be_visible(visible=adventure_mode)
     if not adventure_mode:
         page.get_by_role("tab", name="Chat", exact=True).press("ArrowRight")
+        expect(page.locator("#preview-thought-panel")).to_be_visible()
+        page.get_by_role("tab", name="Thought", exact=True).press("ArrowRight")
         expect(page.locator("#preview-chat-panel")).to_be_visible()
         expect(page.locator("#preview-story-panel")).to_be_hidden()
+
+
+def test_watch_tab_displays_narratron_thought(remote_page: Page) -> None:
+    page = remote_page
+    remote_data = {
+        "agent_running": True,
+        "is_owner": True,
+        "is_orator": True,
+        "is_adventure_mode": False,
+        "agent_thought": {
+            "text": "Pondering the ancient secrets of the ruins...",
+            "time": 100.0,
+            "highlighted": True,
+        },
+    }
+    page.route("**/api/theaters/stage/remote", lambda route: route.fulfill(json=remote_data))
+    page.goto("http://remote.test/remote?theater_id=stage#preview")
+    page.wait_for_function("!document.getElementById('controls').disabled")
+
+    thought_tab = page.get_by_role("tab", name="Thought", exact=True)
+    expect(thought_tab).to_be_visible()
+    expect(page.locator("#preview-chat-panel")).to_be_visible()
+    expect(page.locator("#preview-thought-panel")).to_be_hidden()
+
+    thought_tab.click()
+    expect(page.locator("#preview-thought-panel")).to_be_visible()
+    expect(page.locator("#preview-chat-panel")).to_be_hidden()
+
+    card = page.locator("#agent-thought-card")
+    expect(card).to_have_class("agent-thought-card is-highlighted")
+    text_el = page.locator("#agent-thought-text")
+    expect(text_el).to_have_text("Pondering the ancient secrets of the ruins...")
+
+    remote_data["agent_thought"] = {
+        "text": "wandering",
+        "time": 200.0,
+        "highlighted": False,
+    }
+    page.wait_for_function(
+        "document.getElementById('agent-thought-text').textContent.includes('wandered away')"
+    )
+    expect(text_el).to_have_text("Narratron has wandered away. (Try resummoning?)")
+    expect(text_el).to_have_class("agent-thought-text is-wandering")
+    expect(card).not_to_have_class("agent-thought-card is-highlighted")
 
 
 def install_watch_audio_stub(page: Page) -> None:
@@ -148,6 +194,12 @@ def test_watch_audio_defaults_muted_and_follows_music(remote_page: Page, tmp_pat
     music["tracks"] = ["/audio/forest.mp3"]
     page.wait_for_function("watchAudio[0].getAttribute('src') === '/audio/forest.mp3' && !watchAudio[0].paused")
     assert page.evaluate("!watchAudio[0].muted")
+    page.get_by_role("tab", name="Inputs", exact=True).click()
+    assert page.evaluate("!watchAudio[0].paused && !watchAudio[0].muted")
+    page.get_by_role("tab", name="Watch", exact=True).click()
+    assert page.evaluate("!watchAudio[0].paused && !watchAudio[0].muted")
+    frame.tap()
+    assert page.evaluate("watchAudio.every(audio => audio.muted)")
     page.get_by_role("tab", name="Inputs", exact=True).click()
     page.wait_for_function("watchAudio.every(audio => audio.paused)")
     page.get_by_role("tab", name="Watch", exact=True).click()
@@ -227,6 +279,12 @@ def test_watch_audio_queues_matching_live_speech(remote_page: Page) -> None:
     assert page.evaluate("!watchAudio[1].getAttribute('src')")
     page.get_by_role("tab", name="Inputs", exact=True).click()
     socket.send(json.dumps({"type": "scene_speech_ready", "speech_generation": 3, "audio_url": "/speech/hidden.mp3"}))
+    page.get_by_role("tab", name="Watch", exact=True).click()
+    assert page.evaluate("watchAudio[1].getAttribute('src') === '/speech/hidden.mp3' && !watchAudio[1].paused")
+    page.get_by_role("button", name="Mute canvas audio").tap()
+    assert page.evaluate("watchAudio.every(audio => audio.muted)")
+    page.get_by_role("tab", name="Inputs", exact=True).click()
+    socket.send(json.dumps({"type": "scene_speech_ready", "speech_generation": 3, "audio_url": "/speech/muted_hidden.mp3"}))
     page.get_by_role("tab", name="Watch", exact=True).click()
     assert page.evaluate("watchAudio[1].paused && !watchAudio[1].getAttribute('src')")
 

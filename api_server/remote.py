@@ -35,6 +35,12 @@ class RemoteMusicStatus(BaseModel):
     paused: bool
 
 
+class RemoteAgentThought(BaseModel):
+    text: str = ""
+    time: float = 0.0
+    highlighted: bool = False
+
+
 class RemoteStatus(BaseModel):
     theater_id: str
     agent_running: bool
@@ -45,6 +51,7 @@ class RemoteStatus(BaseModel):
     preview_url: str | None = None
     music: RemoteMusicStatus
     committed_scene_speech_generation: int
+    agent_thought: RemoteAgentThought = RemoteAgentThought()
     is_contributor: bool = False
     is_owner: bool = False
     is_orator: bool = False
@@ -134,6 +141,11 @@ def get_remote_status(theater_id: str, request: Request, response: Response) -> 
             paused=state.audio.music_paused,
         ),
         committed_scene_speech_generation=state.story.committed_scene_speech_generation,
+        agent_thought=RemoteAgentThought(
+            text=state.tool_response.current_agent_thought,
+            time=state.tool_response.current_agent_thought_time,
+            highlighted=state.tool_response.agent_thought_highlighted,
+        ),
         is_contributor=is_contributor(deployment, current_user=user),
         is_owner=is_owner,
         is_orator=is_orator,
