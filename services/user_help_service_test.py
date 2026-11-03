@@ -147,7 +147,7 @@ def test_user_help_tool_agent_instructions_direct_concise_answers_and_doc_citati
 def test_feedback_guide_is_discoverable_readable_and_citable(tmp_path: Path) -> None:
     tool = make_service(tmp_path)
     tool.help_roots = tool._default_help_roots()
-    assert "docs/theater_feedback_and_reports.md (doc URL: /docs/feedback-and-reporting)" in tool.list_help_files()
+    assert "site_docs/theater_feedback_and_reports.md (doc URL: /docs/feedback-and-reporting)" in tool.list_help_files()
     assert "theater_feedback_and_reports.md" in tool.search_help_files("Feedback/Report Theater")
     assert "Send Report" in tool.read_help_file("/docs/feedback-and-reporting")
     assert "/docs/feedback-and-reporting" in tool._create_agent().instruction

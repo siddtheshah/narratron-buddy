@@ -5,8 +5,7 @@ observation/command models, and pure Python/Go CEL evaluation are implemented.
 The still-image observation adapter, pinned image catalog, canonical object
 geometry, and atomic local saves are also implemented. The shared commit host,
 animation adapter, input integration, and remaining acceptance gates are unfinished;
-canvas-enabled actions are not enabled in the live game host.
-See [implementation and review notes](game_canvas_implementation.md). Existing
+canvas-enabled actions are not enabled in the live game host. Existing
 version-2 games continue to work without opting in.
 
 Every game uses the same host-provided `canvas` value. It describes the shared

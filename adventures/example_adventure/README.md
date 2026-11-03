@@ -3,7 +3,7 @@
 This directory serves as the **official reference template** for building premade adventure packages in Narratron Buddy. It is an extremely brief starter example about exploring a mysterious repository of discarded story ideas and unfinished drafts.
 
 For complete documentation on package specifications, testing with the Testlab Adventure Runner, and submitting your adventure to get featured on **narratron.app**, see:
-👉 **[Writing Adventures Documentation](../../docs/writing_adventures.md)**
+👉 **[Writing Adventures Documentation](../../site_docs/writing_adventures.md)**
 
 ---
 
@@ -61,7 +61,7 @@ supplies nested text, piece, selection and destination bindings; 32 named square
 actions resolve selection or movement in CEL. The reset action retains its
 confirmation, and square actions retain contributor permissions.
 
-See [Authored game panels](../../docs/game_html_panels.md) for the binding syntax
+See [Authored game panels](../../site_docs/game_html_panels.md) for the binding syntax
 and restrictions. HTML panels evaluate on the server: selecting a piece updates
 the shared selection, and clicking a highlighted destination commits the move
 immediately. There is no local preview or Submit step.

@@ -50,7 +50,7 @@ static_dir = PROJECT_ROOT / "static"
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 # Screenshots and diagrams embedded in the public documentation.
-app.mount("/docs/images", StaticFiles(directory=PROJECT_ROOT / "docs" / "images"), name="docs-images")
+app.mount("/docs/images", StaticFiles(directory=PROJECT_ROOT / "site_docs" / "images"), name="docs-images")
 
 # Public playlists live in the example_theater or fixed playlists directory.
 playlists_dir_path = PROJECT_ROOT / "example_theater" / "playlists"

@@ -47,4 +47,4 @@ and how the game ends. Then define the rules and how players will see their
 choices.
 
 For authoring details and examples, see the
-[full game package guide on Narratron's GitHub](https://github.com/siddtheshah/narratron-buddy/blob/main/docs/game_packages.md).
+[full game package guide on Narratron's GitHub](https://github.com/siddtheshah/narratron-buddy/blob/main/site_docs/game_packages.md).

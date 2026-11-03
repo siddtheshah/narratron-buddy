@@ -379,8 +379,8 @@ def read_docs_theater_yaml():
 @app.get("/docs/writing-adventures", response_class=HTMLResponse)
 @app.get("/docs/adventures", response_class=HTMLResponse)
 def read_docs_writing_adventures():
-    """Serve the Adventure Authoring Guide from docs/writing_adventures.md."""
-    doc_path = PROJECT_ROOT / "docs" / "writing_adventures.md"
+    """Serve the Adventure Authoring Guide from site_docs/writing_adventures.md."""
+    doc_path = PROJECT_ROOT / "site_docs" / "writing_adventures.md"
     raw_content = doc_path.read_text(encoding="utf-8") if doc_path.exists() else ""
     adventures_content = render_about_markdown(raw_content)
     return render_page_template(
@@ -401,7 +401,7 @@ def read_docs_writing_adventures():
 @app.get("/docs/game-packages", response_class=HTMLResponse)
 def read_docs_game_packages() -> str:
     """Serve the lightweight game package overview."""
-    doc_path = PROJECT_ROOT / "docs" / "game_packages_overview.md"
+    doc_path = PROJECT_ROOT / "site_docs" / "game_packages_overview.md"
     content = render_about_markdown(doc_path.read_text(encoding="utf-8"))
     return render_page_template(
         "about.html",
@@ -418,7 +418,7 @@ def read_docs_game_packages() -> str:
 @app.get("/docs/beyond20", response_class=HTMLResponse)
 def read_docs_beyond20():
     """Serve setup guidance for the Beyond20 canvas integration."""
-    doc_path = PROJECT_ROOT / "docs" / "beyond20.md"
+    doc_path = PROJECT_ROOT / "site_docs" / "beyond20.md"
     beyond20_content = render_about_markdown(doc_path.read_text(encoding="utf-8"))
     return render_page_template(
         "about.html",
@@ -439,8 +439,8 @@ def read_docs_beyond20():
 @app.get("/docs/virtual_tabletop", response_class=HTMLResponse)
 @app.get("/docs/vtt", response_class=HTMLResponse)
 def read_docs_virtual_tabletop() -> str:
-    """Serve the Virtual Tabletop Guide from docs/virtual_tabletop_guide.md."""
-    doc_path = PROJECT_ROOT / "docs" / "virtual_tabletop_guide.md"
+    """Serve the Virtual Tabletop Guide from site_docs/virtual_tabletop_guide.md."""
+    doc_path = PROJECT_ROOT / "site_docs" / "virtual_tabletop_guide.md"
     raw_content = doc_path.read_text(encoding="utf-8") if doc_path.exists() else ""
     vtt_content = render_about_markdown(raw_content)
     return render_page_template(
@@ -461,7 +461,7 @@ def read_docs_virtual_tabletop() -> str:
 @app.get("/docs/feedback-and-reporting", response_class=HTMLResponse)
 def read_docs_feedback_and_reporting() -> str:
     """Serve public instructions for feedback and theater reporting."""
-    doc_path = PROJECT_ROOT / "docs" / "theater_feedback_and_reports.md"
+    doc_path = PROJECT_ROOT / "site_docs" / "theater_feedback_and_reports.md"
     content = render_about_markdown(doc_path.read_text(encoding="utf-8"))
     return render_page_template(
         "about.html",
@@ -484,7 +484,7 @@ def read_docs_feedback_and_reporting() -> str:
 @app.get("/docs/terms", response_class=HTMLResponse)
 def read_terms():
     """Serve the Terms of Service placeholder page."""
-    doc_path = PROJECT_ROOT / "docs" / "terms_of_service.md"
+    doc_path = PROJECT_ROOT / "site_docs" / "terms_of_service.md"
     raw_content = doc_path.read_text(encoding="utf-8") if doc_path.exists() else ""
     terms_content = render_about_markdown(raw_content)
     return render_page_template(
@@ -509,7 +509,7 @@ def read_terms():
 @app.get("/docs/privacy", response_class=HTMLResponse)
 def read_privacy():
     """Serve the Privacy Policy placeholder page."""
-    doc_path = PROJECT_ROOT / "docs" / "privacy_policy.md"
+    doc_path = PROJECT_ROOT / "site_docs" / "privacy_policy.md"
     raw_content = doc_path.read_text(encoding="utf-8") if doc_path.exists() else ""
     privacy_content = render_about_markdown(raw_content)
     return render_page_template(

@@ -124,7 +124,7 @@ class UserHelpService:
     @staticmethod
     def _default_help_roots() -> tuple[Path, ...]:
         project_root = Path(__file__).resolve().parent.parent
-        return (project_root / "templates", project_root / "docs")
+        return (project_root / "templates", project_root / "site_docs")
 
     async def answer(self, question: str) -> str:
         """Research one question without depending on a theater or chat transport.
@@ -232,7 +232,7 @@ class UserHelpService:
                 "use short headings when helpful, blank lines between paragraphs and lists, bold for control names, "
                 "and inline code for keys and shortcuts. Do not wrap the whole answer in a code fence or use raw HTML. "
                 "Give practical numbered steps and name controls, keys, and shortcuts exactly as the source confirms them. "
-                "Always cite documentation using relative web paths (/docs/...), never internal file paths (like docs/*.md or templates/*.html). "
+                "Always cite documentation using relative web paths (/docs/...), never internal file paths (like site_docs/*.md or templates/*.html). "
                 "Do not mention tools, source file paths, or internal implementation details in the final answer."
             ),
             tools=[self.list_help_files, self.search_help_files, self.read_help_file],

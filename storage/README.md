@@ -1,4 +1,8 @@
-# Theater storage quota index
+# Storage
+
+`storage` manages the database, theater persistence, assets, and storage quota accounting.
+
+## Theater storage quota index
 
 Quota checks read `theaters.storage_bytes` from the database instead of walking
 every owned theater's directories. The value is the larger of the saved package
@@ -19,7 +23,7 @@ Each invalidation increments `storage_revision`. A scan only stores its result
 if the revision still matches, so a concurrent write cannot be hidden by an
 older scan completing afterward.
 
-## Deployment
+### Deployment
 
 Before starting the updated application against an existing Cloud SQL database,
 apply the additive migration as the database owner:
@@ -31,7 +35,7 @@ uv run python scripts/migrate_cloud_sql_schema.py
 Local databases add the columns automatically when opened. No filesystem
 backfill is required before startup; the first quota check measures legacy rows.
 
-## Maintenance
+### Maintenance
 
 Changes made directly to storage outside the application need explicit
 invalidation. To remeasure a theater after such a change, run this SQL with its

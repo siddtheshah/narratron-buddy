@@ -1,5 +1,5 @@
 # Checkers Club — edit this file to change the game.
-# See docs/game_packages.md for the format. CEL expressions use |- for multiple lines.
+# See site_docs/game_packages.md for the format. CEL expressions use |- for multiple lines.
 
 version: 2
 
@@ -421,7 +421,7 @@ transitions:
       }] : []
 
 # Passive HTML layout lives in panel.html; all bindings and actions remain CEL.
-# See docs/game_html_panels.md. Only the 32 playable squares need named actions.
+# See site_docs/game_html_panels.md. Only the 32 playable squares need named actions.
 panel:
   parameters:
     status: |-

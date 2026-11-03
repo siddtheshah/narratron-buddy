@@ -55,7 +55,7 @@ COPY static/ static/
 COPY pricing/ pricing/
 COPY providers/ providers/
 COPY models/ models/
-COPY docs/ docs/
+COPY site_docs/ site_docs/
 
 # Copy default theater assets that are checked in
 COPY example_theater/ example_theater/

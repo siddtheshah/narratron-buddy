@@ -110,7 +110,7 @@ def test_game_packages_guide_has_a_public_page_and_search_results() -> None:
     assert "Theater game packages" in response.text
     assert "turn-based transactional" in response.text
     assert "<pre><code" not in response.text
-    assert 'href="https://github.com/siddtheshah/narratron-buddy/blob/main/docs/game_packages.md"' in response.text
+    assert 'href="https://github.com/siddtheshah/narratron-buddy/blob/main/site_docs/game_packages.md"' in response.text
     assert "game/game.yaml" not in response.text
     assert "uv run" not in response.text
     assert '<title>Game Packages | Narratron Docs</title>' in response.text
