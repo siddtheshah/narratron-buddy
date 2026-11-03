@@ -11,14 +11,16 @@ from PIL import Image
 from providers.image_provider import GENERATED_WEBP_QUALITY
 
 from providers import (
+    DecisionProvider,
     ImageGenerationRequest,
     ImageProvider,
     ImageProviderError,
+    TextResponseProvider,
     get_image_provider,
 )
 from tools.base_tool import BaseTools, CANVAS_PINNED_MESSAGE, blocked_when_canvas_pinned, with_cycle_cooldown
 from tools.tool_metadata import terminal
-from tools.image.prompt_cleanup import clean_image_prompt
+from tools.image.prompt_cleanup import clean_image_prompt, resolve_safety_reduction
 from utils.image_utils import (
     embed_image_metadata,
     extract_image_metadata_description,
@@ -39,6 +41,8 @@ class ImageTools(BaseTools):
         canvas_manager: CanvasStateManager,
         adventure_mode: bool = False,
         reference_manager: Optional[ReferenceManager] = None,
+        decision_provider: Optional[DecisionProvider] = None,
+        text_provider: Optional[TextResponseProvider] = None,
     ) -> None:
         super().__init__(
             theater=theater,
@@ -47,6 +51,8 @@ class ImageTools(BaseTools):
         self.reference_manager: ReferenceManager = (
             reference_manager if reference_manager is not None else ReferenceManager(theater=theater)
         )
+        self._decision_provider: Optional[DecisionProvider] = decision_provider
+        self._text_provider: Optional[TextResponseProvider] = text_provider
 
         image_config = self.config.get("image_generation", {})
         visuals_config = self.config.get("visuals", {})
@@ -98,6 +104,40 @@ class ImageTools(BaseTools):
     @currently_displayed_image_path.setter
     def currently_displayed_image_path(self, val: Optional[str]) -> None:
         self._currently_displayed_image_path = val
+
+    @property
+    def decision_provider(self) -> Optional[DecisionProvider]:
+        if self._decision_provider is None and self.safety_reduction:
+            if self.reference_manager is not None and self.reference_manager.decision_provider is not None:
+                self._decision_provider = self.reference_manager.decision_provider
+            else:
+                provider_id = self.visuals_config.get("decision_provider")
+                from providers.registry import get_decision_provider
+
+                if provider_id:
+                    self._decision_provider = get_decision_provider(str(provider_id))
+                else:
+                    self._decision_provider = get_decision_provider()
+        return self._decision_provider
+
+    @decision_provider.setter
+    def decision_provider(self, value: Optional[DecisionProvider]) -> None:
+        self._decision_provider = value
+
+    @property
+    def text_provider(self) -> Optional[TextResponseProvider]:
+        if self._text_provider is None:
+            from providers.registry import get_text_response_provider
+
+            self._text_provider = get_text_response_provider(
+                "gemini-2-5",
+                options={"model": "gemini-3.5-flash-lite"},
+            )
+        return self._text_provider
+
+    @text_provider.setter
+    def text_provider(self, value: Optional[TextResponseProvider]) -> None:
+        self._text_provider = value
 
     @property
     def visual(self) -> Optional["VisualState"]:
@@ -242,12 +282,25 @@ class ImageTools(BaseTools):
 
         styled_prompt = self._apply_default_style(image_prompt)
         if self.safety_reduction:
-            effective_prompt = clean_image_prompt(styled_prompt)
-            if effective_prompt != styled_prompt:
-                logger.debug(
-                    "[ImageTools] Image prompt cleanup original=%r cleaned=%r",
-                    styled_prompt, effective_prompt,
-                )
+            if not styled_prompt.strip():
+                effective_prompt = ""
+            else:
+                decision_provider = self.decision_provider
+                should_clean = True
+                if decision_provider is not None:
+                    should_clean = resolve_safety_reduction(styled_prompt, decision_provider)
+                if should_clean:
+                    effective_prompt = clean_image_prompt(
+                        styled_prompt,
+                        text_provider=self.text_provider,
+                    )
+                    if effective_prompt != styled_prompt:
+                        logger.debug(
+                            "[ImageTools] Image prompt cleanup original=%r cleaned=%r",
+                            styled_prompt, effective_prompt,
+                        )
+                else:
+                    effective_prompt = styled_prompt
         else:
             effective_prompt = styled_prompt
         if not effective_prompt:

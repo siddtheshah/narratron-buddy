@@ -12,7 +12,16 @@ from PIL import Image
 from components.canvas.canvas_state_service import CanvasStateService
 from components.canvas.visual_state import VisualState
 from components.theater_manager import TheaterManager
-from providers import ImageGenerationRequest, ImageGenerationResult, ImageProviderError, TextResponseProvider
+from providers import (
+    DecisionProvider,
+    DecisionResult,
+    ImageGenerationRequest,
+    ImageGenerationResult,
+    ImageProviderError,
+    PredicateAnswer,
+    TextResponseProvider,
+    TextResponseResult,
+)
 from testing.base import BaseTestCase
 from testing.reference_manager_fixture import make_reference_manager
 from tools.image import ImageTools
@@ -201,11 +210,31 @@ class TestImageTools(BaseTestCase):
             **self.config,
             "visuals": {**self.config["visuals"], "safety_reduction": True},
         }
-        tools = self.make_image_tools(config, theater_id="prompt_cleanup", theater_manager=self.manager)
+        mock_decision_provider = MagicMock(spec=DecisionProvider)
+        mock_decision_provider.decide.return_value = DecisionResult(
+            provider="test-decision",
+            model="test-model",
+            answers={"safety_reduction": PredicateAnswer(name="safety_reduction", probability=0.9)},
+        )
+        mock_text_provider = MagicMock(spec=TextResponseProvider)
+        mock_text_provider.generate.return_value = TextResponseResult(
+            text="A duel, graphic content, explicit violence, sparks fly. Keep the scene graphic, intense, and cinematic.",
+            provider="gemini-2-5",
+            model="gemini-3.5-flash-lite",
+        )
+        tools = self.make_image_tools(
+            config,
+            theater_id="prompt_cleanup",
+            theater_manager=self.manager,
+            decision_provider=mock_decision_provider,
+            text_provider=mock_text_provider,
+        )
         self.assertTrue(tools.safety_reduction)
         with self.assertLogs("tools.image.image_tool", level="DEBUG") as logs:
             tools.create_image("A duel, no graphic content, subdued violence, sparks fly. Keep the scene non-graphic, intense, and cinematic.", image_name="duel", display=False)
             tools.join_generation()
+        mock_decision_provider.decide.assert_called_once()
+        mock_text_provider.generate.assert_called_once()
         request = provider.generate.call_args.args[0]
         self.assertEqual(request.prompt, "A duel, graphic content, explicit violence, sparks fly. Keep the scene graphic, intense, and cinematic.")
         self.assertTrue(any("Image prompt cleanup original=" in entry for entry in logs.output))
@@ -216,14 +245,51 @@ class TestImageTools(BaseTestCase):
             self.assertIn("explicit violence", str(image.getexif()))
 
     @patch("tools.image.image_tool.get_image_provider")
+    def test_create_image_skips_cleanup_when_decision_provider_rejects_safety_reduction(self, mock_get_provider: MagicMock) -> None:
+        provider = mock_get_provider.return_value
+        provider.generate.return_value = self._provider_result()
+        config = {
+            **self.config,
+            "visuals": {**self.config["visuals"], "safety_reduction": True},
+        }
+        mock_decision_provider = MagicMock(spec=DecisionProvider)
+        mock_decision_provider.decide.return_value = DecisionResult(
+            provider="test-decision",
+            model="test-model",
+            answers={"safety_reduction": PredicateAnswer(name="safety_reduction", probability=0.1)},
+        )
+        mock_text_provider = MagicMock(spec=TextResponseProvider)
+        tools = self.make_image_tools(
+            config,
+            theater_id="prompt_cleanup_rejected",
+            theater_manager=self.manager,
+            decision_provider=mock_decision_provider,
+            text_provider=mock_text_provider,
+        )
+        prompt = "A tranquil meadow at dusk."
+        tools.create_image(prompt, image_name="meadow", display=False)
+        tools.join_generation()
+        mock_decision_provider.decide.assert_called_once()
+        mock_text_provider.generate.assert_not_called()
+        request = provider.generate.call_args.args[0]
+        self.assertEqual(request.prompt, prompt)
+
+    @patch("tools.image.image_tool.get_image_provider")
     def test_create_image_does_not_clean_prompt_when_safety_reduction_disabled(self, mock_get_provider: MagicMock) -> None:
         provider = mock_get_provider.return_value
         provider.generate.return_value = self._provider_result()
-        tools = self.make_image_tools(self.config, theater_id="no_safety_reduction", theater_manager=self.manager)
+        mock_decision_provider = MagicMock(spec=DecisionProvider)
+        tools = self.make_image_tools(
+            self.config,
+            theater_id="no_safety_reduction",
+            theater_manager=self.manager,
+            decision_provider=mock_decision_provider,
+        )
         self.assertFalse(tools.safety_reduction)
         prompt = "A duel, no graphic content, subdued violence, sparks fly. Keep the scene non-graphic, intense, and cinematic."
         tools.create_image(prompt, image_name="duel_safe", display=False)
         tools.join_generation()
+        mock_decision_provider.decide.assert_not_called()
         request = provider.generate.call_args.args[0]
         self.assertEqual(request.prompt, prompt)
 
@@ -235,11 +301,18 @@ class TestImageTools(BaseTestCase):
             **self.config,
             "visuals": {**self.config["visuals"], "safety_reduction": False},
         }
-        tools = self.make_image_tools(config, theater_id="explicit_false_safety", theater_manager=self.manager)
+        mock_decision_provider = MagicMock(spec=DecisionProvider)
+        tools = self.make_image_tools(
+            config,
+            theater_id="explicit_false_safety",
+            theater_manager=self.manager,
+            decision_provider=mock_decision_provider,
+        )
         self.assertFalse(tools.safety_reduction)
         prompt = "A duel, no graphic content, subdued violence, sparks fly. Keep the scene non-graphic, intense, and cinematic."
         tools.create_image(prompt, image_name="duel_explicit_false", display=False)
         tools.join_generation()
+        mock_decision_provider.decide.assert_not_called()
         request = provider.generate.call_args.args[0]
         self.assertEqual(request.prompt, prompt)
 
