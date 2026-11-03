@@ -657,12 +657,12 @@ class AdventureSession:
         if bool(config.get("music", {}).get("use_generated_music", False)):
             tools.append(self.mock_tools.create_music)
 
-        if bool(config.get("animation", {}).get("enabled", False)):
-            tools.extend([
-                self.mock_tools.create_animation,
-                self.mock_tools.play_animation,
-                self.mock_tools.browse_animations,
-            ])
+        tools.extend([
+            self.mock_tools.play_animation,
+            self.mock_tools.browse_animations,
+        ])
+        if bool(config.get("animation", {}).get("generation_enabled", False)):
+            tools.append(self.mock_tools.create_animation)
 
         if bool((config.get("observability_tool") or {}).get("enabled", False)):
             tools.append(self.mock_tools.request_canvas_observability)
@@ -712,7 +712,7 @@ class AdventureSession:
             ref_context=ref_context,
             playlist_context=playlist_context,
             special_instructions=special_instructions,
-            animation_enabled=bool(self.config.get("animation", {}).get("enabled", False)),
+            animation_generation_enabled=bool(self.config.get("animation", {}).get("generation_enabled", False)),
             image_generation_enabled=image_generation_enabled,
             use_generated_music=bool(self.config.get("music", {}).get("use_generated_music", False)),
             game_enabled=False,

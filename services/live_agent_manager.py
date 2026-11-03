@@ -177,7 +177,7 @@ class LiveAgentSession:
         self.reference_manager: ReferenceManager | None = (
             self.image_tools.reference_manager if self.image_tools is not None else None
         )
-        self.animation_tools = get_bound_tool_instance(self.agent, "create_animation")
+        self.animation_tools = get_bound_tool_instance(self.agent, "play_animation")
         self.chat_tools = get_bound_tool_instance(self.agent, "send_chat_message")
         self.story_planning_tools = (
             get_bound_tool_instance(self.agent, "process_user_action")

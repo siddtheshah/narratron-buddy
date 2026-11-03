@@ -18,7 +18,11 @@ display images into the theater output folder.
 
 Saved animations live in `animations/<animation-id>/` inside each theater.
 Generated animations are written there, and pre-populated folders are available
-in the animation browser and through `play_animation`. Include `video.mp4` with
+in the animation browser and through `play_animation`. Narrator tools
+`browse_animations` and `play_animation` are always available; set
+`animation.generation_enabled: true` to also enable `create_animation`.
+Pre-generated playback does not require animation-generation credentials.
+Include `video.mp4` with
 an optional `video.json`, `layered.json` with its layer images, or `triframe.json`
 with its three frame images. Three frames named `frame_1.webp` through
 `frame_3.webp` (or `.jpg`) also work without a manifest. Animation folders are

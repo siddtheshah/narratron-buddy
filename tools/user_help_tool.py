@@ -9,8 +9,6 @@ from components.theater_manager import Theater
 from services.user_help_service import (
     HelpUnavailableError,
     UserHelpService,
-    ensure_doc_citation,  # noqa: F401 - preserve existing imports
-    normalize_doc_links,  # noqa: F401 - preserve existing imports
 )
 from tools.base_tool import BaseTools, with_cycle_cooldown
 from tools.tool_metadata import terminal

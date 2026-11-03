@@ -541,7 +541,7 @@ class TestTheaterAPI(BaseTestCase):
         theater_id = response.json()["theater_id"]
         config = theater_manager.theater(theater_id).config()
         self.assertTrue(config["music"]["use_generated_music"])
-        self.assertTrue(config["animation"]["enabled"])
+        self.assertTrue(config["animation"]["generation_enabled"])
         self.assertTrue(config["interactive_canvas"]["enabled"])
         self.assertTrue(config["story_planning"]["adventure_mode"])
 
@@ -579,7 +579,7 @@ class TestTheaterAPI(BaseTestCase):
         theater_id = response.json()["theater_id"]
         config = theater_manager.theater(theater_id).config()
         self.assertFalse(config["music"]["use_generated_music"])
-        self.assertFalse(config["animation"]["enabled"])
+        self.assertFalse(config["animation"]["generation_enabled"])
         self.assertFalse(config["interactive_canvas"]["enabled"])
         self.assertFalse(config["story_planning"]["adventure_mode"])
         self.assertTrue(config["image_generation"]["enabled"])

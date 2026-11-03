@@ -440,13 +440,14 @@ story_planning:
 
           <section class="section" id="animation">
             <h2><code>animation</code></h2>
-            <p>Enables narrator tools (<code>create_animation</code> and <code>play_animation</code>) to generate and
-              display loop-ready animated scenes on the canvas. Supports multiple animation techniques—including AI
+            <p>Configures animation generation. The narrator can always browse pre-generated animations with
+              <code>browse_animations</code> and display them with <code>play_animation</code>. Supports loop-ready
+              animated scenes on the canvas using multiple animation techniques—including AI
               text-to-video generation, depth-layered parallax, and 3-frame sequences—with automatic scene
               classification or forced overrides.</p>
             <dl class="options">
-              <dt><code>enabled</code> <span class="type">boolean</span></dt>
-              <dd>Adds animation creation and playback tools to the narrator’s toolset. Default: <code>false</code>.
+              <dt><code>generation_enabled</code> <span class="type">boolean</span></dt>
+              <dd>Adds <code>create_animation</code> to the narrator’s toolset. Browsing and playback are always available. Default: <code>false</code>.
               </dd>
               <dt><code>cooldown_duration</code> <span class="type">number, seconds</span></dt>
               <dd>Minimum delay between animation-generation requests. If omitted, it inherits the image tool’s
@@ -491,7 +492,7 @@ story_planning:
             </ul>
             <h3>Example: video animation configuration</h3>
             <pre>animation:
-  enabled: true
+  generation_enabled: true
   cooldown_duration: 20
   # Force all animations to use the video technique, or leave null for automatic classification
   forced_technique: "video"</pre>

@@ -1342,7 +1342,7 @@ def configure_with_assets(
     animation_config = config.setdefault("animation", {})
     if not isinstance(animation_config, dict):
         raise HTTPException(status_code=400, detail="Invalid theater configuration: animation must be a mapping.")
-    animation_config["enabled"] = enable_scene_animations
+    animation_config["generation_enabled"] = enable_scene_animations
 
     interactive_canvas_config = config.setdefault("interactive_canvas", {})
     if not isinstance(interactive_canvas_config, dict):
