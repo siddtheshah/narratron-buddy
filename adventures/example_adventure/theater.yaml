@@ -5,7 +5,7 @@
 # Live agent instructions & behavioral flags
 live_agent:
     special_instructions: "Guide the player through the Library of Origins, a mysterious sanctuary of discarded story ideas, forgotten characters, and unfinished drafts. Encourage thoughtful exploration, evoke quiet wonder, and keep interactions engaging."
-
+    enable_regular_observability: false
 # Default visual displayed on load (must match a file in references/)
 starting_image: "library_of_origins_cover.webp"
 
@@ -13,6 +13,20 @@ starting_image: "library_of_origins_cover.webp"
 visuals:
     cycle_length: 6
     style: "surreal fantasy library of discarded stories, floating luminous pages, glowing amber lanterns, towering endless bookshelves, dusty manuscripts, soft atmospheric haze, digital painting"
+
+animation:
+    # Disable AI animation creation while keeping pre-generated animations available
+    # for the agent to browse and play on the canvas.
+    generation_enabled: false
+    cooldown_duration: 20
+    # Force a single animation type across the theater, bypassing classification.
+    # Supported values: 'triframe', 'layered', 'video', or null (automatic classification).
+    forced_technique: null
+
+interactive_canvas:
+    enabled: false
+    max_surfaces: 5
+    cooldown_duration: 10
 
 # Canvas image generation controls
 image_generation:
@@ -43,3 +57,26 @@ story_planning:
 # Chat cooldown in seconds
 chat:
     cooldown_duration: 10
+
+
+# Lets the live agent browse matching templates and documentation to answer
+# questions about the visible UI. Set enabled to false to omit the tool.
+user_help:
+    enabled: true
+    cooldown_duration: 15
+    max_output_tokens: 1200
+
+# Speech delivery defaults for synthesized dialogue (Adventure Mode).
+# Operational backend provider and model selection are configured in app.yaml.
+speech:
+    # Default language/locale code used for voice selection when unspecified.
+    voice_language_code: "en-US"
+    # When true, duplicates accent voice tags into delivery direction so accents
+    # remain clearly pronounced without altering the transcript text.
+    accent_augmentation: true
+    # When true, synthesizes scene narration using the speech provider.
+    narration_voicing: false
+    # Speech provider for character dialogue (defaults to provider, e.g. "gemini-flash-tts").
+    character_provider: null
+    # Speech provider for scene narration (e.g. "google-chirp-3-hd").
+    narration_provider: null
