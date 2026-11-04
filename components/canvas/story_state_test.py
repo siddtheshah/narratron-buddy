@@ -851,6 +851,46 @@ def test_dispatch_forwards_voice_tags_and_accent_augmentation() -> None:
     request = mock_provider.synthesize.call_args.args[0]
     assert request.voice_tags == ("gender=female", "accent=british")
     assert request.accent_augmentation is False
+    assert request.gender_augmentation is True
+
+
+def test_dispatch_forwards_gender_augmentation() -> None:
+    mock_provider = MagicMock(spec=SpeechProvider)
+    mock_provider.select_voice.return_value = "voice_beta"
+    mock_provider.synthesize.return_value = SpeechSynthesisResult(
+        audio_bytes=b"audio",
+        mime_type="audio/wav",
+        provider="mock",
+        model="mock",
+    )
+    state = StoryState(publish_audio_fn=Mock())
+    state.set_character_voice_tags("Mara", ["gender=female", "accent=British"])
+    state.enable_scene_speech(mock_provider, gender_augmentation=False)
+
+    state.dispatch([{
+        "speaker": "Mara",
+        "text": "Quiet now.",
+        "kind": "speech",
+    }])
+    state._executor.shutdown(wait=True)
+
+    request = mock_provider.synthesize.call_args.args[0]
+    assert request.accent_augmentation is True
+    assert request.gender_augmentation is False
+
+
+def test_get_character_voice_tags_includes_gender_from_planning_state() -> None:
+    state = StoryState()
+    state.story_planning_state = {
+        "characters": [
+            {"name": "Mara", "gender": "female", "voice_tags": ["accent=British"]},
+            {"name": "Arthur", "gender": "male"},
+            {"name": "Rowan", "gender": "nonbinary", "voice_tags": ["nonbinary", "accent=Irish"]},
+        ]
+    }
+    assert state.get_character_voice_tags("Mara") == ["female", "accent=british"]
+    assert state.get_character_voice_tags("Arthur") == ["male"]
+    assert state.get_character_voice_tags("Rowan") == ["nonbinary", "accent=irish"]
 
 
 

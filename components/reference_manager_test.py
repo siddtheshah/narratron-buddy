@@ -1498,6 +1498,56 @@ class TestReferenceManager(unittest.TestCase):
             self.assertEqual(manager.count(), 1)
             self.assertIsNotNone(manager.lookup_character().characters[0].image_reference_path)
 
+    def test_character_yaml_loads_gender_with_case_insensitivity_and_aliases(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            theater = Theater(TheaterManager(directory), "stage")
+            authored_f = theater.characters_dir() / "Elena Vance"
+            authored_f.mkdir(parents=True)
+            (authored_f / "character.yaml").write_text("gender: Female\nvoice_tags: [accent=British]\n", encoding="utf-8")
+
+            authored_nb = theater.characters_dir() / "Zephyr"
+            authored_nb.mkdir(parents=True)
+            (authored_nb / "character.yaml").write_text("gender: Non-binary\n", encoding="utf-8")
+
+            manager = ReferenceManager(theater)
+            elena = manager.lookup_character("Elena Vance").characters[0]
+            self.assertEqual(elena.gender, "female")
+            self.assertEqual(manager.get_character_voice_tags("Elena Vance"), ["female", "accent=british"])
+
+            zephyr = manager.lookup_character("Zephyr").characters[0]
+            self.assertEqual(zephyr.gender, "nonbinary")
+            self.assertEqual(manager.get_character_voice_tags("Zephyr"), ["nonbinary"])
+
+    def test_character_yaml_extracts_gender_from_voice_tags_if_gender_omitted(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            theater = Theater(TheaterManager(directory), "stage")
+            authored = theater.characters_dir() / "Soran"
+            authored.mkdir(parents=True)
+            (authored / "character.yaml").write_text("voice_tags: [gender=male, accent=French]\n", encoding="utf-8")
+
+            manager = ReferenceManager(theater)
+            soran = manager.lookup_character("Soran").characters[0]
+            self.assertEqual(soran.gender, "male")
+            self.assertIn("gender=male", soran.voice_tags)
+
+    def test_character_yaml_gender_prioritized_over_decision_guesses(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            theater = Theater(TheaterManager(directory), "stage")
+            theater.directory().mkdir(parents=True, exist_ok=True)
+            (theater.directory() / "theater.yaml").write_text("story_planning:\n  adventure_mode: true\n", encoding="utf-8")
+            authored = theater.characters_dir() / "The Caretaker"
+            authored.mkdir(parents=True)
+            (authored / "character.yaml").write_text("gender: nonbinary\nvoice_tags: [whisper]\n", encoding="utf-8")
+
+            manager = ReferenceManager(theater)
+            # In adventure mode, library characters are not pre-registered.
+            # Simulate a decision or responder tool introducing the character with an inferred gender guess.
+            caretaker = manager.create_or_update_character("The Caretaker", gender="male")
+            self.assertIsNotNone(caretaker)
+            self.assertEqual(caretaker.gender, "nonbinary")
+            tags = manager.get_character_voice_tags("The Caretaker")
+            self.assertIn("nonbinary", tags)
+
     def test_initialization_registers_entire_catalog_beyond_active_limit(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             theater = Theater(TheaterManager(directory), "stage")

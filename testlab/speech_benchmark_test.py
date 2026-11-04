@@ -88,6 +88,7 @@ def test_speech_benchmark_selects_a_voice_from_tags(monkeypatch, tmp_path):
     assert item["selected_voice"] == "voice_selected_from_tags"
     assert item["voice_tags"] == ["female", "adventurous"]
     assert provider.request.accent_augmentation is True
+    assert provider.request.gender_augmentation is True
 
 
 def test_benchmark_one_speech_honors_accent_augmentation_option(monkeypatch, tmp_path):
@@ -119,3 +120,36 @@ def test_benchmark_one_speech_honors_accent_augmentation_option(monkeypatch, tmp
     )
 
     assert provider.request.accent_augmentation is False
+    assert provider.request.gender_augmentation is True
+
+
+def test_benchmark_one_speech_honors_gender_augmentation_option(monkeypatch, tmp_path):
+    class Provider:
+        def __init__(self):
+            self.request = None
+
+        def select_voice(self, tags):
+            return "voice_selected"
+
+        def synthesize(self, request):
+            self.request = request
+            return SpeechSynthesisResult(
+                audio_bytes=b"wav",
+                mime_type="audio/wav",
+                provider="test",
+                model="test-model",
+            )
+
+    provider = Provider()
+    monkeypatch.setattr(server, "get_speech_provider", lambda *_: provider)
+    monkeypatch.setattr(server, "BENCHMARK_SPEECH_OUTPUT", tmp_path)
+
+    server._benchmark_one_speech(
+        "gemini-flash-tts",
+        get_speech_prompt("heroic-rally"),
+        1,
+        {"gender_augmentation": False},
+    )
+
+    assert provider.request.accent_augmentation is True
+    assert provider.request.gender_augmentation is False

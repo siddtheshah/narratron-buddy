@@ -123,6 +123,7 @@ class StoryState:
         self._narration_voicing_enabled = False
         self._narration_voice: str | None = None
         self._accent_augmentation = True
+        self._gender_augmentation = True
         self._speech_executor: ThreadPoolExecutor | None = None
         self._speech_lock = threading.Lock()
         # Incremented immediately to invalidate in-flight synthesis work.
@@ -429,12 +430,23 @@ class StoryState:
         if key in self.character_voice_tags and self.character_voice_tags[key]:
             return list(self.character_voice_tags[key])
         character = self._character(speaker)
-        tags = (character.get("voice_tags") or character.get("gender", [])) if character else []
-        candidates: list[str] = []
-        if isinstance(tags, (list, tuple, set)):
-            candidates = [str(tag).strip().lower().replace("-", "") for tag in tags]
-        elif isinstance(tags, str):
-            candidates = [str(tags).strip().lower().replace("-", "")]
+        tags_raw = character.get("voice_tags") if character else None
+        gender_raw = character.get("gender") if character else None
+        raw_list: list[str] = []
+        if type(tags_raw) in (list, tuple, set):
+            raw_list.extend(str(tag).strip() for tag in tags_raw if str(tag).strip())
+        elif type(tags_raw) is str and tags_raw.strip():
+            raw_list.append(tags_raw.strip())
+        has_gender_tag = any(
+            t.lower().replace("-", "") in ("male", "female", "nonbinary", "nb") or t.lower().startswith("gender=")
+            for t in raw_list
+        )
+        if not has_gender_tag and gender_raw:
+            if type(gender_raw) in (list, tuple, set):
+                raw_list.extend(str(g).strip() for g in gender_raw if str(g).strip())
+            elif type(gender_raw) is str and gender_raw.strip():
+                raw_list.insert(0, gender_raw.strip())
+        candidates = [str(tag).strip().lower().replace("-", "") for tag in raw_list]
         allowed = {"male": "male", "female": "female", "nonbinary": "nonbinary", "nb": "nonbinary"}
         return [
             allowed[c] if c in allowed else c
@@ -458,6 +470,7 @@ class StoryState:
         provider: SpeechProvider | None = None,
         *,
         accent_augmentation: bool = True,
+        gender_augmentation: bool = True,
         character_voicing: bool = True,
         narration_voicing: bool = False,
         narration_provider: SpeechProvider | None = None,
@@ -466,6 +479,7 @@ class StoryState:
         if provider is None and narration_provider is None:
             raise TypeError("enable_scene_speech requires a SpeechProvider")
         self._accent_augmentation = bool(accent_augmentation)
+        self._gender_augmentation = bool(gender_augmentation)
         self._character_voicing_enabled = bool(character_voicing)
         self._narration_voicing_enabled = bool(narration_voicing)
         self._speech_provider = provider
@@ -582,6 +596,7 @@ class StoryState:
                 voice_tags=tuple(self.get_character_voice_tags(speaker)),
                 voice_instruction=str(line.get("voice_instruction") or "").strip() or None,
                 accent_augmentation=self._accent_augmentation,
+                gender_augmentation=self._gender_augmentation,
             ))
             with self._speech_lock:
                 if generation != self._active_speech_generation:

@@ -162,6 +162,7 @@ chat:
 speech:
     voice_language_code: "en-US"
     accent_augmentation: true        # Amplifies character accent voice tags into explicit delivery instructions
+    gender_augmentation: true        # Amplifies character gender voice tags into explicit delivery instructions
 
 user_help:
     enabled: true

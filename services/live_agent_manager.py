@@ -1563,9 +1563,14 @@ class LiveAgentSessionManager:
             if accent_aug is None and "accent_augmentation" in theater_config:
                 accent_aug = theater_config.get("accent_augmentation")
 
+            gender_aug = speech_dict.get("gender_augmentation")
+            if gender_aug is None and "gender_augmentation" in theater_config:
+                gender_aug = theater_config.get("gender_augmentation")
+
             canvas_mgr.story.enable_scene_speech(
                 primary_provider,
                 accent_augmentation=True if accent_aug is None else bool(accent_aug),
+                gender_augmentation=True if gender_aug is None else bool(gender_aug),
                 character_voicing=char_voicing,
                 narration_voicing=narr_voicing,
                 narration_provider=narration_provider,

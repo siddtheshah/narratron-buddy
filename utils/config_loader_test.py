@@ -165,6 +165,7 @@ class TestConfigLoader(BaseTestCase):
         self.assertIn("speech", config)
         self.assertEqual(config["speech"].get("voice_language_code"), "en-US")
         self.assertEqual(config["speech"].get("accent_augmentation"), True)
+        self.assertEqual(config["speech"].get("gender_augmentation"), True)
 
         app_override = {
             "speech": {
@@ -173,6 +174,7 @@ class TestConfigLoader(BaseTestCase):
                 "narration_voice": "en-US-Chirp3-HD-Kore",
                 "voice_language_code": "en-GB",
                 "accent_augmentation": False,
+                "gender_augmentation": False,
             }
         }
         merged = apply_app_config(config, app_override)
@@ -181,6 +183,7 @@ class TestConfigLoader(BaseTestCase):
         self.assertEqual(merged["speech"]["narration_voice"], "en-US-Chirp3-HD-Kore")
         self.assertEqual(merged["speech"]["voice_language_code"], "en-GB")
         self.assertEqual(merged["speech"]["accent_augmentation"], False)
+        self.assertEqual(merged["speech"]["gender_augmentation"], False)
 
     def test_app_config_top_level_accent_augmentation_overrides_speech_fields(self):
         config = get_theater_default_config()
@@ -189,6 +192,14 @@ class TestConfigLoader(BaseTestCase):
         }
         merged = apply_app_config(config, app_override)
         self.assertEqual(merged["speech"]["accent_augmentation"], False)
+
+    def test_app_config_top_level_gender_augmentation_overrides_speech_fields(self):
+        config = get_theater_default_config()
+        app_override = {
+            "gender_augmentation": False,
+        }
+        merged = apply_app_config(config, app_override)
+        self.assertEqual(merged["speech"]["gender_augmentation"], False)
 
 if __name__ == "__main__":
     unittest.main()

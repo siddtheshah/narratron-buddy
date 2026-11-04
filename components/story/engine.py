@@ -194,7 +194,17 @@ class StoryEngine:
         if story is None:
             return
         characters = self.reference_manager.export_characters()
-        story.update_character_voice_tags({char.name: char.voice_tags or [char.gender] for char in characters})
+        tag_map: dict[str, list[str]] = {}
+        for char in characters:
+            tags = list(char.voice_tags) if char.voice_tags else []
+            has_gender = any(
+                t in ("male", "female", "nonbinary") or t.startswith("gender=")
+                for t in tags
+            )
+            if not has_gender and char.gender:
+                tags.insert(0, char.gender)
+            tag_map[char.name] = tags
+        story.update_character_voice_tags(tag_map)
         for char in characters:
             if char.voice_id:
                 story.assign_character_voice(char.name, str(char.voice_id))

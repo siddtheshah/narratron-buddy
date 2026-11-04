@@ -20,6 +20,8 @@ def extract_voice_tags(tags: Any = None) -> list[str]:
         clean = str(t).strip().lower().replace("-", "")
         if clean.startswith("gender="):
             clean = clean.removeprefix("gender=")
+        elif clean.startswith("gender:"):
+            clean = clean.removeprefix("gender:")
         if clean in ("nb", "nonbinary"):
             normalized.append("nonbinary")
         elif clean in ("male", "female"):
@@ -61,26 +63,66 @@ class SpeechSynthesisRequest:
     sample_rate_hz: int | None = None
     voice_tags: tuple[str, ...] = ()
     accent_augmentation: bool = True
+    gender_augmentation: bool = True
 
-    def style_instruction(self, *, accent_augmentation: bool | None = None) -> str | None:
-        """Combine line delivery with explicit accent tags without changing the transcript."""
-        enabled = self.accent_augmentation if accent_augmentation is None else accent_augmentation
-        if not enabled:
-            return self.voice_instruction
+    def style_instruction(
+        self,
+        *,
+        accent_augmentation: bool | None = None,
+        gender_augmentation: bool | None = None,
+    ) -> str | None:
+        """Combine line delivery with explicit gender and accent tags without changing the transcript."""
+        accent_enabled = self.accent_augmentation if accent_augmentation is None else accent_augmentation
+        gender_enabled = self.gender_augmentation if gender_augmentation is None else gender_augmentation
+
         accents: list[str] = []
-        seen: set[str] = set()
+        seen_accents: set[str] = set()
+        genders: list[str] = []
+        seen_genders: set[str] = set()
+
         for tag in self.voice_tags:
             key, separator, value = tag.partition("=")
             if not separator and ":" in tag:
                 key, separator, value = tag.partition(":")
-            value = value.strip()
-            if separator and key.strip().lower() == "accent" and value and value.casefold() not in seen:
-                accents.append(value)
-                seen.add(value.casefold())
-        if not accents:
+            val = value.strip()
+            k = key.strip().lower()
+            if separator:
+                if k == "accent" and val and val.casefold() not in seen_accents:
+                    accents.append(val)
+                    seen_accents.add(val.casefold())
+                elif k == "gender" and val:
+                    clean_g = val.lower().replace("-", "")
+                    if clean_g in ("nb", "nonbinary"):
+                        clean_g = "nonbinary"
+                    if clean_g in ("male", "female", "nonbinary") and clean_g not in seen_genders:
+                        genders.append(clean_g)
+                        seen_genders.add(clean_g)
+            else:
+                clean_t = tag.strip().lower().replace("-", "")
+                if clean_t in ("nb", "nonbinary"):
+                    clean_t = "nonbinary"
+                if clean_t in ("male", "female", "nonbinary") and clean_t not in seen_genders:
+                    genders.append(clean_t)
+                    seen_genders.add(clean_t)
+
+        directions: list[str] = []
+        has_gender = bool(gender_enabled and genders)
+        has_accent = bool(accent_enabled and accents)
+
+        if has_gender and has_accent:
+            directions.append(
+                f"Speak with a {genders[0]} voice and a clearly pronounced {', '.join(accents)} accent throughout."
+            )
+        elif has_gender:
+            directions.append(f"Speak with a {genders[0]} voice throughout.")
+        elif has_accent:
+            directions.append(f"Speak with a clearly pronounced {', '.join(accents)} accent throughout.")
+
+        if not directions:
             return self.voice_instruction
-        direction = f"Speak with a clearly pronounced {', '.join(accents)} accent throughout."
-        return " ".join(part for part in ((self.voice_instruction or "").strip(), direction) if part)
+
+        combined_direction = " ".join(directions)
+        return " ".join(part for part in ((self.voice_instruction or "").strip(), combined_direction) if part)
 
     def __post_init__(self) -> None:
         if not self.text.strip():
@@ -89,10 +131,12 @@ class SpeechSynthesisRequest:
             raise ValueError("Speech speed must be positive.")
         if self.sample_rate_hz is not None and self.sample_rate_hz <= 0:
             raise ValueError("Speech sample rate must be positive.")
-        if self.voice_tags and not isinstance(self.voice_tags, tuple):
+        if self.voice_tags and type(self.voice_tags) is not tuple:
             object.__setattr__(self, "voice_tags", tuple(self.voice_tags))
-        if not isinstance(self.accent_augmentation, bool):
+        if type(self.accent_augmentation) is not bool:
             object.__setattr__(self, "accent_augmentation", bool(self.accent_augmentation))
+        if type(self.gender_augmentation) is not bool:
+            object.__setattr__(self, "gender_augmentation", bool(self.gender_augmentation))
 
 
 @dataclass(frozen=True)

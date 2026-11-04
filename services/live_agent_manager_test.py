@@ -704,6 +704,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
         canvas_manager.story.enable_scene_speech.assert_called_once_with(
             configured_provider,
             accent_augmentation=True,
+            gender_augmentation=True,
             character_voicing=True,
             narration_voicing=False,
             narration_provider=configured_provider,
@@ -756,6 +757,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
         canvas_manager.story.enable_scene_speech.assert_called_once_with(
             configured_provider,
             accent_augmentation=True,
+            gender_augmentation=True,
             character_voicing=True,
             narration_voicing=False,
             narration_provider=configured_provider,
@@ -813,6 +815,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
         canvas_manager.story.enable_scene_speech.assert_called_once_with(
             gemini_provider,
             accent_augmentation=True,
+            gender_augmentation=True,
             character_voicing=True,
             narration_voicing=True,
             narration_provider=chirp_provider,

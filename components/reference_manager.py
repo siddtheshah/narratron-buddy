@@ -129,6 +129,16 @@ class SceneTraits(BaseModel):
     description: str = ""
 
 
+def _voice_tag_gender(tags: list[str]) -> str:
+    """Return the explicit or legacy gender represented by voice tags."""
+    for tag in tags:
+        if tag in SUPPORTED_VOICE_TAGS:
+            return tag
+        if tag.startswith("gender=") and tag.removeprefix("gender=") in SUPPORTED_VOICE_TAGS:
+            return tag.removeprefix("gender=")
+    return ""
+
+
 class CharacterTraits(BaseModel):
     """Authored or session-owned traits stored beside a character's portraits."""
 
@@ -138,6 +148,35 @@ class CharacterTraits(BaseModel):
     quirk: str = ""
     gender: Literal["male", "female", "nonbinary"] | None = None
     voice_tags: list[str] = Field(default_factory=list)
+
+    @field_validator("gender", mode="before")
+    @classmethod
+    def _normalize_gender(cls, value: object) -> object:
+        if not value:
+            return None
+        if type(value) is str:
+            clean = value.strip().lower().replace("-", "")
+            if clean.startswith("gender="):
+                clean = clean.removeprefix("gender=")
+            elif clean.startswith("gender:"):
+                clean = clean.removeprefix("gender:")
+            if clean in ("nb", "nonbinary"):
+                return "nonbinary"
+            if clean in ("male", "female"):
+                return clean
+            if clean in ("man", "boy"):
+                return "male"
+            if clean in ("woman", "girl"):
+                return "female"
+        return value
+
+    @model_validator(mode="after")
+    def _extract_gender_from_voice_tags(self) -> CharacterTraits:
+        if self.gender is None and self.voice_tags:
+            inferred = _voice_tag_gender(self.voice_tags)
+            if inferred in ("male", "female", "nonbinary"):
+                self.gender = inferred  # type: ignore[assignment]
+        return self
 
 
 class Character(BaseModel):
@@ -523,6 +562,12 @@ def normalize_voice_tags(
                     if normalized not in seen:
                         seen.add(normalized)
                         result.append(normalized)
+            elif key.strip().lower() == "accent" and value.strip():
+                clean_acc = value.strip()
+                normalized = f"accent={clean_acc.lower()}"
+                if normalized not in seen:
+                    seen.add(normalized)
+                    result.append(normalized)
             continue
         mapped = alias_map.get(candidate.lower().replace("-", ""))
         if mapped and mapped in SUPPORTED_VOICE_TAGS and mapped not in seen:
@@ -896,7 +941,9 @@ class ReferenceManager:
         profile = directory / "character.yaml"
         if profile.is_file():
             try:
-                return CharacterTraits.model_validate(yaml.safe_load(profile.read_text(encoding="utf-8")))
+                data = yaml.safe_load(profile.read_text(encoding="utf-8"))
+                if type(data) is dict:
+                    return CharacterTraits.model_validate(data)
             except (OSError, ValueError, yaml.YAMLError) as exc:
                 logger.warning("[ReferenceManager] Could not read character traits from %s: %s", profile, exc)
         return CharacterTraits()
@@ -2065,6 +2112,12 @@ class ReferenceManager:
 
             supported_tags = self._supported_voice_tags()
 
+            folders = self._reference_folders(
+                self.theater.characters_dir(), self.characters_dir,
+            ).get(self._slug_key(clean_name), [])
+            profile = self._library_profile(folders, "character.yaml")
+            yaml_traits = self._read_character_traits(profile.parent) if profile is not None else None
+
             # 1. If character already exists, update all fields specified (upsert).
             existing = self._existing_character(clean_name)
             if existing:
@@ -2097,6 +2150,8 @@ class ReferenceManager:
                     norm_g = normalize_voice_tags(gender)
                     if norm_g:
                         clean_gender = norm_g[0]
+                elif yaml_traits is not None and yaml_traits.gender:
+                    clean_gender = yaml_traits.gender
 
                 if voice_tags is not None and (
                     (type(voice_tags) in (list, tuple, set) and len(voice_tags) > 0)
@@ -2128,18 +2183,14 @@ class ReferenceManager:
                 return existing
 
             # Load authored/session traits only when this character is introduced.
-            folders = self._reference_folders(
-                self.theater.characters_dir(), self.characters_dir,
-            ).get(self._slug_key(clean_name), [])
-            profile = self._library_profile(folders, "character.yaml")
-            if profile is not None:
-                traits = self._read_character_traits(profile.parent)
-                description = description or traits.description
-                personality = personality or traits.personality
-                motivation = motivation or traits.motivation
-                quirk = quirk or traits.quirk
-                gender = gender or traits.gender
-                voice_tags = voice_tags or traits.voice_tags
+            if yaml_traits is not None:
+                description = description or yaml_traits.description
+                personality = personality or yaml_traits.personality
+                motivation = motivation or yaml_traits.motivation
+                quirk = quirk or yaml_traits.quirk
+                if yaml_traits.gender:
+                    gender = yaml_traits.gender
+                voice_tags = yaml_traits.voice_tags or voice_tags
 
             # 2. Character does not exist yet in memory.
             # Check if traits were assigned per the serialized story state.
@@ -2149,12 +2200,15 @@ class ReferenceManager:
                 clean_name = serialized.name or clean_name
                 alias = serialized.alias or self._alias_for_name(clean_name)
 
-                # Prioritize traits from serialized story state, falling back to caller's specified views
-                clean_gender = serialized.gender
-                if not clean_gender and gender:
-                    norm_g = normalize_voice_tags(gender)
-                    if norm_g:
-                        clean_gender = norm_g[0]
+                # Prioritize explicit character.yaml gender, then serialized story state, then caller gender
+                if yaml_traits is not None and yaml_traits.gender:
+                    clean_gender = yaml_traits.gender
+                else:
+                    clean_gender = serialized.gender
+                    if not clean_gender and gender:
+                        norm_g = normalize_voice_tags(gender)
+                        if norm_g:
+                            clean_gender = norm_g[0]
 
                 clean_tags = normalize_voice_tags(serialized.voice_tags or voice_tags, supported_tags)
                 tag_gender = _voice_tag_gender(clean_tags)
@@ -2183,11 +2237,14 @@ class ReferenceManager:
                 clean_personality = str(personality or "").strip()[:300]
                 clean_motivation = str(motivation or "").strip()[:300]
                 clean_quirk = str(quirk or "").strip()[:300]
-                clean_gender = ""
-                if gender:
-                    norm_g = normalize_voice_tags(gender)
-                    if norm_g:
-                        clean_gender = norm_g[0]
+                if yaml_traits is not None and yaml_traits.gender:
+                    clean_gender = yaml_traits.gender
+                else:
+                    clean_gender = ""
+                    if gender:
+                        norm_g = normalize_voice_tags(gender)
+                        if norm_g:
+                            clean_gender = norm_g[0]
 
                 clean_tags = normalize_voice_tags(voice_tags, supported_tags)
                 tag_gender = _voice_tag_gender(clean_tags)
@@ -2384,12 +2441,29 @@ class ReferenceManager:
                 normalized = str(name or "").strip().lower()
                 char = next((c for alias, c in self._characters.items() if alias.lower() == normalized or c.name.strip().lower() == normalized), None)
             if char:
-                tags = char.voice_tags
-                if tags:
-                    return list(tags)
-                gender = char.gender
-                if gender:
-                    return [gender]
+                tags = list(char.voice_tags) if char.voice_tags else []
+                has_gender = any(
+                    t in ("male", "female", "nonbinary") or t.startswith("gender=")
+                    for t in tags
+                )
+                if not has_gender and char.gender:
+                    tags.insert(0, char.gender)
+                return tags
+            clean_name = str(name or "").strip()
+            folders = self._reference_folders(
+                self.theater.characters_dir(), self.characters_dir,
+            ).get(self._slug_key(clean_name), [])
+            profile = self._library_profile(folders, "character.yaml")
+            if profile is not None:
+                traits = self._read_character_traits(profile.parent)
+                tags = list(traits.voice_tags) if traits.voice_tags else []
+                has_gender = any(
+                    t in ("male", "female", "nonbinary") or t.startswith("gender=")
+                    for t in tags
+                )
+                if not has_gender and traits.gender:
+                    tags.insert(0, traits.gender)
+                return tags
             return []
 
     def get_character_voice_id(self, name: str) -> str | None:

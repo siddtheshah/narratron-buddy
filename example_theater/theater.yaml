@@ -127,3 +127,4 @@ speech:
     # When true, duplicates accent voice tags into delivery direction so accents
     # remain clearly pronounced without altering the transcript text.
     accent_augmentation: true
+    gender_augmentation: true

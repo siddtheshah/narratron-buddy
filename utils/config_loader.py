@@ -93,6 +93,9 @@ def apply_app_config(
     if "accent_augmentation" in app_config:
         config.setdefault("speech", {})["accent_augmentation"] = app_config["accent_augmentation"]
 
+    if "gender_augmentation" in app_config:
+        config.setdefault("speech", {})["gender_augmentation"] = app_config["gender_augmentation"]
+
     if "speech" in app_config:
         deep_merge(config.setdefault("speech", {}), app_config["speech"])
 

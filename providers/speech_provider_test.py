@@ -332,10 +332,27 @@ def test_speech_synthesis_request_accent_augmentation():
     # Accent augmentation enabled by default
     req_default = SpeechSynthesisRequest(
         text="Welcome traveler.",
-        voice_tags=("gender=female", "accent=British"),
+        voice_tags=("accent=British",),
     )
     assert req_default.accent_augmentation is True
     assert req_default.style_instruction() == "Speak with a clearly pronounced British accent throughout."
+
+    # Combined with gender augmentation when both tags are present
+    req_combined = SpeechSynthesisRequest(
+        text="Welcome traveler.",
+        voice_tags=("gender=female", "accent=British"),
+    )
+    assert req_combined.accent_augmentation is True
+    assert req_combined.gender_augmentation is True
+    assert req_combined.style_instruction() == (
+        "Speak with a female voice and a clearly pronounced British accent throughout."
+    )
+    assert req_combined.style_instruction(gender_augmentation=False) == (
+        "Speak with a clearly pronounced British accent throughout."
+    )
+    assert req_combined.style_instruction(accent_augmentation=False) == (
+        "Speak with a female voice throughout."
+    )
 
     # Appends to existing voice instruction
     req_with_instruction = SpeechSynthesisRequest(
@@ -357,12 +374,13 @@ def test_speech_synthesis_request_accent_augmentation():
     )
     assert req_disabled.style_instruction() == "Whisper cautiously."
 
-    # No accent tags
+    # No accent tags with gender augmentation disabled
     req_no_accent = SpeechSynthesisRequest(
         text="Welcome traveler.",
         voice_instruction="Whisper cautiously.",
         voice_tags=("gender=male", "pitch=low"),
         accent_augmentation=True,
+        gender_augmentation=False,
     )
     assert req_no_accent.style_instruction() == "Whisper cautiously."
 
@@ -373,6 +391,36 @@ def test_speech_synthesis_request_accent_augmentation():
         accent_augmentation=True,
     )
     assert req_dedup.style_instruction() == "Speak with a clearly pronounced Irish accent throughout."
+
+
+def test_speech_synthesis_request_gender_augmentation():
+    # Gender augmentation enabled by default
+    req_male = SpeechSynthesisRequest(
+        text="Hold the line.",
+        voice_tags=("gender=male",),
+    )
+    assert req_male.gender_augmentation is True
+    assert req_male.style_instruction() == "Speak with a male voice throughout."
+
+    req_female = SpeechSynthesisRequest(
+        text="Hold the line.",
+        voice_tags=("female",),
+    )
+    assert req_female.style_instruction() == "Speak with a female voice throughout."
+
+    req_nb = SpeechSynthesisRequest(
+        text="Hold the line.",
+        voice_tags=("nonbinary",),
+    )
+    assert req_nb.style_instruction() == "Speak with a nonbinary voice throughout."
+
+    req_disabled = SpeechSynthesisRequest(
+        text="Hold the line.",
+        voice_instruction="Firmly.",
+        voice_tags=("gender=female",),
+        gender_augmentation=False,
+    )
+    assert req_disabled.style_instruction() == "Firmly."
 
 
 def test_gemini_speech_honors_request_accent_augmentation():

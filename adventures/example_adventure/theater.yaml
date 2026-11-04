@@ -74,6 +74,7 @@ speech:
     # When true, duplicates accent voice tags into delivery direction so accents
     # remain clearly pronounced without altering the transcript text.
     accent_augmentation: true
+    gender_augmentation: true
     # When true, synthesizes scene narration using the speech provider.
     narration_voicing: false
     # Speech provider for character dialogue (defaults to provider, e.g. "gemini-flash-tts").
