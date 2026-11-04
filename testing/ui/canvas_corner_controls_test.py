@@ -55,7 +55,11 @@ def test_visible_corner_controls_pack_against_edges(corner: str) -> None:
             edge = "top" if corner.startswith("top") else "bottom"
             expected = canvas["y"] + 24 if edge == "top" else canvas["y"] + canvas["height"] - 24
             assert all(box[edge] == pytest.approx(expected) for box in boxes)
-        # Expanded hover/click panels keep adjacent controls in the horizontal row.
+        # Expanded hover/click panels cover up subsequent controls without pushing them horizontally.
+        boxes_collapsed = group.locator(":scope > :visible").evaluate_all('''controls => controls.map(control => {
+            const rect = control.getBoundingClientRect();
+            return {left: rect.left, right: rect.right, bottom: rect.bottom};
+        })''')
         for control_id in ["prompt-toggle-btn", "suggestions-toggle-btn", "sticky-notes-toggle-btn"]:
             control = group.locator(f"#{control_id}")
             if control.count() == 0:
@@ -65,7 +69,13 @@ def test_visible_corner_controls_pack_against_edges(corner: str) -> None:
                 const rect = control.getBoundingClientRect();
                 return {left: rect.left, right: rect.right, bottom: rect.bottom};
             })''')
-            for previous, current in zip(boxes, boxes[1:]):
-                assert current["left"] - previous["right"] == pytest.approx(8)
+            control_box = control.evaluate('''el => {
+                const rect = el.getBoundingClientRect();
+                return {left: rect.left, right: rect.right};
+            }''')
+            for collapsed, current in zip(boxes_collapsed, boxes):
+                assert current["left"] == pytest.approx(collapsed["left"])
+                if current["left"] > control_box["left"]:
+                    assert control_box["right"] > current["left"]
             control.evaluate("control => control.classList.remove('expanded')")
         browser.close()
