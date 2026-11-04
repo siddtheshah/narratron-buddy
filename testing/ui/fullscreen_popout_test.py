@@ -61,7 +61,7 @@ class TestFullscreenPopout(UITestCase):
         ):
             self.assertIn(element, html)
 
-    def test_canvas_contains_smaller_monitor_chat_rules(self):
+    def test_canvas_contains_smaller_monitor_chat_rules(self) -> None:
         response = self.client.get("/canvas?theater_id=test_theater")
         self.assertEqual(response.status_code, 200)
         html = response.text
@@ -75,4 +75,23 @@ class TestFullscreenPopout(UITestCase):
             "window.innerWidth <= SMALL_WINDOW_BREAKPOINT",
         ):
             self.assertIn(rule, html)
+
+    def test_canvas_contains_fullscreen_retracted_chat_tab_rules(self) -> None:
+        response = self.client.get("/canvas?theater_id=test_theater")
+        self.assertEqual(response.status_code, 200)
+        html = response.text
+
+        for rule in (
+            "body.fullscreen-cinematic #chat-sidebar.collapsed",
+            "body.fullscreen-cinematic #chat-sidebar.collapsed .chat-side-toggle-tab",
+            "position: fixed !important",
+            "right: 0 !important",
+            "top: 50% !important",
+            "transform: translateY(-50%) !important",
+            "opacity: 1 !important",
+            "pointer-events: auto !important",
+            "z-index: 9997 !important",
+        ):
+            self.assertIn(rule, html)
+
 
