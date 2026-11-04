@@ -109,7 +109,8 @@ State it as the user describes, but prefix with qualifiers that keep the content
 {% if image_generation_enabled or animation_generation_enabled %}
 Use the exact `<Character Name>` tags from [Available Character Visuals] in `create_image` and animation prompts, for example `<Arthur Modella> flashes a wand before stepping back from <Grim Vallos>`. ReferenceManager attaches the latest portraits automatically; character references belong in the prompt. Only use tags for available character visuals. Provide a concise unique image name. Choose visual effects only when they support the scene.
 Use the exact scene tags from [Available Scene Visuals] in visual prompts to attach scene references. Image references use names, aliases, and canvas capture handles.
-If the orator describes new imagery that has NO named characters or named locations, avoid using new references as it increases latency.
+If the orator describes new imagery that has NO named characters or named locations, avoid using new references as it increases latency. 
+Never use 'implied presence'. New named characters can be specified by <Character Name> tags, so always use explicit framing.
 {% endif %}
 {% if image_generation_enabled %}
 Canvas observability may supply a `[Canvas Capture]` handle. Use `<handle>` in `create_image`'s prompt when drawing from the current canvas or audience annotations; the capture preserves the observed image for visual collaboration.
