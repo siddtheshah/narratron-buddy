@@ -8,9 +8,10 @@ from __future__ import annotations
 
 from components.canvas.locking import synchronized
 
+import asyncio
 import json
 import logging
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from threading import RLock
 from hashlib import sha256
@@ -50,6 +51,9 @@ class CanvasStateManager:
     chat: Optional[ChatManager] = None
     game: GameState | None = None
     notepad: Optional[Notepad] = None
+    on_characters_updated: Callable[[list[dict[str, JsonValue]]], None] | None = None
+    on_scenes_updated: Callable[[list[dict[str, JsonValue]]], None] | None = None
+    on_animations_updated: Callable[[list[dict[str, JsonValue]]], None] | None = None
 
     def __init__(self, theater: Theater) -> None:
         self.canvas_lock = RLock()
@@ -138,6 +142,52 @@ class CanvasStateManager:
 
     def notify_changed(self, *domains: str) -> None:
         self.connections.notify(*domains)
+
+    def broadcast_doodle(self, message: dict[str, JsonValue]) -> None:
+        if self.connections is None or not self.connections.active_ws_connections:
+            return
+        loop = self.connections.state_ws_loop
+        if loop is None or loop.is_closed():
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                return
+        if loop is None or loop.is_closed():
+            return
+        try:
+            current_loop: asyncio.AbstractEventLoop | None = asyncio.get_running_loop()
+        except RuntimeError:
+            current_loop = None
+
+        if current_loop is loop:
+            loop.create_task(self.connections.broadcast_doodle_message(message))
+        else:
+            asyncio.run_coroutine_threadsafe(self.connections.broadcast_doodle_message(message), loop)
+
+    def notify_characters_updated(self) -> None:
+        if self.theater is None:
+            return
+        characters = [dict(character) for character in self.theater.characters()]
+        self.broadcast_doodle({"type": "theater_characters_updated", "characters": characters})
+        if self.on_characters_updated is not None:
+            self.on_characters_updated(characters)
+
+    def notify_scenes_updated(self) -> None:
+        if self.theater is None:
+            return
+        scenes = [dict(scene) for scene in self.theater.scenes()]
+        self.broadcast_doodle({"type": "theater_scenes_updated", "scenes": scenes})
+        if self.on_scenes_updated is not None:
+            self.on_scenes_updated(scenes)
+
+    def notify_animations_updated(self) -> None:
+        if self.theater is None:
+            return
+        from services.theater_assets import animations as list_animations
+        anim_list = [animation.model_dump(mode="json") for animation in list_animations(self.theater)]
+        self.broadcast_doodle({"type": "theater_animations_updated", "animations": anim_list})
+        if self.on_animations_updated is not None:
+            self.on_animations_updated(anim_list)
 
     @synchronized
     def persist(self) -> None:

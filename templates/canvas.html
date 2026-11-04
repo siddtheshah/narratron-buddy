@@ -6577,6 +6577,7 @@
                 const data = JSON.parse(event.data);
                 if (data.type === 'theater_characters_updated') {
                     cachedTheaterCharacters = data.characters || [];
+                    preloadItemImages(cachedTheaterCharacters);
                     if (isStampManagerOpen && activeStampManagerTab === 'characters') renderCharactersManagerGrid(cachedTheaterCharacters);
                     return;
                 }
@@ -6587,6 +6588,7 @@
                 }
                 if (data.type === 'theater_scenes_updated') {
                     cachedTheaterScenes = data.scenes || [];
+                    preloadItemImages(cachedTheaterScenes);
                     if (isStampManagerOpen && activeStampManagerTab === 'scenes') renderScenesManagerGrid(cachedTheaterScenes);
                     return;
                 }
@@ -8357,7 +8359,8 @@
             panel.textContent = 'Loading…';
             stampManagerCount.textContent = '…';
             try {
-                const res = await fetch(`/api/theaters/${encodeURIComponent(theaterId)}/${kind}`);
+                const tid = (typeof theaterId !== 'undefined' && theaterId) || (typeof currenttheaterId !== 'undefined' && currenttheaterId) || new URLSearchParams(window.location.search).get('theater_id');
+                const res = await fetch(`/api/theaters/${encodeURIComponent(tid)}/${kind}`);
                 if (!res.ok) throw new Error('Unable to load assets.');
                 const assets = await res.json();
                 if (version !== assetLoadVersion || activeStampManagerTab !== kind) return;
@@ -8710,9 +8713,8 @@
                 if (cachedTheaterScenes) {
                     renderScenesManagerGrid(cachedTheaterScenes);
                     preloadItemImages(cachedTheaterScenes);
-                } else {
-                    loadTheaterScenes();
                 }
+                loadTheaterScenes();
             } else if (tab === 'characters') {
                 if (stampManagerPermissionBanner) stampManagerPermissionBanner.style.display = 'none';
                 if (stampManagerGrid) stampManagerGrid.style.display = 'none';
@@ -8733,9 +8735,8 @@
                 if (cachedTheaterCharacters) {
                     renderCharactersManagerGrid(cachedTheaterCharacters);
                     preloadItemImages(cachedTheaterCharacters);
-                } else {
-                    loadTheaterCharacters();
                 }
+                loadTheaterCharacters();
             }
         }
 

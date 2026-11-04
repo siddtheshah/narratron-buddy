@@ -436,6 +436,8 @@ class LiveAgentSession:
             technique_str = f" ({technique})" if technique else ""
             msg = f"[System Notification] Animation '{animation_id}'{technique_str} is ready to play. Call play_animation with animation_id='{animation_id}' to display it on canvas."
             logger.info(f"[LiveAgentSession] Animation ready notification: {msg}")
+            if self.canvas_state_manager is not None:
+                self.canvas_state_manager.notify_animations_updated()
             content = types.Content(role="system", parts=[types.Part(text=msg)])
 
             def enqueue() -> None:

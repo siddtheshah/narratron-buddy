@@ -31,6 +31,8 @@ class ReferenceTool(BaseTools):
         if reference_manager is None:
             raise ValueError("reference_manager is required.")
         self.reference_manager = reference_manager
+        if self.reference_manager.canvas_manager is None and canvas_manager is not None:
+            self.reference_manager.canvas_manager = canvas_manager
 
     @logged_tool_call
     def list_references(self) -> list[dict[str, str]]:

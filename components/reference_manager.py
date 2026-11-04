@@ -609,6 +609,8 @@ class ImagePathResolver(Protocol):
 class ReferenceManager:
     """Own character state and session-scoped character and scene imagery."""
 
+    canvas_manager: Optional[CanvasStateManager] = None
+
     def __init__(
         self,
         theater: Theater,
@@ -1151,6 +1153,8 @@ class ReferenceManager:
                 if clean_description or (not self.reference_generation_enabled and key not in self._scene_descriptions):
                     self._scene_descriptions[key] = clean_description
                 self._save_scene_traits(name)
+                if not self._initializing_references and self.canvas_manager is not None:
+                    self.canvas_manager.notify_scenes_updated()
                 if previous is None and not self.reference_generation_enabled:
                     return {"name": name, "description": self._scene_descriptions[key]}
                 return self._scene_image_entry(name, previous) if previous is not None else None
@@ -2344,6 +2348,8 @@ class ReferenceManager:
                 self._sync_story_state()
 
             self._save_character_traits(character)
+            if not self._initializing_references and self.canvas_manager is not None:
+                self.canvas_manager.notify_characters_updated()
             return character
 
     def _supported_voice_tags(self) -> Mapping[str, tuple[str, ...]]:

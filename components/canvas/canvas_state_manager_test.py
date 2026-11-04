@@ -1,6 +1,11 @@
 from __future__ import annotations
 
+import asyncio
 import json
+from typing import cast
+from fastapi import WebSocket
+from pydantic import JsonValue
+import pytest
 from pathlib import Path
 
 from components.canvas.canvas_state_manager import CanvasStateManager
@@ -35,6 +40,17 @@ class FakeTheater:
 
     def get_url_for_path(self, file_path: str) -> str:
         return f"/theaters/{self.theater_id}/{Path(file_path).name}"
+
+    def characters(self) -> list[dict[str, object]]:
+        return [{"id": "c1", "name": "Mira", "description": "Hero"}]
+
+    def scenes(self) -> list[dict[str, object]]:
+        return [{"id": "s1", "name": "Castle", "description": "High tower"}]
+
+    def animations_dir(self) -> Path:
+        anim_dir = self.root / "animations"
+        anim_dir.mkdir(parents=True, exist_ok=True)
+        return anim_dir
 
 
 class FakeTheaterManager:
@@ -260,3 +276,53 @@ def test_latest_payload_never_transmits_history_doodle_content(tmp_path: Path) -
     assert all("doodles" not in page for page in payload["history"])
     assert "Private page content" not in json.dumps(payload)
     assert "Private page content 0" in json.dumps(manager.serialized_state())
+
+
+def test_notify_characters_updated_broadcasts_and_invokes_callback(tmp_path: Path) -> None:
+    theater_manager = FakeTheaterManager(tmp_path)
+    manager = CanvasStateManager(theater_manager.theater("chars_test"))
+    received: list[list[dict[str, JsonValue]]] = []
+    manager.on_characters_updated = received.append
+    manager.notify_characters_updated()
+    assert len(received) == 1
+    assert received[0][0]["name"] == "Mira"
+
+
+def test_notify_scenes_updated_broadcasts_and_invokes_callback(tmp_path: Path) -> None:
+    theater_manager = FakeTheaterManager(tmp_path)
+    manager = CanvasStateManager(theater_manager.theater("scenes_test"))
+    received: list[list[dict[str, JsonValue]]] = []
+    manager.on_scenes_updated = received.append
+    manager.notify_scenes_updated()
+    assert len(received) == 1
+    assert received[0][0]["name"] == "Castle"
+
+
+def test_notify_animations_updated_broadcasts_and_invokes_callback(tmp_path: Path) -> None:
+    theater_manager = FakeTheaterManager(tmp_path)
+    theater = theater_manager.theater("anims_test")
+    manager = CanvasStateManager(theater)
+    received: list[list[dict[str, JsonValue]]] = []
+    manager.on_animations_updated = received.append
+    manager.notify_animations_updated()
+    assert len(received) == 1
+
+
+@pytest.mark.asyncio
+async def test_broadcast_doodle_dispatches_to_websocket(tmp_path: Path) -> None:
+    theater_manager = FakeTheaterManager(tmp_path)
+    manager = CanvasStateManager(theater_manager.theater("ws_test"))
+    sent: list[dict[str, JsonValue]] = []
+
+    class FakeWebSocket:
+        async def send_json(self, data: dict[str, JsonValue]) -> None:
+            sent.append(data)
+
+    fake_ws = cast(WebSocket, FakeWebSocket())
+    manager.connections.active_ws_connections.append(fake_ws)
+    manager.connections.state_ws_loop = asyncio.get_running_loop()
+    manager.notify_characters_updated()
+    await asyncio.sleep(0.01)
+    assert len(sent) == 1
+    assert sent[0]["type"] == "theater_characters_updated"
+    assert sent[0]["characters"][0]["name"] == "Mira"

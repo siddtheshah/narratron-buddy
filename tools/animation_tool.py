@@ -213,6 +213,8 @@ class AnimationTools(BaseTools):
         if selected == "layered":
             self._notify_layered_animation_created(animation_id)
         self._notify_animation_ready(animation_id, selected)
+        if self.canvas_manager is not None:
+            self.canvas_manager.notify_animations_updated()
 
     def _register_layered_aliases(self, animation_id: str, base_path: str, layer_paths: list[str]) -> None:
         if not self.visual:

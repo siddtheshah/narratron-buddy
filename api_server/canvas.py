@@ -679,6 +679,7 @@ async def websocket_endpoint(
     if websocket not in connections.active_ws_connections:
         connections.active_ws_connections.append(websocket)
     connections.active_user_connections[websocket] = current_user
+    connections.state_ws_loop = asyncio.get_running_loop()
     initial_doodles = cs.doodles_for_page(page_id) if page_id else cs.doodles
     if initial_doodles is None:
         _unregister_doodle_websocket(cs, websocket)

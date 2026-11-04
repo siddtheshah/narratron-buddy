@@ -2,6 +2,7 @@
 
 import asyncio
 from fastapi import WebSocket
+from pydantic import JsonValue
 from typing import Any
 from typing import Optional
 import logging
@@ -62,6 +63,23 @@ class ConnectionState:
         for connection, result in zip(connections, results):
             if isinstance(result, BaseException):
                 self.unregister_state_websocket(connection)
+
+    async def _send_doodle_one(self, connection: WebSocket, message: dict[str, JsonValue]) -> None:
+        try:
+            await connection.send_json(message)
+        except Exception:
+            self.unregister_websocket(connection)
+
+    async def broadcast_doodle_message(
+        self, message: dict[str, JsonValue], sender: WebSocket | None = None,
+    ) -> None:
+        page_id = message.get("page_id")
+        recipients = [
+            connection for connection in list(self.active_ws_connections)
+            if connection is not sender
+            and (not page_id or self.doodle_subscriptions.get(connection) == page_id)
+        ]
+        await asyncio.gather(*(self._send_doodle_one(conn, message) for conn in recipients))
 
     def get_active_viewers(self) -> list[dict[str, Any]]:
         """Return list of distinct authenticated users currently connected as active canvas viewers."""
