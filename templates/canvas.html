@@ -1885,15 +1885,47 @@
             transition: opacity 0.4s ease, transform 0.4s ease;
         }
 
-        body.fullscreen-cinematic #chat-sidebar {
+        body.fullscreen-cinematic #chat-sidebar:not(.collapsed) {
             position: absolute !important;
             top: 1.5rem !important;
             right: 1.5rem !important;
             height: calc(100vh - 3rem) !important;
+            border-radius: 16px !important;
+            border: 1px solid var(--glass-border) !important;
             z-index: 100 !important;
             opacity: 0;
             pointer-events: none;
             transition: opacity 0.4s ease, transform 0.4s ease;
+        }
+
+        body.fullscreen-cinematic #chat-sidebar.collapsed {
+            position: fixed !important;
+            top: 0 !important;
+            right: 0 !important;
+            height: 100vh !important;
+            width: 320px !important;
+            margin-right: -320px !important;
+            z-index: 9997 !important;
+            opacity: 1 !important;
+            pointer-events: none !important;
+            background: transparent !important;
+            border: none !important;
+            box-shadow: none !important;
+            backdrop-filter: none !important;
+            -webkit-backdrop-filter: none !important;
+            transition: none !important;
+        }
+
+        body.fullscreen-cinematic #chat-sidebar.collapsed .chat-side-toggle-tab {
+            position: fixed !important;
+            right: 0 !important;
+            left: auto !important;
+            top: 50% !important;
+            transform: translateY(-50%) !important;
+            opacity: 1 !important;
+            pointer-events: auto !important;
+            visibility: visible !important;
+            z-index: 9997 !important;
         }
 
         body.fullscreen-cinematic #popout-expand-btn,
@@ -1919,11 +1951,6 @@
 
         body.fullscreen-cinematic.ui-visible #history-paging-controls {
             opacity: 1 !important;
-            pointer-events: none !important;
-        }
-
-        body.fullscreen-cinematic.ui-visible #chat-sidebar.collapsed {
-            opacity: 0 !important;
             pointer-events: none !important;
         }
 
@@ -10822,6 +10849,9 @@
             }
             if (popoutExpandBtn) {
                 popoutExpandBtn.style.display = collapsed ? 'flex' : 'none';
+            }
+            if (document.body.classList.contains('fullscreen-cinematic')) {
+                showCinematicUI();
             }
         }
 
