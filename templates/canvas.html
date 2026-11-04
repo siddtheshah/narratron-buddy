@@ -970,11 +970,14 @@
             box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
         }
 
+        #prompt-toggle-btn:hover,
         #prompt-toggle-btn.expanded {
-            width: auto;
+            z-index: 30;
+            width: 320px;
+            max-width: 320px;
             height: auto;
-            max-width: 70%;
             max-height: 300px;
+            margin-right: -276px;
             border-radius: 16px;
             padding: 12px 16px 12px 12px;
             background: rgba(15, 17, 21, 0.9);
@@ -984,15 +987,18 @@
             overflow-y: auto;
         }
 
+        #prompt-toggle-btn:hover::-webkit-scrollbar,
         #prompt-toggle-btn.expanded::-webkit-scrollbar {
             width: 4px;
         }
 
+        #prompt-toggle-btn:hover::-webkit-scrollbar-thumb,
         #prompt-toggle-btn.expanded::-webkit-scrollbar-thumb {
             background: rgba(255, 255, 255, 0.2);
             border-radius: 4px;
         }
 
+        #prompt-toggle-btn:hover svg,
         #prompt-toggle-btn.expanded svg {
             margin-right: 10px;
             color: #6366f1;
@@ -1012,6 +1018,7 @@
             display: inline-block;
         }
 
+        #prompt-toggle-btn:hover #prompt-text,
         #prompt-toggle-btn.expanded #prompt-text {
             opacity: 1;
             max-width: 100%;
@@ -1052,6 +1059,7 @@
             width: 320px;
             height: auto;
             max-height: 380px;
+            margin-right: -276px;
             border-radius: 16px;
             padding: 14px;
             background: rgba(15, 17, 21, 0.95);
@@ -1187,6 +1195,7 @@
             width: 320px;
             height: auto;
             max-height: 440px;
+            margin-right: -276px;
             border-radius: 16px;
             padding: 14px;
             align-items: flex-start;
