@@ -235,3 +235,30 @@ def test_reference_discovery_searches_metadata_and_latest_versions(tmp_path: Pat
     assert tool.search_references("generated_harbor") == []
     assert tool.search_references("") == entries
     canvas.visual.update_visual.assert_not_called()
+
+
+def test_reference_tool_creates_character_and_notifies_canvas(tmp_path: Path) -> None:
+    theater = TheaterManager(base_theaters_dir=str(tmp_path)).theater("char-notify")
+    theater.directory().mkdir(parents=True)
+    manager = ReferenceManager(theater)
+    canvas = MagicMock(spec=CanvasStateManager)
+    tool = ReferenceTool(theater, manager, canvas_manager=canvas)
+    tool.create_or_update_character("Rowan", description="A swift scout", gender="nonbinary")
+    canvas.notify_characters_updated.assert_called()
+
+
+def test_reference_tool_creates_scene_and_notifies_canvas(tmp_path: Path) -> None:
+    from providers.image_provider import ImageGenerationResult, ImageProvider
+    from testing.reference_images import png_bytes
+
+    theater = TheaterManager(base_theaters_dir=str(tmp_path)).theater("scene-notify")
+    theater.directory().mkdir(parents=True)
+    img_provider = MagicMock(spec=ImageProvider)
+    img_provider.generate.return_value = ImageGenerationResult(
+        image_bytes=png_bytes(), mime_type="image/png", provider="test", model="test"
+    )
+    manager = ReferenceManager(theater, image_provider=img_provider)
+    canvas = MagicMock(spec=CanvasStateManager)
+    tool = ReferenceTool(theater, manager, canvas_manager=canvas)
+    tool.create_or_update_scene("Overlook", description="High mountain pass")
+    canvas.notify_scenes_updated.assert_called()

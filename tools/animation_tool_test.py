@@ -1981,3 +1981,37 @@ class TestAnimationTools(BaseTestCase):
         self.assertIs(AnimationTools.is_loop_animation, AnimationProvider.check_loop_animation)
         self.assertIs(AnimationTools.decide_loop_animation, AnimationProvider.check_loop_animation)
 
+    def test_create_animation_notifies_canvas_manager(self) -> None:
+        video_provider = MagicMock()
+        video_provider.generate.return_value = VideoGenerationResult(
+            video_bytes=fake_video_bytes(),
+            mime_type="video/mp4",
+            provider="test",
+            model="test",
+        )
+        image_provider = MagicMock()
+        image_provider.generate.return_value = ImageGenerationResult(
+            image_bytes=fake_image_bytes(),
+            mime_type="image/jpeg",
+            provider="test",
+            model="test",
+        )
+        canvas_mock = MagicMock()
+        theater = self.manager.theater("notify_test")
+        theater.manager.get_theater_config = MagicMock(return_value={
+            "visuals": {},
+            "animation": {"forced_technique": "video", "cooldown_duration": 0},
+        })
+        animation_tools = AnimationTools(
+            theater,
+            canvas_mock,
+            MagicMock(),
+            MagicMock(),
+            image_provider=image_provider,
+            video_provider=video_provider,
+        )
+        animation_tools.create_animation("test prompt", "test_notify", technique="video")
+        animation_tools.join_generation()
+        canvas_mock.notify_animations_updated.assert_called_once()
+
+
