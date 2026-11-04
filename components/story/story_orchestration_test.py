@@ -1449,3 +1449,82 @@ def test_pending_output_survives_restart_after_turn_is_acknowledged(harness: Tur
         assert restored.narration == "third"
         assert restored.output_cycle.payload()["displayed_sequence"] == 3
         assert_foreground_calls(harness, ["recorder"] * 3)
+
+
+def test_canvas_update_not_blocked_by_recorder_completion(harness: TurnHarness) -> None:
+    tool = harness.new_tool()
+    recorder_started, release_recorder = Event(), Event()
+    original_record = tool.recorder_module.record
+
+    def slow_record(event: RecordingEvent) -> int:
+        recorder_started.set()
+        assert release_recorder.wait(5)
+        return original_record(event)
+
+    with patch.object(tool.recorder_module, "record", side_effect=slow_record):
+        tool.process_user_action("Enter the dark cavern")
+        assert recorder_started.wait(5)
+        # Canvas has already received the narration while recorder is still running
+        assert tool.canvas_manager.story.narration == "The key breaks."
+        release_recorder.set()
+        assert tool.wait_for_pending_events(5)
+    assert tool.turn_journal.turns()[0].completed
+
+
+def test_new_responder_invocation_waits_for_previous_recorder(harness: TurnHarness) -> None:
+    tool = harness.new_tool()
+    turn1_recorder_started, release_turn1 = Event(), Event()
+    turn2_responder_started = Event()
+    original_record = tool.recorder_module.record
+    original_generate = tool.response_module._generate_response
+    calls: list[str] = []
+
+    def record_gate(event: RecordingEvent) -> int:
+        calls.append("recorder_1")
+        turn1_recorder_started.set()
+        assert release_turn1.wait(5)
+        return original_record(event)
+
+    def generate_gate(user_action: str, nudge: str = "") -> dict[str, JsonValue]:
+        if "second" in user_action:
+            calls.append("responder_2")
+            turn2_responder_started.set()
+        return original_generate(user_action, nudge=nudge)
+
+    with (
+        patch.object(tool.recorder_module, "record", side_effect=record_gate),
+        patch.object(tool.response_module, "_generate_response", side_effect=generate_gate),
+    ):
+        tool.process_user_action("first action")
+        assert turn1_recorder_started.wait(5)
+        # While turn 1 recorder is active, submit turn 2
+        tool.process_user_action("second action")
+        # Ensure responder for turn 2 has NOT been called yet
+        assert not turn2_responder_started.is_set()
+        assert "responder_2" not in calls
+        # Release turn 1 recorder
+        release_turn1.set()
+        assert turn2_responder_started.wait(5)
+        assert tool.wait_for_pending_events(5)
+    turns = tool.turn_journal.turns()
+    assert len(turns) == 2
+    assert all(turn.completed for turn in turns)
+
+
+def test_unrecorded_delivered_turns_caught_up_at_init_time(harness: TurnHarness) -> None:
+    journal = StoryTurnJournal(harness.theater.output_dir() / "story.sqlite")
+    try:
+        journal.accept(StoryTurn(
+            turn_id="unrecorded-foreground", ingress="communicated_action", action="Drop the torch",
+            response={"narration": "The flame extinguishes in the damp mud.", "notepad_revision_used": 0},
+            delivered=True, recorder_completed=False,
+        ))
+    finally:
+        journal.close()
+    tool = harness.new_tool()
+    assert tool.wait_for_pending_events(5)
+    turn = tool.turn_journal.get("unrecorded-foreground")
+    assert turn is not None
+    assert turn.recorder_completed
+    assert turn.completed
+    assert_foreground_calls(harness, ["recorder"])

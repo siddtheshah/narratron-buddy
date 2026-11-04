@@ -69,6 +69,9 @@ def isolate_registry_storage(tmp_path_factory: pytest.TempPathFactory) -> Genera
 def offline_lab_text_providers() -> Generator[MagicMock, None, None]:
     """Mock Test Lab construction; individual tests supply generation results."""
     provider = MagicMock(spec=TextResponseProvider)
+    provider.model = "mock-model"
+    provider.id = "mock-text-provider"
+    provider.display_name = "Mock Text Provider"
     provider.generate.side_effect = AssertionError("This test must mock text generation")
     with (
         patch("testlab.adventure_runner.get_text_response_provider", return_value=provider),

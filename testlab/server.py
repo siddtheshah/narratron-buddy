@@ -1,6 +1,7 @@
 """Standalone development server for the browser-based Narratron test labs."""
 
 import json
+import logging
 import mimetypes
 from pathlib import Path
 import threading
@@ -71,6 +72,7 @@ from testlab.decision_lab import router as decision_lab_router
 ROOT = Path(__file__).resolve().parent
 PROJECT_ROOT = ROOT.parent
 load_dotenv(PROJECT_ROOT / ".env")
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Narratron Test Lab")
 app.include_router(game_lab_router)
@@ -461,11 +463,21 @@ def create_story_planner_session(body: dict[str, Any]):
         canvas_manager=canvas_manager,
         story_state=canvas_manager.story,
     )
+    text_provider = get_text_response_provider("gemini-3", options={"model": model})
+    decision_provider_id = str(theater.config().get("story_planning", {}).get("decision_provider") or "openai-decisions")
+    try:
+        from providers.registry import get_decision_provider
+        decision_provider = get_decision_provider(decision_provider_id)
+    except Exception as exc:
+        logger.warning("[TestlabServer] Could not initialize decision provider %s: %s", decision_provider_id, exc)
+        from providers.text_response_decision_provider import TextResponseDecisionProvider
+        decision_provider = TextResponseDecisionProvider(text_provider)
     tools = StoryTool(
         theater,
         canvas_manager=canvas_manager,
-        text_response_provider=get_text_response_provider("gemini-3", options={"model": model}),
+        text_response_provider=text_provider,
         reference_manager=reference_manager,
+        decision_provider=decision_provider,
     )
     tools.response_module.adventure_mode = True
     tools.on_scene_reaction = on_scene_reaction

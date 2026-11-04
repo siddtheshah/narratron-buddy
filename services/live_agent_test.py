@@ -318,6 +318,7 @@ class TestCreateAgent(unittest.TestCase):
             canvas_manager=expected_canvas,
             text_response_provider=ANY,
             reference_manager=ANY,
+            decision_provider=ANY,
             lore_library=ANY,
         )
         mock_music_cls.assert_called_once_with(
@@ -722,6 +723,7 @@ class TestCreateAgent(unittest.TestCase):
             canvas_manager=canvas_mgr,
             text_response_provider=mock_get_text_provider.return_value,
             reference_manager=char_mgr,
+            decision_provider=ANY,
             lore_library=lore_lib,
         )
         mock_animation_tools_cls.assert_called_once()

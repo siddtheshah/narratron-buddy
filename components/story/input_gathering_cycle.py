@@ -38,6 +38,7 @@ class StoryInputGatheringCycle:
         self._deadline = 0.0
         self._draining = False
         self._closed = False
+        self.on_wait: Callable[[float], None] | None = None
 
     def bind(self, handler: CycleHandler) -> None:
         with self._condition:
@@ -125,13 +126,22 @@ class StoryInputGatheringCycle:
 
     def wait(self, timeout: float = 5.0) -> bool:
         """Drain pending batches for deterministic harnesses and shutdown."""
+        deadline = time.monotonic() + timeout
         with self._condition:
             self._draining = True
             try:
                 self._schedule_locked()
-                return self._condition.wait_for(lambda: not self._active and not self._pending, timeout)
+                done = self._condition.wait_for(
+                    lambda: not self._active and not self._pending,
+                    max(0.0, deadline - time.monotonic()),
+                )
+                if not done:
+                    return False
             finally:
                 self._draining = False
+        if self.on_wait is not None:
+            self.on_wait(max(0.0, deadline - time.monotonic()))
+        return True
 
     def close(self) -> None:
         with self._condition:

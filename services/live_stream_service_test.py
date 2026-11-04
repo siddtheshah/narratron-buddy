@@ -1,3 +1,4 @@
+from providers import DecisionProvider
 import asyncio
 import os
 import unittest
@@ -246,6 +247,7 @@ def test_format_canvas_state_includes_sticky_notes(tmp_path: Path, reference_man
         canvas_manager=CanvasFixture(),
         text_response_provider=MagicMock(),
         reference_manager=reference_manager,
+        decision_provider=MagicMock(spec=DecisionProvider),
     )
     elements.update_sticky_note("hero", "Mara, a cartographer")
     elements.update_sticky_note("tone", "Hopeful and tense")
@@ -315,6 +317,7 @@ def test_format_canvas_state_omits_active_character_details(tmp_path: Path) -> N
         canvas_manager=canvas,
         text_response_provider=MagicMock(),
         reference_manager=ref_mgr,
+        decision_provider=MagicMock(spec=DecisionProvider),
     )
     elements.create_or_update_character(name="Vaelen", personality="Brave", motivation="Find the talisman", quirk="Flips a coin on choices")
 
@@ -375,6 +378,7 @@ def test_format_canvas_state_omits_character_image_handles_for_npcs(tmp_path: Pa
         canvas_manager=canvas,
         text_response_provider=MagicMock(),
         reference_manager=ref_mgr,
+        decision_provider=MagicMock(spec=DecisionProvider),
     )
     elements.reference_manager.create_or_update_character(
         name="Lyra",
@@ -404,6 +408,7 @@ def test_format_canvas_state_omits_character_image_handles_for_player(tmp_path: 
         canvas_manager=canvas,
         text_response_provider=MagicMock(),
         reference_manager=ref_mgr,
+        decision_provider=MagicMock(spec=DecisionProvider),
     )
     elements.reference_manager.set_player_character(
         PlayerCharacter(

@@ -24,15 +24,17 @@ class StoryTool(BaseTools):
         canvas_manager: CanvasStateManager,
         text_response_provider: TextResponseProvider,
         reference_manager: ReferenceManager,
+        decision_provider: DecisionProvider,
         speech_provider: SpeechProvider | None = None,
         lore_library: Optional[LoreLibrary] = None,
-        decision_provider: Optional[DecisionProvider] = None,
     ) -> None:
         super().__init__(theater, canvas_manager)
+        if decision_provider is None:
+            raise ValueError("decision_provider is required.")
         self.engine = StoryEngine(
             theater, canvas_manager, text_response_provider, reference_manager,
+            decision_provider,
             speech_provider=speech_provider, lore_library=lore_library,
-            decision_provider=decision_provider,
         )
 
     @terminal

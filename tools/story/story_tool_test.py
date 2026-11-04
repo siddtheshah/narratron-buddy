@@ -1,3 +1,4 @@
+from providers import DecisionProvider
 """Boundary tests for the story subsystem composition root."""
 
 import unittest
@@ -84,11 +85,13 @@ class TestStoryToolStateIntegration(unittest.TestCase):
             image_provider=self.image_provider,
             speech_provider=self.speech_provider,
         )
+        self.decision_provider = MagicMock(spec=DecisionProvider)
         self.tool = StoryTool(
             theater=self.theater,
             canvas_manager=self.canvas,
             text_response_provider=self.provider,
             reference_manager=self.reference_manager,
+            decision_provider=self.decision_provider,
         )
 
     def tearDown(self) -> None:
@@ -150,6 +153,7 @@ class TestStoryToolStateIntegration(unittest.TestCase):
             canvas_manager=self.canvas,
             text_response_provider=self.provider,
             reference_manager=reloaded_reference_manager,
+            decision_provider=self.decision_provider,
         )
         self.addCleanup(reloaded_tool.close)
         reloaded_tool.reload_from_session_state()
@@ -377,6 +381,30 @@ class TestStoryToolStateIntegration(unittest.TestCase):
 
         speech_release.set()
         self.assertTrue(speech_completed.wait(timeout=2.0))
+
+
+    def test_decision_provider_required_for_story_tool(self) -> None:
+        with self.assertRaises(ValueError) as ctx:
+            StoryTool(
+                theater=self.theater,
+                canvas_manager=self.canvas,
+                text_response_provider=self.provider,
+                reference_manager=self.reference_manager,
+                decision_provider=None,  # type: ignore[arg-type]
+            )
+        self.assertIn("decision_provider is required", str(ctx.exception))
+
+    def test_decision_provider_required_for_story_engine(self) -> None:
+        from components.story.engine import StoryEngine
+        with self.assertRaises(ValueError) as ctx:
+            StoryEngine(
+                theater=self.theater,
+                canvas_manager=self.canvas,
+                text_response_provider=self.provider,
+                reference_manager=self.reference_manager,
+                decision_provider=None,  # type: ignore[arg-type]
+            )
+        self.assertIn("decision_provider is required", str(ctx.exception))
 
 
 if __name__ == "__main__":

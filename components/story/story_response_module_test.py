@@ -52,6 +52,7 @@ class TestStoryResponseModuleDependencies(unittest.TestCase):
         self.session_id = "response-boundary-session"
         self.notepad = Notepad(self.theater, canvas_manager=self.canvas)
         self.canvas.notepad = self.notepad
+        self.decision_provider = MagicMock(spec=DecisionProvider)
 
     def test_dialogue_supports_a_tts_voice_instruction(self) -> None:
         dialogue = ResponseDialogue(
@@ -65,11 +66,13 @@ class TestStoryResponseModuleDependencies(unittest.TestCase):
     def test_uses_injected_dependencies(self) -> None:
         module = StoryResponseModule(
             self.theater, self.canvas, self.lore_library, self.reference_manager, self.provider,
+            self.decision_provider,
         )
         self.assertIs(module.notepad, self.notepad)
         self.assertIs(module.lore_library, self.lore_library)
         self.assertIs(module.reference_manager, self.reference_manager)
         self.assertIs(module.text_response_provider, self.provider)
+        self.assertIs(module.decision_provider, self.decision_provider)
         self.provider.generate.assert_not_called()
 
     def test_requires_text_provider(self) -> None:
@@ -77,16 +80,30 @@ class TestStoryResponseModuleDependencies(unittest.TestCase):
             StoryResponseModule(
                 self.theater, self.canvas, self.lore_library, self.reference_manager,
                 None,  # type: ignore[arg-type]
+                self.decision_provider,
             )
 
     def test_requires_lore_and_references(self) -> None:
         with self.assertRaisesRegex(ValueError, "lore_library is required"):
             StoryResponseModule(
                 self.theater, self.canvas, None, self.reference_manager, self.provider,  # type: ignore[arg-type]
+                self.decision_provider,
             )
         with self.assertRaisesRegex(ValueError, "reference_manager is required"):
             StoryResponseModule(
                 self.theater, self.canvas, self.lore_library, None, self.provider,  # type: ignore[arg-type]
+                self.decision_provider,
+            )
+
+    def test_requires_decision_provider(self) -> None:
+        with self.assertRaisesRegex(ValueError, "decision_provider is required"):
+            StoryResponseModule(
+                self.theater, self.canvas, self.lore_library, self.reference_manager, self.provider,
+                None,  # type: ignore[arg-type]
+            )
+        with self.assertRaises(TypeError):
+            StoryResponseModule(  # type: ignore[call-arg]
+                self.theater, self.canvas, self.lore_library, self.reference_manager, self.provider,
             )
 
 
@@ -129,19 +146,20 @@ class TestStoryResponseModuleBehavior(unittest.TestCase):
             image_provider=self.image_provider,
             speech_provider=self.speech_provider,
         )
+        decisions = MagicMock(spec=DecisionProvider)
+        decisions.decide.return_value = DecisionResult(provider="test", model="test", answers={
+            "primary_lore_document": ChoiceAnswer(name="primary_lore_document", choice="none"),
+            "dice_roll": ChoiceAnswer(name="dice_roll", choice="none"),
+        })
+        self.decisions = decisions
         self.module = StoryResponseModule(
             theater=self.theater,
             canvas_manager=self.canvas,
             lore_library=self.lore_library,
             reference_manager=self.reference_manager,
             text_response_provider=self.provider,
+            decision_provider=decisions,
         )
-        decisions = MagicMock(spec=DecisionProvider)
-        decisions.decide.return_value = DecisionResult(provider="test", model="test", answers={
-            "primary_lore_document": ChoiceAnswer(name="primary_lore_document", choice="none"),
-            "dice_roll": ChoiceAnswer(name="dice_roll", choice="none"),
-        })
-        self.module.decision_provider = decisions
 
     def test_generates_once_with_fresh_structured_output_and_context(self) -> None:
         self.provider.generate.return_value = TextResponseResult(
@@ -503,6 +521,7 @@ class TestStoryResponseModuleBehavior(unittest.TestCase):
                     lore_library=self.lore_library,
                     reference_manager=self.reference_manager,
                     text_response_provider=self.provider,
+                    decision_provider=self.decisions,
                 )
                 instruction = module._build_responder_instruction()
                 self.assertEqual("**Dice Results**" in instruction, enabled)
@@ -887,12 +906,14 @@ class TestStoryResponseModulePlayerCharacter(unittest.TestCase):
         self.canvas.notepad = self.notepad
         self.provider = MagicMock(spec=TextResponseProvider)
         self.reference_manager = MagicMock(spec=ReferenceManager)
+        self.decision_provider = MagicMock(spec=DecisionProvider)
         self.module = StoryResponseModule(
             theater=self.theater,
             canvas_manager=self.canvas,
             lore_library=self.lore_library,
             reference_manager=self.reference_manager,
             text_response_provider=self.provider,
+            decision_provider=self.decision_provider,
         )
 
     def test_delegates_player_character_management(self) -> None:
@@ -990,12 +1011,14 @@ class TestResponderInstructionAndTurnPrompt(unittest.TestCase):
         self.canvas.notepad = self.notepad
         self.provider = MagicMock(spec=TextResponseProvider)
         self.reference_manager = MagicMock(spec=ReferenceManager)
+        self.decision_provider = MagicMock(spec=DecisionProvider)
         self.module = StoryResponseModule(
             theater=self.theater,
             canvas_manager=self.canvas,
             lore_library=self.lore_library,
             reference_manager=self.reference_manager,
             text_response_provider=self.provider,
+            decision_provider=self.decision_provider,
         )
 
     def test_instruction_maximizes_prefix_and_excludes_state_variables(self) -> None:
@@ -1122,7 +1145,7 @@ class TestStoryResponseLoreDecisionProvider(unittest.TestCase):
         self.reference_manager.get_present_characters.return_value = []
         self.reference_manager.get_player_character.return_value = None
         self.provider = MagicMock(spec=TextResponseProvider)
-        self.provider = MagicMock(spec=TextResponseProvider)
+        self.decision_provider = MagicMock(spec=DecisionProvider)
 
         self.module = StoryResponseModule(
             theater=self.theater,
@@ -1130,6 +1153,7 @@ class TestStoryResponseLoreDecisionProvider(unittest.TestCase):
             lore_library=self.lore_library,
             reference_manager=self.reference_manager,
             text_response_provider=self.provider,
+            decision_provider=self.decision_provider,
         )
 
     def test_collect_relevant_lore_reviews_sticky_state_and_action(self) -> None:
@@ -1236,6 +1260,17 @@ class TestStoryResponseLoreDecisionProvider(unittest.TestCase):
             relevant_lore="Arch lore excerpt",
         )
         self.assertIn("# Relevant Lore Context\nArch lore excerpt", prompt)
+
+    def test_decision_provider_is_required(self) -> None:
+        with self.assertRaisesRegex(ValueError, "decision_provider is required"):
+            StoryResponseModule(
+                theater=self.theater,
+                canvas_manager=self.canvas_manager,
+                lore_library=self.lore_library,
+                reference_manager=self.reference_manager,
+                text_response_provider=self.provider,
+                decision_provider=None,  # type: ignore[arg-type]
+            )
 
 
 if __name__ == "__main__":

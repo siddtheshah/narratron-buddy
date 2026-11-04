@@ -303,8 +303,8 @@ class StoryResponseModule:
         lore_library: LoreLibrary,
         reference_manager: ReferenceManager,
         text_response_provider: TextResponseProvider,
+        decision_provider: DecisionProvider,
         recording_journal: StoryRecordingJournal | None = None,
-        decision_provider: Optional[DecisionProvider] = None,
     ) -> None:
         if canvas_manager is None:
             raise ValueError("canvas_manager is required.")
@@ -317,6 +317,8 @@ class StoryResponseModule:
             raise ValueError("reference_manager is required.")
         if text_response_provider is None:
             raise ValueError("text_response_provider is required.")
+        if decision_provider is None:
+            raise ValueError("decision_provider is required.")
 
         self.theater = theater
         self.canvas_manager = canvas_manager
@@ -331,7 +333,7 @@ class StoryResponseModule:
 
         self.lore_library = lore_library
         self.recording_journal = recording_journal
-        self._decision_provider: Optional[DecisionProvider] = decision_provider
+        self._decision_provider = decision_provider
         self.reference_manager = reference_manager
         if self.reference_manager.story_state is None and self.canvas_manager is not None:
             self.reference_manager.story_state = self.canvas_manager.story
@@ -976,8 +978,6 @@ class StoryResponseModule:
         """Prepare context with decisions, then request exactly one scene delta."""
         started = time.perf_counter()
         self.reset_lore_call_counts()
-        if self._decision_provider is None:
-            self._decision_provider = TextResponseDecisionProvider(self.text_response_provider)
         prompt = self._build_responder_turn_prompt(user_action, nudge=nudge)
         # Freeze the exact context before recording new reads. They must neither
         # duplicate lore in this prompt nor evict a document we decided to reuse.

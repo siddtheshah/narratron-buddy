@@ -370,11 +370,20 @@ def create_tool_bundle_for_session(
     tools.extend([reference_tools.list_references, reference_tools.search_references])
 
     if adventure_mode:
+        decision_provider_id = str(story_planning_config.get("decision_provider") or "openai-decisions")
+        try:
+            from providers.registry import get_decision_provider
+            decision_provider = get_decision_provider(decision_provider_id)
+        except Exception as exc:
+            logger.warning("[LiveAgent] Could not initialize decision provider %s: %s", decision_provider_id, exc)
+            from providers.text_response_decision_provider import TextResponseDecisionProvider
+            decision_provider = TextResponseDecisionProvider(story_planning_text_provider)
         story_planning_tools = StoryTool(
             theater,
             canvas_manager=canvas_manager,
             text_response_provider=story_planning_text_provider,
             reference_manager=reference_manager,
+            decision_provider=decision_provider,
             lore_library=lore_library,
         )
         tools.append(story_planning_tools.process_user_action)

@@ -494,6 +494,14 @@ class AdventureSession:
             str(sp_config.get("text_provider", "gemini-3")),
             {"model": planner_model_name},
         )
+        decision_provider_id = str(sp_config.get("decision_provider") or "openai-decisions")
+        try:
+            from providers.registry import get_decision_provider
+            story_planning_decision_provider = get_decision_provider(decision_provider_id)
+        except Exception as exc:
+            logger.warning("[AdventureRunner] Could not initialize decision provider %s: %s", decision_provider_id, exc)
+            from providers.text_response_decision_provider import TextResponseDecisionProvider
+            story_planning_decision_provider = TextResponseDecisionProvider(story_planning_text_provider)
         theater = self.theater_manager.theater(self.session_id)
         canvas_manager = self.canvas_state_service.get(self.session_id)
         self.game = canvas_manager.game
@@ -508,6 +516,7 @@ class AdventureSession:
                 canvas_manager=canvas_manager,
                 text_response_provider=story_planning_text_provider,
                 reference_manager=reference_manager,
+                decision_provider=story_planning_decision_provider,
             )
             if bool(sp_config.get("adventure_mode", False))
             else NotepadTool(theater, canvas_manager=canvas_manager)

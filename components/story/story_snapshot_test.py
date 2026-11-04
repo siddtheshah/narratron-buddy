@@ -1,3 +1,4 @@
+from providers import DecisionProvider
 import pytest
 from unittest.mock import MagicMock
 from pathlib import Path
@@ -132,6 +133,7 @@ def test_story_tool_creates_snapshot_and_diff(tmp_path: Path, request: pytest.Fi
         canvas_manager=canvas_manager,
         text_response_provider=MagicMock(),
         reference_manager=ref_mgr,
+        decision_provider=MagicMock(spec=DecisionProvider),
     )
 
     request.addfinalizer(tool.close)
