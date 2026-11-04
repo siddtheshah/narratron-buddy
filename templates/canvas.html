@@ -6584,28 +6584,7 @@
             socket.onerror = () => socket.close();
             socket.onmessage = (event) => {
                 const data = JSON.parse(event.data);
-                if (data.type === 'theater_characters_updated') {
-                    cachedTheaterCharacters = data.characters || [];
-                    preloadItemImages(cachedTheaterCharacters);
-                    if (isStampManagerOpen && activeStampManagerTab === 'characters') renderCharactersManagerGrid(cachedTheaterCharacters);
-                    return;
-                }
-                if (data.type === 'theater_playlists_updated' || data.type === 'theater_animations_updated') {
-                    const tab = data.type === 'theater_playlists_updated' ? 'playlists' : 'animations';
-                    if (isStampManagerOpen && activeStampManagerTab === tab) loadExtraAssets(tab);
-                    return;
-                }
-                if (data.type === 'theater_scenes_updated') {
-                    cachedTheaterScenes = data.scenes || [];
-                    preloadItemImages(cachedTheaterScenes);
-                    if (isStampManagerOpen && activeStampManagerTab === 'scenes') renderScenesManagerGrid(cachedTheaterScenes);
-                    return;
-                }
-                if (data.type === 'theater_stamps_updated') {
-                    cachedTheaterStamps = data.stamps || [];
-                    if (isStampManagerOpen) renderStampManagerGrid(cachedUserStamps || []);
-                    return;
-                }
+                if (typeof handleDoodleSocketData === 'function' && handleDoodleSocketData(data)) return;
                 if (data.page_id && displayedDoodlePageId && data.page_id !== displayedDoodlePageId) return;
                 if (data.type === 'doodles_toggle') {
                     setDoodlesDisplay(data.enabled);
@@ -8279,6 +8258,33 @@
             });
         }
 
+        function handleDoodleSocketData(data) {
+            if (!data || typeof data !== 'object') return false;
+            if (data.type === 'theater_characters_updated') {
+                cachedTheaterCharacters = data.characters || [];
+                preloadItemImages(cachedTheaterCharacters);
+                if (isStampManagerOpen && activeStampManagerTab === 'characters') renderCharactersManagerGrid(cachedTheaterCharacters);
+                return true;
+            }
+            if (data.type === 'theater_playlists_updated' || data.type === 'theater_animations_updated') {
+                const tab = data.type === 'theater_playlists_updated' ? 'playlists' : 'animations';
+                if (isStampManagerOpen && activeStampManagerTab === tab) loadExtraAssets(tab);
+                return true;
+            }
+            if (data.type === 'theater_scenes_updated') {
+                cachedTheaterScenes = data.scenes || [];
+                preloadItemImages(cachedTheaterScenes);
+                if (isStampManagerOpen && activeStampManagerTab === 'scenes') renderScenesManagerGrid(cachedTheaterScenes);
+                return true;
+            }
+            if (data.type === 'theater_stamps_updated') {
+                cachedTheaterStamps = data.stamps || [];
+                if (isStampManagerOpen) renderStampManagerGrid(cachedUserStamps || []);
+                return true;
+            }
+            return false;
+        }
+
         const extraAssetPanels = {
             playlists: document.getElementById('playlists-manager'),
             animations: document.getElementById('animations-manager'),
@@ -8722,8 +8728,9 @@
                 if (cachedTheaterScenes) {
                     renderScenesManagerGrid(cachedTheaterScenes);
                     preloadItemImages(cachedTheaterScenes);
+                } else {
+                    loadTheaterScenes();
                 }
-                loadTheaterScenes();
             } else if (tab === 'characters') {
                 if (stampManagerPermissionBanner) stampManagerPermissionBanner.style.display = 'none';
                 if (stampManagerGrid) stampManagerGrid.style.display = 'none';
@@ -8744,8 +8751,9 @@
                 if (cachedTheaterCharacters) {
                     renderCharactersManagerGrid(cachedTheaterCharacters);
                     preloadItemImages(cachedTheaterCharacters);
+                } else {
+                    loadTheaterCharacters();
                 }
-                loadTheaterCharacters();
             }
         }
 

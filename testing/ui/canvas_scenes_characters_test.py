@@ -1061,6 +1061,10 @@ def test_scene_generation_pending_cards_and_overlapping_jobs(
     expect(page.locator('.scene-card-generating')).to_have_count(2)
     expect(page.locator('#scene-generation-status')).to_contain_text('2 scenes generating')
     expect(page.locator('#stamp-manager-count')).to_contain_text('2 generating')
+    for _ in range(50):
+        if len(jobs) == 2:
+            break
+        page.wait_for_timeout(50)
     assert len(jobs) == 2
     # A newer snapshot can arrive before the response to the first request.
     scenes = [{"id": "island", "name": "Island kingdom"}]
@@ -1080,4 +1084,83 @@ def test_scene_generation_pending_cards_and_overlapping_jobs(
     expect(page.locator('#scenes-manager-grid .scene-card')).to_have_count(2 if older_succeeds else 1)
     expect(prompt).to_have_value('Next scene draft')
     expect(page.locator('#scene-generation-form')).to_have_attribute('aria-busy', 'false')
+
+
+def test_websocket_characters_and_scenes_update_active_and_background_tabs(
+    scenes_chars_page: Page,
+) -> None:
+    page = scenes_chars_page
+
+    def serve_empty_characters(route: Route) -> None:
+        route.fulfill(json=[])
+
+    page.route("**/api/theaters/*/characters", serve_empty_characters)
+    page.evaluate("applyRoleUI(true); setStampManagerOpen(true); switchStampManagerTab('characters')")
+    expect(page.locator('#characters-manager-grid .character-card')).to_have_count(0)
+
+    # 1. Active characters tab: receiving theater_characters_updated renders immediately
+    page.evaluate("""
+        handleDoodleSocketData({
+            type: 'theater_characters_updated',
+            characters: [
+                { id: 'elena', name: 'Elena', description: 'Brave warrior', image_url: 'http://narratron.test/img/elena.png' },
+                { id: 'rowan', name: 'Rowan', description: 'Swift scout', image_url: 'http://narratron.test/img/rowan.png' }
+            ]
+        })
+    """)
+    expect(page.locator('#characters-manager-grid .character-card')).to_have_count(2)
+    expect(page.locator('#characters-manager-grid .character-card').first).to_contain_text('Elena')
+
+    # 2. Switch to scenes tab: receiving theater_scenes_updated renders immediately
+    page.evaluate("switchStampManagerTab('scenes')")
+    expect(page.locator('#scenes-manager-grid .scene-card')).to_have_count(0)
+    page.evaluate("""
+        handleDoodleSocketData({
+            type: 'theater_scenes_updated',
+            scenes: [
+                { id: 'mountain_pass', name: 'Mountain Pass', description: 'Snowy trail', image_url: 'http://narratron.test/img/mountain.png' }
+            ]
+        })
+    """)
+    expect(page.locator('#scenes-manager-grid .scene-card')).to_have_count(1)
+    expect(page.locator('#scenes-manager-grid .scene-card').first).to_contain_text('Mountain Pass')
+
+    # 3. Background tab update: receiving theater_characters_updated while on scenes tab caches update
+    page.evaluate("""
+        handleDoodleSocketData({
+            type: 'theater_characters_updated',
+            characters: [
+                { id: 'elena', name: 'Elena', description: 'Brave warrior', image_url: 'http://narratron.test/img/elena.png' },
+                { id: 'rowan', name: 'Rowan', description: 'Swift scout', image_url: 'http://narratron.test/img/rowan.png' },
+                { id: 'val', name: 'Val', description: 'Wise mage', image_url: 'http://narratron.test/img/val.png' }
+            ]
+        })
+    """)
+    # Still 1 scene displayed
+    expect(page.locator('#scenes-manager-grid .scene-card')).to_have_count(1)
+
+    # Switching to characters tab shows the updated 3 characters immediately from cache
+    page.locator('#stamp-tab-characters').click()
+    expect(page.locator('#characters-manager-grid .character-card')).to_have_count(3)
+
+
+def test_websocket_animations_updated_reloads_animations_panel(
+    scenes_chars_page: Page,
+) -> None:
+    page = scenes_chars_page
+    anim_list: list[dict[str, str]] = [
+        {"id": "storm", "name": "Storm", "description": "Rolling storm", "type": "video", "url": ""}
+    ]
+
+    def serve_animations(route: Route) -> None:
+        route.fulfill(json=anim_list)
+
+    page.route('**/api/theaters/*/animations', serve_animations)
+    page.evaluate("applyRoleUI(true); setStampManagerOpen(true); switchStampManagerTab('animations')")
+    expect(page.locator('#animations-manager .asset-push-button')).to_have_count(1)
+
+    # Agent generates a new animation; update route and send WebSocket notification
+    anim_list.append({"id": "campfire", "name": "Campfire", "description": "Flickering flames", "type": "video", "url": ""})
+    page.evaluate("handleDoodleSocketData({ type: 'theater_animations_updated' })")
+    expect(page.locator('#animations-manager .asset-push-button')).to_have_count(2)
 

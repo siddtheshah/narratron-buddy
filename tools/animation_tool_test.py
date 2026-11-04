@@ -1997,6 +1997,7 @@ class TestAnimationTools(BaseTestCase):
             model="test",
         )
         canvas_mock = MagicMock()
+        canvas_mock.visual.pinned = False
         theater = self.manager.theater("notify_test")
         theater.manager.get_theater_config = MagicMock(return_value={
             "visuals": {},
