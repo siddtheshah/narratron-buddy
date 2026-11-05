@@ -81,4 +81,62 @@ def test_html_panel_binding_actions_permissions_and_network_isolation(tmp_path: 
         assert game.state == {"count": 1}
         page.evaluate("window.editable = false; renderer.render()")
         expect(frame.get_by_role("button", name="Add one")).to_be_disabled()
+
+        # Default sizing (no author width/height specified): 510px panel width, 430px iframe height
+        page.set_viewport_size({"width": 1280, "height": 1000})
+        panel_box = page.locator(".game-panel").bounding_box()
+        frame_box = page.locator("iframe.game-html-panel").bounding_box()
+        assert panel_box is not None and frame_box is not None
+        assert round(panel_box["width"]) == 510
+        assert round(frame_box["height"]) == 430
+
+        # Author-controlled sizing within limits (e.g. 620px width, 540px height)
+        page.evaluate("""() => {
+            window.renderer.render({
+                definition_hash: 'custom-size',
+                revision: 2,
+                state: {count: 1},
+                panel_html: '<!doctype html><html><head><style>body { width: 620px; height: 540px; }</style></head><body><p data-panel-text="count"></p></body></html>',
+                view: [{kind: 'column', props: {count: 1}, children: []}],
+            });
+        }""")
+        expect(frame.locator("p")).to_have_text("1")
+        custom_panel = page.locator(".game-panel").bounding_box()
+        custom_frame = page.locator("iframe.game-html-panel").bounding_box()
+        assert custom_panel is not None and custom_frame is not None
+        assert round(custom_panel["width"]) == 620
+        assert round(custom_frame["height"]) == 540
+
+        # Extreme author sizes are clamped to host bounds (max 960px width / 780px height, min 280px width / 220px height)
+        page.evaluate("""() => {
+            window.renderer.render({
+                definition_hash: 'oversized',
+                revision: 3,
+                state: {count: 1},
+                panel_html: '<!doctype html><html><head><style>body { width: 2400px; height: 2000px; }</style></head><body><p data-panel-text="count"></p></body></html>',
+                view: [{kind: 'column', props: {count: 1}, children: []}],
+            });
+        }""")
+        expect(frame.locator("p")).to_have_text("1")
+        oversized_panel = page.locator(".game-panel").bounding_box()
+        oversized_frame = page.locator("iframe.game-html-panel").bounding_box()
+        assert oversized_panel is not None and oversized_frame is not None
+        assert round(oversized_panel["width"]) == 960
+        assert round(oversized_frame["height"]) == 780
+
+        page.evaluate("""() => {
+            window.renderer.render({
+                definition_hash: 'undersized',
+                revision: 4,
+                state: {count: 1},
+                panel_html: '<!doctype html><html><head><style>body { width: 80px; height: 60px; }</style></head><body><p data-panel-text="count"></p></body></html>',
+                view: [{kind: 'column', props: {count: 1}, children: []}],
+            });
+        }""")
+        expect(frame.locator("p")).to_have_text("1")
+        undersized_panel = page.locator(".game-panel").bounding_box()
+        undersized_frame = page.locator("iframe.game-html-panel").bounding_box()
+        assert undersized_panel is not None and undersized_frame is not None
+        assert round(undersized_panel["width"]) == 280
+        assert round(undersized_frame["height"]) == 220
         browser.close()

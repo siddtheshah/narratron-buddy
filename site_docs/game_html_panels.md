@@ -84,7 +84,7 @@ The browser renders the validated HTML in a sandboxed iframe with an opaque
 origin. Its content security policy permits data images while blocking other
 resource types, network connections, base URL changes, and form submissions.
 Inline CSS is allowed; CSS imports, fonts, and remote background images cannot
-load resources. Only a host-generated,
+load resources. Game authors can control panel sizing by setting `width` / `max-width` / `--panel-width` and `height` / `min-height` / `--panel-height` on `:root`, `html`, or `body` in `panel.html`; the host clamps width to 280px–960px (and viewport bounds) and height to 220px–780px (defaulting to 510px × 430px). Only a host-generated,
 nonce-authorized binding/action bridge executes JavaScript. Authored JavaScript
 is unsupported. Panel parameters are JSON data and are never interpolated as
 markup. Changes to panel HTML change the package identity, invalidating saved

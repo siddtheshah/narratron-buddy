@@ -42,6 +42,8 @@
 .game-button.game-submit-ready:hover:enabled { background: #fb923c; }
 .game-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .game-panel:has([data-game-layout="sidebar"]) { width: min(900px, 92vw, 140vh); }
+.game-panel:has(.game-html-panel) { width: min(var(--game-panel-width, 510px), 92vw); min-width: min(280px, 88vw); max-width: min(960px, 92vw); max-height: 88vh; }
+.game-html-panel { display: block; width: 100%; height: clamp(220px, var(--game-panel-height, 430px), calc(88vh - 40px)); min-height: 220px; max-height: calc(88vh - 40px); border: 0; }
 .game-row[data-game-layout="sidebar"] { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); align-items: start; gap: 20px; }
 .game-row[data-game-layout="sidebar"] > .game-column > .game-row { flex-wrap: wrap; }
 .game-grid { display: grid; width: 100%; }
@@ -52,7 +54,7 @@
 .game-svg:not([width]) { width: 100%; }
 .game-message { color: #b9c6d8; font-size: .8rem; }
 .game-error { color: #fca5a5; font-size: .85rem; }
-@media (max-width: 600px) { .game-panel { padding: 10px; width: min(88vw, 66vh); } }
+@media (max-width: 600px) { .game-panel { padding: 10px; width: min(88vw, 66vh); } .game-panel:has(.game-html-panel) { width: min(var(--game-panel-width, 510px), 88vw); } }
 @media (max-width: 600px) {
     .game-panel:has([data-game-layout="sidebar"]) { width: 92vw; }
     .game-row[data-game-layout="sidebar"] { grid-template-columns: minmax(0, 1fr); gap: 12px; }

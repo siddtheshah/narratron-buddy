@@ -389,6 +389,8 @@ export function createGameRenderer({ container, toggleButton, actionUrl, canEdit
             }
             panelFrame = createPanelFrame(game.panel_html, root?.props || {},
                 Object.fromEntries([...panelActions].map(([id, action]) => [id, !pending && canAct(action)])));
+            if (panelFrame.dataset.panelWidth) panel.style.setProperty('--game-panel-width', panelFrame.dataset.panelWidth);
+            if (panelFrame.dataset.panelHeight) panel.style.setProperty('--game-panel-height', panelFrame.dataset.panelHeight);
             panel.append(panelFrame);
         } else {
             (currentView() || []).forEach((node, index) => panel.append(nodeView(node, 0, String(index))));
