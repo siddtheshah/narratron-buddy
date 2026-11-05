@@ -211,7 +211,7 @@ discards private exploration; other viewers see only committed state.
 
 ## Rendering language
 
-Nodes support `column`, `row`, `grid`, `tabs`, `text`, `button`, `svg`, `g`, `path`,
+Nodes support `column`, `row`, `grid`, `tabs`, `text`, `button`, `form`, `input`, `svg`, `g`, `path`,
 `rect`, `circle`, `ellipse`, `line`, `polyline`, `polygon`, `svg_text`, `tspan`,
 `defs`, `linearGradient`, `radialGradient`, `stop`, `clipPath`, `mask`, and
 `symbol`. Each node has CEL-valued `props` and optional `children`.
@@ -249,6 +249,58 @@ Disabled buttons are a UI aid; the server always validates the submitted action
 and guard independently. The renderer uses text nodes and an allowlist of tags,
 attributes and styles. It never evaluates theater JavaScript, inserts theater
 HTML, loads theater CSS or evaluates CEL in the browser.
+
+### Text and number entry
+
+Structured views can submit typed values through a `form` node's action. Put
+`input` nodes inside it with a `name` prop matching a transition parameter. A
+button without its own action submits the enclosing form, as does Enter in an
+input. Buttons with their own actions retain their usual behavior. For example:
+
+```yaml
+view:
+  kind: form
+  props: {label: '"Add combatant"'}
+  action: {name: '"add_combatant"', arguments: '{"team": "party"}'}
+  children:
+    - kind: input
+      props:
+        name: '"name"'
+        label: '"Combatant name"'
+        required: 'true'
+        maxLength: '60'
+    - kind: input
+      props:
+        name: '"initiative"'
+        type: '"number"'
+        label: '"Initiative total"'
+        value: '10'
+        required: 'true'
+        min: '-100'
+        max: '100'
+        step: '1'
+    - kind: button
+      props: {text: '"Add combatant"'}
+```
+
+Inputs support `type` (`text`, the default, or `number`), `name`, `label`, `value`,
+`placeholder`, `required`, `disabled`, `maxLength`, `min`, `max`, and `step`.
+Labels are displayed and exposed to assistive technology. Number fields submit
+JSON numbers; text fields submit strings. Named enabled inputs override matching
+keys in the form action's static arguments. The action name and permissions come
+from the rendered form. Inputs are local until submission; they do not mutate
+shared state, and new committed revisions discard unsaved values. All normal
+permission, revision, schema, guard, and invariant checks still apply.
+
+The browser caps text fields at **1,000 characters**, even if an authored
+`maxLength` is larger or omitted. The server independently rejects action
+argument strings longer than 1,000 characters, including nested values, mapping
+keys, and draft steps. Authors should set tighter JSON Schema `maxLength` limits
+where appropriate (for example, 60-character names). Browser validation is a
+usability aid; the transition's parameter schema must enforce its field types,
+required fields, and bounds. Text renders as text, never HTML or CEL source.
+This input contract applies to structured views; passive HTML panels retain
+their existing restrictions.
 
 CEL view expressions execute on the server when state changes. The browser gets
 the materialized view, not raw state or rules, and can render it repeatedly

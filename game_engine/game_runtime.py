@@ -9,7 +9,7 @@ from pathlib import Path, PurePosixPath
 import random
 import re
 from time import monotonic
-from typing import Literal, TypeVar
+from typing import Annotated, Literal, TypeVar, Union
 import xml.etree.ElementTree as ET
 
 from celpy import Environment, Runner, celtypes
@@ -17,8 +17,8 @@ from celpy.adapter import json_to_cel
 from celpy.evaluation import Activation, CELEvalError, Evaluator, Result, bool_eq, bool_ne
 from jsonschema import Draft202012Validator
 from lark import Token, Tree
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, ValidationError, field_validator, model_validator
-from typing_extensions import Self
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, StringConstraints, TypeAdapter, ValidationError, field_validator, model_validator
+from typing_extensions import Self, TypeAliasType
 from game_engine.canvas_contract import CanvasAPI, CanvasSnapshot, canonical_key
 from game_engine.game_values import MAX_VALUE_BYTES, checked_json
 from game_engine.game_source import game_source_json
@@ -39,6 +39,13 @@ BOOL_ADAPTER = TypeAdapter(bool)
 STRING_ADAPTER = TypeAdapter(str)
 MAP_ADAPTER = TypeAdapter(dict[str, JsonValue])
 LIST_ADAPTER = TypeAdapter(list[JsonValue])
+MAX_ACTION_STRING_LENGTH = 1000
+ActionString = Annotated[str, StringConstraints(max_length=MAX_ACTION_STRING_LENGTH)]
+BoundedActionValue = TypeAliasType(
+    "BoundedActionValue",
+    Union[ActionString, int, float, bool, None, list["BoundedActionValue"], dict[ActionString, "BoundedActionValue"]],
+)
+ACTION_ARGUMENTS_ADAPTER = TypeAdapter(dict[ActionString, BoundedActionValue])
 
 SVG_NAMESPACE = "http://www.w3.org/2000/svg"
 ALLOWED_SVG_TAGS = {
@@ -141,7 +148,7 @@ class KeyboardDefinition(GameModel):
 
 class ViewNode(GameModel):
     kind: Literal[
-        "column", "row", "grid", "tabs", "text", "button",
+        "column", "row", "grid", "tabs", "text", "button", "form", "input",
         "svg", "g", "path", "rect", "circle", "ellipse", "line", "polyline", "polygon", "svg_text", "image",
     ]
     props: dict[str, str] = Field(default_factory=dict, max_length=24)
@@ -200,6 +207,13 @@ class GameDefinition(GameModel):
 class GameStep(GameModel):
     name: str = Field(min_length=1, max_length=80)
     arguments: dict[str, JsonValue] = Field(default_factory=dict)
+
+    @field_validator("arguments")
+    @classmethod
+    def bound_argument_strings(cls, value: dict[str, JsonValue]) -> dict[str, JsonValue]:
+        """Bound every input string, including nested values and mapping keys."""
+        ACTION_ARGUMENTS_ADAPTER.validate_python(value, strict=True)
+        return value
 
 
 class GameAction(GameStep):

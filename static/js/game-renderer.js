@@ -2,7 +2,7 @@
 import { createLocalGame } from './game-runtime.js?v=1';
 import { createPanelFrame } from './game-panel.js?v=2';
 const TAGS = {
-    column: 'div', row: 'div', grid: 'div', tabs: 'div', text: 'p', button: 'button',
+    column: 'div', row: 'div', grid: 'div', tabs: 'div', text: 'p', button: 'button', form: 'form', input: 'input',
     svg: 'svg', g: 'g', path: 'path', rect: 'rect', circle: 'circle', ellipse: 'ellipse',
     line: 'line', polyline: 'polyline', polygon: 'polygon', svg_text: 'text', tspan: 'tspan',
     defs: 'defs', linearGradient: 'linearGradient', radialGradient: 'radialGradient',
@@ -29,7 +29,7 @@ let rendererSequence = 0;
 export function createGameRenderer({ container, toggleButton, actionUrl, canEdit,
     canContribute = () => false, refresh,
     canMove = () => canEdit() || canContribute(),
-    stylesheetUrl = '/static/css/game-renderer.css?v=10', initiallyOpen = false,
+    stylesheetUrl = '/static/css/game-renderer.css?v=11', initiallyOpen = false,
     beforeOpen = async () => {}, onPendingChange = () => {}, onMove = () => {} }) {
     const stylesheet = document.createElement('link');
     stylesheet.rel = 'stylesheet';
@@ -58,6 +58,7 @@ export function createGameRenderer({ container, toggleButton, actionUrl, canEdit
     let draftViews = [];
     let draftPermission = '';
     const selectedTabs = new Map();
+    const inputValues = new Map();
     const rendererId = `game-renderer-${++rendererSequence}`;
     let panelFrame = null;
     let panelActions = new Map();
@@ -161,6 +162,7 @@ export function createGameRenderer({ container, toggleButton, actionUrl, canEdit
             if (!response.ok) throw new Error(typeof result.detail === 'string' ? result.detail : 'Action rejected.');
             if (game?.definition_hash === definitionHash && result.revision >= game.revision) {
                 game = result;
+                inputValues.clear();
                 clearDraft();
             }
         } catch (failure) {
@@ -174,7 +176,7 @@ export function createGameRenderer({ container, toggleButton, actionUrl, canEdit
         }
     }
 
-    function nodeView(node, depth = 0, path = '0') {
+    function nodeView(node, depth = 0, path = '0', formAction = null) {
         if (!Object.hasOwn(TAGS, node.kind) || depth > 12) return document.createTextNode('');
         const element = SVG.has(node.kind)
             ? document.createElementNS('http://www.w3.org/2000/svg', TAGS[node.kind])
@@ -205,11 +207,48 @@ export function createGameRenderer({ container, toggleButton, actionUrl, canEdit
             element.style.gridTemplateColumns = `repeat(${Math.floor(columns)}, minmax(0, 1fr))`;
         }
         if (node.kind === 'button') {
-            element.type = 'button';
+            element.type = formAction && !node.action ? 'submit' : 'button';
             const awaitingCommit = draft.length && game.client.transitions[draft[draft.length - 1].name].triggering;
-            element.disabled = pending || Boolean(awaitingCommit) || !canAct(node.action) || Boolean(props.disabled) || !node.action;
+            element.disabled = pending || Boolean(awaitingCommit) || !canAct(node.action || formAction) || Boolean(props.disabled);
             if (node.action?.permission) element.dataset.gamePermission = String(node.action.permission);
             if (node.action) element.addEventListener('click', () => send(node.action));
+        }
+        if (node.kind === 'input') {
+            element.type = props.type === 'number' ? 'number' : 'text';
+            element.name = String(props.name || '');
+            element.value = inputValues.get(path) ?? String(props.value ?? '');
+            element.addEventListener('input', () => inputValues.set(path, element.value));
+            element.placeholder = String(props.placeholder || '');
+            element.required = Boolean(props.required);
+            for (const key of ['min', 'max', 'step']) {
+                if (props[key] !== undefined) element[key] = props[key];
+            }
+            const maxLength = Number(props.maxLength ?? 1000);
+            element.maxLength = Number.isFinite(maxLength) ? Math.max(0, Math.min(1000, Math.floor(maxLength))) : 1000;
+            element.disabled = pending || !canAct(formAction) || Boolean(props.disabled);
+        }
+        if (node.kind === 'form') {
+            formAction = node.action;
+            element.setAttribute('aria-label', String(props.label || 'Game action'));
+            element.addEventListener('submit', event => {
+                event.preventDefault();
+                event.stopPropagation();
+                if (!canAct(node.action) || !element.reportValidity()) return;
+                const argumentsMap = { ...node.action.arguments };
+                for (const input of element.querySelectorAll('input')) {
+                    if (input.closest('form') !== element || input.disabled || !input.name) continue;
+                    const value = input.type === 'number' ? input.valueAsNumber : input.value;
+                    if (typeof value === 'string' && value.length > Math.min(1000, input.maxLength)) {
+                        input.setCustomValidity('Text exceeds the input length limit.');
+                        input.reportValidity();
+                        input.addEventListener('input', () => input.setCustomValidity(''), {once: true});
+                        return;
+                    }
+                    if (input.type === 'number' && !Number.isFinite(value)) return;
+                    Object.defineProperty(argumentsMap, input.name, {value, enumerable: true, configurable: true});
+                }
+                send({ ...node.action, arguments: argumentsMap });
+            });
         }
         if (node.kind === 'tabs') {
             const key = String(props.id || path);
@@ -251,7 +290,7 @@ export function createGameRenderer({ container, toggleButton, actionUrl, canEdit
                 });
                 const panel = document.createElement('div');
                 panel.className = 'game-node game-tab-panel';
-                panel.append(nodeView(child, depth + 1, `${path}-${index}`));
+                panel.append(nodeView(child, depth + 1, `${path}-${index}`, formAction));
                 panel.id = `${id}-panel`;
                 panel.setAttribute('role', 'tabpanel');
                 panel.setAttribute('aria-labelledby', button.id);
@@ -263,7 +302,15 @@ export function createGameRenderer({ container, toggleButton, actionUrl, canEdit
             element.append(tablist, ...panels);
             activate(Math.min(selectedTabs.get(key) || 0, Math.max(0, children.length - 1)));
         } else {
-            (node.children || []).forEach((child, index) => element.append(nodeView(child, depth + 1, `${path}-${index}`)));
+            (node.children || []).forEach((child, index) => element.append(nodeView(child, depth + 1, `${path}-${index}`, formAction)));
+        }
+        if (node.kind === 'input' && props.label) {
+            const label = document.createElement('label');
+            label.className = 'game-input-field';
+            const caption = document.createElement('span');
+            caption.textContent = String(props.label);
+            label.append(caption, element);
+            return label;
         }
         return element;
     }
@@ -446,6 +493,7 @@ export function createGameRenderer({ container, toggleButton, actionUrl, canEdit
             if (nextSignature === signature) return;
             signature = nextSignature;
             const changed = target?.definition_hash !== game?.definition_hash || target?.revision !== game?.revision;
+            if (changed) inputValues.clear();
             // Polling, permission changes and placement updates are not new game actions.
             // The first payload establishes the baseline; subsequent revisions signal updates.
             if (!target) {

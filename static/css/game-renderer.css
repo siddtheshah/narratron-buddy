@@ -29,6 +29,13 @@
 .game-move.dragging, .game-panel .a2ui-move.dragging { cursor: grabbing; background: #581c87; }
 .game-node { box-sizing: border-box; min-width: 0; margin: 0; }
 .game-column { display: flex; flex-direction: column; gap: 8px; }
+.game-form { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.game-input-field { display: flex; flex: 1 1 100px; flex-direction: column; gap: 4px; font-size: .8rem; }
+.game-form > .game-text { flex-basis: 100%; }
+.game-input { width: 100%; padding: 10px; border: 1px solid #52647b; border-radius: 6px; background: #0d1626; color: #eef3fb; font: inherit; }
+.game-form > .game-input { flex: 1 1 100px; }
+.game-input:focus-visible { outline: 2px solid #67e8f9; outline-offset: 2px; }
+.game-input:disabled { opacity: .6; }
 .game-tabs { display: flex; flex-direction: column; gap: 14px; }
 .game-tabs > [hidden] { display: none; }
 .game-tab-panel { height: 220px; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; padding: 10px; border: 1px solid #52647b; border-radius: 8px; background: #0d1626; }
