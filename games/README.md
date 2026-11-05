@@ -21,7 +21,7 @@ games/<slug>/
 
 ## Example Game Package
 
-See [`example_game/`](./example_game/) for a complete reference game package (Crown & Corners Checkers) including `game/game.yaml`, `game/panel.html`, `game/crest.svg`, `stamps/crown.png`, and `game/game_test.py`.
+See [`example_game/`](./example_game/) for a complete reference game package (Tic-Tac-Toe) including `game/game.yaml`, `game/panel.html`, `game/crest.svg`, `stamps/crown.png`, and `game/game_test.py`.
 
 ## Syncing Games with GCS
 

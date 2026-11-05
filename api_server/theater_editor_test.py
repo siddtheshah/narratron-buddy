@@ -1507,7 +1507,7 @@ def test_games_catalog_and_attach_game_to_draft(builder: BuilderHarness) -> None
 
     game_detail = builder.client.get("/api/games/example-game")
     assert game_detail.status_code == 200
-    assert game_detail.json()["title"] == "Crown & Corners Checkers"
+    assert game_detail.json()["title"] == "Tic-Tac-Toe"
     assert game_detail.json()["has_panel"] is True
 
     cover_res = builder.client.get("/api/games/example-game/cover")
@@ -1561,6 +1561,6 @@ def test_games_catalog_and_attach_game_to_draft(builder: BuilderHarness) -> None
     state = object_registry.canvas_states.get(identifier)
     assert state.game.error == ""
     assert state.game.program is not None
-    assert state.game.state["board"].count(1) == 12
+    assert state.game.state["board"] == [0] * 9
 
 

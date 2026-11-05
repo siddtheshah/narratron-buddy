@@ -1,12 +1,12 @@
 {
   "id": "example-game",
-  "title": "Crown & Corners Checkers",
-  "description": "Classic American Checkers on an 8x8 board with mandatory jumps, multi-jump continuations, king crowning stamps on the canvas, and an HTML status panel.",
+  "title": "Tic-Tac-Toe",
+  "description": "Classic 3x3 Tic-Tac-Toe with an interactive HTML panel, Narratron AI turns, victory crown stamp rewards, and full state validation.",
   "author": "Narratron Creator",
   "genre": "Board Game / Strategy",
   "tags": [
     "Example",
-    "Checkers",
+    "Tic-Tac-Toe",
     "Board Game",
     "Strategy",
     "Canvas"
