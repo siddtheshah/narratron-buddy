@@ -39,7 +39,6 @@ from providers.decision_provider import (
 )
 from components.story.story_models import DEFAULT_STORY_PLANNING_STYLE
 from providers.text_response_provider import TextResponseProvider, TextResponseRequest
-from providers.text_response_decision_provider import TextResponseDecisionProvider
 
 
 # Compatibility import path.  The schema itself is owned by

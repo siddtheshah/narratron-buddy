@@ -32,6 +32,7 @@
 .game-form { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .game-input-field { display: flex; flex: 1 1 100px; flex-direction: column; gap: 4px; font-size: .8rem; }
 .game-form > .game-text { flex-basis: 100%; }
+.game-form > .game-column { flex: 1 0 100%; }
 .game-input { width: 100%; padding: 10px; border: 1px solid #52647b; border-radius: 6px; background: #0d1626; color: #eef3fb; font: inherit; }
 .game-form > .game-input { flex: 1 1 100px; }
 .game-input:focus-visible { outline: 2px solid #67e8f9; outline-offset: 2px; }

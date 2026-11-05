@@ -27,13 +27,14 @@ def test_form_text_numbers_bounds_and_permissions(tmp_path: Path) -> None:
             {"kind": "form", "props": {"label": '"Example form"'},
              "action": {"name": '"save"', "arguments": '{"number": 3}'}, "children": [
                  {"kind": "input", "props": {
-                     "name": '"text"', "label": '"Text"', "required": "true", "maxLength": "9000",
+                     "name": '"text"', "label": '"Text"', "labelHidden": "true", "required": "true", "maxLength": "9000",
                  }},
                  {"kind": "input", "props": {
                      "name": '"number"', "label": '"Number"', "type": '"number"',
                      "value": "0", "required": "true", "step": "1",
                  }},
                  {"kind": "button", "props": {"text": '"Save"'}},
+                 {"kind": "button", "props": {"text": '"Clear text"', "clearInputs": '{"text": ""}'}},
              ]},
         ]},
     })
@@ -71,6 +72,7 @@ def test_form_text_numbers_bounds_and_permissions(tmp_path: Path) -> None:
         page.goto("http://game.test/")
         text = page.get_by_label("Text", exact=True)
         expect(text).to_have_attribute("maxlength", "1000")
+        assert page.locator("label.game-input-field", has=text).count() == 0
         page.get_by_role("button", name="Save", exact=True).click()
         assert submissions == []
         entered = '<img src=x onerror="window.compromised=true">'
@@ -81,6 +83,12 @@ def test_form_text_numbers_bounds_and_permissions(tmp_path: Path) -> None:
         assert submissions[0].arguments == {"text": entered, "number": -2}
         assert page.locator("#root img").count() == 0
         assert page.evaluate("window.compromised === undefined")
+        text.fill("Draft text")
+        page.get_by_label("Number", exact=True).fill("5")
+        page.get_by_role("button", name="Clear text", exact=True).click()
+        expect(text).to_have_value("")
+        expect(page.get_by_label("Number", exact=True)).to_have_value("5")
+        assert len(submissions) == 1
         text.fill("x" * 1001)
         expect(text).to_have_value("x" * 1000)
         text.evaluate("input => { input.value = 'x'.repeat(1001); }")
@@ -89,4 +97,5 @@ def test_form_text_numbers_bounds_and_permissions(tmp_path: Path) -> None:
         page.evaluate("window.editable = false; renderer.render()")
         expect(text).to_be_disabled()
         expect(page.get_by_role("button", name="Save", exact=True)).to_be_disabled()
+        expect(page.get_by_role("button", name="Clear text", exact=True)).to_be_disabled()
         browser.close()

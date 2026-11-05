@@ -239,6 +239,9 @@ Supported properties:
   viewer, survives game updates, and works for read-only viewers. Arrow keys,
   Home and End navigate tabs. Give the tabs node a stable `id` if its position
   in the view can change; changing the game package resets the selection.
+  Optional numeric `panelHeight` sets the shared panel height in pixels (clamped
+  to 160–560px and 55vh); omitted values keep the default height. This allows
+  dense tables to show more rows while keeping tab switching stable.
 - SVG: `src` (relative `.svg` file in `game/`), `viewBox`, `preserveAspectRatio`, `x`, `y`, `x1`, `y1`, `x2`, `y2`, `dx`, `dy`, `width`, `height`, `cx`, `cy`, `r`, `rx`, `ry`, `d`, `points`, `fill`, `fill-opacity`, `fill-rule`, `stroke`, `stroke-width`, `stroke-opacity`, `stroke-linecap`, `stroke-linejoin`, `stroke-dasharray`, `stroke-dashoffset`, `stroke-miterlimit`, `opacity`, `transform`, `text-anchor`, `dominant-baseline`, `font-size`, `font-weight`, `font-family`, `letter-spacing`, and gradient/stop attributes.
 
 A button's `action` declares CEL expressions for its `name` and JSON-object
@@ -285,12 +288,21 @@ view:
 
 Inputs support `type` (`text`, the default, or `number`), `name`, `label`, `value`,
 `placeholder`, `required`, `disabled`, `maxLength`, `min`, `max`, and `step`.
-Labels are displayed and exposed to assistive technology. Number fields submit
+Labels are displayed and exposed to assistive technology. Set `labelHidden: 'true'`
+to retain an accessible label without a visible caption, such as in a compact
+table with column headings. Number fields submit
 JSON numbers; text fields submit strings. Named enabled inputs override matching
 keys in the form action's static arguments. The action name and permissions come
 from the rendered form. Inputs are local until submission; they do not mutate
 shared state, and new committed revisions discard unsaved values. All normal
 permission, revision, schema, guard, and invariant checks still apply.
+
+A form button without an action can declare a `clearInputs` prop evaluating to
+a map of input names to replacement strings or numbers, for example
+`clearInputs: '{"name0": "", "initiative0": 0}'`. It updates only those inputs
+in the enclosing form, preserves other draft entries, and makes no server call.
+The button remains disabled for read-only viewers. This is useful for a small
+per-row clear control alongside one shared batch-submit button.
 
 The browser caps text fields at **1,000 characters**, even if an authored
 `maxLength` is larger or omitted. The server independently rejects action

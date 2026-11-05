@@ -29,7 +29,7 @@ let rendererSequence = 0;
 export function createGameRenderer({ container, toggleButton, actionUrl, canEdit,
     canContribute = () => false, refresh,
     canMove = () => canEdit() || canContribute(),
-    stylesheetUrl = '/static/css/game-renderer.css?v=11', initiallyOpen = false,
+    stylesheetUrl = '/static/css/game-renderer.css?v=12', initiallyOpen = false,
     beforeOpen = async () => {}, onPendingChange = () => {}, onMove = () => {} }) {
     const stylesheet = document.createElement('link');
     stylesheet.rel = 'stylesheet';
@@ -207,11 +207,26 @@ export function createGameRenderer({ container, toggleButton, actionUrl, canEdit
             element.style.gridTemplateColumns = `repeat(${Math.floor(columns)}, minmax(0, 1fr))`;
         }
         if (node.kind === 'button') {
-            element.type = formAction && !node.action ? 'submit' : 'button';
+            const clearsInputs = props.clearInputs && typeof props.clearInputs === 'object' && !Array.isArray(props.clearInputs);
+            element.type = formAction && !node.action && !clearsInputs ? 'submit' : 'button';
             const awaitingCommit = draft.length && game.client.transitions[draft[draft.length - 1].name].triggering;
             element.disabled = pending || Boolean(awaitingCommit) || !canAct(node.action || formAction) || Boolean(props.disabled);
             if (node.action?.permission) element.dataset.gamePermission = String(node.action.permission);
             if (node.action) element.addEventListener('click', () => send(node.action));
+            else if (clearsInputs) element.addEventListener('click', () => {
+                if (pending || !canAct(formAction)) return;
+                const form = element.closest('form');
+                let first = null;
+                for (const input of form?.querySelectorAll('input') || []) {
+                    if (input.closest('form') !== form || input.disabled || !Object.hasOwn(props.clearInputs, input.name)) continue;
+                    const value = props.clearInputs[input.name];
+                    if (typeof value !== 'string' && typeof value !== 'number') continue;
+                    input.value = String(value);
+                    input.dispatchEvent(new Event('input', {bubbles: true}));
+                    first ||= input;
+                }
+                first?.focus();
+            });
         }
         if (node.kind === 'input') {
             element.type = props.type === 'number' ? 'number' : 'text';
@@ -290,6 +305,9 @@ export function createGameRenderer({ container, toggleButton, actionUrl, canEdit
                 });
                 const panel = document.createElement('div');
                 panel.className = 'game-node game-tab-panel';
+                if (Number.isFinite(props.panelHeight)) {
+                    panel.style.height = `min(${Math.max(160, Math.min(560, Math.floor(props.panelHeight)))}px, 55vh)`;
+                }
                 panel.append(nodeView(child, depth + 1, `${path}-${index}`, formAction));
                 panel.id = `${id}-panel`;
                 panel.setAttribute('role', 'tabpanel');
@@ -304,7 +322,7 @@ export function createGameRenderer({ container, toggleButton, actionUrl, canEdit
         } else {
             (node.children || []).forEach((child, index) => element.append(nodeView(child, depth + 1, `${path}-${index}`, formAction)));
         }
-        if (node.kind === 'input' && props.label) {
+        if (node.kind === 'input' && props.label && !props.labelHidden) {
             const label = document.createElement('label');
             label.className = 'game-input-field';
             const caption = document.createElement('span');

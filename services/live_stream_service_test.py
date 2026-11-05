@@ -61,6 +61,15 @@ class CanvasFixture:
     def notify_changed(self, *domains: str) -> None:
         pass
 
+    def notify_characters_updated(self) -> None:
+        pass
+
+    def notify_scenes_updated(self) -> None:
+        pass
+
+    def notify_animations_updated(self) -> None:
+        pass
+
 
 @pytest.fixture
 def notepad() -> MagicMock:

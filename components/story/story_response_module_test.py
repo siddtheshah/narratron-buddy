@@ -13,6 +13,7 @@ from components.canvas_state import CanvasStateManager
 from components.theater_manager import Theater, TheaterManager
 from providers import ImageProvider, SpeechProvider, TextResponseProvider
 from providers.text_response_provider import TextResponseRequest, TextResponseResult
+from providers.text_response_decision_provider import TextResponseDecisionProvider
 from providers.decision_provider import (
     ChoiceAnswer,
     DecisionProvider,
@@ -187,8 +188,8 @@ class TestStoryResponseModuleBehavior(unittest.TestCase):
         self.assertEqual(self.provider.generate.call_count, 2)
 
     def test_can_derive_decisions_from_only_the_text_provider(self) -> None:
-        self.module.decision_provider = None
         self.provider.model = "test"
+        self.module.decision_provider = TextResponseDecisionProvider(self.provider)
         self.provider.generate.side_effect = [
             TextResponseResult(text="", provider="test", model="test", parsed={"primary_lore_document": "none"}),
             TextResponseResult(text='{"narration":"The door opens."}', provider="test", model="test"),
