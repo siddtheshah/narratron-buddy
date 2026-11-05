@@ -196,6 +196,53 @@ def editor_page() -> Iterator[Page]:
                         state: structuredClone(draft), message: `Imported ${path} from Google.`
                     })};
                 }
+                if (request.pathname === '/api/games') {
+                    return {ok: true, json: async () => ([
+                        {
+                            id: 'example-game',
+                            title: 'Crown & Corners Checkers',
+                            description: 'Classic American Checkers on an 8x8 board.',
+                            genre: 'Board Game / Strategy',
+                            tags: ['Checkers', 'Board Game'],
+                            declaration_file: 'game/game.yaml',
+                            has_panel: true,
+                            svg_count: 1,
+                            stamp_count: 1,
+                            cover_image: 'game/crest.svg',
+                        },
+                        {
+                            id: 'wacky-chess',
+                            title: 'Wacky Chess',
+                            description: 'Multiplayer chess with dragons and cake shields.',
+                            genre: 'Comedy / Strategy',
+                            tags: ['Chess', 'Chaos'],
+                            declaration_file: 'game/game.yaml',
+                            has_panel: false,
+                            svg_count: 17,
+                            stamp_count: 0,
+                        },
+                    ])};
+                }
+                if (request.pathname.endsWith('/game')) {
+                    const body = JSON.parse(options.body);
+                    window.lastAttachGameRequest = body;
+                    draft.files = draft.files.filter(f => !f.path.startsWith('game/'));
+                    if (body.game_id === 'example-game') {
+                        draft.files.push(
+                            {path: 'game/game.yaml', kind: 'text'},
+                            {path: 'game/panel.html', kind: 'text'},
+                            {path: 'game/crest.svg', kind: 'image'},
+                            {path: 'stamps/crown.png', kind: 'image'},
+                        );
+                        window.savedFiles['game/game.yaml'] = 'version: 2\\n# Checkers\\n';
+                        window.savedFiles['game/panel.html'] = '<div>Checkers Panel</div>';
+                    } else {
+                        draft.files.push({path: 'game/game.yaml', kind: 'text'});
+                        window.savedFiles['game/game.yaml'] = 'version: 2\\n# Wacky Chess\\n';
+                    }
+                    draft.draft.revision++;
+                    return {ok: true, json: async () => structuredClone(draft)};
+                }
                 if (request.pathname.endsWith('/reset')) {
                     window.resetTheater = true;
                     return {ok: true, json: async () => structuredClone(draft)};
@@ -1331,4 +1378,39 @@ def test_drag_and_drop_files_between_folders(editor_page: Page) -> None:
     # Now drag lore/guide.txt into lore/characters - should report duplicate file error
     page.locator('.file-button[data-path="lore/guide.txt"]').drag_to(chars_folder_summary)
     expect(page.locator("#builder-status")).to_have_text('A file named "guide.txt" already exists in lore/characters.')
+
+
+def test_attach_predefined_game_from_library_ui(editor_page: Page) -> None:
+    page = editor_page
+    page.locator("#attach-game").click()
+    dialog = page.locator("#game-library-dialog")
+    expect(dialog).to_be_visible()
+    expect(dialog.locator(".game-library-card")).to_have_count(2)
+
+    # Filter games via search input
+    page.locator("#game-library-search").fill("Checkers")
+    expect(dialog.locator(".game-library-card")).to_have_count(1)
+    card = dialog.locator('.game-library-card[data-game-id="example-game"]')
+    expect(card).to_be_visible()
+    expect(card.locator(".game-card-title")).to_have_text("Crown & Corners Checkers")
+    expect(card.locator(".game-card-badge")).to_have_text([
+        "game/game.yaml", "HTML Panel", "1 SVG", "1 Stamp",
+    ])
+
+    page.locator("#game-enable-tool").check()
+    page.locator("#game-library-submit").click()
+
+    expect(dialog).not_to_be_visible()
+    expect(page.locator("#builder-status")).to_have_text('Attached "Crown & Corners Checkers" to your working theater.')
+    assert page.evaluate("window.lastAttachGameRequest") == {
+        "revision": 0,
+        "game_id": "example-game",
+        "enable_game_tool": True,
+    }
+    expect(page.locator('.file-button[title="game/game.yaml"]')).to_be_visible()
+    expect(page.locator('.file-button[title="game/panel.html"]')).to_be_visible()
+    expect(page.locator('.file-button[title="game/crest.svg"]')).to_be_visible()
+    expect(page.locator("#selected-path")).to_have_text("game/game.yaml")
+    expect(page.locator("#file-editor")).to_have_value("version: 2\n# Checkers\n")
+
 

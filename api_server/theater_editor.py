@@ -19,10 +19,10 @@ from fastapi.responses import FileResponse, HTMLResponse, Response
 from pydantic import BaseModel, Field, JsonValue, TypeAdapter
 import yaml
 
-from api_server.dependencies import canvas_states, live_agent_manager, pricing_controller
+from api_server.dependencies import canvas_states, game_service, live_agent_manager, pricing_controller
 from api_server.canvas import broadcast_baton_update
 from api_server.pages import SeoMetadata, render_page_template
-from api_server.shared import app, db, get_current_user_async, theater_manager, theater_repository
+from api_server.shared import _safe_path_param, app, db, get_current_user_async, theater_manager, theater_repository
 from api_server.theater_access_cache import theater_access_cache
 from providers.image_provider import ImageReference
 from providers.music_provider import MusicGenerationRequest
@@ -90,6 +90,12 @@ class MoveDraftFileRequest(BaseModel):
     revision: int
     source: str = Field(min_length=1, max_length=500)
     destination: str = Field(min_length=1, max_length=500)
+
+
+class AttachGameRequest(BaseModel):
+    revision: int
+    game_id: str = Field(min_length=1, max_length=120)
+    enable_game_tool: bool = False
 
 
 class GenerateDraftRequest(GenerationRequest):
@@ -288,7 +294,8 @@ async def read_draft_file(theater_id: str, request: Request, path: str) -> FileR
     if not target.is_file():
         raise HTTPException(status_code=404, detail="Asset not found.")
     # Text is edited as source; never render uploaded HTML or Markdown as a page.
-    return FileResponse(target, media_type=asset_mime(target), headers={"X-Content-Type-Options": "nosniff", "Cache-Control": "no-store"})
+    media_type = "text/plain; charset=utf-8" if target.suffix.lower() == ".html" else asset_mime(target)
+    return FileResponse(target, media_type=media_type, headers={"X-Content-Type-Options": "nosniff", "Cache-Control": "no-store"})
 
 
 @app.post("/api/theater-editor/{theater_id}/save")
@@ -475,6 +482,37 @@ async def remove_draft_file(theater_id: str, path: str, revision: int, request: 
         check_revision(info, revision)
         with invalid_input():
             await asyncio.to_thread(write_checkout, info, {}, deletions=[path])
+        return await asyncio.to_thread(response, info)
+
+
+@app.post("/api/theater-editor/{theater_id}/game")
+async def attach_game_to_draft(theater_id: str, body: AttachGameRequest, request: Request) -> DraftResponse:
+    async with _draft_locks.setdefault(theater_id, asyncio.Lock()):
+        info = await require_draft(request, theater_id)
+        check_revision(info, body.revision)
+        _safe_path_param(body.game_id, "game_id")
+        game = await asyncio.to_thread(game_service.get_game, body.game_id)
+        if game is None:
+            raise HTTPException(status_code=404, detail="Game not found.")
+        with invalid_input():
+            game_files = await asyncio.to_thread(game_service.load_game_assets, body.game_id)
+            if not game_files:
+                raise HTTPException(status_code=404, detail="Game package contains no attachable files.")
+            existing = await asyncio.to_thread(store().files, theater_id)
+            stale_game_files = [
+                item.path for item in existing
+                if item.path.startswith("game/") and item.path not in game_files
+            ]
+            if body.enable_game_tool:
+                root = store().directory(theater_id)
+                raw_yaml = safe_asset_path(root, "theater.yaml").read_text(encoding="utf-8")
+                theater_config = TypeAdapter(dict[str, JsonValue]).validate_python(yaml.safe_load(raw_yaml) or {})
+                existing_tool = theater_config.get("game_tool")
+                tool_config = TypeAdapter(dict[str, JsonValue]).validate_python(existing_tool) if type(existing_tool) is dict else {}
+                tool_config["enabled"] = True
+                theater_config["game_tool"] = tool_config
+                game_files["theater.yaml"] = yaml.safe_dump(theater_config, sort_keys=False).encode("utf-8")
+            await asyncio.to_thread(write_checkout, info, game_files, deletions=stale_game_files)
         return await asyncio.to_thread(response, info)
 
 

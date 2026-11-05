@@ -20,6 +20,11 @@ adventures/*
 !adventures/example_adventure/
 !adventures/example_adventure/**
 adventures/example_adventure/**/__pycache__/
+games/*
+!games/README.md
+!games/example_game/
+!games/example_game/**
+games/example_game/**/__pycache__/
 demos/
 music_catalog/
 evaluation_results/

@@ -8,7 +8,7 @@ from game_engine.game_source import GAME_FILES
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
 AUDIO_EXTENSIONS = {".mp3", ".wav", ".ogg", ".flac", ".m4a", ".aac"}
-TEXT_EXTENSIONS = {".txt", ".md", ".yaml", ".yml", ".json", ".svg"}
+TEXT_EXTENSIONS = {".txt", ".md", ".yaml", ".yml", ".json", ".svg", ".html"}
 ROOT_FILES = {"theater.yaml", "planning.yaml", "metadata.json", "README.md", "LICENSE"}
 
 
@@ -25,7 +25,7 @@ def safe_asset_path(root: Path, relative: str) -> Path:
     if any(re.fullmatch(r"(?i)(con|prn|aux|nul|com[0-9]|lpt[0-9])(?:\..*)?", part) for part in parts):
         raise ValueError("Reserved asset filename.")
     suffix = PurePosixPath(normalized).suffix.lower()
-    allowed = normalized in ROOT_FILES or normalized in GAME_FILES
+    allowed = normalized in ROOT_FILES or normalized in GAME_FILES or normalized == "game/panel.html"
     allowed |= len(parts) >= 2 and parts[0] == "game" and suffix in {".svg", ".json"}
     allowed |= len(parts) >= 2 and parts[0] == "references" and suffix in IMAGE_EXTENSIONS
     allowed |= len(parts) >= 2 and parts[0] == "stamps" and suffix in IMAGE_EXTENSIONS

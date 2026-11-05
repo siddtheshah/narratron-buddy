@@ -41,7 +41,6 @@ COPY object_registry.py .
 COPY ABOUT.md LICENSE ./
 COPY app.yaml .
 COPY theater_default.yaml .
-COPY adventures/ adventures/
 COPY api_server/ api_server/
 COPY components/ components/
 COPY game_engine/ game_engine/

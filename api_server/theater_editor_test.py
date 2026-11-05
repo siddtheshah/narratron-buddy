@@ -29,6 +29,7 @@ from pricing.pricing_controller import PricingController
 from testing.reference_images import png_bytes
 from providers.image_provider import ImageGenerationResult
 from providers.music_provider import MusicGenerationResult
+from services.game_service import GameService
 from services.google_asset_importer import GoogleImportResult
 from services.theater_builder import BuilderProposal, ChatMessage, DraftInfo, GenerationRequest, TheaterBuilderStore
 from services.live_agent import get_playlists_context
@@ -96,7 +97,7 @@ def builder(tmp_path: Path) -> Iterator[BuilderHarness]:
         identifier = request.headers.get("x-test-user")
         return {"id": int(identifier)} if identifier else None
 
-    with patch.object(object_registry, "db", database), patch.object(object_registry, "theater_manager", manager), patch.object(object_registry, "theater_repository", repository), patch.object(object_registry, "pricing_controller", pricing), patch.object(object_registry, "canvas_states", CanvasStateService(manager)), patch.object(object_registry, "live_agent_manager", MagicMock()), patch("api_server.theater_editor.get_current_user_async", new=AsyncMock(side_effect=authenticate)), TestClient(app, headers={"x-test-user": "7"}) as client:
+    with patch.object(object_registry, "db", database), patch.object(object_registry, "theater_manager", manager), patch.object(object_registry, "theater_repository", repository), patch.object(object_registry, "pricing_controller", pricing), patch.object(object_registry, "canvas_states", CanvasStateService(manager)), patch.object(object_registry, "live_agent_manager", MagicMock()), patch.object(object_registry, "game_service", GameService(Path("games"))), patch("api_server.theater_editor.get_current_user_async", new=AsyncMock(side_effect=authenticate)), TestClient(app, headers={"x-test-user": "7"}) as client:
         yield BuilderHarness(client, manager, repository, database)
 
 
@@ -118,6 +119,7 @@ def test_drafts_require_login_and_owner_for_every_action(builder: BuilderHarness
     assert builder.client.post(f"{base}/upload", data={"revision": 1}, files={"files": ("hero.png", b"image")}).status_code == 403
     assert builder.client.get(f"{base}/download").status_code == 403
     assert builder.client.post(f"{base}/reset", json={"revision": 1}).status_code == 403
+    assert builder.client.post(f"{base}/game", json={"revision": 1, "game_id": "example-game"}).status_code == 403
     builder.database.record_user_usage.assert_not_called()
 
 
@@ -180,6 +182,7 @@ def test_nonowner_cannot_reclaim_baton_by_opening_editor(builder: BuilderHarness
     ("delete", {"path": "lore/new.txt"}),
     ("move", {"source": "lore/new.txt", "destination": "lore/sub/new.txt"}),
     ("google-link", {"url": "https://drive.google.com/file/d/example/view"}),
+    ("game", {"game_id": "example-game"}),
     ("deploy", {}),
     ("reset", {}),
 ])
@@ -1494,4 +1497,70 @@ def test_editor_resolves_tagged_references_for_animation_generation(builder: Bui
     assert len(references) == 1
     assert references[0].data == b"zara-bytes"
     assert references[0].mime_type == "image/webp"
+
+
+def test_games_catalog_and_attach_game_to_draft(builder: BuilderHarness) -> None:
+    games_res = builder.client.get("/api/games")
+    assert games_res.status_code == 200, games_res.text
+    game_ids = {item["id"] for item in games_res.json()}
+    assert "example-game" in game_ids
+
+    game_detail = builder.client.get("/api/games/example-game")
+    assert game_detail.status_code == 200
+    assert game_detail.json()["title"] == "Crown & Corners Checkers"
+    assert game_detail.json()["has_panel"] is True
+
+    cover_res = builder.client.get("/api/games/example-game/cover")
+    assert cover_res.status_code == 200
+    assert "svg" in cover_res.headers["content-type"]
+
+    data = builder.create()
+    identifier = data["draft"]["theater_id"]
+    base = f"/api/theater-editor/{identifier}"
+
+    # Seed an old game declaration (game.json) and an old SVG to verify replacement
+    old_game = '{"version":2,"initial":{"count":0},"state_schema":{"type":"object","properties":{"count":{"type":"integer"}},"required":["count"],"additionalProperties":false},"transitions":{"inc":{"parameters":{},"result":"{\\"count\\": state.count + 1}"}},"view":{"kind":"text","props":{"text":"string(state.count)"}}}'
+    seeded = builder.client.post(f"{base}/save", json={
+        "revision": data["draft"]["revision"],
+        "name": data["draft"]["name"],
+        "writes": [
+            {"path": "game/game.json", "content": old_game},
+            {"path": "game/old_token.svg", "content": '<svg viewBox="0 0 10 10"><circle cx="5" cy="5" r="4"/></svg>'},
+        ],
+    })
+    assert seeded.status_code == 200, seeded.text
+    rev = seeded.json()["draft"]["revision"]
+
+    # Revision mismatch and unknown game ID checks
+    assert builder.client.post(f"{base}/game", json={"revision": rev - 1, "game_id": "example-game"}).status_code == 409
+    assert builder.client.post(f"{base}/game", json={"revision": rev, "game_id": "nonexistent-game"}).status_code == 404
+
+    attached = builder.client.post(f"{base}/game", json={
+        "revision": rev,
+        "game_id": "example-game",
+        "enable_game_tool": True,
+    })
+    assert attached.status_code == 200, attached.text
+    paths = {item["path"] for item in attached.json()["files"]}
+    assert {"game/game.yaml", "game/panel.html", "game/crest.svg", "stamps/crown.png"} <= paths
+    assert "game/game.json" not in paths
+    assert "game/old_token.svg" not in paths
+
+    # Verify panel.html is served as plain text source, not executable HTML
+    panel_res = builder.client.get(f"{base}/file?path=game/panel.html")
+    assert panel_res.status_code == 200
+    assert panel_res.headers["content-type"].startswith("text/plain")
+    assert "data-panel-action" in panel_res.text
+
+    # Verify theater.yaml has game_tool.enabled: true
+    config_text = builder.client.get(f"{base}/file?path=theater.yaml").text
+    assert "game_tool:" in config_text
+    assert "enabled: true" in config_text
+
+    # Verify canvas state loaded the newly attached game cleanly
+    state = object_registry.canvas_states.get(identifier)
+    assert state.game.error == ""
+    assert state.game.program is not None
+    assert state.game.state["board"].count(1) == 12
+
 

@@ -23,6 +23,7 @@ from components.canvas.canvas_state_service import CanvasStateService
 from components.theater_manager import TheaterManager
 from pricing.pricing_controller import PricingController
 from services.adventure_service import AdventureService, CACHE_CHECK_INTERVAL_SECONDS, ensure_adventures_root
+from services.game_service import GameService, ensure_games_root
 from services.live_agent_manager import LiveAgentSessionManager
 from services.music_catalog import MusicCatalog
 from services.suggestion_service import SuggestionService
@@ -121,6 +122,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Finish the first load before accepting requests; subsequent checks never
     # put filesystem scans on the card-listing request path.
     await asyncio.to_thread(adventure_service.list_adventures, force_refresh=True)
+    await asyncio.to_thread(game_service.list_games, force_refresh=True)
     stop = asyncio.Event()
     monitor = asyncio.create_task(monitor_adventure_catalog(stop))
     storage_billing_task = asyncio.create_task(run_storage_billing_loop(stop))
@@ -145,6 +147,7 @@ async def monitor_adventure_catalog(stop: asyncio.Event) -> None:
         except asyncio.TimeoutError:
             try:
                 await asyncio.to_thread(adventure_service.refresh_if_changed)
+                await asyncio.to_thread(game_service.refresh_if_changed)
             except Exception:
                 logging.getLogger(__name__).exception("Adventure catalog refresh failed; retaining cached cards.")
 
@@ -197,6 +200,7 @@ live_agent_manager = LiveAgentSessionManager(
 )
 suggestion_service = SuggestionService(config=config)
 adventure_service = AdventureService(ensure_adventures_root())
+game_service = GameService(ensure_games_root())
 text_beautifier = TextBeautifier(config=config)
 stamp_storage = StampStorage(ensure_stamps_root())
 

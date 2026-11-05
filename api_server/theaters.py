@@ -34,7 +34,7 @@ from api_server.shared import (
     PROJECT_ROOT
 )
 from google.genai import types
-from api_server.dependencies import live_agent_manager, suggestion_service, adventure_service, pricing_controller
+from api_server.dependencies import live_agent_manager, suggestion_service, adventure_service, game_service, pricing_controller
 from api_server.canvas import broadcast_baton_update, _broadcast_doodle
 from services.theater_image_generation import generate_theater_image
 from services.theater_media_generation import generate_theater_media
@@ -1154,6 +1154,33 @@ def get_adventure_cover_endpoint(adventure_id: str):
     """Stream or return the cover image of a premade adventure."""
     _safe_path_param(adventure_id, "adventure_id")
     res = adventure_service.get_adventure_cover(adventure_id)
+    if not res:
+        raise HTTPException(status_code=404, detail="Cover image not found")
+    content, ctype = res
+    return Response(content=content, media_type=ctype)
+
+
+@app.get("/api/games")
+def list_games_endpoint(refresh: bool = False) -> list[dict[str, JsonValue]]:
+    """List pre-defined games stored in GCS/shared storage sorted newest first."""
+    return game_service.list_games(force_refresh=refresh)
+
+
+@app.get("/api/games/{game_id}")
+def get_game_endpoint(game_id: str) -> dict[str, JsonValue]:
+    """Get metadata for a specific pre-defined game."""
+    _safe_path_param(game_id, "game_id")
+    game = game_service.get_game(game_id)
+    if not game:
+        raise HTTPException(status_code=404, detail="Game not found")
+    return game
+
+
+@app.get("/api/games/{game_id}/cover")
+def get_game_cover_endpoint(game_id: str) -> Response:
+    """Stream or return the cover image of a pre-defined game."""
+    _safe_path_param(game_id, "game_id")
+    res = game_service.get_game_cover(game_id)
     if not res:
         raise HTTPException(status_code=404, detail="Cover image not found")
     content, ctype = res

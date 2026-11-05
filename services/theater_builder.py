@@ -87,6 +87,11 @@ def validate_text(path: str, content: str) -> None:
             raise ValueError("Game definition exceeds size limit.")
         validate_game_package(content.encode("utf-8"), filename=PurePosixPath(path).name)
         return
+    elif path == "game/panel.html":
+        from game_engine.panel_html import validate_panel_html
+
+        validate_panel_html(content.encode("utf-8"))
+        return
     elif path.startswith("game/") and path.lower().endswith(".svg"):
         from game_engine.game_runtime import validate_game_svg
 
@@ -126,7 +131,7 @@ def upload_path(filename: str, folder: bool) -> str:
         return relative
     if parts[:2] == ["references", "scenes"]:
         return relative
-    if relative in GAME_FILENAMES:
+    if relative in GAME_FILENAMES or relative == "panel.html":
         return f"game/{relative}"
     if relative in ROOT_FILES or parts[0] in {"references", "stamps", "playlists", "animations", "lore", "game"}:
         return relative

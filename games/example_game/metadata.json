@@ -1,0 +1,18 @@
+{
+  "id": "example-game",
+  "title": "Crown & Corners Checkers",
+  "description": "Classic American Checkers on an 8x8 board with mandatory jumps, multi-jump continuations, king crowning stamps on the canvas, and an HTML status panel.",
+  "author": "Narratron Creator",
+  "genre": "Board Game / Strategy",
+  "tags": [
+    "Example",
+    "Checkers",
+    "Board Game",
+    "Strategy",
+    "Canvas"
+  ],
+  "created_at": "2026-09-07T18:00:00Z",
+  "cover_image": "game/crest.svg",
+  "difficulty": "Easy",
+  "recommended_players": "1-2"
+}

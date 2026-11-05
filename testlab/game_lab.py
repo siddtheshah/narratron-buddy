@@ -227,7 +227,7 @@ def game_lab_page() -> FileResponse:
 def game_lab_catalog() -> GameCatalog:
     games = sorted(
         str(path.relative_to(PROJECT_ROOT)).replace("\\", "/")
-        for folder in (PROJECT_ROOT / "adventures", PROJECT_ROOT / "theaters")
+        for folder in (PROJECT_ROOT / "games", PROJECT_ROOT / "adventures", PROJECT_ROOT / "theaters")
         for filename in GAME_FILENAMES
         for path in folder.glob(f"*/game/{filename}")
         if path.resolve().is_relative_to(PROJECT_ROOT)

@@ -816,6 +816,182 @@
       await selectFile(importedFile);
     }
   }
+  let availableGames = [];
+  let selectedGameId = null;
+
+  function renderGameLibraryList() {
+    const listEl = el('game-library-list');
+    if (!listEl) return;
+    listEl.replaceChildren();
+    const query = (el('game-library-search')?.value || '').trim().toLowerCase();
+    const filtered = availableGames.filter(game => {
+      if (!query) return true;
+      const haystack = [
+        game.title,
+        game.id,
+        game.description,
+        game.genre,
+        game.author,
+        ...(Array.isArray(game.tags) ? game.tags : []),
+      ].filter(Boolean).join(' ').toLowerCase();
+      return haystack.includes(query);
+    });
+    if (!filtered.length) {
+      const empty = document.createElement('div');
+      empty.className = 'game-library-empty';
+      empty.textContent = availableGames.length ? 'No games match your search.' : 'No pre-defined games found in the repository.';
+      listEl.append(empty);
+      if (el('game-library-submit')) el('game-library-submit').disabled = true;
+      return;
+    }
+    if (!selectedGameId || !filtered.some(g => g.id === selectedGameId)) {
+      selectedGameId = filtered[0].id;
+    }
+    if (el('game-library-submit')) el('game-library-submit').disabled = false;
+    for (const game of filtered) {
+      const card = document.createElement('div');
+      card.className = 'game-library-card' + (game.id === selectedGameId ? ' selected' : '');
+      card.setAttribute('role', 'option');
+      card.setAttribute('tabindex', '0');
+      card.setAttribute('aria-selected', game.id === selectedGameId ? 'true' : 'false');
+      card.dataset.gameId = game.id;
+
+      if (game.cover_image) {
+        const img = document.createElement('img');
+        img.className = 'game-card-cover';
+        img.src = `/api/games/${encodeURIComponent(game.id)}/cover`;
+        img.alt = game.title || game.id;
+        card.append(img);
+      } else {
+        const icon = document.createElement('div');
+        icon.className = 'game-card-cover';
+        icon.textContent = '🎮';
+        card.append(icon);
+      }
+
+      const body = document.createElement('div');
+      body.className = 'game-card-body';
+
+      const header = document.createElement('div');
+      header.className = 'game-card-header';
+      const title = document.createElement('span');
+      title.className = 'game-card-title';
+      title.textContent = game.title || game.id;
+      header.append(title);
+      if (game.genre) {
+        const genre = document.createElement('span');
+        genre.className = 'game-card-genre';
+        genre.textContent = game.genre;
+        header.append(genre);
+      }
+      body.append(header);
+
+      if (game.description) {
+        const desc = document.createElement('p');
+        desc.className = 'game-card-desc';
+        desc.textContent = game.description;
+        body.append(desc);
+      }
+
+      const badges = document.createElement('div');
+      badges.className = 'game-card-badges';
+      if (game.declaration_file) {
+        const declBadge = document.createElement('span');
+        declBadge.className = 'game-card-badge';
+        declBadge.textContent = game.declaration_file;
+        badges.append(declBadge);
+      }
+      if (game.has_panel) {
+        const panelBadge = document.createElement('span');
+        panelBadge.className = 'game-card-badge';
+        panelBadge.textContent = 'HTML Panel';
+        badges.append(panelBadge);
+      }
+      if (game.svg_count > 0) {
+        const svgBadge = document.createElement('span');
+        svgBadge.className = 'game-card-badge';
+        svgBadge.textContent = `${game.svg_count} SVG${game.svg_count > 1 ? 's' : ''}`;
+        badges.append(svgBadge);
+      }
+      if (game.stamp_count > 0) {
+        const stampBadge = document.createElement('span');
+        stampBadge.className = 'game-card-badge';
+        stampBadge.textContent = `${game.stamp_count} Stamp${game.stamp_count > 1 ? 's' : ''}`;
+        badges.append(stampBadge);
+      }
+      body.append(badges);
+      card.append(body);
+
+      const selectCard = () => {
+        selectedGameId = game.id;
+        renderGameLibraryList();
+      };
+      card.addEventListener('click', selectCard);
+      card.addEventListener('keydown', e => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          selectCard();
+        }
+      });
+      listEl.append(card);
+    }
+  }
+
+  async function openGameLibraryDialog() {
+    if (!state || busy || activeGenerations > 0) return;
+    const dialog = el('game-library-dialog');
+    if (!dialog) return;
+    if (el('game-library-search')) el('game-library-search').value = '';
+    if (el('game-enable-tool')) el('game-enable-tool').checked = false;
+    const listEl = el('game-library-list');
+    if (listEl) {
+      const loading = document.createElement('div');
+      loading.className = 'game-library-empty';
+      loading.textContent = 'Loading games from repository…';
+      listEl.replaceChildren(loading);
+    }
+    if (el('game-library-submit')) el('game-library-submit').disabled = true;
+    dialog.showModal();
+    try {
+      const games = await api('/api/games');
+      availableGames = Array.isArray(games) ? games : [];
+      selectedGameId = availableGames[0]?.id || null;
+      renderGameLibraryList();
+      el('game-library-search')?.focus();
+    } catch (error) {
+      if (listEl) {
+        const errNode = document.createElement('div');
+        errNode.className = 'game-library-empty';
+        errNode.textContent = error.message || 'Could not load games.';
+        listEl.replaceChildren(errNode);
+      }
+    }
+  }
+
+  async function submitAttachGame() {
+    if (!state || !selectedGameId) return;
+    const chosen = availableGames.find(g => g.id === selectedGameId);
+    const enableGameTool = Boolean(el('game-enable-tool')?.checked);
+    el('game-library-dialog')?.close();
+    let targetFile = null;
+    await run(async () => {
+      await save();
+      const next = await post('/game', {
+        revision: state.draft.revision,
+        game_id: selectedGameId,
+        enable_game_tool: enableGameTool,
+      });
+      expandedFolders.set('game', true);
+      if (chosen?.stamp_count > 0) expandedFolders.set('stamps', true);
+      render(next);
+      const declPath = chosen?.declaration_file || 'game/game.yaml';
+      targetFile = state.files.find(f => f.path === declPath) || state.files.find(f => f.path.startsWith('game/'));
+      status(`Attached "${chosen?.title || selectedGameId}" to your working theater.`);
+    }, `Attaching ${chosen?.title || selectedGameId}…`);
+    if (targetFile) {
+      await selectFile(targetFile);
+    }
+  }
   async function initialize() {
     if (opening) return;
     opening = true;
@@ -900,6 +1076,15 @@
   el('suggest-world').addEventListener('click', () => ask('Develop this theater into a coherent world using its existing assets and lore. Propose scenes (with lore dossiers, references/scenes/ imagery, and scene.yaml), characters (with lore dossiers and references/characters/ portraits), reference images, stamp tokens for tactical play, and atmospheric playlist tracks.'));
   el('harvest-doc-shortcut').addEventListener('click', () => openGoogleDialog(true));
   el('import-google-link').addEventListener('click', () => openGoogleDialog(false));
+  if (el('attach-game')) el('attach-game').addEventListener('click', openGameLibraryDialog);
+  if (el('game-library-cancel')) el('game-library-cancel').addEventListener('click', () => el('game-library-dialog').close());
+  if (el('game-library-search')) el('game-library-search').addEventListener('input', renderGameLibraryList);
+  if (el('game-library-form')) el('game-library-form').addEventListener('submit', event => { event.preventDefault(); submitAttachGame(); });
+  if (el('game-library-dialog')) {
+    el('game-library-dialog').addEventListener('click', event => {
+      if (event.target === el('game-library-dialog')) el('game-library-dialog').close();
+    });
+  }
   el('google-link-cancel').addEventListener('click', () => el('google-link-dialog').close());
   el('google-link-url').addEventListener('input', updateGoogleDialogState);
   el('google-doc-harvest').addEventListener('change', updateGoogleDialogState);
