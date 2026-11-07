@@ -220,6 +220,7 @@ class GameAction(GameStep):
     revision: int = Field(ge=0)
     draft: list[GameStep] = Field(default_factory=list, max_length=64)
     canvas_revision: int | None = Field(default=None, ge=0)
+    username: str = Field(default="", max_length=MAX_ACTION_STRING_LENGTH)
 
 
 class RenderedAction(GameModel):
@@ -538,6 +539,7 @@ class GameProgram:
                 self.compile_scoped(shortcut.action.name, allowed_functions, canvas=True)
                 self.compile_scoped(shortcut.action.arguments, allowed_functions, canvas=True)
         self.compile_view(definition.view, allowed_functions, 0)
+        self.uses_user: bool = any("user" in deps for deps in self.dependencies.values())
 
     def check_binding_name(self, name: str) -> None:
         if self.definition.canvas_api is not None and name in {"canvas", "next_state"}:
@@ -587,8 +589,8 @@ class GameProgram:
         for child in node.children:
             self.compile_view(child, functions, depth + 1)
 
-    def execution(self) -> Execution:
-        return Execution(self)
+    def execution(self, *, username: str = "") -> Execution:
+        return Execution(self, username=username)
 
 
 def nullable_equal(left: celtypes.Value, right: celtypes.Value) -> Result:
@@ -612,8 +614,12 @@ def nullable_not_equal(left: celtypes.Value, right: celtypes.Value) -> Result:
 
 
 class Execution:
-    def __init__(self, program: GameProgram) -> None:
+    def __init__(self, program: GameProgram, *, username: str = "") -> None:
         self.program = program
+
+        self.username: str = username
+        self.user: dict[str, JsonValue] = {"username": username}
+
         self.budget = Budget()
         self.svg_expanded_bytes: int = 0
         self._values: dict[int, tuple[JsonValue, celtypes.Value]] = {}
@@ -630,6 +636,7 @@ class Execution:
                 raise ValueError("Incorrect function argument count.")
             context = {name: checked_json(value) for name, value in zip(definition.parameters, arguments)}
             context["constants"] = self.program.definition.constants
+            context.setdefault("user", self.user)
             result = self.evaluate(definition.expr, context)
             return json_to_cel(result)
         return invoke
@@ -670,9 +677,12 @@ class Execution:
                 raise ValueError(f"Binding shadows an existing name: {binding.name}")
             context[binding.name] = self.evaluate(binding.expr, context)
 
-    def context(self, state: dict[str, JsonValue]) -> dict[str, JsonValue]:
-        context: dict[str, JsonValue] = {"state": state, "constants": self.program.definition.constants, "initial": self.program.definition.initial}
+    def context(self, state: dict[str, JsonValue], *, username: str | None = None) -> dict[str, JsonValue]:
+        user_value: dict[str, JsonValue] = self.user if username is None else {"username": username}
+        context: dict[str, JsonValue] = {"state": state, "constants": self.program.definition.constants, "initial": self.program.definition.initial, "user": user_value}
         self.bindings(self.program.definition.derived, context)
+
+
         return context
 
     def validate(self, state: dict[str, JsonValue], context: dict[str, JsonValue]) -> None:

@@ -153,3 +153,34 @@ def test_canvas_game_requires_fresh_canvas_revision_and_commits_victory_stamp(tm
         response = TestClient(canvas.app).get(str(stamp["url"]))
     assert response.status_code == 200
     assert response.content == (state.theater.directory() / "stamps" / "crown.png").read_bytes()
+
+
+def test_post_game_action_and_get_latest_pass_authenticated_username(tmp_path: Path) -> None:
+    game = make_preview_checkers_game(tmp_path)
+    callback = Mock()
+    game.on_player_action = callback
+    ui = Mock(viewer_collab_enabled=True)
+    state = Mock(game=game, ui=ui)
+    state.get_latest_state.side_effect = lambda username="": {"game_state": game.payload(username=username)}
+    request = Request({"type": "http"})
+
+    with patch.object(canvas, "_require_canvas_access"), patch.object(canvas, "db") as mock_db, \
+            patch.object(canvas, "get_current_user", return_value={"id": "u1", "username": "alice"}), \
+            patch.object(canvas, "can_control_agent_websocket", return_value=True), \
+            patch.object(canvas, "is_contributor", return_value=False), \
+            patch.object(canvas, "_state", return_value=state), \
+            patch.object(canvas.theater_manager, "theater") as mock_theater:
+        mock_db.get_deployment.return_value = {"id": "checkers"}
+        mock_theater.return_value.directory.return_value = tmp_path
+
+        action = GameAction(name="move", arguments={"source": 40, "target": 33}, revision=0)
+        res = canvas.post_game_action(action, request, "checkers")
+        assert res is not None
+        assert res["revision"] == 1
+        assert action.username == "alice"
+        callback.assert_called_once()
+        assert callback.call_args[0][0].username == "alice"
+
+        latest = canvas.get_latest_image(request, "checkers")
+        state.get_latest_state.assert_called_once_with(username="alice")
+        assert latest["game_state"] is not None

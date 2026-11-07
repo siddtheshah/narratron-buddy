@@ -362,7 +362,7 @@ class CanvasStateManager:
         return True
 
     @synchronized
-    def get_latest_state(self) -> dict[str, object]:
+    def get_latest_state(self, *, username: str = "") -> dict[str, JsonValue]:
         visual = self.visual.payload()
         sticky_notes = self.notepad.get_present_sticky_notes() if self.notepad is not None else []
         return {**visual, "music": self.audio.payload(), "music_pinned": self.audio.pinned,
@@ -374,4 +374,4 @@ class CanvasStateManager:
                 "agent_thought": self.tool_response.agent_thought_payload(),
                 **self.story.payload(), "sticky_notes": sticky_notes,
                 "interactive_surfaces": list(self.ui.interactive_surfaces.values()),
-                "game_state": self.game.payload()}
+                "game_state": self.game.payload(username=username) if username else self.game.payload()}

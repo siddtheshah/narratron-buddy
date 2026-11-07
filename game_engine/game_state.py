@@ -99,6 +99,8 @@ class GameState:
         self.definition_hash = ""
         self.error = ""
         self._view: list[JsonValue] = []
+        self._view_username = ""
+        self._active_username = ""
         self._model_state: JsonValue = {}
         self._narratron_actions: dict[str, JsonValue] = {}
         self._story_commits: dict[str, StoryGameCommit] = {}
@@ -197,26 +199,29 @@ class GameState:
             finally:
                 self.operation_metrics = dict(worker.last_metrics)
 
-    def _prepare(self, state: dict[str, JsonValue], budget: Budget | None = None) -> list[JsonValue]:
+    def _prepare(self, state: dict[str, JsonValue], budget: Budget | None = None, *, username: str | None = None) -> list[JsonValue]:
         assert self.program is not None
+        effective_username = self._active_username if username is None else username
         if self.program.definition.canvas_api is not None and self._canvas_host is not None:
             snapshot = self._canvas_host.canvas_observation()
             with self._canvas_engine() as evaluator:
-                prepared = evaluator.prepare(state, snapshot)
+                prepared = evaluator.prepare(state, snapshot, username=effective_username)
             self._view, self._model_state, self._narratron_actions = prepared.view, prepared.model_state, prepared.actions
+            self._view_username = effective_username
             self._canvas_revision = snapshot.revision
             return self._view
         if self._worker is not None:
             from game_engine.go_cel import Prepared, validate_prepared
 
             logger.debug("[GameState] Preparing state (revision=%d): %s", self.revision, state)
-            message: dict[str, JsonValue] = {"op": "prepare", "state": state}
+            message: dict[str, JsonValue] = {"op": "prepare", "state": state, "username": effective_username}
             if self._package_key:
                 message["package"] = self._package_key
             result = self._go_request(message)
             prepared = Prepared.model_validate(result)
             view = validate_prepared(self.program, prepared)
             self._view = view
+            self._view_username = effective_username
             self._model_state = prepared.model_state
             self._narratron_actions = prepared.actions
             logger.debug(
@@ -228,13 +233,13 @@ class GameState:
 
         if budget is None:
             def prepare(budget: Budget) -> list[JsonValue]:
-                return self._prepare(state, budget)
+                return self._prepare(state, budget, username=effective_username)
 
             return evaluate_with_recovery(prepare)
         logger.debug("[GameState] Preparing state (revision=%d): %s", self.revision, state)
         if len(json.dumps(state, allow_nan=False).encode("utf-8")) > MAX_VALUE_BYTES:
             raise ValueError("Game state exceeds its size budget.")
-        execution = self.program.execution()
+        execution = self.program.execution(username=effective_username)
         execution.budget = budget
         budget.nodes = 0
         context = execution.context(state)
@@ -244,6 +249,7 @@ class GameState:
             raise ValueError("Rendered view exceeds its size budget.")
         model_state, actions = execution.model_context(context)
         self._view = view
+        self._view_username = effective_username
         self._model_state = model_state
         self._narratron_actions = actions
         logger.debug(
@@ -263,7 +269,9 @@ class GameState:
             return
         with self._lock:
             logger.debug("[GameState] Loading saved game (current_revision=%d)", self.revision)
-            previous_view, previous_model_state, previous_actions = self._view, self._model_state, self._narratron_actions
+            previous_view, previous_view_username, previous_model_state, previous_actions = (
+                self._view, self._view_username, self._model_state, self._narratron_actions,
+            )
             try:
                 # Inspect the hash before parsing the version-specific saved payload.
                 data = TypeAdapter(dict[str, JsonValue]).validate_python(saved)
@@ -276,6 +284,7 @@ class GameState:
                     self.error = "Game definition changed; a fresh game was initialized."
                     return
                 restored = SavedGame.model_validate(data)
+                self._active_username = ""
                 self._prepare(restored.state)
                 self.state, self.revision = restored.state, restored.revision
                 self._story_commits = restored.story_commits
@@ -287,6 +296,7 @@ class GameState:
             except Exception:
                 # A broken game save must not interrupt loading story/chat state.
                 self._view = previous_view
+                self._view_username = previous_view_username
                 self._model_state = previous_model_state
                 self._narratron_actions = previous_actions
                 self.error = "Saved game could not be loaded; the current game state was retained."
@@ -357,18 +367,35 @@ class GameState:
             self.act(action, actor="narratron", story_event_id=event_id)
             return json.loads(json.dumps(self._story_commits[event_id].receipt))
 
-    def payload(self) -> dict[str, JsonValue] | None:
+    def payload(self, username: str = "") -> dict[str, JsonValue] | None:
         with self._lock:
             if self.program is None:
                 return {"error": self.error} if self.error else None
+            if (
+                self.program.definition.canvas_api is None
+                and self.program.uses_user
+                and username != self._view_username
+            ):
+                try:
+                    self._prepare(self.state, username=username)
+                except ValueError as exc:
+                    payload_err: dict[str, JsonValue] = {
+                        "definition_hash": self.definition_hash,
+                        "revision": self.revision,
+                        "view": self._view,
+                        "error": str(exc),
+                    }
+                    if self.program.panel_html is not None:
+                        payload_err["panel_html"] = self.program.panel_html
+                    return json.loads(json.dumps(payload_err))
             payload: dict[str, JsonValue] = {"definition_hash": self.definition_hash, "revision": self.revision, "view": self._view, "error": self.error}
             if self.program.panel_html is not None:
                 payload["panel_html"] = self.program.panel_html
             if self.program.definition.canvas_api is not None and self._canvas_host is not None:
                 try:
                     snapshot = self._canvas_host.canvas_observation()
-                    if snapshot.revision != self._canvas_revision:
-                        self._prepare(self.state)
+                    if snapshot.revision != self._canvas_revision or (self.program.uses_user and username != self._view_username):
+                        self._prepare(self.state, username=username)
                     payload["view"] = self._view
                     payload["canvas_revision"] = self._canvas_revision
                 except ValueError as exc:
@@ -422,6 +449,8 @@ class GameState:
         self,
         action: GameAction,
         actor: Literal["player", "contributor", "narratron"],
+        *,
+        username: str = "",
     ) -> None:
         from game_engine.go_cel import Prepared, validate_prepared
 
@@ -448,6 +477,7 @@ class GameState:
                     "op": "act",
                     "state": self.state,
                     "actor": actor,
+                    "username": username,
                     "steps": [candidate.model_dump(mode="json") for candidate in pending_steps],
                 }
                 if self._package_key:
@@ -483,6 +513,7 @@ class GameState:
                 "state": self.state,
                 "guard": recovery.guard,
                 "source": recovery.result,
+                "username": username,
             }
             if self._package_key:
                 recover_msg["package"] = self._package_key
@@ -493,6 +524,7 @@ class GameState:
 
         self.state = proposal.state
         self._view = view
+        self._view_username = username
         self._model_state = proposal.model_state
         self._narratron_actions = proposal.actions
         logger.debug(
@@ -503,7 +535,7 @@ class GameState:
 
     def act(
         self, action: GameAction, actor: Literal["player", "contributor", "narratron"] = "player",
-        *, story_event_id: str = "",
+        *, story_event_id: str = "", username: str = "",
     ) -> dict[str, JsonValue] | None:
         with self._lock:
             if self.program is None:
@@ -529,6 +561,9 @@ class GameState:
                 observed = self._canvas_host.canvas_observation()
                 if action.canvas_revision is not None and action.canvas_revision != observed.revision:
                     raise StaleGameAction("The canvas changed. Review the current page and try again.")
+            effective_username = "" if actor == "narratron" else (username if username else action.username)
+            if action.username != effective_username:
+                action.username = effective_username
             if len(action.model_dump_json().encode("utf-8")) > 32768:
                 logger.debug("[GameState] Act rejected: action exceeds size budget")
                 raise ValueError("Game action exceeds its size budget.")
@@ -563,19 +598,23 @@ class GameState:
                 self.revision,
                 action.arguments,
             )
-            previous, previous_view, previous_model_state, previous_actions, revision = (
-                self.state, self._view, self._model_state, self._narratron_actions, self.revision
+            previous, previous_view, previous_view_username, previous_active_username, previous_model_state, previous_actions, revision = (
+                self.state, self._view, self._view_username, self._active_username, self._model_state, self._narratron_actions, self.revision
             )
             event_id = story_event_id or f"player:{self.definition_hash}:{action.revision}"
 
             previous_canvas_revision = self._canvas_revision
+            self._active_username = effective_username
             try:
                 with ExitStack() as transaction:
                     if canvas_enabled:
                         assert self._canvas_host is not None and observed is not None
                         with self._canvas_engine() as evaluator:
                             try:
-                                proposal = evaluator.attempt(self.state, observed, GameStep(name=action.name, arguments=action.arguments), actor)
+                                proposal = evaluator.attempt(
+                                    self.state, observed, GameStep(name=action.name, arguments=action.arguments),
+                                    actor, username=effective_username,
+                                )
                             except ValueError as exc:
                                 if str(exc) == "Only the active orator can take this game action.":
                                     raise UnauthorizedGameAction(str(exc)) from exc
@@ -584,12 +623,13 @@ class GameState:
                                 staged = transaction.enter_context(self._canvas_host.stage_canvas_effects(proposal.canvas_effects, observed))
                             except ValueError as exc:
                                 raise InvalidGameInput(str(exc)) from exc
-                            prepared = evaluator.prepare(proposal.state, staged)
+                            prepared = evaluator.prepare(proposal.state, staged, username=effective_username)
                         self.state = prepared.state
                         self._view, self._model_state, self._narratron_actions = prepared.view, prepared.model_state, prepared.actions
+                        self._view_username = effective_username
                         self._canvas_revision = staged.revision
                     elif self._worker is not None:
-                        self._act_go(action, actor)
+                        self._act_go(action, actor, username=effective_username)
                     else:
                         for step in action.draft:
                             self._apply_step(step, actor, exploratory=True)
@@ -612,8 +652,8 @@ class GameState:
             except Exception as exc:
                 self._canvas_revision = previous_canvas_revision
                 self._story_commits.pop(event_id, None)
-                self.state, self._view, self._model_state, self._narratron_actions, self.revision = (
-                    previous, previous_view, previous_model_state, previous_actions, revision
+                self.state, self._view, self._view_username, self._active_username, self._model_state, self._narratron_actions, self.revision = (
+                    previous, previous_view, previous_view_username, previous_active_username, previous_model_state, previous_actions, revision
                 )
                 logger.exception("Game action failed: %s", action.name)
                 if type(exc) is GameWorkBudgetExceeded:
@@ -631,7 +671,7 @@ class GameState:
             self.error = ""
             self._notify_safely()
             callback = self.on_player_action if actor in ("player", "contributor") and transition.triggering else None
-            result = self.payload()
+            result = self.payload(username=effective_username)
         # Story intake may acquire journal/note locks. Never invoke it while
         # holding the game lock: story stages can also read or mutate the game.
         if callback is not None:
@@ -664,11 +704,15 @@ class GameState:
 
             def recover(budget: Budget) -> bool:
                 assert self.program is not None
-                execution = self.program.execution()
+                execution = self.program.execution(username=self._active_username)
                 execution.budget = budget
                 # Recovery must not repeat failing derived values or use unvalidated input.
-                context = {"state": self.state, "initial": self.program.definition.initial,
-                           "constants": self.program.definition.constants}
+                context: dict[str, JsonValue] = {
+                    "state": self.state,
+                    "initial": self.program.definition.initial,
+                    "constants": self.program.definition.constants,
+                    "user": {"username": self._active_username},
+                }
                 recovery = transition.on_error
                 assert recovery is not None
                 if not TypeAdapter(bool).validate_python(execution.evaluate(recovery.guard, context), strict=True):
@@ -698,7 +742,7 @@ class GameState:
         if (actor == "narratron") != (transition.actor == "narratron"):
             raise InvalidGameInput("This actor cannot take that game action.")
         if actor == "contributor" and not transition.allows_contributor:
-            view_execution = self.program.execution()
+            view_execution = self.program.execution(username=self._active_username)
             view_execution.budget = budget
             budget.nodes = 0
             view = [node.model_dump(mode="json") for node in view_execution.render(
@@ -714,7 +758,7 @@ class GameState:
             self.program.action_validators[step.name].validate(step.arguments)
         except SchemaValidationError as exc:
             raise InvalidGameInput(f"Invalid input: {exc.message[:200]}") from exc
-        execution = self.program.execution()
+        execution = self.program.execution(username=self._active_username)
         execution.budget = budget
         context = execution.context(self.state)
         context["action"] = step.arguments

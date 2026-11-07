@@ -87,13 +87,13 @@ class CanvasEvaluator:
         self.worker = worker
         self._package_key = uuid4().hex
 
-    def prepare(self, state: dict[str, JsonValue], snapshot: CanvasSnapshot) -> CanvasEvaluation:
+    def prepare(self, state: dict[str, JsonValue], snapshot: CanvasSnapshot, *, username: str = "") -> CanvasEvaluation:
         snapshot = CanvasSnapshot.model_validate(snapshot.model_dump(mode="json"))
         if self.worker is not None:
-            return self._go("prepare", state, snapshot)
+            return self._go("prepare", state, snapshot, username=username)
 
         def prepare(budget: Budget) -> CanvasEvaluation:
-            execution = self.program.execution()
+            execution = self.program.execution(username=username)
             execution.budget = budget
             return self._prepare(execution, state, snapshot)
 
@@ -116,6 +116,7 @@ class CanvasEvaluator:
 
     def attempt(
         self, state: dict[str, JsonValue], snapshot: CanvasSnapshot, step: GameStep, actor: Actor = "player",
+        *, username: str = "",
     ) -> CanvasEvaluation:
         snapshot = CanvasSnapshot.model_validate(snapshot.model_dump(mode="json"))
         transition = self.program.definition.transitions.get(step.name)
@@ -127,10 +128,10 @@ class CanvasEvaluator:
         if snapshot.event is not None and snapshot.event.actor != actor:
             raise ValueError("Canvas evidence actor does not match the acting principal's role.")
         if self.worker is not None:
-            return self._go("act", state, snapshot, step, actor)
+            return self._go("act", state, snapshot, step, actor, username=username)
 
         def attempt(budget: Budget) -> CanvasEvaluation:
-            execution = self.program.execution()
+            execution = self.program.execution(username=username)
             execution.budget = budget
             context = execution.context(state)
             if actor == "contributor" and not transition.allows_contributor:
@@ -167,7 +168,7 @@ class CanvasEvaluator:
 
     def _go(
         self, op: str, state: dict[str, JsonValue], snapshot: CanvasSnapshot,
-        step: GameStep | None = None, actor: Actor = "player",
+        step: GameStep | None = None, actor: Actor = "player", *, username: str = "",
     ) -> CanvasEvaluation:
         from game_engine.go_cel import Prepared, validate_prepared
 
@@ -177,6 +178,7 @@ class CanvasEvaluator:
         response = Prepared.model_validate(self.worker.request({
             "op": op, "state": state, "canvas": snapshot.model_dump(mode="json"),
             "steps": [step.model_dump(mode="json")] if step is not None else [], "actor": actor,
+            "username": username,
             "package": self._package_key,
         }))
         view = validate_prepared(self.program, response)

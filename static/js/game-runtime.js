@@ -122,8 +122,8 @@ export function createLocalGame(program) {
             scope[binding.name] = evaluate(binding.expr, scope);
         }
     }
-    function context(state) {
-        const scope = { state, initial: program.initial, constants: program.constants };
+    function context(state, username = '') {
+        const scope = { state, initial: program.initial, constants: program.constants, user: { username } };
         bindings(program.derived, scope);
         return scope;
     }
@@ -166,12 +166,13 @@ export function createLocalGame(program) {
         apply(state, action) {
             try {
                 resetBudget();
+                const username = typeof action.username === 'string' ? action.username : '';
                 const transition = read(program.transitions, action.name);
-                const scope = { ...context(state), action: action.arguments };
+                const scope = { ...context(state, username), action: action.arguments };
                 if (!boolean(evaluate(transition.guard, scope))) throw new InvalidGameInput('This action is not permitted in the current game state.');
                 bindings(transition.bindings, scope);
                 const candidate = evaluate(transition.result, scope);
-                const next = context(candidate);
+                const next = context(candidate, username);
                 validate(next);
                 const view = render(program.view, next);
                 // JSON serialization also removes prototypes and enforces a bounded local snapshot.

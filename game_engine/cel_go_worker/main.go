@@ -92,17 +92,17 @@ type step struct {
 	Arguments map[string]interface{}
 }
 type request struct {
-	Op, Source, Guard, Actor, Package string
-	Definition                        definition
-	Sources                           map[string][]string
-	Random                            []string
-	Assets                            map[string]rendered
-	State                             map[string]interface{}
-	Canvas                            map[string]interface{}
-	Steps                             []step
-	Context                           map[string]interface{}
-	TimeoutMS                         int    `json:"timeout_ms"`
-	CostLimit                         uint64 `json:"cost_limit"`
+	Op, Source, Guard, Actor, Package, Username string
+	Definition                                  definition
+	Sources                                     map[string][]string
+	Random                                      []string
+	Assets                                      map[string]rendered
+	State                                       map[string]interface{}
+	Canvas                                      map[string]interface{}
+	Steps                                       []step
+	Context                                     map[string]interface{}
+	TimeoutMS                                   int    `json:"timeout_ms"`
+	CostLimit                                   uint64 `json:"cost_limit"`
 }
 type prepared struct {
 	State            map[string]interface{}   `json:"state"`
@@ -142,6 +142,7 @@ type execution struct {
 	exhausted               error
 	stats                   metrics
 	canvas                  map[string]interface{}
+	username                string
 }
 type compiled struct {
 	def          definition
@@ -292,6 +293,9 @@ func compile(req request) (*compiled, error) {
 				vars[f.Parameters[i]] = v
 			}
 			vars["constants"] = p.def.Constants
+			if _, exists := vars["user"]; !exists {
+				vars["user"] = map[string]interface{}{"username": e.username}
+			}
 			v, err := e.eval(f.Expr, e.newScope(vars))
 			if err != nil {
 				return types.NewErr("%s", err)
@@ -590,7 +594,12 @@ func (e *execution) bindings(bindings []binding, s scope) (scope, error) {
 	return s, nil
 }
 func (e *execution) stateScope(state map[string]interface{}) (scope, error) {
-	return e.bindings(e.pkg.def.Derived, e.newScope(map[string]interface{}{"state": state, "constants": e.pkg.def.Constants, "initial": e.pkg.def.Initial}))
+	return e.bindings(e.pkg.def.Derived, e.newScope(map[string]interface{}{
+		"state":     state,
+		"constants": e.pkg.def.Constants,
+		"initial":   e.pkg.def.Initial,
+		"user":      map[string]interface{}{"username": e.username},
+	}))
 }
 func (e *execution) canvasScope(s scope, event bool) (scope, error) {
 	if e.pkg.def.CanvasAPI == nil {
@@ -898,6 +907,7 @@ func (e *execution) operate(req request) (interface{}, error) {
 			"state":     req.State,
 			"initial":   e.pkg.def.Initial,
 			"constants": e.pkg.def.Constants,
+			"user":      map[string]interface{}{"username": e.username},
 		})
 		guard, err := e.eval(req.Guard, s)
 		if err != nil {
@@ -1088,7 +1098,7 @@ func main() {
 					err = fmt.Errorf("invalid operation cost limit")
 				} else {
 					ctx, cancel := context.WithTimeout(context.Background(), time.Duration(req.TimeoutMS)*time.Millisecond)
-					e := &execution{ctx: ctx, pkg: pkg, cache: map[string]ref.Val{}, costLimit: costLimit}
+					e := &execution{ctx: ctx, pkg: pkg, cache: map[string]ref.Val{}, costLimit: costLimit, username: req.Username}
 					pkg.active = e
 					resp.Result, err = e.operate(req)
 					resp.Metrics = e.stats

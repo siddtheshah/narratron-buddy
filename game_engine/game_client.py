@@ -61,7 +61,7 @@ def _expression(program: GameProgram, node: Tree[Token] | Token) -> JsonValue:
 
 def browser_program(program: GameProgram) -> dict[str, JsonValue] | None:
     """Export player rules only; server execution remains authoritative."""
-    if not program.definition.local_preview or program.definition.canvas_api is not None or program.definition.panel is not None:
+    if not program.definition.local_preview or program.definition.canvas_api is not None or program.definition.panel is not None or program.uses_user:
         return None
     if not browser_compatible([program.definition.initial, program.definition.constants]):
         return None

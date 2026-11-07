@@ -270,3 +270,41 @@ def test_legacy_packages_can_still_use_canvas_as_an_ordinary_binding() -> None:
     definition = counter_definition()
     definition.derived.append(Binding(name="canvas", expr="1"))
     assert validate_game_package(definition.model_dump_json().encode("utf-8")).initial_model_state == {"count": 0}
+
+
+def test_canvas_evaluator_exposes_username_across_python_and_go(worker: GoWorker | None) -> None:
+    definition = canvas_definition()
+    definition.functions["GreetUser"] = FunctionDefinition(parameters=["prefix"], expr="prefix + ':' + user.username")
+    definition.transitions["add"].guard = "user.username == 'alice' && state.count + action.amount <= 10"
+    definition.transitions["add"].canvas_effects = (
+        '[{"op": "put_stamp", "target": {"page_id": canvas.page.id}, '
+        '"key": "piece-" + user.username, "asset_id": "stamp:key", '
+        '"center": {"x": next_state.count * 1000, "y": 5000}, "width": 600, "rotation": 0, "draggable": true}]'
+    )
+    definition.view = ViewNode(kind="text", props={"text": "GreetUser('Player')"})
+    evaluator = CanvasEvaluator(GameProgram(definition), worker)
+
+    prepared_alice = evaluator.prepare(definition.initial, scene_snapshot(), username="alice")
+    assert prepared_alice.view[0]["props"]["text"] == "Player:alice"
+
+    prepared_bob = evaluator.prepare(definition.initial, scene_snapshot(), username="bob")
+    assert prepared_bob.view[0]["props"]["text"] == "Player:bob"
+
+    with pytest.raises(ValueError, match="not permitted"):
+        evaluator.attempt(
+            definition.initial,
+            region_snapshot(),
+            GameStep(name="add", arguments={"amount": 2}),
+            username="bob",
+        )
+
+    result = evaluator.attempt(
+        definition.initial,
+        region_snapshot(),
+        GameStep(name="add", arguments={"amount": 2}),
+        username="alice",
+    )
+    assert result.state == {"count": 2}
+    assert result.view[0]["props"]["text"] == "Player:alice"
+    assert len(result.canvas_effects) == 1
+    assert result.canvas_effects[0]["key"] == "piece-alice"

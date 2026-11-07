@@ -767,6 +767,15 @@ async def trigger_orator_mic_toggle(request: Request, theater_id: str):
     return {"status": "ok", "broadcasted_to": count}
 
 
+def _request_username(request: Request) -> str:
+    current_user = get_current_user(request)
+    if type(current_user) is dict:
+        raw_username = current_user.get("username")
+        if type(raw_username) is str:
+            return raw_username
+    return ""
+
+
 @app.get("/api/latest")
 def get_latest_image(
     request: Request,
@@ -780,7 +789,8 @@ def get_latest_image(
     theater_dir = theater_manager.theater(theater_id).directory()
     if not theater_dir.exists():
         theater_repository.reconstruct_theater(theater_id, theater_dir)
-    return _state(theater_id).get_latest_state()
+    username = _request_username(request)
+    return _state(theater_id).get_latest_state(username=username) if username else _state(theater_id).get_latest_state()
 
 @app.get("/api/doodles")
 def get_page_doodles(request: Request, theater_id: str, page_id: str,
@@ -876,7 +886,8 @@ def post_game_action(
         raise HTTPException(status_code=400, detail="Canvas-enabled actions require the displayed canvas revision.")
     try:
         is_orator = can_control_agent_websocket(deployment, current_user=get_current_user(request))
-        return state.game.act(payload) if is_orator else state.game.act(payload, actor="contributor")
+        username = _request_username(request)
+        return state.game.act(payload, username=username) if is_orator else state.game.act(payload, actor="contributor", username=username)
     except UnauthorizedGameAction as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     except StaleGameAction as exc:

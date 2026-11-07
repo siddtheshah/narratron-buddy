@@ -851,3 +851,108 @@ def test_contributor_permission_actions_and_narration(tmp_path: Path) -> None:
         game.act(GameAction(name="clear", revision=1), actor="contributor")
     assert game.state == {"count": 2}
     assert game.revision == 1
+
+
+@pytest.mark.parametrize("backend", ["python", "go"])
+def test_username_in_transitions_and_per_user_views(tmp_path: Path, backend: str) -> None:
+    definition = GameDefinition.model_validate({
+        "version": 2,
+        "local_preview": True,
+        "initial": {
+            "last_actor": "",
+            "secrets": {"alice": "Royal Flush", "bob": "Two Pair"},
+        },
+        "state_schema": {
+            "type": "object",
+            "required": ["last_actor", "secrets"],
+            "additionalProperties": False,
+            "properties": {
+                "last_actor": {"type": "string"},
+                "secrets": {
+                    "type": "object",
+                    "additionalProperties": {"type": "string"},
+                },
+            },
+        },
+        "derived": [
+            {
+                "name": "viewer_secret",
+                "expr": "user.username in state.secrets ? state.secrets[user.username] : 'Hidden'",
+            }
+        ],
+        "transitions": {
+            "claim": {
+                "actor": "player",
+                "parameters": {
+                    "type": "object",
+                    "required": ["note"],
+                    "additionalProperties": False,
+                    "properties": {"note": {"type": "string"}},
+                },
+                "bindings": [{"name": "who", "expr": "user.username"}],
+                "guard": "user.username != '' && user.username in state.secrets",
+                "result": '{"last_actor": who, "secrets": state.secrets}',
+            }
+        },
+        "view": {
+            "kind": "column",
+            "children": [
+                {"kind": "text", "props": {"text": "viewer_secret"}},
+                {
+                    "kind": "button",
+                    "repeat": "user.username == 'alice' ? [1] : []",
+                    "props": {"text": "'Claim as ' + user.username"},
+                    "action": {"name": '"claim"', "arguments": '{"note": "ready"}', "permission": "contributor"},
+                },
+            ],
+        },
+    })
+    path = tmp_path / backend
+    (path / "game").mkdir(parents=True)
+    (path / "game" / "game.json").write_text(definition.model_dump_json(), encoding="utf-8")
+    game = GameState(path, Mock(), Mock(), backend=backend)
+    assert game.program is not None
+    assert game.program.uses_user is True
+
+    # Because the game depends on user.username, local_preview client export and raw state are suppressed.
+    anon_payload = game.payload()
+    assert anon_payload is not None
+    assert "client" not in anon_payload
+    assert "state" not in anon_payload
+    assert anon_payload["view"][0]["children"][0]["props"]["text"] == "Hidden"
+    assert len(anon_payload["view"][0]["children"]) == 1
+
+    # Alice sees her secret and her user-gated button; Bob sees only his secret.
+    alice_payload = game.payload(username="alice")
+    assert alice_payload is not None
+    assert alice_payload["view"][0]["children"][0]["props"]["text"] == "Royal Flush"
+    assert len(alice_payload["view"][0]["children"]) == 2
+
+    bob_payload = game.payload(username="bob")
+    assert bob_payload is not None
+    assert bob_payload["view"][0]["children"][0]["props"]["text"] == "Two Pair"
+    assert len(bob_payload["view"][0]["children"]) == 1
+
+    # Bob cannot invoke the button action that is only rendered for Alice.
+    with pytest.raises(UnauthorizedGameAction, match="active orator"):
+        game.act(
+            GameAction(name="claim", arguments={"note": "ready"}, revision=0),
+            actor="contributor",
+            username="bob",
+        )
+
+    # Alice can invoke her action, and user.username is recorded on the action and state.
+    callback = Mock()
+    game.on_player_action = callback
+    act_res = game.act(
+        GameAction(name="claim", arguments={"note": "ready"}, revision=0),
+        actor="contributor",
+        username="alice",
+    )
+    assert act_res is not None
+    assert game.state["last_actor"] == "alice"
+    pending = game.pending_story_actions()
+    assert len(pending) == 1
+    assert pending[0][0].username == "alice"
+    callback.assert_called_once()
+    assert callback.call_args[0][0].username == "alice"
