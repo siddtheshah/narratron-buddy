@@ -144,6 +144,20 @@ export function initializeChatController(options = {}) {
     const privateHelpMessages = [];
     let helpPending = false;
     let suggestionsHidden = false;
+    const heldScrollPointers = new Set();
+    let scrollInteractionVersion = 0;
+
+    messagesContainer?.addEventListener('pointerdown', event => {
+        heldScrollPointers.add(event.pointerId);
+        scrollInteractionVersion++;
+    }, { passive: true });
+    const releaseScrollPointer = event => heldScrollPointers.delete(event.pointerId);
+    window.addEventListener('pointerup', releaseScrollPointer, { passive: true });
+    window.addEventListener('pointercancel', releaseScrollPointer, { passive: true });
+    window.addEventListener('blur', () => heldScrollPointers.clear());
+    for (const eventName of ['wheel', 'touchmove', 'keydown']) {
+        messagesContainer?.addEventListener(eventName, () => scrollInteractionVersion++, { passive: true });
+    }
 
     let nameDisplay = initialNameDisplay || null;
     if (!nameDisplay && nameInput && nameInput.parentElement) {
@@ -547,20 +561,27 @@ export function initializeChatController(options = {}) {
             const messages = [...await res.json(), ...privateHelpMessages];
             const fingerprint = JSON.stringify(messages);
             if (fingerprint !== lastChatFingerprint) {
+                const previousScrollTop = messagesContainer.scrollTop;
                 const isNearBottom = (messagesContainer.scrollHeight - messagesContainer.scrollTop - messagesContainer.clientHeight) < 120;
                 const isInitial = (lastChatFingerprint === '');
+                const interactionVersion = scrollInteractionVersion;
+                const shouldFollow = heldScrollPointers.size === 0 && (forceScrollToBottom || isInitial || isNearBottom);
                 messagesContainer.innerHTML = '';
                 messages.forEach(msg => {
                     messagesContainer.appendChild(renderChatMessage(msg));
                 });
+                // Rebuilding the log must not move someone reading older messages.
+                messagesContainer.scrollTop = previousScrollTop;
                 lastChatFingerprint = fingerprint;
-                await fetchSuggestions();
 
-                if (forceScrollToBottom || isInitial || isNearBottom) {
+                if (shouldFollow) {
                     requestAnimationFrame(() => {
-                        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+                        if (heldScrollPointers.size === 0 && interactionVersion === scrollInteractionVersion) {
+                            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+                        }
                     });
                 }
+                await fetchSuggestions();
             }
         } catch (err) {
             console.warn('Chat fetch failed:', err);

@@ -490,6 +490,51 @@ def test_preview_chat_sends_emotes_suggestions_and_private_help(
     assert errors == []
 
 
+@pytest.mark.parametrize("release_event", ["pointerup", "pointercancel"])
+def test_preview_follows_story_updates_unless_scroll_is_held(
+    remote_page: Page, release_event: str,
+) -> None:
+    page = remote_page
+    messages = [{"author": "Narratron", "text": f"Story beat {index}. " * 12} for index in range(12)]
+
+    def chat(route: Route) -> None:
+        route.fulfill(json=messages)
+
+    page.route("**/api/chat?theater_id=stage", chat)
+    page.goto("http://remote.test/remote?theater_id=stage#preview")
+    log = page.get_by_role("log", name="Theater chat")
+    expect(log.locator(".chat-message")).to_have_count(12)
+    at_bottom = """() => {
+        const log = document.getElementById('chat-messages');
+        return log.scrollHeight - log.scrollTop - log.clientHeight < 1;
+    }"""
+    page.wait_for_function(at_bottom)
+
+    messages.append({"author": "Narratron", "text": "A new story update. " * 30})
+    expect(log.locator(".chat-message")).to_have_count(13)
+    page.wait_for_function(at_bottom)
+
+    log.evaluate("log => { log.scrollTop = 80; }")
+    messages.append({"author": "Narratron", "text": "The story continues. " * 30})
+    expect(log.locator(".chat-message")).to_have_count(14)
+    assert log.evaluate("log => log.scrollTop") == 80
+
+    log.evaluate("log => { log.scrollTop = log.scrollHeight; }")
+    held_position = log.evaluate("log => log.scrollTop")
+    log.dispatch_event("pointerdown", {"pointerId": 7, "pointerType": "touch"})
+    messages.append({"author": "Narratron", "text": "An update while holding. " * 30})
+    expect(log.locator(".chat-message")).to_have_count(15)
+    assert log.evaluate("log => log.scrollTop") == held_position
+
+    # Releasing outside the log also ends the hold. Returning to the bottom
+    # resumes following subsequent agent updates.
+    page.locator("body").dispatch_event(release_event, {"pointerId": 7, "pointerType": "touch"})
+    log.evaluate("log => { log.scrollTop = log.scrollHeight; }")
+    messages.append({"author": "Narratron", "text": "Following the story again. " * 30})
+    expect(log.locator(".chat-message")).to_have_count(16)
+    page.wait_for_function(at_bottom)
+
+
 @pytest.mark.parametrize("owner_credits", [8001.0, 0.0])
 def test_phone_baton_holder_with_no_credits_starts_using_owner_balance(
     remote_page: Page, owner_credits: float,
