@@ -297,6 +297,27 @@ def test_watch_audio_queues_matching_live_speech(remote_page: Page) -> None:
     assert page.evaluate("watchAudio[1].paused && !watchAudio[1].getAttribute('src')")
 
 
+def test_watch_composers_fit_short_viewports(remote_page: Page, tmp_path: Path) -> None:
+    page = remote_page
+    page.get_by_role("tab", name="Watch", exact=True).click()
+    for width, height in [(390, 844), (320, 568), (390, 480), (844, 390)]:
+        page.set_viewport_size({"width": width, "height": height})
+        for tab_name, composer_selector, log_selector in [
+            ("Chat", "#chat-form", "#chat-messages"),
+            ("Story", "#remote-composer", "#remote-story-log"),
+        ]:
+            page.get_by_role("tab", name=tab_name, exact=True).click()
+            composer = page.locator(composer_selector)
+            expect(composer).to_be_in_viewport(ratio=1)
+            assert composer.evaluate("element => element.getBoundingClientRect().bottom <= innerHeight")
+            assert page.locator(log_selector).evaluate("element => element.clientHeight > 0")
+            assert page.locator(".preview-tabs").evaluate("element => element.clientHeight <= 32")
+            assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+            page.screenshot(path=str(tmp_path / f"watch-{tab_name.lower()}-{width}-{height}.png"))
+        page.get_by_role("tab", name="Agent", exact=True).click()
+        expect(page.locator("#preview-thought-panel")).to_be_in_viewport(ratio=1)
+
+
 def test_story_preview_reads_updates_and_sends_instructions(remote_page: Page, tmp_path: Path) -> None:
     page = remote_page
     entries = [

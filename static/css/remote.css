@@ -306,7 +306,7 @@ body[data-pure-viewer="true"] #preview-tab {
     justify-content: center;
 }
 body[data-pure-viewer="true"] #canvas-preview {
-    display: block !important;
+    display: flex !important;
 }
 body[data-owner-idle="true"] #assets-tab,
 body[data-owner-idle="true"] #inputs-tab,
@@ -338,8 +338,35 @@ body[data-owner-idle="true"] #remote-controls {
 #retry-assets { margin-top: 8px; font-size: 12px; padding: 6px 12px; }
 #retry-assets[hidden] { display: none; }
 #canvas-preview { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: #10151f; }
-.preview-tabs { margin: 8px; }
-.preview-tabs button { min-height: 44px; height: auto; font-size: 14px; }
+.preview-tabs { margin: 4px 8px; }
+.preview-tabs button { min-height: 26px; height: 26px; font-size: 11px; }
+/* Reserve room for the composer; only the log and preview consume spare height. */
+main:has(#canvas-preview:not([hidden])) {
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
+}
+main:has(#canvas-preview:not([hidden])) > :is(header, .remote-tabs) { flex-shrink: 0; }
+main:has(#canvas-preview:not([hidden])) #remote-views { flex: 1; min-height: 0; }
+#canvas-preview { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+#canvas-preview > :is(.preview-heading, .preview-tabs) { flex-shrink: 0; }
+#canvas-preview .preview-frame { flex: 0 1 32svh; min-height: 0; max-height: 32%; }
+#canvas-preview > :where(.preview-chat, .preview-thought, #preview-story-panel) {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+}
+#canvas-preview #preview-chat-panel { min-height: 200px; }
+#canvas-preview #preview-story-panel { min-height: 100px; }
+#canvas-preview #chat-messages, #canvas-preview #remote-story-log { flex: 1; min-height: 0; height: 0; }
+#canvas-preview :is(.preview-chat-heading, #chat-form, #story-input-controls) { flex-shrink: 0; }
+#canvas-preview .preview-thought { flex: 1; overflow-y: auto; }
+#canvas-preview[hidden], #canvas-preview > [hidden] { display: none; }
+@media (max-height: 500px) {
+    main:has(#canvas-preview:not([hidden])) { padding-block: 8px max(8px, env(safe-area-inset-bottom)); }
+    #canvas-preview .preview-heading, #canvas-preview .preview-chat-heading { padding-block: 4px; }
+}
 #preview-thought-tab.is-highlighted {
     color: #fef08a;
     border-color: #fbbf24;
