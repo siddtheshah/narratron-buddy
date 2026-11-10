@@ -9,6 +9,7 @@ import importlib
 import json
 import re
 import pytest
+from pydantic import JsonValue
 from fastapi.testclient import TestClient
 from playwright.sync_api import Page, Route, WebSocketRoute, expect, sync_playwright
 
@@ -26,6 +27,11 @@ def remote_page() -> Iterator[Page]:
             files = {
                 "/remote": ("templates/remote.html", "text/html"),
                 "/static/js/remote.js": ("static/js/remote.js", "text/javascript"),
+                "/static/js/remote-game.js": ("static/js/remote-game.js", "text/javascript"),
+                "/static/js/game-renderer.js": ("static/js/game-renderer.js", "text/javascript"),
+                "/static/js/game-runtime.js": ("static/js/game-runtime.js", "text/javascript"),
+                "/static/js/game-panel.js": ("static/js/game-panel.js", "text/javascript"),
+                "/static/css/game-renderer.css": ("static/css/game-renderer.css", "text/css"),
                 "/static/js/remote-audio.js": ("static/js/remote-audio.js", "text/javascript"),
                 "/static/js/story-log-inspector.js": ("static/js/story-log-inspector.js", "text/javascript"),
                 "/static/js/chat-controller.js": ("static/js/chat-controller.js", "text/javascript"),
@@ -92,6 +98,79 @@ def test_adventure_controls_follow_theater_mode(remote_page: Page, adventure_mod
         page.get_by_role("tab", name="Agent", exact=True).press("ArrowRight")
         expect(page.locator("#preview-chat-panel")).to_be_visible()
         expect(page.locator("#preview-story-panel")).to_be_hidden()
+
+
+def test_watch_game_frame_zoom_actions_permissions_and_removal(remote_page: Page, tmp_path: Path) -> None:
+    page = remote_page
+    game: dict[str, JsonValue] = {
+        "definition_hash": "counter", "revision": 1,
+        "panel_html": '<style>body {width:620px;height:540px;margin:0;background:#182436;color:white}</style>'
+                      '<p data-panel-text="count"></p><button data-panel-action="add">Add one</button>',
+        "view": [{"kind": "column", "props": {"count": 0}, "children": [
+            {"kind": "button", "props": {"id": "add"}, "action": {
+                "name": "increment", "arguments": {}, "permission": "contributor",
+            }},
+        ]}],
+    }
+    remote_data: dict[str, JsonValue] = {
+        "agent_running": False, "is_owner": False, "is_orator": True,
+        "viewer_collab_enabled": False, "is_contributor": False, "game_state": game,
+    }
+    page.route("**/api/theaters/stage/remote", lambda route: route.fulfill(json=remote_data))
+
+    def act(route: Route) -> None:
+        assert json.loads(route.request.post_data or "{}") == {
+            "name": "increment", "arguments": {}, "revision": 1, "draft": [],
+        }
+        game["revision"] = 2
+        game["view"] = [{"kind": "column", "props": {"count": 1}, "children": [
+            {"kind": "button", "props": {"id": "add"}, "action": {
+                "name": "increment", "arguments": {}, "permission": "contributor",
+            }},
+        ]}]
+        route.fulfill(json=game)
+
+    page.route("**/api/game/action?*", act)
+    page.goto("http://remote.test/remote?theater_id=stage&join_key=secret#preview")
+    tab = page.get_by_role("tab", name="Game", exact=True)
+    tab.click()
+    frame = page.frame_locator("#remote-game-content iframe")
+    expect(frame.locator("p")).to_have_text("0")
+    expect(page.locator("#remote-game-content iframe")).to_have_attribute("sandbox", "allow-scripts")
+    expect(page.locator("#game-zoom-level")).not_to_have_text("100%")
+    initial = page.locator("#remote-game-content iframe").bounding_box()
+    assert initial is not None and initial["width"] <= 390
+    page.get_by_role("button", name="Zoom game in", exact=True).click()
+    enlarged = page.locator("#remote-game-content iframe").bounding_box()
+    assert enlarged is not None and enlarged["width"] > initial["width"]
+    assert page.locator("#remote-game-viewport").evaluate("el => el.scrollWidth > el.clientWidth")
+    page.get_by_role("button", name="Fit", exact=True).click()
+    # Polls preserve the frame and its interaction state when nothing changed.
+    frame.locator("p").evaluate("el => el.dataset.preserved = 'yes'")
+    page.wait_for_timeout(2200)
+    expect(frame.locator("p")).to_have_attribute("data-preserved", "yes")
+    frame.get_by_role("button", name="Add one").click()
+    expect(frame.locator("p")).to_have_text("1")
+    remote_data["is_orator"] = False
+    expect(frame.get_by_role("button", name="Add one")).to_be_disabled()
+    remote_data["viewer_collab_enabled"] = True
+    remote_data["is_contributor"] = True
+    expect(frame.get_by_role("button", name="Add one")).to_be_enabled()
+    page.screenshot(path=str(tmp_path / "watch-game-mobile.png"))
+    for width, height in [(320, 568), (390, 480), (844, 390)]:
+        page.set_viewport_size({"width": width, "height": height})
+        page.get_by_role("button", name="Fit", exact=True).click()
+        box = page.locator("#remote-game-stage").bounding_box()
+        assert box is not None and box["width"] <= width
+        assert page.locator("#remote-game-viewport").evaluate("el => el.clientHeight > 0")
+        page.screenshot(path=str(tmp_path / f"watch-game-{width}-{height}.png"))
+    remote_data["game_state"] = None
+    expect(tab).to_be_hidden()
+    expect(page.locator("#preview-chat-panel")).to_be_visible()
+    remote_data["game_state"] = game
+    expect(tab).to_be_visible()
+    tab.click()
+    expect(frame.locator("p")).to_have_text("1")
 
 
 def test_watch_tab_displays_narratron_thought(remote_page: Page) -> None:

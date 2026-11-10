@@ -1,6 +1,7 @@
 import { initializeChatController } from './chat-controller.js';
 import { initializeStoryLogInspector } from './story-log-inspector.js';
 import { initializeRemoteAudio } from './remote-audio.js';
+import { initializeRemoteGame } from './remote-game.js';
 
 (() => {
     'use strict';
@@ -155,6 +156,12 @@ import { initializeRemoteAudio } from './remote-audio.js';
     let audioWs = null;
     let audioReconnectTimer = null;
     let audioRefreshTimer = null;
+    const remoteGame = initializeRemoteGame({
+        actionUrl: () => `/api/game/action?${new URLSearchParams({ theater_id: theaterId, ...(theaterKey ? { join_key: theaterKey } : {}) })}`,
+        canEdit: () => Boolean(state && isOratorUser()),
+        canContribute: () => Boolean(state?.viewer_collab_enabled && state?.is_contributor),
+        refresh: () => void refresh(generation),
+    });
 
     function connectAudioSocket() {
         if (!theaterId || !/^[a-zA-Z0-9_-]+$/.test(theaterId)) return;
@@ -423,7 +430,7 @@ import { initializeRemoteAudio } from './remote-audio.js';
 
     let swipeStart = null;
     viewContainer.addEventListener('touchstart', event => {
-        const nested = event.target.closest('.asset-carousel, .asset-card, input, textarea, button, #chat-messages, #remote-story-log');
+        const nested = event.target.closest('.asset-carousel, .asset-card, input, textarea, button, #chat-messages, #remote-story-log, #remote-game-viewport');
         swipeStart = event.touches.length === 1 && !nested
             ? {x: event.touches[0].clientX, y: event.touches[0].clientY} : null;
     }, {passive: true});
@@ -721,6 +728,8 @@ import { initializeRemoteAudio } from './remote-audio.js';
     function render() {
         const adventureMode = Boolean(state?.is_adventure_mode);
         document.getElementById('preview-story-tab').hidden = !adventureMode;
+        document.getElementById('preview-game-tab').hidden = !state?.game_state;
+        remoteGame.render(state?.game_state || null);
         document.getElementById('story-direction').hidden = !adventureMode;
         if (!adventureMode && previewTabs[selectedPreviewIndex]?.id === 'preview-story-tab') {
             selectedPreviewIndex = 0;

@@ -351,7 +351,7 @@ main:has(#canvas-preview:not([hidden])) #remote-views { flex: 1; min-height: 0; 
 #canvas-preview { display: flex; flex-direction: column; height: 100%; min-height: 0; }
 #canvas-preview > :is(.preview-heading, .preview-tabs) { flex-shrink: 0; }
 #canvas-preview .preview-frame { flex: 0 1 32svh; min-height: 0; max-height: 32%; }
-#canvas-preview > :where(.preview-chat, .preview-thought, #preview-story-panel) {
+#canvas-preview > :where(.preview-chat, .preview-thought, #preview-story-panel, #preview-game-panel) {
     display: flex;
     flex-direction: column;
     flex: 1;
@@ -362,6 +362,20 @@ main:has(#canvas-preview:not([hidden])) #remote-views { flex: 1; min-height: 0; 
 #canvas-preview #chat-messages, #canvas-preview #remote-story-log { flex: 1; min-height: 0; height: 0; }
 #canvas-preview :is(.preview-chat-heading, #chat-form, #story-input-controls) { flex-shrink: 0; }
 #canvas-preview .preview-thought { flex: 1; overflow-y: auto; }
+#canvas-preview:has(#preview-game-panel:not([hidden])) .preview-frame { display: none; }
+#remote-views:has(#preview-game-panel:not([hidden])) { touch-action: pan-x pan-y pinch-zoom; }
+.game-zoom-controls { display: flex; align-items: center; justify-content: center; gap: 12px; padding: 8px; flex-shrink: 0; }
+.game-zoom-controls button { flex: 0 0 auto; min-width: 40px; min-height: 36px; }
+#game-zoom-level { min-width: 48px; text-align: center; font-size: 13px; }
+#remote-game-viewport { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; }
+#remote-game-stage { position: relative; overflow: hidden; }
+#remote-game-content { position: absolute; top: 0; left: 0; width: var(--remote-game-width, 510px); transform-origin: top left; }
+#remote-game-content .game-panel {
+    position: relative; left: auto !important; top: auto !important; transform: none;
+    width: 100%; min-width: 0; max-width: none; max-height: none; overflow: visible;
+    margin: 0; padding: 0; border: 0; border-radius: 0; box-shadow: none;
+}
+#remote-game-content .game-html-panel { height: var(--game-panel-height, 430px) !important; max-height: none !important; }
 #canvas-preview[hidden], #canvas-preview > [hidden] { display: none; }
 @media (max-height: 500px) {
     main:has(#canvas-preview:not([hidden])) { padding-block: 8px max(8px, env(safe-area-inset-bottom)); }

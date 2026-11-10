@@ -29,7 +29,7 @@ let rendererSequence = 0;
 export function createGameRenderer({ container, toggleButton, actionUrl, canEdit,
     canContribute = () => false, refresh,
     canMove = () => canEdit() || canContribute(),
-    stylesheetUrl = '/static/css/game-renderer.css?v=12', initiallyOpen = false,
+    stylesheetUrl = '/static/css/game-renderer.css?v=12', initiallyOpen = false, embedded = false,
     beforeOpen = async () => {}, onPendingChange = () => {}, onMove = () => {} }) {
     const stylesheet = document.createElement('link');
     stylesheet.rel = 'stylesheet';
@@ -343,6 +343,7 @@ export function createGameRenderer({ container, toggleButton, actionUrl, canEdit
     function draw() {
         panelFrame = null;
         panelActions = new Map();
+        if (embedded) open = Boolean(game);
         if (!game) open = false;
         toggleButton.hidden = !game;
         toggleButton.setAttribute('aria-expanded', String(open));

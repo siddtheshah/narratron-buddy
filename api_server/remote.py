@@ -3,7 +3,7 @@
 from fastapi import HTTPException, Query, Request, Response
 from fastapi.responses import HTMLResponse
 import jinja2
-from pydantic import BaseModel
+from pydantic import BaseModel, JsonValue
 
 from api_server.dependencies import live_agent_manager
 from api_server.shared import (
@@ -49,6 +49,7 @@ class RemoteStatus(BaseModel):
     viewer_collab_enabled: bool
     is_adventure_mode: bool = False
     preview_url: str | None = None
+    game_state: dict[str, JsonValue] | None = None
     music: RemoteMusicStatus
     committed_scene_speech_generation: int
     agent_thought: RemoteAgentThought = RemoteAgentThought()
@@ -135,6 +136,7 @@ def get_remote_status(theater_id: str, request: Request, response: Response) -> 
             theater and theater.config.get("story_planning", {}).get("adventure_mode", False)
         ),
         preview_url=state.visual.preview_image_url(),
+        game_state=state.game.payload(),
         music=RemoteMusicStatus(
             music_id=state.audio.current_music_id or state.audio.current_playlist,
             tracks=state.audio.current_playlist_tracks,

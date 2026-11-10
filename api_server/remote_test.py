@@ -20,6 +20,7 @@ def remote_services() -> Iterator[tuple[TestClient, MagicMock, MagicMock]]:
     state.audio.music_paused = False
     state.story.committed_scene_speech_generation = 3
     state.ui.viewer_collab_enabled = True
+    state.game.payload.return_value = None
     state.visual.preview_image_url.return_value = "/theaters/stage/output/scene.webp"
     state.tool_response.current_agent_thought = ""
     state.tool_response.current_agent_thought_time = 0.0
@@ -87,6 +88,7 @@ def test_remote_returns_state_for_active_orator(
         "music_pinned": False, "viewer_collab_enabled": True,
         "is_adventure_mode": False,
         "preview_url": "/theaters/stage/output/scene.webp",
+        "game_state": None,
         "music": {"music_id": "rain", "tracks": ["/audio/rain.mp3"], "paused": False},
         "committed_scene_speech_generation": 3,
         "agent_thought": {"text": "", "time": 0.0, "highlighted": False},
@@ -96,6 +98,15 @@ def test_remote_returns_state_for_active_orator(
     }
     manager.get_session.return_value = MagicMock(is_alive=True)
     assert client.get("/api/theaters/stage/remote").json()["agent_running"] is True
+
+
+def test_remote_includes_current_game_payload(
+    remote_services: tuple[TestClient, MagicMock, MagicMock],
+) -> None:
+    client, _, _ = remote_services
+    game = {"definition_hash": "counter", "revision": 3, "view": [], "panel_html": "<p>Game</p>"}
+    with patch.object(remote.canvas_states.get("stage").game, "payload", return_value=game):
+        assert client.get("/api/theaters/stage/remote").json()["game_state"] == game
 
 
 def test_remote_allows_owner_after_handoff_and_pure_viewers(

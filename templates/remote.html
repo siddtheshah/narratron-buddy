@@ -110,6 +110,7 @@
             <button id="preview-chat-tab" role="tab" aria-controls="preview-chat-panel" aria-selected="true">Chat</button>
             <button id="preview-thought-tab" role="tab" aria-controls="preview-thought-panel" aria-selected="false" tabindex="-1">Agent</button>
             <button id="preview-story-tab" role="tab" aria-controls="preview-story-panel" aria-selected="false" tabindex="-1" hidden>Story</button>
+            <button id="preview-game-tab" role="tab" aria-controls="preview-game-panel" aria-selected="false" tabindex="-1" hidden>Game</button>
         </nav>
         <section id="preview-chat-panel" class="preview-chat" role="tabpanel" aria-labelledby="preview-chat-tab">
             <div class="preview-chat-heading">
@@ -153,6 +154,17 @@
                 <p id="story-input-status" role="status"></p>
                 <div id="story-composer-slot"></div>
             </fieldset>
+        </section>
+        <section id="preview-game-panel" role="tabpanel" aria-labelledby="preview-game-tab" hidden>
+            <div class="game-zoom-controls" role="group" aria-label="Game zoom">
+                <button id="game-zoom-out" type="button" aria-label="Zoom game out">−</button>
+                <output id="game-zoom-level" aria-live="polite">100%</output>
+                <button id="game-zoom-in" type="button" aria-label="Zoom game in">+</button>
+                <button id="game-zoom-fit" type="button">Fit</button>
+            </div>
+            <div id="remote-game-viewport" tabindex="0" aria-label="Scrollable game frame">
+                <div id="remote-game-stage"><div id="remote-game-content"></div></div>
+            </div>
         </section>
     </section>
     <section id="remote-baton" role="tabpanel" aria-labelledby="party-tab" tabindex="0" hidden>
