@@ -5,6 +5,65 @@ import sys
 from pathlib import Path
 
 from playwright.sync_api import Route, sync_playwright
+import pytest
+
+
+@pytest.mark.parametrize("owner", [True, False])
+def test_help_settings_button_is_owner_only_and_requires_a_click(owner: bool) -> None:
+    script = Path("static/js/chat-controller.js").read_text(encoding="utf-8")
+    script = script.replace("export function", "function").replace("import { initializeChatEmotes } from './chat-emotes.js';", "")
+    emotes = Path("static/js/chat-emotes.js").read_text(encoding="utf-8").replace("export function", "function")
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(channel="msedge" if sys.platform == "win32" else None)
+        page = browser.new_page()
+
+        def shell(route: Route) -> None:
+            route.fulfill(body='<div id="chat-messages"></div>', content_type="text/html")
+
+        page.route("http://narratron.test/", shell)
+        page.goto("http://narratron.test/")
+        page.add_script_tag(content="""
+            window.applies = []; window.restarts = 0;
+            window.fetch = async (url, options) => {
+                if (!url.endsWith('/apply-settings')) return {ok: true, json: async () => url.startsWith('/api/chat') && window.message ? [window.message] : []};
+                window.applies.push({url, body: JSON.parse(options.body), confirmation: options.headers['X-Narratron-Settings-Confirm']});
+                if (window.applies.length === 1) return {ok: false, json: async () => ({detail: 'Settings changed. Ask again.'})};
+                return {ok: true, json: async () => ({applied: true, agent_running: true, message: 'Settings saved and agent restarted.'})};
+            };
+        """)
+        page.add_script_tag(content=emotes + script)
+        page.evaluate("""async owner => {
+            window.controller = initializeChatController({
+                messagesContainer: document.querySelector('#chat-messages'), theaterId: 'stage',
+                isTheaterOwner: () => owner, onSettingsApplied: async () => { window.restarts++; },
+            });
+            await controller.fetchChat();
+            window.message = {type: 'user_help', author: 'Narratron User Help', text: 'Review this change.',
+                settings_proposal: {config_digest: 'a'.repeat(64), changes: [{setting: 'image_generation.enabled', enabled: false}]},
+                settings_summary: ['Disable AI image generation'],
+            };
+            document.querySelector('#chat-messages').appendChild(controller.renderChatMessage(message));
+        }""", owner)
+        button = page.get_by_role('button', name='Apply settings and restart agent')
+        assert button.count() == (1 if owner else 0)
+        assert page.evaluate("window.applies") == []
+        if owner:
+            assert page.get_by_text('Disable AI image generation').count() == 1
+            button.click()
+            page.get_by_role('status').filter(has_text='Settings changed. Ask again.').wait_for()
+            assert button.is_enabled()
+            assert page.evaluate('window.restarts') == 0
+            button.click()
+            page.get_by_role('status').filter(has_text='Settings saved and agent restarted.').wait_for()
+            assert page.evaluate('window.restarts') == 1
+            assert page.evaluate('window.applies[1]') == {
+                'url': '/api/user-help/stage/apply-settings',
+                'confirmation': '1',
+                'body': {'config_digest': 'a' * 64, 'changes': [{'setting': 'image_generation.enabled', 'enabled': False}]},
+            }
+            page.evaluate("document.querySelector('#chat-messages').replaceChildren(controller.renderChatMessage(message))")
+            assert page.get_by_role('button', name='Settings applied').is_disabled()
+        browser.close()
 
 
 def test_canvas_help_is_private_and_skips_the_live_agent() -> None:

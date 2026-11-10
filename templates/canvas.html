@@ -4697,6 +4697,11 @@
             hideSuggestionsBtn: document.getElementById('hide-suggestions-btn'),
             theaterId: theaterId,
             isCurrentOrator: () => isCurrentOrator(),
+            isTheaterOwner: () => isTheaterStampOwner,
+            onSettingsApplied: async () => {
+                cleanupAgentConnection();
+                await checkAgentStatus();
+            },
             getAgentWs: () => ((isCurrentOrator() && agentWs) ? agentWs : null),
             getAuthState: () => getCanvasAuthState(),
         });

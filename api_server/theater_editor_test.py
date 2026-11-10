@@ -71,6 +71,95 @@ class BuilderHarness:
         return result.json()
 
 
+def test_canvas_help_settings_save_restart_and_reject_stale_proposals(builder: BuilderHarness) -> None:
+    from services.user_help_settings import config_digest
+
+    identifier = builder.create()["draft"]["theater_id"]
+    path = builder.manager.theater(identifier).directory() / "theater.yaml"
+    proposal = {"config_digest": config_digest(path.read_bytes()),
+                "changes": [{"setting": "image_generation.enabled", "enabled": False}]}
+    with (
+        patch("api_server.user_help.get_current_user_async", AsyncMock(return_value={"id": 7})),
+        patch("api_server.shared.get_current_user_async", AsyncMock(return_value={"id": 7})),
+    ):
+        help_answer = builder.client.post(f"/api/user-help?theater_id={identifier}",
+                                         json={"question": "Disable AI image generation"})
+    assert help_answer.status_code == 200, help_answer.text
+    assert help_answer.json()["settings_proposal"] == proposal
+    assert help_answer.json()["settings_summary"] == ["Disable AI image generation"]
+    with patch.object(object_registry, "live_agent_manager", MagicMock()) as manager:
+        result = builder.client.post(f"/api/user-help/{identifier}/apply-settings", json=proposal)
+        assert result.status_code == 200, result.text
+        assert result.json()["agent_running"] is True
+        manager.stop_session.assert_called_once_with(identifier)
+        manager.get_or_create_session.return_value.summon.assert_called_once()
+        stale = builder.client.post(f"/api/user-help/{identifier}/apply-settings", json=proposal)
+        assert stale.status_code == 409
+        assert manager.stop_session.call_count == 1
+    assert "enabled: false" in path.read_text(encoding="utf-8")
+    info = TheaterBuilderStore(builder.manager.base_dir).load(identifier)
+    assert info.saved_revision == info.revision
+    assert (builder.repository.theater_path(identifier) / "theater.yaml").read_bytes() == path.read_bytes()
+
+
+@pytest.mark.parametrize("user_id,orator_id,status", [(None, 7, 401), (8, 7, 403), (7, 8, 409)])
+def test_canvas_help_settings_require_owner_holding_baton(
+    builder: BuilderHarness, user_id: int | None, orator_id: int, status: int,
+) -> None:
+    from services.user_help_settings import config_digest
+
+    identifier = builder.create()["draft"]["theater_id"]
+    path = builder.manager.theater(identifier).directory() / "theater.yaml"
+    original = path.read_bytes()
+    builder.database.get_deployment.return_value = {"user_id": 7, "active_orator_id": orator_id}
+    if user_id is None:
+        builder.client.headers.pop("x-test-user")
+    else:
+        builder.client.headers["x-test-user"] = str(user_id)
+    response = builder.client.post(f"/api/user-help/{identifier}/apply-settings", json={
+        "config_digest": config_digest(original),
+        "changes": [{"setting": "image_generation.enabled", "enabled": False}],
+    })
+    assert response.status_code == status
+    assert path.read_bytes() == original
+
+
+def test_canvas_help_reports_restart_failure_after_saving(builder: BuilderHarness) -> None:
+    from services.user_help_settings import config_digest
+
+    identifier = builder.create()["draft"]["theater_id"]
+    path = builder.manager.theater(identifier).directory() / "theater.yaml"
+    with patch.object(object_registry.live_agent_manager, "get_or_create_session", side_effect=RuntimeError("Unavailable")):
+        response = builder.client.post(f"/api/user-help/{identifier}/apply-settings", json={
+            "config_digest": config_digest(path.read_bytes()),
+            "changes": [{"setting": "image_generation.enabled", "enabled": False}],
+        })
+    assert response.status_code == 200
+    assert response.json()["applied"] is True
+    assert response.json()["agent_running"] is False
+    assert "could not restart" in response.json()["message"]
+
+
+def test_canvas_help_does_not_restart_when_durable_save_fails(builder: BuilderHarness) -> None:
+    from services.user_help_settings import config_digest
+
+    identifier = builder.create()["draft"]["theater_id"]
+    path = builder.manager.theater(identifier).directory() / "theater.yaml"
+    with (
+        patch("services.theater_checkout.save_theater_checkout", return_value=False),
+        patch.object(object_registry, "live_agent_manager", MagicMock()) as manager,
+    ):
+        response = builder.client.post(f"/api/user-help/{identifier}/apply-settings", json={
+            "config_digest": config_digest(path.read_bytes()),
+            "changes": [{"setting": "image_generation.enabled", "enabled": False}],
+        })
+    assert response.status_code == 200
+    assert response.json()["applied"] is True
+    assert response.json()["agent_running"] is False
+    assert "saving failed" in response.json()["message"]
+    manager.get_or_create_session.assert_not_called()
+
+
 @pytest.fixture
 def builder(tmp_path: Path) -> Iterator[BuilderHarness]:
     manager = TheaterManager(tmp_path / "runtime")
@@ -97,7 +186,7 @@ def builder(tmp_path: Path) -> Iterator[BuilderHarness]:
         identifier = request.headers.get("x-test-user")
         return {"id": int(identifier)} if identifier else None
 
-    with patch.object(object_registry, "db", database), patch.object(object_registry, "theater_manager", manager), patch.object(object_registry, "theater_repository", repository), patch.object(object_registry, "pricing_controller", pricing), patch.object(object_registry, "canvas_states", CanvasStateService(manager)), patch.object(object_registry, "live_agent_manager", MagicMock()), patch.object(object_registry, "game_service", GameService(Path("games"))), patch("api_server.theater_editor.get_current_user_async", new=AsyncMock(side_effect=authenticate)), TestClient(app, headers={"x-test-user": "7"}) as client:
+    with patch.object(object_registry, "db", database), patch.object(object_registry, "theater_manager", manager), patch.object(object_registry, "theater_repository", repository), patch.object(object_registry, "pricing_controller", pricing), patch.object(object_registry, "canvas_states", CanvasStateService(manager)), patch.object(object_registry, "live_agent_manager", MagicMock()), patch.object(object_registry, "game_service", GameService(Path("games"))), patch("api_server.theater_editor.get_current_user_async", new=AsyncMock(side_effect=authenticate)), TestClient(app, headers={"x-test-user": "7", "X-Narratron-Settings-Confirm": "1"}) as client:
         yield BuilderHarness(client, manager, repository, database)
 
 

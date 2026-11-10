@@ -133,6 +133,8 @@ export function initializeChatController(options = {}) {
         hideSuggestionsBtn,
         theaterId = '',
         isCurrentOrator = () => false,
+        isTheaterOwner = () => false,
+        onSettingsApplied = null,
         getAgentWs = () => null,
         getAuthState = () => Promise.resolve({ authenticated: false }),
         popoutBroadcast = null,
@@ -143,6 +145,7 @@ export function initializeChatController(options = {}) {
     let lastChatFingerprint = "";
     const privateHelpMessages = [];
     let helpPending = false;
+    const settingsActions = new Map();
     let suggestionsHidden = false;
     const heldScrollPointers = new Set();
     let scrollInteractionVersion = 0;
@@ -458,6 +461,59 @@ export function initializeChatController(options = {}) {
 
         div.appendChild(prefixSpan);
         div.appendChild(textSpan);
+        if (isHelp && msg.settings_proposal && theaterId && isTheaterOwner()) {
+            const proposal = msg.settings_proposal;
+            const key = JSON.stringify(proposal);
+            const state = settingsActions.get(key) || { pending: false, applied: false, message: '' };
+            settingsActions.set(key, state);
+            const review = document.createElement('div');
+            review.className = 'help-settings-review';
+            const summary = document.createElement('ul');
+            for (const [index, change] of proposal.changes.entries()) {
+                const item = document.createElement('li');
+                item.textContent = msg.settings_summary?.[index]
+                    || `${change.enabled ? 'Enable' : 'Disable'} ${change.setting.replaceAll('_', ' ').replace('.enabled', '')}`;
+                summary.appendChild(item);
+            }
+            const apply = document.createElement('button');
+            apply.type = 'button';
+            apply.className = 'help-upgrade-btn help-settings-apply';
+            apply.textContent = state.applied ? 'Settings applied' : 'Apply settings and restart agent';
+            apply.disabled = state.pending || state.applied;
+            const status = document.createElement('p');
+            status.setAttribute('role', 'status');
+            status.textContent = state.message;
+            apply.addEventListener('click', async () => {
+                if (state.pending || state.applied) return;
+                state.pending = true;
+                apply.disabled = true;
+                state.message = 'Saving settings and restarting agent…';
+                status.textContent = state.message;
+                try {
+                    const response = await fetch(`/api/user-help/${encodeURIComponent(theaterId)}/apply-settings`, {
+                        method: 'POST', headers: {
+                            'Content-Type': 'application/json', 'X-Narratron-Settings-Confirm': '1',
+                        },
+                        body: JSON.stringify(proposal),
+                    });
+                    const result = await response.json();
+                    if (!response.ok) throw new Error(result.detail || 'Could not apply settings. Please try again.');
+                    state.applied = result.applied;
+                    state.message = result.message;
+                    apply.textContent = 'Settings applied';
+                    if (onSettingsApplied) await onSettingsApplied(result);
+                } catch (error) {
+                    state.message = error.message;
+                } finally {
+                    state.pending = false;
+                    apply.disabled = state.applied;
+                    status.textContent = state.message;
+                    await fetchChat();
+                }
+            });
+            review.append(summary, apply, status);
+            div.appendChild(review);
+        }
         if (isHelp && msg.help_mode === 'basic' && msg.help_question) {
             const upgrade = document.createElement('button');
             upgrade.type = 'button';
@@ -559,7 +615,7 @@ export function initializeChatController(options = {}) {
             const res = await fetch('/api/chat' + (theaterId ? `?theater_id=${encodeURIComponent(theaterId)}` : ''));
             if (!res.ok) return;
             const messages = [...await res.json(), ...privateHelpMessages];
-            const fingerprint = JSON.stringify(messages);
+            const fingerprint = JSON.stringify([isTheaterOwner(), messages, [...settingsActions]]);
             if (fingerprint !== lastChatFingerprint) {
                 const previousScrollTop = messagesContainer.scrollTop;
                 const isNearBottom = (messagesContainer.scrollHeight - messagesContainer.scrollTop - messagesContainer.clientHeight) < 120;

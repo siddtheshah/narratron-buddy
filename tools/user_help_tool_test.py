@@ -8,6 +8,7 @@ from tools.user_help_tool import UserHelpTool
 def make_tool(tmp_path: Path) -> UserHelpTool:
     theater = MagicMock()
     theater.theater_id = "test_theater"
+    theater.directory.return_value = tmp_path
     theater.config.return_value = {"user_help": {"cooldown_duration": 15}}
     with (
         patch("services.user_help_service.Agent"),
@@ -73,3 +74,26 @@ def test_user_help_tool_schedules_another_question_during_cooldown(tmp_path: Pat
 
     assert first == "User help answer posted in chat."
     assert second == "Tool 'user_help_tool' scheduled for next cycle when cooldown expires."
+
+
+def test_help_tool_publishes_reviewable_settings_without_writing(tmp_path: Path) -> None:
+    from services.user_help_settings import FeatureChange, config_digest
+
+    path = tmp_path / "theater.yaml"
+    original = b"live_agent: {}\n"
+    path.write_bytes(original)
+    tool = make_tool(tmp_path)
+
+    async def answer(question: str) -> str:
+        tool.service.settings_changes = [FeatureChange(setting="image_generation.enabled", enabled=False)]
+        return "Review the proposed change."
+
+    with patch.object(tool.service, "answer", side_effect=answer):
+        asyncio.run(tool.user_help_tool("Disable AI image generation"))
+    message = tool.canvas_manager.chat.add_message.call_args.args[0]
+    assert message["settings_proposal"] == {
+        "config_digest": config_digest(original),
+        "changes": [{"setting": "image_generation.enabled", "enabled": False}],
+    }
+    assert message["settings_summary"] == ["Disable AI image generation"]
+    assert path.read_bytes() == original

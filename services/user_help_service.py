@@ -14,6 +14,7 @@ from google.adk.apps.app import App
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
 from google.genai import types
+from services.user_help_settings import FEATURES, FeatureChange
 
 
 
@@ -109,11 +110,14 @@ class UserHelpService:
         help_roots: tuple[Path, ...] | None = None,
         session_service: InMemorySessionService | None = None,
         max_output_tokens: int = 1_200,
+        allow_settings_proposals: bool = False,
     ) -> None:
         self.model = model
         self.help_roots = help_roots or self._default_help_roots()
         self.session_service = session_service or InMemorySessionService()
         self.max_output_tokens = max_output_tokens
+        self.allow_settings_proposals = allow_settings_proposals
+        self.settings_changes: list[FeatureChange] = []
         self._search_calls = 0
         self._read_calls = 0
         self._call_lock = Lock()
@@ -135,6 +139,7 @@ class UserHelpService:
         if not clean_question:
             raise ValueError("Please ask a specific question about Narratron.")
         self._reset_call_counts()
+        self.settings_changes.clear()
         raw_answer = await self._run_agent(clean_question)
         return ensure_doc_citation(normalize_doc_links(raw_answer), clean_question)
 
@@ -203,6 +208,17 @@ class UserHelpService:
         ]
         return f"{self._display_path(target)} lines {safe_start_line}-{end_index}:\n" + "\n".join(numbered_lines)
 
+    def propose_feature_change(self, setting: str, enabled: bool) -> str:
+        """Offer an owner-confirmed feature switch; this never edits or restarts anything."""
+        if not self.allow_settings_proposals:
+            return "Settings proposals are unavailable here."
+        if setting not in FEATURES:
+            return "Unsupported setting. Use only one of: " + ", ".join(FEATURES)
+        change = FeatureChange(setting=setting, enabled=enabled)
+        self.settings_changes = [item for item in self.settings_changes if item.setting != setting]
+        self.settings_changes.append(change)
+        return "Proposed for owner review. No settings have changed."
+
     def _create_agent(self) -> Agent:
         return Agent(
             name="narratron_user_help_agent",
@@ -234,8 +250,14 @@ class UserHelpService:
                 "Give practical numbered steps and name controls, keys, and shortcuts exactly as the source confirms them. "
                 "Always cite documentation using relative web paths (/docs/...), never internal file paths (like site_docs/*.md or templates/*.html). "
                 "Do not mention tools, source file paths, or internal implementation details in the final answer."
+                + ("\nWhen the user asks to enable or disable a supported feature, call propose_feature_change "
+                   "with its exact setting key and desired boolean. Offer changes only when relevant to the question, "
+                   "never claim they have been applied. Explain that the owner can review the proposed switches "
+                   "and click Apply settings and restart agent. Supported settings: " + str(FEATURES)
+                   if self.allow_settings_proposals else "")
             ),
-            tools=[self.list_help_files, self.search_help_files, self.read_help_file],
+            tools=[self.list_help_files, self.search_help_files, self.read_help_file]
+            + ([self.propose_feature_change] if self.allow_settings_proposals else []),
             generate_content_config=types.GenerateContentConfig(
                 temperature=0.2,
                 max_output_tokens=self.max_output_tokens,

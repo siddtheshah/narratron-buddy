@@ -30,6 +30,22 @@ def test_empty_service_question_never_starts_research(tmp_path: Path) -> None:
     run.assert_not_awaited()
 
 
+def test_feature_proposals_are_opt_in_and_reset_between_answers(tmp_path: Path) -> None:
+    service = make_service(tmp_path)
+    assert service.propose_feature_change("image_generation.enabled", False) == "Settings proposals are unavailable here."
+    with patch("services.user_help_service.Runner"):
+        service = UserHelpService(model="test-model", help_roots=(tmp_path,), allow_settings_proposals=True)
+    assert service.propose_feature_change in service._agent.tools
+    assert "Unsupported" in service.propose_feature_change("live_agent.special_instructions", True)
+    service.propose_feature_change("image_generation.enabled", False)
+    service.propose_feature_change("image_generation.enabled", True)
+    assert len(service.settings_changes) == 1
+    assert service.settings_changes[0].enabled is True
+    with patch.object(service, "_run_agent", AsyncMock(return_value="Use [Docs](/docs).")):
+        asyncio.run(service.answer("How do I open the menu?"))
+    assert service.settings_changes == []
+
+
 @pytest.mark.parametrize("failure", [TimeoutError("timeout"), RuntimeError("provider failure")])
 def test_provider_failure_raises_instead_of_returning_a_billable_answer(
     tmp_path: Path, failure: Exception,
