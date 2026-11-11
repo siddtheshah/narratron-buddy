@@ -619,9 +619,18 @@ class GameState:
                                     self.state, observed, GameStep(name=action.name, arguments=action.arguments),
                                     actor, username=effective_username,
                                 )
+                            except SchemaValidationError as exc:
+                                raise InvalidGameInput(f"Invalid input: {exc.message[:200]}") from exc
                             except ValueError as exc:
                                 if str(exc) == "Only the active orator can take this game action.":
                                     raise UnauthorizedGameAction(str(exc)) from exc
+                                if str(exc) in (
+                                    "This actor cannot take that game action.",
+                                    "Game action exceeds its size budget.",
+                                    "Canvas evidence actor does not match the acting principal's role.",
+                                    "This action is not permitted in the current game state.",
+                                ):
+                                    raise InvalidGameInput(str(exc)) from exc
                                 raise
                             try:
                                 staged = transaction.enter_context(self._canvas_host.stage_canvas_effects(proposal.canvas_effects, observed))
@@ -665,6 +674,7 @@ class GameState:
                 elif type(exc) in (InvalidGameInput, UnauthorizedGameAction):
                     message = str(exc)
                 else:
+                    logger.debug("[GameState] Unexpected game action failure: %s", exc, exc_info=True)
                     message = "Game action could not be completed; the action was undone. Try another action."
                 self.report_error(message)
                 if type(exc) is GameWorkBudgetExceeded:

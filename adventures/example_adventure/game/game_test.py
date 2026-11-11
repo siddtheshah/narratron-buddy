@@ -171,3 +171,14 @@ def test_concession_is_unavailable_outside_an_active_ivory_turn(tmp_path: Path, 
     with pytest.raises(ValueError):
         game.act(GameAction(name="narratron_concede", revision=0), actor="narratron")
     assert game.serialize() == before and canvas.canvas_observation().stamps == {}
+
+
+def test_missing_move_arguments_raises_invalid_game_input(tmp_path: Path) -> None:
+    canvas = make_example_canvas(tmp_path)
+    move(canvas, 40, 33)
+    game = canvas.game
+    assert game is not None
+    before = game.serialize()
+    with pytest.raises(ValueError, match="Invalid input: 'source' is a required property"):
+        game.act(GameAction(name="narratron_move", arguments={}, revision=game.revision), actor="narratron")
+    assert game.serialize() == before

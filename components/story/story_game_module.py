@@ -43,6 +43,9 @@ logger = logging.getLogger(__name__)
 MAX_GAME_READ_LORE_CALLS_PER_RUN = 4
 MAX_GAME_SEARCH_LORE_CALLS_PER_RUN = 4
 GAME_ACTION_TIMEOUT_SECONDS = 35.0
+# Single-pass decisions whose Narratron actions the runtime rejects are re-prompted with
+# the rejection; a decision is persisted only once its actions commit (or it proposes none).
+MAX_GAME_DECISION_ATTEMPTS = 3
 
 GamePhase = Literal["control_game", "apply_story_response"]
 
@@ -149,6 +152,79 @@ def build_game_turn_prompt(
         game_state_json=game_state_json,
         relevant_lore=relevant_lore,
     ).strip()
+
+
+def _build_game_control_json_schema(
+    game_snapshot: dict[str, JsonValue] | None,
+) -> dict[str, JsonValue] | None:
+    """Build a JSON Schema constraining game_actions to the active Narratron contracts."""
+    if game_snapshot is None:
+        return None
+    raw_actions = game_snapshot.get("actions")
+    if type(raw_actions) is not dict:
+        return None
+    action_variants: list[JsonValue] = []
+    for name, contract in raw_actions.items():
+        if type(name) is not str or type(contract) is not dict:
+            return None
+        parameters = contract.get("parameters")
+        if type(parameters) is not dict:
+            return None
+        action_variants.append(
+            {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "enum": [name]},
+                    "arguments": parameters,
+                    "revision": {"type": "integer", "minimum": 0},
+                },
+                "required": ["name", "arguments", "revision"],
+                "additionalProperties": False,
+            }
+        )
+    if len(action_variants) == 1:
+        game_actions_schema: dict[str, JsonValue] = {
+            "type": "array",
+            "items": action_variants[0],
+        }
+    elif action_variants:
+        game_actions_schema = {
+            "type": "array",
+            "items": {"anyOf": action_variants},
+        }
+    else:
+        game_actions_schema = {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "revision": {"type": "integer", "minimum": 0},
+                },
+                "required": ["name", "revision"],
+                "additionalProperties": False,
+            },
+            "maxItems": 0,
+        }
+    narration_schema = TypeAdapter(dict[str, JsonValue]).validate_python(
+        NarrationRequest.model_json_schema()
+    )
+    return {
+        "type": "object",
+        "properties": {
+            "game_actions": game_actions_schema,
+            "narration_request": {
+                "anyOf": [narration_schema, {"type": "null"}],
+            },
+            "reason": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1000,
+            },
+        },
+        "required": ["game_actions", "narration_request", "reason"],
+        "additionalProperties": False,
+    }
 
 
 SubmitGameAction = Callable[[GameAction], dict[str, JsonValue]]
@@ -434,26 +510,60 @@ class StoryGameModule:
         relevant_lore = self.collect_relevant_lore(
             event, sticky_snapshot=snapshot, contextual_documents=contextual_documents,
         )
-        prompt = self._build_game_turn_prompt(
-            event, snapshot, phase=phase, relevant_lore=relevant_lore,
-        )
-        prompt += "\n# Already committed Narratron receipts (do not repeat)\n" + json.dumps(
-            [
-                receipt.model_dump(mode="json")
-                for receipt in self.journal.narratron_receipts(event.event_id)
-            ],
-            ensure_ascii=False,
-        )
-        if history:
-            prompt = f"{history}\n\n{prompt}"
+        system_instruction = self._build_game_instruction()
+        rejections: list[str] = []
+        for attempt in range(1, MAX_GAME_DECISION_ATTEMPTS + 1):
+            # Rebuild each attempt: a partially committed chain advances the game revision.
+            game_snapshot = (
+                self._game_state.story_snapshot("narratron")
+                if self._game_state is not None and self._game_state.program is not None
+                else None
+            )
+            prompt = self._build_game_turn_prompt(
+                event, snapshot, phase=phase, relevant_lore=relevant_lore,
+                game_snapshot=game_snapshot,
+            )
+            prompt += "\n# Already committed Narratron receipts (do not repeat)\n" + json.dumps(
+                [
+                    receipt.model_dump(mode="json")
+                    for receipt in self.journal.narratron_receipts(event.event_id)
+                ],
+                ensure_ascii=False,
+            )
+            if rejections:
+                prompt += (
+                    "\n\n# Rejected Narratron game actions\n"
+                    "The game runtime rejected the following proposed actions and did not apply them. "
+                    "The Current Game State above is authoritative. Choose valid listed Narratron actions "
+                    "at its current revision, or return no `game_actions` if none is justified.\n"
+                    + "\n".join(rejections)
+                )
+            if history:
+                prompt = f"{history}\n\n{prompt}"
 
-        request = TextResponseRequest(
-            prompt=prompt,
-            system_instruction=self._build_game_instruction(),
-            model=self.game_model,
-            temperature=0.2,
-            response_schema=GameControlDecision,
+            response_json_schema = _build_game_control_json_schema(game_snapshot)
+            request = TextResponseRequest(
+                prompt=prompt,
+                system_instruction=system_instruction,
+                model=self.game_model,
+                temperature=0.2,
+                response_schema=None if response_json_schema is not None else GameControlDecision,
+                response_json_schema=response_json_schema,
+            )
+            decision = self._generate_decision(request, phase=phase, started=started)
+            rejection = self._commit_decision_actions(event, decision)
+            if rejection is None:
+                return decision
+            rejections.append(f"- Attempt {attempt}: {rejection}")
+        raise ValueError(
+            f"Narratron game actions were rejected after {MAX_GAME_DECISION_ATTEMPTS} attempts for event "
+            f"{event.event_id}:\n" + "\n".join(rejections)
         )
+
+    def _generate_decision(
+        self, request: TextResponseRequest, *, phase: GamePhase, started: float,
+    ) -> GameControlDecision:
+        assert self.text_response_provider is not None
         executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="story-game")
         pending = executor.submit(self.text_response_provider.generate, request)
         try:
@@ -473,23 +583,35 @@ class StoryGameModule:
             fields = TypeAdapter(dict[str, JsonValue]).validate_json(response.text)
             if "reason" not in fields or "narration_request" not in fields:
                 raise ValueError("Game control must return an explicit narration decision and reason.")
-        decision = (
+        return (
             GameControlDecision.model_validate(response.parsed)
             if response.parsed is not None
             else GameControlDecision.model_validate_json(response.text)
         )
-        for action in decision.game_actions:
+
+    def _commit_decision_actions(self, event: RecordingEvent, decision: GameControlDecision) -> str | None:
+        """Commit a chained action list, returning the first rejection for corrective feedback.
+
+        Later actions in a chain depend on earlier revisions, so a rejection stops the chain.
+        """
+        for index, action in enumerate(decision.game_actions):
             try:
                 self._commit_game_action(event, action)
             except ValueError as exc:
                 logger.warning(
-                    "[StoryGameModule] Rejected invalid game action %s (revision=%d) for event %s: %s",
+                    "[StoryGameModule] Rejected invalid game action %s (args=%s) (revision=%d) for event %s: %s",
                     action.name,
+                    action.arguments,
                     action.revision,
                     event.event_id,
                     exc,
                 )
-        return decision
+                skipped = len(decision.game_actions) - index - 1
+                return (
+                    f"{action.model_dump_json(include={'name', 'arguments', 'revision'})} -> {exc}"
+                    + (f" ({skipped} dependent action(s) not attempted)" if skipped else "")
+                )
+        return None
 
     def should_apply_story_response(self, event: RecordingEvent) -> bool:
         """Analyze current game state, story response, and game rules to decide if a game action is warranted."""
@@ -777,16 +899,24 @@ class StoryGameModule:
         *,
         phase: GamePhase = "control_game",
         relevant_lore: str = "",
+        game_snapshot: dict[str, JsonValue] | None = None,
     ) -> str:
         owners = {
             topic: str(definition.get("owner") or "unknown")
             for topic, definition in self.notepad.sticky_definitions.items()
         }
         game_state_json = ""
-        if self._game_state is not None and self._game_state.program is not None:
-            game_snapshot = self._game_state.story_snapshot("narratron")
-            if game_snapshot is not None:
-                game_state_json = json.dumps(game_snapshot, ensure_ascii=False)
+        resolved_snapshot = (
+            game_snapshot
+            if game_snapshot is not None
+            else (
+                self._game_state.story_snapshot("narratron")
+                if self._game_state is not None and self._game_state.program is not None
+                else None
+            )
+        )
+        if resolved_snapshot is not None:
+            game_state_json = json.dumps(resolved_snapshot, ensure_ascii=False)
         return build_game_turn_prompt(
             event,
             snapshot,

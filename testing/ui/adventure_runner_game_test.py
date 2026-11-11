@@ -31,7 +31,14 @@ def test_adventure_lab_game_moves_and_reset(
     monkeypatch.setattr(server, "_adventure_runner_sessions", {})
 
     def generate(request: TextResponseRequest) -> TextResponseResult:
-        if request.response_schema is GameControlDecision:
+        schema_props = (
+            request.response_json_schema.get("properties")
+            if request.response_json_schema is not None
+            else None
+        )
+        if request.response_schema is GameControlDecision or (
+            type(schema_props) is dict and "game_actions" in schema_props
+        ):
             return TextResponseResult(text=GameControlDecision().model_dump_json(), provider="test", model="test")
         return TextResponseResult(
             text="", provider="test", model="test",

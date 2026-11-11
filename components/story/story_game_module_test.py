@@ -4,11 +4,13 @@ from pathlib import Path
 from unittest.mock import Mock
 
 import pytest
+from pydantic import JsonValue
 
 from components.canvas_state import CanvasStateManager
 from components.lore_library import LoreLibrary
 from components.notepad import Notepad, NoteSnapshot
 from components.story.story_game_module import (
+    MAX_GAME_DECISION_ATTEMPTS,
     MAX_GAME_READ_LORE_CALLS_PER_RUN,
     MAX_GAME_SEARCH_LORE_CALLS_PER_RUN,
     StoryGameModule,
@@ -20,6 +22,7 @@ from components.story.story_recording_journal import RecordingEvent, StoryRecord
 from components.theater_manager import Theater
 from game_engine.game_runtime import GameAction
 from game_engine.game_state import GameState
+from testing.game_fixtures import make_example_canvas
 from providers.decision_provider import (
     ChoiceAnswer,
     DecisionProvider,
@@ -612,6 +615,195 @@ def test_single_pass_text_response_provider_commits_game_actions_and_preloads_lo
         game_state.commit_story_action.assert_called_once()
         assert len(outcome.narratron_receipts) == 1
         assert outcome.narration_request == decision_payload.narration_request
+    finally:
+        journal.close()
+
+
+def _rejecting_game_module(
+    pad: Notepad, tmp_path: Path, decisions: list[GameControlDecision], commits: list[dict[str, JsonValue] | Exception],
+) -> tuple[StoryGameModule, Mock, Mock, StoryRecordingJournal]:
+    game_state = Mock(spec=GameState)
+    game_state.program = Mock()
+    game_state.story_action_commits.return_value = []
+    game_state.commit_story_action.side_effect = commits
+    game_state.story_snapshot.return_value = {
+        "revision": 1,
+        "state": {"turn": "narratron"},
+        "instructions": "Narratron must answer every player move.",
+        "actions": {"narratron_move": {"description": "Move a narratron piece."}},
+    }
+    text_provider = Mock(spec=TextResponseProvider)
+    text_provider.generate.side_effect = [
+        TextResponseResult(text=decision.model_dump_json(), provider="mock", model="fast-game")
+        for decision in decisions
+    ]
+    journal = StoryRecordingJournal(tmp_path / "recording.sqlite")
+    game_module = StoryGameModule(
+        pad, journal, game_state=game_state, text_response_provider=text_provider,
+    )
+    return game_module, game_state, text_provider, journal
+
+
+def _player_move(event_id: str) -> RecordingEvent:
+    return RecordingEvent(
+        event_id=event_id,
+        action_id=f"player-{event_id}",
+        kind="committed_game_action",
+        source_revision=0,
+        payload={"action": {"name": "player_move"}, "receipt": {"revision": 1}},
+    )
+
+
+def test_rejected_narratron_action_is_corrected_instead_of_stalling_the_game(
+    pad: Notepad, tmp_path: Path,
+) -> None:
+    illegal = GameAction(name="narratron_move", arguments={"to": "z9"}, revision=1)
+    legal = GameAction(name="narratron_move", arguments={"to": "d5"}, revision=1)
+    game_module, game_state, text_provider, journal = _rejecting_game_module(
+        pad, tmp_path,
+        decisions=[
+            GameControlDecision(game_actions=(illegal,), reason="Counter on z9."),
+            GameControlDecision(game_actions=(legal,), reason="Counter on d5."),
+        ],
+        commits=[
+            ValueError("This action is not permitted in the current game state."),
+            {"revision": 2, "state": {"turn": "player"}},
+        ],
+    )
+    try:
+        event = _player_move("game-reject-1")
+        outcome = game_module.control_game(event)
+        assert text_provider.generate.call_count == 2
+        retry_prompt: str = text_provider.generate.call_args_list[1][0][0].prompt
+        assert "Rejected Narratron game actions" in retry_prompt
+        assert "not permitted in the current game state" in retry_prompt
+        assert '"arguments":{"to":"z9"}' in retry_prompt
+        assert game_state.commit_story_action.call_count == 2
+        assert [receipt.action for receipt in outcome.narratron_receipts] == [legal]
+        saved = journal.game_control_decision(event.event_id)
+        assert saved is not None and saved.game_actions == (legal,)
+    finally:
+        journal.close()
+
+
+def test_persistently_rejected_narratron_action_escalates_without_persisting_decision(
+    pad: Notepad, tmp_path: Path,
+) -> None:
+    illegal = GameAction(name="narratron_move", arguments={"to": "z9"}, revision=1)
+    rejection = ValueError("This action is not permitted in the current game state.")
+    game_module, game_state, text_provider, journal = _rejecting_game_module(
+        pad, tmp_path,
+        decisions=[GameControlDecision(game_actions=(illegal,))] * MAX_GAME_DECISION_ATTEMPTS,
+        commits=[rejection] * MAX_GAME_DECISION_ATTEMPTS,
+    )
+    try:
+        event = _player_move("game-reject-2")
+        with pytest.raises(ValueError, match="rejected"):
+            game_module.control_game(event)
+        assert text_provider.generate.call_count == MAX_GAME_DECISION_ATTEMPTS
+        assert journal.game_control_decision(event.event_id) is None
+        assert journal.narratron_receipts(event.event_id) == []
+    finally:
+        journal.close()
+
+
+def test_example_adventure_game_control_uses_concrete_action_argument_schemas_and_retries_missing_args(
+    pad: Notepad, tmp_path: Path,
+) -> None:
+    canvas = make_example_canvas(tmp_path / "theater")
+    game = canvas.game
+    assert game is not None
+    game.act(
+        GameAction(
+            name="move",
+            arguments={"source": 40, "target": 33},
+            revision=0,
+            canvas_revision=canvas.canvas_observation().revision,
+        ),
+        actor="player",
+    )
+    assert game.revision == 1
+
+    bad_move = GameAction(name="narratron_move", arguments={}, revision=1)
+    good_move = GameAction(name="narratron_move", arguments={"source": 17, "target": 26}, revision=1)
+    text_provider = Mock(spec=TextResponseProvider)
+    text_provider.generate.side_effect = [
+        TextResponseResult(
+            text=GameControlDecision(game_actions=(bad_move,), reason="Missing args.").model_dump_json(),
+            provider="mock",
+            model="fast-game",
+        ),
+        TextResponseResult(
+            text=GameControlDecision(game_actions=(good_move,), reason="Ivory b6 to c5.").model_dump_json(),
+            provider="mock",
+            model="fast-game",
+        ),
+    ]
+    journal = StoryRecordingJournal(tmp_path / "recording.sqlite")
+    game_module = StoryGameModule(
+        pad, journal, game_state=game, text_response_provider=text_provider,
+    )
+    try:
+        player_event = RecordingEvent(
+            event_id="player:checkers:1:recording",
+            action_id="player:checkers:1",
+            kind="committed_game_action",
+            source_revision=0,
+            payload={
+                "action": {"name": "move", "arguments": {"source": 40, "target": 33}, "revision": 0},
+                "receipt": game.story_snapshot("narratron") or {},
+            },
+        )
+        outcome = game_module.control_game(player_event)
+        assert text_provider.generate.call_count == 2
+        first_req: TextResponseRequest = text_provider.generate.call_args_list[0][0][0]
+        assert first_req.response_schema is None
+        assert first_req.response_json_schema is not None
+        game_actions_schema = first_req.response_json_schema["properties"]["game_actions"]
+        variants = game_actions_schema["items"]["anyOf"]
+        move_variant = next(variant for variant in variants if variant["properties"]["name"]["enum"] == ["narratron_move"])
+        assert move_variant["properties"]["arguments"]["required"] == ["source", "target"]
+        assert "source" in move_variant["properties"]["arguments"]["properties"]
+        assert "target" in move_variant["properties"]["arguments"]["properties"]
+
+        retry_req: TextResponseRequest = text_provider.generate.call_args_list[1][0][0]
+        assert "'source' is a required property" in retry_req.prompt
+        assert [receipt.action.arguments for receipt in outcome.narratron_receipts] == [{"source": 17, "target": 26}]
+        assert game.revision == 2
+    finally:
+        journal.close()
+
+
+def test_empty_narratron_actions_constrains_game_actions_to_empty_array(
+    pad: Notepad, tmp_path: Path,
+) -> None:
+    canvas = make_example_canvas(tmp_path / "theater")
+    game = canvas.game
+    assert game is not None
+    # Revision 0 is Red's turn, so no Narratron actions are available.
+    text_provider = Mock(spec=TextResponseProvider)
+    text_provider.generate.return_value = TextResponseResult(
+        text=GameControlDecision(reason="Red's turn.").model_dump_json(),
+        provider="mock",
+        model="fast-game",
+    )
+    journal = StoryRecordingJournal(tmp_path / "recording.sqlite")
+    game_module = StoryGameModule(
+        pad, journal, game_state=game, text_response_provider=text_provider,
+    )
+    try:
+        player_event = RecordingEvent(
+            event_id="player:checkers:0:recording",
+            action_id="player:checkers:0",
+            kind="committed_game_action",
+            source_revision=0,
+            payload={"action": {"name": "reset", "arguments": {}, "revision": 0}, "receipt": {}},
+        )
+        game_module.control_game(player_event)
+        req: TextResponseRequest = text_provider.generate.call_args[0][0]
+        assert req.response_schema is None
+        assert req.response_json_schema is not None
+        assert req.response_json_schema["properties"]["game_actions"]["maxItems"] == 0
     finally:
         journal.close()
 

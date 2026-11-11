@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from concurrent.futures import Future, ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from threading import Lock
 import time
 from uuid import uuid4
@@ -353,17 +353,34 @@ class StoryEngine:
         if future is not None:
             try:
                 future.result(timeout=timeout)
+            except FutureTimeoutError as exc:
+                if not future.done():
+                    # Still running: keep the future so later waits observe its real outcome.
+                    logger.warning("[StoryEngine] Previous recorder call still running after %.1fs", timeout)
+                    return exc
+                logger.warning("[StoryEngine] Previous recorder call failed: %s", exc)
+                self._last_recorder_error = exc
+                err = exc
             except Exception as exc:
                 logger.warning("[StoryEngine] Previous recorder call failed: %s", exc)
                 self._last_recorder_error = exc
                 err = exc
-            finally:
-                with self._recorder_lock:
-                    if self._recorder_future is future:
-                        self._recorder_future = None
+            with self._recorder_lock:
+                if self._recorder_future is future:
+                    self._recorder_future = None
         if err is None and self._last_recorder_error is not None:
             err = self._last_recorder_error
         return err
+
+    def _require_earlier_cycles_completed(self, turns: list[StoryTurn]) -> None:
+        """Gate dependent stages on durable turn state, not on a sticky recorder error.
+
+        A failed recording leaves its turn incomplete, so earlier failures are caught here,
+        while a failure belonging to ``turns`` itself is exactly what this batch retries.
+        """
+        self._wait_for_previous_recorder()
+        if any(t.position < turns[0].position and not t.completed for t in self.turn_journal.turns()):
+            raise RuntimeError("An earlier story cycle requires recovery.")
 
     def _run_recording_task(self, turns: list[StoryTurn], owner: StoryTurn | None) -> None:
         spoken = [turn for turn in turns if turn.ingress == "communicated_action"]
@@ -505,13 +522,7 @@ class StoryEngine:
             for turn in turns:
                 if turn.ingress != "game_action" or turn.game_completed or turn.recorder_completed:
                     continue
-                self._wait_for_previous_recorder()
-                uncompleted_earlier = [
-                    t for t in self.turn_journal.turns()
-                    if t.position < turns[0].position and not t.completed
-                ]
-                if uncompleted_earlier or self._last_recorder_error is not None:
-                    raise RuntimeError("An earlier story cycle requires recovery.")
+                self._require_earlier_cycles_completed(turns)
                 event = self._recording_event(turn)
                 outcome = self.game_module.control_game(event)
                 decision = self.recording_journal.game_control_decision(event.event_id)
@@ -527,13 +538,7 @@ class StoryEngine:
             owner = spoken[0] if spoken else (narrated[0] if narrated else None)
             if owner is not None:
                 if owner.response is None:
-                    self._wait_for_previous_recorder()
-                    uncompleted_earlier = [
-                        t for t in self.turn_journal.turns()
-                        if t.position < turns[0].position and not t.completed
-                    ]
-                    if uncompleted_earlier or self._last_recorder_error is not None:
-                        raise RuntimeError("An earlier story cycle requires recovery.")
+                    self._require_earlier_cycles_completed(turns)
                     action = "\n".join(turn.action for turn in spoken) if spoken else "Narrate the recorder-established outcome."
                     nudges = [turn.nudge for turn in spoken if turn.nudge]
                     nudges.extend(turn.narrative_brief for turn in narrated if turn.narrative_brief)
@@ -560,13 +565,7 @@ class StoryEngine:
                 else:
                     self._run_recording_task(turns, owner)
             else:
-                self._wait_for_previous_recorder()
-                uncompleted_earlier = [
-                    t for t in self.turn_journal.turns()
-                    if t.position < turns[0].position and not t.completed
-                ]
-                if uncompleted_earlier or self._last_recorder_error is not None:
-                    raise RuntimeError("An earlier story cycle requires recovery.")
+                self._require_earlier_cycles_completed(turns)
                 self._run_recording_task(turns, None)
             return owner.response if owner is not None and owner.response is not None else {
                 "status": "completed", "narration_skipped": True, "reason": turns[0].narration_reason,

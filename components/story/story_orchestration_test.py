@@ -93,7 +93,14 @@ class TurnHarness:
         })
         tool = StoryTool(self.theater, canvas, provider, references, decision_provider=decisions)
         def generate(request: TextResponseRequest) -> TextResponseResult:
-            if request.response_schema is GameControlDecision:
+            schema_props = (
+                request.response_json_schema.get("properties")
+                if request.response_json_schema is not None
+                else None
+            )
+            if request.response_schema is GameControlDecision or (
+                type(schema_props) is dict and "game_actions" in schema_props
+            ):
                 role: StoryRole = "game"
                 stage_id = tool.game_module._game_stage_id
             else:
@@ -654,6 +661,27 @@ def test_game_turn_skip_is_explicit_and_planning_runs_in_background(harness: Tur
     tool._handle_player_game_action(action, receipt)
     assert tool.wait_for_pending_events(5)
     assert_foreground_calls(harness, ["game", "recorder"])
+
+
+@pytest.mark.parametrize("recovery", ["retry", "next_game_action"])
+def test_failed_skipped_game_recording_is_retried_instead_of_blocking_forever(
+    harness: TurnHarness, recovery: str,
+) -> None:
+    harness.fail_recording = True
+    tool = harness.new_tool()
+    tool._handle_player_game_action(GameAction(name="move", arguments={}, revision=0), {"revision": 1})
+    assert not tool.wait_for_pending_events(5)
+    first = tool.turn_journal.turns()[0]
+    assert first.game_completed and first.responder_skipped and not first.recorder_completed
+
+    harness.fail_recording = False
+    if recovery == "retry":
+        tool.retry_pending_turns()
+    else:
+        tool._handle_player_game_action(GameAction(name="move", arguments={}, revision=1), {"revision": 2})
+    assert tool.wait_for_pending_events(5)
+    assert all(turn.completed for turn in tool.turn_journal.turns())
+    assert harness.calls.count("game") == len(tool.turn_journal.turns())
 
 
 def test_significant_game_turn_narrates_brief_without_recording_again(harness: TurnHarness) -> None:
