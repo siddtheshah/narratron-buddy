@@ -43,19 +43,21 @@ def isolate_registry_storage(tmp_path_factory: pytest.TempPathFactory) -> Genera
     canvas = object_registry.canvas_states
     database.close()
     canvas.states.clear()
-    for name in ("ephemeral", "theaters", "stamps", "adventures", "music_catalog"):
+    for name in ("ephemeral", "theaters", "stamps", "adventures", "games", "music_catalog"):
         (tmp_path / name).mkdir()
     with (
         patch("components.theater_manager.ensure_ephemeral_root", return_value=tmp_path / "ephemeral"),
         patch("storage.theater_repository.ensure_theaters_root", return_value=tmp_path / "theaters"),
         patch("storage.stamp_storage.ensure_stamps_root", return_value=tmp_path / "stamps"),
         patch("services.adventure_service.ensure_adventures_root", return_value=tmp_path / "adventures"),
+        patch("services.game_service.ensure_games_root", return_value=tmp_path / "games"),
         patch("services.music_catalog.get_music_catalog_root", return_value=tmp_path / "music_catalog"),
         patch.object(database, "db_path", str(tmp_path / "registry.db")),
         patch.object(object_registry.theater_manager, "base_dir", tmp_path / "ephemeral"),
         patch.object(object_registry.theater_repository, "_base_dir", tmp_path / "theaters"),
         patch.object(object_registry.stamp_storage, "_base_dir", tmp_path / "stamps"),
         patch.object(object_registry.adventure_service, "_base_dir", tmp_path / "adventures"),
+        patch.object(object_registry.game_service, "_base_dir", tmp_path / "games"),
         patch.object(object_registry.music_catalog, "directory", tmp_path / "music_catalog"),
     ):
         try:

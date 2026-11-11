@@ -39,6 +39,7 @@ def initialize_test_registry() -> None:
         patch("storage.theater_repository.get_theaters_root", return_value=root / "theaters"),
         patch("storage.stamp_storage.get_stamps_root", return_value=root / "stamps"),
         patch("services.adventure_service.get_adventures_root", return_value=root / "adventures"),
+        patch("services.game_service.get_games_root", return_value=root / "games"),
         patch("services.music_catalog.get_music_catalog_root", return_value=root / "music_catalog"),
         patch("services.music_catalog.get_text_response_provider", return_value=provider),
         patch("services.text_beautifier.get_text_response_provider", return_value=provider),

@@ -401,5 +401,76 @@ class TestAdventureService(unittest.TestCase):
         self.assertEqual(service_custom.list_adventures(force_refresh=True), [])
 
 
+def test_cloud_adventure_refresh_checks_only_gcs_sentinel(tmp_path: Path) -> None:
+    mount = tmp_path / "adventures"
+    adv_dir = mount / "Alpha"
+    (adv_dir / "lore").mkdir(parents=True)
+    (adv_dir / "metadata.json").write_text(
+        json.dumps({"id": "alpha", "title": "Alpha", "created_at": "2026-08-10T00:00:00Z"}),
+        encoding="utf-8",
+    )
+    (adv_dir / "lore" / "intro.md").write_text("Intro", encoding="utf-8")
+
+    sentinel_generation: list[int | None] = [None]
+    requested_blobs: list[str] = []
+
+    def fake_get_blob(name: str) -> SimpleNamespace | None:
+        requested_blobs.append(name)
+        gen = sentinel_generation[0]
+        return SimpleNamespace(generation=gen) if gen is not None else None
+
+    bucket = MagicMock(spec=storage.Bucket)
+    bucket.get_blob.side_effect = fake_get_blob
+    bucket.list_blobs.side_effect = AssertionError("Sentinel check must not list bucket objects")
+    client = MagicMock(spec=storage.Client)
+    client.bucket.return_value = bucket
+
+    with (
+        flagsaver.flagsaver(testing_use_local=False),
+        patch.object(adventures, "get_adventures_root", return_value=mount),
+        patch.object(adventures.storage, "Client", return_value=client),
+        patch("services.catalog_sentinel.local_directory_cache_key", side_effect=AssertionError("Must not scan FUSE directory")),
+        patch.dict("os.environ", {"GCS_BUCKET": "test-bucket", "GCS_ADVENTURES_PREFIX": "adventures"}),
+    ):
+        service = AdventureService(mount)
+        loaded = service.list_adventures(force_refresh=True)
+        assert [item["id"] for item in loaded] == ["alpha"]
+        assert requested_blobs == ["adventures/.catalog_sentinel.json"]
+
+        # Missing or unchanged sentinel does not re-scan or reload.
+        with patch.object(service, "_fetch_adventures", side_effect=AssertionError("Unexpected reload")):
+            assert service.refresh_if_changed() is False
+
+        # Update metadata on disk and advance sentinel generation -> refreshes once.
+        sentinel_generation[0] = 42
+        (adv_dir / "metadata.json").write_text(
+            json.dumps({"id": "alpha", "title": "Alpha v2", "created_at": "2026-08-10T00:00:00Z"}),
+            encoding="utf-8",
+        )
+        assert service.refresh_if_changed() is True
+        assert service.get_adventure("alpha")["title"] == "Alpha v2"
+
+        # Same generation on subsequent ticks skips reload.
+        with patch.object(service, "_fetch_adventures", side_effect=AssertionError("Unexpected reload")):
+            assert service.refresh_if_changed() is False
+
+        # Transient sentinel check failure preserves snapshot and retries.
+        bucket.get_blob.side_effect = OSError("GCS unavailable")
+        with pytest.raises(OSError):
+            service.refresh_if_changed()
+        assert service.get_adventure("alpha")["title"] == "Alpha v2"
+
+        bucket.get_blob.side_effect = fake_get_blob
+        sentinel_generation[0] = 43
+        (adv_dir / "metadata.json").write_text(
+            json.dumps({"id": "alpha", "title": "Alpha v3", "created_at": "2026-08-10T00:00:00Z"}),
+            encoding="utf-8",
+        )
+        assert service.refresh_if_changed() is True
+        assert service.get_adventure("alpha")["title"] == "Alpha v3"
+        client.bucket.assert_called_with("test-bucket")
+        assert client.call_count == 0
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -130,6 +130,7 @@ import yaml
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 BUCKET = "narratron-buddy-app-storage"
+CATALOG_SENTINEL_FILENAME = ".catalog_sentinel.json"
 EXCLUDED_NAMES = {".git", "__pycache__", ".pytest_cache", ".ruff_cache", ".venv"}
 EXCLUDED_FILES = ("*.pyc", "*.pyo", ".env", ".env.*", "*.tmp", "*~", "*.swp")
 
@@ -598,10 +599,15 @@ def publish_tree(
     if bucket is None:
         raise ValueError("Publishing requires a storage bucket.")
     remote: dict[str, StorageBlob] = {}
+    sentinel_name = f"{prefix}{CATALOG_SENTINEL_FILENAME}"
+    sentinel_blob: StorageBlob | None = None
     for blob in bucket.list_blobs(prefix=prefix):
         if not blob.name.startswith(prefix):
             raise ValueError(f"Unexpected object outside publication prefix: {blob.name}")
         relative = blob.name.removeprefix(prefix)
+        if relative == CATALOG_SENTINEL_FILENAME:
+            sentinel_blob = blob
+            continue
         parts = relative.split("/")
         if len(parts) < 2 or not parts[-1]:
             continue
@@ -636,6 +642,28 @@ def publish_tree(
                     raise ValueError(f"Missing generation for {name}")
                 blob.delete(if_generation_match=blob.generation)
                 pruned += 1
+    if uploaded > 0 or pruned > 0 or sentinel_blob is None:
+        sentinel_generation = (
+            sentinel_blob.generation
+            if sentinel_blob is not None and sentinel_blob.generation is not None
+            else 0
+        )
+        sentinel_payload = json.dumps(
+            {
+                "kind": kind,
+                "commit": commit,
+                "published_at": datetime.now(timezone.utc).isoformat(),
+            },
+            sort_keys=True,
+        )
+        with TemporaryDirectory(prefix="narratron-sentinel-") as sentinel_dir:
+            sentinel_path = Path(sentinel_dir) / CATALOG_SENTINEL_FILENAME
+            sentinel_path.write_text(sentinel_payload, encoding="utf-8")
+            bucket.blob(sentinel_name).upload_from_filename(
+                str(sentinel_path),
+                content_type="application/json",
+                if_generation_match=sentinel_generation,
+            )
     print(f"Published {kind} at {commit}: {uploaded} uploaded, {skipped} unchanged, {pruned} pruned")
     return Publication(commit, uploaded, skipped, pruned)
 

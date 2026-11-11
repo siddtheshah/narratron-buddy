@@ -23,6 +23,11 @@ from pydantic import JsonValue, TypeAdapter
 from absl import flags
 from game_engine.game_source import GAME_FILES
 from components.theater_manager import asset_destination
+from services.catalog_sentinel import (
+    CatalogCacheKey,
+    gcs_sentinel_cache_key,
+    local_directory_cache_key,
+)
 
 if "testing_use_local" not in flags.FLAGS:
     flags.DEFINE_boolean(
@@ -76,7 +81,8 @@ class AdventureService:
         self._base_dir = Path(base_dir).resolve()
 
         self._adventures_cache: Optional[List[Dict[str, Any]]] = None
-        self._cache_key: Optional[tuple[tuple[str, int, int], ...]] = None
+        self._cache_key: Optional[CatalogCacheKey] = None
+        self._gcs_client: Optional[storage.Client] = None
         self._refresh_lock = Lock()
 
     @property
@@ -101,23 +107,32 @@ class AdventureService:
             self._adventures_cache = None
             self._cache_key = None
 
-    def _get_cache_key(self) -> tuple[tuple[str, int, int], ...]:
-        """Fingerprint package paths and file stats without reading asset contents.
+    def _use_gcs(self) -> bool:
+        """Return whether this service targets the cloud GCS adventures bucket."""
+        return (
+            not FLAGS["testing_use_local"].value
+            and self.base_dir == get_adventures_root().resolve()
+        )
 
-        This scan runs at startup or in the background, never on a warm listing.
-        Directory entries also detect added/removed empty adventure packages.
+    def _get_gcs_client(self) -> storage.Client:
+        """Lazily initialize and reuse a GCS client for sentinel checks."""
+        if self._gcs_client is None:
+            self._gcs_client = storage.Client()
+        return self._gcs_client
+
+    def _get_cache_key(self) -> CatalogCacheKey:
+        """Check only the GCS sentinel in cloud mode, or stat local files in local mode.
+
+        In cloud mode, checking a single sentinel blob avoids recurring FUSE
+        recursive directory scans (Class A ListObjects operations).
         """
-        root = self.base_dir
-        if not root.exists():
-            return ()
-        entries: list[tuple[str, int, int]] = []
-        for folder in root.iterdir():
-            if not folder.is_dir() or folder.name.startswith("."):
-                continue
-            for path in [folder, *folder.rglob("*")]:
-                stat = path.stat()
-                entries.append((path.relative_to(root).as_posix(), stat.st_mtime_ns, stat.st_size))
-        return tuple(sorted(entries))
+        if self._use_gcs():
+            return gcs_sentinel_cache_key(
+                self._get_gcs_client(),
+                os.getenv("GCS_BUCKET", DEFAULT_ADVENTURES_BUCKET),
+                os.getenv("GCS_ADVENTURES_PREFIX", DEFAULT_ADVENTURES_PREFIX),
+            )
+        return local_directory_cache_key(self.base_dir)
 
     def refresh_if_changed(self, force_refresh: bool = False) -> bool:
         """Atomically replace the snapshot only when its source fingerprint changes.
@@ -280,9 +295,7 @@ class AdventureService:
         if matched_folder is None:
             return reference_files, playlists_data, lore_files, theater_config
 
-        use_gcs = (not FLAGS["testing_use_local"].value
-                   and self.base_dir == get_adventures_root().resolve())
-        if use_gcs:
+        if self._use_gcs():
             with TemporaryDirectory(prefix="narratron-adventure-") as temporary:
                 local_folder = Path(temporary)
                 self._download_adventure_folder(matched_folder.name, local_folder)

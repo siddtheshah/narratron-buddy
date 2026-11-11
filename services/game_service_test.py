@@ -275,3 +275,57 @@ class TestGameService(unittest.TestCase):
 
         with patch.object(service, "_fetch_games", side_effect=fetch_during_refresh):
             self.assertTrue(service.refresh_if_changed(force_refresh=True))
+
+
+def test_cloud_game_refresh_checks_only_gcs_sentinel(tmp_path: Path) -> None:
+    mount = tmp_path / "games"
+    game_dir = mount / "Alpha Checkers"
+    (game_dir / "game").mkdir(parents=True)
+    (game_dir / "metadata.json").write_text(
+        json.dumps({"id": "alpha-checkers", "title": "Alpha Checkers", "created_at": "2026-08-10T00:00:00Z"}),
+        encoding="utf-8",
+    )
+    (game_dir / "game" / "game.yaml").write_text("version: 2\n", encoding="utf-8")
+
+    sentinel_generation: list[int | None] = [None]
+    requested_blobs: list[str] = []
+
+    def fake_get_blob(name: str) -> SimpleNamespace | None:
+        requested_blobs.append(name)
+        gen = sentinel_generation[0]
+        return SimpleNamespace(generation=gen) if gen is not None else None
+
+    bucket = MagicMock(spec=storage.Bucket)
+    bucket.get_blob.side_effect = fake_get_blob
+    bucket.list_blobs.side_effect = AssertionError("Sentinel check must not list bucket objects")
+    client = MagicMock(spec=storage.Client)
+    client.bucket.return_value = bucket
+
+    with (
+        flagsaver.flagsaver(testing_use_local=False),
+        patch.object(games, "get_games_root", return_value=mount),
+        patch.object(games.storage, "Client", return_value=client),
+        patch("services.catalog_sentinel.local_directory_cache_key", side_effect=AssertionError("Must not scan FUSE directory")),
+        patch.dict("os.environ", {"GCS_BUCKET": "test-bucket", "GCS_GAMES_PREFIX": "games"}),
+    ):
+        service = GameService(mount)
+        listed = service.list_games(force_refresh=True)
+        assert [item["id"] for item in listed] == ["alpha-checkers"]
+        assert requested_blobs == ["games/.catalog_sentinel.json"]
+
+        with patch.object(service, "_fetch_games", side_effect=AssertionError("Unexpected reload")):
+            assert service.refresh_if_changed() is False
+
+        sentinel_generation[0] = 7
+        (game_dir / "metadata.json").write_text(
+            json.dumps({"id": "alpha-checkers", "title": "Alpha Checkers v2", "created_at": "2026-08-10T00:00:00Z"}),
+            encoding="utf-8",
+        )
+        assert service.refresh_if_changed() is True
+        game = service.get_game("alpha-checkers")
+        assert game is not None
+        assert game["title"] == "Alpha Checkers v2"
+
+        with patch.object(service, "_fetch_games", side_effect=AssertionError("Unexpected reload")):
+            assert service.refresh_if_changed() is False
+        client.bucket.assert_called_with("test-bucket")

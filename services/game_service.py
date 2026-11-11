@@ -21,6 +21,11 @@ from absl import flags
 from components.theater_manager import asset_destination
 from components.theater_package import IMAGE_EXTENSIONS, safe_asset_path
 from game_engine.game_source import GAME_FILES, GAME_FILENAMES
+from services.catalog_sentinel import (
+    CatalogCacheKey,
+    gcs_sentinel_cache_key,
+    local_directory_cache_key,
+)
 
 if "testing_use_local" not in flags.FLAGS:
     flags.DEFINE_boolean(
@@ -72,7 +77,8 @@ class GameService:
     def __init__(self, base_dir: Path | str) -> None:
         self._base_dir: Path | None = Path(base_dir).resolve()
         self._games_cache: list[dict[str, JsonValue]] | None = None
-        self._cache_key: tuple[tuple[str, int, int], ...] | None = None
+        self._cache_key: CatalogCacheKey | None = None
+        self._gcs_client: storage.Client | None = None
         self._refresh_lock = Lock()
 
     @property
@@ -96,19 +102,28 @@ class GameService:
             self._games_cache = None
             self._cache_key = None
 
-    def _get_cache_key(self) -> tuple[tuple[str, int, int], ...]:
-        """Fingerprint package paths and file stats without reading asset contents."""
-        root = self.base_dir
-        if not root.exists():
-            return ()
-        entries: list[tuple[str, int, int]] = []
-        for folder in root.iterdir():
-            if not folder.is_dir() or folder.name.startswith("."):
-                continue
-            for path in [folder, *folder.rglob("*")]:
-                stat = path.stat()
-                entries.append((path.relative_to(root).as_posix(), stat.st_mtime_ns, stat.st_size))
-        return tuple(sorted(entries))
+    def _use_gcs(self) -> bool:
+        """Return whether this service targets the cloud GCS games bucket."""
+        return (
+            not FLAGS["testing_use_local"].value
+            and self.base_dir == get_games_root().resolve()
+        )
+
+    def _get_gcs_client(self) -> storage.Client:
+        """Lazily initialize and reuse a GCS client for sentinel checks."""
+        if self._gcs_client is None:
+            self._gcs_client = storage.Client()
+        return self._gcs_client
+
+    def _get_cache_key(self) -> CatalogCacheKey:
+        """Check only the GCS sentinel in cloud mode, or stat local files in local mode."""
+        if self._use_gcs():
+            return gcs_sentinel_cache_key(
+                self._get_gcs_client(),
+                os.getenv("GCS_BUCKET", DEFAULT_GAMES_BUCKET),
+                os.getenv("GCS_GAMES_PREFIX", DEFAULT_GAMES_PREFIX),
+            )
+        return local_directory_cache_key(self.base_dir)
 
     def refresh_if_changed(self, force_refresh: bool = False) -> bool:
         """Atomically replace the snapshot only when its source fingerprint changes."""
@@ -253,9 +268,7 @@ class GameService:
         if matched_folder is None:
             return {}
 
-        use_gcs = (not FLAGS["testing_use_local"].value
-                   and self.base_dir == get_games_root().resolve())
-        if use_gcs:
+        if self._use_gcs():
             with TemporaryDirectory(prefix="narratron-game-") as temporary:
                 local_folder = Path(temporary)
                 self._download_game_folder(matched_folder.name, local_folder)

@@ -1,6 +1,7 @@
 """Shared content workflows with real local Git and an in-memory GCS boundary."""
 
 from dataclasses import dataclass
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -538,7 +539,8 @@ def test_publish_flags_preserve_orphans_and_can_force_upload(workspace: ContentW
     assert result.skipped == result.pruned == 0
     assert orphan in bucket.objects
     uploads = [name for operation, name in bucket.events if operation == "upload"]
-    assert all(name.endswith("metadata.json") for name in uploads[-2:])
+    assert uploads[-1] == f"{workspace.kind}/{content.CATALOG_SENTINEL_FILENAME}"
+    assert all(name.endswith("metadata.json") for name in uploads[-3:-1])
 
 
 def test_publish_rejects_committed_symlinks_on_every_platform(workspace: ContentWorkspace, bucket: MemoryBucket) -> None:
@@ -585,3 +587,34 @@ def test_missing_checkout_is_cloned_using_the_shared_transport(workspace: Conten
     clone = missing / workspace.kind
     assert content.run_git(clone, "branch", "--show-current") == "main"
     assert (clone / f"local-game/{workspace.declaration}").read_text() == "name: Original\n"
+
+
+def test_publish_writes_and_updates_catalog_sentinel(workspace: ContentWorkspace, bucket: MemoryBucket) -> None:
+    commit = upload(workspace)
+    content.publish_collection(workspace.project, workspace.root, workspace.kind, bucket=bucket)
+    sentinel_name = f"{workspace.kind}/{content.CATALOG_SENTINEL_FILENAME}"
+    assert sentinel_name in bucket.objects
+    sentinel_blob = bucket.objects[sentinel_name]
+    assert sentinel_blob.generation == 1
+    payload = json.loads(sentinel_blob.data.decode("utf-8"))
+    assert payload["kind"] == workspace.kind
+    assert payload["commit"] == commit
+
+    # If the sentinel was deleted externally, a publish without package diffs still recreates it.
+    del bucket.objects[sentinel_name]
+    bucket.events.clear()
+    second = content.publish_collection(workspace.project, workspace.root, workspace.kind, bucket=bucket)
+    assert second.uploaded == 0
+    assert second.pruned == 0
+    assert sentinel_name in bucket.objects
+    assert bucket.events == [("list", f"{workspace.kind}/"), ("upload", sentinel_name)]
+
+    # A failed publish must not write or bump the sentinel.
+    bucket.events.clear()
+    bucket.fail_upload = f"{workspace.kind}/local-game/{workspace.declaration}"
+    write_file(workspace.project / workspace.kind / f"local-game/{workspace.declaration}", "name: Broken\n")
+    upload(workspace)
+    with pytest.raises(OSError, match="Simulated upload failure"):
+        content.publish_collection(workspace.project, workspace.root, workspace.kind, bucket=bucket)
+    assert bucket.objects[sentinel_name].generation == 1
+
