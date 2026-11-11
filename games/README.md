@@ -23,22 +23,24 @@ games/<slug>/
 
 See [`example_game/`](./example_game/) for a complete reference game package (Tic-Tac-Toe) including `game/game.yaml`, `game/panel.html`, `game/crest.svg`, `stamps/crown.png`, and `game/game_test.py`.
 
-## Syncing Games with GCS
+## Versioning and Publishing Games
 
-- **Upload Games to GCS**:
-  ```bash
-  uv run python scripts/upload_games_to_gcs.py
-  # Upload a single game:
-  uv run python scripts/upload_games_to_gcs.py --game wacky-chess
-  # Dry run:
-  uv run python scripts/upload_games_to_gcs.py --dry-run
-  ```
-- **Download Games from GCS**:
-  ```bash
-  uv run python scripts/download_games_from_gcs.py
-  # Download a single game:
-  uv run python scripts/download_games_from_gcs.py --game wacky-chess
-  ```
+The shared content command manages Git history separately from the app-served
+GCS catalog:
+
+```bash
+# Snapshot local changes, commit, and push to the game Git remote:
+uv run python scripts/content.py upload --content games --message "Update rules"
+# Pull versioned games into the local editing folder:
+uv run python scripts/content.py download --content games
+# Publish the uploaded commit to the catalog served by the app:
+uv run python scripts/content.py publish --content games
+```
+
+Add `--package wacky-chess` to select one package, or `--dry-run` to preview an
+operation without remote access or changes. Publishing reads an uploaded Git
+commit; local edits require another upload before they can be published.
+Run `uv run python scripts/content.py --help` for setup and recovery instructions.
 
 ## Testing & Attaching Games
 

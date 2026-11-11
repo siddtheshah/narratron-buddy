@@ -109,16 +109,6 @@ can test multi-party behavior with different accounts.
 To discard local database state and start with a new database, add
 `--with_empty_db`. This does not delete theater files.
 
-In cloud mode, deploying a preset adventure downloads its folder directly
-through the GCS Python transfer manager with up to eight concurrent transfers.
-The mounted `/mnt/storage/adventures` directory still supplies package listings
-and resolves adventure IDs to folder names. `GCS_BUCKET` defaults to
-`narratron-buddy-app-storage` and `GCS_ADVENTURES_PREFIX` to `adventures`; set them
-to match the mounted source. Downloads use Application Default Credentials with
-permission to list and read those objects. Temporary downloads are removed after
-the existing package parser reads them, including on failure. Local mode and
-explicit local adventure directories continue to read from disk. Repository
-persistence remains in the background after deployment.
 
 To load test a disposable local canvas, run:
 
@@ -170,6 +160,27 @@ Create a username and password in your `ngrok_policy.yaml`. This will prevent yo
 ```powershell
 ngrok http 8000 --traffic-policy-file ngrok_policy.yaml
 ```
+
+## Content Management
+
+In cloud mode, deploying a preset adventure downloads its folder directly
+through the GCS Python transfer manager with up to eight concurrent transfers.
+The mounted `/mnt/storage/adventures` directory still supplies package listings
+and resolves adventure IDs to folder names. `GCS_BUCKET` defaults to
+`narratron-buddy-app-storage` and `GCS_ADVENTURES_PREFIX` to `adventures`; set them
+to match the mounted source. Downloads use Application Default Credentials with
+permission to list and read those objects. Temporary downloads are removed after
+the existing package parser reads them, including on failure. Local mode and
+explicit local adventure directories continue to read from disk. Repository
+persistence remains in the background after deployment.
+
+Game and adventure content can be backed up to separate Git repositories under
+`gs://narratron-buddy-app-storage/git/` without adding packages to this source
+repository. Use `uv run python scripts/content.py upload` to snapshot, commit,
+and push local content, `download` to restore versioned content, and `publish`
+to deploy an uploaded commit to the app-served GCS folders. Add `--content games`
+or `--content adventures` to select a collection. Run
+`uv run python scripts/content.py --help` for setup and recovery instructions.
 
 ## Virtual Tabletop (VTT) & Game Play
 
