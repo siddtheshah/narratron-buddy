@@ -74,6 +74,8 @@ def test_animation_folder_upload_save_restore_and_delete(tmp_path: Path) -> None
     ("RESPONDER.md", False, "lore/RESPONDER.md"),
     ("PLANNER.md", False, "lore/PLANNER.md"),
     ("RECORDER.md", False, "lore/RECORDER.md"),
+    ("GAME.md", False, "lore/GAME.md"),
+    ("world/GAME.md", True, "lore/GAME.md"),
     ("world/RECORDER.md", True, "lore/RECORDER.md"),
     ("world/lore/RESPONDER.md", True, "lore/RESPONDER.md"),
     ("world/references/people/hero.png", True, "references/people/hero.png"),
@@ -150,6 +152,7 @@ def test_assistant_keeps_role_guides_and_planning_context_ahead_of_bulk_lore(tmp
         "lore/RESPONDER.md": b"guide",
         "lore/PLANNER.md": b"guide",
         "lore/RECORDER.md": b"guide",
+        "lore/GAME.md": b"guide",
         **{f"lore/aaa_{index}.txt": b"x" * 20_000 for index in range(5)},
     }
     store.write_files(info, adventure_files)
@@ -159,7 +162,7 @@ def test_assistant_keeps_role_guides_and_planning_context_ahead_of_bulk_lore(tmp
         store.propose(info, "Develop this adventure", [], {})
     call = client.models.generate_content.call_args.kwargs
     context = json.loads(call["contents"][0].text)["text_files"]
-    assert {"theater.yaml", "planning.yaml", "lore/RESPONDER.md", "lore/PLANNER.md", "lore/RECORDER.md"} <= context.keys()
+    assert {"theater.yaml", "planning.yaml", "lore/RESPONDER.md", "lore/PLANNER.md", "lore/RECORDER.md", "lore/GAME.md"} <= context.keys()
     instructions = call["config"].system_instruction
     assert "game/game.yaml" in instructions
     assert "game_tool.enabled: true" in instructions

@@ -72,6 +72,7 @@ class GameControlDecision(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
+    game_actions: tuple[GameAction, ...] = ()
     narration_request: NarrationRequest | None = None
     reason: str = Field(default="Routine mechanical action.", min_length=1, max_length=1000)
     factual_updates: dict[str, str] = Field(default_factory=dict)

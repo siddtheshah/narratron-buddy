@@ -14,7 +14,7 @@ from components.story.story_handoffs import CommittedGameReceipt, GameControlDec
 
 
 DEFAULT_HISTORY_EVENT_LIMIT = 20
-StoryHistoryRole = Literal["responder", "recorder", "planner"]
+StoryHistoryRole = Literal["responder", "game", "recorder", "planner"]
 HistoryKind = Literal["player_action", "game_action", "story_output", "lore_read"]
 RecordingKind = Literal["completed_response", "committed_game_action", "player_action", "story_output", "lore_read"]
 HISTORY_KINDS: dict[RecordingKind, HistoryKind] = {
@@ -31,7 +31,7 @@ class LoreReadRecord(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     event_id: str
-    reader: Literal["responder", "recorder"]
+    reader: Literal["responder", "game", "recorder"]
     document: str
     content: str
 
@@ -52,7 +52,7 @@ class StoryHistoryEvent(BaseModel):
         payload = self.payload
         if self.kind == "lore_read":
             read = LoreReadRecord.model_validate({"event_id": self.event_id, **payload})
-            private = PurePosixPath(read.document).name.casefold() in {"responder.md", "recorder.md", "planner.md"}
+            private = PurePosixPath(read.document).name.casefold() in {"responder.md", "game.md", "recorder.md", "planner.md"}
             if private and read.reader != role:
                 return None
         if self.kind == "game_action":
@@ -175,6 +175,12 @@ class StoryRecordingJournal:
                     completed INTEGER NOT NULL DEFAULT 0
                 )"""
             )
+            self._connection.execute(
+                """CREATE TABLE IF NOT EXISTS recorder_decisions (
+                    event_id TEXT PRIMARY KEY,
+                    decision_json TEXT NOT NULL
+                )"""
+            )
 
     @staticmethod
     def _history_event(event_json: str, metadata_json: str) -> StoryHistoryEvent:
@@ -231,7 +237,7 @@ class StoryRecordingJournal:
                 self._store_history_event(event)
 
     def record_lore_read(
-        self, reader: Literal["responder", "recorder"], document: str, result: str,
+        self, reader: Literal["responder", "game", "recorder"], document: str, result: str,
     ) -> None:
         if not result.startswith("Lore document:"):
             return
@@ -476,6 +482,34 @@ class StoryRecordingJournal:
             row = self._connection.execute(
                 "SELECT decision_json FROM game_control_decisions WHERE parent_event_id = ?",
                 (parent_event_id,),
+            ).fetchone()
+        return None if row is None else GameControlDecision.model_validate_json(row[0])
+
+    def save_recorder_decision(
+        self, event_id: str, decision: GameControlDecision
+    ) -> None:
+        with self._lock, self._connection:
+            row = self._connection.execute(
+                "SELECT decision_json FROM recorder_decisions WHERE event_id = ?",
+                (event_id,),
+            ).fetchone()
+            if row is not None:
+                if GameControlDecision.model_validate_json(row[0]) != decision:
+                    raise ValueError(
+                        "Recorder decision was already saved with different content."
+                    )
+                return
+            self._connection.execute(
+                """INSERT INTO recorder_decisions
+                   (event_id, decision_json) VALUES (?, ?)""",
+                (event_id, decision.model_dump_json()),
+            )
+
+    def recorder_decision(self, event_id: str) -> GameControlDecision | None:
+        with self._lock:
+            row = self._connection.execute(
+                "SELECT decision_json FROM recorder_decisions WHERE event_id = ?",
+                (event_id,),
             ).fetchone()
         return None if row is None else GameControlDecision.model_validate_json(row[0])
 

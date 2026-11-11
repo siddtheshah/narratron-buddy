@@ -26,7 +26,8 @@ example_adventure/
 │   └── crest.svg            # Embedded panel image
 ├── lore/                   # Contextual lore injected into the story modules
 │   ├── RESPONDER.md         # Pinned immediate-response instructions
-│   ├── RECORDER.md          # Pinned factual-recording and game-control instructions
+│   ├── GAME.md              # Pinned game-control and story-to-game integration instructions
+│   ├── RECORDER.md          # Pinned factual-recording instructions
 │   ├── PLANNER.md           # Pinned background-planning instructions
 │   ├── characters/         # NPC dossiers
 │   │   └── the_caretaker.txt

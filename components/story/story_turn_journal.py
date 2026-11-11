@@ -14,13 +14,14 @@ class StoryTurn(BaseModel):
     turn_id: str
     position: int = 0
     ingress: Literal["communicated_action", "game_action"]
-    entry_role: Literal["recorder", "responder"] | None = None
+    entry_role: Literal["game", "responder"] | None = None
     action: str
     action_logged: bool = False
     nudge: str = ""
     source_revision: int = 0
     game_payload: dict[str, JsonValue] = Field(default_factory=dict)
     response: dict[str, JsonValue] | None = None
+    game_completed: bool = False
     recorder_completed: bool = False
     responder_skipped: bool = False
     narration_reason: str | None = None
@@ -33,7 +34,7 @@ class StoryTurn(BaseModel):
 
     @model_validator(mode="after")
     def validate_entry_role(self) -> "StoryTurn":
-        expected = "recorder" if self.ingress == "game_action" else "responder"
+        expected: Literal["game", "responder"] = "game" if self.ingress == "game_action" else "responder"
         if self.entry_role is not None and self.entry_role != expected:
             raise ValueError("Entry role does not match the accepted ingress.")
         self.entry_role = expected

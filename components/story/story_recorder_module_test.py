@@ -6,8 +6,6 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from game_engine.game_runtime import GameAction
-from game_engine.game_state import GameState
 from components.canvas_state import CanvasStateManager
 from components.lore_library import LoreLibrary
 from components.notepad import Notepad, NoteSnapshot
@@ -17,17 +15,8 @@ from components.story.story_recorder_module import (
     MAX_RECORDER_READ_LORE_CALLS_PER_RUN,
     MAX_RECORDER_SEARCH_LORE_CALLS_PER_RUN,
     StoryRecorderModule,
-    SubmitGameAction,
 )
 from components.story.story_recording_journal import RecordingEvent, StoryRecordingJournal
-from providers.decision_provider import (
-    ChoiceAnswer,
-    DecisionProvider,
-    DecisionRequest,
-    DecisionResult,
-    PredicateAnswer,
-    ScoreAnswer,
-)
 
 
 @pytest.fixture
@@ -177,7 +166,7 @@ def test_recording_ignores_narration_request_and_commits_facts(
     try:
         if saved:
             journal.enqueue(event)
-            journal.save_game_control_decision(event.event_id, decision)
+            journal.save_recorder_decision(event.event_id, decision)
         with patch.object(recorder, "_run_model", return_value=decision) as run_model:
             assert recorder.record(event) == 1
             assert recorder.record(event) == 1
@@ -185,7 +174,7 @@ def test_recording_ignores_narration_request_and_commits_facts(
         assert pad.snapshot().notes["Inventory"] == "Broken key"
         assert journal.pending() == []
         assert journal.recorded_revision(event.event_id) == 1
-        stored = journal.game_control_decision(event.event_id)
+        stored = journal.recorder_decision(event.event_id)
         assert stored is not None
         assert stored.factual_updates == decision.factual_updates
         if not saved:
@@ -249,150 +238,6 @@ def test_pending_game_receipt_survives_restart(tmp_path: Path) -> None:
         restored.close()
 
 
-def test_retrying_projection_preserves_narration_handoff_without_peer_triggering(
-    pad: Notepad, tmp_path: Path
-) -> None:
-    journal = StoryRecordingJournal(tmp_path / "recording.sqlite")
-    game_state = Mock(spec=GameState)
-    game_state.story_snapshot.return_value = {"revision": 2, "state": {"tile": "B2"}}
-    player_event = RecordingEvent(
-        event_id="game-1",
-        action_id="player-1",
-        kind="committed_game_action",
-        source_revision=0,
-        payload={"action": {"name": "step"}, "receipt": {"revision": 1, "state": {"tile": "A2"}}},
-    )
-    narratron_action = GameAction(name="counter", arguments={"tile": "B2"}, revision=1)
-    reconcile = Mock(
-        side_effect=[
-            {"Location": "Square A2"},
-            RuntimeError("Transient projection failure"),
-            {"Location": "Square B2"},
-        ]
-    )
-    def control(
-        event: RecordingEvent, snapshot: NoteSnapshot, submit: SubmitGameAction
-    ) -> GameControlDecision:
-        assert snapshot.notes["Location"] == "Square A2"
-        receipt = submit(narratron_action)
-        assert receipt == {"revision": 2, "state": {"tile": "B2"}}
-        return GameControlDecision(
-            narration_request=NarrationRequest(
-                user_action="The warden blocks the corridor at B2.",
-                nudge="Describe the counter-move.",
-            )
-        )
-
-    control_mock = Mock(side_effect=control)
-    recorder = StoryRecorderModule(
-        pad,
-        journal,
-        reconcile,
-        game_state=game_state,
-        control_game=control_mock,
-    )
-    try:
-        with pytest.raises(RuntimeError, match="Transient projection failure"):
-            recorder.control_game(player_event)
-        game_state.act.assert_called_once_with(narratron_action, actor="narratron")
-        assert pad.snapshot().notes["Location"] == "Square A2"
-
-        outcome = recorder.control_game(player_event)
-        assert outcome.player_recorded_revision == 1
-        assert outcome.final_recorded_revision == 2
-        assert len(outcome.narratron_receipts) == 1
-        assert outcome.narration_request is not None
-        assert outcome.narration_triggered is False
-        assert journal.is_game_control_completed("game-1")
-        game_state.act.assert_called_once()
-        control_mock.assert_called_once()
-        assert reconcile.call_count == 3
-
-        repeated = recorder.control_game(player_event)
-        assert repeated == outcome
-        assert reconcile.call_count == 3
-    finally:
-        journal.close()
-
-
-def test_interrupted_controller_reuses_committed_receipt_and_rejects_conflicting_action(
-    pad: Notepad, tmp_path: Path
-) -> None:
-    journal = StoryRecordingJournal(tmp_path / "recording.sqlite")
-    game_state = Mock(spec=GameState)
-    game_state.story_snapshot.return_value = {"revision": 2, "state": {"tile": "B2"}}
-    player_event = RecordingEvent(
-        event_id="game-1",
-        action_id="player-1",
-        kind="committed_game_action",
-        source_revision=0,
-        payload={"action": {"name": "step"}, "receipt": {"revision": 1, "state": {"tile": "A2"}}},
-    )
-    first_action = GameAction(name="counter", arguments={"tile": "B2"}, revision=1)
-    conflicting_action = GameAction(name="counter", arguments={"tile": "C3"}, revision=1)
-    attempts = 0
-
-    def control(
-        event: RecordingEvent, snapshot: NoteSnapshot, submit: SubmitGameAction
-    ) -> GameControlDecision:
-        nonlocal attempts
-        attempts += 1
-        if attempts == 1:
-            submit(first_action)
-            raise RuntimeError("Controller interrupted after committing game action")
-        if attempts == 2:
-            submit(conflicting_action)
-            return GameControlDecision()
-        assert submit(first_action) == {"revision": 2, "state": {"tile": "B2"}}
-        return GameControlDecision()
-
-    recorder = StoryRecorderModule(
-        pad,
-        journal,
-        Mock(return_value={}),
-        game_state=game_state,
-        control_game=control,
-    )
-    try:
-        with pytest.raises(RuntimeError, match="Controller interrupted"):
-            recorder.control_game(player_event)
-        game_state.act.assert_called_once_with(first_action, actor="narratron")
-
-        with pytest.raises(ValueError, match="different committed Narratron action"):
-            recorder.control_game(player_event)
-        game_state.act.assert_called_once()
-
-        outcome = recorder.control_game(player_event)
-        assert len(outcome.narratron_receipts) == 1
-        assert outcome.narration_triggered is False
-        assert journal.pending() == []
-        game_state.act.assert_called_once()
-    finally:
-        journal.close()
-
-
-def test_completed_response_and_narratron_receipt_cannot_enter_game_control(
-    pad: Notepad, tmp_path: Path
-) -> None:
-    journal = StoryRecordingJournal(tmp_path / "recording.sqlite")
-    recorder = StoryRecorderModule(pad, journal, Mock(return_value={}))
-    narratron_event = RecordingEvent(
-        event_id="game-1:narratron:1",
-        action_id="player-1",
-        source_event_ids=("game-1",),
-        kind="committed_game_action",
-        source_revision=0,
-        payload={"actor": "narratron", "action": {"name": "counter"}, "receipt": {"revision": 2}},
-    )
-    try:
-        with pytest.raises(ValueError, match="Completed responses cannot enter game control"):
-            recorder.control_game(response())
-        with pytest.raises(ValueError, match="Narratron game receipts cannot recursively"):
-            recorder.control_game(narratron_event)
-    finally:
-        journal.close()
-
-
 def test_recorder_instructions_combine_source_template_and_pinned_recorder_md(
     pad: Notepad, tmp_path: Path
 ) -> None:
@@ -402,38 +247,31 @@ def test_recorder_instructions_combine_source_template_and_pinned_recorder_md(
         "RECORDER.md",
         "RESPONDER.md",
         "PLANNER.md",
+        "GAME.md",
         "rules/inventory.txt",
     ]
     contents = {
         "RECORDER.md": "RECORDER PRIORITY: verify brass key usage against archive rules.",
         "RESPONDER.md": "RESPONDER PRIORITY: narrate sensory details.",
         "PLANNER.md": "PLANNER SECRET: archivist counter-plan.",
+        "GAME.md": "GAME SECRET: play Ivory pieces conservatively.",
         "rules/inventory.txt": "Brass keys snap when forced.",
     }
     theater.read_lore_document.side_effect = contents.__getitem__
     lore_library = LoreLibrary(theater)
-    game_state = Mock(spec=GameState)
-    game_state.program = Mock()
-    game_state.story_snapshot.return_value = {
-        "revision": 2,
-        "state": {"square": "Courtyard"},
-        "instructions": "Advance the patrol when the bell rings.",
-        "actions": {"advance_patrol": {"description": "Move patrol"}},
-    }
     journal = StoryRecordingJournal(tmp_path / "recording.sqlite")
     recorder = StoryRecorderModule(
         pad,
         journal,
         Mock(return_value={}),
         lore_library=lore_library,
-        game_state=game_state,
         style="grounded mystery",
     )
     try:
         instruction = recorder._build_recorder_instruction()
         assert "# Role & Mission" in instruction
-        assert "# Phase 1 — Factual Recording Rules" in instruction
-        assert "# Phase 2 — Game Control Rules" in instruction
+        assert "# Factual Recording Rules" in instruction
+        assert "Game Control Rules" not in instruction
         assert "grounded mystery" in instruction
         assert '"Location"' in instruction
         assert '"Inventory"' in instruction
@@ -442,16 +280,18 @@ def test_recorder_instructions_combine_source_template_and_pinned_recorder_md(
         assert contents["RECORDER.md"] in instruction
         assert contents["RESPONDER.md"] not in instruction
         assert contents["PLANNER.md"] not in instruction
+        assert contents["GAME.md"] not in instruction
         assert "RESPONDER.md" in instruction  # Mentioned only as boundary description
+        assert "GAME.md" in instruction  # Mentioned only as boundary description
         assert "private" in recorder.read_lore("RESPONDER.md")
         assert "private" in recorder.read_lore("PLANNER.md")
+        assert "private" in recorder.read_lore("GAME.md")
         assert contents["RECORDER.md"] in recorder.read_lore("RECORDER.md")
 
         turn_prompt = recorder._build_recorder_turn_prompt(
-            response(), pad.snapshot(), phase="control_game"
+            response(), pad.snapshot()
         )
-        assert "# Recorder Work (control_game)" in turn_prompt
-        assert "Advance the patrol when the bell rings." in turn_prompt
+        assert "# Recorder Work (record)" in turn_prompt
         assert "- [recorder] Location: Gate" in turn_prompt
         assert "- [planner] Ambush: Wait" in turn_prompt
     finally:
@@ -497,180 +337,5 @@ def test_recorder_debug_logging(pad: Notepad, tmp_path: Path, caplog: pytest.Log
         assert "[StoryRecorderModule] Reconciled 1 update(s) for event response-1" in caplog.text
         assert "[StoryRecorderModule] Published recorded revision 1 for event response-1" in caplog.text
         assert "[StoryRecorderModule] Event response-1 already recorded at revision 1" in caplog.text
-    finally:
-        journal.close()
-
-
-
-def test_control_game_with_decision_provider_passes_predicate(
-    pad: Notepad, tmp_path: Path
-) -> None:
-    journal = StoryRecordingJournal(tmp_path / "recording.sqlite")
-    mock_provider = Mock(spec=DecisionProvider)
-    mock_provider.decide.return_value = DecisionResult(
-        provider="mock",
-        model="fast-decide",
-        answers={
-            "should_narrate_move": PredicateAnswer(name="should_narrate_move", probability=0.85),
-            "drama_level": ScoreAnswer(name="drama_level", score=1.5),
-            "narrator_reaction_tone": ChoiceAnswer(name="narrator_reaction_tone", choice="rattled"),
-        },
-    )
-    recorder = StoryRecorderModule(
-        pad,
-        journal,
-        Mock(return_value={}),
-        decision_provider=mock_provider,
-    )
-    try:
-        assert recorder.decision_provider is mock_provider
-
-        player_event = RecordingEvent(
-            event_id="game-1",
-            action_id="player-1",
-            kind="committed_game_action",
-            source_revision=0,
-            payload={"summary": "Double jump captures two kings."},
-        )
-        outcome = recorder.control_game(player_event)
-        mock_provider.decide.assert_called_once()
-        call_req: DecisionRequest = mock_provider.decide.call_args[0][0]
-        assert call_req.input_text == "Double jump captures two kings."
-        assert len(call_req.questions) == 3
-        assert call_req.questions[0].name == "should_narrate_move"
-        assert call_req.questions[1].name == "drama_level"
-        assert call_req.questions[2].name == "narrator_reaction_tone"
-
-        assert outcome.narration_triggered is True
-        assert outcome.narration_request is not None
-        assert outcome.narration_request.user_action == "Double jump captures two kings."
-        assert outcome.narration_request.nudge == "React in character with a rattled tone."
-        assert outcome.narration_request.brief == "Dramatic game move: drama=1.50, tone=rattled."
-
-        saved_decision = journal.game_control_decision("game-1")
-        assert saved_decision is not None
-        assert "Move exceeded drama threshold" in saved_decision.reason
-        assert "should_narrate=85%" in saved_decision.reason
-
-        repeated = recorder.control_game(player_event)
-        assert repeated == outcome
-        mock_provider.decide.assert_called_once()
-    finally:
-        journal.close()
-
-
-def test_control_game_with_decision_provider_high_drama_level(
-    pad: Notepad, tmp_path: Path
-) -> None:
-    journal = StoryRecordingJournal(tmp_path / "recording.sqlite")
-    mock_provider = Mock(spec=DecisionProvider)
-    mock_provider.decide.return_value = DecisionResult(
-        provider="mock",
-        model="fast-decide",
-        answers={
-            "should_narrate_move": PredicateAnswer(name="should_narrate_move", probability=0.40),
-            "drama_level": ScoreAnswer(name="drama_level", score=2.5),
-            "narrator_reaction_tone": ChoiceAnswer(name="narrator_reaction_tone", choice="impressed"),
-        },
-    )
-    recorder = StoryRecorderModule(
-        pad,
-        journal,
-        Mock(return_value={}),
-        decision_provider=mock_provider,
-    )
-    try:
-        player_event = RecordingEvent(
-            event_id="game-2",
-            action_id="player-2",
-            kind="committed_game_action",
-            source_revision=0,
-            payload={"action": "Queen sacrifice for checkmate sequence"},
-        )
-        outcome = recorder.control_game(player_event)
-        mock_provider.decide.assert_called_once()
-        assert outcome.narration_triggered is True
-        assert outcome.narration_request is not None
-        assert outcome.narration_request.user_action == "Queen sacrifice for checkmate sequence"
-        assert outcome.narration_request.nudge == "React in character with a impressed tone."
-        assert outcome.narration_request.brief == "Dramatic game move: drama=2.50, tone=impressed."
-    finally:
-        journal.close()
-
-
-def test_control_game_with_decision_provider_below_narration_threshold(
-    pad: Notepad, tmp_path: Path
-) -> None:
-    journal = StoryRecordingJournal(tmp_path / "recording.sqlite")
-    mock_provider = Mock(spec=DecisionProvider)
-    mock_provider.decide.return_value = DecisionResult(
-        provider="mock",
-        model="fast-decide",
-        answers={
-            "should_narrate_move": PredicateAnswer(name="should_narrate_move", probability=0.20),
-            "drama_level": ScoreAnswer(name="drama_level", score=0.8),
-            "narrator_reaction_tone": ChoiceAnswer(name="narrator_reaction_tone", choice="unbothered"),
-        },
-    )
-    recorder = StoryRecorderModule(
-        pad,
-        journal,
-        Mock(return_value={}),
-        decision_provider=mock_provider,
-    )
-    try:
-        player_event = RecordingEvent(
-            event_id="game-3",
-            action_id="player-3",
-            kind="committed_game_action",
-            source_revision=0,
-            payload={"name": "Pawn moves e2 to e3"},
-        )
-        outcome = recorder.control_game(player_event)
-        mock_provider.decide.assert_called_once()
-        assert outcome.narration_triggered is False
-        assert outcome.narration_request is None
-
-        saved_decision = journal.game_control_decision("game-3")
-        assert saved_decision is not None
-        assert saved_decision.narration_request is None
-        assert saved_decision.reason == "Routine move below narration threshold."
-    finally:
-        journal.close()
-
-
-def test_control_game_without_decision_provider_preserves_existing_behavior(
-    pad: Notepad, tmp_path: Path
-) -> None:
-    journal = StoryRecordingJournal(tmp_path / "recording.sqlite")
-    custom_decision = GameControlDecision(
-        narration_request=NarrationRequest(
-            user_action="Manual action",
-            nudge="Manual nudge",
-            brief="Manual brief",
-        ),
-        reason="Manual callback reason",
-    )
-    control_mock = Mock(return_value=custom_decision)
-    recorder = StoryRecorderModule(
-        pad,
-        journal,
-        Mock(return_value={}),
-        control_game=control_mock,
-        decision_provider=None,
-    )
-    try:
-        assert recorder.decision_provider is None
-        player_event = RecordingEvent(
-            event_id="game-4",
-            action_id="player-4",
-            kind="committed_game_action",
-            source_revision=0,
-            payload={"action": "step"},
-        )
-        outcome = recorder.control_game(player_event)
-        control_mock.assert_called_once()
-        assert outcome.narration_triggered is False
-        assert outcome.narration_request == custom_decision.narration_request
     finally:
         journal.close()

@@ -28,7 +28,7 @@ from components.reference_manager import ReferenceManager
 from components.theater_manager import Theater, TheaterManager
 from providers import ImageGenerationResult, TextResponseProvider
 from providers.text_response_provider import TextResponseRequest, TextResponseResult
-from providers.decision_provider import ChoiceAnswer, DecisionProvider, DecisionResult
+from providers.decision_provider import ChoiceAnswer, DecisionProvider, DecisionResult, PredicateAnswer
 from services.live_agent_manager import LiveAgentSession
 from tools.image import ImageTools
 from components.story.story_handoffs import GameControlDecision, NarrationRequest
@@ -64,6 +64,8 @@ class TurnHarness:
         self.calls: list[str] = []
         self.prompts: list[tuple[str, str]] = []
         self.decision = GameControlDecision(factual_updates={"Inventory": "Broken key"})
+        self.game_decision: GameControlDecision | None = None
+        self.fail_game = False
         self.fail_recording = False
         self.fail_planning = False
         self.fail_response = False
@@ -87,13 +89,20 @@ class TurnHarness:
             "dice_roll": ChoiceAnswer(name="dice_roll", choice="none"),
             "primary_lore_document": ChoiceAnswer(name="primary_lore_document", choice="none"),
             "secondary_lore_document": ChoiceAnswer(name="secondary_lore_document", choice="none"),
+            "should_take_game_action": PredicateAnswer(name="should_take_game_action", probability=0.90),
         })
         tool = StoryTool(self.theater, canvas, provider, references, decision_provider=decisions)
         def generate(request: TextResponseRequest) -> TextResponseResult:
+            if request.response_schema is GameControlDecision:
+                role: StoryRole = "game"
+                stage_id = tool.game_module._game_stage_id
+            else:
+                role = "responder"
+                stage_id = tool.response_module._story_stage_id
             return TextResponseResult(
                 text=self.response_model(
-                    tool.story_session, "responder", request.prompt,
-                    stage_id=tool.response_module._story_stage_id,
+                    tool.story_session, role, request.prompt,
+                    stage_id=stage_id,
                 ), provider="test", model="test",
             )
         provider.generate.side_effect = generate
@@ -108,6 +117,10 @@ class TurnHarness:
     def model_run(self, role: StoryRole, prompt: str) -> str:
         self.calls.append(role)
         self.prompts.append((role, prompt))
+        if role == "game":
+            if self.fail_game:
+                raise RuntimeError("game control unavailable")
+            return (self.game_decision or self.decision).model_dump_json()
         if role == "recorder":
             if self.fail_recording:
                 raise RuntimeError("recording unavailable")
@@ -315,10 +328,13 @@ def test_game_completion_is_retained_when_narration_fails(harness: TurnHarness) 
     tool = harness.new_tool()
     tool._handle_player_game_action(GameAction(name="trade", arguments={}, revision=0), {"revision": 1})
     assert not tool.wait_for_pending_events(5)
-    assert [event.kind for event in tool.recording_journal.recent_history()] == ["game_action"]
+    assert tool.turn_journal.turns()[0].game_completed
+    assert tool.recording_journal.game_control_decision("game:0:recording") is not None
+    assert tool.recording_journal.recent_history() == []
     harness.fail_response = False
     tool.retry_pending_turns()
     assert tool.wait_for_pending_events(5)
+    assert harness.calls.count("game") == 1
     assert [event.kind for event in tool.recording_journal.recent_history()] == ["game_action", "story_output"]
 
 
@@ -383,6 +399,7 @@ def test_foreground_lore_tools_append_shared_reads_without_planner_reads_or_priv
         "items.txt": "SHARED_ITEMS",
         "RESPONDER.md": "PRIVATE_RESPONDER",
         "RECORDER.md": "PRIVATE_RECORDER",
+        "GAME.md": "PRIVATE_GAME",
         "PLANNER.md": "PRIVATE_PLANNER",
         "research.txt": "PLANNER_ONLY_RESEARCH",
     }
@@ -397,9 +414,10 @@ def test_foreground_lore_tools_append_shared_reads_without_planner_reads_or_priv
     assert "SHARED_ITEMS" in tool.recorder_module.read_lore("items.txt")
     assert "PRIVATE_RESPONDER" in tool.response_module.read_lore("RESPONDER.md")
     assert "PRIVATE_RECORDER" in tool.recorder_module.read_lore("RECORDER.md")
+    assert "PRIVATE_GAME" in tool.game_module.read_lore("GAME.md")
     context = tool.story_session.history_context
     assert context is not None
-    for role in ("responder", "recorder", "planner"):
+    for role in ("responder", "game", "recorder", "planner"):
         prompt = context(role)
         assert prompt.index("SHARED_RULES") < prompt.index("SHARED_ITEMS")
         assert prompt.count('"source": "lore_read"') == (2 if role == "planner" else 3)
@@ -407,6 +425,8 @@ def test_foreground_lore_tools_append_shared_reads_without_planner_reads_or_priv
             assert "PRIVATE_RESPONDER" not in prompt
         if role != "recorder":
             assert "PRIVATE_RECORDER" not in prompt
+        if role != "game":
+            assert "PRIVATE_GAME" not in prompt
     before = context("planner")
     assert "PLANNER_ONLY_RESEARCH" in tool.planning_module.deep_read_lore("research.txt")
     assert context("planner") == before
@@ -473,21 +493,21 @@ def test_response_recording_can_prepare_game_offer_awaiting_player_consent(
     tool = harness.new_tool()
     game = make_game(tmp_path / "story-offer", exchange_definition())
     tool.canvas_manager.game = game
-    tool.recorder_module._game_state = game
+    tool.game_module.game_state = game
     tool.planning_module.game_state = game
 
     def model(session: StorySession, role: StoryRole, prompt: str, *, timeout: float = 60.0, stage_id: str = "") -> str:
-        if role == "recorder":
-            assert "# Recorder Work (record)" in prompt
+        if role == "game":
+            assert "# Game Work (apply_story_response)" in prompt
             for name, arguments in (("narratron_place", '{"item":"green"}'), ("narratron_finalize", "{}")):
-                receipt = tool.recorder_module.take_game_action(name, arguments, game.revision)
+                receipt = tool.game_module.take_game_action(name, arguments, game.revision)
                 assert not receipt.startswith("Error:"), receipt
         return harness.model_run(role, prompt)
 
     with patch_models(harness, model):
         result = tool.resolve_action("Show me your offer", drain=True)
         assert "error" not in result
-        assert_foreground_calls(harness, ["responder", "recorder"])
+        assert_foreground_calls(harness, ["responder", "game", "recorder"])
         assert game.revision == 2
         assert game.state["narratron_offer"] == ["green"]
         assert game.state["narratron_done"] is True
@@ -513,8 +533,8 @@ def test_response_recording_can_prepare_game_offer_awaiting_player_consent(
         assert tool.recording_journal.pending() == []
         tool.recorder_module.record(event)
         assert game.revision == 2
-        assert_foreground_calls(harness, ["responder", "recorder"])
-        assert "Error:" in tool.recorder_module.take_game_action("narratron_finalize", "{}", game.revision)
+        assert_foreground_calls(harness, ["responder", "game", "recorder"])
+        assert "Error:" in tool.game_module.take_game_action("narratron_finalize", "{}", game.revision)
 
 
 @pytest.mark.parametrize("attempt", ["prerequisite", "arguments", "actor"])
@@ -527,7 +547,7 @@ def test_response_recording_preserves_game_validation(
     game = make_game(tmp_path / "story-prerequisite", definition)
     game.act(GameAction(name="player_place", arguments={"item": "red"}, revision=0))
     tool.canvas_manager.game = game
-    tool.recorder_module._game_state = game
+    tool.game_module.game_state = game
     tool.planning_module.game_state = game
     before = game.serialize()
     errors: list[str] = []
@@ -538,16 +558,16 @@ def test_response_recording_preserves_game_validation(
     }
 
     def model(session: StorySession, role: StoryRole, prompt: str, *, timeout: float = 60.0, stage_id: str = "") -> str:
-        if role == "recorder":
+        if role == "game":
             name, arguments = actions[attempt]
-            errors.append(tool.recorder_module.take_game_action(name, arguments, game.revision))
+            errors.append(tool.game_module.take_game_action(name, arguments, game.revision))
         return harness.model_run(role, prompt)
 
     with patch_models(harness, model):
         result = tool.resolve_action("Accept my offer", drain=True)
     assert "error" not in result
     assert len(errors) == 1 and errors[0].startswith("Error:")
-    assert "active story-response" not in errors[0]
+    assert "active game stage" not in errors[0]
     assert game.serialize() == before
     assert tool.recording_journal.pending() == []
 
@@ -559,7 +579,7 @@ def test_response_recording_retries_receipt_completion_without_repeating_models(
     tool = harness.new_tool()
     game = make_game(tmp_path / "story-recovery", exchange_definition())
     tool.canvas_manager.game = game
-    tool.recorder_module._game_state = game
+    tool.game_module.game_state = game
     tool.planning_module.game_state = game
     commit = tool.recording_journal.commit
 
@@ -569,8 +589,8 @@ def test_response_recording_retries_receipt_completion_without_repeating_models(
         commit(event_id, snapshot)
 
     def model(session: StorySession, role: StoryRole, prompt: str, *, timeout: float = 60.0, stage_id: str = "") -> str:
-        if role == "recorder":
-            receipt = tool.recorder_module.take_game_action("narratron_place", '{"item":"green"}', game.revision)
+        if role == "game":
+            receipt = tool.game_module.take_game_action("narratron_place", '{"item":"green"}', game.revision)
             assert not receipt.startswith("Error:"), receipt
         return harness.model_run(role, prompt)
 
@@ -583,11 +603,11 @@ def test_response_recording_retries_receipt_completion_without_repeating_models(
         with failure:
             assert "error" in tool.resolve_action("Show me your offer")
         assert game.revision == 1
-        assert_foreground_calls(harness, ["responder", "recorder"])
+        assert_foreground_calls(harness, ["responder", "game", "recorder"])
         tool.retry_pending_turns()
         assert tool.wait_for_pending_events(5)
     assert game.revision == 1
-    assert_foreground_calls(harness, ["responder", "recorder"])
+    assert_foreground_calls(harness, ["responder", "game", "recorder"])
     turn = tool.turn_journal.turns()[0]
     assert turn.completed
     assert tool.recording_journal.is_game_control_completed(tool._recording_event(turn).event_id)
@@ -599,12 +619,12 @@ def test_recording_narratron_receipt_cannot_submit_more_actions(
 ) -> None:
     tool = harness.new_tool()
     game = make_game(tmp_path / "receipt-only", exchange_definition())
-    tool.recorder_module._game_state = game
+    tool.game_module.game_state = game
     errors: list[str] = []
 
     def model(session: StorySession, role: StoryRole, prompt: str, *, timeout: float = 60.0, stage_id: str = "") -> str:
         if role == "recorder":
-            errors.append(tool.recorder_module.take_game_action("narratron_place", '{"item":"green"}', game.revision))
+            errors.append(tool.game_module.take_game_action("narratron_place", '{"item":"green"}', game.revision))
         return harness.model_run(role, prompt)
 
     event = RecordingEvent(
@@ -613,7 +633,7 @@ def test_recording_narratron_receipt_cannot_submit_more_actions(
     )
     with patch_models(harness, model):
         tool.recorder_module.record(event)
-    assert len(errors) == 1 and "active story-response or game-entry recording stage" in errors[0]
+    assert len(errors) == 1 and "active story-response or game-entry stage" in errors[0]
     assert game.revision == 0
     assert_foreground_calls(harness, ["recorder"])
     assert tool.recording_journal.pending() == []
@@ -625,15 +645,15 @@ def test_game_turn_skip_is_explicit_and_planning_runs_in_background(harness: Tur
     receipt = {"revision": 1, "state": {"secret": "raw game secret"}}
     tool._handle_player_game_action(action, receipt)
     assert tool.wait_for_pending_events(5)
-    assert_foreground_calls(harness, ["recorder"])
+    assert_foreground_calls(harness, ["game", "recorder"])
     turn = tool.turn_journal.turns()[0]
-    assert turn.entry_role == "recorder"
+    assert turn.entry_role == "game"
     assert turn.responder_skipped
     assert turn.narration_reason
     assert turn.completed
     tool._handle_player_game_action(action, receipt)
     assert tool.wait_for_pending_events(5)
-    assert_foreground_calls(harness, ["recorder"])
+    assert_foreground_calls(harness, ["game", "recorder"])
 
 
 def test_significant_game_turn_narrates_brief_without_recording_again(harness: TurnHarness) -> None:
@@ -646,7 +666,7 @@ def test_significant_game_turn_narrates_brief_without_recording_again(harness: T
         "revision": 1, "state": {"raw_game_secret": 42}, "instructions": "private mechanics",
     })
     assert tool.wait_for_pending_events(5)
-    assert_foreground_calls(harness, ["recorder", "responder"])
+    assert_foreground_calls(harness, ["game", "responder", "recorder"])
     responder_prompt = next(prompt for role, prompt in harness.prompts if role == "responder")
     assert "The merchant hands over the key" in responder_prompt
     assert "raw_game_secret" not in responder_prompt
@@ -680,10 +700,11 @@ def test_game_entry_repeated_rejections_stay_pending_without_live_agent_error(
         assert not tool.wait_for_pending_events(5)
         failure.assert_not_called()
     delivered.assert_not_called()
-    assert_foreground_calls(harness, ["recorder", "responder"])
+    assert_foreground_calls(harness, ["game", "responder"])
     turn = tool.turn_journal.turns()[0]
     assert not tool.is_action_in_flight
-    assert turn.recorder_completed
+    assert turn.game_completed
+    assert not turn.recorder_completed
     assert turn.response is None
     assert not turn.foreground_ready
     assert not turn.planner_completed
@@ -697,7 +718,7 @@ def test_game_entry_repeated_rejections_stay_pending_without_live_agent_error(
     else:
         tool.retry_pending_turns()
     assert tool.wait_for_pending_events(5)
-    assert_foreground_calls(harness, ["recorder", "responder", "responder"])
+    assert_foreground_calls(harness, ["game", "responder", "responder", "recorder"])
     assert tool.turn_journal.turns()[0].completed
 
 
@@ -835,6 +856,7 @@ def test_models_have_only_their_authorized_mutation_tools(harness: TurnHarness) 
     assert recorder is not None
     planner_tools = {function.__name__ for function in planner.tools}
     assert tool.response_module.text_response_provider is tool.text_response_provider
+    assert tool.game_module.text_response_provider is tool.text_response_provider
     assert not planner_tools & {"take_game_action", "trigger_story_response", "create_or_update_character", "create_or_update_scene", "update_player_character"}
     assert tool.story_session.runner.app_name == "narratron_story"
     assert len({agent.output_key for agent in (planner, recorder)}) == 2
@@ -852,14 +874,14 @@ def test_restart_resumes_pending_narration_without_another_recorder(harness: Tur
     first = harness.new_tool()
     first._handle_player_game_action(GameAction(name="move", arguments={}, revision=0), {"revision": 1})
     assert not first.wait_for_pending_events(5)
-    assert_foreground_calls(harness, ["recorder", "responder"])
+    assert_foreground_calls(harness, ["game", "responder"])
     first.close()
     harness.tools.remove(first)
     harness.calls.clear()
     harness.fail_response = False
     restarted = harness.new_tool()
     assert restarted.wait_for_pending_events(5)
-    assert_foreground_calls(harness, ["responder"])
+    assert_foreground_calls(harness, ["responder", "recorder"])
     assert restarted.turn_journal.turns()[0].completed
 
 
@@ -884,7 +906,7 @@ def test_failed_receipt_write_recovers_from_game_commit_without_reexecuting(
     tool = harness.new_tool()
     game = make_game(tmp_path / "game-case", exchange_definition())
     tool.canvas_manager.game = game
-    tool.recorder_module._game_state = game
+    tool.game_module.game_state = game
     tool.planning_module.game_state = game
     player = GameAction(name="player_place", arguments={"item": "red"}, revision=0)
     game.act(player)
@@ -892,10 +914,10 @@ def test_failed_receipt_write_recovers_from_game_commit_without_reexecuting(
 
     def model(session: StorySession, role: StoryRole, prompt: str, *, timeout: float = 60.0, stage_id: str = "") -> str:
         nonlocal attempted
-        if role == "recorder" and not attempted:
+        if role == "game" and not attempted:
             attempted = True
-            tool.recorder_module.take_game_action("narratron_place", '{"item":"green"}', 1)
-        elif role == "recorder":
+            tool.game_module.take_game_action("narratron_place", '{"item":"green"}', 1)
+        elif role == "game":
             assert '"narratron_place"' in prompt
             assert "Already committed Narratron receipts" in prompt
         return harness.model_run(role, prompt)
@@ -1070,7 +1092,7 @@ def test_failed_turn_recovers_on_subsequent_player_game_action(
     tool = harness.new_tool()
     game = make_game(tmp_path / "game-recovery", exchange_definition())
     tool.canvas_manager.game = game
-    tool.recorder_module._game_state = game
+    tool.game_module.game_state = game
     tool.planning_module.game_state = game
     game.on_player_action = tool._handle_player_game_action
 
@@ -1147,7 +1169,7 @@ def test_cycle_combines_game_receipts_and_all_spoken_actions(harness: TurnHarnes
 
     with patch_models(harness, model):
         assert tool.wait_for_pending_events(5)
-    assert_foreground_calls(harness, ["recorder", "responder", "recorder"])
+    assert_foreground_calls(harness, ["game", "responder", "recorder", "recorder"])
     prompt = next(prompt for role, prompt in harness.prompts if role == "responder")
     assert "Ask about the merchant" in prompt
     assert "Examine the key" in prompt
@@ -1303,7 +1325,7 @@ def test_game_only_cycle_records_each_receipt_and_narrates_once(harness: TurnHar
     tool._handle_player_game_action(GameAction(name="move", revision=0), {"revision": 1})
     tool._handle_player_game_action(GameAction(name="move", revision=1), {"revision": 2})
     assert tool.wait_for_pending_events(5)
-    assert_foreground_calls(harness, ["recorder", "recorder", "responder"])
+    assert_foreground_calls(harness, ["game", "game", "responder", "recorder", "recorder"])
     assert all(turn.completed for turn in tool.turn_journal.turns())
     assert len([entry for entry in tool._story_log if entry["type"] == "story_response"]) == 1
 
@@ -1318,7 +1340,7 @@ def test_out_of_order_callbacks_drain_durable_game_receipts_in_revision_order(
     pending = game.pending_story_actions()
     tool = harness.new_tool()
     tool.canvas_manager.game = game
-    tool.recorder_module._game_state = game
+    tool.game_module.game_state = game
     tool.planning_module.game_state = game
     tool._handle_player_game_action(*pending[1])
     tool._handle_player_game_action(*pending[0])

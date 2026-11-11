@@ -28,6 +28,7 @@ from components.reference_manager import ReferenceManager
 from components.lore_library import LoreLibrary
 from components.notepad import Notepad
 from components.story.background_planning import BackgroundPlanning
+from components.story.story_game_module import StoryGameModule
 from components.story.story_planning_module import StoryPlanningModule
 from components.story.story_response_module import GameEntryNarrationRejected, StoryResponseModule
 from components.story.story_handoffs import ProposedFactChange
@@ -154,9 +155,15 @@ class StoryEngine:
             session_id=self.story_session.session_id, story_session=self.story_session,
             story_log_context_fn=self.format_recent_story_log, game_state=canvas_manager.game,
         )
-        self.recorder_module = StoryRecorderModule(
+        self.game_module = StoryGameModule(
             self.notepad, self.recording_journal,
             lore_library=self.lore_library, game_state=canvas_manager.game,
+            text_response_provider=self.text_response_provider,
+            decision_provider=decision_provider,
+        )
+        self.recorder_module = StoryRecorderModule(
+            self.notepad, self.recording_journal,
+            lore_library=self.lore_library,
             story_session=self.story_session, reference_manager=self.reference_manager,
         )
         assert self.recorder_module.agent is not None
@@ -358,28 +365,54 @@ class StoryEngine:
             err = self._last_recorder_error
         return err
 
-    def _run_recording_task(self, turns: list[StoryTurn], owner: StoryTurn) -> None:
+    def _run_recording_task(self, turns: list[StoryTurn], owner: StoryTurn | None) -> None:
         spoken = [turn for turn in turns if turn.ingress == "communicated_action"]
+        if self.game_module.game_state is None and self.canvas_manager.game is not None:
+            self.game_module.game_state = self.canvas_manager.game
         try:
-            if spoken and not owner.recorder_completed:
-                self.recorder_module.record(self._recording_event(owner))
+            for turn in turns:
+                if turn.ingress == "game_action" and not turn.recorder_completed:
+                    self.recorder_module.record(self._recording_event(turn))
+                    self.recording_journal.complete_history(self._game_completion_events(turn))
+                    turn.recorder_completed = True
+                    if owner is not None and turn.turn_id != owner.turn_id:
+                        turn.response_owner_id = owner.turn_id
+                    self.turn_journal.save(turn)
+                    self._queue_planning_progress(turn)
+            if spoken and owner is not None and not owner.recorder_completed:
+                event = self._recording_event(owner)
+                if not owner.game_completed:
+                    if self.game_module.game_state is not None and self.game_module.game_state.program is not None:
+                        self.recording_journal.enqueue(event)
+                        self.game_module.recover_game_receipts(event)
+                    if (
+                        self.recording_journal.game_control_decision(event.event_id) is not None
+                        or self.recording_journal.narratron_receipts(event.event_id)
+                        or self.game_module.should_apply_story_response(event)
+                    ):
+                        self.game_module.control_story_response(event)
+                    owner.game_completed = True
+                    self.turn_journal.save(owner)
+                self.recorder_module.record(event)
                 self.recording_journal.complete_history(self._response_completion_events(turns, owner))
                 owner.recorder_completed = True
                 self.turn_journal.save(owner)
                 self._queue_planning_progress(owner)
-            if not spoken:
+            if not spoken and owner is not None:
                 self.recording_journal.complete_history(self._response_completion_events(turns, owner))
-            for turn in turns:
-                if turn.turn_id != owner.turn_id:
-                    turn.response_owner_id = owner.turn_id
-                    if turn.ingress == "communicated_action":
-                        turn.recorder_completed = True
-                    self.turn_journal.save(turn)
-                    self._queue_planning_progress(turn)
+            if owner is not None:
+                for turn in turns:
+                    if turn.turn_id != owner.turn_id:
+                        turn.response_owner_id = owner.turn_id
+                        if turn.ingress == "communicated_action":
+                            turn.recorder_completed = True
+                        self.turn_journal.save(turn)
+                        self._queue_planning_progress(turn)
             self.sync_character_bindings()
             self._last_recorder_error = None
         except Exception as exc:
-            logger.exception("Story recorder failed for turn %s: %s", owner.turn_id, exc)
+            target_id = owner.turn_id if owner is not None else turns[0].turn_id
+            logger.exception("Story recorder failed for turn %s: %s", target_id, exc)
             self._last_recorder_error = exc
             raise
 
@@ -393,13 +426,18 @@ class StoryEngine:
             spoken = [t for t in members if t.ingress == "communicated_action"]
             narrated = [t for t in members if t.ingress == "game_action" and not t.responder_skipped]
             owner = spoken[0] if spoken else (narrated[0] if narrated else None)
-            if owner is None or owner.response is None or owner.recorder_completed:
-                continue
-            logger.info("[StoryEngine] Catching up recorder at init time for turn %s", owner.turn_id)
+            if owner is not None:
+                if owner.response is None or owner.recorder_completed:
+                    continue
+            else:
+                if not any(t.ingress == "game_action" and t.game_completed and not t.recorder_completed for t in members):
+                    continue
+            target_id = owner.turn_id if owner is not None else members[0].turn_id
+            logger.info("[StoryEngine] Catching up recorder at init time for turn %s", target_id)
             try:
                 self._run_recording_task(members, owner)
             except Exception as exc:
-                logger.warning("[StoryEngine] Failed to catch up recorder for turn %s: %s", owner.turn_id, exc)
+                logger.warning("[StoryEngine] Failed to catch up recorder for turn %s: %s", target_id, exc)
 
     def _set_user_action_processing(self, active: bool) -> None:
         try:
@@ -462,20 +500,27 @@ class StoryEngine:
                     self.turn_journal.save(turn)
                     self.append_story_log_entry({"type": "user_action", "action": turn.action})
             # Establish every committed game outcome before interpreting speech.
+            if self.game_module.game_state is None and self.canvas_manager.game is not None:
+                self.game_module.game_state = self.canvas_manager.game
             for turn in turns:
-                if turn.ingress != "game_action" or turn.recorder_completed:
+                if turn.ingress != "game_action" or turn.game_completed or turn.recorder_completed:
                     continue
+                self._wait_for_previous_recorder()
+                uncompleted_earlier = [
+                    t for t in self.turn_journal.turns()
+                    if t.position < turns[0].position and not t.completed
+                ]
+                if uncompleted_earlier or self._last_recorder_error is not None:
+                    raise RuntimeError("An earlier story cycle requires recovery.")
                 event = self._recording_event(turn)
-                outcome = self.recorder_module.control_game(event)
+                outcome = self.game_module.control_game(event)
                 decision = self.recording_journal.game_control_decision(event.event_id)
                 assert decision is not None
-                turn.recorder_completed = True
+                turn.game_completed = True
                 turn.narration_reason = decision.reason
                 turn.responder_skipped = outcome.narration_request is None
                 turn.narrative_brief = outcome.narration_request.brief if outcome.narration_request is not None else None
-                self.recording_journal.complete_history(self._game_completion_events(turn))
                 self.turn_journal.save(turn)
-                self._queue_planning_progress(turn)
 
             spoken = [turn for turn in turns if turn.ingress == "communicated_action"]
             narrated = [turn for turn in turns if turn.ingress == "game_action" and not turn.responder_skipped]
@@ -514,6 +559,15 @@ class StoryEngine:
                         )
                 else:
                     self._run_recording_task(turns, owner)
+            else:
+                self._wait_for_previous_recorder()
+                uncompleted_earlier = [
+                    t for t in self.turn_journal.turns()
+                    if t.position < turns[0].position and not t.completed
+                ]
+                if uncompleted_earlier or self._last_recorder_error is not None:
+                    raise RuntimeError("An earlier story cycle requires recovery.")
+                self._run_recording_task(turns, None)
             return owner.response if owner is not None and owner.response is not None else {
                 "status": "completed", "narration_skipped": True, "reason": turns[0].narration_reason,
             }

@@ -4,7 +4,9 @@ import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 from pydantic import JsonValue
+from components.notepad import NoteSnapshot
 from components.story.story_handoffs import GameControlDecision, NarrationRequest
+from components.story.story_recording_journal import RecordingEvent
 from components.story.story_session import StoryRole, StorySession
 from components.story.story_response_module import SceneReaction
 from providers.text_response_provider import TextResponseRequest, TextResponseResult
@@ -43,7 +45,7 @@ def test_adventure_game_moves_use_real_callback_and_reset(sample_adventure: Path
     session = AdventureSession("synthetic-test-adventure")
     try:
         assert session.game is session.story_tool.planning_module.game_state
-        assert session.game is session.story_tool.recorder_module._game_state
+        assert session.game is session.story_tool.game_module.game_state
         assert "game_state" not in session.story_tool.response_module.__dict__
         assert session.get_state()["game"]["revision"] == 0
         move = GameAction(name="player_place", arguments={"item": "red"}, revision=0)
@@ -122,15 +124,15 @@ def test_game_turn_waits_for_narratron_response(sample_adventure: Path) -> None:
     game_dir.mkdir()
     (game_dir / "game.json").write_text(exchange_definition().model_dump_json(), encoding="utf-8")
     session = AdventureSession("synthetic-test-adventure")
-    def run(shared: StorySession, role: StoryRole, prompt: str, *, timeout: float = 60.0, stage_id: str = "") -> str:
-        if role == "recorder":
-            assert '"player_place"' in prompt
-            session.story_tool.recorder_module.take_game_action("narratron_place", '{"item":"green"}', 1)
-            return GameControlDecision().model_dump_json()
-        return "No changes."
+
+    def run_game_model(
+        event: RecordingEvent, snapshot: NoteSnapshot, *, phase: str = "control_game"
+    ) -> GameControlDecision:
+        session.story_tool.game_module.take_game_action("narratron_place", '{"item":"green"}', 1)
+        return GameControlDecision()
 
     try:
-        with patch.object(StorySession, "run", run):
+        with patch.object(session.story_tool.game_module, "_run_model", side_effect=run_game_model):
             result = session.take_game_action(GameAction(name="player_place", arguments={"item": "red"}, revision=0))
         assert result["revision"] == 2
         assert session.game.state["narratron_offer"] == ["green"]
@@ -176,7 +178,7 @@ def test_game_narration_finishes_before_return_and_state_serializes(sample_adven
             patch.object(session.story_tool.engine, "_handle_scene_reaction") as handle,
         ):
             decision = GameControlDecision(narration_request=NarrationRequest(user_action="Red moves.", brief="Ivory replies."))
-            with patch.object(session.story_tool.recorder_module, "_run_model", return_value=decision):
+            with patch.object(session.story_tool.game_module, "_run_model", return_value=decision):
                 session.story_tool._handle_player_game_action(GameAction(name="move", arguments={}, revision=0), {"revision": 1})
                 assert session.story_tool.wait_for_pending_events(5)
             assert resolve.call_count == 1
@@ -231,10 +233,17 @@ def sample_adventure(
     def generate(request: TextResponseRequest) -> TextResponseResult:
         if request.response_schema is SceneReaction:
             return TextResponseResult(text='{"narration":"The synthetic scene changes."}', provider="test", model="test")
+        if request.response_schema is GameControlDecision:
+            return TextResponseResult(text=GameControlDecision().model_dump_json(), provider="test", model="test")
         assert request.response_json_schema is not None
         return TextResponseResult(
             text="", provider="test", model="test",
-            parsed={"primary_lore_document": "none", "secondary_lore_document": "none", "dice_roll": "none"},
+            parsed={
+                "primary_lore_document": "none",
+                "secondary_lore_document": "none",
+                "dice_roll": "none",
+                "should_take_game_action": False,
+            },
         )
 
     offline_lab_text_providers.model = "test"

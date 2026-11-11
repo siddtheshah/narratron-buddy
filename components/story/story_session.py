@@ -25,11 +25,12 @@ from google.genai import types
 from pydantic import JsonValue, TypeAdapter
 
 
-StoryRole = Literal["responder", "recorder", "planner"]
+StoryRole = Literal["responder", "game", "recorder", "planner"]
 APP_NAME = "narratron_story"
 USER_ID = "story"
 ROLE_AUTHORS = {
     "responder": "story_responder",
+    "game": "story_game",
     "recorder": "story_recorder",
     "planner": "story_deep_planner",
 }

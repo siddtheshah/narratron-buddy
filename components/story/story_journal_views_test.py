@@ -76,14 +76,17 @@ def test_lore_reads_are_shared_but_role_documents_remain_private(
 ) -> None:
     journal.record_lore_read("recorder", "rules.txt", "Lore document: rules.txt\n\nSHARED_LORE")
     journal.record_lore_read("recorder", "RECORDER.md", "Lore document: RECORDER.md\n\nPRIVATE_RECORDER")
+    journal.record_lore_read("game", "GAME.md", "Lore document: GAME.md\n\nPRIVATE_GAME")
     journal.record_lore_read("responder", "RESPONDER.md", "Lore document: RESPONDER.md\n\nPRIVATE_RESPONDER")
     responder = journal.prompt_context("responder", 20, 10)
+    game = journal.prompt_context("game", 20, 10)
     recorder = journal.prompt_context("recorder", 20, 10)
     planner = journal.prompt_context("planner", 20, 10)
-    for prompt in (responder, recorder, planner):
+    for prompt in (responder, game, recorder, planner):
         assert "SHARED_LORE" in prompt
-    assert "PRIVATE_RESPONDER" in responder and "PRIVATE_RECORDER" not in responder
-    assert "PRIVATE_RECORDER" in recorder and "PRIVATE_RESPONDER" not in recorder
+    assert "PRIVATE_RESPONDER" in responder and "PRIVATE_RECORDER" not in responder and "PRIVATE_GAME" not in responder
+    assert "PRIVATE_GAME" in game and "PRIVATE_RESPONDER" not in game and "PRIVATE_RECORDER" not in game
+    assert "PRIVATE_RECORDER" in recorder and "PRIVATE_RESPONDER" not in recorder and "PRIVATE_GAME" not in recorder
     assert "PRIVATE" not in planner
 
 

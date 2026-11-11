@@ -58,8 +58,10 @@ def private_tool() -> str:
 
 def agents(
     recorder: CapturingModel, responder: CapturingModel, planner: CapturingModel,
+    game: CapturingModel | None = None,
 ) -> list[Agent]:
     return [
+        Agent(name="story_game", model=game or CapturingModel(), output_key="game_output"),
         Agent(name="story_recorder", model=recorder, tools=[private_tool], output_key="recorder_output"),
         Agent(name="story_responder", model=responder, output_key="responder_output"),
         Agent(name="story_deep_planner", model=planner, output_key="planner_output"),
@@ -240,7 +242,7 @@ def test_projection_omits_aborted_invocations_after_tool_response_or_malformed_c
     ]
 
 
-@pytest.mark.parametrize("role", ["recorder", "responder", "planner"])
+@pytest.mark.parametrize("role", ["game", "recorder", "responder", "planner"])
 def test_model_requests_use_bounded_completions_without_prior_agent_history(
     tmp_path: Path, role: StoryRole,
 ) -> None:
@@ -254,9 +256,9 @@ def test_model_requests_use_bounded_completions_without_prior_agent_history(
     ])
     model = CapturingModel(replies=[final("OLD_AGENT_OUTPUT"), final("New completion")])
     shared = StorySession(tmp_path / "session.sqlite", "bounded")
-    models = {name: CapturingModel() for name in ("recorder", "responder", "planner")}
+    models = {name: CapturingModel() for name in ("game", "recorder", "responder", "planner")}
     models[role] = model
-    shared.bind(agents(models["recorder"], models["responder"], models["planner"]))
+    shared.bind(agents(models["recorder"], models["responder"], models["planner"], models["game"]))
 
     def history_context(recipient: StoryRole) -> str:
         return journal.prompt_context(recipient, 2, 1)
@@ -277,7 +279,7 @@ def test_model_requests_use_bounded_completions_without_prior_agent_history(
         restarted = StorySession(tmp_path / "session.sqlite", "bounded")
         after_restart = CapturingModel(replies=[final("Restart completion")])
         models[role] = after_restart
-        restarted.bind(agents(models["recorder"], models["responder"], models["planner"]))
+        restarted.bind(agents(models["recorder"], models["responder"], models["planner"], models["game"]))
         restarted.history_context = history_context
         try:
             restarted.run(role, "Restart task")

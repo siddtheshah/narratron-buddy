@@ -426,7 +426,7 @@ DECISION_SCENARIOS: tuple[DecisionScenario, ...] = (
     DecisionScenario(
         id="game-move-narration-gate",
         title="6. Board/Card Game Move Narration Gate",
-        subsystem="components/story/story_recorder_module.py",
+        subsystem="components/story/story_game_module.py",
         category="Story & Game Gating",
         description=(
             "Evaluates a committed player board-game move to decide in ~100ms whether the move is "

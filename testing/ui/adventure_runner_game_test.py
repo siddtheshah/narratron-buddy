@@ -10,10 +10,12 @@ from testing.game_fixtures import counter_definition
 from testlab import adventure_runner, server
 from components.story.story_handoffs import GameControlDecision
 from components.story.story_session import StoryRole, StorySession
+from providers.text_response_provider import TextResponseRequest, TextResponseResult
 
 
-@pytest.mark.usefixtures("offline_lab_text_providers")
-def test_adventure_lab_game_moves_and_reset(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:
+def test_adventure_lab_game_moves_and_reset(
+    monkeypatch: MonkeyPatch, tmp_path: Path, offline_lab_text_providers: pytest.MonkeyPatch,
+) -> None:
     adventures = tmp_path / "adventures"
     adventure = adventures / "counter"
     (adventure / "game").mkdir(parents=True)
@@ -27,6 +29,21 @@ def test_adventure_lab_game_moves_and_reset(monkeypatch: MonkeyPatch, tmp_path: 
     monkeypatch.setattr(adventure_runner, "ADVENTURES_DIR", adventures)
     monkeypatch.setattr(adventure_runner, "THEATERS_DIR", tmp_path / "theaters")
     monkeypatch.setattr(server, "_adventure_runner_sessions", {})
+
+    def generate(request: TextResponseRequest) -> TextResponseResult:
+        if request.response_schema is GameControlDecision:
+            return TextResponseResult(text=GameControlDecision().model_dump_json(), provider="test", model="test")
+        return TextResponseResult(
+            text="", provider="test", model="test",
+            parsed={
+                "primary_lore_document": "none",
+                "secondary_lore_document": "none",
+                "dice_roll": "none",
+                "should_take_game_action": False,
+            },
+        )
+
+    offline_lab_text_providers.generate.side_effect = generate
 
     def offline_story_role(
         session: StorySession, role: StoryRole, prompt: str, *, timeout: float = 60.0, stage_id: str = "",
