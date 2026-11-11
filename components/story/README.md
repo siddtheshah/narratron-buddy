@@ -1,6 +1,6 @@
 # Story processing
 
-`StoryEngine` binds the recorder, responder, planner, journals, references, and
+`StoryEngine` binds the responder, game module, recorder, planner, journals, references, and
 ADK session to a theater. `tools/story/story_tool.py` is the live-agent adapter.
 `StoryInputGatheringCycle` in `input_gathering_cycle.py` gathers spoken actions
 (including auto-begin) and committed game receipts through
@@ -38,9 +38,11 @@ saved with canvas state and restored when an engine starts. Engine shutdown
 cancels output timers while retaining that checkpoint.
 
 At dispatch, the turn journal atomically freezes cycle membership. The sole
-cycle worker records each game receipt, resolves all spoken actions and game
-narrative briefs in one response, records that response, and stages it once.
-Game-only cycles honor the recorder's explicit decision to skip narration.
+cycle worker evaluates each game receipt through `StoryGameModule`, resolves all
+spoken actions and game narrative briefs in one response, optionally applies any
+story-driven game actions through `StoryGameModule`, records factual state through
+`StoryRecorderModule`, and stages output once. Game-only cycles honor the game
+module's explicit decision to skip narration.
 
 The turn journal remains separate. All other story events live in
 `StoryRecordingJournal` in `story.sqlite`, with one canonical event payload per
@@ -133,5 +135,8 @@ the flight, including exceptions before role execution. Shutdown drains accepted
 input and joins the planner before closing the session and journals.
 
 The earlier design and role contracts are recorded in
-[`adr-001-recorder-planner-responder.md`](../../tools/story/adr/adr-001-recorder-planner-responder.md).
+[`adr-001-recorder-planner-responder.md`](adr/adr-001-recorder-planner-responder.md),
+and the extraction of single-pass game control into `StoryGameModule` with
+`lore/GAME.md` is recorded in
+[`adr-002-story-game-module.md`](adr/adr-002-story-game-module.md).
 Its foreground wait hook and tool-owned scheduling are superseded by this cycle.
