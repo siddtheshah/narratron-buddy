@@ -1011,14 +1011,41 @@
     } catch (error) { status(error.message, true); }
     finally { opening = false; }
   }
+  const authoringDialog = el('external-authoring-dialog');
+  const authoringCopyFeedback = el('authoring-copy-feedback');
+  if (el('open-external-authoring') && authoringDialog) {
+    el('open-external-authoring').addEventListener('click', () => {
+      if (authoringCopyFeedback) authoringCopyFeedback.textContent = '';
+      authoringDialog.showModal();
+    });
+  }
+  if (el('external-authoring-close') && authoringDialog) {
+    el('external-authoring-close').addEventListener('click', () => authoringDialog.close());
+  }
+  if (el('external-authoring-done') && authoringDialog) {
+    el('external-authoring-done').addEventListener('click', () => authoringDialog.close());
+  }
+  if (authoringDialog) {
+    authoringDialog.addEventListener('click', event => {
+      if (event.target === authoringDialog) authoringDialog.close();
+    });
+    authoringDialog.addEventListener('keydown', event => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        authoringDialog.close();
+      }
+    });
+  }
   el('copy-authoring-prompt').addEventListener('click', async () => {
     const prompt = el('authoring-prompt');
     try {
       await navigator.clipboard.writeText(prompt.value);
+      if (authoringCopyFeedback) authoringCopyFeedback.textContent = 'Copied to clipboard.';
       status('Starter prompt copied. Paste it into your AI app with the authoring kit.');
     } catch {
       prompt.focus();
       prompt.select();
+      if (authoringCopyFeedback) authoringCopyFeedback.textContent = 'Selected — copy and paste into your AI app.';
       status('Copy the selected starter prompt and paste it into your AI app.');
     }
   });

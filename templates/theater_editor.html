@@ -18,28 +18,12 @@
   <main>
     <header class="builder-heading">
       <div><a class="back-link" href="/deploy">← Your theaters</a><h1>Theater Builder <span class="eyebrow">WITH AI</span></h1><p>Shape a world. Give it a voice. Bring it to life.</p></div>
+      <button type="button" class="secondary external-authoring-trigger" id="open-external-authoring" aria-haspopup="dialog">
+        <span class="info-badge" aria-hidden="true">i</span>
+        <span>Build in your favorite AI app</span>
+      </button>
     </header>
     <div id="builder-status" role="status" aria-live="polite"></div>
-    <section class="external-authoring panel" aria-labelledby="external-authoring-title">
-      <h2 id="external-authoring-title">Build in your favorite AI app</h2>
-      <p>Create and edit your whole theater in ChatGPT, Antigravity, or another AI app. Upload the finished folder here when you’re ready to play.</p>
-      <div class="external-authoring-actions">
-        <a class="authoring-download" href="/theater-authoring-kit" download>Download authoring kit</a>
-        <a href="https://chatgpt.com/" target="_blank" rel="noopener noreferrer">Open ChatGPT ↗</a>
-        <a href="https://antigravity.google/" target="_blank" rel="noopener noreferrer">Get Antigravity ↗</a>
-      </div>
-      <details><summary>How to use the kit</summary>
-        <ol>
-          <li><strong>ChatGPT:</strong> attach the kit ZIP to a chat that supports file creation. If ZIP attachments aren’t supported, attach the extracted skill and references. The kit also includes a skills-based plugin and local installation instructions in its README.</li>
-          <li><strong>Antigravity:</strong> extract the kit, open the folder, and ask the agent to read <code>narratron-theater/AGENTS.md</code>.</li>
-          <li>Develop your world and ask for a finished theater ZIP. Extract it, choose <strong>Upload a folder</strong> below, then <strong>Save &amp; test</strong>. For a theater already open here, use <strong>＋ Folder</strong>; matching files are replaced and omitted files stay.</li>
-        </ol>
-        <label for="authoring-prompt">Starter prompt</label>
-        <textarea id="authoring-prompt" rows="4" readonly>Read the Narratron create-theater skill and bundled references in this authoring kit. Help me create or improve a complete theater. Keep editing the actual theater files as we work, and give me a validated theater ZIP for upload when I am ready. Start by helping me develop my premise.</textarea>
-        <button class="secondary" id="copy-authoring-prompt" type="button">Copy starter prompt</button>
-        <p class="hint">Opening an app does not transfer files or install the plugin. To continue an existing theater, also use Download theater and attach that ZIP. Your AI app’s features and subscription apply. You can also build here with the co-creator.</p>
-      </details>
-    </section>
     <section id="login-gate" class="welcome-card" hidden>
       <span class="welcome-icon" aria-hidden="true">✦</span><h2>Your next story starts here.</h2>
       <p>Log in to build theaters, upload assets, and create with your AI assistant.</p>
@@ -113,6 +97,35 @@
     </section>
     <input type="file" id="folder-input" webkitdirectory multiple hidden>
     <input type="file" id="assets-input" accept=".png,.jpg,.jpeg,.webp,.gif,.mp3,.wav,.ogg,.flac,.m4a,.aac,.txt,.md,.yaml,.yml,.json,.svg,.html" multiple hidden>
+    <dialog id="external-authoring-dialog" class="external-authoring-dialog" aria-labelledby="external-authoring-title">
+      <div class="dialog-header">
+        <h2 id="external-authoring-title">Build in your favorite AI app</h2>
+        <button type="button" class="dialog-close-btn" id="external-authoring-close" aria-label="Close">×</button>
+      </div>
+      <p class="dialog-hint">Create and edit your whole theater in ChatGPT, Antigravity, or another AI app. Upload the finished folder here when you’re ready to play.</p>
+      <div class="external-authoring-actions">
+        <a class="authoring-download" href="/theater-authoring-kit" download>Download authoring kit</a>
+        <a href="https://chatgpt.com/" target="_blank" rel="noopener noreferrer">Open ChatGPT ↗</a>
+        <a href="https://antigravity.google/" target="_blank" rel="noopener noreferrer">Get Antigravity ↗</a>
+      </div>
+      <details open class="external-authoring-guide"><summary>How to use the kit</summary>
+        <ol>
+          <li><strong>ChatGPT:</strong> attach the kit ZIP to a chat that supports file creation. If ZIP attachments aren’t supported, attach the extracted skill and references. The kit also includes a skills-based plugin and local installation instructions in its README.</li>
+          <li><strong>Antigravity:</strong> extract the kit, open the folder, and ask the agent to read <code>narratron-theater/AGENTS.md</code>.</li>
+          <li>Develop your world and ask for a finished theater ZIP. Extract it, choose <strong>Upload a folder</strong>, then <strong>Save &amp; test</strong>. For a theater already open here, use <strong>＋ Folder</strong>; matching files are replaced and omitted files stay.</li>
+        </ol>
+        <label for="authoring-prompt">Starter prompt</label>
+        <textarea id="authoring-prompt" rows="4" readonly>Read the Narratron create-theater skill and bundled references in this authoring kit. Help me create or improve a complete theater. Keep editing the actual theater files as we work, and give me a validated theater ZIP for upload when I am ready. Start by helping me develop my premise.</textarea>
+        <div class="external-authoring-prompt-actions">
+          <button class="secondary" id="copy-authoring-prompt" type="button">Copy starter prompt</button>
+          <span id="authoring-copy-feedback" class="authoring-copy-feedback" role="status" aria-live="polite"></span>
+        </div>
+        <p class="hint">Opening an app does not transfer files or install the plugin. To continue an existing theater, also use Download theater and attach that ZIP. Your AI app’s features and subscription apply. You can also build here with the co-creator.</p>
+      </details>
+      <div class="dialog-actions">
+        <button class="secondary" type="button" id="external-authoring-done">Done</button>
+      </div>
+    </dialog>
     <dialog id="game-library-dialog"><form id="game-library-form"><h2>Attach a Pre-defined Game</h2><p class="dialog-hint">Select a submitted game package from the repository to attach to this theater. Existing files in <code>game/</code> will be replaced.</p><label for="game-library-search" class="sr-only">Search games</label><input id="game-library-search" type="search" placeholder="Search games by title, genre, or tag…"><div id="game-library-list" class="game-library-list" role="listbox" aria-label="Available games"></div><div class="google-dialog-options"><label class="checkbox-label"><input type="checkbox" id="game-enable-tool"><span><strong>Enable live-agent game tool</strong> (sets <code>game_tool.enabled: true</code> in <code>theater.yaml</code>)</span></label></div><div class="dialog-actions"><button class="secondary" type="button" id="game-library-cancel">Cancel</button><button type="submit" id="game-library-submit">Attach Game</button></div></form></dialog>
     <dialog id="new-file-dialog"><form method="dialog"><h2>Create a text file</h2><label for="new-file-path">Path</label><input id="new-file-path" placeholder="lore/characters/cartographer.txt" required><div class="dialog-actions"><button class="secondary" type="button" id="new-file-cancel" value="cancel">Cancel</button><button value="create" id="new-file-submit">Create</button></div></form></dialog>
     <dialog id="google-link-dialog"><form id="google-link-form"><h2>Link from Google</h2><p class="dialog-hint">Import an image from Google Drive or harvest a Google Doc with your assistant.<br>Set link sharing to <em>Anyone with the link can view</em>.</p><label for="google-link-url">Google Link</label><input id="google-link-url" type="url" placeholder="https://drive.google.com/file/d/... or https://docs.google.com/document/d/..." required><label for="google-link-name">Custom asset name (optional)</label><input id="google-link-name" maxlength="100" placeholder="e.g. hero_portrait or world_lore"><div id="google-doc-options" class="google-dialog-options" hidden><label class="checkbox-label"><input type="checkbox" id="google-doc-harvest" checked><span><strong>Harvest with AI Assistant</strong> (creates lore files, persona &amp; styles)</span></label><label for="google-harvest-prompt">Harvest instructions (optional)</label><textarea id="google-harvest-prompt" rows="2" maxlength="2000" placeholder="e.g. Focus on faction rivalries and set up an interactive adventure"></textarea></div><div class="dialog-actions"><button class="secondary" type="button" id="google-link-cancel">Cancel</button><button type="submit" id="google-link-submit">Import Link</button></div></form></dialog>

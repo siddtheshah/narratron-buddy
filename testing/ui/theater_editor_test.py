@@ -288,33 +288,48 @@ def editor_page() -> Iterator[Page]:
 def test_external_authoring_copies_prompt_without_changing_theater(editor_page: Page, width: int) -> None:
     page = editor_page
     page.set_viewport_size({"width": width, "height": 900})
-    panel = page.get_by_role("region", name="Build in your favorite AI app")
-    expect(panel).to_be_visible()
-    expect(panel.get_by_role("link", name="Download authoring kit")).to_have_attribute("href", "/theater-authoring-kit")
-    expect(panel.get_by_role("link", name="Open ChatGPT")).to_have_attribute("href", "https://chatgpt.com/")
-    panel.locator("summary").click()
+    trigger = page.get_by_role("button", name="Build in your favorite AI app")
+    dialog = page.get_by_role("dialog", name="Build in your favorite AI app")
+    expect(trigger).to_be_visible()
+    expect(dialog).not_to_be_visible()
+    assert trigger.evaluate("el => el.getBoundingClientRect().right <= innerWidth")
+
+    trigger.click()
+    expect(dialog).to_be_visible()
+    expect(dialog.get_by_role("link", name="Download authoring kit")).to_have_attribute("href", "/theater-authoring-kit")
+    expect(dialog.get_by_role("link", name="Open ChatGPT")).to_have_attribute("href", "https://chatgpt.com/")
     page.evaluate("""() => {
         Object.defineProperty(navigator, 'clipboard', {configurable: true, value: {
             writeText: async text => { window.copiedAuthoringPrompt = text; }
         }});
     }""")
-    panel.get_by_role("button", name="Copy starter prompt").click()
+    dialog.get_by_role("button", name="Copy starter prompt").click()
+    expect(page.locator("#authoring-copy-feedback")).to_contain_text("Copied")
     expect(page.locator("#builder-status")).to_contain_text("Starter prompt copied")
     assert page.evaluate("window.copiedAuthoringPrompt") == page.locator("#authoring-prompt").input_value()
     assert page.evaluate("window.savedFiles") == {}
-    assert panel.evaluate("el => el.scrollWidth <= el.clientWidth && el.getBoundingClientRect().right <= innerWidth")
+    assert dialog.evaluate("el => el.scrollWidth <= el.clientWidth && el.getBoundingClientRect().right <= innerWidth")
+
+    dialog.get_by_role("button", name="Done").click()
+    expect(dialog).not_to_be_visible()
 
 
 def test_external_authoring_selects_prompt_when_clipboard_unavailable(editor_page: Page) -> None:
     page = editor_page
-    page.locator(".external-authoring summary").click()
+    page.get_by_role("button", name="Build in your favorite AI app").click()
+    dialog = page.get_by_role("dialog", name="Build in your favorite AI app")
+    expect(dialog).to_be_visible()
     page.evaluate("""() => {
         Object.defineProperty(navigator, 'clipboard', {configurable: true, value: undefined});
     }""")
-    page.get_by_role("button", name="Copy starter prompt").click()
+    dialog.get_by_role("button", name="Copy starter prompt").click()
+    expect(page.locator("#authoring-copy-feedback")).to_contain_text("Selected")
     expect(page.locator("#builder-status")).to_contain_text("Copy the selected starter prompt")
     expect(page.locator("#authoring-prompt")).to_be_focused()
     assert page.locator("#authoring-prompt").evaluate("el => el.selectionEnd - el.selectionStart") == len(page.locator("#authoring-prompt").input_value())
+
+    dialog.get_by_role("button", name="Close").click()
+    expect(dialog).not_to_be_visible()
 
 
 @pytest.mark.parametrize("width", [1280, 390])
