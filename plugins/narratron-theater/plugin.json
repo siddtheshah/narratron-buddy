@@ -1,0 +1,6 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "narratron-theater",
+  "version": "0.1.0",
+  "description": "Create and edit complete Narratron theaters with your AI assistant, then export a package to upload to Narratron."
+}

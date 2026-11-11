@@ -1343,6 +1343,16 @@ def test_draft_generations_generate_concurrently(builder: BuilderHarness) -> Non
     assert final_draft["revision"] == data["draft"]["revision"] + 2
 
 
+def test_authoring_kit_download_needs_no_login(builder: BuilderHarness) -> None:
+    with patch("api_server.theater_editor.get_current_user_async", AsyncMock(return_value=None)):
+        result = builder.client.get("/theater-authoring-kit")
+    assert result.status_code == 200
+    assert result.headers["content-type"] == "application/zip"
+    assert 'filename="narratron-theater-authoring.zip"' in result.headers["content-disposition"]
+    with zipfile.ZipFile(BytesIO(result.content)) as archive:
+        assert "narratron-theater/skills/create-theater/SKILL.md" in archive.namelist()
+
+
 def test_download_draft_returns_zip_archive(builder: BuilderHarness) -> None:
     data = builder.create()
     identifier = data["draft"]["theater_id"]

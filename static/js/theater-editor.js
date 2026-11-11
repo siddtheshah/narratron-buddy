@@ -1011,6 +1011,17 @@
     } catch (error) { status(error.message, true); }
     finally { opening = false; }
   }
+  el('copy-authoring-prompt').addEventListener('click', async () => {
+    const prompt = el('authoring-prompt');
+    try {
+      await navigator.clipboard.writeText(prompt.value);
+      status('Starter prompt copied. Paste it into your AI app with the authoring kit.');
+    } catch {
+      prompt.focus();
+      prompt.select();
+      status('Copy the selected starter prompt and paste it into your AI app.');
+    }
+  });
   el('start-default').addEventListener('click', () => run(async () => { await create(); status('Default theater ready. Make it your own.'); }, 'Preparing your theater…'));
   el('resume-draft').addEventListener('click', () => run(() => load(el('resume-draft').dataset.identifier), 'Opening your last theater…'));
   el('start-folder').addEventListener('click', () => el('folder-input').click());

@@ -28,6 +28,7 @@ from providers.image_provider import ImageReference
 from providers.music_provider import MusicGenerationRequest
 from providers.registry import get_music_provider
 from services.theater_assets import extract_and_resolve_references
+from services.theater_authoring import authoring_kit
 from services.theater_image_generation import generate_theater_image
 from services.theater_media_generation import generate_theater_media
 from services.theater_checkout import checkout_locks as _draft_locks, refresh_checkout_metadata, save_theater_checkout
@@ -197,6 +198,16 @@ def theater_editor_page() -> str:
     # The shell shows the shared login dialog; all draft data and actions require auth.
     return render_page_template("theater_editor.html", active_page="deploy",
         seo_metadata=SeoMetadata(title="Narratron Theater Builder", description="", path="/theater-editor", indexable=False))
+
+
+@app.get("/theater-authoring-kit")
+async def download_authoring_kit() -> Response:
+    """Public authoring resources: no account or theater data is included."""
+    content = await asyncio.to_thread(authoring_kit)
+    return Response(content=content, media_type="application/zip", headers={
+        "Content-Disposition": 'attachment; filename="narratron-theater-authoring.zip"',
+        "Cache-Control": "no-cache",
+    })
 
 
 @app.post("/api/theater-editor/drafts")

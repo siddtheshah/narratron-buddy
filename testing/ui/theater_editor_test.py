@@ -285,6 +285,39 @@ def editor_page() -> Iterator[Page]:
 
 
 @pytest.mark.parametrize("width", [1280, 390])
+def test_external_authoring_copies_prompt_without_changing_theater(editor_page: Page, width: int) -> None:
+    page = editor_page
+    page.set_viewport_size({"width": width, "height": 900})
+    panel = page.get_by_role("region", name="Build in your favorite AI app")
+    expect(panel).to_be_visible()
+    expect(panel.get_by_role("link", name="Download authoring kit")).to_have_attribute("href", "/theater-authoring-kit")
+    expect(panel.get_by_role("link", name="Open ChatGPT")).to_have_attribute("href", "https://chatgpt.com/")
+    panel.locator("summary").click()
+    page.evaluate("""() => {
+        Object.defineProperty(navigator, 'clipboard', {configurable: true, value: {
+            writeText: async text => { window.copiedAuthoringPrompt = text; }
+        }});
+    }""")
+    panel.get_by_role("button", name="Copy starter prompt").click()
+    expect(page.locator("#builder-status")).to_contain_text("Starter prompt copied")
+    assert page.evaluate("window.copiedAuthoringPrompt") == page.locator("#authoring-prompt").input_value()
+    assert page.evaluate("window.savedFiles") == {}
+    assert panel.evaluate("el => el.scrollWidth <= el.clientWidth && el.getBoundingClientRect().right <= innerWidth")
+
+
+def test_external_authoring_selects_prompt_when_clipboard_unavailable(editor_page: Page) -> None:
+    page = editor_page
+    page.locator(".external-authoring summary").click()
+    page.evaluate("""() => {
+        Object.defineProperty(navigator, 'clipboard', {configurable: true, value: undefined});
+    }""")
+    page.get_by_role("button", name="Copy starter prompt").click()
+    expect(page.locator("#builder-status")).to_contain_text("Copy the selected starter prompt")
+    expect(page.locator("#authoring-prompt")).to_be_focused()
+    assert page.locator("#authoring-prompt").evaluate("el => el.selectionEnd - el.selectionStart") == len(page.locator("#authoring-prompt").input_value())
+
+
+@pytest.mark.parametrize("width", [1280, 390])
 def test_nested_folders_expand_with_mouse_and_keyboard(editor_page: Page, width: int) -> None:
     page = editor_page
     page.set_viewport_size({"width": width, "height": 900})

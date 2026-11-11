@@ -55,6 +55,7 @@ COPY pricing/ pricing/
 COPY providers/ providers/
 COPY models/ models/
 COPY site_docs/ site_docs/
+COPY plugins/narratron-theater/ plugins/narratron-theater/
 
 # Copy default theater assets that are checked in
 COPY example_theater/ example_theater/

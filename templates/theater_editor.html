@@ -20,6 +20,26 @@
       <div><a class="back-link" href="/deploy">← Your theaters</a><h1>Theater Builder <span class="eyebrow">WITH AI</span></h1><p>Shape a world. Give it a voice. Bring it to life.</p></div>
     </header>
     <div id="builder-status" role="status" aria-live="polite"></div>
+    <section class="external-authoring panel" aria-labelledby="external-authoring-title">
+      <h2 id="external-authoring-title">Build in your favorite AI app</h2>
+      <p>Create and edit your whole theater in ChatGPT, Antigravity, or another AI app. Upload the finished folder here when you’re ready to play.</p>
+      <div class="external-authoring-actions">
+        <a class="authoring-download" href="/theater-authoring-kit" download>Download authoring kit</a>
+        <a href="https://chatgpt.com/" target="_blank" rel="noopener noreferrer">Open ChatGPT ↗</a>
+        <a href="https://antigravity.google/" target="_blank" rel="noopener noreferrer">Get Antigravity ↗</a>
+      </div>
+      <details><summary>How to use the kit</summary>
+        <ol>
+          <li><strong>ChatGPT:</strong> attach the kit ZIP to a chat that supports file creation. If ZIP attachments aren’t supported, attach the extracted skill and references. The kit also includes a skills-based plugin and local installation instructions in its README.</li>
+          <li><strong>Antigravity:</strong> extract the kit, open the folder, and ask the agent to read <code>narratron-theater/AGENTS.md</code>.</li>
+          <li>Develop your world and ask for a finished theater ZIP. Extract it, choose <strong>Upload a folder</strong> below, then <strong>Save &amp; test</strong>. For a theater already open here, use <strong>＋ Folder</strong>; matching files are replaced and omitted files stay.</li>
+        </ol>
+        <label for="authoring-prompt">Starter prompt</label>
+        <textarea id="authoring-prompt" rows="4" readonly>Read the Narratron create-theater skill and bundled references in this authoring kit. Help me create or improve a complete theater. Keep editing the actual theater files as we work, and give me a validated theater ZIP for upload when I am ready. Start by helping me develop my premise.</textarea>
+        <button class="secondary" id="copy-authoring-prompt" type="button">Copy starter prompt</button>
+        <p class="hint">Opening an app does not transfer files or install the plugin. To continue an existing theater, also use Download theater and attach that ZIP. Your AI app’s features and subscription apply. You can also build here with the co-creator.</p>
+      </details>
+    </section>
     <section id="login-gate" class="welcome-card" hidden>
       <span class="welcome-icon" aria-hidden="true">✦</span><h2>Your next story starts here.</h2>
       <p>Log in to build theaters, upload assets, and create with your AI assistant.</p>

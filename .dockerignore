@@ -44,3 +44,7 @@ ngrok_policy.yaml
 # Misc
 README.md
 TASKLIST.md
+
+# Public authoring plugin is served as a downloadable kit.
+!plugins/narratron-theater/
+!plugins/narratron-theater/**
