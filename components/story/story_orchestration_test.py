@@ -749,6 +749,33 @@ def test_game_action_scene_reaction_allows_proposed_fact_changes_without_text_or
     assert all(turn.completed for turn in tool.turn_journal.turns())
 
 
+def test_game_action_recording_keeps_stable_source_revision_when_notepad_advances(
+    harness: TurnHarness,
+) -> None:
+    harness.decision = GameControlDecision(
+        factual_updates={"Inventory": "Updated key"},
+        narration_request=NarrationRequest(user_action="A trade completed", brief="The merchant hands over the key."),
+    )
+    tool = harness.new_tool()
+
+    def model(session: StorySession, role: StoryRole, prompt: str, *, timeout: float = 60.0, stage_id: str = "") -> str:
+        response = harness.model_run(role, prompt)
+        if role == "game":
+            # Simulate background planner advancing notepad.revision between control_game and responder.
+            tool.notepad.publish_role_updates("planner", {"Ambush": "Shifted"}, source=tool.notepad.snapshot())
+        return response
+
+    with patch_models(harness, model):
+        tool._handle_player_game_action(GameAction(name="trade", arguments={}, revision=0), {"revision": 1})
+        assert tool.wait_for_pending_events(5)
+    turn = tool.turn_journal.turns()[0]
+    assert turn.completed
+    assert turn.response is not None
+    assert turn.response["notepad_revision_used"] > turn.source_revision
+    assert tool.notepad.snapshot().notes["Inventory"] == "Updated key"
+    assert tool.notepad.snapshot().notes["Ambush"] == "Shifted"
+
+
 @pytest.mark.parametrize("restart", [False, True])
 def test_game_entry_repeated_rejections_stay_pending_without_live_agent_error(
     harness: TurnHarness, caplog: pytest.LogCaptureFixture, restart: bool,

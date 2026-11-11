@@ -305,7 +305,11 @@ class StoryEngine:
             event_id=f"{turn.turn_id}:recording", action_id=turn.turn_id,
             source_event_ids=(f"{turn.turn_id}:responder",) if turn.ingress == "communicated_action" else (),
             kind="committed_game_action" if turn.ingress == "game_action" else "completed_response",
-            source_revision=int((turn.response or {}).get("notepad_revision_used", turn.source_revision)),
+            source_revision=(
+                turn.source_revision
+                if turn.ingress == "game_action"
+                else int((turn.response or {}).get("notepad_revision_used", turn.source_revision))
+            ),
             payload=turn.game_payload if turn.ingress == "game_action" else (turn.response or {}),
         )
 
