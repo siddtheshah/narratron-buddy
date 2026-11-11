@@ -140,3 +140,146 @@ def test_html_panel_binding_actions_permissions_and_network_isolation(tmp_path: 
         assert round(undersized_panel["width"]) == 280
         assert round(undersized_frame["height"]) == 220
         browser.close()
+
+
+def test_canvas_hotkeys_work_after_clicking_game_panel(tmp_path: Path) -> None:
+    """Clicking inside a sandboxed HTML game panel must not swallow canvas mic/text hotkeys."""
+    definition = panel_definition()
+    (tmp_path / "game").mkdir()
+    (tmp_path / "game/game.json").write_text(definition.model_dump_json(exclude={"view"}), encoding="utf-8")
+    (tmp_path / "game/panel.html").write_text(
+        '''<!doctype html><html><body>
+        <p id="status" data-panel-text="count"></p>
+        <button data-panel-action="increment" data-panel-disabled="full">Add one</button>
+        <button data-panel-action="unknown">Disabled action</button>
+        </body></html>''',
+        encoding="utf-8",
+    )
+    game = GameState(tmp_path, Mock(), Mock(), backend="python")
+    assert not game.error
+
+    template = Path("templates/canvas.html").read_text(encoding="utf-8")
+    space_guard = template[
+        template.index("        // Plain Space is reserved"):
+        template.index("        function escapeHtml", template.index("        // Plain Space is reserved"))
+    ]
+    command_setup = template[
+        template.index("        const oratorCommandOverlay = document.getElementById('orator-command-overlay');"):
+        template.index("        const suggestionsHiddenStorageKey =", template.index("        const oratorCommandOverlay"))
+    ]
+    hotkey_setup = template[
+        template.index("        // Configurable Mic Hotkey Logic"):
+        template.index("        window.setMicHotkey =", template.index("        // Configurable Mic Hotkey Logic"))
+    ]
+    hotkey_setup = hotkey_setup[hotkey_setup.index("        const micHotkeyBtn = null;"):]
+
+    html = f'''<!doctype html><html><body>
+    <button id="agent-start-stop-btn" type="button">Banish</button>
+    <button id="agent-connect-btn" type="button">Mic On</button>
+    <button id="game-state-toggle-btn" type="button"></button>
+    <div id="game-state-layer"></div>
+    <div id="orator-command-overlay" aria-hidden="true">
+        <form id="orator-command-form">
+            <input id="orator-command-input" type="text">
+            <span id="orator-command-dismiss-hotkey"></span>
+            <span id="orator-command-status"></span>
+        </form>
+    </div>
+    <script type="module">
+    import {{ createGameRenderer }} from '/static/js/game-renderer.js';
+    const theaterId = 'test';
+    const isCurrentOrator = () => true;
+    const stopSceneSpeech = () => {{}};
+    const actionWheel = {{ cancelRebinding: () => {{}} }};
+    const agentStartStopBtn = document.getElementById('agent-start-stop-btn');
+    const agentConnectBtn = document.getElementById('agent-connect-btn');
+    window.micMode = 'vad';
+    let micMode = 'vad';
+    let micPressHeld = false;
+    let micPressSource = null;
+    window.micClicks = 0;
+    window.micPressLog = [];
+    agentConnectBtn.addEventListener('click', () => {{ window.micClicks += 1; }});
+    const beginMicPress = source => {{
+        micPressHeld = true;
+        micPressSource = source;
+        window.micPressLog.push('begin:' + source);
+    }};
+    const releaseMicPress = () => {{
+        micPressHeld = false;
+        micPressSource = null;
+        window.micPressLog.push('release');
+    }};
+    window.setMicMode = mode => {{ micMode = mode; window.micMode = mode; }};
+    {space_guard}
+    {command_setup}
+    {hotkey_setup}
+    const renderer = createGameRenderer({{
+        container: document.getElementById('game-state-layer'),
+        toggleButton: document.getElementById('game-state-toggle-btn'),
+        actionUrl: () => '/action',
+        canEdit: () => true,
+        initiallyOpen: true,
+        refresh: () => {{}},
+    }});
+    renderer.render(await (await fetch('/latest')).json());
+    </script></body></html>'''
+
+    def route_request(route: Route) -> None:
+        path = route.request.url.split("http://game.test", 1)[-1]
+        if path == "/":
+            route.fulfill(content_type="text/html", body=html)
+        elif path == "/latest":
+            route.fulfill(json=game.payload())
+        elif path == "/action":
+            action = GameAction.model_validate_json(route.request.post_data or "{}")
+            route.fulfill(json=game.act(action))
+        elif path.startswith("/static/"):
+            route.fulfill(path=Path(path.split("?", 1)[0].lstrip("/")))
+        else:
+            raise AssertionError(f"Unexpected request: {route.request.url}")
+
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        page = browser.new_page()
+        page.route("http://game.test/**", route_request)
+        page.goto("http://game.test/")
+        frame = page.frame_locator("iframe.game-html-panel")
+        expect(frame.locator("#status")).to_have_text("0")
+
+        # Clicking inside the sandboxed game panel moves focus into the iframe.
+        frame.locator("#status").click()
+        assert page.evaluate("document.activeElement?.className") == "game-html-panel"
+
+        # Spoofed key messages from any other window must be ignored.
+        page.evaluate("window.postMessage({type:'game-panel-key', eventType:'keydown', key:' ', code:'Space', shiftKey:true}, '*')")
+        assert page.evaluate("document.getElementById('orator-command-overlay').classList.contains('active')") is False
+
+        # Text hotkey (Shift+Space) still opens and focuses the Orator command input.
+        page.keyboard.press("Shift+Space")
+        page.wait_for_function("document.getElementById('orator-command-overlay').classList.contains('active')")
+        page.wait_for_function("document.activeElement?.id === 'orator-command-input'")
+        page.keyboard.type("look around")
+        expect(page.locator("#orator-command-input")).to_have_value("look around")
+        page.keyboard.press("Escape")
+        page.wait_for_function("!document.getElementById('orator-command-overlay').classList.contains('active')")
+
+        # Click inside the iframe again (e.g. a disabled button) and trigger the mic hotkey (Ctrl+Shift+[).
+        frame.get_by_role("button", name="Disabled action").click(force=True)
+        assert page.evaluate("document.activeElement?.className") == "game-html-panel"
+        page.keyboard.press("Control+Shift+BracketLeft")
+        page.wait_for_function("window.micClicks === 1")
+
+        # Push-to-talk keydown and keyup must both forward from the iframe.
+        page.evaluate("window.setMicMode('push-to-talk')")
+        frame.locator("#status").click()
+        page.keyboard.down("Control")
+        page.keyboard.down("Shift")
+        page.keyboard.down("BracketLeft")
+        page.wait_for_function("window.micPressLog.includes('begin:hotkey')")
+        page.keyboard.up("BracketLeft")
+        page.keyboard.up("Shift")
+        page.keyboard.up("Control")
+        page.wait_for_function("window.micPressLog.includes('release')")
+        assert page.evaluate("window.micPressLog") == ["begin:hotkey", "release"]
+        browser.close()

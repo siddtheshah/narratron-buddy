@@ -1,6 +1,6 @@
 // Generic declarative views with optional data-only local exploration.
 import { createLocalGame } from './game-runtime.js?v=1';
-import { createPanelFrame } from './game-panel.js?v=2';
+import { createPanelFrame } from './game-panel.js?v=3';
 const TAGS = {
     column: 'div', row: 'div', grid: 'div', tabs: 'div', text: 'p', button: 'button', form: 'form', input: 'input',
     svg: 'svg', g: 'g', path: 'path', rect: 'rect', circle: 'circle', ellipse: 'ellipse',
@@ -63,9 +63,30 @@ export function createGameRenderer({ container, toggleButton, actionUrl, canEdit
     let panelFrame = null;
     let panelActions = new Map();
     window.addEventListener('message', event => {
-        if (!panelFrame || event.source !== panelFrame.contentWindow || event.data?.type !== 'game-panel-action') return;
-        const action = panelActions.get(event.data.id);
-        if (action) send(action);
+        if (!panelFrame || event.source !== panelFrame.contentWindow) return;
+        if (event.data?.type === 'game-panel-action') {
+            const action = panelActions.get(event.data.id);
+            if (action) send(action);
+        } else if (event.data?.type === 'game-panel-key') {
+            if (event.data.eventType !== 'keydown' && event.data.eventType !== 'keyup') return;
+            panelFrame.dispatchEvent(new KeyboardEvent(event.data.eventType, {
+                key: typeof event.data.key === 'string' ? event.data.key : '',
+                code: typeof event.data.code === 'string' ? event.data.code : '',
+                location: Number(event.data.location) || 0,
+                altKey: Boolean(event.data.altKey),
+                ctrlKey: Boolean(event.data.ctrlKey),
+                shiftKey: Boolean(event.data.shiftKey),
+                metaKey: Boolean(event.data.metaKey),
+                repeat: Boolean(event.data.repeat),
+                bubbles: true,
+                cancelable: true,
+                composed: true,
+            }));
+        } else if (event.data?.type === 'game-panel-blur') {
+            requestAnimationFrame(() => {
+                if (!document.hasFocus()) window.dispatchEvent(new Event('blur'));
+            });
+        }
     });
 
     function clearDraft() {

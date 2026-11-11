@@ -101,6 +101,28 @@ export function createPanelFrame(html, parameters, actions) {
                 if (!el.disabled) parent.postMessage({type: 'game-panel-action', id}, '*');
             });
         }
+        const forwardKey = event => {
+            if (event.isComposing) return;
+            const active = document.activeElement;
+            if (active && (['INPUT', 'TEXTAREA', 'SELECT'].includes(active.tagName) || active.isContentEditable)) return;
+            parent.postMessage({
+                type: 'game-panel-key',
+                eventType: event.type,
+                key: String(event.key || ''),
+                code: String(event.code || ''),
+                location: Number(event.location) || 0,
+                altKey: Boolean(event.altKey),
+                ctrlKey: Boolean(event.ctrlKey),
+                shiftKey: Boolean(event.shiftKey),
+                metaKey: Boolean(event.metaKey),
+                repeat: Boolean(event.repeat),
+            }, '*');
+        };
+        window.addEventListener('keydown', forwardKey, true);
+        window.addEventListener('keyup', forwardKey, true);
+        window.addEventListener('blur', () => {
+            parent.postMessage({type: 'game-panel-blur'}, '*');
+        });
     `;
     const policy = `default-src 'none'; img-src data:; script-src 'nonce-${nonce}'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'`;
     frame.srcdoc = `<!doctype html><meta http-equiv="Content-Security-Policy" content="${policy}"><meta charset="utf-8">${html}<script nonce="${nonce}">${bridge}</script>`;
