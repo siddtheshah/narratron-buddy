@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncGenerator
 import asyncio
+import logging
 from typing import Optional
 
 from google import genai
@@ -12,6 +13,9 @@ from google.adk.models.google_llm import Gemini
 from google.adk.models.llm_request import LlmRequest
 from google.adk.models.llm_response import LlmResponse
 from pydantic import PrivateAttr
+
+
+logger = logging.getLogger(__name__)
 
 
 DEFAULT_COMPACTION_TRIGGER_TOKENS = 10_000
@@ -48,6 +52,13 @@ class VertexGemini(Gemini):
                 # backend. Keep the legacy flag for existing story consumers
                 # unless a caller explicitly opts in to Enterprise.
                 kwargs["enterprise" if self.enterprise else "vertexai"] = True
+            logger.debug(
+                "[VertexGemini] Creating genai.Client for loop (model=%s, project=%s, location=%s, enterprise=%s)",
+                self.model,
+                self.project_id,
+                self.location,
+                self.enterprise,
+            )
             self._client_cache[loop] = genai.Client(**kwargs)
         return self._client_cache[loop]
 
@@ -69,7 +80,19 @@ class VertexGemini(Gemini):
                 for resp in responses
             )
             if malformed and attempt + 1 < max_attempts:
+                logger.warning(
+                    "[VertexGemini] MALFORMED_FUNCTION_CALL on attempt %d/%d (model=%s); retrying",
+                    attempt + 1,
+                    max_attempts,
+                    self.model,
+                )
                 continue
+            if malformed:
+                logger.warning(
+                    "[VertexGemini] MALFORMED_FUNCTION_CALL persisted after %d attempt(s) (model=%s)",
+                    max_attempts,
+                    self.model,
+                )
             for response in responses:
                 yield response
             return

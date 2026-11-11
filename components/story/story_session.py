@@ -4,6 +4,7 @@ import asyncio
 from collections.abc import AsyncGenerator
 from collections.abc import Callable
 import json
+import logging
 from pathlib import Path
 from threading import RLock, Thread
 import time
@@ -24,6 +25,8 @@ from google.adk.sessions.session import Session
 from google.genai import types
 from pydantic import JsonValue, TypeAdapter
 
+
+logger = logging.getLogger(__name__)
 
 StoryRole = Literal["responder", "game", "recorder", "planner"]
 APP_NAME = "narratron_story"
@@ -136,6 +139,11 @@ class StorySessionService(DatabaseSessionService):
         async with self._append_lock:
             latest = await self.get_session(app_name=session.app_name, user_id=session.user_id, session_id=session.id)
             if latest is None:
+                logger.error(
+                    "[StorySessionService] Story session disappeared during invocation (session_id=%s, invocation_id=%s)",
+                    session.id,
+                    event.invocation_id,
+                )
                 raise ValueError("Story session disappeared during an invocation.")
             # ADK can construct a model event before its before-model callbacks.
             # Preserve append order when a callback inserts new planner input.
@@ -144,6 +152,14 @@ class StorySessionService(DatabaseSessionService):
             session.events = latest.events
             session.state.update(latest.state)
             session.last_update_time = latest.last_update_time
+            logger.debug(
+                "[StorySessionService] Appended event author=%s invocation=%s final=%s error=%s finish=%s",
+                event.author,
+                event.invocation_id,
+                event.is_final_response(),
+                event.error_code,
+                event.finish_reason,
+            )
             return result
 
 
@@ -174,6 +190,11 @@ class StorySession:
         if callback_context.invocation_id.startswith("planner:") and self.planner_context is not None:
             prompt = self.planner_context()
             if prompt:
+                logger.debug(
+                    "[StorySession] Injecting mid-invocation planner_context (len=%d) for %s",
+                    len(prompt),
+                    callback_context.invocation_id,
+                )
                 await self.session_service.append_event(callback_context.session, Event(
                     author="user", invocation_id=callback_context.invocation_id,
                     content=types.Content(role="user", parts=[types.Part(text=prompt)]),
@@ -187,6 +208,12 @@ class StorySession:
             prompt = self._history_snapshots[invocation_id]
             if prompt:
                 llm_request.contents.insert(0, types.Content(role="user", parts=[types.Part(text=prompt)]))
+        logger.debug(
+            "[StorySession] Built role request for %s (contents=%d, has_history=%s)",
+            callback_context.invocation_id,
+            len(llm_request.contents or []),
+            callback_context.invocation_id in self._history_snapshots,
+        )
         return result
 
     def bind(self, agents: list[Agent]) -> None:
@@ -204,16 +231,44 @@ class StorySession:
         )
 
     def run(self, role: StoryRole, prompt: str, *, timeout: float = 60.0, stage_id: str = "") -> str:
+        logger.debug(
+            "[StorySession] run() requested (role=%s, stage_id=%s, timeout=%.1fs, prompt_len=%d)",
+            role,
+            stage_id,
+            timeout,
+            len(prompt),
+        )
         with self._lock:
             if self._closed:
+                logger.warning("[StorySession] run() rejected for role=%s: session is closed", role)
                 raise RuntimeError("Story session is closed.")
             if self._thread is None:
+                logger.debug("[StorySession] Starting background story-adk event loop thread")
                 self._thread = Thread(target=self._loop.run_forever, daemon=True, name="story-adk")
                 self._thread.start()
             future = asyncio.run_coroutine_threadsafe(
                 asyncio.wait_for(self._run(role, prompt, stage_id), timeout), self._loop,
             )
-        return future.result(timeout=timeout + 5.0)
+        started = time.perf_counter()
+        try:
+            result = future.result(timeout=timeout + 5.0)
+            logger.debug(
+                "[StorySession] run() completed (role=%s, stage_id=%s, elapsed=%.3fs, result_len=%d)",
+                role,
+                stage_id,
+                time.perf_counter() - started,
+                len(result),
+            )
+            return result
+        except Exception as exc:
+            logger.warning(
+                "[StorySession] run() failed (role=%s, stage_id=%s, elapsed=%.3fs): %s",
+                role,
+                stage_id,
+                time.perf_counter() - started,
+                exc,
+            )
+            raise
 
     async def _run(self, role: StoryRole, prompt: str, stage_id: str) -> str:
         if self.runner is None:
@@ -221,12 +276,19 @@ class StorySession:
         async with self._creation_lock:
             session = await self.session_service.get_session(app_name=APP_NAME, user_id=USER_ID, session_id=self.session_id)
             if session is None:
+                logger.debug("[StorySession] Creating ADK session %s", self.session_id)
                 await self.session_service.create_session(app_name=APP_NAME, user_id=USER_ID, session_id=self.session_id)
         for attempt in range(self.max_attempts):
             final_text = ""
             structured_args: dict[str, JsonValue] | None = None
             malformed = False
             invocation_id = f"{role}:{stage_id}:{uuid4().hex}"
+            logger.debug(
+                "[StorySession] Starting attempt %d/%d (invocation_id=%s)",
+                attempt + 1,
+                self.max_attempts,
+                invocation_id,
+            )
             try:
                 async for event in self.runner.run_async(
                     user_id=USER_ID,
@@ -239,25 +301,53 @@ class StorySession:
                         or event.finish_reason == types.FinishReason.MALFORMED_FUNCTION_CALL
                     ):
                         malformed = True
+                        logger.warning(
+                            "[StorySession] MALFORMED_FUNCTION_CALL in %s (attempt %d/%d, error_code=%s)",
+                            invocation_id,
+                            attempt + 1,
+                            self.max_attempts,
+                            event.error_code,
+                        )
                     if event.author == ROLE_AUTHORS[role] and event.content:
                         for part in event.content.parts or []:
+                            if part.function_call is not None:
+                                logger.debug(
+                                    "[StorySession] %s tool call: %s",
+                                    invocation_id,
+                                    part.function_call.name,
+                                )
                             if part.function_call is not None and part.function_call.name == "set_model_response":
                                 structured_args = TypeAdapter(dict[str, JsonValue]).validate_python(
                                     dict(part.function_call.args or {})
                                 )
                         if event.is_final_response():
                             final_text = "".join(part.text or "" for part in event.content.parts or [])
+                            logger.debug(
+                                "[StorySession] %s final response received (text_len=%d, has_structured_args=%s)",
+                                invocation_id,
+                                len(final_text),
+                                structured_args is not None,
+                            )
             finally:
                 self._history_snapshots.pop(invocation_id, None)
             if final_text.strip():
                 if structured_args is not None:
                     return json.dumps(structured_args, ensure_ascii=False)
                 return final_text
+            logger.warning(
+                "[StorySession] %s produced empty final text (malformed=%s, attempt %d/%d)",
+                invocation_id,
+                malformed,
+                attempt + 1,
+                self.max_attempts,
+            )
             if not malformed or attempt + 1 >= self.max_attempts:
                 break
+        logger.error("[StorySession] Story %s (stage=%s) returned no completion", role, stage_id)
         raise ValueError(f"Story {role} returned no completion.")
 
     def close(self) -> None:
+        logger.debug("[StorySession] Closing StorySession (session_id=%s)", self.session_id)
         with self._lock:
             if self._closed:
                 return
@@ -267,3 +357,4 @@ class StorySession:
                 self._loop.call_soon_threadsafe(self._loop.stop)
                 self._thread.join(timeout=5)
             self._loop.close()
+        logger.debug("[StorySession] Closed StorySession (session_id=%s)", self.session_id)

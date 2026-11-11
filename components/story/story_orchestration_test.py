@@ -701,6 +701,54 @@ def test_significant_game_turn_narrates_brief_without_recording_again(harness: T
     assert "private mechanics" not in responder_prompt
 
 
+def test_game_action_scene_reaction_allows_proposed_fact_changes_without_text_or_voice_input(
+    harness: TurnHarness,
+) -> None:
+    harness.theater.config.return_value["story_planning"]["require_user_input"] = True
+    harness.decision = GameControlDecision(
+        factual_updates={"Inventory": "Key and crown"},
+        narration_request=NarrationRequest(user_action="A trade completed", brief="The merchant hands over the key."),
+    )
+    tool = harness.new_tool()
+    assert not tool.response_module.is_user_input_detected
+    delivered = MagicMock()
+    tool.on_scene_reaction = delivered
+
+    def model(session: StorySession, role: StoryRole, prompt: str, *, timeout: float = 60.0, stage_id: str = "") -> str:
+        response = harness.model_run(role, prompt)
+        if role == "responder":
+            return json.dumps({
+                "narration": "The merchant also gives you a crown.",
+                "proposed_factual_changes": [{
+                    "topic": "Inventory", "info": "Key and crown", "evidence": "A new gift.",
+                }],
+            })
+        return response
+
+    with patch_models(harness, model):
+        tool._handle_player_game_action(GameAction(name="trade", arguments={}, revision=0), {"revision": 1})
+        assert tool.wait_for_pending_events(5)
+    delivered.assert_called_once()
+    reaction = delivered.call_args.args[0]
+    assert reaction["narration"] == "The merchant also gives you a crown."
+    assert reaction["proposed_factual_changes"] == [{
+        "topic": "Inventory", "info": "Key and crown", "evidence": "A new gift.",
+    }]
+    assert tool.canvas_manager.story.narration == "The merchant also gives you a crown."
+    assert tool.notepad.snapshot().notes["Inventory"] == "Key and crown"
+    assert_foreground_calls(harness, ["game", "responder", "recorder"])
+    recorder_prompt = next(prompt for role, prompt in harness.prompts if role == "recorder")
+    assert "# Associated Story Response" in recorder_prompt
+    assert "Key and crown" in recorder_prompt
+    assert tool.turn_journal.turns()[0].completed
+
+    # Subsequent game actions are not blocked and still require no text/voice input.
+    tool._handle_player_game_action(GameAction(name="move", arguments={}, revision=1), {"revision": 2})
+    assert tool.wait_for_pending_events(5)
+    assert len(tool.turn_journal.turns()) == 2
+    assert all(turn.completed for turn in tool.turn_journal.turns())
+
+
 @pytest.mark.parametrize("restart", [False, True])
 def test_game_entry_repeated_rejections_stay_pending_without_live_agent_error(
     harness: TurnHarness, caplog: pytest.LogCaptureFixture, restart: bool,
@@ -717,9 +765,7 @@ def test_game_entry_repeated_rejections_stay_pending_without_live_agent_error(
         if role == "responder":
             return json.dumps({
                 "narration": "The merchant also gives you a crown.",
-                "proposed_factual_changes": [{
-                    "topic": "Inventory", "info": "Key and crown", "evidence": "A new gift.",
-                }],
+                "dice_used": True,
             })
         return response
 
@@ -1578,3 +1624,25 @@ def test_unrecorded_delivered_turns_caught_up_at_init_time(harness: TurnHarness)
     assert turn.recorder_completed
     assert turn.completed
     assert_foreground_calls(harness, ["recorder"])
+
+
+def test_failed_game_action_logs_block_and_recovery_details(
+    harness: TurnHarness, caplog: pytest.LogCaptureFixture,
+) -> None:
+    tool = harness.new_tool()
+    with caplog.at_level("DEBUG"):
+        with patch.object(tool.game_module, "control_game", side_effect=ValueError("invalid game move")):
+            tool._handle_player_game_action(GameAction(name="move", arguments={}, revision=0), {"revision": 1})
+            assert not tool.wait_for_pending_events(5)
+            result = tool.resolve_action("Check the lock")
+            assert result == {"error": "An earlier story cycle requires recovery."}
+        assert "[StoryEngine] _handle_player_game_action received" in caplog.text
+        assert "[StoryEngine] Running control_game for turn game:0" in caplog.text
+        assert "Story cycle game:0 remains pending" in caplog.text
+        assert "left incomplete state -> BLOCKING subsequent cycles" in caplog.text
+        assert "BLOCKED by earlier incomplete cycle" in caplog.text
+        assert "[StoryEngine] wait_for_pending_events returning False" in caplog.text
+
+        tool.retry_pending_turns()
+        assert tool.wait_for_pending_events(5)
+        assert all(turn.completed for turn in tool.turn_journal.turns())

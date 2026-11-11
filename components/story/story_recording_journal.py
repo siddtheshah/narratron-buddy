@@ -1,6 +1,7 @@
 """One story event journal with recording, completed-history, and role views."""
 
 import json
+import logging
 from pathlib import Path, PurePosixPath
 import sqlite3
 from threading import RLock
@@ -11,6 +12,9 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
 
 from components.notepad import NoteSnapshot
 from components.story.story_handoffs import CommittedGameReceipt, GameControlDecision
+
+
+logger = logging.getLogger(__name__)
 
 
 DEFAULT_HISTORY_EVENT_LIMIT = 20
@@ -231,6 +235,12 @@ class StoryRecordingJournal:
 
     def complete_history(self, events: list[StoryHistoryEvent]) -> None:
         """Publish completed events as a view of their existing canonical payloads."""
+        if events:
+            logger.debug(
+                "[StoryRecordingJournal] Publishing %d history event(s): %s",
+                len(events),
+                [(e.event_id, e.kind) for e in events],
+            )
         with self._lock, self._connection:
             self._connection.execute("BEGIN IMMEDIATE")
             for event in events:
@@ -321,12 +331,23 @@ class StoryRecordingJournal:
             ).fetchone()
             if row is not None:
                 if RecordingEvent.model_validate_json(row[0]) != event:
+                    logger.error(
+                        "[StoryRecordingJournal] Event identity %s reused with different content",
+                        event.event_id,
+                    )
                     raise ValueError("Event identity was reused with different content.")
+                logger.debug("[StoryRecordingJournal] Event %s already enqueued", event.event_id)
                 return
             self._connection.execute(
                 "INSERT INTO recording_events (event_id, event_json) VALUES (?, ?)",
                 (event.event_id, event.model_dump_json()),
             )
+        logger.debug(
+            "[StoryRecordingJournal] Enqueued event %s (kind=%s, action_id=%s)",
+            event.event_id,
+            event.kind,
+            event.action_id,
+        )
 
     def pending(self) -> list[RecordingEvent]:
         with self._lock:
@@ -360,6 +381,11 @@ class StoryRecordingJournal:
                    WHERE recording_required = 1 AND recorded_revision IS NULL ORDER BY position LIMIT 1"""
             ).fetchone()
             if row is None or row[0] != event_id:
+                logger.error(
+                    "[StoryRecordingJournal] Cannot commit %s: oldest pending event is %s",
+                    event_id,
+                    row[0] if row is not None else None,
+                )
                 raise ValueError("Recording must commit the oldest pending event.")
             self._connection.execute(
                 """INSERT INTO recorded_notes (singleton, snapshot_json) VALUES (1, ?)
@@ -370,6 +396,11 @@ class StoryRecordingJournal:
                 "UPDATE recording_events SET recorded_revision = ? WHERE event_id = ?",
                 (snapshot.revision, event_id),
             )
+        logger.debug(
+            "[StoryRecordingJournal] Committed event %s at notepad revision=%d",
+            event_id,
+            snapshot.revision,
+        )
 
     @staticmethod
     def receipt_recording_event(receipt: CommittedGameReceipt) -> RecordingEvent:
@@ -398,15 +429,31 @@ class StoryRecordingJournal:
             ).fetchone()
             if existing is not None:
                 if CommittedGameReceipt.model_validate_json(existing[0]) != receipt:
+                    logger.error(
+                        "[StoryRecordingJournal] Receipt revision %d reused with different content for parent %s",
+                        receipt.action.revision,
+                        receipt.parent_event_id,
+                    )
                     raise ValueError(
                         "Game receipt revision was reused with different content."
                     )
+                logger.debug(
+                    "[StoryRecordingJournal] Reusing Narratron receipt %s (rev=%d) for parent %s",
+                    receipt.event_id,
+                    receipt.action.revision,
+                    receipt.parent_event_id,
+                )
                 return event
             decision_row = self._connection.execute(
                 "SELECT 1 FROM game_control_decisions WHERE parent_event_id = ?",
                 (receipt.parent_event_id,),
             ).fetchone()
             if decision_row is not None:
+                logger.error(
+                    "[StoryRecordingJournal] Rejected Narratron receipt %s: decision already finalized for parent %s",
+                    receipt.event_id,
+                    receipt.parent_event_id,
+                )
                 raise ValueError(
                     "Game control decision is already finalized for this event."
                 )
@@ -416,6 +463,10 @@ class StoryRecordingJournal:
             ).fetchone()
             if by_id is not None:
                 if CommittedGameReceipt.model_validate_json(by_id[0]) != receipt:
+                    logger.error(
+                        "[StoryRecordingJournal] Receipt event_id %s reused with different content",
+                        receipt.event_id,
+                    )
                     raise ValueError(
                         "Game receipt identity was reused with different content."
                     )
@@ -435,6 +486,13 @@ class StoryRecordingJournal:
                 "INSERT INTO recording_events (event_id, event_json) VALUES (?, ?)",
                 (event.event_id, event.model_dump_json()),
             )
+        logger.debug(
+            "[StoryRecordingJournal] Recorded Narratron receipt %s (action=%s, game_rev=%d, parent=%s)",
+            receipt.event_id,
+            receipt.action.name,
+            receipt.action.revision,
+            receipt.parent_event_id,
+        )
         return event
 
     def narratron_receipt_for_revision(
@@ -467,6 +525,10 @@ class StoryRecordingJournal:
             ).fetchone()
             if row is not None:
                 if GameControlDecision.model_validate_json(row[0]) != decision:
+                    logger.error(
+                        "[StoryRecordingJournal] Game control decision mismatch for parent %s",
+                        parent_event_id,
+                    )
                     raise ValueError(
                         "Game control decision was already saved with different content."
                     )
@@ -476,6 +538,12 @@ class StoryRecordingJournal:
                    (parent_event_id, decision_json, completed) VALUES (?, ?, 0)""",
                 (parent_event_id, decision.model_dump_json()),
             )
+        logger.debug(
+            "[StoryRecordingJournal] Saved game control decision for %s (actions=%d, narrate=%s)",
+            parent_event_id,
+            len(decision.game_actions),
+            decision.narration_request is not None,
+        )
 
     def game_control_decision(self, parent_event_id: str) -> GameControlDecision | None:
         with self._lock:
@@ -495,6 +563,10 @@ class StoryRecordingJournal:
             ).fetchone()
             if row is not None:
                 if GameControlDecision.model_validate_json(row[0]) != decision:
+                    logger.error(
+                        "[StoryRecordingJournal] Recorder decision mismatch for event %s",
+                        event_id,
+                    )
                     raise ValueError(
                         "Recorder decision was already saved with different content."
                     )
@@ -504,6 +576,12 @@ class StoryRecordingJournal:
                    (event_id, decision_json) VALUES (?, ?)""",
                 (event_id, decision.model_dump_json()),
             )
+        logger.debug(
+            "[StoryRecordingJournal] Saved recorder decision for %s (updates=%s, refs=%d)",
+            event_id,
+            list(decision.factual_updates.keys()),
+            len(decision.reference_updates),
+        )
 
     def recorder_decision(self, event_id: str) -> GameControlDecision | None:
         with self._lock:
@@ -529,6 +607,10 @@ class StoryRecordingJournal:
                 (parent_event_id,),
             ).fetchone()
             if decision_row is None:
+                logger.error(
+                    "[StoryRecordingJournal] Cannot complete game control for %s: no saved decision",
+                    parent_event_id,
+                )
                 raise ValueError("Cannot complete game control before saving its decision.")
             unrecorded = self._connection.execute(
                 """SELECT 1 FROM recording_events
@@ -544,6 +626,10 @@ class StoryRecordingJournal:
                 (parent_event_id, parent_event_id),
             ).fetchone()
             if unrecorded is not None:
+                logger.error(
+                    "[StoryRecordingJournal] Cannot complete game control for %s: unrecorded factual events remain",
+                    parent_event_id,
+                )
                 raise ValueError(
                     "Cannot complete game control while its factual events remain unrecorded."
                 )
@@ -551,7 +637,9 @@ class StoryRecordingJournal:
                 "UPDATE game_control_decisions SET completed = 1 WHERE parent_event_id = ?",
                 (parent_event_id,),
             )
+        logger.debug("[StoryRecordingJournal] Completed game control for %s", parent_event_id)
 
     def close(self) -> None:
+        logger.debug("[StoryRecordingJournal] Closing recording journal")
         with self._lock:
             self._connection.close()

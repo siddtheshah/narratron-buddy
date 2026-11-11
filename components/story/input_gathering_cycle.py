@@ -2,10 +2,14 @@
 
 from collections.abc import Callable, Mapping
 from concurrent.futures import Future, ThreadPoolExecutor
+import logging
 from threading import Condition, Timer
 import time
 
 from pydantic import JsonValue, TypeAdapter
+
+
+logger = logging.getLogger(__name__)
 
 
 StoryResult = dict[str, JsonValue]
@@ -47,17 +51,35 @@ class StoryInputGatheringCycle:
             if self._handler is not None:
                 raise RuntimeError("Story cycle already has an engine.")
             self._handler = handler
+            logger.debug(
+                "[StoryInputGatheringCycle] Bound handler (pending=%d, cycle_length=%.1fs)",
+                len(self._pending),
+                self.cycle_length,
+            )
             self._schedule_locked()
 
     def submit(self, turn_id: str) -> Future[StoryResult]:
         with self._condition:
             if self._closed:
+                logger.warning("[StoryInputGatheringCycle] Submit rejected for %s: cycle is closed", turn_id)
                 raise RuntimeError("Story cycle is closed.")
             existing = self._pending.get(turn_id) or self._active.get(turn_id)
             if existing is not None:
+                logger.debug(
+                    "[StoryInputGatheringCycle] Reusing existing future for turn %s (in_active=%s, in_pending=%s)",
+                    turn_id,
+                    turn_id in self._active,
+                    turn_id in self._pending,
+                )
                 return existing
             future: Future[StoryResult] = Future()
             self._pending[turn_id] = future
+            logger.debug(
+                "[StoryInputGatheringCycle] Queued turn %s (pending=%d, active=%d)",
+                turn_id,
+                len(self._pending),
+                len(self._active),
+            )
             self._schedule_locked()
             return future
 
@@ -82,6 +104,12 @@ class StoryInputGatheringCycle:
 
     def _schedule_locked(self) -> None:
         if self._active or not self._pending or self._handler is None:
+            logger.debug(
+                "[StoryInputGatheringCycle] _schedule_locked deferred (active=%d, pending=%d, bound=%s)",
+                len(self._active),
+                len(self._pending),
+                self._handler is not None,
+            )
             return
         if self._timer is not None:
             self._timer.cancel()
@@ -90,23 +118,45 @@ class StoryInputGatheringCycle:
         if self._draining or self._closed or delay == 0:
             self._active, self._pending = self._pending, {}
             self._deadline = time.monotonic() + self.cycle_length
+            logger.debug(
+                "[StoryInputGatheringCycle] Dispatching batch immediately: turn_ids=%s (draining=%s, closed=%s, delay=%.3fs)",
+                list(self._active),
+                self._draining,
+                self._closed,
+                delay,
+            )
             self._executor.submit(self._run, self._handler, self._active)
         else:
+            logger.debug(
+                "[StoryInputGatheringCycle] Scheduling batch timer in %.3fs for %d pending turn(s): %s",
+                delay,
+                len(self._pending),
+                list(self._pending),
+            )
             self._timer = Timer(delay, self._tick)
             self._timer.daemon = True
             self._timer.start()
 
     def _tick(self) -> None:
+        logger.debug("[StoryInputGatheringCycle] Cooldown timer fired")
         with self._condition:
             self._schedule_locked()
 
     def _run(self, handler: CycleHandler, batch: dict[str, Future[StoryResult]]) -> None:
+        batch_ids = list(batch)
+        logger.debug("[StoryInputGatheringCycle] Worker executing batch: %s", batch_ids)
         try:
-            results = handler(list(batch))
+            results = handler(batch_ids)
             for turn_id, future in batch.items():
                 if not future.cancelled():
                     future.set_result(results[turn_id])
+            logger.debug(
+                "[StoryInputGatheringCycle] Worker finished batch %s (errors=%s)",
+                batch_ids,
+                [tid for tid, res in results.items() if "error" in res],
+            )
         except BaseException as exc:
+            logger.exception("[StoryInputGatheringCycle] Worker failed for batch %s: %s", batch_ids, exc)
             for future in batch.values():
                 if not future.done():
                     future.set_exception(exc)
@@ -114,12 +164,22 @@ class StoryInputGatheringCycle:
         finally:
             with self._condition:
                 self._active = {}
+                logger.debug(
+                    "[StoryInputGatheringCycle] Released active batch %s (remaining_pending=%d)",
+                    batch_ids,
+                    len(self._pending),
+                )
                 self._schedule_locked()
                 self._condition.notify_all()
 
     def flush(self) -> None:
         """Release waiting input without changing an otherwise empty interval."""
         with self._condition:
+            logger.debug(
+                "[StoryInputGatheringCycle] flush() called (pending=%d, active=%d)",
+                len(self._pending),
+                len(self._active),
+            )
             if self._pending:
                 self._deadline = 0.0
                 self._schedule_locked()
@@ -127,6 +187,7 @@ class StoryInputGatheringCycle:
     def wait(self, timeout: float = 5.0) -> bool:
         """Drain pending batches for deterministic harnesses and shutdown."""
         deadline = time.monotonic() + timeout
+        logger.debug("[StoryInputGatheringCycle] wait() started (timeout=%.1fs)", timeout)
         with self._condition:
             self._draining = True
             try:
@@ -136,21 +197,34 @@ class StoryInputGatheringCycle:
                     max(0.0, deadline - time.monotonic()),
                 )
                 if not done:
+                    logger.warning(
+                        "[StoryInputGatheringCycle] wait() timed out after %.1fs (active=%s, pending=%s)",
+                        timeout,
+                        list(self._active),
+                        list(self._pending),
+                    )
                     return False
             finally:
                 self._draining = False
         if self.on_wait is not None:
             self.on_wait(max(0.0, deadline - time.monotonic()))
+        logger.debug("[StoryInputGatheringCycle] wait() completed")
         return True
 
     def close(self) -> None:
+        logger.debug("[StoryInputGatheringCycle] Closing cycle")
         with self._condition:
             self._closed = True
             abandoned = list(self._pending.values()) if self._handler is None else []
             if abandoned:
+                logger.warning(
+                    "[StoryInputGatheringCycle] Abandoning %d unbound pending turn(s) on close",
+                    len(abandoned),
+                )
                 self._pending = {}
             self._schedule_locked()
             self._condition.wait_for(lambda: not self._active and not self._pending)
         for future in abandoned:
             future.cancel()
         self._executor.shutdown(wait=True)
+        logger.debug("[StoryInputGatheringCycle] Closed cycle")

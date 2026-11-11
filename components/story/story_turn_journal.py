@@ -1,11 +1,15 @@
 """Durable bounded turn scheduling, independent of note content revisions."""
 
+import logging
 from pathlib import Path
 import sqlite3
 from threading import RLock
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
+
+
+logger = logging.getLogger(__name__)
 
 
 class StoryTurn(BaseModel):
@@ -71,7 +75,19 @@ class StoryTurnJournal:
                 if (existing.ingress, existing.action, existing.nudge, existing.game_payload) != (
                     turn.ingress, turn.action, turn.nudge, turn.game_payload,
                 ):
+                    logger.error(
+                        "[StoryTurnJournal] Turn identity %s reused with different content (existing_ingress=%s, new_ingress=%s)",
+                        turn.turn_id,
+                        existing.ingress,
+                        turn.ingress,
+                    )
                     raise ValueError("Turn identity reused with different ingress.")
+                logger.debug(
+                    "[StoryTurnJournal] Reusing existing turn %s (pos=%d, cycle=%s)",
+                    existing.turn_id,
+                    existing.position,
+                    existing.cycle_id,
+                )
                 return existing
             cursor = self._connection.execute(
                 "INSERT INTO story_turns (turn_id, turn_json) VALUES (?, ?)",
@@ -80,6 +96,12 @@ class StoryTurnJournal:
             assert cursor.lastrowid is not None
             turn.position = cursor.lastrowid
             self.save(turn)
+            logger.debug(
+                "[StoryTurnJournal] Accepted new turn %s (pos=%d, ingress=%s)",
+                turn.turn_id,
+                turn.position,
+                turn.ingress,
+            )
             return turn
 
     def get(self, turn_id: str) -> StoryTurn | None:
@@ -95,6 +117,16 @@ class StoryTurnJournal:
                 "UPDATE story_turns SET turn_json = ? WHERE turn_id = ?",
                 (turn.model_dump_json(), turn.turn_id),
             )
+        logger.debug(
+            "[StoryTurnJournal] Saved turn %s (pos=%d, cycle=%s, game_done=%s, rec_done=%s, skip=%s, deliv=%s)",
+            turn.turn_id,
+            turn.position,
+            turn.cycle_id,
+            turn.game_completed,
+            turn.recorder_completed,
+            turn.responder_skipped,
+            turn.delivered,
+        )
 
     def turns(self) -> list[StoryTurn]:
         with self._lock:
@@ -103,6 +135,7 @@ class StoryTurnJournal:
 
     def bind_cycle(self, turn_ids: list[str]) -> None:
         """Freeze membership before any model runs, including across restarts."""
+        logger.debug("[StoryTurnJournal] Binding cycle %s to turn_ids=%s", turn_ids[0], turn_ids)
         with self._lock, self._connection:
             for turn_id in turn_ids:
                 turn = self.get(turn_id)
@@ -115,5 +148,6 @@ class StoryTurnJournal:
                     )
 
     def close(self) -> None:
+        logger.debug("[StoryTurnJournal] Closing turn journal")
         with self._lock:
             self._connection.close()

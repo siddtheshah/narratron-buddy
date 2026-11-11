@@ -302,14 +302,16 @@ class StoryGameModule:
         The `revision` argument must be the integer revision from Current Game State (not the story snapshot revision).
         """
         logger.debug(
-            "[StoryGameModule] take_game_action called: name=%s, revision=%d, arguments=%s",
+            "[StoryGameModule] take_game_action called (stage=%s): name=%s, revision=%d, arguments=%s",
+            self._game_stage_id,
             name,
             revision,
             arguments_json,
         )
         if self._submit_game_action is None:
             logger.warning(
-                "[StoryGameModule] take_game_action rejected: no active story-response or game-entry stage"
+                "[StoryGameModule] take_game_action rejected (stage=%s): no active story-response or game-entry stage",
+                self._game_stage_id,
             )
             return "Error: Game actions require an active story-response or game-entry stage."
         try:
@@ -328,15 +330,22 @@ class StoryGameModule:
     def recover_game_receipts(self, event: RecordingEvent) -> None:
         """Recover actions persisted before an interrupted journal write."""
         if self._game_state is None:
+            logger.debug("[StoryGameModule] recover_game_receipts skipped for %s: no game_state", event.event_id)
             return
         commits = self._game_state.story_action_commits(f"{event.event_id}:narratron:")
-        if commits:
+        logger.debug(
+            "[StoryGameModule] recover_game_receipts for %s found %d commit(s)",
+            event.event_id,
+            len(commits),
+        )
+        for receipt_id, action, receipt in commits:
             logger.debug(
-                "[StoryGameModule] Recording %d existing Narratron commit(s) from game state for event %s",
-                len(commits),
+                "[StoryGameModule] Recovering Narratron commit %s (action=%s, revision=%d) for event %s",
+                receipt_id,
+                action.name,
+                action.revision,
                 event.event_id,
             )
-        for receipt_id, action, receipt in commits:
             self.journal.record_narratron_receipt(
                 CommittedGameReceipt(
                     event_id=receipt_id,
@@ -350,14 +359,22 @@ class StoryGameModule:
 
     def _commit_game_action(self, event: RecordingEvent, action: GameAction) -> dict[str, JsonValue]:
         logger.debug(
-            "[StoryGameModule] Committing Narratron game action %s (revision=%d) for event %s",
+            "[StoryGameModule] Committing Narratron game action %s (revision=%d, args=%s) for event %s",
             action.name,
             action.revision,
+            action.arguments,
             event.event_id,
         )
         existing = self.journal.narratron_receipt_for_revision(event.event_id, action.revision)
         if existing is not None:
             if existing.action != action:
+                logger.error(
+                    "[StoryGameModule] Revision %d already committed different action %s != %s for event %s",
+                    action.revision,
+                    existing.action.name,
+                    action.name,
+                    event.event_id,
+                )
                 raise ValueError("Game revision already has a different committed Narratron action.")
             logger.debug(
                 "[StoryGameModule] Reusing existing Narratron receipt for event %s at revision %d",
@@ -366,6 +383,11 @@ class StoryGameModule:
             )
             return existing.receipt
         if self._game_state is None:
+            logger.error(
+                "[StoryGameModule] Cannot commit action %s for event %s: no game_state configured",
+                action.name,
+                event.event_id,
+            )
             raise ValueError("No game state is configured for Narratron game actions.")
         receipt = self._game_state.commit_story_action(
             action, f"{event.event_id}:narratron:{action.revision}"
@@ -390,16 +412,36 @@ class StoryGameModule:
     def _submit_standalone_game_action(
         self, event: RecordingEvent, action: GameAction, source_revision: int
     ) -> dict[str, JsonValue]:
+        logger.debug(
+            "[StoryGameModule] Submitting standalone Narratron game action %s (revision=%d) for event %s",
+            action.name,
+            action.revision,
+            event.event_id,
+        )
         existing = self.journal.narratron_receipt_for_revision(event.event_id, action.revision)
         if existing is not None:
             if existing.action != action:
+                logger.error(
+                    "[StoryGameModule] Standalone revision %d conflict for event %s: %s != %s",
+                    action.revision,
+                    event.event_id,
+                    existing.action.name,
+                    action.name,
+                )
                 raise ValueError("Game revision already has a different committed Narratron action.")
+            logger.debug(
+                "[StoryGameModule] Reusing standalone Narratron receipt for event %s at revision %d",
+                event.event_id,
+                action.revision,
+            )
             return existing.receipt
         if self._game_state is None:
+            logger.error("[StoryGameModule] Standalone game action failed for %s: no game_state", event.event_id)
             raise ValueError("No game state is configured for Narratron game actions.")
         self._game_state.act(action, actor="narratron")
         snapshot = self._game_state.story_snapshot("responder")
         if snapshot is None:
+            logger.error("[StoryGameModule] Game state returned None snapshot after action %s", action.name)
             raise ValueError("Game state did not return a committed receipt.")
         committed = CommittedGameReceipt(
             event_id=f"{event.event_id}:narratron:{action.revision}",
@@ -410,6 +452,11 @@ class StoryGameModule:
             receipt=snapshot,
         )
         self.journal.record_narratron_receipt(committed)
+        logger.debug(
+            "[StoryGameModule] Standalone Narratron action %s committed for event %s",
+            action.name,
+            event.event_id,
+        )
         return snapshot
 
     def collect_relevant_lore(
@@ -471,12 +518,20 @@ class StoryGameModule:
             if secondary != "none" and secondary in candidate_docs and secondary not in selected_docs:
                 selected_docs.append(secondary)
 
+        logger.debug(
+            "[StoryGameModule] collect_relevant_lore for %s selected %s (candidates=%d, already_in_context=%d)",
+            event.event_id,
+            selected_docs,
+            len(candidate_docs),
+            len(contextual_documents),
+        )
         if not selected_docs:
             return ""
 
         sections: list[str] = []
         for doc_path in selected_docs:
             if doc_path in contextual_documents:
+                logger.debug("[StoryGameModule] Skipping lore %s (already in contextual_documents)", doc_path)
                 continue
             content = self.read_lore(doc_path)
             if content and not content.startswith("Error:"):
@@ -511,6 +566,15 @@ class StoryGameModule:
             event, sticky_snapshot=snapshot, contextual_documents=contextual_documents,
         )
         system_instruction = self._build_game_instruction()
+        logger.debug(
+            "[StoryGameModule] _run_model starting for event=%s phase=%s model=%s snapshot_rev=%d history_len=%d lore_len=%d",
+            event.event_id,
+            phase,
+            self.game_model,
+            snapshot.revision,
+            len(history),
+            len(relevant_lore),
+        )
         rejections: list[str] = []
         for attempt in range(1, MAX_GAME_DECISION_ATTEMPTS + 1):
             # Rebuild each attempt: a partially committed chain advances the game revision.
@@ -523,10 +587,11 @@ class StoryGameModule:
                 event, snapshot, phase=phase, relevant_lore=relevant_lore,
                 game_snapshot=game_snapshot,
             )
+            committed_receipts = self.journal.narratron_receipts(event.event_id)
             prompt += "\n# Already committed Narratron receipts (do not repeat)\n" + json.dumps(
                 [
                     receipt.model_dump(mode="json")
-                    for receipt in self.journal.narratron_receipts(event.event_id)
+                    for receipt in committed_receipts
                 ],
                 ensure_ascii=False,
             )
@@ -542,6 +607,18 @@ class StoryGameModule:
                 prompt = f"{history}\n\n{prompt}"
 
             response_json_schema = _build_game_control_json_schema(game_snapshot)
+            raw_actions = game_snapshot.get("actions") if game_snapshot is not None else None
+            logger.debug(
+                "[StoryGameModule] _run_model attempt %d/%d for event=%s game_rev=%s actions=%s committed_receipts=%d prior_rejections=%d has_schema=%s",
+                attempt,
+                MAX_GAME_DECISION_ATTEMPTS,
+                event.event_id,
+                game_snapshot.get("revision") if game_snapshot is not None else None,
+                list(raw_actions.keys()) if type(raw_actions) is dict else None,
+                len(committed_receipts),
+                len(rejections),
+                response_json_schema is not None,
+            )
             request = TextResponseRequest(
                 prompt=prompt,
                 system_instruction=system_instruction,
@@ -551,10 +628,41 @@ class StoryGameModule:
                 response_json_schema=response_json_schema,
             )
             decision = self._generate_decision(request, phase=phase, started=started)
+            logger.debug(
+                "[StoryGameModule] _run_model attempt %d/%d decision for event=%s: actions=%s narration=%s reason=%r",
+                attempt,
+                MAX_GAME_DECISION_ATTEMPTS,
+                event.event_id,
+                [(a.name, a.revision, a.arguments) for a in decision.game_actions],
+                decision.narration_request is not None,
+                decision.reason,
+            )
             rejection = self._commit_decision_actions(event, decision)
             if rejection is None:
+                logger.info(
+                    "[StoryGameModule] _run_model succeeded on attempt %d/%d for event=%s in %.3fs (actions=%d, narrate=%s)",
+                    attempt,
+                    MAX_GAME_DECISION_ATTEMPTS,
+                    event.event_id,
+                    time.perf_counter() - started,
+                    len(decision.game_actions),
+                    decision.narration_request is not None,
+                )
                 return decision
+            logger.warning(
+                "[StoryGameModule] _run_model attempt %d/%d rejected for event=%s: %s",
+                attempt,
+                MAX_GAME_DECISION_ATTEMPTS,
+                event.event_id,
+                rejection,
+            )
             rejections.append(f"- Attempt {attempt}: {rejection}")
+        logger.error(
+            "[StoryGameModule] All %d game decision attempts failed for event=%s: %s",
+            MAX_GAME_DECISION_ATTEMPTS,
+            event.event_id,
+            rejections,
+        )
         raise ValueError(
             f"Narratron game actions were rejected after {MAX_GAME_DECISION_ATTEMPTS} attempts for event "
             f"{event.event_id}:\n" + "\n".join(rejections)
@@ -564,14 +672,24 @@ class StoryGameModule:
         self, request: TextResponseRequest, *, phase: GamePhase, started: float,
     ) -> GameControlDecision:
         assert self.text_response_provider is not None
+        logger.debug(
+            "[StoryGameModule] Submitting generation request (phase=%s, model=%s, timeout=%.1fs, prompt_len=%d)",
+            phase,
+            request.model,
+            self.game_action_timeout_seconds,
+            len(request.prompt),
+        )
+        gen_started = time.perf_counter()
         executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="story-game")
         pending = executor.submit(self.text_response_provider.generate, request)
         try:
             response = pending.result(timeout=self.game_action_timeout_seconds)
         except (FutureTimeoutError, TimeoutError) as exc:
             logger.warning(
-                "[StoryGameModule] Generation timed out after %.3fs",
+                "[StoryGameModule] Generation timed out after %.3fs (total=%.3fs, phase=%s)",
+                time.perf_counter() - gen_started,
                 time.perf_counter() - started,
+                phase,
             )
             raise RuntimeError(
                 f"Story game module timed out after {self.game_action_timeout_seconds} seconds."
@@ -579,9 +697,21 @@ class StoryGameModule:
         finally:
             executor.shutdown(wait=False, cancel_futures=True)
 
+        logger.debug(
+            "[StoryGameModule] Generation returned in %.3fs (phase=%s, has_parsed=%s, text_len=%d, usage=%s)",
+            time.perf_counter() - gen_started,
+            phase,
+            response.parsed is not None,
+            len(response.text or ""),
+            response.usage,
+        )
         if phase == "control_game" and response.parsed is None:
             fields = TypeAdapter(dict[str, JsonValue]).validate_json(response.text)
             if "reason" not in fields or "narration_request" not in fields:
+                logger.warning(
+                    "[StoryGameModule] control_game response missing required fields (keys=%s)",
+                    list(fields.keys()),
+                )
                 raise ValueError("Game control must return an explicit narration decision and reason.")
         return (
             GameControlDecision.model_validate(response.parsed)
@@ -594,12 +724,19 @@ class StoryGameModule:
 
         Later actions in a chain depend on earlier revisions, so a rejection stops the chain.
         """
+        logger.debug(
+            "[StoryGameModule] _commit_decision_actions committing %d action(s) for event=%s",
+            len(decision.game_actions),
+            event.event_id,
+        )
         for index, action in enumerate(decision.game_actions):
             try:
                 self._commit_game_action(event, action)
             except ValueError as exc:
                 logger.warning(
-                    "[StoryGameModule] Rejected invalid game action %s (args=%s) (revision=%d) for event %s: %s",
+                    "[StoryGameModule] Rejected invalid game action %d/%d %s (args=%s) (revision=%d) for event %s: %s",
+                    index + 1,
+                    len(decision.game_actions),
                     action.name,
                     action.arguments,
                     action.revision,
@@ -611,6 +748,11 @@ class StoryGameModule:
                     f"{action.model_dump_json(include={'name', 'arguments', 'revision'})} -> {exc}"
                     + (f" ({skipped} dependent action(s) not attempted)" if skipped else "")
                 )
+        logger.debug(
+            "[StoryGameModule] All %d game action(s) committed for event=%s",
+            len(decision.game_actions),
+            event.event_id,
+        )
         return None
 
     def should_apply_story_response(self, event: RecordingEvent) -> bool:
@@ -618,11 +760,23 @@ class StoryGameModule:
         if event.kind != "completed_response":
             raise ValueError("Only completed story responses can be evaluated for game impact.")
         if self._game_state is None or self._game_state.program is None:
+            logger.debug(
+                "[StoryGameModule] should_apply_story_response=False for %s: no active game program",
+                event.event_id,
+            )
             return False
         game_snapshot = self._game_state.story_snapshot("narratron")
         if game_snapshot is None:
+            logger.debug(
+                "[StoryGameModule] should_apply_story_response=False for %s: game_snapshot is None",
+                event.event_id,
+            )
             return False
         if self._decision_provider is None:
+            logger.debug(
+                "[StoryGameModule] should_apply_story_response=True for %s: no decision_provider",
+                event.event_id,
+            )
             return True
         lore_context = (
             self.lore_library.get_lore_context(role="game")
@@ -648,13 +802,27 @@ class StoryGameModule:
             ),
         )
         result = self._decision_provider.decide(request)
-        return result.get_predicate("should_take_game_action").passed(0.50)
+        predicate = result.get_predicate("should_take_game_action")
+        passed = predicate.passed(0.50)
+        logger.debug(
+            "[StoryGameModule] should_apply_story_response=%s (prob=%.2f) for event=%s",
+            passed,
+            predicate.probability,
+            event.event_id,
+        )
+        return passed
 
     def control_story_response(self, event: RecordingEvent) -> GameControlOutcome:
         """Execute warranted Narratron game actions in response to a completed story response."""
+        logger.debug(
+            "[StoryGameModule] control_story_response() called for event %s (action_id=%s)",
+            event.event_id,
+            event.action_id,
+        )
         if event.kind != "completed_response":
             raise ValueError("Only completed story responses can enter control_story_response.")
         with self._lock:
+            logger.debug("[StoryGameModule] control_story_response acquired lock for %s", event.event_id)
             self.journal.enqueue(event)
             if self.text_response_provider is not None:
                 self.recover_game_receipts(event)
@@ -690,8 +858,26 @@ class StoryGameModule:
                     )
                     decision = decision.model_copy(update={"narration_request": None})
                 self.journal.save_game_control_decision(event.event_id, decision)
+                logger.debug(
+                    "[StoryGameModule] Saved story-response game decision for %s (actions=%d, reason=%r)",
+                    event.event_id,
+                    len(decision.game_actions),
+                    decision.reason,
+                )
+            else:
+                logger.debug(
+                    "[StoryGameModule] Reusing saved story-response game decision for %s (actions=%d)",
+                    event.event_id,
+                    len(decision.game_actions),
+                )
             receipts = tuple(self.journal.narratron_receipts(event.event_id))
             revision = self.notepad.revision
+            logger.debug(
+                "[StoryGameModule] control_story_response finished for %s (receipts=%d, rev=%d)",
+                event.event_id,
+                len(receipts),
+                revision,
+            )
             return GameControlOutcome(
                 event_id=event.event_id,
                 player_recorded_revision=revision,
@@ -714,6 +900,7 @@ class StoryGameModule:
         if event.source_event_ids or event.payload.get("actor") == "narratron":
             raise ValueError("Narratron game receipts cannot recursively enter game control.")
         with self._lock:
+            logger.debug("[StoryGameModule] control_game acquired lock for %s", event.event_id)
             self.journal.enqueue(event)
             if self.text_response_provider is not None:
                 self.recover_game_receipts(event)
@@ -731,6 +918,10 @@ class StoryGameModule:
                     finally:
                         self._submit_game_action = None
                     if decision.narration_request is not None and not decision.narration_request.brief:
+                        logger.warning(
+                            "[StoryGameModule] Rejecting narration request with empty brief for event %s",
+                            event.event_id,
+                        )
                         raise ValueError("Narration requires a concise game narrative brief.")
                     self.journal.save_game_control_decision(event.event_id, decision)
                 elif self._decision_provider is not None:
@@ -770,6 +961,14 @@ class StoryGameModule:
                     drama = result.get_score("drama_level")
                     tone = result.get_choice("narrator_reaction_tone")
                     wake_responder = narrate.passed(0.60) or drama.score >= 2.0
+                    logger.debug(
+                        "[StoryGameModule] Decision provider gating for %s: wake=%s drama=%.2f prob=%.2f tone=%s",
+                        event.event_id,
+                        wake_responder,
+                        drama.score,
+                        narrate.probability,
+                        tone.choice,
+                    )
                     if wake_responder:
                         narration_request = NarrationRequest(
                             user_action=str(
@@ -807,9 +1006,23 @@ class StoryGameModule:
                     )
                     decision = raw_decision if raw_decision is not None else GameControlDecision()
                     self.journal.save_game_control_decision(event.event_id, decision)
+            else:
+                logger.debug(
+                    "[StoryGameModule] Reusing saved control_game decision for %s (narrate=%s, actions=%d)",
+                    event.event_id,
+                    decision.narration_request is not None,
+                    len(decision.game_actions),
+                )
 
             receipts = tuple(self.journal.narratron_receipts(event.event_id))
             revision = self.notepad.revision
+            logger.debug(
+                "[StoryGameModule] control_game finished for %s (receipts=%d, narrate=%s, rev=%d)",
+                event.event_id,
+                len(receipts),
+                decision.narration_request is not None,
+                revision,
+            )
             return GameControlOutcome(
                 event_id=event.event_id,
                 player_recorded_revision=revision,

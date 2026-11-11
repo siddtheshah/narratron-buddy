@@ -47,6 +47,16 @@ logger = logging.getLogger(__name__)
 STORY_LOG_CONTEXT_LINES = 200
 
 
+def _turn_summary(turn: StoryTurn) -> str:
+    return (
+        f"turn_id={turn.turn_id} pos={turn.position} cycle={turn.cycle_id} "
+        f"ingress={turn.ingress} game_done={turn.game_completed} "
+        f"rec_done={turn.recorder_completed} skip={turn.responder_skipped} "
+        f"has_resp={turn.response is not None} deliv={turn.delivered} "
+        f"owner={turn.response_owner_id} ready={turn.foreground_ready}"
+    )
+
+
 class StoryResponseOutput(BaseModel):
     narration: str = ""
     dialogue: list[dict[str, JsonValue]] = Field(default_factory=list)
@@ -186,9 +196,23 @@ class StoryEngine:
         self.sync_character_bindings()
         self.output_cycle.start()
         self.cycle.bind(self._process_cycle)
+        logger.info(
+            "[StoryEngine] Initialized (theater=%s, has_game=%s, input_cycle=%.1fs, output_cycle=%.1fs, history_limit=%d, chunk_size=%d)",
+            theater.theater_id,
+            canvas_manager.game is not None,
+            self.input_cycle.cycle_length,
+            self.output_cycle.cycle_length,
+            self.history_event_limit,
+            self.history_chunk_size,
+        )
         if canvas_manager.game is not None:
             canvas_manager.game.on_player_action = self._handle_player_game_action
-            for action, receipt in canvas_manager.game.pending_story_actions():
+            pending_game = canvas_manager.game.pending_story_actions()
+            logger.debug(
+                "[StoryEngine] Draining %d pending game story action(s) at init",
+                len(pending_game),
+            )
+            for action, receipt in pending_game:
                 self._handle_player_game_action(action, receipt)
         self._catch_up_recorder()
         self.retry_pending_turns()
@@ -249,6 +273,7 @@ class StoryEngine:
         return "\n".join(lines)
 
     def _schedule_turn(self, turn: StoryTurn) -> Future[dict[str, JsonValue]]:
+        logger.debug("[StoryEngine] Scheduling turn: %s", _turn_summary(turn))
         self._queue_planning_input(turn)
         return self.cycle.submit(turn.turn_id)
 
@@ -351,8 +376,14 @@ class StoryEngine:
             future = self._recorder_future
         err: Exception | None = None
         if future is not None:
+            logger.debug(
+                "[StoryEngine] Waiting for previous recorder future (done=%s, timeout=%.1fs)",
+                future.done(),
+                timeout,
+            )
             try:
                 future.result(timeout=timeout)
+                logger.debug("[StoryEngine] Previous recorder future completed cleanly")
             except FutureTimeoutError as exc:
                 if not future.done():
                     # Still running: keep the future so later waits observe its real outcome.
@@ -369,6 +400,10 @@ class StoryEngine:
                 if self._recorder_future is future:
                     self._recorder_future = None
         if err is None and self._last_recorder_error is not None:
+            logger.warning(
+                "[StoryEngine] Carrying sticky _last_recorder_error=%s",
+                self._last_recorder_error,
+            )
             err = self._last_recorder_error
         return err
 
@@ -378,44 +413,103 @@ class StoryEngine:
         A failed recording leaves its turn incomplete, so earlier failures are caught here,
         while a failure belonging to ``turns`` itself is exactly what this batch retries.
         """
-        self._wait_for_previous_recorder()
-        if any(t.position < turns[0].position and not t.completed for t in self.turn_journal.turns()):
+        logger.debug(
+            "[StoryEngine] Checking earlier cycle completion before position=%d (batch=%s)",
+            turns[0].position,
+            [t.turn_id for t in turns],
+        )
+        rec_err = self._wait_for_previous_recorder()
+        if rec_err is not None:
+            logger.warning(
+                "[StoryEngine] _wait_for_previous_recorder returned error before pos=%d: %s",
+                turns[0].position,
+                rec_err,
+            )
+        blocking = [
+            t for t in self.turn_journal.turns()
+            if t.position < turns[0].position and not t.completed
+        ]
+        if blocking:
+            logger.error(
+                "[StoryEngine] Earlier incomplete cycle(s) block pos=%d: %s",
+                turns[0].position,
+                [_turn_summary(t) for t in blocking],
+            )
             raise RuntimeError("An earlier story cycle requires recovery.")
 
     def _run_recording_task(self, turns: list[StoryTurn], owner: StoryTurn | None) -> None:
         spoken = [turn for turn in turns if turn.ingress == "communicated_action"]
+        logger.debug(
+            "[StoryEngine] _run_recording_task started (turns=%s, owner=%s, spoken_count=%d)",
+            [_turn_summary(t) for t in turns],
+            owner.turn_id if owner is not None else None,
+            len(spoken),
+        )
         if self.game_module.game_state is None and self.canvas_manager.game is not None:
+            logger.debug("[StoryEngine] Attaching canvas_manager.game to game_module in recording task")
             self.game_module.game_state = self.canvas_manager.game
         try:
             for turn in turns:
                 if turn.ingress == "game_action" and not turn.recorder_completed:
-                    self.recorder_module.record(self._recording_event(turn))
+                    logger.debug(
+                        "[StoryEngine] Recording game_action turn %s (pos=%d)",
+                        turn.turn_id,
+                        turn.position,
+                    )
+                    recording_event = self._recording_event(turn)
+                    if not spoken and owner is not None and turn.turn_id == owner.turn_id and owner.response is not None:
+                        self.recorder_module.record(recording_event, story_response=owner.response)
+                    else:
+                        self.recorder_module.record(recording_event)
                     self.recording_journal.complete_history(self._game_completion_events(turn))
                     turn.recorder_completed = True
                     if owner is not None and turn.turn_id != owner.turn_id:
                         turn.response_owner_id = owner.turn_id
                     self.turn_journal.save(turn)
                     self._queue_planning_progress(turn)
+                    logger.debug("[StoryEngine] Recorded game_action turn %s", turn.turn_id)
             if spoken and owner is not None and not owner.recorder_completed:
                 event = self._recording_event(owner)
+                logger.debug(
+                    "[StoryEngine] Recording spoken owner turn %s (game_completed=%s, event_id=%s)",
+                    owner.turn_id,
+                    owner.game_completed,
+                    event.event_id,
+                )
                 if not owner.game_completed:
                     if self.game_module.game_state is not None and self.game_module.game_state.program is not None:
                         self.recording_journal.enqueue(event)
                         self.game_module.recover_game_receipts(event)
-                    if (
-                        self.recording_journal.game_control_decision(event.event_id) is not None
-                        or self.recording_journal.narratron_receipts(event.event_id)
+                    has_decision = self.recording_journal.game_control_decision(event.event_id) is not None
+                    has_receipts = bool(self.recording_journal.narratron_receipts(event.event_id))
+                    should_apply = (
+                        has_decision
+                        or has_receipts
                         or self.game_module.should_apply_story_response(event)
-                    ):
+                    )
+                    logger.debug(
+                        "[StoryEngine] Story response game-control gate for %s: has_decision=%s, has_receipts=%s, should_apply=%s",
+                        event.event_id,
+                        has_decision,
+                        has_receipts,
+                        should_apply,
+                    )
+                    if should_apply:
                         self.game_module.control_story_response(event)
                     owner.game_completed = True
                     self.turn_journal.save(owner)
+                    logger.debug("[StoryEngine] Completed game phase for spoken owner %s", owner.turn_id)
                 self.recorder_module.record(event)
                 self.recording_journal.complete_history(self._response_completion_events(turns, owner))
                 owner.recorder_completed = True
                 self.turn_journal.save(owner)
                 self._queue_planning_progress(owner)
+                logger.debug("[StoryEngine] Completed recorder phase for spoken owner %s", owner.turn_id)
             if not spoken and owner is not None:
+                logger.debug(
+                    "[StoryEngine] Completing history for non-spoken owner %s",
+                    owner.turn_id,
+                )
                 self.recording_journal.complete_history(self._response_completion_events(turns, owner))
             if owner is not None:
                 for turn in turns:
@@ -427,6 +521,10 @@ class StoryEngine:
                         self._queue_planning_progress(turn)
             self.sync_character_bindings()
             self._last_recorder_error = None
+            logger.debug(
+                "[StoryEngine] _run_recording_task finished cleanly (turns=%s)",
+                [t.turn_id for t in turns],
+            )
         except Exception as exc:
             target_id = owner.turn_id if owner is not None else turns[0].turn_id
             logger.exception("Story recorder failed for turn %s: %s", target_id, exc)
@@ -469,6 +567,7 @@ class StoryEngine:
         No engine/cycle lock is held during model work, game access, or callbacks.
         Only the canvas cycle can invoke this consumer, with one worker.
         """
+        logger.info("[StoryEngine] _process_cycle started for turn_ids=%s", turn_ids)
         accepted = self.turn_journal.turns()
         boundary = max(turn.position for turn in accepted if turn.turn_id in turn_ids)
         unbound: list[str] = []
@@ -478,10 +577,15 @@ class StoryEngine:
             if turn.response is not None or turn.recorder_completed:
                 # Saved turns from the pre-cycle scheduler already have
                 # separate model outputs/receipts and must resume separately.
+                logger.debug(
+                    "[StoryEngine] Binding pre-progressed turn %s into solo cycle",
+                    turn.turn_id,
+                )
                 self.turn_journal.bind_cycle([turn.turn_id])
             else:
                 unbound.append(turn.turn_id)
         if unbound:
+            logger.debug("[StoryEngine] Binding unbound turns into cycle %s: %s", unbound[0], unbound)
             self.turn_journal.bind_cycle(unbound)
         groups: dict[str, list[StoryTurn]] = {}
         accepted = self.turn_journal.turns()
@@ -489,24 +593,72 @@ class StoryEngine:
         for turn in accepted:
             if turn.position <= boundary or turn.cycle_id in selected_cycles:
                 groups.setdefault(turn.cycle_id or turn.turn_id, []).append(turn)
+        logger.debug(
+            "[StoryEngine] _process_cycle boundary=%d selected %d group(s): %s",
+            boundary,
+            len(groups),
+            {cid: [_turn_summary(t) for t in members] for cid, members in groups.items()},
+        )
         results: dict[str, dict[str, JsonValue]] = {}
         blocked = False
-        for turns in groups.values():
+        for cycle_key, turns in groups.items():
             if blocked:
+                logger.warning(
+                    "[StoryEngine] Cycle group %s BLOCKED by earlier incomplete cycle (turns=%s)",
+                    cycle_key,
+                    [t.turn_id for t in turns],
+                )
                 result: dict[str, JsonValue] = {"error": "An earlier story cycle requires recovery."}
             elif all(turn.completed and (turn.response is None or turn.delivered) for turn in turns):
+                logger.debug(
+                    "[StoryEngine] Cycle group %s already completed & delivered; returning cached result",
+                    cycle_key,
+                )
                 result = next((turn.response for turn in turns if turn.response is not None), {"status": "completed", "narration_skipped": True})
             else:
+                logger.info(
+                    "[StoryEngine] Executing cycle group %s (%d turn(s): %s)",
+                    cycle_key,
+                    len(turns),
+                    [t.turn_id for t in turns],
+                )
                 result = self._run_batch(turns)
                 if len(groups) > 1:
+                    logger.debug(
+                        "[StoryEngine] Waiting for recorder before evaluating next group after %s",
+                        cycle_key,
+                    )
                     self._wait_for_previous_recorder()
                 refreshed = [self.turn_journal.get(turn.turn_id) for turn in turns]
-                blocked = any(turn is None or not turn.foreground_ready or (turn.response is not None and not turn.delivered) for turn in refreshed)
+                incomplete = [
+                    _turn_summary(turn) if turn is not None else "missing_turn"
+                    for turn in refreshed
+                    if turn is None or not turn.foreground_ready or (turn.response is not None and not turn.delivered)
+                ]
+                blocked = bool(incomplete)
+                if blocked:
+                    logger.warning(
+                        "[StoryEngine] Cycle group %s left incomplete state -> BLOCKING subsequent cycles: %s (result=%s)",
+                        cycle_key,
+                        incomplete,
+                        result,
+                    )
+                else:
+                    logger.debug("[StoryEngine] Cycle group %s completed cleanly", cycle_key)
             for turn in turns:
                 results[turn.turn_id] = result
+        logger.info(
+            "[StoryEngine] _process_cycle finished for turn_ids=%s (blocked=%s)",
+            turn_ids,
+            blocked,
+        )
         return {turn_id: results[turn_id] for turn_id in turn_ids}
 
     def _run_batch(self, turns: list[StoryTurn]) -> dict[str, JsonValue]:
+        logger.debug(
+            "[StoryEngine] _run_batch started: %s",
+            [_turn_summary(t) for t in turns],
+        )
         self._set_user_action_processing(True)
         try:
             # Pending windows must not leak future player actions into the
@@ -518,12 +670,27 @@ class StoryEngine:
                     self.append_story_log_entry({"type": "user_action", "action": turn.action})
             # Establish every committed game outcome before interpreting speech.
             if self.game_module.game_state is None and self.canvas_manager.game is not None:
+                logger.debug("[StoryEngine] Attaching canvas_manager.game to game_module in _run_batch")
                 self.game_module.game_state = self.canvas_manager.game
             for turn in turns:
                 if turn.ingress != "game_action" or turn.game_completed or turn.recorder_completed:
+                    if turn.ingress == "game_action":
+                        logger.debug(
+                            "[StoryEngine] Skipping control_game for already-progressed game turn %s (game_completed=%s, recorder_completed=%s)",
+                            turn.turn_id,
+                            turn.game_completed,
+                            turn.recorder_completed,
+                        )
                     continue
                 self._require_earlier_cycles_completed(turns)
                 event = self._recording_event(turn)
+                logger.info(
+                    "[StoryEngine] Running control_game for turn %s (pos=%d, event_id=%s, action=%s)",
+                    turn.turn_id,
+                    turn.position,
+                    event.event_id,
+                    turn.game_payload.get("action"),
+                )
                 outcome = self.game_module.control_game(event)
                 decision = self.recording_journal.game_control_decision(event.event_id)
                 assert decision is not None
@@ -532,10 +699,23 @@ class StoryEngine:
                 turn.responder_skipped = outcome.narration_request is None
                 turn.narrative_brief = outcome.narration_request.brief if outcome.narration_request is not None else None
                 self.turn_journal.save(turn)
+                logger.info(
+                    "[StoryEngine] control_game finished for turn %s (narratron_receipts=%d, responder_skipped=%s, reason=%r)",
+                    turn.turn_id,
+                    len(outcome.narratron_receipts),
+                    turn.responder_skipped,
+                    turn.narration_reason,
+                )
 
             spoken = [turn for turn in turns if turn.ingress == "communicated_action"]
             narrated = [turn for turn in turns if turn.ingress == "game_action" and not turn.responder_skipped]
             owner = spoken[0] if spoken else (narrated[0] if narrated else None)
+            logger.debug(
+                "[StoryEngine] Batch role selection: spoken=%d, narrated=%d, owner=%s",
+                len(spoken),
+                len(narrated),
+                owner.turn_id if owner is not None else None,
+            )
             if owner is not None:
                 if owner.response is None:
                     self._require_earlier_cycles_completed(turns)
@@ -544,27 +724,59 @@ class StoryEngine:
                     nudges.extend(turn.narrative_brief for turn in narrated if turn.narrative_brief)
                     if spoken and any(turn.ingress == "game_action" for turn in turns):
                         nudges.append("Combine the spoken actions with this cycle's already committed game outcomes. Do not resolve those game actions again.")
+                    logger.debug(
+                        "[StoryEngine] Resolving responder action for owner=%s (game_entry=%s, nudges=%d)",
+                        owner.turn_id,
+                        not spoken,
+                        len(nudges),
+                    )
                     result = self.response_module._resolve_user_action(
                         action, nudge="\n".join(nudges), publish=False,
                         game_entry=not spoken, stage_id=owner.turn_id,
                     )
                     if result.get("error"):
+                        logger.warning(
+                            "[StoryEngine] Responder returned error for owner=%s: %s",
+                            owner.turn_id,
+                            result.get("error"),
+                        )
                         raise RuntimeError(str(result["error"]))
                     owner.response = TypeAdapter(dict[str, JsonValue]).validate_python(result)
                     self.turn_journal.save(owner)
                     self._queue_planning_progress(owner)
+                    logger.debug("[StoryEngine] Saved responder output for owner=%s", owner.turn_id)
                 if not owner.delivered:
+                    logger.debug(
+                        "[StoryEngine] Delivering scene reaction for owner=%s at sequence=%d",
+                        owner.turn_id,
+                        turns[0].position,
+                    )
                     self._handle_scene_reaction(owner.response, sequence=turns[0].position)
                     owner.delivered = True
                     self.turn_journal.save(owner)
+                    logger.debug("[StoryEngine] Scene reaction delivered for owner=%s", owner.turn_id)
                 if spoken and not owner.recorder_completed:
+                    logger.debug(
+                        "[StoryEngine] Submitting background recorder task for spoken owner=%s",
+                        owner.turn_id,
+                    )
                     with self._recorder_lock:
                         self._recorder_future = self._recorder_executor.submit(
                             self._run_recording_task, turns, owner
                         )
                 else:
+                    logger.debug(
+                        "[StoryEngine] Running synchronous recording task for owner=%s (spoken=%s, recorder_completed=%s)",
+                        owner.turn_id,
+                        bool(spoken),
+                        owner.recorder_completed,
+                    )
                     self._run_recording_task(turns, owner)
             else:
+                logger.debug(
+                    "[StoryEngine] Running synchronous recording task for narration-skipped game batch %s",
+                    [t.turn_id for t in turns],
+                )
                 self._require_earlier_cycles_completed(turns)
                 self._run_recording_task(turns, None)
             return owner.response if owner is not None and owner.response is not None else {
@@ -574,7 +786,12 @@ class StoryEngine:
             logger.warning("Story cycle %s awaits corrected game-entry narration", turns[0].cycle_id)
             return {"status": "pending", "story_turn_id": turns[0].turn_id}
         except Exception as exc:
-            logger.exception("Story cycle %s remains pending", turns[0].cycle_id)
+            logger.exception(
+                "Story cycle %s remains pending (turns=%s): %s",
+                turns[0].cycle_id,
+                [_turn_summary(t) for t in turns],
+                exc,
+            )
             result = {"error": str(exc), "story_turn_id": turns[0].turn_id}
             self._notify_scene_reaction(result)
             return result
@@ -596,14 +813,30 @@ class StoryEngine:
     def _handle_player_game_action(self, action: GameAction, new_state: dict[str, JsonValue]) -> None:
         game = self.canvas_manager.game
         acknowledgements: list[str] = []
+        logger.info(
+            "[StoryEngine] _handle_player_game_action received: name=%s, revision=%d, story_event_id=%s",
+            action.name,
+            action.revision,
+            new_state.get("story_event_id"),
+        )
         with self._intake_lock:
             if self._closed:
+                logger.warning(
+                    "[StoryEngine] Ignoring player game action %s (revision=%d): engine is closed",
+                    action.name,
+                    action.revision,
+                )
                 return
             # Post-commit callbacks can arrive out of order. Drain the durable
             # game outbox in revision order before accepting the callback itself.
             pending = game.pending_story_actions() if game is not None else []
             if not any(receipt == new_state for _, receipt in pending):
                 pending.append((action, new_state))
+            logger.debug(
+                "[StoryEngine] Processing %d pending game outbox item(s): %s",
+                len(pending),
+                [(a.name, a.revision, r.get("story_event_id")) for a, r in pending],
+            )
             for player_action, receipt in sorted(pending, key=lambda item: item[0].revision):
                 event_id = str(receipt.get("story_event_id") or f"game:{player_action.revision}")
                 turn = self.turn_journal.accept(StoryTurn(
@@ -611,28 +844,40 @@ class StoryEngine:
                     source_revision=self.notepad.revision,
                     game_payload={"action": player_action.model_dump(mode="json"), "receipt": receipt, "actor": "player"},
                 ))
+                logger.debug("[StoryEngine] Accepted game turn: %s", _turn_summary(turn))
                 self._schedule_turn(turn)
                 if receipt.get("story_event_id"):
                     acknowledgements.append(event_id)
-        if game is not None:
+        if game is not None and acknowledgements:
+            logger.debug("[StoryEngine] Acknowledging %d story game action(s): %s", len(acknowledgements), acknowledgements)
             for event_id in acknowledgements:
                 game.acknowledge_story_action(event_id)
 
     def retry_pending_turns(self) -> None:
-        for turn in self.turn_journal.turns():
+        turns = self.turn_journal.turns()
+        logger.debug("[StoryEngine] retry_pending_turns scanning %d turn(s)", len(turns))
+        for turn in turns:
             if not turn.planner_completed:
                 self._queue_planning_input(turn)
                 self._queue_planning_progress(turn)
             if not turn.completed or (turn.response is not None and not turn.delivered):
+                logger.info("[StoryEngine] Re-scheduling incomplete turn: %s", _turn_summary(turn))
                 self._schedule_turn(turn)
         self.background_planning.retry()
 
     def submit_action(self, user_action: str, nudge: str = "", *, require_input: bool = True) -> tuple[str, Future[dict[str, JsonValue]]]:
+        logger.debug(
+            "[StoryEngine] submit_action called (require_input=%s, action_len=%d, nudge_len=%d)",
+            require_input,
+            len(user_action),
+            len(nudge),
+        )
         with self._intake_lock:
             return self._accept_action(user_action, nudge, require_input=require_input)
 
     def _accept_action(self, user_action: str, nudge: str, *, require_input: bool) -> tuple[str, Future[dict[str, JsonValue]]]:
         if self._closed:
+            logger.warning("[StoryEngine] Rejecting action: engine is closed")
             raise ValueError("Story engine is closed.")
         action = user_action.strip()
         if not action:
@@ -645,8 +890,10 @@ class StoryEngine:
             raise ValueError("Adventure Mode is not enabled for this theater.")
         for pending in self.turn_journal.turns():
             if not pending.foreground_ready and pending.ingress == "communicated_action" and pending.action == action and pending.nudge == nudge:
+                logger.info("[StoryEngine] Reusing existing pending turn for duplicate action: %s", _turn_summary(pending))
                 return pending.turn_id, self._schedule_turn(pending)
         if require_input and not self.response_module.consume_user_input():
+            logger.debug("[StoryEngine] Rejecting action: no orator input detected")
             raise ValueError("No input from the orator was detected.")
         try:
             turn = self.turn_journal.accept(StoryTurn(
@@ -656,14 +903,19 @@ class StoryEngine:
             if require_input:
                 self.response_module.record_user_input()
             raise
+        logger.info("[StoryEngine] Accepted spoken action turn %s (pos=%d)", turn.turn_id, turn.position)
         return turn.turn_id, self._schedule_turn(turn)
 
     def resolve_action(self, user_action: str, nudge: str = "", *, drain: bool = False) -> dict[str, JsonValue]:
+        logger.debug("[StoryEngine] resolve_action started (drain=%s)", drain)
         turn_id, future = self.submit_action(user_action, nudge, require_input=False)
         self.cycle.flush()
+        logger.debug("[StoryEngine] resolve_action waiting for cycle future (turn_id=%s)", turn_id)
         result = future.result(timeout=300)
+        logger.debug("[StoryEngine] resolve_action cycle future resolved (turn_id=%s, keys=%s)", turn_id, list(result.keys()))
         rec_err = self._wait_for_previous_recorder(300)
         if rec_err is not None:
+            logger.warning("[StoryEngine] resolve_action returning recorder error for turn_id=%s: %s", turn_id, rec_err)
             self._last_recorder_error = None
             return {"error": str(rec_err), "story_turn_id": turn_id}
         if drain:
@@ -675,6 +927,7 @@ class StoryEngine:
         try:
             turn_id, _ = self.submit_action(user_action, nudge, require_input=require_input)
         except ValueError as exc:
+            logger.debug("[StoryEngine] process_user_action rejected: %s", exc)
             return {"error": str(exc)}
         return {"status": "processing", "story_turn_id": turn_id, "message": "Story action queued for the next cycle."}
 
@@ -683,20 +936,38 @@ class StoryEngine:
         try:
             turn_id, _ = self.submit_action(user_action, nudge, require_input=False)
         except ValueError as exc:
+            logger.debug("[StoryEngine] process_system_action rejected (%s): %s", message_type, exc)
             return {"error": str(exc)}
         return {"status": "processing", "story_turn_id": turn_id, "message": message_type}
 
     def wait_for_pending_events(self, timeout: float = 5.0) -> bool:
+        logger.debug("[StoryEngine] wait_for_pending_events started (timeout=%.1fs)", timeout)
         deadline = time.monotonic() + timeout
         input_done = self.input_cycle.wait(timeout)
         output_done = self.output_cycle.flush(
             max(0.0, deadline - time.monotonic()),
         )
-        self._wait_for_previous_recorder(max(0.0, deadline - time.monotonic()))
+        rec_err = self._wait_for_previous_recorder(max(0.0, deadline - time.monotonic()))
         planning_done = self.background_planning.wait(max(0.0, deadline - time.monotonic()))
-        return input_done and output_done and planning_done and all(
-            turn.completed and (turn.response is None or turn.delivered) for turn in self.turn_journal.turns()
-        )
+        incomplete_turns = [
+            _turn_summary(turn)
+            for turn in self.turn_journal.turns()
+            if not (turn.completed and (turn.response is None or turn.delivered))
+        ]
+        all_done = input_done and output_done and planning_done and not incomplete_turns
+        if not all_done:
+            logger.warning(
+                "[StoryEngine] wait_for_pending_events returning False "
+                "(input_done=%s, output_done=%s, planning_done=%s, rec_err=%s, incomplete_turns=%s)",
+                input_done,
+                output_done,
+                planning_done,
+                rec_err,
+                incomplete_turns,
+            )
+        else:
+            logger.debug("[StoryEngine] wait_for_pending_events completed cleanly")
+        return all_done
 
     def wait_for_deep_planning(self, timeout: float = 5.0, target_turn_id: int | None = None) -> bool:
         return self.background_planning.wait(timeout)
@@ -706,6 +977,7 @@ class StoryEngine:
         return self.cycle.is_active
 
     def close(self) -> None:
+        logger.info("[StoryEngine] Closing StoryEngine (theater=%s)", self.theater.theater_id)
         with self._intake_lock:
             if self._closed:
                 return
@@ -722,6 +994,7 @@ class StoryEngine:
         self.story_session.close()
         self.turn_journal.close()
         self.recording_journal.close()
+        logger.info("[StoryEngine] Closed StoryEngine (theater=%s)", self.theater.theater_id)
 
     def __getattr__(self, name: str) -> Callable:
         """Expose the response module's existing public tool surface."""

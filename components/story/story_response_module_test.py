@@ -361,11 +361,25 @@ class TestStoryResponseModuleBehavior(unittest.TestCase):
         decisions.decide.assert_not_called()
         self.provider.generate.assert_called_once()
 
-    def test_game_entry_rejects_factual_changes_without_retry(self) -> None:
-        from components.story.story_response_module import GameEntryNarrationRejected
+    def test_game_entry_allows_proposed_factual_changes_without_user_input(self) -> None:
+        self.module.require_user_input = True
+        self.module._user_input_detected = False
+        proposal = {'topic': 'Inventory', 'info': 'Crown', 'evidence': 'Gift'}
         self.provider.generate.return_value = TextResponseResult(
             text='{"narration":"A crown appears.","proposed_factual_changes":'
                  '[{"topic":"Inventory","info":"Crown","evidence":"Gift"}]}',
+            provider='test', model='test',
+        )
+        result = self.module._resolve_user_action('A trade completed.', game_entry=True, publish=False)
+        self.provider.generate.assert_called_once()
+        self.assertEqual(result['narration'], 'A crown appears.')
+        self.assertEqual(result['proposed_factual_changes'], [proposal])
+        self.assertFalse(self.module._game_entry)
+
+    def test_game_entry_rejects_dice_used_without_retry(self) -> None:
+        from components.story.story_response_module import GameEntryNarrationRejected
+        self.provider.generate.return_value = TextResponseResult(
+            text='{"narration":"A crown appears.","dice_used":true}',
             provider='test', model='test',
         )
         with self.assertRaises(GameEntryNarrationRejected):

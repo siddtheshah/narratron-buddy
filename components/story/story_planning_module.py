@@ -418,23 +418,47 @@ class StoryPlanningModule:
     def deep_read_lore(self, document: str = "") -> str:
         with self._deep_lore_calls_lock:
             if self._deep_read_lore_calls_this_run >= MAX_DEEP_READ_LORE_CALLS_PER_RUN:
+                logger.warning(
+                    "[StoryPlanningModule] deep_read_lore limit reached (%d/%d)",
+                    self._deep_read_lore_calls_this_run,
+                    MAX_DEEP_READ_LORE_CALLS_PER_RUN,
+                )
                 return (
                     f"Error: Maximum deep_read_lore limit "
                     f"({MAX_DEEP_READ_LORE_CALLS_PER_RUN}) reached. "
                     "Finalize the deep plan now."
                 )
             self._deep_read_lore_calls_this_run += 1
+            call_count = self._deep_read_lore_calls_this_run
+        logger.debug(
+            "[StoryPlanningModule] deep_read_lore (%d/%d): document=%r",
+            call_count,
+            MAX_DEEP_READ_LORE_CALLS_PER_RUN,
+            document,
+        )
         return self.lore_library.read_lore(document, role="planner")
 
     def deep_search_lore(self, query: str) -> str:
         with self._deep_lore_calls_lock:
             if self._deep_search_lore_calls_this_run >= MAX_DEEP_SEARCH_LORE_CALLS_PER_RUN:
+                logger.warning(
+                    "[StoryPlanningModule] deep_search_lore limit reached (%d/%d)",
+                    self._deep_search_lore_calls_this_run,
+                    MAX_DEEP_SEARCH_LORE_CALLS_PER_RUN,
+                )
                 return (
                     f"Error: Maximum deep_search_lore limit "
                     f"({MAX_DEEP_SEARCH_LORE_CALLS_PER_RUN}) reached. "
                     "Finalize the deep plan now."
                 )
             self._deep_search_lore_calls_this_run += 1
+            call_count = self._deep_search_lore_calls_this_run
+        logger.debug(
+            "[StoryPlanningModule] deep_search_lore (%d/%d): query=%r",
+            call_count,
+            MAX_DEEP_SEARCH_LORE_CALLS_PER_RUN,
+            query,
+        )
         return self.lore_library.search_lore(query)
 
     def reset_deep_lore_call_counts(self) -> None:
@@ -650,6 +674,10 @@ class StoryPlanningModule:
         self, callback_context: CallbackContext, llm_request: LlmRequest,
     ) -> LlmResponse | None:
         if self._story_tokens_remaining <= 0:
+            logger.debug(
+                "[StoryPlanningModule] Story token budget exhausted for %s",
+                callback_context.invocation_id,
+            )
             return LlmResponse(content=types.Content(role="model", parts=[
                 types.Part(text="Planning token budget reached; current planning pass is complete."),
             ]))
@@ -670,11 +698,18 @@ class StoryPlanningModule:
             )
             # Keep a finite bound even for providers that omit usage metadata.
             self._story_tokens_remaining -= used or self.deep_max_output_tokens
+            logger.debug(
+                "[StoryPlanningModule] Story tokens used=%d remaining=%d (%s)",
+                used,
+                self._story_tokens_remaining,
+                callback_context.invocation_id,
+            )
         return None
 
     def plan_story_updates(self, handoff: dict[str, JsonValue], source: NoteSnapshot) -> dict[str, str]:
         """Assimilate incoming story content without waiting for a cycle boundary."""
         if self.token_budget_per_event == 0:
+            logger.debug("[StoryPlanningModule] Skipping plan_story_updates: token_budget_per_event=0")
             return {}
         if self.story_session is None:
             raise RuntimeError("A shared story session is required for turn planning.")
@@ -687,7 +722,19 @@ class StoryPlanningModule:
             "sticky_notes": source.notes,
             "game_state": handoff.get("game_state"),
         }, ensure_ascii=False)
+        logger.debug(
+            "[StoryPlanningModule] plan_story_updates starting (source_rev=%d, budget=%d, timeout=%.1fs, prompt_len=%d)",
+            source.revision,
+            self.token_budget_per_event,
+            self.deep_planner_timeout_seconds,
+            len(prompt),
+        )
         self.story_session.run("planner", prompt, timeout=self.deep_planner_timeout_seconds)
+        logger.debug(
+            "[StoryPlanningModule] plan_story_updates staged %d update(s): %s",
+            len(self.staged_notes.updates),
+            list(self.staged_notes.updates.keys()),
+        )
         return dict(self.staged_notes.updates)
 
     def restart_deep_planner_agent(self) -> None:

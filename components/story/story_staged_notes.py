@@ -1,6 +1,11 @@
 """Role-scoped tools stage updates until their complete stage can commit."""
 
+import logging
+
 from components.notepad import Notepad, StickyOwner
+
+
+logger = logging.getLogger(__name__)
 
 
 class StagedStoryNotes:
@@ -20,6 +25,13 @@ class StagedStoryNotes:
         try:
             self.notepad.validate_role_update(self.owner, topic, info)
         except ValueError as exc:
+            logger.warning(
+                "[StagedStoryNotes] Rejected sticky update (owner=%s, topic=%s): %s",
+                self.owner,
+                topic,
+                exc,
+            )
             return f"Error: {exc}"
         self.updates[topic] = info
+        logger.debug("[StagedStoryNotes] Staged sticky update (owner=%s, topic=%s)", self.owner, topic)
         return f"Sticky note '{topic}' staged."

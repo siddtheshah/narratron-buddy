@@ -9,6 +9,7 @@ from google.adk.agents import Agent
 from google.adk.agents.readonly_context import ReadonlyContext
 from google.genai import types
 from jinja2 import Template
+from pydantic import JsonValue
 
 from components.lore_library import LoreLibrary
 from components.notepad import Notepad, NoteSnapshot
@@ -162,6 +163,7 @@ class StoryRecorderModule:
         self.reference_manager = reference_manager
         self.staged_notes = StagedStoryNotes(notepad, "recorder")
         self._reconcile = reconcile or self._reconcile_model
+        self._active_story_response: dict[str, JsonValue] | None = None
         raw_config = notepad.theater.config()
         config = raw_config.get("story_planning", raw_config)
         configured_style = style or str(config.get("style", DEFAULT_STORY_PLANNING_STYLE))
@@ -221,6 +223,11 @@ class StoryRecorderModule:
         self.reset_lore_call_counts()
         self.staged_notes.updates.clear()
         prompt = self._build_recorder_turn_prompt(event, snapshot)
+        if self._active_story_response is not None:
+            prompt += "\n# Associated Story Response\n" + json.dumps(
+                self._active_story_response,
+                ensure_ascii=False,
+            )
         receipts = self.journal.narratron_receipts(event.event_id)
         if receipts:
             prompt += "\n# Committed Narratron Game Receipts\n" + json.dumps(
@@ -288,10 +295,23 @@ class StoryRecorderModule:
     def _complete_game_recording(self, event: RecordingEvent) -> tuple[CommittedGameReceipt, ...]:
         """Publish receipts already reconciled by this event's recording invocation."""
         receipts = tuple(self.journal.narratron_receipts(event.event_id))
+        if receipts:
+            logger.debug(
+                "[StoryRecorderModule] Completing %d Narratron game receipt(s) for event %s",
+                len(receipts),
+                event.event_id,
+            )
         for receipt in receipts:
             if self.journal.recorded_revision(receipt.event_id) is None:
+                logger.debug(
+                    "[StoryRecorderModule] Committing receipt %s (rev=%d) for event %s",
+                    receipt.event_id,
+                    self.notepad.revision,
+                    event.event_id,
+                )
                 self.journal.commit(receipt.event_id, self.notepad.snapshot())
         if self.journal.game_control_decision(event.event_id) is not None:
+            logger.debug("[StoryRecorderModule] Completing game control decision for event %s", event.event_id)
             self.journal.complete_game_control(event.event_id)
         return receipts
 
@@ -395,7 +415,12 @@ class StoryRecorderModule:
             owners=owners,
         )
 
-    def record(self, event: RecordingEvent) -> int:
+    def record(
+        self,
+        event: RecordingEvent,
+        *,
+        story_response: dict[str, JsonValue] | None = None,
+    ) -> int:
         """Retain failed events for retry and never reconcile a recorded event twice."""
         logger.debug(
             "[StoryRecorderModule] record() called for event %s (kind=%s, action_id=%s, source_rev=%d)",
@@ -421,6 +446,12 @@ class StoryRecorderModule:
                 return recorded
             pending = self.journal.pending()
             if not pending or pending[0].event_id != event.event_id:
+                logger.error(
+                    "[StoryRecorderModule] Cannot record %s: oldest pending event is %s (pending_count=%d)",
+                    event.event_id,
+                    pending[0].event_id if pending else None,
+                    len(pending),
+                )
                 raise ValueError("An earlier event still requires recording.")
             source = self.notepad.snapshot()
             logger.debug(
@@ -428,7 +459,11 @@ class StoryRecorderModule:
                 event.event_id,
                 source.revision,
             )
-            updates = self._reconcile(event, source)
+            self._active_story_response = story_response
+            try:
+                updates = self._reconcile(event, source)
+            finally:
+                self._active_story_response = None
             logger.debug(
                 "[StoryRecorderModule] Reconciled %d update(s) for event %s: %s",
                 len(updates),

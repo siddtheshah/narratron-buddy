@@ -104,7 +104,7 @@ Resolve only the immediate consequences of the player's submitted action and dec
 A recorder reconciles established facts and owns factual sticky notes. A planner owns conditional guidance only. Read both collections; planner intentions are not proof an event happened and private plans must not automatically become player-visible. Never modify sticky notes or canonical character, scene, or game state directly.
 Communicate immediate factual fallout through proposed_factual_changes and planning cues through planning_signals.
 Also return `proposed_factual_changes` for established outcomes that affect factual sticky notes. Each proposal names its topic, the proposed complete value in `info`, and supporting `evidence`. These are claims for reconciliation, not committed facts: never turn player intentions or conditional plans into established outcomes, and never override validated game state. Return an optional `planning_request` with a concrete `reason` when future guidance needs revision. Routine bookkeeping alone does not require creative planning.
-The orchestrator always records your completed response before planning once for the turn. planning_request is advisory context, never a scheduling trigger. Follow your pinned RESPONDER.md. On game-entry turns, narrate only the recorder's established outcomes and brief: do not resolve the game again, roll dice, or propose additional factual changes.
+The orchestrator always records your completed response before planning once for the turn. planning_request is advisory context, never a scheduling trigger. Follow your pinned RESPONDER.md. On game-entry turns, narrate the game-established outcomes and brief without resolving the game again or rolling dice; return any `proposed_factual_changes` needed for sticky-note reconciliation.
 Respond ONLY with valid JSON conforming to the scene reaction schema.
 
 # Core Improv & Player Agency Principles
@@ -400,13 +400,16 @@ class StoryResponseModule:
     def acquire_in_flight(self, tool_name: str) -> bool:
         with self._in_flight_lock:
             if tool_name in self._in_flight_tools:
+                logger.warning("[StoryResponseModule] In-flight lock busy for %s", tool_name)
                 return False
             self._in_flight_tools.add(tool_name)
+            logger.debug("[StoryResponseModule] Acquired in-flight lock for %s", tool_name)
             return True
 
     def release_in_flight(self, tool_name: str) -> None:
         with self._in_flight_lock:
             self._in_flight_tools.discard(tool_name)
+            logger.debug("[StoryResponseModule] Released in-flight lock for %s", tool_name)
 
 
     # Shared Lore delegations to lore_library
@@ -587,12 +590,19 @@ class StoryResponseModule:
             if secondary != "none" and secondary in candidate_docs and secondary not in selected_docs:
                 selected_docs.append(secondary)
 
+        logger.debug(
+            "[StoryResponseModule] collect_relevant_lore selected %s (candidates=%d, contextual=%d)",
+            selected_docs,
+            len(candidate_docs),
+            len(contextual_documents),
+        )
         if not selected_docs:
             return ""
 
         sections: list[str] = []
         for doc_path in selected_docs:
             if doc_path in contextual_documents:
+                logger.debug("[StoryResponseModule] Skipping lore %s (already in context)", doc_path)
                 continue
             content = self.read_lore(doc_path)
             if content and not content.startswith("Error:"):
@@ -1013,6 +1023,15 @@ class StoryResponseModule:
             model=self.responder_model, response_schema=SceneReaction,
         )
 
+        logger.debug(
+            "[StoryResponseModule] Generating response (stage=%s, game_entry=%s, model=%s, timeout=%.1fs, prompt_len=%d, has_roll=%s)",
+            self._story_stage_id,
+            self._game_entry,
+            self.responder_model,
+            self.user_action_timeout_seconds,
+            len(prompt),
+            provisional_roll is not None,
+        )
         generation_started = time.perf_counter()
         executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="story-response")
         pending = executor.submit(self.text_response_provider.generate, request)
@@ -1030,6 +1049,10 @@ class StoryResponseModule:
         )
         if reaction.dice_used:
             if self._game_entry:
+                logger.warning(
+                    "[StoryResponseModule] Rejecting game-entry narration (stage=%s): dice_used=True",
+                    self._story_stage_id,
+                )
                 raise GameEntryNarrationRejected("Game-entry narration cannot use dice.")
             if provisional_roll is None:
                 raise ValueError("Story responder used dice when no application roll was supplied.")
@@ -1169,17 +1192,26 @@ class StoryResponseModule:
         if not self.adventure_mode:
             return {"error": "Adventure Mode is not enabled for this theater."}
 
+        logger.debug(
+            "[StoryResponseModule] _resolve_user_action started (stage=%s, game_entry=%s, publish=%s, notepad_rev=%d)",
+            stage_id,
+            game_entry,
+            publish,
+            self.notepad.revision,
+        )
         self._planning_request_reason = None
         self._game_entry = game_entry
         self._story_stage_id = stage_id
         self._turn_note_snapshot = self.notepad.snapshot()
         try:
             parsed = self._generate_response(action, nudge=nudge)
-            if game_entry and "error" not in parsed and (
-                parsed.get("proposed_factual_changes") or self.get_die_rolls_this_turn()
-            ):
+            if game_entry and "error" not in parsed and self.get_die_rolls_this_turn():
+                logger.warning(
+                    "[StoryResponseModule] Rejecting game-entry narration (stage=%s): dice=True",
+                    stage_id,
+                )
                 raise GameEntryNarrationRejected(
-                    "Game-entry narration cannot establish new factual or mechanical changes."
+                    "Game-entry narration cannot roll dice."
                 )
             planning_request = self._planning_request_reason
             snapshot_used = self._turn_note_snapshot
@@ -1193,6 +1225,11 @@ class StoryResponseModule:
         if not isinstance(parsed, dict):
             raise ValueError("Story responder must return a JSON object.")
         if "error" in parsed:
+            logger.warning(
+                "[StoryResponseModule] _resolve_user_action returning error (stage=%s): %s",
+                stage_id,
+                parsed.get("error"),
+            )
             return parsed
         factual_changes = [
             ProposedFactChange.model_validate(change).model_dump(mode="json")
@@ -1250,6 +1287,12 @@ class StoryResponseModule:
 
     def deliver_response(self, result: dict[str, JsonValue], *, sequence: int | None = None) -> None:
         """Deliver only an application-persisted response, separately from model execution."""
+        logger.debug(
+            "[StoryResponseModule] deliver_response (turn_id=%s, sequence=%s, narration_len=%d)",
+            result.get("turn_id"),
+            sequence,
+            len(str(result.get("narration") or "")),
+        )
         self._last_scene_reaction = result
         self._last_action_response_word_count = self._count_response_words(result)
         self.save_to_session_state()
