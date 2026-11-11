@@ -5,6 +5,8 @@ from functools import partial
 import json
 import logging
 from pathlib import Path
+from threading import RLock
+from typing import Literal
 from unittest.mock import Mock, patch
 
 import pytest
@@ -33,9 +35,45 @@ from game_engine.game_state import (
     UnauthorizedGameAction,
 )
 from components.canvas.canvas_state_manager import CanvasStateManager
+from game_engine.canvas_contract import CanvasAPI, CanvasSnapshot
+from game_engine.canvas_host import CanvasHost
 
 
 from testing.game_fixtures import counter_definition, make_game
+
+
+@pytest.mark.parametrize("backend", ["python", "go"])
+@pytest.mark.parametrize("canvas_enabled", [False, True])
+def test_failed_personalized_view_does_not_expose_previous_viewer(
+    tmp_path: Path, backend: Literal["python", "go"], canvas_enabled: bool,
+) -> None:
+    definition = counter_definition()
+    definition.constants = {"secrets": {"alice": "Royal Flush"}}
+    definition.view = ViewNode(kind="text", props={
+        "text": "user.username == '' ? 'Hidden' : constants.secrets[user.username]",
+    })
+    host = Mock(spec=CanvasHost)
+    host.canvas_lock = RLock()
+    host.canvas_observation.return_value = CanvasSnapshot.empty()
+    if canvas_enabled:
+        definition.canvas_api = CanvasAPI(version=1, effects=[])
+    (tmp_path / "game").mkdir()
+    (tmp_path / "game/game.json").write_text(definition.model_dump_json(), encoding="utf-8")
+    game = GameState(
+        tmp_path, Mock(), Mock(), backend=backend,
+        canvas_host=host if canvas_enabled else None,
+    )
+    alice = game.payload(username="alice")
+    assert alice is not None
+    assert alice["view"][0]["props"]["text"] == "Royal Flush"
+
+    bob = game.payload(username="bob")
+    assert bob is not None
+    assert bob["error"]
+    assert bob["view"] == []
+    assert "Royal Flush" not in json.dumps(bob)
+    # The failed request must not destroy Alice's cached view.
+    assert game.payload(username="alice") == alice
 
 
 def test_serialize_reuses_unchanged_game(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:

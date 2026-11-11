@@ -382,7 +382,9 @@ class GameState:
                     payload_err: dict[str, JsonValue] = {
                         "definition_hash": self.definition_hash,
                         "revision": self.revision,
-                        "view": self._view,
+                        # A failed personalized render must not return another
+                        # viewer's cached content.
+                        "view": [],
                         "error": str(exc),
                     }
                     if self.program.panel_html is not None:
@@ -399,6 +401,8 @@ class GameState:
                     payload["view"] = self._view
                     payload["canvas_revision"] = self._canvas_revision
                 except ValueError as exc:
+                    if username != self._view_username:
+                        payload["view"] = []
                     payload["error"] = str(exc)
             if self._client is not None and browser_compatible(self.state):
                 payload["client"] = self._client
