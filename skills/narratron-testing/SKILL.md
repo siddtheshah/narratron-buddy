@@ -34,6 +34,7 @@ Tests are organized into two primary categories:
      - `frontend/canvas/bookmarks_test.ts` (tests `frontend/canvas/bookmarks.ts`)
      - `frontend/canvas/navigation_test.ts` (tests `frontend/canvas/navigation.ts`)
      - `frontend/canvas/doodle-actions_test.ts` (tests `frontend/canvas/doodle-actions.ts`)
+     - `frontend/canvas/state-polling_test.ts` (tests `frontend/canvas/state-polling.ts`)
    - Shared browser test fixtures and their self-tests live in `testing/ui/`:
      - `testing/ui/canvas_fixtures.ts` (shared Playwright fixture)
      - `testing/ui/canvas_fixtures_test.ts` (self-tests for `canvas_fixtures.ts`)
@@ -41,7 +42,6 @@ Tests are organized into two primary categories:
 3. **Node CJS Tests & Legacy Python UI Tests (`testing/ui/`)**:
    - **Node CJS Tests (`*_test.cjs`)**: Isolated Node.js test runner suites for standalone frontend modules.
      - `testing/ui/audio_recorder_test.cjs`
-     - `testing/ui/canvas_state_polling_test.cjs`
      - `testing/ui/story_log_inspector_test.cjs`
    - **Python UI Tests (`*_test.py`)**: Legacy and backend-focused UI integration tests (e.g. backend undo handlers in `canvas_undo_test.py`, corner controls, zoom effects).
 
@@ -194,7 +194,6 @@ testing/
 │   ├── canvas_fixtures.ts        # Shared Playwright TS fixture (offline guard, static server, canvas.html loader)
 │   ├── canvas_fixtures_test.ts   # Self-tests for shared Playwright fixtures
 │   ├── audio_recorder_test.cjs   # Node CJS test suite for audio recorder
-│   ├── canvas_state_polling_test.cjs # Node CJS test suite for state polling
 │   ├── story_log_inspector_test.cjs  # Node CJS test suite for story log inspector
 │   ├── canvas_undo_test.py       # Python backend tests for undo endpoints
 │   ├── canvas_corner_controls_test.py # Python UI integration tests

@@ -39,7 +39,8 @@ Move canvas logic and its tests to TypeScript progressively, keeping existing Ja
 - [ ] Track coverage parity for the initial core: 17 Python files and 104 test definitions before parametrization (`canvas*_test.py` and `a2ui_canvas_drag_test.py`).
   - Retain the two Python backend tests currently in `canvas_undo_test.py`, leaving 102 frontend migration candidates.
   - Preserve parametrized cases, permissions, persistence, geometry, and race-condition coverage; remove superseded Python frontend tests only after their replacements pass.
-  - Retain and integrate existing JavaScript polling, story-log inspector, and audio-recorder tests while migrating them to TypeScript progressively.
+  - Completed state polling: `frontend/canvas/state-polling.ts` and 13 browser tests (all 12 former CJS cases plus module-shim compatibility); canvas, OBS, and popout import the compiled module directly.
+  - Retain and integrate existing JavaScript story-log inspector and audio-recorder tests while migrating them to TypeScript progressively.
 - [ ] Follow with adjacent canvas suites, including action wheel, doodle history, doodles, and hotkey configuration.
   - Scope remote, OBS, game UI, and live load/evaluation harnesses separately; keep backend state/API tests in Python.
 

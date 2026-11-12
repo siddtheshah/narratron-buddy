@@ -279,7 +279,6 @@
             border: 1px solid rgba(16, 185, 129, 0.4);
         }
     </style>
-    <script src="/static/js/canvas-state-polling.js"></script>
 </head>
 
 <body>
@@ -351,6 +350,7 @@
     </div>
 
     <script type="module">
+        import { startCanvasStatePolling } from "/static/generated/canvas/state-polling.js";
         import { initializeChatEmotes } from '/static/js/chat-emotes.js';
         const urlParams = new URLSearchParams(window.location.search);
         const theaterId = urlParams.get('theater_id') || '';
@@ -790,7 +790,7 @@
             };
         }
 
-        window.startCanvasStatePolling(refreshCanvasState);
+        startCanvasStatePolling(refreshCanvasState);
         connectCanvasStateSocket();
 
         // Notify parent window on unload

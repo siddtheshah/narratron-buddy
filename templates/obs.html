@@ -157,7 +157,6 @@
         .clip-draft-action { display: inline-block; width: 100%; margin-top: 1.2rem; padding: .75rem 1rem; border: 1px solid rgba(244, 114, 182, .7); border-radius: 10px; color: #fff; background: rgba(236, 72, 153, .28); font-weight: 700; text-align: center; text-decoration: none; }
         .clip-draft-action:hover { background: rgba(236, 72, 153, .42); }
     </style>
-    <script src="/static/js/canvas-state-polling.js"></script>
 </head>
 
 <body>
@@ -195,6 +194,7 @@
     </div>
 
     <script type="module">
+        import { startCanvasStatePolling } from "/static/generated/canvas/state-polling.js";
         import { createDoodleRenderer, createImageRenderer } from "/static/js/canvas-renderers.js?v=zoom-effect-origin-20261030-1";
         import { getAnimationSignature, playCanvasAnimation } from "/static/js/canvas-media.js";
         import { createCanvasScene } from "/static/js/canvas-scene.js";
@@ -609,7 +609,7 @@
             };
         }
 
-        window.startCanvasStatePolling(fetchLatestImage);
+        startCanvasStatePolling(fetchLatestImage);
         connectCanvasStateSocket();
 
         // Clip mode is intentionally isolated from the interactive canvas so

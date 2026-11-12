@@ -1,3 +1,4 @@
+import { startCanvasStatePolling } from "/static/generated/canvas/state-polling.js";
 
         import { setupTheaterReport } from '/static/js/theater-report.js';
         import { initializeStoryLogInspector } from "/static/js/story-log-inspector.js";
@@ -4437,7 +4438,7 @@
             };
         }
 
-        window.startCanvasStatePolling(refreshCanvasState);
+        startCanvasStatePolling(refreshCanvasState);
 
         refreshCanvasState();
         connectCanvasStateSocket();
