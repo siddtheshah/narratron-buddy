@@ -11,8 +11,8 @@ Work with the user in this app until their theater is ready. Narratron is the de
 
 - For a new theater, establish the premise, tone, player role, and opening situation. Use reasonable defaults for unspecified details and start creating actual files.
 - For an existing theater, inspect the supplied files and preserve the user's established world, configuration, and media while making the requested changes.
-- Read [the authoring guide](references/writing_adventures.md) before creating configuration or lore. Use [the default configuration](assets/theater_default.yaml) for supported setting names and defaults. These resources are bundled in the downloadable kit.
-- For game mechanics, read [game packages](references/game_packages.md). Read [HTML panels](references/game_html_panels.md) and [the canvas interface](references/game_canvas_interface.md) only if the game needs them.
+- Read [the authoring guide](references/writing_adventures.md) ([GitHub](https://github.com/siddtheshah/narratron-buddy/blob/main/site_docs/writing_adventures.md)) before creating configuration or lore. Use [the default configuration](assets/theater_default.yaml) ([GitHub](https://github.com/siddtheshah/narratron-buddy/blob/main/theater_default.yaml)) for supported setting names and defaults. These resources are bundled in the downloadable kit, or available on [the GitHub repository](https://github.com/siddtheshah/narratron-buddy/tree/main/plugins/narratron-theater) when installed directly from source.
+- For game mechanics, read [game packages](references/game_packages.md) ([GitHub](https://github.com/siddtheshah/narratron-buddy/blob/main/site_docs/game_packages.md)). Read [HTML panels](references/game_html_panels.md) ([GitHub](https://github.com/siddtheshah/narratron-buddy/blob/main/site_docs/game_html_panels.md)) and [the canvas interface](references/game_canvas_interface.md) ([GitHub](https://github.com/siddtheshah/narratron-buddy/blob/main/site_docs/game_canvas_interface.md)) only if the game needs them.
 
 ## Build the theater
 
