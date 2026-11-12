@@ -6,6 +6,14 @@ RUN go mod download
 COPY game_engine/cel_go_worker/ ./
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /cel-go-worker .
 
+FROM node:22-bookworm-slim AS frontend-build
+WORKDIR /app
+COPY package.json package-lock.json tsconfig.json tsconfig.build.json ./
+RUN npm ci
+COPY scripts/build_canvas.mjs scripts/build_canvas.mjs
+COPY frontend/ frontend/
+RUN npm run build
+
 FROM python:3.13-slim
 COPY --from=cel-worker /cel-go-worker /usr/local/bin/cel-go-worker
 ENV NARRATRON_CEL_BACKEND=go \
@@ -51,6 +59,7 @@ COPY tools/ tools/
 COPY utils/ utils/
 COPY templates/ templates/
 COPY static/ static/
+COPY --from=frontend-build /app/static/generated/ static/generated/
 COPY pricing/ pricing/
 COPY providers/ providers/
 COPY models/ models/

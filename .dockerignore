@@ -26,6 +26,10 @@ scratch/
 testing/
 evaluation_results/
 *_test.py
+node_modules/
+static/generated/
+playwright-report/
+test-results/
 
 # Data (ephemeral on Cloud Run — mount volumes if needed)
 theaters/

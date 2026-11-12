@@ -3,7 +3,7 @@
         import { initializeStoryLogInspector } from "/static/js/story-log-inspector.js";
         import { initializeCanvasBookmarks } from "/static/js/canvas-bookmarks.js";
         import { initializeActionWheel } from "/static/js/action-wheel.js?v=cursor-cycle-20261028-1";
-        import { canvasCursorState } from '/static/js/canvas-cursor-state.js?v=20261028-1';
+        import { canvasCursorState } from '/static/generated/canvas/cursor-state.js';
         import { initializeChatController } from "/static/js/chat-controller.js";
         import { initializeBeyond20Listener } from "/static/js/beyond20-listener.js";
         import {

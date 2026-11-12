@@ -353,10 +353,12 @@ def test_lifespan_preloads_adventure_cards_before_serving() -> None:
 
     async def run_lifespan() -> None:
         async with object_registry.lifespan(object_registry.app):
+            build_assets.assert_called_once_with()
             service.list_adventures.assert_called_once_with(force_refresh=True)
             database.close.assert_not_called()
 
     with (
+        patch.object(object_registry, "ensure_canvas_assets_built") as build_assets,
         patch.object(object_registry, "adventure_service", service),
         patch.object(object_registry, "db", database),
         patch("api_server.pages.rebuild_docs_search_index"),

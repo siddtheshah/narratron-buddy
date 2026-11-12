@@ -1,0 +1,31 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ES2022",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": ["node"],
+    "rootDir": ".",
+    "noEmit": true,
+    "allowJs": true,
+    "checkJs": false,
+    "strict": true,
+    "noImplicitAny": true,
+    "noImplicitReturns": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "paths": {
+      "/static/generated/canvas/*": ["./frontend/canvas/*"],
+      "/static/js/*": ["./static/js/*"]
+    }
+  },
+  "include": [
+    "playwright.config.ts",
+    "testing/ui/**/*.ts",
+    "frontend/canvas/**/*.ts",
+    "frontend/canvas/**/*.js",
+    "frontend/canvas/**/*.d.ts"
+  ]
+}

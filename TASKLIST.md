@@ -22,18 +22,19 @@
 
 Move canvas logic and its tests to TypeScript progressively, keeping existing JavaScript callers and the Python server working throughout the migration.
 
-- [ ] Add the TypeScript build, watch, and type-check commands, plus TypeScript Playwright test configuration and dependency lockfile.
+- [x] Add the TypeScript build, watch, and type-check commands, plus TypeScript Playwright test configuration and dependency lockfile.
   - Keep production TypeScript in `frontend/canvas/`, emit browser ES modules to `static/generated/canvas/`, and keep browser tests in `testing/ui/`.
   - Include generated assets in local startup and deployment builds without overwriting existing JavaScript source files.
   - Support mixed JavaScript/TypeScript with `allowJs` and initially leave `checkJs` disabled; use strict checking for TypeScript and explicit types at migrated module boundaries.
   - Run a separate `tsc --noEmit` check because Playwright transpiles TypeScript tests without checking their types.
-- [ ] Add shared browser fixtures that serve real production modules and assets.
+- [x] Add shared browser fixtures that serve real production modules and assets.
   - Preserve HTTP/WebSocket isolation, block service workers, and fail on unexpected requests.
   - Replace source slicing and source-text assertions with module imports and behavior checks where practical.
-- [ ] Pilot the migration with cursor state and its TypeScript tests.
+- [x] Pilot the migration with cursor state and its TypeScript tests.
   - Update existing JavaScript callers to import the compiled module, using one consistent URL for shared singleton state.
   - Verify interoperability before expanding the migration; TypeScript tests can also cover modules that are still JavaScript.
 - [ ] Migrate bookmarks, doodle actions/undo, navigation, and rendering in small batches, moving their tests alongside the logic.
+  - Completed: `bookmarks` (`frontend/canvas/bookmarks.ts`, `frontend/canvas/bookmarks_test.ts`), `doodle actions/undo` (`frontend/canvas/doodle-actions.ts`, `frontend/canvas/doodle-actions_test.ts`, retaining the 2 backend tests in `testing/ui/canvas_undo_test.py`), and `navigation` (`frontend/canvas/navigation.ts`, `frontend/canvas/navigation_test.ts`). Remaining: `rendering`.
 - [ ] Continue with asset-manager behavior, canvas controls, and A2UI surfaces; extract smaller typed modules from `static/js/canvas.js` as needed.
 - [ ] Track coverage parity for the initial core: 17 Python files and 104 test definitions before parametrization (`canvas*_test.py` and `a2ui_canvas_drag_test.py`).
   - Retain the two Python backend tests currently in `canvas_undo_test.py`, leaving 102 frontend migration candidates.

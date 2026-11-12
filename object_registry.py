@@ -34,6 +34,7 @@ from storage.database import CloudPostgresDatabaseManager, LocalDatabaseManager
 from storage.stamp_storage import StampStorage, ensure_stamps_root
 from storage.theater_repository import TheaterRepository
 from utils.config_loader import get_app_config
+from utils.frontend_build import ensure_canvas_assets_built
 
 # Repository-level paths are shared application constants, alongside the
 # service instances below.  Route modules should import this from the registry
@@ -116,6 +117,8 @@ async def run_storage_billing_loop(stop: asyncio.Event) -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    # Run for every entry point, including uvicorn main:app and api_server.app:app.
+    await asyncio.to_thread(ensure_canvas_assets_built)
     # Route modules are loaded by the time the ASGI lifespan begins. Rebuild
     # from rendered pages so search always reflects the deployed docs.
     from api_server.pages import rebuild_docs_search_index

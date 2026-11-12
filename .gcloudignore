@@ -33,6 +33,10 @@ scratch/
 testing/
 evaluation_results/
 *_test.py
+node_modules/
+static/generated/
+playwright-report/
+test-results/
 
 # Data that shouldn't be baked into the image
 theaters/
@@ -41,11 +45,7 @@ output/
 
 # Secrets
 .env
-client_secret.json
 ngrok_policy.yaml
-
-# Large media
-*.wav
 
 # Docs
 README.md

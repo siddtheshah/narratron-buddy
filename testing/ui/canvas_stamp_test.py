@@ -349,7 +349,7 @@ def stamp_page() -> Iterator[Page]:
             </div>
         """)
 
-        cursor_code = Path("static/js/canvas-cursor-state.js").read_text(encoding="utf-8")
+        cursor_code = Path("static/generated/canvas/cursor-state.js").read_text(encoding="utf-8")
         page.add_script_tag(content=cursor_code.replace("export ", ""))
         page.add_script_tag(content=renderer_code.replace("export function", "function"))
         page.add_script_tag(content="""

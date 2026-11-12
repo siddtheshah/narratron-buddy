@@ -32,6 +32,7 @@ theaters.
 ## Prerequisites
 
 - Python 3.10+
+- Node.js 22 and npm (for the canvas TypeScript build)
 - [`uv`](https://github.com/astral-sh/uv) (fast Python package and project manager)
 - Windows (PowerShell examples below)
 
@@ -49,6 +50,16 @@ uv venv
 . .venv\Scripts\Activate.ps1
 uv pip install -r requirements.txt
 ```
+
+Install and build the frontend dependencies from the repository root:
+
+```powershell
+npm ci
+npm run build
+```
+
+Server startup rebuilds missing or stale canvas assets automatically. Use
+`npm run watch` to rebuild TypeScript changes while the server is running.
 
 ### Development checks
 
