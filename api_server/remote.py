@@ -5,15 +5,13 @@ from fastapi.responses import HTMLResponse
 import jinja2
 from pydantic import BaseModel, JsonValue
 
-from api_server.dependencies import live_agent_manager
+
+import object_registry
 from api_server.shared import (
     PROJECT_ROOT,
     app,
-    canvas_states,
-    db,
     get_current_user,
     is_contributor,
-    theater_manager,
     _extract_candidate_join_key,
     _grant_canvas_access,
     _require_canvas_access,
@@ -115,10 +113,10 @@ def get_remote_status(theater_id: str, request: Request, response: Response) -> 
     if not user:
         raise HTTPException(status_code=401, detail="Sign in on this device to use the remote.")
     _require_canvas_access(request, theater_id)
-    deployment = db.get_deployment(theater_id)
-    state = canvas_states.get(theater_id)
-    session = live_agent_manager.get_session(theater_id)
-    theater = theater_manager.get_theater(theater_id)
+    deployment = object_registry.db.get_deployment(theater_id)
+    state = object_registry.canvas_states.get(theater_id)
+    session = object_registry.live_agent_manager.get_session(theater_id)
+    theater = object_registry.theater_manager.get_theater(theater_id)
     user_id = user.get("id")
     is_owner = bool(deployment and user_id and user_id == deployment.get("user_id"))
     active_orator_id = deployment.get("active_orator_id") if deployment else None

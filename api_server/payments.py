@@ -10,7 +10,8 @@ from fastapi import Request, HTTPException
 from pydantic import BaseModel, ConfigDict
 import stripe
 
-from api_server.shared import app, db, get_current_user, FLAGS
+import object_registry
+from api_server.shared import app, get_current_user
 from utils.auth_cache import auth_session_cache
 from pricing.pricing_controller import PricingController
 
@@ -91,9 +92,9 @@ def _settled_checkout_credits(
 
 def _is_mock_payment_mode(payment_method: Optional[str] = None) -> bool:
     """Allow simulated payment only when an explicit test flag enables it."""
-    if FLAGS.allow_mock_payments:
+    if object_registry.FLAGS.allow_mock_payments:
         return True
-    if FLAGS.testing_use_local:
+    if object_registry.FLAGS.testing_use_local:
         return True
     return False
 
@@ -125,15 +126,15 @@ def buy_credits(req: BuyCreditsRequest, request: Request) -> dict:
             card_num = (req.card_number or "").replace(" ", "").replace("-", "")
             if not card_num:
                 raise HTTPException(status_code=400, detail="Credit card number is required.")
-            
+
             if card_num.endswith("0002") or card_num.endswith("0000"):
                 raise HTTPException(status_code=400, detail="Your card was declined by the issuer.")
             if card_num.endswith("0051"):
                 raise HTTPException(status_code=400, detail="Insufficient funds on credit card.")
-            
+
             if not card_num.isdigit() or len(card_num) < 13 or len(card_num) > 19:
                 raise HTTPException(status_code=400, detail="Invalid credit card number format.")
-            
+
             if req.card_exp:
                 exp_clean = req.card_exp.replace(" ", "")
                 if "/" not in exp_clean or len(exp_clean) != 5:
@@ -146,12 +147,12 @@ def buy_credits(req: BuyCreditsRequest, request: Request) -> dict:
                 raise HTTPException(status_code=400, detail="Invalid CVV / CVC code (must be 3 or 4 digits).")
 
             stripe_key = os.getenv("STRIPE_SECRET_KEY")
-            allow_mock = bool(FLAGS.allow_mock_payments) or bool(FLAGS.testing_use_local)
+            allow_mock = bool(object_registry.FLAGS.allow_mock_payments) or bool(object_registry.FLAGS.testing_use_local)
 
             if not stripe_key and not allow_mock:
                 raise HTTPException(status_code=503, detail="Payment service unavailable")
 
-        result = db.add_user_credits(user["id"], credits_to_add, usd_amount, payment_method)
+        result = object_registry.db.add_user_credits(user["id"], credits_to_add, usd_amount, payment_method)
         auth_session_cache.invalidate_user(user["id"])
         return {"status": "ok", "message": f"Successfully added {credits_to_add:.1f} credits!", **result}
 
@@ -225,7 +226,7 @@ def buy_credits(req: BuyCreditsRequest, request: Request) -> dict:
             metadata={"user_id": str(user["id"]), "credits_to_add": str(credits_to_add)},
         )
         if intent.status == "succeeded" and intent.currency == "usd" and intent.amount_received == amount_cents:
-            result = db.add_user_credits(user["id"], credits_to_add, usd_amount, "stripe_live")
+            result = object_registry.db.add_user_credits(user["id"], credits_to_add, usd_amount, "stripe_live")
             auth_session_cache.invalidate_user(user["id"])
             return {"status": "ok", "message": f"Successfully added {credits_to_add:.1f} credits!", **result}
         else:
@@ -262,7 +263,7 @@ def verify_stripe_session(session_id: str, request: Request) -> dict:
             )
 
             if meta_user_id == user["id"] and credits_to_add > 0:
-                result = db.add_stripe_session_credits(
+                result = object_registry.db.add_stripe_session_credits(
                     user["id"], credits_to_add, usd_amount, session_id, "stripe_checkout"
                 )
                 auth_session_cache.invalidate_user(user["id"])
@@ -309,7 +310,7 @@ async def stripe_webhook(request: Request) -> dict:
             session_id = data_obj["id"]
             if not session_id:
                 raise ValueError("Missing checkout session ID.")
-            db.add_stripe_session_credits(
+            object_registry.db.add_stripe_session_credits(
                 user_id,
                 credits_to_add,
                 usd_amount,
@@ -327,7 +328,7 @@ def get_payment_history(request: Request) -> dict:
     user = get_current_user(request)
     if not user:
         raise HTTPException(status_code=401, detail="Authentication required to view payment history.")
-    transactions = db.get_user_transactions(user["id"])
+    transactions = object_registry.db.get_user_transactions(user["id"])
     return {"status": "ok", "transactions": transactions}
 
 @app.get("/api/pricing")
@@ -374,7 +375,7 @@ def get_pricing_rates(
     if usd_amount is not None and usd_amount < 0:
         raise HTTPException(status_code=400, detail="usd_amount must be non-negative.")
 
-    pricing = getattr(db, "pricing_controller", None) or PricingController.from_env()
+    pricing = getattr(object_registry.db, "pricing_controller", None) or PricingController.from_env()
     rates = pricing.get_rates()
 
     calculation = {}

@@ -14,7 +14,6 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 import object_registry
-from api_server.dependencies import FLAGS, canvas_states, db, theater_manager, theater_repository, SERVER_RUN_ID, stamp_storage  # noqa: F401
 from utils.auth_cache import auth_session_cache
 from api_server.theater_access_cache import theater_access_cache
 from storage.database import DatabaseConnectionTimeout
@@ -37,12 +36,12 @@ async def database_connection_timeout_handler(request: Request, exc: DatabaseCon
     )
 
 
-theaters_folder = str(theater_manager.base_dir)
+theaters_folder = str(object_registry.theater_manager.base_dir)
 
 @app.middleware("http")
 async def add_cache_control_headers(request: Request, call_next):
     response = await call_next(request)
-    if FLAGS.testing_use_local or request.url.path.startswith("/static/"):
+    if object_registry.FLAGS.testing_use_local or request.url.path.startswith("/static/"):
         response.headers.setdefault("Cache-Control", "no-cache, must-revalidate")
     return response
 
@@ -124,7 +123,7 @@ def get_current_user(request: Request | WebSocket, *, record_activity: bool = Tr
     if token:
         user = auth_session_cache.get_or_validate(
             token,
-            lambda: db.validate_session_token(token, record_activity=record_activity),
+            lambda: object_registry.db.validate_session_token(token, record_activity=record_activity),
         )
         if user:
             setattr(request_cache, "_narratron_current_user", dict(user))
@@ -148,7 +147,7 @@ async def get_current_user_async(
         user = await asyncio.to_thread(
             auth_session_cache.get_or_validate,
             token,
-            lambda: db.validate_session_token(token, record_activity=record_activity),
+            lambda: object_registry.db.validate_session_token(token, record_activity=record_activity),
         )
         if user:
             setattr(request_cache, "_narratron_current_user", dict(user))
@@ -320,7 +319,7 @@ def _require_canvas_access(
         deployment, allowed = memoized[cache_key]
     else:
         def resolve() -> tuple[Optional[dict], bool]:
-            deployment = db.get_deployment(theater_id)
+            deployment = object_registry.db.get_deployment(theater_id)
             return (
                 deployment,
                 bool(deployment) and can_access_agent_websocket(
@@ -361,7 +360,7 @@ async def _require_canvas_access_async(
         deployment, allowed = memoized[cache_key]
     else:
         def resolve() -> tuple[Optional[dict], bool]:
-            deployment = db.get_deployment(theater_id)
+            deployment = object_registry.db.get_deployment(theater_id)
             return (
                 deployment,
                 bool(deployment) and can_access_agent_websocket(

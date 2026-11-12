@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 from pydantic import ValidationError
 from google.genai import types
 
+import object_registry
 from api_server import canvas
 from providers import LiveAgentProvider
 from services.live_agent_manager import LiveAgentSession
@@ -28,11 +29,11 @@ def action_services() -> Iterator[tuple[MagicMock, MagicMock]]:
     session.send_notification.return_value = True
     manager = MagicMock()
     manager.get_session.return_value = session
-    with patch.object(canvas, "_require_canvas_access"), patch.object(canvas, "db"), \
+    with patch.object(canvas, "_require_canvas_access"), patch.object(object_registry, "db"), \
             patch.object(canvas, "get_current_user"), \
             patch.object(canvas, "can_control_agent_websocket", return_value=True), \
             patch.object(canvas, "_state", return_value=state), \
-            patch.object(canvas, "live_agent_manager", manager):
+            patch.object(object_registry, "live_agent_manager", manager):
         yield state, session
 
 
@@ -122,7 +123,7 @@ def test_unpin_reaches_live_request_queue(
             queue.record_model_tool_calls(queue.remaining_live_tool_budget)
             assert not queue.live_tool_window_active
 
-        with patch.object(canvas.live_agent_manager, "get_session", return_value=session):
+        with patch.object(object_registry.live_agent_manager, "get_session", return_value=session):
             if action == "canvas-pin":
                 canvas.set_canvas_pin("stage", canvas.CanvasPinRequest(pinned=False), Request({"type": "http"}))
             else:
@@ -354,7 +355,7 @@ def test_new_image_triggers_observability_when_collab_enabled(
     state.ui.viewer_collab_enabled = True
     session.observability_tools = None
 
-    with patch.object(canvas.theater_manager, "get_theater_config", return_value={}):
+    with patch.object(object_registry.theater_manager, "get_theater_config", return_value={}):
         canvas.post_orator_action(
             "stage", canvas.OratorAction(action="new_image"), Request({"type": "http"})
         )
@@ -375,7 +376,7 @@ def test_new_image_does_not_trigger_observability_when_collab_disabled_even_if_t
     session.observability_tools = MagicMock()
 
     with patch.object(
-        canvas.theater_manager,
+        object_registry.theater_manager,
         "get_theater_config",
         return_value={"observability_tool": {"enabled": True}},
     ):
@@ -399,7 +400,7 @@ def test_new_image_triggers_observability_even_if_tool_disabled_in_config(
     session.observability_tools = None
 
     with patch.object(
-        canvas.theater_manager,
+        object_registry.theater_manager,
         "get_theater_config",
         return_value={"observability_tool": {"enabled": False}},
     ):

@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+import object_registry
 from api_server import shared
 from utils.auth_cache import AuthSessionCache, auth_session_cache
 from api_server.theater_access_cache import TheaterAccessCache, theater_access_cache
@@ -55,7 +56,7 @@ def test_current_user_is_memoized_on_the_request():
     registry_db = MagicMock()
     registry_db.validate_session_token.return_value = {"id": 8, "username": "ada", "expires_at": "2099-01-01T00:00:00+00:00"}
 
-    with patch.object(shared, "db", registry_db):
+    with patch.object(object_registry, "db", registry_db):
         assert shared.get_current_user(request)["username"] == "ada"
         assert shared.get_current_user(request)["username"] == "ada"
 
@@ -75,7 +76,7 @@ async def test_current_user_async_validates_on_a_worker_thread():
 
     registry_db.validate_session_token.side_effect = validate
     event_loop_thread_id = threading.get_ident()
-    with patch.object(shared, "db", registry_db):
+    with patch.object(object_registry, "db", registry_db):
         user = await shared.get_current_user_async(request)
 
     assert user["username"] == "ada"
@@ -97,7 +98,7 @@ async def test_canvas_access_async_resolves_deployment_on_a_worker_thread():
 
     registry_db.get_deployment.side_effect = get_deployment
     event_loop_thread_id = threading.get_ident()
-    with patch.object(shared, "db", registry_db):
+    with patch.object(object_registry, "db", registry_db):
         deployment = await shared._require_canvas_access_async(request, "stage")
 
     assert deployment["theater_id"] == "stage"
@@ -143,7 +144,7 @@ def test_canvas_access_check_is_memoized_for_repeated_theater_checks():
     registry_db = MagicMock()
     registry_db.get_deployment.return_value = {"theater_id": "stage", "user_id": 3, "join_key": "JOIN"}
 
-    with patch.object(shared, "db", registry_db):
+    with patch.object(object_registry, "db", registry_db):
         assert shared._require_canvas_access(request, "stage")["theater_id"] == "stage"
         assert shared._require_canvas_access(request, "stage")["theater_id"] == "stage"
 
@@ -161,7 +162,7 @@ def test_join_key_viewer_is_denied_after_theater_access_invalidation():
         {"theater_id": "stage", "user_id": 3, "join_key": "ROTATED"},
     ]
 
-    with patch.object(shared, "db", registry_db):
+    with patch.object(object_registry, "db", registry_db):
         first_request = SimpleNamespace(cookies={"canvas_access": old_grant}, query_params={})
         assert shared._require_canvas_access(first_request, "stage")["theater_id"] == "stage"
 

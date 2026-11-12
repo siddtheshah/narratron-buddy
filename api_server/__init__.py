@@ -2,10 +2,6 @@
 
 from api_server.shared import (  # noqa: F401
     app,
-    FLAGS,
-    db,
-    theater_manager,
-    canvas_states,
     theaters_folder,
     get_current_user,
     get_current_user_async,

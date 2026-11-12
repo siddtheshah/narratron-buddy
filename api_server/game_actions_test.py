@@ -6,6 +6,7 @@ import pytest
 from fastapi import HTTPException, Request
 from fastapi.testclient import TestClient
 
+import object_registry
 from api_server import canvas, theaters
 from game_engine.game_state import GameAction, GameState
 from testing.game_fixtures import make_example_canvas, make_preview_checkers_game
@@ -16,7 +17,7 @@ def game_route(tmp_path: Path) -> Iterator[GameState]:
     game = make_preview_checkers_game(tmp_path)
     ui = Mock(viewer_collab_enabled=False)
     state = Mock(game=game, ui=ui)
-    with patch.object(canvas, "_require_canvas_access"), patch.object(canvas, "db") as mock_db, \
+    with patch.object(canvas, "_require_canvas_access"), patch.object(object_registry, "db") as mock_db, \
             patch.object(canvas, "get_current_user"), \
             patch.object(canvas, "can_control_agent_websocket", return_value=True), \
             patch.object(canvas, "is_contributor", return_value=False), \
@@ -56,7 +57,7 @@ def test_contributor_can_take_annotated_actions_when_collab_enabled(tmp_path: Pa
     state = Mock(game=game, ui=ui)
     request = Request({"type": "http"})
 
-    with patch.object(canvas, "_require_canvas_access"), patch.object(canvas, "db") as mock_db, \
+    with patch.object(canvas, "_require_canvas_access"), patch.object(object_registry, "db") as mock_db, \
             patch.object(canvas, "get_current_user"), \
             patch.object(canvas, "can_control_agent_websocket", return_value=False), \
             patch.object(canvas, "is_contributor", return_value=True), \
@@ -129,7 +130,7 @@ def test_canvas_game_requires_fresh_canvas_revision_and_commits_victory_stamp(tm
     }})
     action = GameAction(name="move", arguments={"source": 42, "target": 28}, revision=0)
     request = Request({"type": "http"})
-    with patch.object(canvas, "_require_canvas_access"), patch.object(canvas, "db"), \
+    with patch.object(canvas, "_require_canvas_access"), patch.object(object_registry, "db"), \
             patch.object(canvas, "get_current_user"), \
             patch.object(canvas, "can_control_agent_websocket", return_value=True), \
             patch.object(canvas, "_state", return_value=state):
@@ -149,7 +150,7 @@ def test_canvas_game_requires_fresh_canvas_revision_and_commits_victory_stamp(tm
         assert len(state.canvas_observation().stamps) == 1
     stamp, = state.doodles.stamp_annotations()
     with patch.object(theaters, "_require_canvas_access_async", AsyncMock()), \
-            patch.object(theaters, "theater_manager", state.theater.manager):
+            patch.object(object_registry, "theater_manager", state.theater.manager):
         response = TestClient(canvas.app).get(str(stamp["url"]))
     assert response.status_code == 200
     assert response.content == (state.theater.directory() / "stamps" / "crown.png").read_bytes()
@@ -164,12 +165,12 @@ def test_post_game_action_and_get_latest_pass_authenticated_username(tmp_path: P
     state.get_latest_state.side_effect = lambda username="": {"game_state": game.payload(username=username)}
     request = Request({"type": "http"})
 
-    with patch.object(canvas, "_require_canvas_access"), patch.object(canvas, "db") as mock_db, \
+    with patch.object(canvas, "_require_canvas_access"), patch.object(object_registry, "db") as mock_db, \
             patch.object(canvas, "get_current_user", return_value={"id": "u1", "username": "alice"}), \
             patch.object(canvas, "can_control_agent_websocket", return_value=True), \
             patch.object(canvas, "is_contributor", return_value=False), \
             patch.object(canvas, "_state", return_value=state), \
-            patch.object(canvas.theater_manager, "theater") as mock_theater:
+            patch.object(object_registry.theater_manager, "theater") as mock_theater:
         mock_db.get_deployment.return_value = {"id": "checkers"}
         mock_theater.return_value.directory.return_value = tmp_path
 

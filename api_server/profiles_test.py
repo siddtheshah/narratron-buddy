@@ -224,7 +224,7 @@ async def test_upload_stamp_success() -> None:
     registry_storage.save_stamp.return_value = "abc_star.webp"
 
     with patch.object(object_registry, "db", registry_db), \
-         patch.object(profiles, "stamp_storage", registry_storage), \
+         patch.object(object_registry, "stamp_storage", registry_storage), \
          patch.object(profiles, "get_current_user", return_value={"id": 8}), \
          patch.object(profiles.auth_session_cache, "invalidate_user"):
         result = await profiles.upload_stamp(request(), dummy_file, "Star")
@@ -259,7 +259,7 @@ def test_delete_stamp_success() -> None:
     }
     registry_storage = MagicMock()
     with patch.object(object_registry, "db", registry_db), \
-         patch.object(profiles, "stamp_storage", registry_storage), \
+         patch.object(object_registry, "stamp_storage", registry_storage), \
          patch.object(profiles, "get_current_user", return_value={"id": 8}), \
          patch.object(profiles.auth_session_cache, "invalidate_user"):
         result = profiles.delete_stamp_endpoint(5, request())
@@ -276,7 +276,7 @@ def test_get_stamp_endpoint_success() -> None:
     registry_storage = MagicMock()
     registry_storage.read_stamp.return_value = b"\x89PNGfake"
     with patch.object(object_registry, "db", registry_db), \
-         patch.object(profiles, "stamp_storage", registry_storage):
+         patch.object(object_registry, "stamp_storage", registry_storage):
         resp = profiles.get_stamp_endpoint(5)
     assert resp.body == b"\x89PNGfake"
     assert resp.media_type == "image/png"

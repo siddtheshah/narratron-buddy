@@ -8,6 +8,7 @@ import pytest
 from fastapi import HTTPException, Request
 from pydantic import ValidationError
 
+import object_registry
 from api_server import theaters
 from components.theater_manager import TheaterManager
 from components.canvas.audio_state import AudioState
@@ -29,7 +30,7 @@ async def test_prepopulated_animation_file_is_served_with_canvas_access(tmp_path
     path.parent.mkdir(parents=True)
     path.write_bytes(b"video")
     request = Request({"type": "http", "headers": []})
-    with patch.object(theaters, "theater_manager", manager), patch.object(theaters, "_require_canvas_access_async", AsyncMock()) as access:
+    with patch.object(object_registry, "theater_manager", manager), patch.object(theaters, "_require_canvas_access_async", AsyncMock()) as access:
         response = await theaters.serve_theater_animation(request, "stage", "rain/video.mp4", join_key="key")
     access.assert_awaited_once_with(request, "stage", join_key="key")
     assert response.status_code == 200
@@ -41,7 +42,7 @@ async def test_prepopulated_animation_file_is_served_with_canvas_access(tmp_path
 @pytest.mark.parametrize("filename,status", [("../theater.yaml", 400), ("rain/run.py", 400), ("rain/video.mp4", 404)])
 async def test_animation_serving_rejects_invalid_or_missing_files(tmp_path: Path, filename: str, status: int) -> None:
     request = Request({"type": "http", "headers": []})
-    with patch.object(theaters, "theater_manager", TheaterManager(tmp_path)), patch.object(theaters, "_require_canvas_access_async", AsyncMock()):
+    with patch.object(object_registry, "theater_manager", TheaterManager(tmp_path)), patch.object(theaters, "_require_canvas_access_async", AsyncMock()):
         with pytest.raises(HTTPException) as error:
             await theaters.serve_theater_animation(request, "stage", filename)
     assert error.value.status_code == status
@@ -95,9 +96,9 @@ async def test_no_music_clears_shared_playback_even_when_pinned() -> None:
     with patch.object(theaters, "_require_canvas_access_async", AsyncMock()), \
          patch.object(theaters, "get_current_user_async", AsyncMock(return_value={"id": 1})), \
          patch.object(theaters, "can_control_agent_websocket", return_value=True), \
-         patch.object(theaters.db, "get_deployment", return_value={}), \
-         patch.object(theaters.live_agent_manager, "get_session", return_value=mock_session), \
-         patch.object(theaters.canvas_states, "get", return_value=state):
+         patch.object(object_registry.db, "get_deployment", return_value={}), \
+         patch.object(object_registry.live_agent_manager, "get_session", return_value=mock_session), \
+         patch.object(object_registry.canvas_states, "get", return_value=state):
         response = await theaters.push_theater_track(theaters.PushAssetRequest(id="no_music"), request, "asset-stage")
     assert response["message"] == "Music stopped."
     assert state.audio.payload()["music_id"] == ""
@@ -131,13 +132,13 @@ async def test_asset_catalog_and_individual_track_push(tmp_path: Path) -> None:
     state = MagicMock()
     mock_session = MagicMock()
     mock_session.is_alive = True
-    with patch.object(theaters, "theater_manager", manager), \
+    with patch.object(object_registry, "theater_manager", manager), \
          patch.object(theaters, "_require_canvas_access_async", AsyncMock()), \
          patch.object(theaters, "get_current_user_async", AsyncMock(return_value={"id": 1})), \
          patch.object(theaters, "can_control_agent_websocket", return_value=True), \
-         patch.object(theaters.db, "get_deployment", return_value={}), \
-         patch.object(theaters.live_agent_manager, "get_session", return_value=mock_session), \
-         patch.object(theaters.canvas_states, "get", return_value=state):
+         patch.object(object_registry.db, "get_deployment", return_value={}), \
+         patch.object(object_registry.live_agent_manager, "get_session", return_value=mock_session), \
+         patch.object(object_registry.canvas_states, "get", return_value=state):
         response = await theaters.push_theater_track(theaters.PushAssetRequest(id=groups[0].tracks[0].id), request, "asset-stage")
         assert response["status"] == "ok"
         state.audio.update_music.assert_called_once_with("Quiet evening / A song", [groups[0].tracks[0].url], allow_pinned=True)
@@ -181,10 +182,10 @@ async def test_entire_playlist_push_updates_shared_playback_when_pinned(tmp_path
     request = Request({"type": "http", "headers": []})
     mock_session = MagicMock()
     mock_session.is_alive = True
-    with patch.object(theaters, "theater_manager", manager), \
+    with patch.object(object_registry, "theater_manager", manager), \
          patch.object(theaters, "_require_asset_orator", AsyncMock()), \
-         patch.object(theaters.live_agent_manager, "get_session", return_value=mock_session), \
-         patch.object(theaters.canvas_states, "get", return_value=state):
+         patch.object(object_registry.live_agent_manager, "get_session", return_value=mock_session), \
+         patch.object(object_registry.canvas_states, "get", return_value=state):
         response = await theaters.push_theater_track(theaters.PushAssetRequest(id=group.id), request, "asset-stage")
         with pytest.raises(HTTPException) as missing:
             await theaters.push_theater_track(theaters.PushAssetRequest(id="playlist:missing"), request, "asset-stage")
@@ -238,12 +239,12 @@ async def test_animations_resolve_local_files_and_push(tmp_path: Path) -> None:
     request = Request({"type": "http", "headers": []})
     state = MagicMock()
     state.visual.update_animation.return_value = {"status": "displayed", "message": "Playing Storm"}
-    with patch.object(theaters, "theater_manager", manager), \
+    with patch.object(object_registry, "theater_manager", manager), \
          patch.object(theaters, "_require_canvas_access_async", AsyncMock()), \
          patch.object(theaters, "get_current_user_async", AsyncMock(return_value={"id": 1})), \
          patch.object(theaters, "can_control_agent_websocket", return_value=True), \
-         patch.object(theaters.db, "get_deployment", return_value={}), \
-         patch.object(theaters.canvas_states, "get", return_value=state):
+         patch.object(object_registry.db, "get_deployment", return_value={}), \
+         patch.object(object_registry.canvas_states, "get", return_value=state):
         listed = await theaters.list_theater_animations(request, "asset-stage")
         assert listed[2].manifest == {}
         assert listed[2].description == "Storm"
@@ -259,7 +260,7 @@ async def test_new_asset_routes_reject_viewers() -> None:
     with patch.object(theaters, "_require_canvas_access_async", AsyncMock()), \
          patch.object(theaters, "get_current_user_async", AsyncMock(return_value={"id": 2})), \
          patch.object(theaters, "can_control_agent_websocket", return_value=False), \
-         patch.object(theaters.db, "get_deployment", return_value={}):
+         patch.object(object_registry.db, "get_deployment", return_value={}):
         for route in (theaters.list_theater_playlists, theaters.list_theater_animations):
             with pytest.raises(HTTPException) as denied:
                 await route(request, "asset-stage")

@@ -146,7 +146,7 @@ class TestChatPrefixes(UITestCase):
             "active_orator_id": 1,
             "contributors": "[2, 3]",
         }
-        with patch("api_server.canvas.db.get_deployment", return_value=deployment), \
+        with patch("object_registry.db.get_deployment", return_value=deployment), \
              patch("api_server.canvas.get_current_user", return_value={"id": 99, "username": "intruder"}):
             res = self.client.post(
                 f"/api/chat?theater_id={self.theater_id}",
@@ -166,7 +166,7 @@ class TestChatPrefixes(UITestCase):
             "active_orator_id": 1,
             "contributors": "[2, 3]",
         }
-        with patch("api_server.canvas.db.get_deployment", return_value=deployment), \
+        with patch("object_registry.db.get_deployment", return_value=deployment), \
              patch("api_server.canvas.get_current_user", return_value={"id": 2, "username": "co_orator"}):
             res = self.client.post(
                 f"/api/chat?theater_id={self.theater_id}",
@@ -184,8 +184,8 @@ class TestChatPrefixes(UITestCase):
         mock_session.is_alive = True
         deployment = {"theater_id": self.theater_id, "user_id": 1, "contributors": "[]"}
 
-        with patch("api_server.canvas.live_agent_manager.get_session", return_value=mock_session), \
-             patch("api_server.canvas.db.get_deployment", return_value=deployment), \
+        with patch("object_registry.live_agent_manager.get_session", return_value=mock_session), \
+             patch("object_registry.db.get_deployment", return_value=deployment), \
              patch("api_server.canvas.get_current_user", return_value={"id": 1, "username": "Ada"}):
             # 1. Collab mode disabled -> no forward
             state.ui.viewer_collab_enabled = False

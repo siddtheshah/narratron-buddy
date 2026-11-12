@@ -11,19 +11,16 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 import uvicorn
 
+import object_registry
 from services.live_stream_service import handle_live_websocket_connection
 from api_server import (
     app,
-    FLAGS,
-    canvas_states,
-    db,
     get_current_user_async,
     can_control_agent_websocket,
-    is_contributor as is_contributor,  # noqa: F401
+    is_contributor as is_contributor,
 )
-from api_server.dependencies import live_agent_manager
-from api_server import can_access_agent_websocket as can_access_agent_websocket  # noqa: F401
-from api_server import theater_manager as theater_manager  # noqa: F401
+
+from api_server import can_access_agent_websocket as can_access_agent_websocket
 
 load_dotenv()
 
@@ -74,15 +71,15 @@ class LogFilter(logging.Filter):
         return True
 
 logging.basicConfig(
-    level=logging.DEBUG if FLAGS.log_prefixes else logging.INFO,
+    level=logging.DEBUG if object_registry.FLAGS.log_prefixes else logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
-logging.getLogger().setLevel(logging.DEBUG if FLAGS.log_prefixes else logging.INFO)
+logging.getLogger().setLevel(logging.DEBUG if object_registry.FLAGS.log_prefixes else logging.INFO)
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
 # Apply filter to root logger and uvicorn access logger
-log_filter = LogFilter(prefixes=FLAGS.log_prefixes, filter_polling=FLAGS.suppress_polling)
+log_filter = LogFilter(prefixes=object_registry.FLAGS.log_prefixes, filter_polling=object_registry.FLAGS.suppress_polling)
 for handler in logging.getLogger().handlers:
     handler.addFilter(log_filter)
 
@@ -111,7 +108,7 @@ def suppress_noisy_loggers(log_prefixes: str = "") -> None:
 
 
 # Suppress noisy third-party debug clutter (e.g. google_adk live request dumps)
-suppress_noisy_loggers(FLAGS.log_prefixes)
+suppress_noisy_loggers(object_registry.FLAGS.log_prefixes)
 
 # Suppress Pydantic serialization warnings
 warnings.filterwarnings("ignore", category=UserWarning, module="pydantic")
@@ -123,18 +120,18 @@ APP_NAME = "narratron-combined"
 static_dir = Path(__file__).resolve().parent.parent / "static"
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
-use_in_memory_artifacts = FLAGS.use_in_memory_artifacts
+use_in_memory_artifacts = object_registry.FLAGS.use_in_memory_artifacts
 
 
 def get_theater_owner_credits(theater_id: str):
     """Return (has_credits, credit_balance, owner_user_id) for the theater owner."""
-    deployment = db.get_deployment(theater_id)
+    deployment = object_registry.db.get_deployment(theater_id)
     if not deployment:
         return False, 0.0, None
     owner_id = deployment.get("user_id")
     if owner_id is None:
         return False, 0.0, None
-    owner = db.get_user_by_id(owner_id)
+    owner = object_registry.db.get_user_by_id(owner_id)
     if not owner:
         return False, 0.0, owner_id
     credits = owner.get("credits", 0.0)
@@ -155,7 +152,7 @@ async def start_agent_endpoint(
     if not current_user:
         raise HTTPException(status_code=401, detail="Authentication required.")
 
-    deployment = db.get_deployment(theater_id)
+    deployment = object_registry.db.get_deployment(theater_id)
     if not deployment:
         raise HTTPException(status_code=404, detail="Active theater not found.")
 
@@ -164,7 +161,7 @@ async def start_agent_endpoint(
 
     has_credits, credits_bal, owner_id = get_theater_owner_credits(theater_id)
     if not has_credits:
-        live_agent_manager.stop_session(theater_id=theater_id)
+        object_registry.live_agent_manager.stop_session(theater_id=theater_id)
         return JSONResponse(
             status_code=402,
             content={
@@ -176,9 +173,9 @@ async def start_agent_endpoint(
                 "agent_running": False,
             },
         )
-    agent_session = live_agent_manager.get_or_create_session(
+    agent_session = object_registry.live_agent_manager.get_or_create_session(
         theater_id=theater_id,
-        canvas_state_service=canvas_states,
+        canvas_state_service=object_registry.canvas_states,
         use_in_memory_artifacts=use_in_memory_artifacts,
     )
     agent_session.summon()
@@ -201,14 +198,14 @@ async def stop_agent_endpoint(
     if not current_user:
         raise HTTPException(status_code=401, detail="Authentication required.")
 
-    deployment = db.get_deployment(theater_id)
+    deployment = object_registry.db.get_deployment(theater_id)
     if not deployment:
         raise HTTPException(status_code=404, detail="Active theater not found.")
 
     if not can_control_agent_websocket(deployment, current_user=current_user):
         raise HTTPException(status_code=403, detail="Only the active orator can stop the agent.")
 
-    stopped = live_agent_manager.stop_session(theater_id=theater_id)
+    stopped = object_registry.live_agent_manager.stop_session(theater_id=theater_id)
     return {
         "status": "stopped" if stopped else "not_found",
         "theater_id": theater_id,
@@ -221,9 +218,9 @@ async def get_agent_status_endpoint(theater_id: str) -> dict[str, str | bool | f
     """API endpoint to check if an agent session is active in memory."""
     has_credits, credits_bal, owner_id = get_theater_owner_credits(theater_id)
     if not has_credits:
-        session = live_agent_manager.get_session(theater_id=theater_id)
+        session = object_registry.live_agent_manager.get_session(theater_id=theater_id)
         if session and session.status != "stopped":
-            live_agent_manager.stop_session(theater_id=theater_id)
+            object_registry.live_agent_manager.stop_session(theater_id=theater_id)
         return {
             "theater_id": theater_id,
             "agent_running": False,
@@ -233,7 +230,7 @@ async def get_agent_status_endpoint(theater_id: str) -> dict[str, str | bool | f
             "credits": credits_bal,
         }
 
-    session = live_agent_manager.get_session(theater_id=theater_id)
+    session = object_registry.live_agent_manager.get_session(theater_id=theater_id)
     if not session or session.status == "stopped":
         return {
             "theater_id": theater_id,
@@ -278,14 +275,14 @@ async def agent_websocket_endpoint(
     """
     current_user = await get_current_user_async(websocket)
 
-    deployment = db.get_deployment(theater_id)
+    deployment = object_registry.db.get_deployment(theater_id)
     if not can_control_agent_websocket(deployment, current_user=current_user):
         await websocket.close(code=1008)
         return
 
     has_credits, credits_bal, owner_id = get_theater_owner_credits(theater_id)
     if not has_credits:
-        live_agent_manager.stop_session(theater_id=theater_id)
+        object_registry.live_agent_manager.stop_session(theater_id=theater_id)
         await websocket.accept()
         await websocket.send_json({
             "type": "insufficient_credits",
@@ -298,17 +295,17 @@ async def agent_websocket_endpoint(
     await handle_live_websocket_connection(
         websocket=websocket,
         theater_id=theater_id,
-        live_agent_manager=live_agent_manager,
+        live_agent_manager=object_registry.live_agent_manager,
         user_id=current_user["id"],
-        canvas_state_service=canvas_states,
+        canvas_state_service=object_registry.canvas_states,
     )
     # Perform periodic cleanup of old idle sessions
-    live_agent_manager.cleanup_idle_sessions(ttl_seconds=300.0)
+    object_registry.live_agent_manager.cleanup_idle_sessions(ttl_seconds=300.0)
 
 if __name__ == "__main__":
-    sys.argv = FLAGS(sys.argv, known_only=True)
+    sys.argv = object_registry.FLAGS(sys.argv, known_only=True)
     logger.info("====================================================")
-    logger.info("HOST: %s", FLAGS.host)
-    logger.info("PORT: %s", FLAGS.port)
+    logger.info("HOST: %s", object_registry.FLAGS.host)
+    logger.info("PORT: %s", object_registry.FLAGS.port)
     logger.info("====================================================")
-    uvicorn.run(app, host=FLAGS.host, port=FLAGS.port)
+    uvicorn.run(app, host=object_registry.FLAGS.host, port=object_registry.FLAGS.port)

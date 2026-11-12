@@ -112,7 +112,7 @@ async def test_toggle_microphone_requires_owner_then_notifies_canvas_connections
     first.send_json = AsyncMock()
     second.send_json = AsyncMock()
     service.get.return_value.connections.active_ws_connections = [first, second]
-    with patch.object(canvas, "db", registry_db), patch.object(canvas, "canvas_states", service), patch.object(canvas, "get_current_user_async", AsyncMock(return_value={"id": 3})):
+    with patch.object(object_registry, "db", registry_db), patch.object(object_registry, "canvas_states", service), patch.object(canvas, "get_current_user_async", AsyncMock(return_value={"id": 3})):
         result = await canvas.trigger_orator_mic_toggle(request(), "stage")
     assert result == {"status": "ok", "broadcasted_to": 2}
     service.get.assert_called_once_with("stage")
@@ -261,7 +261,7 @@ async def test_text_annotation_rejects_non_orator_when_collaboration_is_disabled
         "id": annotation_id,
     }
 
-    with patch.object(canvas.db, "get_deployment", return_value=deployment):
+    with patch.object(object_registry.db, "get_deployment", return_value=deployment):
         await canvas._apply_doodle_message(state, message, sender)
 
     state.doodles.add.assert_not_called()
@@ -287,7 +287,7 @@ async def test_text_annotation_accepts_collaborating_viewer_or_active_orator(col
         "id": "annotation-2",
     }
 
-    with patch.object(canvas.db, "get_deployment", return_value=deployment):
+    with patch.object(object_registry.db, "get_deployment", return_value=deployment):
         await canvas._apply_doodle_message(state, message, sender)
 
     state.doodles.save_text.assert_called_once_with({
@@ -312,7 +312,7 @@ async def test_stamp_message_rejects_non_contributor() -> None:
         "client_message_id": "stamp-1", "id": "stamp-uuid-1",
     }
 
-    with patch.object(canvas.db, "get_deployment", return_value=deployment):
+    with patch.object(object_registry.db, "get_deployment", return_value=deployment):
         await canvas._apply_doodle_message(state, message, sender)
 
     state.doodles.save_stamp.assert_not_called()
@@ -341,7 +341,7 @@ async def test_stamp_message_accepts_contributor(rotation: float) -> None:
     other_client.send_json = AsyncMock()
     state.connections.active_ws_connections = [sender, other_client]
 
-    with patch.object(canvas.db, "get_deployment", return_value=deployment):
+    with patch.object(object_registry.db, "get_deployment", return_value=deployment):
         await canvas._apply_doodle_message(state, message, sender)
 
     state.doodles.save_stamp.assert_called_once_with({
@@ -392,7 +392,7 @@ async def test_select_stamp_message_accepts_contributor_and_broadcasts() -> None
         "client_message_id": "select-1",
     }
 
-    with patch.object(canvas.db, "get_deployment", return_value=deployment):
+    with patch.object(object_registry.db, "get_deployment", return_value=deployment):
         await canvas._apply_doodle_message(state, message, sender)
 
     state.doodles.select_stamp.assert_called_once_with("stamp-uuid-2")
@@ -424,8 +424,8 @@ def test_a2ui_action_relays_authoritative_player_action_and_removes_surface():
         ),
     )
 
-    with patch.object(canvas, "db", registry_db), patch.object(canvas, "canvas_states", service), \
-            patch.object(canvas, "live_agent_manager", manager), patch.object(canvas, "_require_canvas_access"), \
+    with patch.object(object_registry, "db", registry_db), patch.object(object_registry, "canvas_states", service), \
+            patch.object(object_registry, "live_agent_manager", manager), patch.object(canvas, "_require_canvas_access"), \
             patch.object(canvas, "get_current_user", return_value={"id": 3}):
         result = canvas.post_a2ui_action(payload, request(), "stage")
 
@@ -446,7 +446,7 @@ def test_a2ui_action_rejects_non_orator():
             timestamp="2026-08-21T12:00:00Z",
         ),
     )
-    with patch.object(canvas, "db", registry_db), patch.object(canvas, "_require_canvas_access"), \
+    with patch.object(object_registry, "db", registry_db), patch.object(canvas, "_require_canvas_access"), \
             patch.object(canvas, "get_current_user", return_value={"id": 9}), pytest.raises(HTTPException) as error:
         canvas.post_a2ui_action(payload, request(), "stage")
     assert error.value.status_code == 403
@@ -460,7 +460,7 @@ def test_orator_command_relays_direct_input_without_creating_chat_message():
     manager = MagicMock()
     manager.get_session.return_value = session
 
-    with patch.object(canvas, "db", registry_db), patch.object(canvas, "live_agent_manager", manager), \
+    with patch.object(object_registry, "db", registry_db), patch.object(object_registry, "live_agent_manager", manager), \
             patch.object(canvas, "_require_canvas_access"), \
             patch.object(canvas, "get_current_user", return_value={"id": 3}):
         result = canvas.post_orator_command(
@@ -476,7 +476,7 @@ def test_orator_command_relays_direct_input_without_creating_chat_message():
 def test_orator_command_rejects_non_orator():
     registry_db = MagicMock()
     registry_db.get_deployment.return_value = {"user_id": 3, "active_orator_id": 3}
-    with patch.object(canvas, "db", registry_db), patch.object(canvas, "_require_canvas_access"), \
+    with patch.object(object_registry, "db", registry_db), patch.object(canvas, "_require_canvas_access"), \
             patch.object(canvas, "get_current_user", return_value={"id": 9}), pytest.raises(HTTPException) as error:
         canvas.post_orator_command(canvas.OratorCommand(text="Bring in a storm."), request(), "stage")
     assert error.value.status_code == 403
@@ -489,7 +489,7 @@ def test_active_orator_can_move_and_delete_a2ui_surface():
     service.get.return_value.ui.move_surface.return_value = {"left_pct": 76.5, "top_pct": 20.0}
     service.get.return_value.ui.delete_surface.return_value = 1
 
-    with patch.object(canvas, "db", registry_db), patch.object(canvas, "canvas_states", service), \
+    with patch.object(object_registry, "db", registry_db), patch.object(object_registry, "canvas_states", service), \
             patch.object(canvas, "_require_canvas_access"), \
             patch.object(canvas, "get_current_user", return_value={"id": 3}):
         moved = canvas.move_a2ui_surface(
@@ -513,7 +513,7 @@ def test_get_latest_image_passes_join_key_to_require_canvas_access():
     manager.theater.return_value = theater
     req = request()
     with patch.object(canvas, "_require_canvas_access") as mock_require, \
-         patch.object(canvas, "theater_manager", manager), \
+         patch.object(object_registry, "theater_manager", manager), \
          patch.object(canvas, "_state") as mock_state:
         mock_state.return_value.get_latest_state.return_value = {"latest": "img.png"}
         result = canvas.get_latest_image(req, theater_id="stage", join_key="KEY-123")
@@ -668,7 +668,7 @@ async def test_reconnecting_viewer_receives_only_browsed_page_snapshot(tmp_path:
     viewer.receive_json = AsyncMock(side_effect=WebSocketDisconnect())
     with patch.object(canvas, "_require_canvas_access_async", AsyncMock()), \
          patch.object(canvas, "get_current_user_async", AsyncMock(return_value=None)), \
-         patch.object(canvas.db, "get_theater_baton_state_async", AsyncMock(return_value=None)), \
+         patch.object(object_registry.db, "get_theater_baton_state_async", AsyncMock(return_value=None)), \
          patch.object(canvas, "_state", return_value=state):
         await canvas.websocket_endpoint(viewer, "stage", page_id=first_id)
     messages = [call.args[0] for call in viewer.send_json.await_args_list]

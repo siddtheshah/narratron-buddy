@@ -12,21 +12,18 @@ from urllib.parse import quote
 from fastapi import Query, Request
 from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, RedirectResponse, Response
 
+import object_registry
 from services.docs_search import DocsSearchPage, docs_search_index
 from utils.markdown import render_markdown as render_about_markdown
 
 from api_server.shared import (
     app,
-    db,
-    theater_manager,
-    theater_repository,
     get_current_user_async,
     _require_canvas_access,
     _require_canvas_access_async,
     _valid_join_key,
     _grant_canvas_access,
     PROJECT_ROOT,
-    SERVER_RUN_ID,
 )
 
 
@@ -156,12 +153,12 @@ def render_page_template(
         html_content = html_content.replace("</head>", f"{render_seo_markup(seo_metadata)}\n</head>", 1)
     html_content = re.sub(
         r"/static/js/auth-flow\.js(?:\?[^\"'>\s]*)?",
-        f"/static/js/auth-flow.js?v={SERVER_RUN_ID}",
+        f"/static/js/auth-flow.js?v={object_registry.SERVER_RUN_ID}",
         html_content,
     )
     html_content = re.sub(
         r"/static/css/auth-flow\.css(?:\?[^\"'>\s]*)?",
-        f"/static/css/auth-flow.css?v={SERVER_RUN_ID}",
+        f"/static/css/auth-flow.css?v={object_registry.SERVER_RUN_ID}",
         html_content,
     )
     if extra_replacements:
@@ -592,16 +589,16 @@ async def read_obs_canvas(
     resolved_join_key = join_key or request.query_params.get("join_key")
     if theater_id:
         deployment = await _require_canvas_access_async(request, theater_id, resolved_join_key)
-        theater_dir = theater_manager.theater(theater_id).directory()
+        theater_dir = object_registry.theater_manager.theater(theater_id).directory()
         if not theater_dir.exists():
-            theater_repository.reconstruct_theater(theater_id, theater_dir)
+            object_registry.theater_repository.reconstruct_theater(theater_id, theater_dir)
         artifacts_dir = theater_dir / "output" / "artifacts"
         artifacts_dir.mkdir(parents=True, exist_ok=True)
 
         current_user = await get_current_user_async(request, record_activity=False)
         client_ip = request.client.host if request.client else None
         asyncio.create_task(
-            db.record_theater_view_async(
+            object_registry.db.record_theater_view_async(
                 theater_id,
                 current_user["id"] if current_user else None,
                 client_ip,
@@ -639,9 +636,9 @@ async def read_canvas(
             _grant_canvas_access(response, request, theater_id, join_key)
             return response
 
-        theater_dir = theater_manager.theater(theater_id).directory()
+        theater_dir = object_registry.theater_manager.theater(theater_id).directory()
         if not theater_dir.exists():
-            theater_repository.reconstruct_theater(theater_id, theater_dir)
+            object_registry.theater_repository.reconstruct_theater(theater_id, theater_dir)
         artifacts_dir = theater_dir / "output" / "artifacts"
         artifacts_dir.mkdir(parents=True, exist_ok=True)
 
@@ -649,7 +646,7 @@ async def read_canvas(
         current_user = await get_current_user_async(request, record_activity=False)
         client_ip = request.client.host if request.client else None
         asyncio.create_task(
-            db.record_theater_view_async(
+            object_registry.db.record_theater_view_async(
                 theater_id,
                 current_user["id"] if current_user else None,
                 client_ip,

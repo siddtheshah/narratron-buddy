@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
+import object_registry
 from api_server import pages
 
 
@@ -287,7 +288,7 @@ def test_canvas_reconstructs_missing_theater_using_theater_repository(tmp_path):
     registry_db.record_theater_view_async = AsyncMock()
     request = SimpleNamespace(headers={}, query_params={}, client=None)
     deployment = {"theater_id": "stage", "join_key": "JOIN"}
-    with patch.object(pages, "theater_manager", manager), patch.object(pages, "theater_repository", mock_repo), patch.object(pages, "db", registry_db), patch.object(pages, "_require_canvas_access_async", AsyncMock(return_value=deployment)), patch.object(pages, "_valid_join_key", return_value=False), patch.object(pages, "get_current_user_async", AsyncMock(return_value=None)):
+    with patch.object(object_registry, "theater_manager", manager), patch.object(object_registry, "theater_repository", mock_repo), patch.object(object_registry, "db", registry_db), patch.object(pages, "_require_canvas_access_async", AsyncMock(return_value=deployment)), patch.object(pages, "_valid_join_key", return_value=False), patch.object(pages, "get_current_user_async", AsyncMock(return_value=None)):
         __import__("asyncio").run(pages.read_canvas(request, "stage"))
     mock_repo.reconstruct_theater.assert_called_once_with("stage", theater.directory.return_value)
 
@@ -367,9 +368,9 @@ def test_obs_canvas_returns_200_without_redirect_and_grants_cookie(tmp_path):
     registry_db.record_theater_view_async = AsyncMock()
     request = SimpleNamespace(query_params={"join_key": "JOIN"}, client=None)
 
-    with patch.object(pages, "theater_manager", manager), \
-         patch.object(pages, "theater_repository", mock_repo), \
-         patch.object(pages, "db", registry_db), \
+    with patch.object(object_registry, "theater_manager", manager), \
+         patch.object(object_registry, "theater_repository", mock_repo), \
+         patch.object(object_registry, "db", registry_db), \
          patch.object(pages, "_require_canvas_access_async", AsyncMock(return_value=deployment)), \
          patch.object(pages, "_valid_join_key", return_value=True), \
          patch.object(pages, "get_current_user_async", AsyncMock(return_value=None)), \

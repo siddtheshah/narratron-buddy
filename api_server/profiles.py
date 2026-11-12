@@ -10,8 +10,9 @@ from urllib.parse import urlsplit
 from fastapi import File, Form, HTTPException, Request, Response, UploadFile
 from pydantic import BaseModel, Field, JsonValue
 
-from api_server.shared import app, db, get_current_user, get_current_user_async, stamp_storage
-from api_server.dependencies import pricing_controller
+import object_registry
+from api_server.shared import app, get_current_user, get_current_user_async
+
 from services.generation_billing import billing_locks, MAX_CONCURRENT_GENERATION_JOBS, GENERATION_SLOT_TTL_SECONDS
 from services.theater_image_generation import generate_theater_image
 from storage.stamp_storage import process_stamp_image
@@ -37,17 +38,17 @@ async def generate_profile_stamp(request: Request, body: GenerateProfileStampReq
         raise HTTPException(status_code=422, detail="Enter a stamp name and image prompt.")
     user_id = int(user["id"])
     slot_id = await asyncio.to_thread(
-        db.acquire_generation_slot, user_id, "stamp", f"profile:{user_id}",
+        object_registry.db.acquire_generation_slot, user_id, "stamp", f"profile:{user_id}",
         MAX_CONCURRENT_GENERATION_JOBS, GENERATION_SLOT_TTL_SECONDS,
     )
     if slot_id is None:
         raise HTTPException(status_code=429, detail="Too many concurrent generation jobs. Please try again shortly.")
     try:
         async with billing_locks.setdefault(user_id, asyncio.Lock()):
-            if await asyncio.to_thread(db.count_user_stamps, user_id) >= 10:
+            if await asyncio.to_thread(object_registry.db.count_user_stamps, user_id) >= 10:
                 raise HTTPException(status_code=400, detail="Maximum limit of 10 stamps reached. Delete a stamp first.")
-            cost = pricing_controller.get_rates()["image_credit_rate"]
-            account = await asyncio.to_thread(db.get_user_by_id, user_id)
+            cost = object_registry.pricing_controller.get_rates()["image_credit_rate"]
+            account = await asyncio.to_thread(object_registry.db.get_user_by_id, user_id)
             if not account or account["credits"] < cost:
                 raise HTTPException(status_code=402, detail=f"Generation requires {cost:g} credits. Top up on /deploy.")
         try:
@@ -59,36 +60,36 @@ async def generate_profile_stamp(request: Request, body: GenerateProfileStampReq
 
         async with billing_locks.setdefault(user_id, asyncio.Lock()):
             # Recheck capacity after generation; uploads and other jobs may have filled it.
-            if await asyncio.to_thread(db.count_user_stamps, user_id) >= 10:
+            if await asyncio.to_thread(object_registry.db.count_user_stamps, user_id) >= 10:
                 raise HTTPException(status_code=400, detail="Maximum limit of 10 stamps reached; no credits were charged.")
             try:
-                filename = await asyncio.to_thread(stamp_storage.save_stamp, user_id, "stamp.webp", processed_bytes, content_type)
+                filename = await asyncio.to_thread(object_registry.stamp_storage.save_stamp, user_id, "stamp.webp", processed_bytes, content_type)
             except Exception as error:
                 logger.exception("Profile stamp storage failed")
                 raise HTTPException(status_code=502, detail="Could not save stamp; no credits were charged.") from error
             try:
-                stamp = await asyncio.to_thread(db.create_user_stamp, user_id, name, filename, content_type)
+                stamp = await asyncio.to_thread(object_registry.db.create_user_stamp, user_id, name, filename, content_type)
             except ValueError as error:
-                await asyncio.to_thread(stamp_storage.delete_stamp, user_id, filename)
+                await asyncio.to_thread(object_registry.stamp_storage.delete_stamp, user_id, filename)
                 raise HTTPException(status_code=400, detail=str(error)) from error
             except Exception as error:
-                await asyncio.to_thread(stamp_storage.delete_stamp, user_id, filename)
+                await asyncio.to_thread(object_registry.stamp_storage.delete_stamp, user_id, filename)
                 logger.exception("Profile stamp storage failed")
                 raise HTTPException(status_code=502, detail="Could not save stamp; no credits were charged.") from error
             try:
                 updated = await asyncio.to_thread(
-                    db.record_user_usage, user_id, images_created=1, credit_cost=cost,
+                    object_registry.db.record_user_usage, user_id, images_created=1, credit_cost=cost,
                     idempotency_key=f"profile-stamp:{user_id}:{stamp['id']}:{filename}",
                 )
             except Exception as error:
-                await asyncio.to_thread(db.delete_user_stamp, int(stamp["id"]), user_id)
-                await asyncio.to_thread(stamp_storage.delete_stamp, user_id, filename)
+                await asyncio.to_thread(object_registry.db.delete_user_stamp, int(stamp["id"]), user_id)
+                await asyncio.to_thread(object_registry.stamp_storage.delete_stamp, user_id, filename)
                 logger.exception("Profile stamp billing failed")
                 raise HTTPException(status_code=503, detail="Could not settle generation credits. Please try again.") from error
             auth_session_cache.invalidate_user(user_id)
         return {"stamp": {**stamp, "url": f"/api/stamps/{stamp['id']}"}, "credits_charged": cost, "credits": float(updated["credits"])}
     finally:
-        await asyncio.to_thread(db.release_generation_slot, slot_id)
+        await asyncio.to_thread(object_registry.db.release_generation_slot, slot_id)
 
 
 class ProfileUpdate(BaseModel):
@@ -124,7 +125,7 @@ def _public_base_url() -> str:
 
 def _profile_or_404(username: str, request: Request):
     viewer = get_current_user(request, record_activity=False)
-    profile = db.get_user_profile(username, viewer["id"] if viewer else None)
+    profile = object_registry.db.get_user_profile(username, viewer["id"] if viewer else None)
     if not profile:
         raise HTTPException(status_code=404, detail="User profile not found.")
     return profile
@@ -141,7 +142,7 @@ def update_my_profile(payload: ProfileUpdate, request: Request):
     if not user:
         raise HTTPException(status_code=401, detail="Authentication required.")
     try:
-        db.update_user_profile(user["id"], payload.bio, payload.stats_visible, payload.profile_color)
+        object_registry.db.update_user_profile(user["id"], payload.bio, payload.stats_visible, payload.profile_color)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     auth_session_cache.invalidate_user(user["id"])
@@ -155,7 +156,7 @@ def create_credit_gift(payload: CreditGiftRequest, request: Request):
         raise HTTPException(status_code=401, detail="Authentication required.")
     public_base_url = _public_base_url()
     try:
-        gift = db.create_credit_gift(user["id"], payload.credits)
+        gift = object_registry.db.create_credit_gift(user["id"], payload.credits)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {**gift, "link": f"{public_base_url}/gift/{gift['token']}"}
@@ -163,7 +164,7 @@ def create_credit_gift(payload: CreditGiftRequest, request: Request):
 
 @app.get("/api/credit-gifts/{token}")
 def get_credit_gift(token: str):
-    gift = db.get_credit_gift(token)
+    gift = object_registry.db.get_credit_gift(token)
     if not gift:
         raise HTTPException(status_code=404, detail="Gift link not found.")
     return gift
@@ -175,7 +176,7 @@ def claim_credit_gift(token: str, request: Request):
     if not user:
         raise HTTPException(status_code=401, detail="Sign in to claim this gift.")
     try:
-        gift = db.claim_credit_gift(token, user["id"])
+        gift = object_registry.db.claim_credit_gift(token, user["id"])
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     auth_session_cache.invalidate_user(user["id"])
@@ -191,10 +192,10 @@ def delete_my_account(request: Request, response: Response):
     user_id = user["id"]
     token = request.cookies.get("auth_token")
     if token:
-        db.invalidate_session_token(token)
+        object_registry.db.invalidate_session_token(token)
         auth_session_cache.invalidate_token(token)
     auth_session_cache.invalidate_user(user_id)
-    db.delete_user(user_id)
+    object_registry.db.delete_user(user_id)
     response.delete_cookie("auth_token")
     return {"status": "ok", "message": "Account deleted successfully."}
 
@@ -205,7 +206,7 @@ def get_my_stamps_endpoint(request: Request) -> list[dict[str, Union[int, str]]]
     user = get_current_user(request)
     if not user:
         raise HTTPException(status_code=401, detail="Authentication required.")
-    stamps = db.get_user_stamps(int(user["id"]))
+    stamps = object_registry.db.get_user_stamps(int(user["id"]))
     return [
         {
             **stamp,
@@ -219,10 +220,10 @@ def get_my_stamps_endpoint(request: Request) -> list[dict[str, Union[int, str]]]
 def get_user_stamps_endpoint(username: str, request: Request) -> list[dict[str, Union[int, str]]]:
     """List all stamps for the specified user."""
     _profile_or_404(username, request)
-    target_user = db.get_user_by_username(username)
+    target_user = object_registry.db.get_user_by_username(username)
     if not target_user:
         raise HTTPException(status_code=404, detail="User not found.")
-    stamps = db.get_user_stamps(int(target_user["id"]))
+    stamps = object_registry.db.get_user_stamps(int(target_user["id"]))
     return [
         {
             **stamp,
@@ -244,7 +245,7 @@ async def upload_stamp(
         raise HTTPException(status_code=401, detail="Authentication required.")
     user_id = int(user["id"])
 
-    current_count = db.count_user_stamps(user_id)
+    current_count = object_registry.db.count_user_stamps(user_id)
     if current_count >= 10:
         raise HTTPException(
             status_code=400,
@@ -269,11 +270,11 @@ async def upload_stamp(
     if len(stamp_name) > 100:
         stamp_name = stamp_name[:100]
 
-    stored_filename = stamp_storage.save_stamp(user_id, raw_filename, processed_bytes, content_type)
+    stored_filename = object_registry.stamp_storage.save_stamp(user_id, raw_filename, processed_bytes, content_type)
     try:
-        stamp_record = db.create_user_stamp(user_id, stamp_name, stored_filename, content_type)
+        stamp_record = object_registry.db.create_user_stamp(user_id, stamp_name, stored_filename, content_type)
     except ValueError as exc:
-        stamp_storage.delete_stamp(user_id, stored_filename)
+        object_registry.stamp_storage.delete_stamp(user_id, stored_filename)
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     auth_session_cache.invalidate_user(user_id)
@@ -291,13 +292,13 @@ def delete_stamp_endpoint(stamp_id: int, request: Request) -> dict[str, str]:
         raise HTTPException(status_code=401, detail="Authentication required.")
     user_id = int(user["id"])
 
-    stamp = db.get_user_stamp(stamp_id, user_id)
+    stamp = object_registry.db.get_user_stamp(stamp_id, user_id)
     if not stamp:
         raise HTTPException(status_code=404, detail="Stamp not found.")
 
     filename = str(stamp["filename"])
-    stamp_storage.delete_stamp(user_id, filename)
-    db.delete_user_stamp(stamp_id, user_id)
+    object_registry.stamp_storage.delete_stamp(user_id, filename)
+    object_registry.db.delete_user_stamp(stamp_id, user_id)
     auth_session_cache.invalidate_user(user_id)
     return {"status": "ok", "message": "Stamp deleted successfully."}
 
@@ -305,11 +306,11 @@ def delete_stamp_endpoint(stamp_id: int, request: Request) -> dict[str, str]:
 @app.get("/api/stamps/{stamp_id}")
 def get_stamp_endpoint(stamp_id: int) -> Response:
     """Stream stamp image bytes for display."""
-    stamp = db.get_stamp_by_id(stamp_id)
+    stamp = object_registry.db.get_stamp_by_id(stamp_id)
     if not stamp:
         raise HTTPException(status_code=404, detail="Stamp not found.")
 
-    image_bytes = stamp_storage.read_stamp(int(stamp["user_id"]), str(stamp["filename"]))
+    image_bytes = object_registry.stamp_storage.read_stamp(int(stamp["user_id"]), str(stamp["filename"]))
     if not image_bytes:
         raise HTTPException(status_code=404, detail="Stamp image file not found.")
 

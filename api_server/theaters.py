@@ -19,22 +19,18 @@ from pydantic import BaseModel, Field, JsonValue
 
 from utils.image_utils import compress_image_to_webp
 
+import object_registry
 from api_server.shared import (
     app,
-    db,
-    theater_manager,
-    theater_repository,
-    canvas_states,
     get_current_user,
     get_current_user_async,
     _require_canvas_access_async,
     _safe_path_param,
     _grant_canvas_access,
     can_control_agent_websocket,
-    PROJECT_ROOT
+    PROJECT_ROOT,
 )
 from google.genai import types
-from api_server.dependencies import live_agent_manager, suggestion_service, adventure_service, game_service, pricing_controller
 from api_server.canvas import broadcast_baton_update, _broadcast_doodle
 from services.theater_image_generation import generate_theater_image
 from services.theater_media_generation import generate_theater_media
@@ -114,59 +110,59 @@ class GenerateTheaterAnimationRequest(GenerateTheaterStampRequest):
 
 def _save_generated_scene(theater_id: str, filename: str, content: bytes) -> None:
     for root in (
-        theater_manager.theater(theater_id).directory(),
-        theater_repository.theater_path(theater_id),
+        object_registry.theater_manager.theater(theater_id).directory(),
+        object_registry.theater_repository.theater_path(theater_id),
     ):
         target = root / "references" / "scenes" / filename
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(content)
-    theater_manager.notify_storage_changed(theater_id)
+    object_registry.theater_manager.notify_storage_changed(theater_id)
 
 
 def _remove_generated_scene(theater_id: str, filename: str) -> None:
     for root in (
-        theater_manager.theater(theater_id).directory(),
-        theater_repository.theater_path(theater_id),
+        object_registry.theater_manager.theater(theater_id).directory(),
+        object_registry.theater_repository.theater_path(theater_id),
     ):
         (root / "references" / "scenes" / filename).unlink(missing_ok=True)
-    theater_manager.notify_storage_changed(theater_id)
+    object_registry.theater_manager.notify_storage_changed(theater_id)
 
 
 def _save_generated_stamp(theater_id: str, filename: str, content: bytes) -> None:
     for root in (
-        theater_manager.theater(theater_id).directory(),
-        theater_repository.theater_path(theater_id),
+        object_registry.theater_manager.theater(theater_id).directory(),
+        object_registry.theater_repository.theater_path(theater_id),
     ):
         target = root / "stamps" / filename
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(content)
-    theater_manager.notify_storage_changed(theater_id)
+    object_registry.theater_manager.notify_storage_changed(theater_id)
 
 
 def _remove_generated_stamp(theater_id: str, filename: str) -> None:
     for root in (
-        theater_manager.theater(theater_id).directory(),
-        theater_repository.theater_path(theater_id),
+        object_registry.theater_manager.theater(theater_id).directory(),
+        object_registry.theater_repository.theater_path(theater_id),
     ):
         (root / "stamps" / filename).unlink(missing_ok=True)
-    theater_manager.notify_storage_changed(theater_id)
+    object_registry.theater_manager.notify_storage_changed(theater_id)
 
 
 def _save_generated_file(theater_id: str, filename: str, content: bytes) -> None:
-    for root in (theater_manager.theater(theater_id).directory(), theater_repository.theater_path(theater_id)):
+    for root in (object_registry.theater_manager.theater(theater_id).directory(), object_registry.theater_repository.theater_path(theater_id)):
         target = root / filename
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(content)
-    theater_manager.notify_storage_changed(theater_id)
+    object_registry.theater_manager.notify_storage_changed(theater_id)
 
 
 def _remove_generated_file(theater_id: str, filename: str) -> None:
-    for root in (theater_manager.theater(theater_id).directory(), theater_repository.theater_path(theater_id)):
+    for root in (object_registry.theater_manager.theater(theater_id).directory(), object_registry.theater_repository.theater_path(theater_id)):
         target = root / filename
         target.unlink(missing_ok=True)
         if target.parent.is_dir() and not list(target.parent.iterdir()):
             target.parent.rmdir()
-    theater_manager.notify_storage_changed(theater_id)
+    object_registry.theater_manager.notify_storage_changed(theater_id)
 
 
 @app.post("/api/theaters/{theater_id}/characters/generate")
@@ -269,7 +265,7 @@ async def _generate_canvas_asset(
     label = "music" if kind == "music" else f"{kind}s"
     if user is None:
         raise HTTPException(status_code=401, detail=f"Sign in to generate theater {label}.")
-    deployment = await asyncio.to_thread(db.get_deployment, theater_id)
+    deployment = await asyncio.to_thread(object_registry.db.get_deployment, theater_id)
     if not deployment or deployment["user_id"] != user["id"]:
         raise HTTPException(status_code=403, detail=f"Only the theater owner can generate {label}.")
     name, prompt = body.name.strip(), body.prompt.strip()
@@ -278,7 +274,7 @@ async def _generate_canvas_asset(
     prompt = body.generation_prompt()
     owner_id = int(user["id"])
     slot_id = await asyncio.to_thread(
-        db.acquire_generation_slot,
+        object_registry.db.acquire_generation_slot,
         owner_id,
         kind,
         theater_id,
@@ -293,13 +289,13 @@ async def _generate_canvas_asset(
     try:
         async with _billing_locks.setdefault(owner_id, asyncio.Lock()):
             rate = {"music": "music_credit_rate", "animation": "layered_animation_credit_rate"}.get(kind, "image_credit_rate")
-            cost = pricing_controller.get_rates()[rate]
-            account = await asyncio.to_thread(db.get_user_by_id, owner_id)
+            cost = object_registry.pricing_controller.get_rates()[rate]
+            account = await asyncio.to_thread(object_registry.db.get_user_by_id, owner_id)
             if not account or account["credits"] < cost:
                 raise HTTPException(status_code=402, detail=f"Generation requires {cost:g} credits. Top up on /deploy.")
-            root = theater_manager.theater(theater_id).directory()
+            root = object_registry.theater_manager.theater(theater_id).directory()
             if not (root / "theater.yaml").is_file():
-                if not await asyncio.to_thread(theater_repository.reconstruct_theater, theater_id, root):
+                if not await asyncio.to_thread(object_registry.theater_repository.reconstruct_theater, theater_id, root):
                     raise HTTPException(status_code=404, detail="Theater files not found.")
         identifier = f"{re.sub(r'[^a-zA-Z0-9_-]', '_', name).strip('_') or kind}_{uuid.uuid4().hex[:12]}"
         save = {"stamp": _save_generated_stamp, "scene": _save_generated_scene}.get(kind, _save_generated_file)
@@ -437,7 +433,7 @@ async def _generate_canvas_asset(
                 raise HTTPException(status_code=502, detail=f"{kind.title()} generation failed; no credits were charged.") from error
             try:
                 updated = await asyncio.to_thread(
-                    db.record_user_usage, owner_id,
+                    object_registry.db.record_user_usage, owner_id,
                     images_created=int(kind in ("stamp", "scene", "character")),
                     music_created=int(kind == "music"), layered_animations_created=int(kind == "animation"),
                     credit_cost=cost, idempotency_key=f"{kind}:{theater_id}:{identifier}",
@@ -449,24 +445,24 @@ async def _generate_canvas_asset(
                 raise HTTPException(status_code=503, detail="Could not settle generation credits. Please try again.") from error
             auth_session_cache.invalidate_user(owner_id)
         if kind == "stamp":
-            stamps = theater_manager.theater(theater_id).stamps()
+            stamps = object_registry.theater_manager.theater(theater_id).stamps()
             assets: dict[str, JsonValue] = {"stamps": stamps}
         elif kind == "scene":
-            assets = {"scenes": [dict(scene) for scene in theater_manager.theater(theater_id).scenes()]}
+            assets = {"scenes": [dict(scene) for scene in object_registry.theater_manager.theater(theater_id).scenes()]}
         elif kind == "character":
-            assets = {"characters": [dict(character) for character in theater_manager.theater(theater_id).characters()]}
+            assets = {"characters": [dict(character) for character in object_registry.theater_manager.theater(theater_id).characters()]}
         elif kind == "music":
-            assets = {"playlists": [playlist.model_dump(mode="json") for playlist in playlists(theater_manager.theater(theater_id))]}
+            assets = {"playlists": [playlist.model_dump(mode="json") for playlist in playlists(object_registry.theater_manager.theater(theater_id))]}
         else:
-            assets = {"animations": [animation.model_dump(mode="json") for animation in animations(theater_manager.theater(theater_id))]}
+            assets = {"animations": [animation.model_dump(mode="json") for animation in animations(object_registry.theater_manager.theater(theater_id))]}
         collection = "playlists" if kind == "music" else f"{kind}s"
-        await _broadcast_doodle(canvas_states.get(theater_id), {"type": f"theater_{collection}_updated", **assets})
+        await _broadcast_doodle(object_registry.canvas_states.get(theater_id), {"type": f"theater_{collection}_updated", **assets})
         result_payload: dict[str, JsonValue] = {**assets, "credits_charged": cost, "credits": float(updated["credits"])}
         if decision is not None:
             result_payload["reference_action"] = decision.action
         return result_payload
     finally:
-        await asyncio.to_thread(db.release_generation_slot, slot_id)
+        await asyncio.to_thread(object_registry.db.release_generation_slot, slot_id)
 
 
 def _session_notepad(session: object) -> object | None:
@@ -481,13 +477,13 @@ def _session_notepad(session: object) -> object | None:
 async def _export_canvas_theater_async(theater_id: str) -> bool:
     """Export theater canvas data to repository asynchronously."""
     def _export() -> bool:
-        theater_dir = theater_manager.theater(theater_id).directory()
-        canvas_states.get(theater_id).save_local_theater_data(theater_dir=theater_dir)
-        saved = save_theater_checkout(theater_id, theater_manager, theater_repository)
+        theater_dir = object_registry.theater_manager.theater(theater_id).directory()
+        object_registry.canvas_states.get(theater_id).save_local_theater_data(theater_dir=theater_dir)
+        saved = save_theater_checkout(theater_id, object_registry.theater_manager, object_registry.theater_repository)
         if saved:
-            metadata = theater_manager.get_theater(theater_id)
+            metadata = object_registry.theater_manager.get_theater(theater_id)
             if metadata is not None:
-                db.update_theater_name(theater_id, metadata.name)
+                object_registry.db.update_theater_name(theater_id, metadata.name)
         return saved
     try:
         async with checkout_locks.setdefault(theater_id, asyncio.Lock()):
@@ -502,7 +498,7 @@ async def _sync_agent_controller(theater_id: str, baton_state: dict) -> None:
     active_orator = baton_state.get("active_orator") or {}
     active_orator_id = active_orator.get("id")
     if active_orator_id is not None:
-        live_agent_manager.set_active_controller(theater_id, active_orator_id)
+        object_registry.live_agent_manager.set_active_controller(theater_id, active_orator_id)
 
 
 class ResolveJoinKeyRequest(BaseModel):
@@ -532,7 +528,7 @@ async def list_theater_stamps(
 ) -> list[dict[str, str]]:
     await _require_canvas_access_async(request, theater_id, join_key=join_key)
     _safe_path_param(theater_id, "theater_id")
-    return theater_manager.theater(theater_id).stamps()
+    return object_registry.theater_manager.theater(theater_id).stamps()
 
 
 class PushSceneRequest(BaseModel):
@@ -553,20 +549,20 @@ async def _require_asset_orator(request: Request, theater_id: str, join_key: str
     await _require_canvas_access_async(request, theater_id, join_key=join_key)
     _safe_path_param(theater_id, "theater_id")
     user = await get_current_user_async(request)
-    if not can_control_agent_websocket(db.get_deployment(theater_id), current_user=user):
+    if not can_control_agent_websocket(object_registry.db.get_deployment(theater_id), current_user=user):
         raise HTTPException(status_code=403, detail="Only the active orator can manage theater assets.")
 
 
 @app.get("/api/theaters/{theater_id}/playlists")
 async def list_theater_playlists(request: Request, theater_id: str, join_key: str | None = None) -> list[Playlist]:
     await _require_asset_orator(request, theater_id, join_key)
-    return await asyncio.to_thread(playlists, theater_manager.theater(theater_id))
+    return await asyncio.to_thread(playlists, object_registry.theater_manager.theater(theater_id))
 
 
 @app.get("/api/theaters/{theater_id}/animations")
 async def list_theater_animations(request: Request, theater_id: str, join_key: str | None = None) -> list[AnimationAsset]:
     await _require_asset_orator(request, theater_id, join_key)
-    assets = await asyncio.to_thread(animations, theater_manager.theater(theater_id))
+    assets = await asyncio.to_thread(animations, object_registry.theater_manager.theater(theater_id))
     return [asset.model_copy(update={"manifest": {}, "frames": []}) for asset in assets]
 
 
@@ -574,10 +570,10 @@ async def list_theater_animations(request: Request, theater_id: str, join_key: s
 async def push_theater_track(payload: PushAssetRequest, request: Request, theater_id: str, join_key: str | None = None) -> dict[str, str]:
     await _require_asset_orator(request, theater_id, join_key)
     if payload.id == "no_music":
-        state = canvas_states.get(theater_id)
+        state = object_registry.canvas_states.get(theater_id)
         state.audio.update_music("", [], allow_pinned=True)
         state.persist()
-        session = live_agent_manager.get_session(theater_id)
+        session = object_registry.live_agent_manager.get_session(theater_id)
         if session is not None and session.is_alive:
             session.send_content(
                 types.Content(
@@ -587,13 +583,13 @@ async def push_theater_track(payload: PushAssetRequest, request: Request, theate
                 partial=True,
             )
         return {"status": "ok", "message": "Music stopped."}
-    groups = await asyncio.to_thread(playlists, theater_manager.theater(theater_id))
+    groups = await asyncio.to_thread(playlists, object_registry.theater_manager.theater(theater_id))
     for group in groups:
         if group.id == payload.id:
-            state = canvas_states.get(theater_id)
+            state = object_registry.canvas_states.get(theater_id)
             state.audio.update_music(group.name, [track.url for track in group.tracks], allow_pinned=True)
             state.persist()
-            session = live_agent_manager.get_session(theater_id)
+            session = object_registry.live_agent_manager.get_session(theater_id)
             if session is not None and session.is_alive:
                 session.send_content(
                     types.Content(
@@ -605,10 +601,10 @@ async def push_theater_track(payload: PushAssetRequest, request: Request, theate
             return {"status": "ok", "message": f"Playing {group.name} ({len(group.tracks)} tracks)."}
         for track in group.tracks:
             if track.id == payload.id:
-                state = canvas_states.get(theater_id)
+                state = object_registry.canvas_states.get(theater_id)
                 state.audio.update_music(f"{group.name} / {track.name}", [track.url], allow_pinned=True)
                 state.persist()
-                session = live_agent_manager.get_session(theater_id)
+                session = object_registry.live_agent_manager.get_session(theater_id)
                 if session is not None and session.is_alive:
                     session.send_content(
                         types.Content(
@@ -624,11 +620,11 @@ async def push_theater_track(payload: PushAssetRequest, request: Request, theate
 @app.post("/api/theaters/{theater_id}/animations/push")
 async def push_theater_animation(payload: PushAssetRequest, request: Request, theater_id: str, join_key: str | None = None) -> dict[str, str]:
     await _require_asset_orator(request, theater_id, join_key)
-    theater = theater_manager.theater(theater_id)
+    theater = object_registry.theater_manager.theater(theater_id)
     assets = await asyncio.to_thread(animations, theater)
     for asset in assets:
         if asset.id == payload.id:
-            state = canvas_states.get(theater_id)
+            state = object_registry.canvas_states.get(theater_id)
             result = state.visual.update_animation(asset.type, asset.frames if asset.type == "triframe" else asset.manifest,
                 id=asset.id, prompt=asset.description, force_immediate=True, source="play_animation", url_for_path=theater.get_url_for_path)
             if result["status"] == "blocked":
@@ -644,11 +640,11 @@ async def list_theater_scenes(
 ) -> list[TheaterScene]:
     await _require_canvas_access_async(request, theater_id, join_key=join_key)
     _safe_path_param(theater_id, "theater_id")
-    deployment = db.get_deployment(theater_id)
+    deployment = object_registry.db.get_deployment(theater_id)
     current_user = await get_current_user_async(request)
     if not can_control_agent_websocket(deployment, current_user=current_user):
         raise HTTPException(status_code=403, detail="Only the active orator can access theater scenes.")
-    return theater_manager.theater(theater_id).scenes()
+    return object_registry.theater_manager.theater(theater_id).scenes()
 
 
 @app.get("/api/theaters/{theater_id}/characters")
@@ -657,11 +653,11 @@ async def list_theater_characters(
 ) -> list[TheaterCharacter]:
     await _require_canvas_access_async(request, theater_id, join_key=join_key)
     _safe_path_param(theater_id, "theater_id")
-    deployment = db.get_deployment(theater_id)
+    deployment = object_registry.db.get_deployment(theater_id)
     current_user = await get_current_user_async(request)
     if not can_control_agent_websocket(deployment, current_user=current_user):
         raise HTTPException(status_code=403, detail="Only the active orator can access theater characters.")
-    return theater_manager.theater(theater_id).characters()
+    return object_registry.theater_manager.theater(theater_id).characters()
 
 
 @app.post("/api/theaters/{theater_id}/scenes/push")
@@ -673,12 +669,12 @@ async def push_theater_scene(
 ) -> dict[str, str]:
     await _require_canvas_access_async(request, theater_id, join_key=join_key)
     _safe_path_param(theater_id, "theater_id")
-    deployment = db.get_deployment(theater_id)
+    deployment = object_registry.db.get_deployment(theater_id)
     current_user = await get_current_user_async(request)
     if not can_control_agent_websocket(deployment, current_user=current_user):
         raise HTTPException(status_code=403, detail="Only the active orator can push scenes to the canvas.")
 
-    scenes = theater_manager.theater(theater_id).scenes()
+    scenes = object_registry.theater_manager.theater(theater_id).scenes()
     target_scene: Optional[TheaterScene] = None
     req_name = payload.name.strip().lower()
     req_id = (payload.scene_id or "").strip()
@@ -695,7 +691,7 @@ async def push_theater_scene(
     if not target_scene["path"]:
         raise HTTPException(status_code=400, detail=f"Scene '{target_scene['name']}' has no image to display.")
 
-    state = canvas_states.get(theater_id)
+    state = object_registry.canvas_states.get(theater_id)
     update_res = state.visual.update_image(
         path=target_scene["path"],
         display_path=None,
@@ -704,11 +700,11 @@ async def push_theater_scene(
         effect="gleam3",
         prompt=target_scene["description"] or target_scene["name"],
         source="show_image",
-        url_for_path=theater_manager.theater(theater_id).get_url_for_path,
+        url_for_path=object_registry.theater_manager.theater(theater_id).get_url_for_path,
     )
     state.persist()
 
-    session = live_agent_manager.get_session(theater_id)
+    session = object_registry.live_agent_manager.get_session(theater_id)
     if session is not None and session.is_alive:
         session.send_content(
             types.Content(
@@ -740,12 +736,12 @@ async def push_theater_character(
 ) -> dict[str, str]:
     await _require_canvas_access_async(request, theater_id, join_key=join_key)
     _safe_path_param(theater_id, "theater_id")
-    deployment = db.get_deployment(theater_id)
+    deployment = object_registry.db.get_deployment(theater_id)
     current_user = await get_current_user_async(request)
     if not can_control_agent_websocket(deployment, current_user=current_user):
         raise HTTPException(status_code=403, detail="Only the active orator can push characters to the canvas.")
 
-    characters = theater_manager.theater(theater_id).characters()
+    characters = object_registry.theater_manager.theater(theater_id).characters()
     target_character: Optional[TheaterCharacter] = None
     req_name = payload.name.strip().lower()
     req_id = (payload.character_id or "").strip()
@@ -762,7 +758,7 @@ async def push_theater_character(
     if not target_character["path"]:
         raise HTTPException(status_code=400, detail=f"Character '{target_character['name']}' has no image to display.")
 
-    state = canvas_states.get(theater_id)
+    state = object_registry.canvas_states.get(theater_id)
     update_res = state.visual.update_image(
         path=target_character["path"],
         display_path=None,
@@ -771,11 +767,11 @@ async def push_theater_character(
         effect="gleam3",
         prompt=target_character["description"] or target_character["personality"] or target_character["quirk"] or target_character["name"],
         source="show_image",
-        url_for_path=theater_manager.theater(theater_id).get_url_for_path,
+        url_for_path=object_registry.theater_manager.theater(theater_id).get_url_for_path,
     )
     state.persist()
 
-    session = live_agent_manager.get_session(theater_id)
+    session = object_registry.live_agent_manager.get_session(theater_id)
     if session is not None and session.is_alive:
         session.send_content(
             types.Content(
@@ -822,7 +818,7 @@ def _get_or_create_low_quality_webp(
     if file_path.suffix.lower() != ".webp":
         return file_path
 
-    th = theater_manager.theater(theater_id)
+    th = object_registry.theater_manager.theater(theater_id)
     cache_dir = th.artifacts_dir() / "cache" / "images"
     cache_dir.mkdir(parents=True, exist_ok=True)
 
@@ -850,7 +846,7 @@ async def serve_theater_stamp(
 ) -> Response:
     await _require_canvas_access_async(request, theater_id, join_key=join_key)
     _safe_path_param(theater_id, "theater_id")
-    root = theater_manager.theater(theater_id).stamps_dir().resolve()
+    root = object_registry.theater_manager.theater(theater_id).stamps_dir().resolve()
     image = (root / filename).resolve()
     if root not in image.parents:
         raise HTTPException(status_code=400, detail="Invalid stamp path")
@@ -879,7 +875,7 @@ async def serve_theater_reference(
 ) -> Response:
     await _require_canvas_access_async(request, theater_id, join_key=join_key)
     _safe_path_param(theater_id, "theater_id")
-    ref_dir = theater_manager.theater(theater_id).references_dir()
+    ref_dir = object_registry.theater_manager.theater(theater_id).references_dir()
     file_path = (ref_dir / filename).resolve()
     if ref_dir.resolve() not in file_path.parents and file_path != ref_dir:
         raise HTTPException(status_code=400, detail="Invalid reference path")
@@ -922,7 +918,7 @@ async def serve_theater_playlist_track(
 ) -> Response:
     await _require_canvas_access_async(request, theater_id, join_key=join_key)
     _safe_path_param(theater_id, "theater_id")
-    playlists_root = theater_manager.theater(theater_id).playlists_dir().resolve()
+    playlists_root = object_registry.theater_manager.theater(theater_id).playlists_dir().resolve()
     playlist_root = (playlists_root / playlist_name).resolve()
     file_path = (playlist_root / filename).resolve()
     if playlists_root not in playlist_root.parents or playlist_root not in file_path.parents:
@@ -970,7 +966,7 @@ async def serve_theater_animation(
 ) -> Response:
     await _require_canvas_access_async(request, theater_id, join_key=join_key)
     _safe_path_param(theater_id, "theater_id")
-    theater = theater_manager.theater(theater_id)
+    theater = object_registry.theater_manager.theater(theater_id)
     try:
         file_path = safe_asset_path(theater.directory(), f"animations/{filename}")
     except ValueError as error:
@@ -1000,7 +996,7 @@ async def serve_theater_output(
 ) -> Response:
     await _require_canvas_access_async(request, theater_id, join_key=join_key)
     _safe_path_param(theater_id, "theater_id")
-    output_dir = theater_manager.theater(theater_id).output_dir()
+    output_dir = object_registry.theater_manager.theater(theater_id).output_dir()
     file_path = (output_dir / filename).resolve()
     if output_dir.resolve() not in file_path.parents:
         raise HTTPException(status_code=400, detail="Invalid output path")
@@ -1036,13 +1032,13 @@ async def serve_theater_output(
 
 @app.post("/api/theaters/resolve-join-key")
 def resolve_join_key(req: ResolveJoinKeyRequest, request: Request, response: Response):
-    dep = db.get_theater_by_join_key(req.join_key)
+    dep = object_registry.db.get_theater_by_join_key(req.join_key)
     if not dep:
         raise HTTPException(status_code=404, detail="Invalid Join Key. No matching active theater found.")
 
-    meta = theater_manager.get_theater(dep["theater_id"])
+    meta = object_registry.theater_manager.get_theater(dep["theater_id"])
     if not meta:
-        db_meta = db.get_theater_metadata_from_db(dep["theater_id"])
+        db_meta = object_registry.db.get_theater_metadata_from_db(dep["theater_id"])
         if not db_meta:
             raise HTTPException(status_code=404, detail="Theater files no longer exist.")
         meta = TheaterMetadata(**db_meta)
@@ -1111,9 +1107,9 @@ def list_theaters(request: Request) -> list[TheaterSummary]:
 
     current_user_id = current_user["id"]
     result: list[TheaterSummary] = []
-    for record in db.get_user_theater_records(current_user_id):
+    for record in object_registry.db.get_user_theater_records(current_user_id):
         theater_id = record["theater_id"]
-        disk_metadata = theater_manager.get_theater(theater_id)
+        disk_metadata = object_registry.theater_manager.get_theater(theater_id)
         raw_meta = disk_metadata.model_dump() if disk_metadata else record.get("metadata", {})
         last_used = record.get("last_used_at") or raw_meta.get("created_at") or ""
         summary = TheaterSummary(
@@ -1136,14 +1132,14 @@ def list_theaters(request: Request) -> list[TheaterSummary]:
 @app.get("/api/adventures")
 def list_adventures_endpoint(refresh: bool = False):
     """List premade adventures stored in GCS/shared storage sorted newest first."""
-    return adventure_service.list_adventures(force_refresh=refresh)
+    return object_registry.adventure_service.list_adventures(force_refresh=refresh)
 
 
 @app.get("/api/adventures/{adventure_id}")
 def get_adventure_endpoint(adventure_id: str):
     """Get metadata for a specific premade adventure."""
     _safe_path_param(adventure_id, "adventure_id")
-    adv = adventure_service.get_adventure(adventure_id)
+    adv = object_registry.adventure_service.get_adventure(adventure_id)
     if not adv:
         raise HTTPException(status_code=404, detail="Adventure not found")
     return adv
@@ -1153,7 +1149,7 @@ def get_adventure_endpoint(adventure_id: str):
 def get_adventure_cover_endpoint(adventure_id: str):
     """Stream or return the cover image of a premade adventure."""
     _safe_path_param(adventure_id, "adventure_id")
-    res = adventure_service.get_adventure_cover(adventure_id)
+    res = object_registry.adventure_service.get_adventure_cover(adventure_id)
     if not res:
         raise HTTPException(status_code=404, detail="Cover image not found")
     content, ctype = res
@@ -1163,14 +1159,14 @@ def get_adventure_cover_endpoint(adventure_id: str):
 @app.get("/api/games")
 def list_games_endpoint(refresh: bool = False) -> list[dict[str, JsonValue]]:
     """List pre-defined games stored in GCS/shared storage sorted newest first."""
-    return game_service.list_games(force_refresh=refresh)
+    return object_registry.game_service.list_games(force_refresh=refresh)
 
 
 @app.get("/api/games/{game_id}")
 def get_game_endpoint(game_id: str) -> dict[str, JsonValue]:
     """Get metadata for a specific pre-defined game."""
     _safe_path_param(game_id, "game_id")
-    game = game_service.get_game(game_id)
+    game = object_registry.game_service.get_game(game_id)
     if not game:
         raise HTTPException(status_code=404, detail="Game not found")
     return game
@@ -1180,7 +1176,7 @@ def get_game_endpoint(game_id: str) -> dict[str, JsonValue]:
 def get_game_cover_endpoint(game_id: str) -> Response:
     """Stream or return the cover image of a pre-defined game."""
     _safe_path_param(game_id, "game_id")
-    res = game_service.get_game_cover(game_id)
+    res = object_registry.game_service.get_game_cover(game_id)
     if not res:
         raise HTTPException(status_code=404, detail="Cover image not found")
     content, ctype = res
@@ -1200,20 +1196,20 @@ async def get_theater(theater_id: str, request: Request):
     # deployment. Reuse both request-scoped results below rather than issuing
     # another deployment lookup for this same theater.
     deployment = await _require_canvas_access_async(request, theater_id)
-    theater_dir = theater_manager.theater(theater_id).directory()
+    theater_dir = object_registry.theater_manager.theater(theater_id).directory()
     if not theater_dir.exists() or not (theater_dir / "theater.json").exists():
-        theater_repository.reconstruct_theater(theater_id, theater_dir)
+        object_registry.theater_repository.reconstruct_theater(theater_id, theater_dir)
 
-    meta = theater_manager.get_theater(theater_id)
+    meta = object_registry.theater_manager.get_theater(theater_id)
     if not meta and theater_dir.exists() and (theater_dir / "theater.yaml").is_file():
-        theater_config = theater_manager.get_theater_config(theater_id)
+        theater_config = object_registry.theater_manager.get_theater_config(theater_id)
         name_val = str(deployment.get("name") or theater_id)
         join_key_val = str(deployment.get("join_key") or "")
         meta = TheaterMetadata(theater_id=theater_id, name=name_val, join_key=join_key_val or "KEY-test", config=theater_config, status="deployed")
-        theater_manager._save_metadata(meta)
+        object_registry.theater_manager._save_metadata(meta)
     if not meta:
         raise HTTPException(status_code=404, detail="Theater not found")
-    
+
     current_user = await get_current_user_async(request, record_activity=False)
     owner_id = deployment.get("user_id")
     is_owner = (current_user is not None and owner_id == current_user["id"])
@@ -1235,7 +1231,7 @@ async def get_theater(theater_id: str, request: Request):
     # Analytics must not hold up the canvas reload, especially with a remote DB.
     client_ip = request.client.host if request.client else None
     asyncio.create_task(
-        db.record_theater_view_async(
+        object_registry.db.record_theater_view_async(
             theater_id,
             current_user["id"] if current_user else None,
             client_ip,
@@ -1256,8 +1252,8 @@ async def get_theater(theater_id: str, request: Request):
 
     return {
         "metadata": meta_dict,
-        "references": theater_manager.get_theater_references(theater_id),
-        "playlists": theater_manager.get_theater_playlists(theater_id),
+        "references": object_registry.theater_manager.get_theater_references(theater_id),
+        "playlists": object_registry.theater_manager.get_theater_playlists(theater_id),
     }
 
 @app.get("/api/theaters/{theater_id}/config")
@@ -1266,11 +1262,11 @@ async def get_theater_config_endpoint(theater_id: str, request: Request):
     await _require_canvas_access_async(request, theater_id)
     _safe_path_param(theater_id, "theater_id")
 
-    theater_dir = theater_manager.theater(theater_id).directory()
+    theater_dir = object_registry.theater_manager.theater(theater_id).directory()
     yaml_path = theater_dir / "theater.yaml"
 
     if not yaml_path.exists():
-        get_theater_config(theater_id, theater_manager=theater_manager)
+        get_theater_config(theater_id, theater_manager=object_registry.theater_manager)
 
     if yaml_path.exists():
         try:
@@ -1303,7 +1299,7 @@ async def save_theater_config_endpoint(theater_id: str, req: SaveTheaterConfigRe
         raise HTTPException(status_code=400, detail=f"Failed to parse YAML: {err}")
 
     # Save to local theater directory
-    theater_dir = theater_manager.theater(theater_id).directory()
+    theater_dir = object_registry.theater_manager.theater(theater_id).directory()
     theater_dir.mkdir(parents=True, exist_ok=True)
     yaml_path = theater_dir / "theater.yaml"
 
@@ -1475,7 +1471,7 @@ async def create_and_deploy_theater(request: Request):
     adv_config: dict = {}
     if preset_adventure_id:
         adv_refs, adv_playlists, adv_lore, adv_config = await asyncio.to_thread(
-            adventure_service.load_adventure_assets, preset_adventure_id,
+            object_registry.adventure_service.load_adventure_assets, preset_adventure_id,
         )
         reference_files.extend(adv_refs)
         lore_files.extend(adv_lore)
@@ -1483,7 +1479,7 @@ async def create_and_deploy_theater(request: Request):
             if pl_name not in playlists_data:
                 playlists_data[pl_name] = []
             playlists_data[pl_name].extend(tracks)
-        adventure_metadata = adventure_service.get_adventure(preset_adventure_id)
+        adventure_metadata = object_registry.adventure_service.get_adventure(preset_adventure_id)
 
     # Important to provide music for first time experience. Blank theater will not have any music tracks by default
     # otherwise. Adventures launched from adventures/ or deploy/ should not attach the default playlist.
@@ -1619,7 +1615,7 @@ async def create_and_deploy_theater(request: Request):
 
     theater_id = f"theater_{uuid.uuid4().hex[:8]}"
     try:
-        metadata = theater_manager.create_theater(
+        metadata = object_registry.theater_manager.create_theater(
             name=name,
             theater_id=theater_id,
             reference_files=reference_files,
@@ -1630,10 +1626,10 @@ async def create_and_deploy_theater(request: Request):
         )
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
-    deployed_meta = theater_manager.deploy_theater(metadata.theater_id)
+    deployed_meta = object_registry.theater_manager.deploy_theater(metadata.theater_id)
 
     # Record deployment & deduct credits (0.0 cost)
-    db.record_deployment(
+    object_registry.db.record_deployment(
         deployed_meta.theater_id,
         user["id"],
         deployed_meta.join_key,
@@ -1655,26 +1651,26 @@ def deploy_existing_theater(theater_id: str, request: Request):
     if not user:
         raise HTTPException(status_code=401, detail="Authentication required.")
 
-    theater_dir = theater_manager.theater(theater_id).directory()
+    theater_dir = object_registry.theater_manager.theater(theater_id).directory()
     if not theater_dir.exists() or not (theater_dir / "theater.json").exists():
-        theater_repository.reconstruct_theater(theater_id, theater_dir)
-    
-    dep = db.get_deployment(theater_id)
+        object_registry.theater_repository.reconstruct_theater(theater_id, theater_dir)
+
+    dep = object_registry.db.get_deployment(theater_id)
     if dep and dep["user_id"] != user["id"]:
         raise HTTPException(status_code=403, detail="Only the theater owner can deploy this theater.")
 
     # Stop any other currently deployed theaters
-    existing_theaters = theater_manager.list_theaters()
+    existing_theaters = object_registry.theater_manager.list_theaters()
     for s in existing_theaters:
         if s.theater_id != theater_id and s.status == "deployed":
             try:
-                theater_manager.stop_theater(s.theater_id)
+                object_registry.theater_manager.stop_theater(s.theater_id)
             except Exception:
                 pass
 
-    meta = theater_manager.deploy_theater(theater_id)
+    meta = object_registry.theater_manager.deploy_theater(theater_id)
     if not dep:
-        db.record_deployment(
+        object_registry.db.record_deployment(
             theater_id,
             user["id"],
             meta.join_key,
@@ -1696,19 +1692,19 @@ def destroy_theater(theater_id: str, request: Request) -> dict[str, str]:
     except ValueError as e:
         raise HTTPException(status_code=400, detail=f"Invalid theater identifier: {e}") from e
 
-    dep = db.get_deployment(theater_id)
+    dep = object_registry.db.get_deployment(theater_id)
     if not dep:
         raise HTTPException(status_code=404, detail="Theater not found or could not be removed")
 
     if dep.get("user_id") is None or dep["user_id"] != user["id"]:
         raise HTTPException(status_code=403, detail="Permission denied. Only the theater owner can delete this theater.")
 
-    live_agent_manager.stop_session(theater_id=theater_id)
-    disk_removed = theater_manager.destroy_theater(theater_id)
-    repo_removed = theater_repository.delete_theater(theater_id)
-    db_deleted = db.delete_deployment(theater_id)
+    object_registry.live_agent_manager.stop_session(theater_id=theater_id)
+    disk_removed = object_registry.theater_manager.destroy_theater(theater_id)
+    repo_removed = object_registry.theater_repository.delete_theater(theater_id)
+    db_deleted = object_registry.db.delete_deployment(theater_id)
     theater_access_cache.invalidate_theater(theater_id)
-    canvas_states.states.pop(theater_id, None)
+    object_registry.canvas_states.states.pop(theater_id, None)
     checkout_locks.pop(theater_id, None)
 
     if not (disk_removed or repo_removed or db_deleted):
@@ -1724,7 +1720,7 @@ async def retitle_theater(theater_id: str, req: RetitleTheaterRequest, request: 
     if not user:
         raise HTTPException(status_code=401, detail="Authentication required to retitle theater.")
 
-    dep = db.get_deployment(theater_id)
+    dep = object_registry.db.get_deployment(theater_id)
     if dep and dep.get("user_id") is not None and dep["user_id"] != user["id"]:
         raise HTTPException(status_code=403, detail="Permission denied. Only the theater owner can retitle this theater.")
 
@@ -1732,12 +1728,12 @@ async def retitle_theater(theater_id: str, req: RetitleTheaterRequest, request: 
     if not new_name:
         raise HTTPException(status_code=400, detail="Theater title cannot be empty.")
 
-    meta = theater_manager.get_theater(theater_id)
+    meta = object_registry.theater_manager.get_theater(theater_id)
     if meta:
         meta.name = new_name
-        theater_manager._save_metadata(meta)
+        object_registry.theater_manager._save_metadata(meta)
 
-    db.update_theater_name(theater_id, new_name)
+    object_registry.db.update_theater_name(theater_id, new_name)
     theater_access_cache.invalidate_theater(theater_id)
 
     return {"status": "ok", "theater_id": theater_id, "name": new_name}
@@ -1749,11 +1745,11 @@ async def retitle_theater(theater_id: str, req: RetitleTheaterRequest, request: 
 @app.get("/api/theaters/{theater_id}/baton")
 async def get_theater_baton_state(theater_id: str, request: Request):
     await _require_canvas_access_async(request, theater_id)
-    state = await db.get_theater_baton_state_async(theater_id)
+    state = await object_registry.db.get_theater_baton_state_async(theater_id)
     if not state:
         raise HTTPException(status_code=404, detail="Theater baton state not found.")
-    
-    connections = canvas_states.get(theater_id).connections
+
+    connections = object_registry.canvas_states.get(theater_id).connections
     viewers = {
         user["id"]: {"id": user["id"], "username": user.get("username", "")}
         for user in connections.active_user_connections.values()
@@ -1768,9 +1764,9 @@ async def add_contributor(theater_id: str, req: AddContributorRequest, request: 
     user = await get_current_user_async(request)
     if not user:
         raise HTTPException(status_code=401, detail="Authentication required.")
-    
+
     try:
-        updated_state = await db.add_contributor_async(theater_id, owner_id=user["id"], target_user_id=req.target_user_id)
+        updated_state = await object_registry.db.add_contributor_async(theater_id, owner_id=user["id"], target_user_id=req.target_user_id)
         theater_access_cache.invalidate_theater(theater_id)
         await broadcast_baton_update(theater_id, updated_state)
         return updated_state
@@ -1783,9 +1779,9 @@ async def remove_contributor(theater_id: str, target_user_id: int, request: Requ
     user = await get_current_user_async(request)
     if not user:
         raise HTTPException(status_code=401, detail="Authentication required.")
-    
+
     try:
-        updated_state = await db.remove_contributor_async(theater_id, owner_id=user["id"], target_user_id=target_user_id)
+        updated_state = await object_registry.db.remove_contributor_async(theater_id, owner_id=user["id"], target_user_id=target_user_id)
         theater_access_cache.invalidate_theater(theater_id)
         await _sync_agent_controller(theater_id, updated_state)
         await broadcast_baton_update(theater_id, updated_state)
@@ -1799,9 +1795,9 @@ async def request_baton_pass(theater_id: str, req: RequestBatonRequest, request:
     user = await get_current_user_async(request)
     if not user:
         raise HTTPException(status_code=401, detail="Authentication required.")
-    
+
     try:
-        updated_state = await db.request_baton_async(
+        updated_state = await object_registry.db.request_baton_async(
             theater_id,
             owner_id=user["id"],
             target_user_id=req.target_user_id,
@@ -1818,9 +1814,9 @@ async def accept_baton_pass(theater_id: str, request: Request):
     user = await get_current_user_async(request)
     if not user:
         raise HTTPException(status_code=401, detail="Authentication required.")
-    
+
     try:
-        updated_state = await db.accept_baton_async(theater_id, target_user_id=user["id"])
+        updated_state = await object_registry.db.accept_baton_async(theater_id, target_user_id=user["id"])
         theater_access_cache.invalidate_theater(theater_id)
         await _sync_agent_controller(theater_id, updated_state)
         await broadcast_baton_update(theater_id, updated_state)
@@ -1834,9 +1830,9 @@ async def decline_baton_pass(theater_id: str, request: Request):
     user = await get_current_user_async(request)
     if not user:
         raise HTTPException(status_code=401, detail="Authentication required.")
-    
+
     try:
-        updated_state = await db.decline_baton_async(theater_id, target_user_id=user["id"])
+        updated_state = await object_registry.db.decline_baton_async(theater_id, target_user_id=user["id"])
         await broadcast_baton_update(theater_id, updated_state)
         return updated_state
     except ValueError as e:
@@ -1848,9 +1844,9 @@ async def take_back_baton(theater_id: str, request: Request):
     user = await get_current_user_async(request)
     if not user:
         raise HTTPException(status_code=401, detail="Authentication required.")
-    
+
     try:
-        updated_state = await db.take_back_baton_async(theater_id, owner_id=user["id"])
+        updated_state = await object_registry.db.take_back_baton_async(theater_id, owner_id=user["id"])
         theater_access_cache.invalidate_theater(theater_id)
         await _sync_agent_controller(theater_id, updated_state)
         await broadcast_baton_update(theater_id, updated_state)
@@ -1866,7 +1862,7 @@ async def save_theater_to_db(theater_id: str, request: Request):
     if not user:
         raise HTTPException(status_code=401, detail="Authentication required.")
 
-    dep = db.get_deployment(theater_id)
+    dep = object_registry.db.get_deployment(theater_id)
     if not dep:
         raise HTTPException(status_code=404, detail="Active theater not found.")
     if dep["user_id"] != user["id"]:
@@ -1882,17 +1878,17 @@ def export_theater_assets(theater_id: str, request: Request):
     if not user:
         raise HTTPException(status_code=401, detail="Authentication required.")
 
-    dep = db.get_deployment(theater_id)
+    dep = object_registry.db.get_deployment(theater_id)
     if not dep:
         raise HTTPException(status_code=404, detail="Active theater not found.")
     if dep["user_id"] != user["id"]:
         raise HTTPException(status_code=403, detail="Only the theater owner can export this theater.")
 
-    theater_dir = theater_manager.theater(theater_id).directory()
+    theater_dir = object_registry.theater_manager.theater(theater_id).directory()
     if not theater_dir.exists():
-        theater_repository.reconstruct_theater(theater_id, theater_dir)
+        object_registry.theater_repository.reconstruct_theater(theater_id, theater_dir)
     # Ensure current displayed image is saved into the theater directory
-    cs = canvas_states.get(theater_id)
+    cs = object_registry.canvas_states.get(theater_id)
     cs.save_local_theater_data(theater_dir=theater_dir)
 
     import io
@@ -1922,18 +1918,18 @@ async def get_theater_suggestions(theater_id: str, request: Request):
     await _require_canvas_access_async(request, theater_id)
     _safe_path_param(theater_id, "theater_id")
 
-    session = live_agent_manager.get_session(theater_id)
+    session = object_registry.live_agent_manager.get_session(theater_id)
     named_elements = []
     notepad = _session_notepad(session)
     if notepad and hasattr(notepad, "get_present_elements"):
         named_elements = notepad.get_present_elements()
-    if not named_elements and canvas_states:
-        c_state = canvas_states.get(theater_id)
+    if not named_elements and object_registry.canvas_states:
+        c_state = object_registry.canvas_states.get(theater_id)
         if c_state is not None and c_state.notepad is not None:
             named_elements = c_state.notepad.get_present_elements()
 
     force_refresh = request.query_params.get("refresh") in ("true", "1")
-    res, fingerprint = suggestion_service.generate_suggestions(
+    res, fingerprint = object_registry.suggestion_service.generate_suggestions(
         named_elements=named_elements,
         theater_id=theater_id,
         force_refresh=force_refresh,
@@ -1951,14 +1947,14 @@ async def get_theater_sticky_notes(theater_id: str, request: Request) -> dict[st
     await _require_canvas_access_async(request, theater_id)
     _safe_path_param(theater_id, "theater_id")
 
-    session = live_agent_manager.get_session(theater_id)
+    session = object_registry.live_agent_manager.get_session(theater_id)
     sticky_notes = []
     notepad = _session_notepad(session)
     if notepad is not None:
         sticky_notes = notepad.get_present_sticky_notes()
 
-    if not sticky_notes and canvas_states:
-        c_state = canvas_states.get(theater_id)
+    if not sticky_notes and object_registry.canvas_states:
+        c_state = object_registry.canvas_states.get(theater_id)
         if c_state is not None and c_state.notepad is not None:
             notepad = c_state.notepad
             sticky_notes = notepad.get_present_sticky_notes()

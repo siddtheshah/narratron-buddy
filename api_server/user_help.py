@@ -10,8 +10,9 @@ from fastapi import HTTPException, Request, Response
 from pydantic import BaseModel, Field, computed_field
 from typing import Literal
 
-from api_server.dependencies import pricing_controller
-from api_server.shared import app, db, get_current_user_async, _require_canvas_access_async
+
+import object_registry
+from api_server.shared import app, get_current_user_async, _require_canvas_access_async
 from services.generation_billing import billing_locks
 from services.user_help_catalog import UserHelpCatalog
 from services.user_help_limits import HelpRateLimitError, UserHelpLimits
@@ -29,7 +30,7 @@ basic_limits.hourly_principal_limit = 120
 basic_limits.hourly_address_limit = 300
 basic_limits.hourly_total_limit = 3000
 basic_limits.max_concurrent = 16
-help_catalog = UserHelpCatalog(pricing=pricing_controller)
+help_catalog = UserHelpCatalog(pricing=object_registry.pricing_controller)
 
 
 def require_settings_confirmation(request: Request) -> None:
@@ -76,7 +77,7 @@ class HelpAnswer(BaseModel):
 
 
 def help_cost() -> float:
-    return float(pricing_controller.get_rates()["live_agent_tool_call_credit_rate"])
+    return float(object_registry.pricing_controller.get_rates()["live_agent_tool_call_credit_rate"])
 
 
 async def research(question: str, changes: list[FeatureChange] | None = None) -> str:
@@ -122,11 +123,9 @@ async def ask_user_help(
     cost = help_cost()
     snapshot: bytes | None = None
     if theater_id and user:
-        from api_server.shared import theater_manager
-
-        deployment = await asyncio.to_thread(db.get_deployment, theater_id)
+        deployment = await asyncio.to_thread(object_registry.db.get_deployment, theater_id)
         if deployment and deployment["user_id"] == int(user["id"]):
-            path = theater_manager.theater(theater_id).directory() / "theater.yaml"
+            path = object_registry.theater_manager.theater(theater_id).directory() / "theater.yaml"
             if path.is_file():
                 snapshot = await asyncio.to_thread(path.read_bytes)
 
@@ -153,7 +152,7 @@ async def ask_user_help(
             raise HTTPException(status_code=409, detail="The personalized help price changed. Refresh the price before sending.")
         user_id = int(user["id"])
         async with billing_locks.setdefault(user_id, asyncio.Lock()):
-            account = await asyncio.to_thread(db.get_user_by_id, user_id)
+            account = await asyncio.to_thread(object_registry.db.get_user_by_id, user_id)
             if not account or float(account["credits"]) < cost:
                 raise HTTPException(status_code=402, detail=f"Personalized help requires {cost:g} credits in your account.")
             with help_limits.claim(principal, address):
@@ -161,7 +160,7 @@ async def ask_user_help(
                 answer = await research(question, changes) if snapshot is not None else await research(question)
                 rendered = render_markdown(answer, open_in_new_tab=True)
                 try:
-                    updated = await asyncio.to_thread(db.record_user_usage, user_id, credit_cost=cost,
+                    updated = await asyncio.to_thread(object_registry.db.record_user_usage, user_id, credit_cost=cost,
                                                       idempotency_key=f"user-help:{uuid4().hex}")
                 except Exception as error:
                     raise HTTPException(status_code=503, detail="Could not settle help credits. Please try again.") from error
@@ -177,8 +176,6 @@ async def ask_user_help(
 @app.post("/api/user-help/{theater_id}/apply-settings")
 async def apply_help_settings(theater_id: str, body: SettingsProposal, request: Request) -> dict[str, str | bool]:
     """Apply reviewed switches through the shared checkout lifecycle and restart."""
-    from api_server.dependencies import FLAGS, canvas_states, live_agent_manager
-    from api_server.shared import theater_manager, theater_repository
     from api_server.theater_editor import invalid_input, require_user, store, write_checkout
     from services.theater_builder import DraftInfo, safe_asset_path
     from services.theater_checkout import checkout_locks, save_theater_checkout
@@ -186,19 +183,19 @@ async def apply_help_settings(theater_id: str, body: SettingsProposal, request: 
     owner_id = await require_user(request)
     require_settings_confirmation(request)
     async with checkout_locks.setdefault(theater_id, asyncio.Lock()):
-        deployment = await asyncio.to_thread(db.get_deployment, theater_id)
+        deployment = await asyncio.to_thread(object_registry.db.get_deployment, theater_id)
         if not deployment:
             raise HTTPException(404, "Theater not found.")
         if deployment["user_id"] != owner_id:
             raise HTTPException(403, "Only the theater owner can apply settings.")
         if (deployment.get("active_orator_id") or owner_id) != owner_id:
             raise HTTPException(409, "Take back the baton before applying settings.")
-        account = await asyncio.to_thread(db.get_user_by_id, owner_id)
+        account = await asyncio.to_thread(object_registry.db.get_user_by_id, owner_id)
         if not account or float(account["credits"]) <= 0:
             raise HTTPException(402, "Add credits before applying settings and restarting the agent.")
         with invalid_input():
             builder = store()
-            path = safe_asset_path(theater_manager.theater(theater_id).directory(), "theater.yaml")
+            path = safe_asset_path(object_registry.theater_manager.theater(theater_id).directory(), "theater.yaml")
             if not path.is_file():
                 raise HTTPException(404, "Theater configuration not found.")
             content = await asyncio.to_thread(path.read_bytes)
@@ -207,19 +204,19 @@ async def apply_help_settings(theater_id: str, body: SettingsProposal, request: 
             updated = update_settings(content, body.changes)
             info = await asyncio.to_thread(builder.load, theater_id)
             if info is None:
-                metadata = theater_manager.get_theater(theater_id)
+                metadata = object_registry.theater_manager.get_theater(theater_id)
                 info = DraftInfo(theater_id=theater_id, owner_id=owner_id, name=metadata.name)
             if info.owner_id != owner_id:
                 raise HTTPException(403, "Only the theater owner can apply settings.")
             await asyncio.to_thread(write_checkout, info, {"theater.yaml": updated})
-        canvas_states.persist(theater_id)
-        if not await asyncio.to_thread(save_theater_checkout, theater_id, theater_manager, theater_repository):
+        object_registry.canvas_states.persist(theater_id)
+        if not await asyncio.to_thread(save_theater_checkout, theater_id, object_registry.theater_manager, object_registry.theater_repository):
             return {"applied": True, "agent_running": False,
                     "message": "Settings updated in the working copy, but saving failed. Save the theater and start the agent from its controls."}
         try:
-            session = live_agent_manager.get_or_create_session(
-                theater_id=theater_id, canvas_state_service=canvas_states,
-                use_in_memory_artifacts=FLAGS.use_in_memory_artifacts,
+            session = object_registry.live_agent_manager.get_or_create_session(
+                theater_id=theater_id, canvas_state_service=object_registry.canvas_states,
+                use_in_memory_artifacts=object_registry.FLAGS.use_in_memory_artifacts,
             )
             session.summon()
         except Exception:

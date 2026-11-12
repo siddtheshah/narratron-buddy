@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
+import object_registry
 from api_server import remote
 
 
@@ -29,10 +30,10 @@ def remote_services() -> Iterator[tuple[TestClient, MagicMock, MagicMock]]:
     manager.get_session.return_value = None
     with patch.object(remote, "_require_canvas_access", return_value=deployment), \
             patch.object(remote, "get_current_user", return_value={"id": 2}) as current_user, \
-            patch.object(remote.db, "get_deployment", return_value=deployment), \
-            patch.object(remote.canvas_states, "get", return_value=state), \
-            patch.object(remote.theater_manager, "get_theater", return_value=MagicMock(config={})), \
-            patch.object(remote, "live_agent_manager", manager):
+            patch.object(object_registry.db, "get_deployment", return_value=deployment), \
+            patch.object(object_registry.canvas_states, "get", return_value=state), \
+            patch.object(object_registry.theater_manager, "get_theater", return_value=MagicMock(config={})), \
+            patch.object(object_registry, "live_agent_manager", manager):
         yield TestClient(remote.app), current_user, manager
 
 
@@ -105,7 +106,7 @@ def test_remote_includes_current_game_payload(
 ) -> None:
     client, _, _ = remote_services
     game = {"definition_hash": "counter", "revision": 3, "view": [], "panel_html": "<p>Game</p>"}
-    with patch.object(remote.canvas_states.get("stage").game, "payload", return_value=game):
+    with patch.object(object_registry.canvas_states.get("stage").game, "payload", return_value=game):
         assert client.get("/api/theaters/stage/remote").json()["game_state"] == game
 
 
@@ -157,7 +158,7 @@ def test_remote_returns_empty_preview_when_canvas_has_no_scene(
     remote_services: tuple[TestClient, MagicMock, MagicMock],
 ) -> None:
     client, _, _ = remote_services
-    with patch.object(remote.canvas_states.get("stage").visual, "preview_image_url", return_value=None):
+    with patch.object(object_registry.canvas_states.get("stage").visual, "preview_image_url", return_value=None):
         response = client.get("/api/theaters/stage/remote")
     assert response.status_code == 200
     assert response.json()["preview_url"] is None
@@ -249,7 +250,7 @@ def test_remote_returns_agent_thought(
     remote_services: tuple[TestClient, MagicMock, MagicMock],
 ) -> None:
     client, _, _ = remote_services
-    state = remote.canvas_states.get("stage")
+    state = object_registry.canvas_states.get("stage")
     state.tool_response.current_agent_thought = "Pondering the cosmos..."
     state.tool_response.current_agent_thought_time = 12345.67
     state.tool_response.agent_thought_highlighted = True

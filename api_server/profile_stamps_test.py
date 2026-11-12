@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 from PIL import Image
 import pytest
 
+import object_registry
 from api_server import profiles
 from pricing.pricing_controller import PricingController
 from providers.image_provider import ImageGenerationResult
@@ -43,10 +44,10 @@ def personal_stamps(tmp_path: Path) -> Iterator[ProfileStampHarness]:
     with patch.object(StampStorage, "_init_gcs_client"):
         storage = StampStorage(tmp_path / "stamps")
     with (
-        patch.object(profiles, "db", database),
-        patch.object(profiles, "stamp_storage", storage),
+        patch.object(object_registry, "db", database),
+        patch.object(object_registry, "stamp_storage", storage),
         patch.object(profiles, "billing_locks", {}),
-        patch.object(profiles, "pricing_controller", PricingController(image_credit_rate=4)),
+        patch.object(object_registry, "pricing_controller", PricingController(image_credit_rate=4)),
         patch.object(profiles, "get_current_user_async", AsyncMock(return_value={"id": 7})),
         patch("services.theater_image_generation.get_image_provider", return_value=provider),
         patch.object(profiles.auth_session_cache, "invalidate_user"),

@@ -7,6 +7,7 @@ import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
+import object_registry
 from api_server.shared import app
 from api_server import user_help
 from services.user_help_limits import UserHelpLimits
@@ -30,7 +31,7 @@ def database() -> Iterator[MagicMock]:
     database = MagicMock()
     database.get_user_by_id.return_value = {"credits": 3.0}
     database.record_user_usage.return_value = {"credits": 2.85}
-    with patch.object(user_help, "db", database):
+    with patch.object(object_registry, "db", database):
         yield database
 
 

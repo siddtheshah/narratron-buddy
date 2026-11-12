@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 from fastapi import WebSocket
 import pytest
 
+import object_registry
 from api_server import friends
 from components.theater_manager import TheaterMetadata
 from components.canvas.connection_state import ConnectionState
@@ -19,7 +20,7 @@ from storage.database import LocalDatabaseManager
 def canvases() -> Iterator[MagicMock]:
     service = MagicMock()
     service.states = {}
-    with patch.object(friends, "canvas_states", service):
+    with patch.object(object_registry, "canvas_states", service):
         yield service
 
 
@@ -86,7 +87,7 @@ def test_api_admission_rechecks_friendship_and_hides_keys(database: LocalDatabas
     database.record_deployment("bob-theater", bob, "SECRET", name="Bob's story")
     manager = MagicMock()
     manager.get_theater.return_value = None
-    with patch.object(friends, "db", database), patch.object(friends, "theater_manager", manager), \
+    with patch.object(object_registry, "db", database), patch.object(object_registry, "theater_manager", manager), \
          patch.object(friends, "get_current_user", return_value={"id": alice}), \
          patch.object(friends, "_grant_canvas_access") as grant, TestClient(friends.app) as client:
         assert client.post('/api/friend-theaters/bob-theater/join').status_code == 404
@@ -128,8 +129,8 @@ def test_friend_theaters_include_distinct_connected_viewers(
     canvases.states = {"bob-theater": canvas}
     manager = MagicMock()
     manager.get_theater.return_value = None
-    with patch.object(friends, "db", database), \
-         patch.object(friends, "theater_manager", manager), \
+    with patch.object(object_registry, "db", database), \
+         patch.object(object_registry, "theater_manager", manager), \
          patch.object(friends, "get_current_user", return_value={"id": alice}), \
          TestClient(friends.app) as client:
         theaters = client.get('/api/friend-theaters').json()
@@ -168,8 +169,8 @@ def test_friend_theater_activity_uses_last_connection(
         theater_id="bob-theater", name="Bob's story", last_connected_at=last_connected_at,
         last_disconnected_at="2026-10-23T11:59:59+00:00",
     )
-    with patch.object(friends, "db", database), \
-         patch.object(friends, "theater_manager", manager), \
+    with patch.object(object_registry, "db", database), \
+         patch.object(object_registry, "theater_manager", manager), \
          patch.object(friends, "get_current_user", return_value={"id": alice}), \
          patch.object(friends, "datetime") as clock, TestClient(friends.app) as client:
         clock.now.return_value = datetime(2026, 10, 23, 12, tzinfo=timezone.utc)

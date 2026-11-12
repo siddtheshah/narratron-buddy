@@ -7,9 +7,12 @@ from typing import Literal
 from fastapi import HTTPException, Request
 from pydantic import BaseModel, Field, JsonValue
 
+import object_registry
 from api_server.shared import (
-    app, db, theater_manager, theater_repository, canvas_states,
-    get_current_user_async, _require_canvas_access_async, _safe_path_param,
+    app,
+    get_current_user_async,
+    _require_canvas_access_async,
+    _safe_path_param,
 )
 from storage.flagged_theaters import snapshot_theater
 
@@ -36,20 +39,20 @@ async def report_theater(
     reason, details = body.reason.strip(), body.details.strip()
     if reason not in {"harmful_content", "harassment", "sexual_content", "illegal_content", "other"} or not details:
         raise HTTPException(status_code=422, detail="Select a reason and describe the problem.")
-    deployment = await asyncio.to_thread(db.get_deployment, theater_id)
+    deployment = await asyncio.to_thread(object_registry.db.get_deployment, theater_id)
     if not deployment or deployment["user_id"] is None:
         raise HTTPException(status_code=404, detail="Theater not found.")
 
     def capture_report() -> int:
-        root = theater_manager.theater(theater_id).directory()
+        root = object_registry.theater_manager.theater(theater_id).directory()
         if not (root / "theater.json").is_file():
-            if not theater_repository.reconstruct_theater(theater_id, root):
+            if not object_registry.theater_repository.reconstruct_theater(theater_id, root):
                 raise FileNotFoundError("Theater files are unavailable")
-        canvas_states.get(theater_id).save_local_theater_data(theater_dir=root)
+        object_registry.canvas_states.get(theater_id).save_local_theater_data(theater_dir=root)
         content_hash, storage_path = snapshot_theater(
-            root, theater_repository.base_dir.parent / "flagged_theaters", theater_id,
+            root, object_registry.theater_repository.base_dir.parent / "flagged_theaters", theater_id,
         )
-        return db.record_theater_report(
+        return object_registry.db.record_theater_report(
             theater_id, deployment.get("name") or theater_id,
             int(deployment["user_id"]),
             int(deployment.get("active_orator_id") or deployment["user_id"]),
@@ -85,7 +88,7 @@ async def file_feedback(body: FeedbackRequest, request: Request) -> dict[str, Js
         await _require_canvas_access_async(request, body.theater_id)
     try:
         report_id = await asyncio.to_thread(
-            db.record_user_feedback, int(user["id"]), body.category, details, body.theater_id,
+            object_registry.db.record_user_feedback, int(user["id"]), body.category, details, body.theater_id,
         )
     except Exception as error:
         logger.exception("Could not save user feedback")

@@ -7,7 +7,8 @@ from fastapi import Request, Response, HTTPException
 from pydantic import BaseModel, JsonValue, StrictBool
 
 from utils.auth_cache import auth_session_cache
-from api_server.shared import FLAGS, SERVER_RUN_ID, app, db, get_current_user
+import object_registry
+from api_server.shared import app, get_current_user
 from storage.database import (
     DatabaseConnectionTimeout,
     MIN_PASSWORD_LENGTH,
@@ -65,8 +66,8 @@ def register_user(req: RegisterRequest, response: Response) -> dict[str, JsonVal
     started_at = time.monotonic()
     logger.info("Registration request started (username_length=%d).", len(username_clean))
     try:
-        user = db.register_user(req.username, req.email, req.password, age_attested=True)
-        token = db.create_auth_session(user["id"])
+        user = object_registry.db.register_user(req.username, req.email, req.password, age_attested=True)
+        token = object_registry.db.create_auth_session(user["id"])
         response.set_cookie(key="auth_token", value=token, httponly=True, max_age=604800)
         logger.info("Registration request completed in %.2fs.", time.monotonic() - started_at)
         return {"status": "ok", "user": user}
@@ -79,10 +80,10 @@ def register_user(req: RegisterRequest, response: Response) -> dict[str, JsonVal
 
 @app.post("/api/auth/login")
 def login_user(req: LoginRequest, response: Response):
-    user = db.authenticate_user(req.username_or_email, req.password)
+    user = object_registry.db.authenticate_user(req.username_or_email, req.password)
     if not user:
         raise HTTPException(status_code=401, detail="Invalid username/email or password.")
-    token = db.create_auth_session(user["id"])
+    token = object_registry.db.create_auth_session(user["id"])
     response.set_cookie(key="auth_token", value=token, httponly=True, max_age=604800)
     return {"status": "ok", "user": user}
 
@@ -90,14 +91,14 @@ def login_user(req: LoginRequest, response: Response):
 def logout_user(request: Request, response: Response):
     token = request.cookies.get("auth_token")
     if token:
-        db.invalidate_session_token(token)
+        object_registry.db.invalidate_session_token(token)
         auth_session_cache.invalidate_token(token)
     response.delete_cookie("auth_token")
     return {"status": "ok"}
 
 @app.post("/api/auth/auto-login")
 def auto_login_user(response: Response):
-    if not FLAGS.testing_use_local:
+    if not object_registry.FLAGS.testing_use_local:
         raise HTTPException(status_code=403, detail="Auto-login is only permitted with --testing_use_local.")
     return login_user(
         LoginRequest(username_or_email="localtest", password="narratron"),
@@ -117,8 +118,8 @@ def get_auth_me(request: Request, response: Response = None):
         "authenticated": bool(user),
         "user": user,
         "use_ricky0123_vad": use_ricky,
-        "testing_use_local": bool(FLAGS.testing_use_local),
-        "server_run_id": str(SERVER_RUN_ID),
+        "testing_use_local": bool(object_registry.FLAGS.testing_use_local),
+        "server_run_id": str(object_registry.SERVER_RUN_ID),
     }
 
 @app.post("/api/auth/mic-sensitivity")
@@ -127,14 +128,14 @@ def update_mic_sensitivity_endpoint(req: MicSensitivityRequest, request: Request
         raise HTTPException(status_code=400, detail="mic_sensitivity must be between 0.0 and 1.0.")
     user = get_current_user(request)
     if user:
-        db.update_user_mic_sensitivity(user["id"], req.mic_sensitivity)
+        object_registry.db.update_user_mic_sensitivity(user["id"], req.mic_sensitivity)
         auth_session_cache.invalidate_user(user["id"])
         return {"status": "ok", "authenticated": True, "mic_sensitivity": req.mic_sensitivity}
     return {"status": "ok", "authenticated": False, "mic_sensitivity": req.mic_sensitivity}
 
 @app.post("/api/auth/forgot-password")
 def forgot_password(req: ForgotPasswordRequest, request: Request) -> dict[str, str]:
-    token_user = db.create_password_reset_token(req.username_or_email)
+    token_user = object_registry.db.create_password_reset_token(req.username_or_email)
     if not token_user:
         return {
             "status": "ok",
@@ -146,7 +147,7 @@ def forgot_password(req: ForgotPasswordRequest, request: Request) -> dict[str, s
     reset_link = f"{base_url}/deploy?reset_token={token}"
 
     delivery = send_password_reset_email(user["email"], user["username"], reset_link)
-    simulated_locally = delivery["method"] == "simulated" and FLAGS.testing_use_local
+    simulated_locally = delivery["method"] == "simulated" and object_registry.FLAGS.testing_use_local
     if not delivery["sent"] and not simulated_locally:
         logger.error("Password reset request failed: email was not sent (method=%s).", delivery["method"])
         raise HTTPException(
@@ -161,7 +162,7 @@ def forgot_password(req: ForgotPasswordRequest, request: Request) -> dict[str, s
 
 @app.get("/api/auth/reset-password/validate")
 def validate_reset_token(token: str):
-    user = db.validate_password_reset_token(token)
+    user = object_registry.db.validate_password_reset_token(token)
     if not user:
         return {"valid": False, "detail": "Invalid or expired password reset link."}
     return {"valid": True, "username": user["username"]}
@@ -175,8 +176,8 @@ def reset_password(req: ResetPasswordRequest):
             status_code=400,
             detail=f"Password must be between {MIN_PASSWORD_LENGTH} and {MAX_PASSWORD_LENGTH} characters.",
         )
-    reset_user = db.validate_password_reset_token(req.token)
-    success = db.reset_password_with_token(req.token, req.new_password)
+    reset_user = object_registry.db.validate_password_reset_token(req.token)
+    success = object_registry.db.reset_password_with_token(req.token, req.new_password)
     if not success:
         raise HTTPException(status_code=400, detail="Invalid or expired reset token.")
     if reset_user:

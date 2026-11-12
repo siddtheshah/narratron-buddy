@@ -8,6 +8,7 @@ import zipfile
 import pytest
 from fastapi.testclient import TestClient
 
+import object_registry
 from api_server import app
 import api_server.theaters as theaters
 from components.theater_manager import TheaterManager, extract_asset_package
@@ -38,7 +39,7 @@ def test_reference_responses_sandbox_legacy_documents_and_display_images(tmp_pat
     root = manager.theater("stage").references_dir()
     (root / "attack.html").write_bytes(b"<script>alert(1)</script>")
     (root / "disguised.png").write_bytes(b"<script>alert(1)</script>")
-    with patch.object(theaters, "theater_manager", manager), \
+    with patch.object(object_registry, "theater_manager", manager), \
          patch.object(theaters, "_require_canvas_access_async", AsyncMock()), TestClient(app) as client:
         for filename in ("attack.html", "disguised.png"):
             response = client.get(f"/theaters/stage/references/{filename}")
@@ -58,7 +59,7 @@ def test_reference_responses_sandbox_legacy_documents_and_display_images(tmp_pat
 ])
 def test_upload_returns_bad_request_for_active_references(tmp_path: Path, field: str, filename: str) -> None:
     manager = TheaterManager(tmp_path)
-    with patch.object(theaters, "theater_manager", manager), \
+    with patch.object(object_registry, "theater_manager", manager), \
          patch.object(theaters, "get_current_user_async", AsyncMock(return_value={"id": 1})), TestClient(app) as client:
         response = client.post("/api/theaters/create-and-deploy", files={field: (filename, b"<script>alert(1)</script>")})
     assert response.status_code == 400
@@ -84,7 +85,7 @@ def test_upload_returns_bad_request_for_escaping_paths(tmp_path: Path, field: st
             package.writestr("references/../../../outside.png", content)
         content = archive.getvalue()
     manager = TheaterManager(tmp_path)
-    with patch.object(theaters, "theater_manager", manager), \
+    with patch.object(object_registry, "theater_manager", manager), \
          patch.object(theaters, "get_current_user_async", AsyncMock(return_value={"id": 1})), TestClient(app) as client:
         response = client.post("/api/theaters/create-and-deploy", files={field: (filename, content)})
     assert response.status_code == 400

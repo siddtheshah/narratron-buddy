@@ -6,8 +6,9 @@ from typing import Literal
 from fastapi import HTTPException, Request, Response
 from pydantic import BaseModel, JsonValue
 
-from api_server.dependencies import canvas_states, theater_manager
-from api_server.shared import app, db, get_current_user, _grant_canvas_access
+
+import object_registry
+from api_server.shared import app, get_current_user, _grant_canvas_access
 
 
 class FriendAction(BaseModel):
@@ -24,13 +25,13 @@ def _user_id(request: Request) -> int:
 @app.get("/api/friends")
 def list_friends(request: Request, response: Response) -> list[dict[str, JsonValue]]:
     response.headers["Cache-Control"] = "no-store"
-    return db.get_friendships(_user_id(request))
+    return object_registry.db.get_friendships(_user_id(request))
 
 
 @app.post("/api/friends/{username}")
 def update_friend(username: str, payload: FriendAction, request: Request) -> dict[str, str]:
     try:
-        db.friend_action(_user_id(request), username, payload.action)
+        object_registry.db.friend_action(_user_id(request), username, payload.action)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"status": "ok"}
@@ -39,17 +40,17 @@ def update_friend(username: str, payload: FriendAction, request: Request) -> dic
 @app.get("/api/friend-theaters")
 def list_friend_theaters(request: Request, response: Response) -> list[dict[str, JsonValue]]:
     response.headers["Cache-Control"] = "no-store"
-    theaters = db.get_friend_theaters(_user_id(request))
+    theaters = object_registry.db.get_friend_theaters(_user_id(request))
     now = datetime.now(timezone.utc)
     for theater in theaters:
         theater.pop("join_key")
-        canvas = canvas_states.states.get(str(theater["theater_id"]))
+        canvas = object_registry.canvas_states.states.get(str(theater["theater_id"]))
         theater["active_viewers"] = [
             str(viewer["username"])
             for viewer in canvas.connections.get_active_viewers()
             if viewer["username"]
         ] if canvas is not None else []
-        metadata = theater_manager.get_theater(str(theater["theater_id"]))
+        metadata = object_registry.theater_manager.get_theater(str(theater["theater_id"]))
         theater["online"] = False
         if metadata is None or not metadata.last_connected_at:
             continue
@@ -66,7 +67,7 @@ def list_friend_theaters(request: Request, response: Response) -> list[dict[str,
 @app.post("/api/friend-theaters/{theater_id}/join")
 def join_friend_theater(theater_id: str, request: Request, response: Response) -> dict[str, str]:
     # Recheck the relationship at admission time, including after removal or a key rotation.
-    theaters = db.get_friend_theaters(_user_id(request))
+    theaters = object_registry.db.get_friend_theaters(_user_id(request))
     theater = next((entry for entry in theaters if entry["theater_id"] == theater_id), None)
     if theater is None:
         raise HTTPException(status_code=404, detail="Friend's theater is no longer available.")

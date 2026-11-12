@@ -15,7 +15,7 @@ from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from testing.base import BaseTestCase
-from api_server.app import app, theater_manager, db, FLAGS, canvas_states
+from api_server.app import app
 import object_registry
 import api_server.theaters as theaters
 from testing.reference_images import mp3_bytes, png_bytes, wav_bytes
@@ -30,7 +30,7 @@ def test_story_log_output_is_fresh_after_append(tmp_path: Path) -> None:
     theater = manager.theater("story-log-test")
     theater.append_output_file("story_log.jsonl", '{"type":"user_action","action":"First"}\n')
     url = "/theaters/story-log-test/output/story_log.jsonl"
-    with patch.object(theaters, "theater_manager", manager), \
+    with patch.object(object_registry, "theater_manager", manager), \
          patch.object(theaters, "_require_canvas_access_async", AsyncMock()), \
          TestClient(app) as client:
         first = client.get(url)
@@ -102,8 +102,8 @@ def test_deployment_preserves_character_folders_and_game(tmp_path: Path, source:
 
     with flagsaver.flagsaver(testing_use_local=True), \
          patch.object(theaters, "get_current_user_async", AsyncMock(return_value={"id": 42})), \
-         patch.object(theaters, "theater_manager", manager), \
-         patch.object(theaters, "db", MagicMock()), \
+         patch.object(object_registry, "theater_manager", manager), \
+         patch.object(object_registry, "db", MagicMock()), \
          patch.object(theaters, "_export_canvas_theater_async", AsyncMock()), \
          patch.object(object_registry, "adventure_service", AdventureService(adventures_root)), \
          TestClient(app) as client:
@@ -132,7 +132,7 @@ async def test_theater_stamps_require_access_and_serve_nested_images(tmp_path: P
     manager.create_theater("Stamps", "stage", reference_files=[("stamps/tokens/hero.png", b"image")])
     request = Request({"type": "http", "headers": []})
     access = AsyncMock()
-    with patch.object(theaters, "_require_canvas_access_async", access), patch.object(theaters, "theater_manager", manager):
+    with patch.object(theaters, "_require_canvas_access_async", access), patch.object(object_registry, "theater_manager", manager):
         stamps = await theaters.list_theater_stamps(request, "stage", join_key="KEY")
         assert stamps[0]["id"] == "theater:stage:tokens/hero.png"
         response = await theaters.serve_theater_stamp(request, "stage", "tokens/hero.png", join_key="KEY")
@@ -163,7 +163,7 @@ def test_theater_stamp_http_caching_and_revalidation(tmp_path: Path) -> None:
     access = AsyncMock()
     with flagsaver.flagsaver(testing_use_local=True), \
          patch.object(theaters, "_require_canvas_access_async", access), \
-         patch.object(theaters, "theater_manager", manager), TestClient(app) as client:
+         patch.object(object_registry, "theater_manager", manager), TestClient(app) as client:
         initial = client.get(url)
         assert initial.status_code == 200
         assert initial.content == b"stamp-image"
@@ -195,29 +195,29 @@ class TestTheaterAPI(BaseTestCase):
 
     def setUp(self):
         super().setUp()
-        FLAGS.allow_mock_payments = True
-        FLAGS.testing_use_local = True
-        self._original_db_is_live = db.is_live
-        self._original_db_path = db.db_path
+        object_registry.FLAGS.allow_mock_payments = True
+        object_registry.FLAGS.testing_use_local = True
+        self._original_db_is_live = object_registry.db.is_live
+        self._original_db_path = object_registry.db.db_path
         self.test_dir = tempfile.mkdtemp()
-        theater_manager.base_dir = Path(self.test_dir).resolve()
-        theater_manager.base_dir.mkdir(parents=True, exist_ok=True)
+        object_registry.theater_manager.base_dir = Path(self.test_dir).resolve()
+        object_registry.theater_manager.base_dir.mkdir(parents=True, exist_ok=True)
         self._original_repo_dir = object_registry.theater_repository._base_dir
         object_registry.theater_repository._base_dir = (Path(self.test_dir) / "repository").resolve()
         object_registry.theater_repository._base_dir.mkdir(parents=True, exist_ok=True)
         # The app module is already imported when these tests run, so switch its
         # shared manager to the local database selected by the testing flag.
-        db.is_live = False
-        db.db_path = Path(self.test_dir) / "test_api_deployer.db"
-        db._init_db()
+        object_registry.db.is_live = False
+        object_registry.db.db_path = Path(self.test_dir) / "test_api_deployer.db"
+        object_registry.db._init_db()
         self.client = TestClient(app)
 
     def tearDown(self):
-        FLAGS.allow_mock_payments = False
-        FLAGS.testing_use_local = False
-        db.close()
-        db.is_live = self._original_db_is_live
-        db.db_path = self._original_db_path
+        object_registry.FLAGS.allow_mock_payments = False
+        object_registry.FLAGS.testing_use_local = False
+        object_registry.db.close()
+        object_registry.db.is_live = self._original_db_is_live
+        object_registry.db.db_path = self._original_db_path
         object_registry.theater_repository._base_dir = self._original_repo_dir
         shutil.rmtree(self.test_dir, ignore_errors=True)
 
@@ -300,9 +300,9 @@ class TestTheaterAPI(BaseTestCase):
         self.assertIn("Sidd", response.text)
 
     def test_canvas_page(self):
-        owner = db.register_user("canvas_owner", "canvas-owner@example.com", "Password123")
-        db.add_user_credits(owner["id"], 50.0, 2.5)
-        self.assertTrue(db.record_deployment("test_theater", owner["id"], "KEY-CANVAS", cost=5.0))
+        owner = object_registry.db.register_user("canvas_owner", "canvas-owner@example.com", "Password123")
+        object_registry.db.add_user_credits(owner["id"], 50.0, 2.5)
+        self.assertTrue(object_registry.db.record_deployment("test_theater", owner["id"], "KEY-CANVAS", cost=5.0))
 
         response = self.client.get("/canvas?theater_id=test_theater")
         self.assertEqual(response.status_code, 403)
@@ -319,9 +319,9 @@ class TestTheaterAPI(BaseTestCase):
         self.assertIn("Narratron Canvas", response.text)
 
     def test_canvas_data_endpoints_require_canvas_access(self):
-        owner = db.register_user("canvas_api_owner", "canvas-api-owner@example.com", "Password123")
-        db.add_user_credits(owner["id"], 50.0, 2.5)
-        self.assertTrue(db.record_deployment("protected_theater", owner["id"], "KEY-PROTECTED", cost=5.0))
+        owner = object_registry.db.register_user("canvas_api_owner", "canvas-api-owner@example.com", "Password123")
+        object_registry.db.add_user_credits(owner["id"], 50.0, 2.5)
+        self.assertTrue(object_registry.db.record_deployment("protected_theater", owner["id"], "KEY-PROTECTED", cost=5.0))
 
         self.assertEqual(
             self.client.get("/api/latest?theater_id=protected_theater").status_code,
@@ -337,9 +337,9 @@ class TestTheaterAPI(BaseTestCase):
         )
 
     def test_theater_config_api_get_and_post(self):
-        owner = db.register_user("config_owner", "config-owner@example.com", "Password123")
-        db.add_user_credits(owner["id"], 50.0, 2.5)
-        self.assertTrue(db.record_deployment("config_theater", owner["id"], "KEY-CONFIG", cost=5.0))
+        owner = object_registry.db.register_user("config_owner", "config-owner@example.com", "Password123")
+        object_registry.db.add_user_credits(owner["id"], 50.0, 2.5)
+        self.assertTrue(object_registry.db.record_deployment("config_theater", owner["id"], "KEY-CONFIG", cost=5.0))
 
         # Access canvas to grant canvas_access cookie
         self.client.get(
@@ -376,7 +376,7 @@ class TestTheaterAPI(BaseTestCase):
         self.assertIn("Restart to apply configs", res_json["message"])
 
         # 4. Verify file on disk
-        yaml_disk_path = theater_manager.base_dir / "config_theater" / "theater.yaml"
+        yaml_disk_path = object_registry.theater_manager.base_dir / "config_theater" / "theater.yaml"
         self.assertTrue(yaml_disk_path.exists())
         self.assertEqual(yaml_disk_path.read_text(encoding="utf-8"), new_yaml)
 
@@ -389,9 +389,9 @@ class TestTheaterAPI(BaseTestCase):
         self.assertEqual(fmt_invalid.status_code, 400)
 
     def test_retitle_theater(self):
-        owner = db.register_user("retitle_owner", "retitle-owner@example.com", "Password123")
-        _other = db.register_user("other_user", "other-user@example.com", "Password123")
-        db.add_user_credits(owner["id"], 50.0, 2.5)
+        owner = object_registry.db.register_user("retitle_owner", "retitle-owner@example.com", "Password123")
+        _other = object_registry.db.register_user("other_user", "other-user@example.com", "Password123")
+        object_registry.db.add_user_credits(owner["id"], 50.0, 2.5)
 
         # Login as owner
         login_res = self.client.post("/api/auth/login", json={"username_or_email": "retitle_owner", "password": "Password123"})
@@ -411,7 +411,7 @@ class TestTheaterAPI(BaseTestCase):
         self.assertEqual(retitle_res.json()["name"], "Renamed Epic Theater")
 
         # Verify disk metadata updated
-        meta = theater_manager.get_theater(tid)
+        meta = object_registry.theater_manager.get_theater(tid)
         self.assertIsNotNone(meta)
         self.assertEqual(meta.name, "Renamed Epic Theater")
 
@@ -480,7 +480,7 @@ class TestTheaterAPI(BaseTestCase):
         join_key = data["theater"]["join_key"]
         self.assertIsNotNone(theater_id)
         self.assertIsNotNone(join_key)
-        config = theater_manager.theater(theater_id).config()
+        config = object_registry.theater_manager.theater(theater_id).config()
         self.assertEqual(config["image_generation"]["style"], "storybook watercolor")
         self.assertEqual(config["live_agent"]["special_instructions"], "Be concise.")
 
@@ -512,7 +512,7 @@ class TestTheaterAPI(BaseTestCase):
 
         theaters.theater_access_cache.clear()
         with patch.object(
-            db.target, "get_deployment", wraps=db.target.get_deployment
+            object_registry.db, "get_deployment", wraps=object_registry.db.get_deployment
         ) as get_deployment:
             response = self.client.get(f"/api/theaters/{theater_id}")
 
@@ -539,7 +539,7 @@ class TestTheaterAPI(BaseTestCase):
         )
         self.assertEqual(response.status_code, 200)
         theater_id = response.json()["theater_id"]
-        config = theater_manager.theater(theater_id).config()
+        config = object_registry.theater_manager.theater(theater_id).config()
         self.assertTrue(config["music"]["use_generated_music"])
         self.assertTrue(config["animation"]["generation_enabled"])
         self.assertTrue(config["interactive_canvas"]["enabled"])
@@ -561,7 +561,7 @@ class TestTheaterAPI(BaseTestCase):
         )
         self.assertEqual(response.status_code, 200)
         theater_id = response.json()["theater_id"]
-        config = theater_manager.theater(theater_id).config()
+        config = object_registry.theater_manager.theater(theater_id).config()
         self.assertFalse(config["image_generation"]["enabled"])
 
     def test_feature_flags_default_to_false_when_omitted(self):
@@ -577,7 +577,7 @@ class TestTheaterAPI(BaseTestCase):
         )
         self.assertEqual(response.status_code, 200)
         theater_id = response.json()["theater_id"]
-        config = theater_manager.theater(theater_id).config()
+        config = object_registry.theater_manager.theater(theater_id).config()
         self.assertFalse(config["music"]["use_generated_music"])
         self.assertFalse(config["animation"]["generation_enabled"])
         self.assertFalse(config["interactive_canvas"]["enabled"])
@@ -601,7 +601,7 @@ class TestTheaterAPI(BaseTestCase):
         )
         self.assertEqual(response.status_code, 200)
         theater_id = response.json()["theater_id"]
-        config = theater_manager.theater(theater_id).config()
+        config = object_registry.theater_manager.theater(theater_id).config()
         self.assertEqual(config["story_planning"]["style"], "harsh and unforgiving, but never arbitrary")
 
     def test_folder_upload_requires_theater_yaml(self):
@@ -631,7 +631,7 @@ class TestTheaterAPI(BaseTestCase):
         )
         self.assertEqual(response.status_code, 200)
         theater_id = response.json()["theater_id"]
-        track = theater_manager.theater(theater_id).playlists_dir() / "default" / "new_story.mp3"
+        track = object_registry.theater_manager.theater(theater_id).playlists_dir() / "default" / "new_story.mp3"
         self.assertTrue(track.is_file())
 
     def test_created_theater_yaml_does_not_contain_app_yaml_fields(self):
@@ -647,7 +647,7 @@ class TestTheaterAPI(BaseTestCase):
         )
         self.assertEqual(response.status_code, 200)
         theater_id = response.json()["theater_id"]
-        yaml_disk_path = theater_manager.theater(theater_id).directory() / "theater.yaml"
+        yaml_disk_path = object_registry.theater_manager.theater(theater_id).directory() / "theater.yaml"
         self.assertTrue(yaml_disk_path.is_file())
         saved_yaml_data = yaml.safe_load(yaml_disk_path.read_text(encoding="utf-8"))
         # Operational app.yaml fields should not be saved in theater.yaml
@@ -669,7 +669,7 @@ class TestTheaterAPI(BaseTestCase):
         )
         self.assertEqual(response.status_code, 200)
         theater_id = response.json()["theater_id"]
-        theater = theater_manager.theater(theater_id)
+        theater = object_registry.theater_manager.theater(theater_id)
         config = theater.config()
         self.assertTrue(config["story_planning"]["adventure_mode"])
         self.assertFalse((theater.directory() / "playlists" / "default" / "new_story.mp3").is_file())
@@ -693,7 +693,7 @@ class TestTheaterAPI(BaseTestCase):
         )
         self.assertEqual(response.status_code, 200)
         theater_id = response.json()["theater_id"]
-        theater = theater_manager.theater(theater_id)
+        theater = object_registry.theater_manager.theater(theater_id)
         self.assertFalse((theater.playlists_dir() / "default").exists())
         self.assertEqual(theater.manager.get_theater_playlists(theater_id), {})
 
@@ -708,7 +708,7 @@ class TestTheaterAPI(BaseTestCase):
         )
         self.assertEqual(response_deploy.status_code, 200)
         deploy_theater_id = response_deploy.json()["theater_id"]
-        deploy_theater = theater_manager.theater(deploy_theater_id)
+        deploy_theater = object_registry.theater_manager.theater(deploy_theater_id)
         self.assertFalse((deploy_theater.playlists_dir() / "default").exists())
 
     def test_adventure_preset_theater_yaml_not_overridden_by_defaults(self):
@@ -733,7 +733,7 @@ class TestTheaterAPI(BaseTestCase):
             )
             self.assertEqual(response.status_code, 200)
             theater_id = response.json()["theater_id"]
-            config = theater_manager.theater(theater_id).config()
+            config = object_registry.theater_manager.theater(theater_id).config()
 
             # theater_default.yaml has music: use_generated_music: false, but example-adventure has true
             self.assertTrue(config["music"]["use_generated_music"])
@@ -756,7 +756,7 @@ class TestTheaterAPI(BaseTestCase):
             )
             self.assertEqual(response_deploy.status_code, 200)
             deploy_theater_id = response_deploy.json()["theater_id"]
-            deploy_config = theater_manager.theater(deploy_theater_id).config()
+            deploy_config = object_registry.theater_manager.theater(deploy_theater_id).config()
             self.assertTrue(deploy_config["music"]["use_generated_music"])
             self.assertEqual(deploy_config["visuals"]["cycle_length"], 6)
             self.assertEqual(deploy_config["image_generation"]["cooldown_duration"], 10)
@@ -784,7 +784,7 @@ music:
         )
         self.assertEqual(response.status_code, 200)
         theater_id = response.json()["theater_id"]
-        config = theater_manager.theater(theater_id).config()
+        config = object_registry.theater_manager.theater(theater_id).config()
         self.assertEqual(config["live_agent"]["style"], "cyberpunk noir detective")
         self.assertEqual(config["live_agent"]["special_instructions"], "speak in terse radio jargon")
         self.assertTrue(config["music"]["use_generated_music"])
@@ -821,7 +821,7 @@ music:
         )
         self.assertEqual(create_res.status_code, 200)
         theater_id = create_res.json()["theater_id"]
-        output_file = theater_manager.theater(theater_id).output_dir() / "test-image.jpg"
+        output_file = object_registry.theater_manager.theater(theater_id).output_dir() / "test-image.jpg"
         output_file.write_bytes(b"test-image")
 
         response = self.client.get(f"/theaters/{theater_id}/output/test-image.jpg")
@@ -847,7 +847,7 @@ music:
         theater_id = create_res.json()["theater_id"]
 
         # Create a detailed image and save as high-quality WebP
-        th = theater_manager.theater(theater_id)
+        th = object_registry.theater_manager.theater(theater_id)
         output_file = th.output_dir() / "scene.webp"
         im = Image.new("RGB", (100, 100))
         for x in range(100):
@@ -902,7 +902,7 @@ music:
         )
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.json()["viewer_collab_enabled"])
-        self.assertTrue(canvas_states.get(theater_id).ui.viewer_collab_enabled)
+        self.assertTrue(object_registry.canvas_states.get(theater_id).ui.viewer_collab_enabled)
 
     def test_active_orator_baton_holder_can_toggle_collaboration_but_owner_cannot_after_handover(self) -> None:
         owner_client = self.client
@@ -965,7 +965,7 @@ music:
         )
         self.assertEqual(collab_toggle_res.status_code, 200)
         self.assertFalse(collab_toggle_res.json()["viewer_collab_enabled"])
-        self.assertFalse(canvas_states.get(theater_id).ui.viewer_collab_enabled)
+        self.assertFalse(object_registry.canvas_states.get(theater_id).ui.viewer_collab_enabled)
 
         # Owner is no longer active orator and gets 403 Forbidden
         owner_toggle_res = owner_client.post(
@@ -988,7 +988,7 @@ music:
         )
         self.assertEqual(owner_toggle_res2.status_code, 200)
         self.assertTrue(owner_toggle_res2.json()["viewer_collab_enabled"])
-        self.assertTrue(canvas_states.get(theater_id).ui.viewer_collab_enabled)
+        self.assertTrue(object_registry.canvas_states.get(theater_id).ui.viewer_collab_enabled)
 
         # Former active orator now gets 403 Forbidden
         orator_toggle_res2 = orator_client.post(
@@ -1016,7 +1016,7 @@ music:
 
         # Simulate theater not being on disk (e.g. not launched recently / cold server)
         import shutil
-        t_dir = theater_manager.theater(theater_id).directory()
+        t_dir = object_registry.theater_manager.theater(theater_id).directory()
         if t_dir.exists():
             shutil.rmtree(t_dir)
 
@@ -1028,7 +1028,7 @@ music:
         self.assertEqual(del_res.json()["status"], "ok")
 
         # Verify deployment is removed from DB
-        self.assertIsNone(db.get_deployment(theater_id))
+        self.assertIsNone(object_registry.db.get_deployment(theater_id))
 
     def test_destroy_theater_stops_agent_session_first(self) -> None:
         reg_res = self.client.post("/api/auth/register", json={
@@ -1047,8 +1047,8 @@ music:
         theater_id = response.json()["theater_id"]
 
         call_order: list[str] = []
-        original_stop_session = theaters.live_agent_manager.stop_session
-        original_destroy_theater = theater_manager.destroy_theater
+        original_stop_session = object_registry.live_agent_manager.stop_session
+        original_destroy_theater = object_registry.theater_manager.destroy_theater
 
         def spy_stop_session(theater_id: str) -> bool:
             call_order.append("stop_session")
@@ -1058,8 +1058,8 @@ music:
             call_order.append("destroy_theater")
             return original_destroy_theater(theater_id)
 
-        with patch.object(theaters.live_agent_manager, "stop_session", side_effect=spy_stop_session) as mock_stop, \
-             patch.object(theater_manager, "destroy_theater", side_effect=spy_destroy_theater) as mock_destroy:
+        with patch.object(object_registry.live_agent_manager, "stop_session", side_effect=spy_stop_session) as mock_stop, \
+             patch.object(object_registry.theater_manager, "destroy_theater", side_effect=spy_destroy_theater) as mock_destroy:
             del_res = self.client.delete(f"/api/theaters/{theater_id}")
             self.assertEqual(del_res.status_code, 200)
             mock_stop.assert_called_once_with(theater_id=theater_id)
@@ -1155,8 +1155,8 @@ music:
             mock_rmtree.assert_not_called()
 
         # Verify theater and deployment still exist
-        self.assertIsNotNone(db.get_deployment(theater_id))
-        self.assertTrue(theater_manager.theater(theater_id).directory().exists())
+        self.assertIsNotNone(object_registry.db.get_deployment(theater_id))
+        self.assertTrue(object_registry.theater_manager.theater(theater_id).directory().exists())
 
     def test_destroy_theater_deletes_ephemeral_and_repository_dirs(self) -> None:
         reg_res = self.client.post("/api/auth/register", json={
@@ -1174,7 +1174,7 @@ music:
         self.assertEqual(response.status_code, 200)
         theater_id: str = response.json()["theater_id"]
 
-        ephemeral_dir: Path = theater_manager.theater(theater_id).directory()
+        ephemeral_dir: Path = object_registry.theater_manager.theater(theater_id).directory()
         self.assertTrue(ephemeral_dir.exists())
 
         # Ensure the theater is also present in TheaterRepository
@@ -1192,11 +1192,11 @@ music:
         # Repository dir must also be deleted
         self.assertFalse(repo_dir.exists())
         # Deployment record must be removed
-        self.assertIsNone(db.get_deployment(theater_id))
+        self.assertIsNone(object_registry.db.get_deployment(theater_id))
 
     def test_export_assets_no_duplication(self):
         import zipfile
-        from api_server.app import canvas_states
+
 
         # Register and log in
         reg_res = self.client.post("/api/auth/register", json={
@@ -1215,7 +1215,7 @@ music:
         self.assertEqual(response.status_code, 200)
         theater_id = response.json()["theater_id"]
 
-        theater_dir = theater_manager.theater(theater_id).directory()
+        theater_dir = object_registry.theater_manager.theater(theater_id).directory()
         out_dir = theater_dir / "output"
         images_dir = out_dir / "images"
         images_dir.mkdir(parents=True, exist_ok=True)
@@ -1225,7 +1225,7 @@ music:
         img_path.write_bytes(b"fake_jpeg_data")
 
         # Simulate a visual component update and history addition.
-        cs = canvas_states.get(theater_id)
+        cs = object_registry.canvas_states.get(theater_id)
         cs.visual.show_image(str(img_path), url_for_path=cs.theater.get_url_for_path)
 
         # Also save theater to DB
@@ -1264,7 +1264,7 @@ music:
         self.assertNotIn("reset_link", data)
 
         # Extract token directly from DB (simulates receiving it via email)
-        with db._get_connection() as conn:
+        with object_registry.db._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
                 "SELECT token FROM password_reset_tokens ORDER BY rowid DESC LIMIT 1"
@@ -1362,10 +1362,10 @@ music:
 
         # 8. Service unavailable when gateway unconfigured
         orig_key = os.environ.pop("STRIPE_SECRET_KEY", None)
-        orig_local_db_flag = FLAGS.testing_use_local
+        orig_local_db_flag = object_registry.FLAGS.testing_use_local
         try:
-            FLAGS.allow_mock_payments = False
-            FLAGS.testing_use_local = False
+            object_registry.FLAGS.allow_mock_payments = False
+            object_registry.FLAGS.testing_use_local = False
             unavail_res = self.client.post("/api/payments/buy-credits", json={
                 "package_id": "starter",
                 "card_number": "4242424242424242",
@@ -1375,7 +1375,7 @@ music:
             self.assertEqual(unavail_res.status_code, 503)
             self.assertEqual(unavail_res.json()["detail"], "Payment service unavailable")
         finally:
-            FLAGS.testing_use_local = orig_local_db_flag
+            object_registry.FLAGS.testing_use_local = orig_local_db_flag
             if orig_key is not None:
                 os.environ["STRIPE_SECRET_KEY"] = orig_key
 
@@ -1487,7 +1487,7 @@ async def test_get_theater_sticky_notes_endpoint():
     with patch.object(theaters, "_require_canvas_access_async", new=AsyncMock()), \
          patch.object(theaters, "_safe_path_param"), \
          patch.object(object_registry, "live_agent_manager", mock_agent_mgr), \
-         patch.object(theaters, "theater_manager", mock_tm):
+         patch.object(object_registry, "theater_manager", mock_tm):
 
         request = MagicMock()
         res = await theaters.get_theater_sticky_notes("stage", request)
@@ -1540,8 +1540,8 @@ async def test_get_theater_sticky_notes_fallback_to_canvas_state_notepad():
     with patch.object(theaters, "_require_canvas_access_async", new=AsyncMock()), \
          patch.object(theaters, "_safe_path_param"), \
          patch.object(object_registry, "live_agent_manager", mock_agent_mgr), \
-         patch.object(theaters, "canvas_states", mock_canvas_states), \
-         patch.object(theaters, "theater_manager", mock_tm):
+         patch.object(object_registry, "canvas_states", mock_canvas_states), \
+         patch.object(object_registry, "theater_manager", mock_tm):
 
         request = MagicMock()
         res = await theaters.get_theater_sticky_notes("stage", request)
@@ -1627,8 +1627,8 @@ async def test_create_and_deploy_theater_with_preset_adventure():
     mock_adv_service.load_adventure_assets.return_value = (mock_adv_refs, mock_adv_playlists, mock_adv_lore, mock_adv_config)
 
     with patch.object(theaters, "get_current_user_async", AsyncMock(return_value=mock_user)), \
-         patch.object(theaters, "theater_manager", mock_manager), \
-         patch.object(theaters, "db", mock_db), \
+         patch.object(object_registry, "theater_manager", mock_manager), \
+         patch.object(object_registry, "db", mock_db), \
          patch.object(object_registry, "adventure_service", mock_adv_service):
 
         res = await theaters.create_and_deploy_theater(request)
@@ -1661,7 +1661,7 @@ def test_serve_theater_output_passes_join_key_to_require_canvas_access_async(tmp
 
     req = MagicMock()
     with patch.object(theaters, "_require_canvas_access_async", AsyncMock()) as mock_require, \
-         patch.object(theaters, "theater_manager", tm), \
+         patch.object(object_registry, "theater_manager", tm), \
          patch.object(theaters, "_safe_path_param"):
         import asyncio
         response = asyncio.run(theaters.serve_theater_output(req, "stage", "test.png", join_key="KEY-123"))
@@ -1689,8 +1689,8 @@ async def test_theater_scenes_and_characters_require_active_orator(tmp_path: Pat
     deployment = {"theater_id": "scenes-stage", "user_id": 1, "active_orator_id": 1}
 
     with patch.object(theaters, "_require_canvas_access_async", access), \
-         patch.object(theaters, "theater_manager", manager), \
-         patch.object(theaters.db, "get_deployment", return_value=deployment):
+         patch.object(object_registry, "theater_manager", manager), \
+         patch.object(object_registry.db, "get_deployment", return_value=deployment):
 
         # Active orator access
         with patch.object(theaters, "get_current_user_async", return_value=user_orator):
@@ -1733,8 +1733,8 @@ async def test_theater_push_scene_to_canvas(tmp_path: Path) -> None:
     deployment = {"theater_id": "push-stage", "user_id": 10, "active_orator_id": 10}
 
     with patch.object(theaters, "_require_canvas_access_async", access), \
-         patch.object(theaters, "theater_manager", manager), \
-         patch.object(theaters.db, "get_deployment", return_value=deployment):
+         patch.object(object_registry, "theater_manager", manager), \
+         patch.object(object_registry.db, "get_deployment", return_value=deployment):
 
         # Non-orator cannot push scene
         with patch.object(theaters, "get_current_user_async", return_value=user_viewer):
@@ -1746,7 +1746,7 @@ async def test_theater_push_scene_to_canvas(tmp_path: Path) -> None:
         mock_session = MagicMock()
         mock_session.is_alive = True
         with patch.object(theaters, "get_current_user_async", return_value=user_orator), \
-             patch.object(theaters.live_agent_manager, "get_session", return_value=mock_session):
+             patch.object(object_registry.live_agent_manager, "get_session", return_value=mock_session):
             result = await theaters.push_theater_scene(PushSceneRequest(name="The Desk of Origins"), request, "push-stage")
             assert result["status"] == "ok"
             assert result["scene_name"] == "The Desk of Origins"
@@ -1757,7 +1757,7 @@ async def test_theater_push_scene_to_canvas(tmp_path: Path) -> None:
             assert mock_session.send_content.call_args.kwargs.get("partial") is True
 
             # Canvas visual state should have the new scene
-            state = theaters.canvas_states.get("push-stage")
+            state = object_registry.canvas_states.get("push-stage")
             assert state.visual.shown_image_path is not None
             assert state.visual.shown_image_prompt == "Ancient cedar drafting table."
             assert state.visual.shown_image_path.endswith("1.webp") or "1" in state.visual.shown_image_path
@@ -1787,18 +1787,18 @@ async def test_theater_push_subsequent_scenes_with_shared_stem_succeeds(tmp_path
     deployment = {"theater_id": "multi-scene-stage", "user_id": 10, "active_orator_id": 10}
 
     with patch.object(theaters, "_require_canvas_access_async", access), \
-         patch.object(theaters, "theater_manager", manager), \
-         patch.object(theaters.db, "get_deployment", return_value=deployment):
+         patch.object(object_registry, "theater_manager", manager), \
+         patch.object(object_registry.db, "get_deployment", return_value=deployment):
 
         mock_session = MagicMock()
         mock_session.is_alive = True
         with patch.object(theaters, "get_current_user_async", return_value=user_orator), \
-             patch.object(theaters.live_agent_manager, "get_session", return_value=mock_session):
+             patch.object(object_registry.live_agent_manager, "get_session", return_value=mock_session):
 
             # Push first scene
             res1 = await theaters.push_theater_scene(PushSceneRequest(name="The Desk of Origins"), request, "multi-scene-stage")
             assert res1["status"] == "ok"
-            state = theaters.canvas_states.get("multi-scene-stage")
+            state = object_registry.canvas_states.get("multi-scene-stage")
             path1 = state.visual.shown_image_path
             time1 = state.visual.shown_image_time
             payload1 = state.get_latest_state()
@@ -1839,8 +1839,8 @@ async def test_theater_push_character_to_canvas(tmp_path: Path) -> None:
     deployment = {"theater_id": "char-push-stage", "user_id": 10, "active_orator_id": 10}
 
     with patch.object(theaters, "_require_canvas_access_async", access), \
-         patch.object(theaters, "theater_manager", manager), \
-         patch.object(theaters.db, "get_deployment", return_value=deployment):
+         patch.object(object_registry, "theater_manager", manager), \
+         patch.object(object_registry.db, "get_deployment", return_value=deployment):
 
         # Non-orator cannot push character
         with patch.object(theaters, "get_current_user_async", return_value=user_viewer):
@@ -1852,7 +1852,7 @@ async def test_theater_push_character_to_canvas(tmp_path: Path) -> None:
         mock_session = MagicMock()
         mock_session.is_alive = True
         with patch.object(theaters, "get_current_user_async", return_value=user_orator), \
-             patch.object(theaters.live_agent_manager, "get_session", return_value=mock_session):
+             patch.object(object_registry.live_agent_manager, "get_session", return_value=mock_session):
             result = await theaters.push_theater_character(PushCharacterRequest(name="Elena Vance"), request, "char-push-stage")
             assert result["status"] == "ok"
             assert result["character_name"] == "Elena Vance"
@@ -1863,7 +1863,7 @@ async def test_theater_push_character_to_canvas(tmp_path: Path) -> None:
             assert mock_session.send_content.call_args.kwargs.get("partial") is True
 
             # Canvas visual state should have the character
-            state = theaters.canvas_states.get("char-push-stage")
+            state = object_registry.canvas_states.get("char-push-stage")
             assert state.visual.shown_image_path is not None
             assert state.visual.shown_image_prompt == "A daring archaeologist."
             assert state.visual.shown_image_path.endswith("1.webp") or "1" in state.visual.shown_image_path
@@ -1909,7 +1909,7 @@ def test_playlist_upload_rejects_active_or_disguised_documents_across_all_paths(
         upload_bytes = archive.getvalue()
 
     manager = TheaterManager(tmp_path)
-    with patch.object(theaters, "theater_manager", manager), \
+    with patch.object(object_registry, "theater_manager", manager), \
          patch.object(theaters, "get_current_user_async", AsyncMock(return_value={"id": 1})), \
          TestClient(app) as client:
         response = client.post(
@@ -1938,7 +1938,7 @@ def test_playlist_serving_route_serves_valid_audio_and_quarantines_legacy_or_dis
     (playlist_dir / "attack.svg").write_bytes(b"<svg onload=alert(1)></svg>")
     (playlist_dir / "disguised.mp3").write_bytes(b"<html><script>alert(1)</script></html>")
 
-    with patch.object(theaters, "theater_manager", manager), \
+    with patch.object(object_registry, "theater_manager", manager), \
          patch.object(theaters, "_require_canvas_access_async", AsyncMock()), \
          TestClient(app) as client:
         for bad_name in ("attack.html", "attack.svg", "disguised.mp3"):
@@ -1969,7 +1969,7 @@ def test_create_and_deploy_theater_rejects_file_over_10mb(tmp_path: Path) -> Non
 
     manager = TheaterManager(tmp_path)
     oversized_bytes = b"X" * (10 * 1024 * 1024 + 10)
-    with patch.object(theaters, "theater_manager", manager), \
+    with patch.object(object_registry, "theater_manager", manager), \
          patch.object(theaters, "get_current_user_async", AsyncMock(return_value={"id": 1})), \
          TestClient(app) as client:
         response = client.post(
@@ -1985,7 +1985,7 @@ def test_create_and_deploy_theater_rejects_when_user_storage_cap_exceeded(tmp_pa
 
     manager = TheaterManager(tmp_path)
     small_bytes = b"X" * 1024
-    with patch.object(theaters, "theater_manager", manager), \
+    with patch.object(object_registry, "theater_manager", manager), \
          patch.object(theaters, "get_current_user_async", AsyncMock(return_value={"id": 1})), \
          patch("api_server.theaters.check_user_theaters_storage_allowance", side_effect=ValueError("User theater storage limit of 500MB exceeded")), \
          TestClient(app) as client:

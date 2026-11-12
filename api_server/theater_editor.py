@@ -19,10 +19,11 @@ from fastapi.responses import FileResponse, HTMLResponse, Response
 from pydantic import BaseModel, Field, JsonValue, TypeAdapter
 import yaml
 
-from api_server.dependencies import canvas_states, game_service, live_agent_manager, pricing_controller
+
+import object_registry
 from api_server.canvas import broadcast_baton_update
 from api_server.pages import SeoMetadata, render_page_template
-from api_server.shared import _safe_path_param, app, db, get_current_user_async, theater_manager, theater_repository
+from api_server.shared import _safe_path_param, app, get_current_user_async
 from api_server.theater_access_cache import theater_access_cache
 from providers.image_provider import ImageReference
 from providers.music_provider import MusicGenerationRequest
@@ -123,29 +124,29 @@ class ImportDraftResponse(DraftResponse):
 
 
 def store() -> TheaterBuilderStore:
-    return TheaterBuilderStore(Path(theater_manager.base_dir), theater_manager.notify_storage_changed)
+    return TheaterBuilderStore(Path(object_registry.theater_manager.base_dir), object_registry.theater_manager.notify_storage_changed)
 
 
 def write_checkout(info: DraftInfo, files: dict[str, bytes], moves: list[FileMove] | None = None, deletions: list[str] | None = None) -> None:
     """Apply edits to the working theater and refresh cached runtime configuration."""
-    live_agent_manager.stop_session(info.theater_id)
+    object_registry.live_agent_manager.stop_session(info.theater_id)
     store().write_files(info, files, moves, deletions)
-    refresh_checkout_metadata(info, theater_manager)
-    canvas_states.reload_package(info.theater_id)
+    refresh_checkout_metadata(info, object_registry.theater_manager)
+    object_registry.canvas_states.reload_package(info.theater_id)
     theater_access_cache.invalidate_theater(info.theater_id)
 
 
 def initialize_theater(info: DraftInfo) -> None:
-    refresh_checkout_metadata(info, theater_manager)
-    metadata = theater_manager.get_theater(info.theater_id)
+    refresh_checkout_metadata(info, object_registry.theater_manager)
+    metadata = object_registry.theater_manager.get_theater(info.theater_id)
     try:
-        if not save_theater_checkout(info.theater_id, theater_manager, theater_repository):
+        if not save_theater_checkout(info.theater_id, object_registry.theater_manager, object_registry.theater_repository):
             raise HTTPException(status_code=503, detail="Could not save the new theater. Please try again.")
-        if not db.record_deployment(info.theater_id, info.owner_id, metadata.join_key, cost=0.0, name=info.name):
+        if not object_registry.db.record_deployment(info.theater_id, info.owner_id, metadata.join_key, cost=0.0, name=info.name):
             raise HTTPException(status_code=503, detail="Could not register the new theater. Please try again.")
     except Exception:
-        theater_manager.destroy_theater(info.theater_id)
-        theater_repository.delete_theater(info.theater_id)
+        object_registry.theater_manager.destroy_theater(info.theater_id)
+        object_registry.theater_repository.delete_theater(info.theater_id)
         raise
     info.saved_revision = info.revision
     theater_access_cache.invalidate_theater(info.theater_id)
@@ -160,7 +161,7 @@ def invalid_input() -> Iterator[None]:
 
 
 def response(info: DraftInfo) -> DraftResponse:
-    return DraftResponse(draft=info, files=store().files(info.theater_id), rates=pricing_controller.get_rates())
+    return DraftResponse(draft=info, files=store().files(info.theater_id), rates=object_registry.pricing_controller.get_rates())
 
 
 async def require_user(request: Request) -> int:
@@ -172,7 +173,7 @@ async def require_user(request: Request) -> int:
 
 async def require_draft(request: Request, theater_id: str) -> DraftInfo:
     owner_id = await require_user(request)
-    deployment = await asyncio.to_thread(db.get_deployment, theater_id)
+    deployment = await asyncio.to_thread(object_registry.db.get_deployment, theater_id)
     if not deployment:
         raise HTTPException(status_code=404, detail="Theater not found.")
     if deployment["user_id"] != owner_id:
@@ -268,7 +269,7 @@ async def import_draft(request: Request, files: list[UploadFile] = File(...), na
 async def open_draft(theater_id: str, request: Request) -> DraftResponse:
     owner_id = await require_user(request)
     async with _draft_locks.setdefault(theater_id, asyncio.Lock()):
-        deployment = await asyncio.to_thread(db.get_deployment, theater_id)
+        deployment = await asyncio.to_thread(object_registry.db.get_deployment, theater_id)
         if not deployment:
             raise HTTPException(status_code=404, detail="Theater not found.")
         if deployment["user_id"] != owner_id:
@@ -276,20 +277,20 @@ async def open_draft(theater_id: str, request: Request) -> DraftResponse:
         with invalid_input():
             root = store().directory(theater_id)
             if not (root / "theater.yaml").is_file():
-                if not await asyncio.to_thread(theater_repository.reconstruct_theater, theater_id, root):
+                if not await asyncio.to_thread(object_registry.theater_repository.reconstruct_theater, theater_id, root):
                     raise HTTPException(status_code=404, detail="Theater package not found.")
             info = await asyncio.to_thread(store().load, theater_id)
         if info is None:
-            metadata = await asyncio.to_thread(theater_manager.get_theater, theater_id)
+            metadata = await asyncio.to_thread(object_registry.theater_manager.get_theater, theater_id)
             info = DraftInfo(theater_id=theater_id, owner_id=owner_id, name=metadata.name)
             await asyncio.to_thread(store().save_info, info)
         # Entering the editor returns control to the owner and cancels pending
         # handoffs, so another user cannot accept an old request afterward.
         if (deployment.get("active_orator_id") or owner_id) != owner_id or deployment.get("baton_request"):
             with invalid_input():
-                baton_state = await db.take_back_baton_async(theater_id, owner_id=owner_id)
+                baton_state = await object_registry.db.take_back_baton_async(theater_id, owner_id=owner_id)
             theater_access_cache.invalidate_theater(theater_id)
-            live_agent_manager.set_active_controller(theater_id, owner_id)
+            object_registry.live_agent_manager.set_active_controller(theater_id, owner_id)
             await broadcast_baton_update(theater_id, baton_state)
         info = await require_draft(request, theater_id)
         with invalid_input():
@@ -316,14 +317,14 @@ async def save_draft(theater_id: str, body: SaveDraftRequest, request: Request) 
         check_revision(info, body.revision)
         info.name = body.name
         with invalid_input():
-            if body.writes or info.name != theater_manager.get_theater(theater_id).name:
+            if body.writes or info.name != object_registry.theater_manager.get_theater(theater_id).name:
                 await asyncio.to_thread(write_checkout, info, encode_text_writes(body.writes))
             if body.persist:
-                canvas_states.persist(theater_id)
-                if not await asyncio.to_thread(save_theater_checkout, theater_id, theater_manager, theater_repository):
+                object_registry.canvas_states.persist(theater_id)
+                if not await asyncio.to_thread(save_theater_checkout, theater_id, object_registry.theater_manager, object_registry.theater_repository):
                     raise HTTPException(status_code=503, detail="Could not save the theater. Your edits are still in the working copy.")
                 info.saved_revision = info.revision
-                await asyncio.to_thread(db.update_theater_name, theater_id, info.name, user_id=info.owner_id)
+                await asyncio.to_thread(object_registry.db.update_theater_name, theater_id, info.name, user_id=info.owner_id)
         return await asyncio.to_thread(response, info)
 
 
@@ -350,8 +351,8 @@ async def import_google_resource(theater_id: str, body: GoogleLinkRequest, reque
             result = await import_google_link(body.url, custom_name=body.target_name)
 
         if result.kind == "doc" and body.harvest:
-            cost = pricing_controller.get_rates()["theater_editor_assistant_credit_rate"]
-            user = await asyncio.to_thread(db.get_user_by_id, owner_id)
+            cost = object_registry.pricing_controller.get_rates()["theater_editor_assistant_credit_rate"]
+            user = await asyncio.to_thread(object_registry.db.get_user_by_id, owner_id)
             if not user or user["credits"] < cost:
                 raise HTTPException(status_code=402, detail=f"Harvesting a Google Doc requires {cost:g} credits. Buy credits using the balance at the top of this page.")
             try:
@@ -360,7 +361,7 @@ async def import_google_resource(theater_id: str, body: GoogleLinkRequest, reque
                 logger.exception("Google Doc harvesting failed")
                 raise HTTPException(status_code=502, detail="The assistant could not harvest the Google Doc into a valid proposal. No credits were charged. Please try again.") from error
             try:
-                updated = await asyncio.to_thread(db.record_user_usage, owner_id,
+                updated = await asyncio.to_thread(object_registry.db.record_user_usage, owner_id,
                     credit_cost=cost, idempotency_key=f"builder:harvest:{theater_id}:{uuid.uuid4().hex}")
             except Exception as error:
                 logger.exception("Google Doc harvest billing failed")
@@ -401,8 +402,8 @@ async def ask_assistant(theater_id: str, body: AssistantRequest, request: Reques
     owner_id = await require_user(request)
     async with _billing_locks.setdefault(owner_id, asyncio.Lock()), _draft_locks.setdefault(theater_id, asyncio.Lock()):
         info = await require_draft(request, theater_id)
-        cost = pricing_controller.get_rates()["theater_editor_assistant_credit_rate"]
-        user = await asyncio.to_thread(db.get_user_by_id, owner_id)
+        cost = object_registry.pricing_controller.get_rates()["theater_editor_assistant_credit_rate"]
+        user = await asyncio.to_thread(object_registry.db.get_user_by_id, owner_id)
         if not user or user["credits"] < cost:
             raise HTTPException(status_code=402, detail=f"Each assistant turn requires {cost:g} credits. Buy credits using the balance at the top of this page.")
 
@@ -443,7 +444,7 @@ async def ask_assistant(theater_id: str, body: AssistantRequest, request: Reques
             logger.exception("Theater builder assistant failed")
             raise HTTPException(status_code=502, detail="The assistant could not prepare a valid proposal. No credits were charged. Please try again.") from error
         try:
-            updated = await asyncio.to_thread(db.record_user_usage, owner_id,
+            updated = await asyncio.to_thread(object_registry.db.record_user_usage, owner_id,
                 credit_cost=cost, idempotency_key=f"builder:assistant:{theater_id}:{uuid.uuid4().hex}")
         except Exception as error:
             logger.exception("Theater builder assistant billing failed")
@@ -502,11 +503,11 @@ async def attach_game_to_draft(theater_id: str, body: AttachGameRequest, request
         info = await require_draft(request, theater_id)
         check_revision(info, body.revision)
         _safe_path_param(body.game_id, "game_id")
-        game = await asyncio.to_thread(game_service.get_game, body.game_id)
+        game = await asyncio.to_thread(object_registry.game_service.get_game, body.game_id)
         if game is None:
             raise HTTPException(status_code=404, detail="Game not found.")
         with invalid_input():
-            game_files = await asyncio.to_thread(game_service.load_game_assets, body.game_id)
+            game_files = await asyncio.to_thread(object_registry.game_service.load_game_assets, body.game_id)
             if not game_files:
                 raise HTTPException(status_code=404, detail="Game package contains no attachable files.")
             existing = await asyncio.to_thread(store().files, theater_id)
@@ -628,7 +629,7 @@ def generate_assets(info: DraftInfo, body: GenerationRequest) -> tuple[str, dict
 async def generate_draft_asset(theater_id: str, body: GenerateDraftRequest, request: Request) -> dict[str, JsonValue]:
     owner_id = await require_user(request)
     slot_id = await asyncio.to_thread(
-        db.acquire_generation_slot,
+        object_registry.db.acquire_generation_slot,
         owner_id,
         "editor",
         theater_id,
@@ -644,9 +645,9 @@ async def generate_draft_asset(theater_id: str, body: GenerateDraftRequest, requ
         async with _billing_locks.setdefault(owner_id, asyncio.Lock()), _draft_locks.setdefault(theater_id, asyncio.Lock()):
             info = await require_draft(request, theater_id)
             check_revision(info, body.revision)
-            rates = pricing_controller.get_rates()
+            rates = object_registry.pricing_controller.get_rates()
             cost = rates["layered_animation_credit_rate" if body.kind == "animation" else "music_credit_rate" if body.kind == "playlist" else "image_credit_rate"]
-            user = await asyncio.to_thread(db.get_user_by_id, owner_id)
+            user = await asyncio.to_thread(object_registry.db.get_user_by_id, owner_id)
             if not user or user["credits"] < cost:
                 raise HTTPException(status_code=402, detail=f"This generation requires {cost:g} credits. Top up on /deploy.")
         try:
@@ -668,7 +669,7 @@ async def generate_draft_asset(theater_id: str, body: GenerateDraftRequest, requ
 
         async with _billing_locks.setdefault(owner_id, asyncio.Lock()):
             try:
-                updated = await asyncio.to_thread(db.record_user_usage, owner_id,
+                updated = await asyncio.to_thread(object_registry.db.record_user_usage, owner_id,
                     images_created=1 if body.kind in ("reference", "stamp", "character", "scene") else 0,
                     music_created=1 if body.kind == "playlist" else 0,
                     layered_animations_created=1 if body.kind == "animation" else 0, credit_cost=cost,
@@ -677,13 +678,13 @@ async def generate_draft_asset(theater_id: str, body: GenerateDraftRequest, requ
                 # Do not leave an unbilled asset available if settlement failed.
                 for filename in files:
                     safe_asset_path(store().directory(theater_id), filename).unlink(missing_ok=True)
-                await asyncio.to_thread(theater_manager.notify_storage_changed, theater_id)
+                await asyncio.to_thread(object_registry.theater_manager.notify_storage_changed, theater_id)
                 logger.exception("Theater builder billing failed")
                 raise HTTPException(status_code=503, detail="Could not settle generation credits. Please reload the draft.") from error
             auth_session_cache.invalidate_user(owner_id)
             return {"path": path, "credits_charged": cost, "credits": float(updated["credits"]), "state": (await asyncio.to_thread(response, info)).model_dump(mode="json")}
     finally:
-        await asyncio.to_thread(db.release_generation_slot, slot_id)
+        await asyncio.to_thread(object_registry.db.release_generation_slot, slot_id)
 
 
 def publish_draft(info: DraftInfo) -> str:
@@ -702,14 +703,14 @@ def publish_draft(info: DraftInfo) -> str:
         matching_alias = any(Path(item.path).stem == str(starting_image) for item in images)
         if (image is None or not image.is_file()) and not matching_alias:
             raise ValueError("starting_image must point to an existing reference image.")
-    live_agent_manager.stop_session(info.theater_id)
-    refresh_checkout_metadata(info, theater_manager)
-    theater_manager.deploy_theater(info.theater_id)
-    canvas_states.reload_package(info.theater_id)
-    canvas_states.get(info.theater_id).persist()
-    if not save_theater_checkout(info.theater_id, theater_manager, theater_repository):
+    object_registry.live_agent_manager.stop_session(info.theater_id)
+    refresh_checkout_metadata(info, object_registry.theater_manager)
+    object_registry.theater_manager.deploy_theater(info.theater_id)
+    object_registry.canvas_states.reload_package(info.theater_id)
+    object_registry.canvas_states.get(info.theater_id).persist()
+    if not save_theater_checkout(info.theater_id, object_registry.theater_manager, object_registry.theater_repository):
         raise HTTPException(status_code=503, detail="Could not save the theater. Your edits are still in the working copy.")
-    db.update_theater_name(info.theater_id, info.name, user_id=info.owner_id)
+    object_registry.db.update_theater_name(info.theater_id, info.name, user_id=info.owner_id)
     theater_access_cache.invalidate_theater(info.theater_id)
     return f"/canvas?theater_id={info.theater_id}&role=orator"
 
@@ -752,9 +753,9 @@ async def reset_theater_draft(theater_id: str, request: Request, body: ResetThea
         if body is not None and body.revision is not None:
             check_revision(info, body.revision)
 
-        live_agent_manager.stop_session(theater_id)
-        await asyncio.to_thread(theater_manager.notify_storage_changed, theater_id)
-        roots = {store().directory(theater_id).resolve(), theater_repository.theater_path(theater_id).resolve()}
+        object_registry.live_agent_manager.stop_session(theater_id)
+        await asyncio.to_thread(object_registry.theater_manager.notify_storage_changed, theater_id)
+        roots = {store().directory(theater_id).resolve(), object_registry.theater_repository.theater_path(theater_id).resolve()}
         for root in roots:
             await asyncio.to_thread(_remove_reference_updates, root / "references")
 
@@ -768,8 +769,8 @@ async def reset_theater_draft(theater_id: str, request: Request, body: ResetThea
                 document = TypeAdapter(dict[str, JsonValue]).validate_json(metadata_path.read_text(encoding="utf-8"))
                 document["canvas_state"] = {}
                 metadata_path.write_text(json.dumps(document), encoding="utf-8")
-        canvas_states.reset(theater_id)
-        await asyncio.to_thread(theater_manager.notify_storage_changed, theater_id)
+        object_registry.canvas_states.reset(theater_id)
+        await asyncio.to_thread(object_registry.theater_manager.notify_storage_changed, theater_id)
         theater_access_cache.invalidate_theater(info.theater_id)
 
         return await asyncio.to_thread(response, info)

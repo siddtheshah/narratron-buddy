@@ -1,3 +1,4 @@
+import object_registry
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -31,8 +32,8 @@ async def test_reports_link_shared_evidence_and_support_moderation(tmp_path: Pat
         states = MagicMock()
         request = Request({'type': 'http', 'headers': []})
         body = reporting.ReportTheaterRequest(reason='harassment', details='Abusive messages')
-        with patch.object(reporting, 'db', database), patch.object(reporting, 'theater_repository', repository), \
-             patch.object(reporting, 'theater_manager', manager), patch.object(reporting, 'canvas_states', states), \
+        with patch.object(object_registry, 'db', database), patch.object(object_registry, 'theater_repository', repository), \
+             patch.object(object_registry, 'theater_manager', manager), patch.object(object_registry, 'canvas_states', states), \
              patch.object(reporting, 'get_current_user_async', AsyncMock(return_value=reporter)), \
              patch.object(reporting, '_require_canvas_access_async', AsyncMock()):
             first = await reporting.report_theater('stage', body, request)
@@ -77,8 +78,8 @@ async def test_report_access_validation_and_failed_capture(tmp_path: Path) -> No
         assert denied.value.status_code == 401
     access = AsyncMock(side_effect=HTTPException(403, 'Access denied'))
     with patch.object(reporting, 'get_current_user_async', AsyncMock(return_value={'id': 2})), \
-         patch.object(reporting, '_require_canvas_access_async', access), patch.object(reporting, 'db', database), \
-         patch.object(reporting, 'theater_manager', manager), patch.object(reporting, 'theater_repository', repository):
+         patch.object(reporting, '_require_canvas_access_async', access), patch.object(object_registry, 'db', database), \
+         patch.object(object_registry, 'theater_manager', manager), patch.object(object_registry, 'theater_repository', repository):
         with pytest.raises(HTTPException) as denied:
             await reporting.report_theater('stage', body, request)
         assert denied.value.status_code == 403
@@ -98,7 +99,7 @@ def test_feedback_routes_persist_and_triage_without_flagging_theaters(tmp_path: 
     try:
         user = database.register_user('feedback_author', 'feedback@example.com', 'password')
         access = AsyncMock()
-        with patch.object(reporting, 'db', database), \
+        with patch.object(object_registry, 'db', database), \
              patch.object(reporting, 'get_current_user_async', AsyncMock(return_value=user)), \
              patch.object(reporting, '_require_canvas_access_async', access), \
              patch.object(reporting, 'snapshot_theater') as snapshot:
@@ -144,14 +145,14 @@ async def test_feedback_authentication_access_and_database_failures() -> None:
     body = reporting.FeedbackRequest(category='bug', details='Audio stopped', theater_id='stage')
     database = MagicMock()
     with patch.object(reporting, 'get_current_user_async', AsyncMock(return_value=None)), \
-         patch.object(reporting, 'db', database):
+         patch.object(object_registry, 'db', database):
         with pytest.raises(HTTPException) as denied:
             await reporting.file_feedback(body, request)
         assert denied.value.status_code == 401
         database.record_user_feedback.assert_not_called()
     access = AsyncMock(side_effect=HTTPException(403, 'Access denied'))
     with patch.object(reporting, 'get_current_user_async', AsyncMock(return_value={'id': 2})), \
-         patch.object(reporting, 'db', database), \
+         patch.object(object_registry, 'db', database), \
          patch.object(reporting, '_require_canvas_access_async', access):
         with pytest.raises(HTTPException) as denied:
             await reporting.file_feedback(body, request)

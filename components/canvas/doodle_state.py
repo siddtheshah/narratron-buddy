@@ -471,14 +471,14 @@ class DoodleState:
 
         if numeric_stamp_id is not None:
             try:
-                from api_server.dependencies import db, stamp_storage
-                if db:
-                    stamp_record = db.get_stamp_by_id(numeric_stamp_id)
+                import object_registry
+                if object_registry.db:
+                    stamp_record = object_registry.db.get_stamp_by_id(numeric_stamp_id)
                     if stamp_record is not None:
                         rec_user_id = int(str(stamp_record.get("user_id", 0)))
                         rec_filename = str(stamp_record.get("filename", ""))
-                        if stamp_storage:
-                            data = stamp_storage.read_stamp(rec_user_id, rec_filename)
+                        if object_registry.stamp_storage:
+                            data = object_registry.stamp_storage.read_stamp(rec_user_id, rec_filename)
                             if data:
                                 return data
             except Exception:

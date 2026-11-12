@@ -13,12 +13,9 @@ from fastapi import Request, WebSocket, WebSocketDisconnect, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from google.genai import types
 
+import object_registry
 from api_server.shared import (
     app,
-    canvas_states,
-    db,
-    theater_manager,
-    theater_repository,
     get_current_user,
     get_current_user_async,
     _require_canvas_access,
@@ -26,7 +23,7 @@ from api_server.shared import (
     can_control_agent_websocket,
     is_contributor,
 )
-from api_server.dependencies import live_agent_manager
+
 from components.canvas.canvas_state_manager import CanvasStateManager
 from components.canvas.doodle_state import DoodleSnapshot
 from game_engine.game_state import GameAction, StaleGameAction, UnauthorizedGameAction
@@ -337,7 +334,7 @@ def _state(theater_id: str) -> CanvasStateManager:
     """Resolve the theater coordinator before selecting one of its components."""
     if not theater_id or not theater_id.strip():
         raise HTTPException(status_code=400, detail="theater_id is required.")
-    return canvas_states.get(theater_id.strip())
+    return object_registry.canvas_states.get(theater_id.strip())
 
 
 def _session_notepad(session: Any) -> Any:
@@ -514,7 +511,7 @@ async def _apply_doodle_message(state: CanvasStateManager, data: dict[str, JsonV
     if data.get("type") == "text":
         current_user = state.connections.active_user_connections.get(sender)
         theater_id = sender.state.theater_id
-        deployment = db.get_deployment(theater_id) if theater_id else None
+        deployment = object_registry.db.get_deployment(theater_id) if theater_id else None
         is_orator = bool(deployment and can_control_agent_websocket(deployment, current_user=current_user))
         if theater_id and not is_orator and not state.ui.viewer_collab_enabled:
             await sender.send_json({"type": "text_annotation_rejected", "client_message_id": message_id})
@@ -550,7 +547,7 @@ async def _apply_doodle_message(state: CanvasStateManager, data: dict[str, JsonV
     if data.get("type") == "stamp":
         current_user = state.connections.active_user_connections.get(sender)
         theater_id = sender.state.theater_id
-        deployment = db.get_deployment(theater_id) if theater_id else None
+        deployment = object_registry.db.get_deployment(theater_id) if theater_id else None
         user_allowed = True
         if theater_id:
             user_allowed = bool(deployment and is_contributor(deployment, current_user=current_user))
@@ -599,7 +596,7 @@ async def _apply_doodle_message(state: CanvasStateManager, data: dict[str, JsonV
     if data.get("type") == "remove_text":
         current_user = state.connections.active_user_connections.get(sender)
         theater_id = sender.state.theater_id
-        deployment = db.get_deployment(theater_id) if theater_id else None
+        deployment = object_registry.db.get_deployment(theater_id) if theater_id else None
         is_orator = bool(deployment and can_control_agent_websocket(deployment, current_user=current_user))
         if theater_id and not is_orator and not state.ui.viewer_collab_enabled:
             await acknowledge()
@@ -614,7 +611,7 @@ async def _apply_doodle_message(state: CanvasStateManager, data: dict[str, JsonV
     if data.get("type") == "remove_stamp":
         current_user = state.connections.active_user_connections.get(sender)
         theater_id = sender.state.theater_id
-        deployment = db.get_deployment(theater_id) if theater_id else None
+        deployment = object_registry.db.get_deployment(theater_id) if theater_id else None
         user_allowed = True
         if theater_id:
             user_allowed = bool(deployment and is_contributor(deployment, current_user=current_user))
@@ -633,7 +630,7 @@ async def _apply_doodle_message(state: CanvasStateManager, data: dict[str, JsonV
     if data.get("type") == "select_stamp":
         current_user = state.connections.active_user_connections.get(sender)
         theater_id = sender.state.theater_id
-        deployment = db.get_deployment(theater_id) if theater_id else None
+        deployment = object_registry.db.get_deployment(theater_id) if theater_id else None
         user_allowed = True
         if theater_id:
             user_allowed = bool(deployment and is_contributor(deployment, current_user=current_user))
@@ -689,8 +686,8 @@ async def websocket_endpoint(
                                "page_id": initial_doodles.page_id})
     connections.doodle_subscriptions[websocket] = initial_doodles.page_id
     await websocket.send_json(initial_doodles.snapshot())
-    
-    baton_st = await db.get_theater_baton_state_async(theater_id)
+
+    baton_st = await object_registry.db.get_theater_baton_state_async(theater_id)
     if baton_st:
         await broadcast_baton_update(theater_id, baton_st)
 
@@ -700,7 +697,7 @@ async def websocket_endpoint(
             await _apply_doodle_message(cs, data, websocket)
     except WebSocketDisconnect:
         _unregister_doodle_websocket(cs, websocket)
-        baton_st = await db.get_theater_baton_state_async(theater_id)
+        baton_st = await object_registry.db.get_theater_baton_state_async(theater_id)
         if baton_st:
             await broadcast_baton_update(theater_id, baton_st)
 
@@ -749,8 +746,8 @@ async def trigger_orator_mic_toggle(request: Request, theater_id: str):
     user = await get_current_user_async(request)
     if not user:
         raise HTTPException(status_code=401, detail="Authentication required to control Orator microphone.")
-    
-    dep = db.get_deployment(theater_id)
+
+    dep = object_registry.db.get_deployment(theater_id)
     if not dep:
         raise HTTPException(status_code=404, detail="Active theater not found.")
     if dep["user_id"] != user["id"]:
@@ -786,9 +783,9 @@ def get_latest_image(
         raise HTTPException(status_code=400, detail="theater_id is required.")
     theater_id = theater_id.strip()
     _require_canvas_access(request, theater_id, join_key=join_key)
-    theater_dir = theater_manager.theater(theater_id).directory()
+    theater_dir = object_registry.theater_manager.theater(theater_id).directory()
     if not theater_dir.exists():
-        theater_repository.reconstruct_theater(theater_id, theater_dir)
+        object_registry.theater_repository.reconstruct_theater(theater_id, theater_dir)
     username = _request_username(request)
     return _state(theater_id).get_latest_state(username=username) if username else _state(theater_id).get_latest_state()
 
@@ -827,7 +824,7 @@ def post_a2ui_action(
     _require_canvas_access(request, theater_id, join_key=join_key)
     if payload.version != "v1.0":
         raise HTTPException(status_code=400, detail="Unsupported A2UI protocol version.")
-    deployment = db.get_deployment(theater_id)
+    deployment = object_registry.db.get_deployment(theater_id)
     current_user = get_current_user(request)
     if not can_control_agent_websocket(deployment, current_user=current_user):
         raise HTTPException(status_code=403, detail="Only the active orator can use interactive canvas controls.")
@@ -846,7 +843,7 @@ def post_a2ui_action(
     ).split())[:2000]
     if not user_action:
         raise HTTPException(status_code=400, detail="Interactive control has no user action.")
-    session = live_agent_manager.get_session(theater_id)
+    session = object_registry.live_agent_manager.get_session(theater_id)
     if not session or not session.is_alive:
         raise HTTPException(status_code=409, detail="The live agent is not connected.")
     notification = (
@@ -869,7 +866,7 @@ def post_game_action(
 ) -> dict[str, JsonValue] | None:
     """Apply a revision-checked move without requiring a live story agent."""
     _require_canvas_access(request, theater_id, join_key=join_key)
-    deployment = db.get_deployment(theater_id)
+    deployment = object_registry.db.get_deployment(theater_id)
     if not can_control_agent_websocket(deployment, current_user=get_current_user(request)):
         state = _state(theater_id)
         if not (
@@ -904,7 +901,7 @@ def post_game_action(
 def post_orator_command(command: OratorCommand, request: Request, theater_id: str):
     """Relay a direct typed instruction from the active orator to Live."""
     _require_canvas_access(request, theater_id)
-    deployment = db.get_deployment(theater_id)
+    deployment = object_registry.db.get_deployment(theater_id)
     current_user = get_current_user(request)
     if not can_control_agent_websocket(deployment, current_user=current_user):
         raise HTTPException(status_code=403, detail="Only the active orator can send commands to Narratron.")
@@ -913,7 +910,7 @@ def post_orator_command(command: OratorCommand, request: Request, theater_id: st
     if not text:
         raise HTTPException(status_code=400, detail="A command cannot be empty.")
 
-    session = live_agent_manager.get_session(theater_id)
+    session = object_registry.live_agent_manager.get_session(theater_id)
     if not session or not session.is_alive:
         raise HTTPException(status_code=409, detail="The live agent is not connected.")
 
@@ -931,7 +928,7 @@ def post_orator_command(command: OratorCommand, request: Request, theater_id: st
 def set_canvas_pin(theater_id: str, payload: CanvasPinRequest, request: Request) -> dict[str, str | bool]:
     """Pin the current image and music on behalf of the active orator."""
     _require_canvas_access(request, theater_id)
-    deployment = db.get_deployment(theater_id)
+    deployment = object_registry.db.get_deployment(theater_id)
     current_user = get_current_user(request)
     if not can_control_agent_websocket(deployment, current_user=current_user):
         raise HTTPException(status_code=403, detail="Only the active orator can pin the canvas.")
@@ -943,7 +940,7 @@ def set_canvas_pin(theater_id: str, payload: CanvasPinRequest, request: Request)
         changed = True
     if changed:
         state.persist()
-        session = live_agent_manager.get_session(theater_id)
+        session = object_registry.live_agent_manager.get_session(theater_id)
         if session and session.is_alive:
             status = "pinned" if payload.pinned else "unpinned"
             guidance = (
@@ -963,11 +960,11 @@ def post_orator_action(
 ) -> OratorActionResponse:
     """Apply an authorized action wheel selection and relay intent to Narratron."""
     _require_canvas_access(request, theater_id)
-    deployment = db.get_deployment(theater_id)
+    deployment = object_registry.db.get_deployment(theater_id)
     if not can_control_agent_websocket(deployment, current_user=get_current_user(request)):
         raise HTTPException(status_code=403, detail="Only the active orator can use the action wheel.")
     state = _state(theater_id)
-    session = live_agent_manager.get_session(theater_id)
+    session = object_registry.live_agent_manager.get_session(theater_id)
     if payload.action in ("update_story", "update_ui"):
         if not session or not session.is_alive:
             raise HTTPException(status_code=409, detail="Connect Narratron before requesting an update.")
@@ -1116,7 +1113,7 @@ def move_a2ui_surface(
 ):
     """Move a generated surface for all connected canvas viewers."""
     _require_canvas_access(request, theater_id)
-    deployment = db.get_deployment(theater_id)
+    deployment = object_registry.db.get_deployment(theater_id)
     current_user = get_current_user(request)
     if not can_control_agent_websocket(deployment, current_user=current_user):
         raise HTTPException(status_code=403, detail="Only the active orator can move interactables.")
@@ -1130,7 +1127,7 @@ def move_a2ui_surface(
 def delete_a2ui_surface(surface_id: str, request: Request, theater_id: str):
     """Let the active orator remove an unwanted generated surface."""
     _require_canvas_access(request, theater_id)
-    deployment = db.get_deployment(theater_id)
+    deployment = object_registry.db.get_deployment(theater_id)
     current_user = get_current_user(request)
     if not can_control_agent_websocket(deployment, current_user=current_user):
         raise HTTPException(status_code=403, detail="Only the active orator can delete interactables.")
@@ -1173,7 +1170,7 @@ def post_chat(msg: ChatMessage, request: Request, theater_id: str) -> dict[str, 
         if profile_color:
             chat_kwargs["profile_color"] = profile_color
     if msg.roll_data is not None:
-        deployment = db.get_deployment(theater_id)
+        deployment = object_registry.db.get_deployment(theater_id)
         if deployment and not is_contributor(deployment, current_user=user):
             raise HTTPException(
                 status_code=403,
@@ -1186,7 +1183,7 @@ def post_chat(msg: ChatMessage, request: Request, theater_id: str) -> dict[str, 
 
     if msg.roll_data is not None and state.ui.viewer_collab_enabled:
         if not msg.roll_data.forwarded_to_agent:
-            session = live_agent_manager.get_session(theater_id)
+            session = object_registry.live_agent_manager.get_session(theater_id)
             if session and session.is_alive:
                 session.send_user_content(
                     types.Content(parts=[types.Part(text=f"[D&D Dice Roll] {msg.text}")])
@@ -1210,7 +1207,7 @@ def get_sticky_notes(request: Request, theater_id: str) -> dict[str, JsonValue]:
     theater_id = theater_id.strip()
     _require_canvas_access(request, theater_id)
 
-    session = live_agent_manager.get_session(theater_id)
+    session = object_registry.live_agent_manager.get_session(theater_id)
     notepad = _session_notepad(session)
     if notepad is None:
         notepad = _state(theater_id).notepad
@@ -1257,14 +1254,14 @@ def set_viewer_collab_mode(
     if not user:
         raise HTTPException(status_code=401, detail="Authentication required.")
 
-    deployment = db.get_deployment(theater_id)
+    deployment = object_registry.db.get_deployment(theater_id)
     if not deployment:
         raise HTTPException(status_code=404, detail="Active theater not found.")
     if not can_control_agent_websocket(deployment, current_user=user):
         raise HTTPException(status_code=403, detail="Only the active orator can change collaboration mode.")
 
     _state(theater_id).ui.set_viewer_collab_enabled(payload.enabled)
-    session = live_agent_manager.get_session(theater_id)
+    session = object_registry.live_agent_manager.get_session(theater_id)
     if session:
         session.send_collaboration_toggle_observability()
     return {
@@ -1275,4 +1272,4 @@ def set_viewer_collab_mode(
 @app.get("/api/stats")
 def get_stats_api():
     """Retrieve system stats summary (accounts, 7-day active users, theater views)."""
-    return db.get_stats_summary()
+    return object_registry.db.get_stats_summary()

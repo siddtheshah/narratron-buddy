@@ -4,21 +4,22 @@ from unittest.mock import AsyncMock, patch
 
 from fastapi.testclient import TestClient
 
-from api_server.app import app, db, theater_manager, FLAGS
+import object_registry
+from api_server.app import app
 from testing.ui.base import UITestCase
 
 
 class TestAdventureGuideUI(UITestCase):
     def setUp(self):
         super().setUp()
-        FLAGS.allow_mock_payments = True
-        FLAGS.testing_use_local = True
-        theater_manager.base_dir = self.theaters_dir
-        self._original_db_is_live = db.is_live
-        self._original_db_path = db.db_path
-        db.is_live = False
-        db.db_path = self.workspace / "test_adv_guide.db"
-        db._init_db()
+        object_registry.FLAGS.allow_mock_payments = True
+        object_registry.FLAGS.testing_use_local = True
+        object_registry.theater_manager.base_dir = self.theaters_dir
+        self._original_db_is_live = object_registry.db.is_live
+        self._original_db_path = object_registry.db.db_path
+        object_registry.db.is_live = False
+        object_registry.db.db_path = self.workspace / "test_adv_guide.db"
+        object_registry.db._init_db()
 
         pages_access_patcher = patch(
             "api_server.pages._require_canvas_access_async",
@@ -39,11 +40,11 @@ class TestAdventureGuideUI(UITestCase):
         self.client = TestClient(app)
 
     def tearDown(self):
-        db.close()
-        db.is_live = self._original_db_is_live
-        db.db_path = self._original_db_path
-        FLAGS.allow_mock_payments = False
-        FLAGS.testing_use_local = False
+        object_registry.db.close()
+        object_registry.db.is_live = self._original_db_is_live
+        object_registry.db.db_path = self._original_db_path
+        object_registry.FLAGS.allow_mock_payments = False
+        object_registry.FLAGS.testing_use_local = False
         super().tearDown()
 
     def test_canvas_template_contains_adventure_guide_elements(self):
@@ -86,11 +87,11 @@ class TestAdventureGuideUI(UITestCase):
         self.assertIn("never told the same way twice", html)
 
     def test_theater_endpoint_includes_is_adventure_mode_field(self):
-        owner = db.register_user("adv_owner", "adv-owner@example.com", "Password123")
-        db.add_user_credits(owner["id"], 50.0, 2.5)
+        owner = object_registry.db.register_user("adv_owner", "adv-owner@example.com", "Password123")
+        object_registry.db.add_user_credits(owner["id"], 50.0, 2.5)
 
         # 1. Create Adventure Mode Theater
-        adv_meta = theater_manager.create_theater(
+        adv_meta = object_registry.theater_manager.create_theater(
             name="Adv Theater",
             theater_id="test_adv_theater",
             theater_config={
@@ -99,7 +100,7 @@ class TestAdventureGuideUI(UITestCase):
                 }
             },
         )
-        db.record_deployment("test_adv_theater", owner["id"], adv_meta.join_key, cost=0.0)
+        object_registry.db.record_deployment("test_adv_theater", owner["id"], adv_meta.join_key, cost=0.0)
 
         response = self.client.get("/api/theaters/test_adv_theater")
         self.assertEqual(response.status_code, 200)
@@ -108,7 +109,7 @@ class TestAdventureGuideUI(UITestCase):
         self.assertTrue(data["metadata"].get("is_adventure_mode"))
 
         # 2. Create Regular Non-Adventure Mode Theater
-        reg_meta = theater_manager.create_theater(
+        reg_meta = object_registry.theater_manager.create_theater(
             name="Reg Theater",
             theater_id="test_reg_theater",
             theater_config={
@@ -117,7 +118,7 @@ class TestAdventureGuideUI(UITestCase):
                 }
             },
         )
-        db.record_deployment("test_reg_theater", owner["id"], reg_meta.join_key, cost=0.0)
+        object_registry.db.record_deployment("test_reg_theater", owner["id"], reg_meta.join_key, cost=0.0)
 
         response2 = self.client.get("/api/theaters/test_reg_theater")
         self.assertEqual(response2.status_code, 200)

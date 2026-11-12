@@ -19,7 +19,7 @@ import yaml
 import object_registry
 from fastapi.testclient import TestClient
 
-from api_server.app import app, canvas_states, db, theater_manager
+from api_server.app import app
 from services.user_help_settings import config_digest
 
 
@@ -36,7 +36,7 @@ class HelpSettingsHarness:
                 "changes": [{"setting": "image_generation.enabled", "enabled": False}]}
 
     def authenticate(self, user_id: int) -> None:
-        self.client.cookies.set("auth_token", db.create_auth_session(user_id))
+        self.client.cookies.set("auth_token", object_registry.db.create_auth_session(user_id))
 
     def assert_unchanged(self) -> None:
         assert self.path.read_bytes() == self.original
@@ -47,7 +47,7 @@ class HelpSettingsHarness:
 @pytest.fixture
 def help_settings(test_environment: tuple[TestClient, Path, dict[str, str | int]]) -> Iterator[HelpSettingsHarness]:
     client, _, owner = test_environment
-    path = theater_manager.theater("secret_stage").directory() / "theater.yaml"
+    path = object_registry.theater_manager.theater("secret_stage").directory() / "theater.yaml"
     original = b"live_agent: {}\nimage_generation:\n  enabled: true\n  cooldown_duration: 9\n"
     path.write_bytes(original)
     client.headers["X-Narratron-Settings-Confirm"] = "1"
@@ -59,13 +59,13 @@ def help_settings(test_environment: tuple[TestClient, Path, dict[str, str | int]
 def test_help_settings_reject_nonowners_even_with_join_key(help_settings: HelpSettingsHarness, role: str) -> None:
     harness = help_settings
     if role != "anonymous":
-        other = db.register_user("attacker", "attacker@example.com", "Password123")
+        other = object_registry.db.register_user("attacker", "attacker@example.com", "Password123")
         other_id = int(other["id"])
         if role in {"contributor", "active_orator"}:
-            db.add_contributor("secret_stage", harness.owner_id, other_id)
+            object_registry.db.add_contributor("secret_stage", harness.owner_id, other_id)
         if role == "active_orator":
-            db.request_baton("secret_stage", harness.owner_id, other_id)
-            db.accept_baton("secret_stage", other_id)
+            object_registry.db.request_baton("secret_stage", harness.owner_id, other_id)
+            object_registry.db.accept_baton("secret_stage", other_id)
         harness.authenticate(other_id)
     # Possession of canvas access and a known config hash grants no edit rights.
     assert harness.client.get("/canvas?theater_id=secret_stage&join_key=KEY-SECRET").status_code == 200
@@ -89,9 +89,9 @@ def test_help_settings_real_owner_can_apply_reviewed_switch(help_settings: HelpS
 
 def test_help_settings_owner_cannot_target_another_owners_theater(help_settings: HelpSettingsHarness) -> None:
     harness = help_settings
-    attacker = db.register_user("other_owner", "other-owner@example.com", "Password123")
-    theater_manager.create_theater("Attacker's theater", "attacker_stage")
-    db.record_deployment("attacker_stage", int(attacker["id"]), "KEY-OTHER", cost=0.0)
+    attacker = object_registry.db.register_user("other_owner", "other-owner@example.com", "Password123")
+    object_registry.theater_manager.create_theater("Attacker's theater", "attacker_stage")
+    object_registry.db.record_deployment("attacker_stage", int(attacker["id"]), "KEY-OTHER", cost=0.0)
     harness.authenticate(int(attacker["id"]))
     response = harness.client.post("/api/user-help/secret_stage/apply-settings", json=harness.proposal())
     assert response.status_code == 403
@@ -100,10 +100,10 @@ def test_help_settings_owner_cannot_target_another_owners_theater(help_settings:
 
 def test_help_settings_owner_must_still_hold_baton(help_settings: HelpSettingsHarness) -> None:
     harness = help_settings
-    other = db.register_user("other_orator", "orator@example.com", "Password123")
-    db.add_contributor("secret_stage", harness.owner_id, int(other["id"]))
-    db.request_baton("secret_stage", harness.owner_id, int(other["id"]))
-    db.accept_baton("secret_stage", int(other["id"]))
+    other = object_registry.db.register_user("other_orator", "orator@example.com", "Password123")
+    object_registry.db.add_contributor("secret_stage", harness.owner_id, int(other["id"]))
+    object_registry.db.request_baton("secret_stage", harness.owner_id, int(other["id"]))
+    object_registry.db.accept_baton("secret_stage", int(other["id"]))
     harness.authenticate(harness.owner_id)
     response = harness.client.post("/api/user-help/secret_stage/apply-settings", json=harness.proposal())
     assert response.status_code == 409
@@ -116,9 +116,9 @@ def test_help_settings_reject_invalid_owner_sessions(help_settings: HelpSettings
     if kind == "forged":
         token = str(harness.owner_id)
     elif kind == "expired":
-        token = db.create_auth_session(harness.owner_id, days_valid=-1)
+        token = object_registry.db.create_auth_session(harness.owner_id, days_valid=-1)
     else:
-        token = db.create_auth_session(harness.owner_id)
+        token = object_registry.db.create_auth_session(harness.owner_id)
         harness.client.cookies.set("auth_token", token)
         assert harness.client.get("/api/auth/me").json()["authenticated"] is True
         assert harness.client.post("/api/auth/logout").status_code == 200
@@ -218,23 +218,23 @@ def test_viewer_cannot_forge_an_actionable_help_message(help_settings: HelpSetti
 @pytest.fixture
 def test_environment() -> Iterator[tuple[TestClient, Path, dict[str, str | int]]]:
     test_dir = tempfile.mkdtemp()
-    original_base = theater_manager.base_dir
-    original_is_live = db.is_live
-    original_db_path = db.db_path
+    original_base = object_registry.theater_manager.base_dir
+    original_is_live = object_registry.db.is_live
+    original_db_path = object_registry.db.db_path
 
-    theater_manager.base_dir = Path(test_dir).resolve()
-    db.is_live = False
-    db.db_path = Path(test_dir) / "test_sec.db"
-    db._init_db()
+    object_registry.theater_manager.base_dir = Path(test_dir).resolve()
+    object_registry.db.is_live = False
+    object_registry.db.db_path = Path(test_dir) / "test_sec.db"
+    object_registry.db._init_db()
 
-    owner = db.register_user("sec_owner", "sec-owner@example.com", "Password123")
-    db.add_user_credits(int(owner["id"]), 50.0, 2.5)
+    owner = object_registry.db.register_user("sec_owner", "sec-owner@example.com", "Password123")
+    object_registry.db.add_user_credits(int(owner["id"]), 50.0, 2.5)
 
-    theater_manager.create_theater("Secret Campaign", "secret_stage")
-    theater_manager.deploy_theater("secret_stage")
-    db.record_deployment("secret_stage", int(owner["id"]), "KEY-SECRET", cost=5.0)
+    object_registry.theater_manager.create_theater("Secret Campaign", "secret_stage")
+    object_registry.theater_manager.deploy_theater("secret_stage")
+    object_registry.db.record_deployment("secret_stage", int(owner["id"]), "KEY-SECRET", cost=5.0)
 
-    state = canvas_states.get("secret_stage")
+    state = object_registry.canvas_states.get("secret_stage")
     state.chat.add_message({"author": "DM", "text": "Super secret plan: the king is an imposter."})
     state.story.story_planning_state = {"sticky_notes": [{"topic": "Secret Map", "info": "Buried under the castle."}]}
     state.persist()
@@ -243,10 +243,10 @@ def test_environment() -> Iterator[tuple[TestClient, Path, dict[str, str | int]]
     try:
         yield client, Path(test_dir), owner
     finally:
-        db.close()
-        db.is_live = original_is_live
-        db.db_path = original_db_path
-        theater_manager.base_dir = original_base
+        object_registry.db.close()
+        object_registry.db.is_live = original_is_live
+        object_registry.db.db_path = original_db_path
+        object_registry.theater_manager.base_dir = original_base
         shutil.rmtree(test_dir, ignore_errors=True)
 
 
@@ -345,7 +345,7 @@ def test_authenticated_user_only_sees_own_theaters(
     test_environment: tuple[TestClient, Path, dict[str, str | int]],
 ) -> None:
     client, _, _ = test_environment
-    db.register_user("other_user", "other@example.com", "Password123")
+    object_registry.db.register_user("other_user", "other@example.com", "Password123")
     client.post(
         "/api/auth/login",
         json={"username_or_email": "other_user", "password": "Password123"},

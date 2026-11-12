@@ -1,6 +1,8 @@
 """Application-wide objects and runtime flags.
 
-Import this module when a component needs one of Narratron's shared services.
+Import this module when a component needs one of Narratron's shared services,
+and access services through module attributes (for example, ``object_registry.db``).
+Callers resolve the currently registered service, including test replacements.
 Keeping construction here ensures the HTTP routes, agent runtime, and test
 configuration all operate on the same instances.
 """

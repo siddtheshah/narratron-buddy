@@ -15,6 +15,7 @@ import pytest
 import yaml
 
 import api_server.theaters as theaters
+import object_registry
 from components.theater_manager import TheaterManager
 from pricing.pricing_controller import PricingController
 from providers.image_provider import ImageGenerationRequest, ImageGenerationResult
@@ -60,12 +61,12 @@ def stamps(tmp_path: Path) -> Iterator[StampHarness]:
         identifier = request.headers.get("x-test-user")
         return {"id": int(identifier)} if identifier else None
 
-    with patch.object(theaters, "db", database), patch.object(theaters, "theater_manager", manager), \
-         patch.object(theaters, "theater_repository", repository), \
-         patch.object(theaters, "pricing_controller", PricingController(image_credit_rate=4)), \
+    with patch.object(object_registry, "db", database), patch.object(object_registry, "theater_manager", manager), \
+         patch.object(object_registry, "theater_repository", repository), \
+         patch.object(object_registry, "pricing_controller", PricingController(image_credit_rate=4)), \
          patch.object(theaters, "get_current_user_async", AsyncMock(side_effect=authenticate)), \
          patch.object(theaters, "_broadcast_doodle", broadcast), \
-         patch.object(theaters, "canvas_states", MagicMock()), \
+         patch.object(object_registry, "canvas_states", MagicMock()), \
          patch("services.theater_image_generation.get_image_provider", return_value=provider), \
          patch.object(theaters.auth_session_cache, "invalidate_user"), \
          TestClient(theaters.app, headers={"x-test-user": "7"}) as client:
