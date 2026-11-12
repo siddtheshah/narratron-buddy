@@ -1,0 +1,52 @@
+# Canvas TypeScript migration coverage
+
+The core baseline is commit `b5632e9`, before the TypeScript migration:
+17 Python files, 104 test definitions before parametrization. Two definitions
+exercise Python backend state/handlers and remain in Python. The other 102 are
+frontend migration candidates.
+
+This inventory counts original definitions, not current Playwright tests. Several
+TypeScript tests group related behaviors; parametrized cases must also survive.
+Keep each Python suite until its replacement passes with the same permissions,
+persistence, geometry, and race-condition checks.
+
+| Original file in `testing/ui/` | Baseline definitions | Current coverage |
+| --- | ---: | --- |
+| `a2ui_canvas_drag_test.py` | 7 | Python; pending migration |
+| `canvas_activity_test.py` | 5 | Python; pending migration |
+| `canvas_bookmarks_test.py` | 1 | `bookmarks_test.ts`; includes persistence, role visibility, navigation, failed jumps |
+| `canvas_chat_name_test.py` | 5 | Python; pending migration |
+| `canvas_collaboration_bar_test.py` | 1 | Python; pending migration |
+| `canvas_corner_controls_test.py` | 1 | Python; pending migration |
+| `canvas_geometry_test.py` | 1 | `renderers_test.ts`; 2 fit modes, each with 4 viewport/zoom combinations at DPR=2 |
+| `canvas_navigation_test.py` | 1 | `navigation_test.ts`; pan, zoom, pinch, coordinate conversion, reset, local state |
+| `canvas_pin_test.py` | 1 | Python; pending migration |
+| `canvas_resize_test.py` | 1 | Python; pending migration |
+| `canvas_scenes_characters_test.py` | 23 | Python; pending migration |
+| `canvas_segment_select_test.py` | 13 | Python; pending migration |
+| `canvas_speech_replay_test.py` | 2 | Python; pending migration |
+| `canvas_stamp_test.py` | 21 | Python; pending migration |
+| `canvas_text_edit_test.py` | 3 | Python; pending migration |
+| `canvas_undo_test.py` | 17 | 15 frontend definitions replaced by `doodle-actions_test.ts`; 2 backend tests retained in Python |
+| `canvas_zoom_effect_test.py` | 1 | `renderers_test.ts`; 4 fit/source-size cases, each with 5 zoom/resize combinations at DPR=2 |
+
+Current disposition: 19 original frontend definitions have TypeScript replacements,
+83 frontend definitions remain in Python, and 2 backend definitions remain in Python.
+The implementation migration is still in progress; image rendering is TypeScript,
+while doodle rendering and the remaining canvas controller logic are JavaScript.
+
+Additional coverage outside this baseline:
+
+- `cursor-state_test.ts`: store validation, subscription, interoperability, and real canvas controls.
+- `state-polling_test.ts`: all 12 original CJS cases plus module-shim compatibility.
+- `image-renderer_test.ts`: CDN policy, shim identity, sequence pixels and lifecycle,
+  layered composition/effects, silent video fallback and looping, and load cancellation.
+- `testing/ui/canvas_fixtures_test.ts`: asset serving, request isolation, service-worker
+  blocking, secondary contexts, and full canvas mounting.
+- `testing/ui/triframe_animation_test.py` and `video_animation_ui_test.py` retain
+  backend manifest/path/history checks.
+- Story-log inspector and audio-recorder CJS suites remain pending migration.
+
+Verification: `npm test` runs strict type checking, the production build, all
+TypeScript Playwright tests, and remaining CJS tests. Run Python checks with
+`uv run pytest`; generated modules are built by the UI fixture when stale.

@@ -18,7 +18,9 @@
     "forceConsistentCasingInFileNames": true,
     "paths": {
       "/static/generated/canvas/*": ["./frontend/canvas/*"],
-      "/static/js/*": ["./static/js/*"]
+      "/static/js/*": ["./static/js/*"],
+      "/static/js/image-effects.js?v=effects-20261005-1": ["./frontend/canvas/image-effects.d.ts"],
+      "/static/js/animation-effects.js": ["./frontend/canvas/animation-effects.d.ts"]
     }
   },
   "include": [
