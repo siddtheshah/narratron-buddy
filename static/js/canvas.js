@@ -1,3 +1,8 @@
+import { createAgentActivityController } from "/static/generated/canvas/agent-activity.js";
+import { createCollabBarController } from "/static/generated/canvas/collab-bar.js";
+import { createLayoutResizeController } from "/static/generated/canvas/layout-resize.js";
+import { createCanvasPinControl } from "/static/generated/canvas/pin-control.js";
+import { createTextAnnotations } from "/static/generated/canvas/text-annotations.js";
 import { startCanvasStatePolling } from "/static/generated/canvas/state-polling.js";
 
         import { setupTheaterReport } from '/static/js/theater-report.js';
@@ -786,40 +791,22 @@ import { startCanvasStatePolling } from "/static/generated/canvas/state-polling.
             return Boolean(window._isActiveOratorState);
         }
 
-        function updateCanvasPinButton() {
-            if (!canvasPinBtn) return;
-            const allPinned = canvasPinned && musicPinned;
-            canvasPinBtn.style.display = isCurrentOrator() ? 'inline-flex' : 'none';
-            canvasPinBtn.classList.toggle('active', allPinned);
-            canvasPinBtn.setAttribute('aria-pressed', canvasPinned !== musicPinned ? 'mixed' : String(allPinned));
-            canvasPinBtn.title = allPinned
-                ? 'Unpin image and music and allow changes'
-                : 'Pin the current image and music and block changes';
-            if (canvasPinLabel) canvasPinLabel.textContent = allPinned ? 'Image and music pinned' : 'Pin image and music';
-        }
-
-        canvasPinBtn?.addEventListener('click', async () => {
-            if (!isCurrentOrator() || !theaterId || canvasPinBtn.disabled) return;
-            canvasPinBtn.disabled = true;
-            try {
-                const response = await fetch(`/api/theaters/${encodeURIComponent(theaterId)}/canvas-pin`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ pinned: !(canvasPinned && musicPinned) }),
-                });
-                const result = await response.json().catch(() => ({}));
-                if (!response.ok) throw new Error(result.detail || 'Unable to update the canvas pin.');
-                canvasPinned = Boolean(result.pinned);
-                musicPinned = Boolean(result.music_pinned);
-                updateCanvasPinButton();
-                actionWheel.updateState(canvasPinned, musicPinned);
-            } catch (error) {
-                console.error('Failed to update canvas pin:', error);
-                canvasPinBtn.title = error.message;
-            } finally {
-                canvasPinBtn.disabled = false;
-            }
+        const pinControl = createCanvasPinControl({
+            button: canvasPinBtn,
+            label: canvasPinLabel,
+            theaterId,
+            isOrator: isCurrentOrator,
+            getState: () => ({ pinned: canvasPinned, musicPinned }),
+            setState: (state) => {
+                canvasPinned = state.pinned;
+                musicPinned = state.musicPinned;
+            },
+            onUpdated: (state) => actionWheel.updateState(state.pinned, state.musicPinned),
         });
+
+        function updateCanvasPinButton() {
+            pinControl.update();
+        }
 
         const actionWheel = initializeActionWheel({
             isOrator: isCurrentOrator,
@@ -1381,107 +1368,26 @@ import { startCanvasStatePolling } from "/static/generated/canvas/state-polling.
         });
 
         const promptBtn = document.getElementById('prompt-toggle-btn');
-        const pcmBroadcastIndicator = document.getElementById('pcm-broadcast-indicator');
-        const drawingIndicator = document.getElementById('agent-drawing-indicator');
-        const writingIndicator = document.getElementById('agent-writing-indicator');
-        const musicIndicator = document.getElementById('agent-music-indicator');
-        const diceIndicator = document.getElementById('agent-dice-indicator');
-        const referenceIndicator = document.getElementById('agent-reference-indicator');
-        const disconnectedIndicator = document.getElementById('agent-disconnected-indicator');
-        const agentToolActivity = {};
-        const agentToolActivityTiming = new Map();
-        const agentActivityStaleMs = 30 * 1000;
-        const agentActivityMaxMs = 10 * 60 * 1000;
-        const agentActivityFields = [
-            'image_generating', 'animation_generating', 'user_action_processing',
-            'music_generating', 'dice_rolling', 'reference_generating',
-        ];
-
-        if (disconnectedIndicator) {
-            disconnectedIndicator.addEventListener('click', () => {
+        const agentActivity = createAgentActivityController({
+            pcmBroadcastIndicator: document.getElementById('pcm-broadcast-indicator'),
+            drawingIndicator: document.getElementById('agent-drawing-indicator'),
+            writingIndicator: document.getElementById('agent-writing-indicator'),
+            musicIndicator: document.getElementById('agent-music-indicator'),
+            diceIndicator: document.getElementById('agent-dice-indicator'),
+            referenceIndicator: document.getElementById('agent-reference-indicator'),
+            disconnectedIndicator: document.getElementById('agent-disconnected-indicator'),
+            onReconnect: () => {
                 checkAgentStatus().then(() => ensureAgentConnectionWhenActive());
-            });
-        }
+            },
+        });
 
         function updateAgentActivity(toolActivity = {}) {
-            // Each tool needs its own confirmation: a live-connection heartbeat
-            // must not keep an unrelated tool indicator alive after an error.
-            Object.assign(agentToolActivity, toolActivity);
-            const now = Date.now();
-            for (const field of agentActivityFields) {
-                let timing = agentToolActivityTiming.get(field);
-                if (toolActivity?.[field] === false) {
-                    agentToolActivityTiming.delete(field);
-                } else if (toolActivity?.[field] === true) {
-                    if (!timing) {
-                        timing = { startedAt: now, confirmedAt: now, timedOut: false };
-                        agentToolActivityTiming.set(field, timing);
-                    }
-                    timing.confirmedAt = now;
-                }
-                if (timing && toolActivity?.[field] !== false) {
-                    // Latch the hard timeout until completion, so a stuck true
-                    // flag cannot repeatedly bring the indicator back.
-                    timing.timedOut ||= now - timing.startedAt >= agentActivityMaxMs;
-                    agentToolActivity[field] = !timing.timedOut
-                        && now - timing.confirmedAt < agentActivityStaleMs;
-                }
-            }
-            toolActivity = agentToolActivity;
-            const setVisible = (element, visible) => {
-                if (!element) return;
-                const active = Boolean(visible);
-                if (element.classList.contains('active') !== active) {
-                    element.classList.toggle('active', active);
-                }
-                const hidden = String(!active);
-                if (element.getAttribute('aria-hidden') !== hidden) {
-                    element.setAttribute('aria-hidden', hidden);
-                }
-            };
-            const isGeneratingImage = Boolean(toolActivity.image_generating);
-            const isGeneratingAnimation = Boolean(toolActivity.animation_generating);
-            const isDrawing = isGeneratingImage || isGeneratingAnimation;
-            setVisible(drawingIndicator, isDrawing);
-            if (drawingIndicator) {
-                if (isGeneratingAnimation && !isGeneratingImage) {
-                    drawingIndicator.title = 'Agent is generating an animation';
-                } else {
-                    drawingIndicator.title = 'Agent is painting a scene';
-                }
-            }
-            setVisible(writingIndicator, toolActivity.user_action_processing);
-            setVisible(musicIndicator, toolActivity.music_generating);
-            setVisible(diceIndicator, toolActivity.dice_rolling);
-            setVisible(referenceIndicator, Boolean(toolActivity.reference_generating));
-            const diceResult = toolActivity.dice_result || {};
-            const tier = ['low', 'middle', 'high'].includes(diceResult.tier) ? diceResult.tier : '';
-            if (diceIndicator) {
-                for (const resultTier of ['low', 'middle', 'high']) {
-                    const className = `dice-result-${resultTier}`;
-                    const selected = resultTier === tier;
-                    if (diceIndicator.classList.contains(className) !== selected) {
-                        diceIndicator.classList.toggle(className, selected);
-                    }
-                }
-                diceIndicator.title = diceResult.notation
-                    ? `Rolled ${diceResult.notation}: ${diceResult.total}`
-                    : 'The story is rolling the dice';
-            }
+            agentActivity.update(toolActivity);
         }
-
-        // Also expire indicators when requests fail and no new snapshot arrives.
-        setInterval(() => updateAgentActivity(), 1000);
 
         function setPcmBroadcasting(isBroadcasting) {
-            if (!pcmBroadcastIndicator) return;
-            pcmBroadcastIndicator.classList.toggle('active', isBroadcasting);
-            pcmBroadcastIndicator.setAttribute('aria-hidden', String(!isBroadcasting));
+            agentActivity.setPcmBroadcasting(isBroadcasting);
         }
-
-        // These map to the complete RMS VAD speech segment, not PCM chunk boundaries.
-        window.addEventListener('narratron:speech-start', () => setPcmBroadcasting(true));
-        window.addEventListener('narratron:speech-end', () => setPcmBroadcasting(false));
         let promptPinned = false;
 
         promptBtn.addEventListener('mouseenter', () => {
@@ -2202,10 +2108,7 @@ import { startCanvasStatePolling } from "/static/generated/canvas/state-polling.
                 ? 'Narratron has wandered away. (Try resummoning?)'
                 : (text || 'Waiting for Narratron to think…');
             agentThoughtText.classList.toggle('is-wandering', isWandering);
-            if (disconnectedIndicator) {
-                disconnectedIndicator.classList.toggle('active', isWandering);
-                disconnectedIndicator.setAttribute('aria-hidden', String(!isWandering));
-            }
+            agentActivity.setDisconnected(isWandering);
             lastAgentThought = text;
         }
 
@@ -2930,24 +2833,7 @@ import { startCanvasStatePolling } from "/static/generated/canvas/state-polling.
         }
 
         function moveTextAnnotation(action, previous, commit) {
-            if (commit) {
-                action = { ...action };
-                delete action.client_message_id;
-                sendOrQueueDoodleMessage(action);
-                pendingTextEdits.set(action.client_message_id, previous);
-                if (previous && (previous.x !== action.x || previous.y !== action.y)) {
-                    if (typeof pushUndoAction === 'function') {
-                        pushUndoAction(typeof MoveTextDoodleAction === 'function'
-                            ? new MoveTextDoodleAction(previous, action)
-                            : {
-                                type: 'move_text',
-                                before: { ...previous },
-                                after: { ...action }
-                            });
-                    }
-                }
-            }
-            applyTextAnnotation(action);
+            textAnnotations.move(action, previous, commit);
         }
 
         function bringStampToFront(stampId) {
@@ -3105,81 +2991,29 @@ import { startCanvasStatePolling } from "/static/generated/canvas/state-polling.
             redrawAllDoodles();
         }
 
+        const textAnnotations = createTextAnnotations({
+            canvas,
+            container: imgContainer,
+            canEdit: canAddTextAnnotation,
+            isPagedBack: () => isPagedBack,
+            stopSpeech: stopSceneSpeech,
+            getActiveEditor: () => activeTextEditor,
+            setActiveEditor: editor => { activeTextEditor = editor; },
+            getDefaults: () => ({
+                color: currentTextColor,
+                font: textAnnotationFont?.value || 'Outfit',
+                size: Number(textAnnotationSize?.value || 32),
+            }),
+            getImagePlane: existing => imageHistory[currentViewIndex]?.canvas_page
+                ? doodleRenderer.imagePlane(existing) : null,
+            send: sendOrQueueDoodleMessage,
+            rememberEdit: (action, previous) => pendingTextEdits.set(action.client_message_id, previous),
+            apply: applyTextAnnotation,
+            pushUndo: pushUndoAction,
+        });
+
         function openTextAnnotationEditor(existing, placement = existing) {
-            if (!canAddTextAnnotation() || isPagedBack) return;
-            stopSceneSpeech();
-            activeTextEditor?.remove();
-
-            const coords = placement;
-            const editor = document.createElement('textarea');
-            editor.rows = 1;
-            editor.value = existing?.text || '';
-            editor.maxLength = 240;
-            editor.className = 'canvas-text-editor';
-            editor.setAttribute('aria-label', 'Text annotation');
-            editor.placeholder = 'Type annotation…';
-            const plane = typeof imageHistory !== 'undefined' && imageHistory[currentViewIndex]?.canvas_page
-                ? doodleRenderer.imagePlane(existing) : null;
-            editor.style.left = plane ? `${plane.x + coords.x * plane.width}px` : `${coords.x * 100}%`;
-            editor.style.top = plane ? `${plane.y + coords.y * plane.height}px` : `${coords.y * 100}%`;
-            editor.style.fontFamily = `"${existing?.font || textAnnotationFont?.value || 'Outfit'}", sans-serif`;
-            const editingSize = Number(existing?.size || textAnnotationSize?.value || 32);
-            editor.style.fontSize = `${plane ? editingSize * plane.width / 1000 : editingSize}px`;
-            editor.style.color = existing?.color || currentTextColor;
-            imgContainer.appendChild(editor);
-            activeTextEditor = editor;
-
-            let finished = false;
-            const finish = (commit) => {
-                if (finished) return;
-                finished = true;
-                const text = editor.value.trim();
-                if (commit && text && canAddTextAnnotation()) {
-                    const action = {
-                        id: existing?.id || ((typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : ('text-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7))),
-                        type: 'text', x: coords.x, y: coords.y, text,
-                        color: existing?.color || currentTextColor,
-                        size: Number(existing?.size || textAnnotationSize?.value || 32),
-                        font: existing?.font || textAnnotationFont?.value || 'Outfit',
-                    };
-                    sendOrQueueDoodleMessage(action);
-                    if (existing) pendingTextEdits.set(action.client_message_id, existing);
-                    applyTextAnnotation(action);
-                    if (typeof pushUndoAction === 'function') {
-                        if (existing) {
-                            pushUndoAction(typeof EditTextDoodleAction === 'function'
-                                ? new EditTextDoodleAction(existing, action)
-                                : {
-                                    type: 'edit_text',
-                                    before: { ...existing },
-                                    after: { ...action }
-                                });
-                        } else {
-                            pushUndoAction(typeof PlaceTextDoodleAction === 'function'
-                                ? new PlaceTextDoodleAction(action)
-                                : {
-                                    type: 'place_text',
-                                    action: { ...action }
-                                });
-                        }
-                    }
-                }
-                editor.remove();
-                if (activeTextEditor === editor) activeTextEditor = null;
-            };
-            editor.addEventListener('keydown', (keyEvent) => {
-                if (keyEvent.key === 'Enter' && !keyEvent.shiftKey) {
-                    keyEvent.preventDefault();
-                    finish(true);
-                } else if (keyEvent.key === 'Escape') {
-                    keyEvent.preventDefault();
-                    finish(false);
-                    canvas.focus();
-                }
-            });
-            editor.addEventListener('blur', () => finish(true), { once: true });
-            editor.focus();
-            editor.select();
+            textAnnotations.open(existing, placement);
         }
 
         canvas.addEventListener('click', beginTextAnnotation);
@@ -5366,19 +5200,28 @@ import { startCanvasStatePolling } from "/static/generated/canvas/state-polling.
         const viewerCollabToggleBtn = document.getElementById('viewer-collab-toggle-btn');
         const collabSection = document.getElementById('collab-section');
         const hideSuggestionsBtn = document.getElementById('hide-suggestions-btn');
-        const viewerCollabGuideBtn = document.getElementById('viewer-collab-guide-btn');
-        const viewerCollabBar = document.getElementById('viewer-collab-bar');
-        const viewerCollabBarStatus = document.getElementById('viewer-collab-bar-status');
         let viewerCollabEnabled = false;
+        const collabBar = createCollabBarController({
+            theaterId,
+            bar: document.getElementById('viewer-collab-bar'),
+            barStatus: document.getElementById('viewer-collab-bar-status'),
+            guideBtn: document.getElementById('viewer-collab-guide-btn'),
+            guideModal: document.getElementById('viewer-collab-guide-modal'),
+            guideCloseBtn: document.getElementById('viewer-collab-guide-close-btn'),
+            guideAckBtn: document.getElementById('viewer-collab-guide-ack-btn'),
+            guideStatus: document.getElementById('viewer-collab-status'),
+            isOrator: isCurrentOrator,
+            isCollabEnabled: () => viewerCollabEnabled,
+            onBarUpdated: () => {
+                if (typeof gameRenderer !== 'undefined' && gameRenderer && typeof gameRenderer.render === 'function') {
+                    gameRenderer.render();
+                }
+            },
+        });
         updateTextAnnotationAvailability();
 
         function updateViewerCollabBar(enabled) {
-            viewerCollabBar.style.display = isCurrentOrator() ? 'none' : 'flex';
-            if (typeof gameRenderer !== 'undefined' && gameRenderer && typeof gameRenderer.render === 'function') {
-                gameRenderer.render();
-            }
-            viewerCollabBar.classList.toggle('is-enabled', Boolean(enabled));
-            viewerCollabBarStatus.textContent = enabled ? 'Collaboration: On' : 'Collaboration: Off';
+            collabBar.updateBar(enabled);
         }
 
         function setSuggestionsHidden(hidden, persist = true) {
@@ -5441,9 +5284,6 @@ import { startCanvasStatePolling } from "/static/generated/canvas/state-polling.
 
         if (hideSuggestionsBtn) {
             hideSuggestionsBtn.addEventListener('click', () => setSuggestionsHidden(!suggestionsHidden));
-        }
-        if (viewerCollabGuideBtn) {
-            viewerCollabGuideBtn.addEventListener('click', openViewerCollabGuide);
         }
         setSuggestionsHidden(localStorage.getItem(suggestionsHiddenStorageKey) === 'true', false);
 
@@ -6974,102 +6814,26 @@ import { startCanvasStatePolling } from "/static/generated/canvas/state-polling.
             document.addEventListener(evt, updateFullscreenUI);
         });
 
-        // Panel drawer collapse/expand logic
-        const popoutExpandBtn = document.getElementById('popout-expand-btn');
-
-        const SMALL_WINDOW_BREAKPOINT = 1280;
-        let userToggledPanel = false;
-        let isPanelCollapsed = window.innerWidth <= SMALL_WINDOW_BREAKPOINT;
-
-        // Cover intermediate layouts so image effects never visibly fold during resizing.
-        const canvasContainer = document.getElementById('image-container');
-        let canvasSettleTimer = null;
-        let canvasRevealFrame = null;
-        let canvasSettleUntil = 0;
-
-        function darkenCanvasUntilStable(delay = 120) {
-            canvasContainer.classList.add('layout-resizing');
-            clearTimeout(canvasSettleTimer);
-            cancelAnimationFrame(canvasRevealFrame);
-            const now = Date.now();
-            const targetTime = now + delay;
-            if (targetTime > canvasSettleUntil) {
-                canvasSettleUntil = targetTime;
-            }
-            const effectiveDelay = Math.max(delay, canvasSettleUntil - now);
-            canvasSettleTimer = setTimeout(() => {
-                canvasSettleUntil = 0;
+        // Panel drawer collapse/expand and resize settle cover
+        const layoutResize = createLayoutResizeController({
+            container: document.getElementById('image-container'),
+            sidebar: document.getElementById('chat-sidebar'),
+            expandButton: document.getElementById('popout-expand-btn'),
+            sideToggleButton: document.getElementById('chat-side-toggle-btn'),
+            onSettle: () => {
                 resizeRendererCanvas();
                 resizeDoodleCanvas();
-                // Let animated renderers paint at the final size before revealing them.
-                canvasRevealFrame = requestAnimationFrame(() => {
-                    canvasRevealFrame = requestAnimationFrame(() => {
-                        canvasContainer.classList.remove('layout-resizing');
-                    });
-                });
-            }, effectiveDelay);
-        }
-
-        let canvasLayout = canvasContainer.getBoundingClientRect();
-        const canvasResizeObserver = new ResizeObserver(() => {
-            const nextLayout = canvasContainer.getBoundingClientRect();
-            if (nextLayout.width !== canvasLayout.width || nextLayout.height !== canvasLayout.height) {
-                darkenCanvasUntilStable();
-                canvasLayout = nextLayout;
-            }
+            },
+            isFullscreenActive,
+            onCinematicShow: showCinematicUI,
         });
-        canvasResizeObserver.observe(canvasContainer);
 
         function setPanelCollapsed(collapsed, manual = false) {
-            if (manual) userToggledPanel = true;
-            isPanelCollapsed = collapsed;
-            const sidebar = document.getElementById('chat-sidebar');
-            if (sidebar) {
-                if (sidebar.classList.contains('collapsed') !== collapsed) {
-                    darkenCanvasUntilStable(400);
-                }
-                if (collapsed) {
-                    sidebar.classList.add('collapsed');
-                } else {
-                    sidebar.classList.remove('collapsed');
-                }
-            }
-            if (popoutExpandBtn) {
-                popoutExpandBtn.style.display = collapsed ? 'flex' : 'none';
-            }
-            if (document.body.classList.contains('fullscreen-cinematic')) {
-                showCinematicUI();
-            }
+            layoutResize.setPanelCollapsed(collapsed, manual);
         }
-
-        if (popoutExpandBtn) {
-            popoutExpandBtn.addEventListener('click', () => setPanelCollapsed(false, true));
-        }
-
-        // Default-hide chat panel if the window is small
-        if (isPanelCollapsed) {
-            const sidebar = document.getElementById('chat-sidebar');
-            if (sidebar) sidebar.classList.add('collapsed');
-            if (popoutExpandBtn) popoutExpandBtn.style.display = 'flex';
-        }
-
-        window.addEventListener('resize', () => {
-            if (!userToggledPanel && !isFullscreenActive()) {
-                const shouldCollapse = window.innerWidth <= SMALL_WINDOW_BREAKPOINT;
-                if (shouldCollapse !== isPanelCollapsed) {
-                    setPanelCollapsed(shouldCollapse, false);
-                }
-            }
-        });
 
         window.toggleFullScreen = toggleFullScreen;
-        window.togglePopoutPanel = () => setPanelCollapsed(!isPanelCollapsed, true);
-
-        // Chat side arrow toggle tab listener
-        const chatSideToggleBtn = document.getElementById('chat-side-toggle-btn');
-        if (chatSideToggleBtn) {
-            chatSideToggleBtn.addEventListener('click', () => setPanelCollapsed(!isPanelCollapsed, true));
-        }
+        window.togglePopoutPanel = () => layoutResize.togglePanel();
 
         // ========================================
         // Pullout Drawer Menu Logic
@@ -7453,47 +7217,16 @@ import { startCanvasStatePolling } from "/static/generated/canvas/state-polling.
         // ========================================
         // Viewer Collaboration Guide Modal Logic
         // ========================================
-        const viewerCollabGuideModal = document.getElementById('viewer-collab-guide-modal');
-        const viewerCollabGuideCloseBtn = document.getElementById('viewer-collab-guide-close-btn');
-        const viewerCollabGuideAckBtn = document.getElementById('viewer-collab-guide-ack-btn');
-        const viewerCollabStatus = document.getElementById('viewer-collab-status');
-
         function updateViewerCollabStatus(enabled) {
-            updateViewerCollabBar(enabled);
-            if (!viewerCollabStatus) return;
-            if (enabled) {
-                viewerCollabStatus.textContent = '🟢 Collaboration Mode is on. Narratron will receive the top viewer suggestion and the doodled canvas on its next update.';
-                viewerCollabStatus.style.background = 'rgba(34, 197, 94, 0.12)';
-                viewerCollabStatus.style.borderColor = 'rgba(74, 222, 128, 0.4)';
-                viewerCollabStatus.style.color = '#bbf7d0';
-            } else {
-                viewerCollabStatus.textContent = '⚪ Collaboration Mode is currently off. You can still doodle, suggest, and vote so everything is ready when the orator turns it on.';
-                viewerCollabStatus.style.background = 'rgba(148, 163, 184, 0.1)';
-                viewerCollabStatus.style.borderColor = 'rgba(148, 163, 184, 0.35)';
-                viewerCollabStatus.style.color = '#cbd5e1';
-            }
+            collabBar.updateStatus(enabled);
         }
 
         function openViewerCollabGuide() {
-            if (!viewerCollabGuideModal) return;
-            updateViewerCollabStatus(viewerCollabEnabled);
-            viewerCollabGuideModal.classList.add('active');
-            viewerCollabGuideModal.setAttribute('aria-hidden', 'false');
+            collabBar.openGuide();
         }
 
         function closeViewerCollabGuide() {
-            if (!viewerCollabGuideModal) return;
-            viewerCollabGuideModal.classList.remove('active');
-            viewerCollabGuideModal.setAttribute('aria-hidden', 'true');
-            localStorage.setItem(`narratron_viewer_collab_guide_seen:${theaterId}`, 'true');
-        }
-
-        if (viewerCollabGuideCloseBtn) viewerCollabGuideCloseBtn.addEventListener('click', closeViewerCollabGuide);
-        if (viewerCollabGuideAckBtn) viewerCollabGuideAckBtn.addEventListener('click', closeViewerCollabGuide);
-        if (viewerCollabGuideModal) {
-            viewerCollabGuideModal.addEventListener('click', (e) => {
-                if (e.target === viewerCollabGuideModal) closeViewerCollabGuide();
-            });
+            collabBar.closeGuide();
         }
 
         document.addEventListener('keydown', (e) => {
@@ -7506,7 +7239,7 @@ import { startCanvasStatePolling } from "/static/generated/canvas/state-polling.
                     closeMicConfigModal();
                 } else if (oratorHowtoModal && oratorHowtoModal.classList.contains('active')) {
                     closeOratorHowtoModal();
-                } else if (viewerCollabGuideModal && viewerCollabGuideModal.classList.contains('active')) {
+                } else if (collabBar.isGuideOpen()) {
                     closeViewerCollabGuide();
                 } else if (adventureGuideModal && adventureGuideModal.classList.contains('active')) {
                     closeAdventureGuideModal();

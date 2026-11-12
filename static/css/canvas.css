@@ -1615,6 +1615,7 @@
             border-color: rgba(239, 68, 68, 0.7);
             animation: agentDisconnectedPulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
             cursor: pointer;
+            pointer-events: auto;
         }
 
         @keyframes agentDisconnectedPulse {
