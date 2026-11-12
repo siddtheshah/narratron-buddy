@@ -656,7 +656,7 @@ import { startCanvasStatePolling } from "/static/generated/canvas/state-polling.
         import { createDoodleRenderer, createImageRenderer } from "/static/js/canvas-renderers.js?v=zoom-effect-origin-20261030-1";
         import { createA2UICanvasRenderer } from "/static/js/a2ui-canvas-renderer.js?v=20261005-1";
         import { createGameRenderer } from "/static/js/game-renderer.js?v=17";
-        import { getAnimationSignature, playCanvasAnimation } from "/static/js/canvas-media.js";
+        import { getAnimationSignature, playCanvasAnimation } from "/static/generated/canvas/media.js";
         import { createCanvasScene } from "/static/js/canvas-scene.js";
         import { createNarrationPane } from "/static/js/narration-pane.js";
 

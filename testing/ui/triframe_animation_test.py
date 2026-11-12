@@ -35,7 +35,7 @@ class TestTriFrameAnimationUI(UITestCase):
         ])
         self.assertTrue(all(Path(path).is_file() for path in frame_paths))
 
-        media = (PROJECT_ROOT / "static" / "js" / "canvas-media.js").read_text(encoding="utf-8")
+        media = (PROJECT_ROOT / "frontend" / "canvas" / "media.ts").read_text(encoding="utf-8")
         renderer = (PROJECT_ROOT / "frontend" / "canvas" / "image-renderer.ts").read_text(encoding="utf-8")
         canvas = read_ui_source(PROJECT_ROOT / "templates" / "canvas.html")
         obs = (PROJECT_ROOT / "templates" / "obs.html").read_text(encoding="utf-8")

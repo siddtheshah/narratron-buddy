@@ -42,7 +42,7 @@ class TestVideoAnimationUI(UITestCase):
         self.assertEqual(state["history"][0]["prompt"], "A soaring griffin over snow-capped mountains.")
         self.assertEqual(state["history"][0]["animation"]["type"], "video")
 
-        media = (PROJECT_ROOT / "static" / "js" / "canvas-media.js").read_text(encoding="utf-8")
+        media = (PROJECT_ROOT / "frontend" / "canvas" / "media.ts").read_text(encoding="utf-8")
         renderer = (PROJECT_ROOT / "frontend" / "canvas" / "image-renderer.ts").read_text(encoding="utf-8")
         self.assertIn("video_duration_seconds", renderer)
         canvas = read_ui_source(PROJECT_ROOT / "templates" / "canvas.html")

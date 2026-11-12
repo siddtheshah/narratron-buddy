@@ -41,6 +41,8 @@ Additional coverage outside this baseline:
 - `state-polling_test.ts`: all 12 original CJS cases plus module-shim compatibility.
 - `image-renderer_test.ts`: CDN policy, shim identity, sequence pixels and lifecycle,
   layered composition/effects, silent video fallback and looping, and load cancellation.
+- `media_test.ts`: manifest signatures, URL resolution, timing defaults, option forwarding,
+  input immutability, and legacy shim identity.
 - `testing/ui/canvas_fixtures_test.ts`: asset serving, request isolation, service-worker
   blocking, secondary contexts, and full canvas mounting.
 - `testing/ui/triframe_animation_test.py` and `video_animation_ui_test.py` retain
