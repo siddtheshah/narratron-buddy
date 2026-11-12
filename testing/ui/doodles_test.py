@@ -52,7 +52,7 @@ class TestDoodles(UITestCase):
 
     def test_text_annotation_uses_one_expandable_bottom_bar_control_and_collab_gating(self):
         canvas = read_ui_source(Path(__file__).resolve().parents[2] / "templates" / "canvas.html")
-        renderer = (Path(__file__).resolve().parents[2] / "static" / "js" / "canvas-renderers.js").read_text(encoding="utf-8")
+        renderer = (Path(__file__).resolve().parents[2] / "static" / "generated" / "canvas" / "doodle-renderer.js").read_text(encoding="utf-8")
         obs = (Path(__file__).resolve().parents[2] / "templates" / "obs.html").read_text(encoding="utf-8")
 
         self.assertEqual(canvas.count('id="text-annotation-toggle"'), 1)

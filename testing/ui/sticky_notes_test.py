@@ -57,7 +57,7 @@ class TestStickyNotesUI(unittest.TestCase):
     def test_canvas_renderers_and_stickies_exclude_selection_pointer_capture(self) -> None:
         canvas_path = Path("templates/canvas.html")
         canvas_content = read_ui_source(canvas_path)
-        renderer_path = Path("static/js/canvas-renderers.js")
+        renderer_path = Path("static/generated/canvas/doodle-renderer.js")
         renderer_content = renderer_path.read_text(encoding="utf-8")
 
         # Sticky notes floating button stops pointerdown and mousedown propagation

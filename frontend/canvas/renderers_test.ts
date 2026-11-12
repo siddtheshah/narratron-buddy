@@ -1,31 +1,9 @@
 import { expect, test } from '../../testing/ui/canvas_fixtures';
-import type { ImageRenderer, ImageRendererOptions } from './image-renderer.js';
+import type { ImageRenderer } from './image-renderer.js';
+import type { DoodleRenderer, DoodleAnnotation as RenderAction } from './doodle-renderer.js';
 
 type FitMode = 'contain' | 'cover';
-interface Plane { x: number; y: number; width: number; height: number }
-interface Point { x: number; y: number }
-interface RenderAction {
-  type: string;
-  id: string;
-  [key: string]: string | number;
-}
-interface DoodleRenderer {
-  resize(actions: RenderAction[]): void;
-  imagePlane(action: RenderAction): Plane;
-  normalizedPoint(event: { clientX: number; clientY: number }): Point;
-  findSegmentAt(x: number, y: number): RenderAction | null;
-}
-// Explicit boundaries for the renderer while its implementation remains JavaScript.
-interface RenderersModule {
-  createDoodleRenderer(options: {
-    canvas: HTMLCanvasElement;
-    fitMode: FitMode;
-    getPage: () => { width: number; height: number };
-    stampLayer: HTMLElement;
-    textLayer: HTMLElement;
-  }): DoodleRenderer;
-  createImageRenderer(options: ImageRendererOptions): ImageRenderer;
-}
+type RenderersModule = typeof import('/static/js/canvas-renderers.js');
 
 declare global {
   interface Window {

@@ -36,7 +36,7 @@ class TestHideCanvasTextUI(unittest.TestCase):
     def test_hide_text_button_pointer_and_drag_capture_exclusion(self) -> None:
         canvas_path = Path("templates/canvas.html")
         canvas_content = read_ui_source(canvas_path)
-        renderer_path = Path("static/js/canvas-renderers.js")
+        renderer_path = Path("static/generated/canvas/doodle-renderer.js")
         renderer_content = renderer_path.read_text(encoding="utf-8")
 
         # Hide text button stops pointerdown and mousedown propagation

@@ -17,7 +17,7 @@ def text_page() -> Iterator[Page]:
                       template.index("        .eraser-btn {", template.index("        #canvas-text-layer {"))]
     editor = template[template.index("        function applyTextAnnotation(action) {"):
                       template.index("        canvas.addEventListener('click', beginTextAnnotation);")]
-    renderer = Path("static/js/canvas-renderers.js").read_text(encoding="utf-8")
+    renderer = Path("static/generated/canvas/doodle-renderer.js").read_text(encoding="utf-8")
     renderer = renderer[renderer.index("export function createDoodleRenderer("):]
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(channel="msedge" if sys.platform == "win32" else None)

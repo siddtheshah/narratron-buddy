@@ -32,8 +32,10 @@ persistence, geometry, and race-condition checks.
 
 Current disposition: 19 original frontend definitions have TypeScript replacements,
 83 frontend definitions remain in Python, and 2 backend definitions remain in Python.
-The implementation migration is still in progress; image rendering is TypeScript,
-while doodle rendering and the remaining canvas controller logic are JavaScript.
+The implementation migration is still in progress; image and doodle rendering are
+TypeScript, while the remaining canvas controller logic is JavaScript. Legacy Python
+renderer snippet fixtures read `static/generated/canvas/doodle-renderer.js` until
+their behavioral coverage moves to TypeScript.
 
 Additional coverage outside this baseline:
 

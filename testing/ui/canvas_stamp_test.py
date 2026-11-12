@@ -13,7 +13,7 @@ from testing.ui.canvas_source import read_ui_source
 def test_canvas_html_and_chat_css_stamp_wiring() -> None:
     canvas_html = read_ui_source(Path("templates/canvas.html"))
     chat_css = Path("static/css/chat.css").read_text(encoding="utf-8")
-    renderer_js = Path("static/js/canvas-renderers.js").read_text(encoding="utf-8")
+    renderer_js = Path("static/generated/canvas/doodle-renderer.js").read_text(encoding="utf-8")
 
     # Persistent asset tab above the chat pane
     assert 'id="chat-open-stamps-btn"' in canvas_html
@@ -301,7 +301,7 @@ def test_canvas_panel_tabs_remain_visible_and_preserve_stamp_composer(
 @pytest.fixture
 def stamp_page() -> Iterator[Page]:
     chat_css = Path("static/css/chat.css").read_text(encoding="utf-8")
-    renderer_js = Path("static/js/canvas-renderers.js").read_text(encoding="utf-8")
+    renderer_js = Path("static/generated/canvas/doodle-renderer.js").read_text(encoding="utf-8")
     renderer_code = renderer_js[renderer_js.index("export function createDoodleRenderer("):]
 
     with sync_playwright() as playwright:

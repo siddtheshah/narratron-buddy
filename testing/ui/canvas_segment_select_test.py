@@ -12,7 +12,7 @@ from testing.ui.canvas_source import read_ui_source
 
 def test_canvas_html_and_renderer_segment_selection_wiring() -> None:
     canvas_html = read_ui_source(Path("templates/canvas.html"))
-    renderer_js = Path("static/js/canvas-renderers.js").read_text(encoding="utf-8")
+    renderer_js = Path("static/generated/canvas/doodle-renderer.js").read_text(encoding="utf-8")
 
     # Renderer support for selectable doodle segments and stamps
     assert "canSelectSegment" in renderer_js
@@ -66,7 +66,7 @@ def segment_page() -> Iterator[Page]:
             "        .eraser-btn {", template.index("        #canvas-text-layer {")
         )
     ]
-    renderer = Path("static/js/canvas-renderers.js").read_text(encoding="utf-8")
+    renderer = Path("static/generated/canvas/doodle-renderer.js").read_text(encoding="utf-8")
     renderer = renderer[renderer.index("export function createDoodleRenderer(") :]
 
     chat_css = Path("static/css/chat.css").read_text(encoding="utf-8")
