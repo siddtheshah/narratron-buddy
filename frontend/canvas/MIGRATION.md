@@ -23,15 +23,15 @@ persistence, geometry, and race-condition checks.
 | `canvas_pin_test.py` | 1 | Python; pending migration |
 | `canvas_resize_test.py` | 1 | Python; pending migration |
 | `canvas_scenes_characters_test.py` | 23 | Python; pending migration |
-| `canvas_segment_select_test.py` | 13 | Python; pending migration |
+| `canvas_segment_select_test.py` | 13 | `doodle-renderer_test.ts`; 18 original cases replaced by 20 browser cases, preserving 6 zoom/pan/reverse combinations and adding permission/history checks |
 | `canvas_speech_replay_test.py` | 2 | Python; pending migration |
 | `canvas_stamp_test.py` | 21 | Python; pending migration |
 | `canvas_text_edit_test.py` | 3 | Python; pending migration |
 | `canvas_undo_test.py` | 17 | 15 frontend definitions replaced by `doodle-actions_test.ts`; 2 backend tests retained in Python |
 | `canvas_zoom_effect_test.py` | 1 | `renderers_test.ts`; 4 fit/source-size cases, each with 5 zoom/resize combinations at DPR=2 |
 
-Current disposition: 19 original frontend definitions have TypeScript replacements,
-83 frontend definitions remain in Python, and 2 backend definitions remain in Python.
+Current disposition: 32 original frontend definitions have TypeScript replacements,
+70 frontend definitions remain in Python, and 2 backend definitions remain in Python.
 The implementation migration is still in progress; image and doodle rendering are
 TypeScript, while the remaining canvas controller logic is JavaScript. Legacy Python
 renderer snippet fixtures read `static/generated/canvas/doodle-renderer.js` until
