@@ -1,34 +1,5 @@
 # Narratron Task List
 
-## Image Tools
-
-- [x] Use Decision for safety reduction checks.
-
-## Game Engine Upgrades
-
-- [x] Input and canvas API
-- [x] Allow direct HTML for game panel.
-- [ ] Game storage repository and attachability in theater-editor.
-
-## Remote
-
-- [x] Show Narratron current thought in the remote watch tab as a separate sub-tab.
-- [x] Keep unmuted when moving been top level tabs if a remote watcher unmuted.
-- [ ] Game integration with mobile? Separate panel html required.
-
-## Adventure Mode
-
-- [x] Enable narration, not just character voicing as an option.
-- [ ] Investigate image gen release on story turn completion.
-
-## Theater Builder
-
-- [x] Move and drag files around in left hand pane. 
-
-### Evaluation and decision
-
-- [ ] Add a reproducible benchmark harness for both tracks, including cold load, steady-state turns, output parity, resource exhaustion, and payload sizes.
-- [ ] Compare native CEL alone, client-side rendering alone, and their combination before choosing a migration. Require measurable end-to-end improvement and preservation of the restricted authoring/security model.
 
 ## Auth, Security & Monetization
 - [ ] Add rate limits for registration/login, password reset, join-key resolution, uploads, payment attempts, and Live WebSocket connections.
@@ -46,4 +17,28 @@
 - [ ] Eliminate traces of 'named element' terminology.
 - [ ] Refactor canvas.html to be more modular.
 - [ ] Reduce direct image file os path checking. Make better interfaces to access image content within a theater.
+
+### Incremental Canvas TypeScript Migration
+
+Move canvas logic and its tests to TypeScript progressively, keeping existing JavaScript callers and the Python server working throughout the migration.
+
+- [ ] Add the TypeScript build, watch, and type-check commands, plus TypeScript Playwright test configuration and dependency lockfile.
+  - Keep production TypeScript in `frontend/canvas/`, emit browser ES modules to `static/generated/canvas/`, and keep browser tests in `testing/ui/`.
+  - Include generated assets in local startup and deployment builds without overwriting existing JavaScript source files.
+  - Support mixed JavaScript/TypeScript with `allowJs` and initially leave `checkJs` disabled; use strict checking for TypeScript and explicit types at migrated module boundaries.
+  - Run a separate `tsc --noEmit` check because Playwright transpiles TypeScript tests without checking their types.
+- [ ] Add shared browser fixtures that serve real production modules and assets.
+  - Preserve HTTP/WebSocket isolation, block service workers, and fail on unexpected requests.
+  - Replace source slicing and source-text assertions with module imports and behavior checks where practical.
+- [ ] Pilot the migration with cursor state and its TypeScript tests.
+  - Update existing JavaScript callers to import the compiled module, using one consistent URL for shared singleton state.
+  - Verify interoperability before expanding the migration; TypeScript tests can also cover modules that are still JavaScript.
+- [ ] Migrate bookmarks, doodle actions/undo, navigation, and rendering in small batches, moving their tests alongside the logic.
+- [ ] Continue with asset-manager behavior, canvas controls, and A2UI surfaces; extract smaller typed modules from `static/js/canvas.js` as needed.
+- [ ] Track coverage parity for the initial core: 17 Python files and 104 test definitions before parametrization (`canvas*_test.py` and `a2ui_canvas_drag_test.py`).
+  - Retain the two Python backend tests currently in `canvas_undo_test.py`, leaving 102 frontend migration candidates.
+  - Preserve parametrized cases, permissions, persistence, geometry, and race-condition coverage; remove superseded Python frontend tests only after their replacements pass.
+  - Retain and integrate existing JavaScript polling, story-log inspector, and audio-recorder tests while migrating them to TypeScript progressively.
+- [ ] Follow with adjacent canvas suites, including action wheel, doodle history, doodles, and hotkey configuration.
+  - Scope remote, OBS, game UI, and live load/evaluation harnesses separately; keep backend state/API tests in Python.
 
