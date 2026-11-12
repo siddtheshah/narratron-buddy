@@ -6,10 +6,12 @@ import sys
 import pytest
 from playwright.sync_api import Route, expect, sync_playwright
 
+from testing.ui.canvas_source import read_ui_source
+
 
 @pytest.mark.parametrize("template_name", ["canvas", "popout"])
 def test_chat_highlight_updates_without_changing_message(template_name: str) -> None:
-    template = Path(f"templates/{template_name}.html").read_text(encoding="utf-8")
+    template = read_ui_source(Path(f"templates/{template_name}.html"))
     css = template.split("<style>", 1)[1].split("</style>", 1)[0]
     if template_name == "canvas":
         start = template.index("        let lastAgentThought = null;")

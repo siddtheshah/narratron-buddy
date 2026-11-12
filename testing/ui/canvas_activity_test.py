@@ -7,10 +7,12 @@ import sys
 from playwright.sync_api import Page, Route, expect, sync_playwright
 import pytest
 
+from testing.ui.canvas_source import read_ui_source
+
 
 @pytest.fixture
 def activity_page() -> Iterator[Page]:
-    template = Path("templates/canvas.html").read_text(encoding="utf-8")
+    template = read_ui_source(Path("templates/canvas.html"))
     css = template.split("<style>", 1)[1].split("</style>", 1)[0]
     start = template.index('            <div id="agent-activity-tray"')
     end = template.index('id="agent-disconnected-indicator"', start)

@@ -2,10 +2,12 @@
 
 from pathlib import Path
 
+from testing.ui.canvas_source import read_ui_source
+
 
 def test_canvas_deduplicates_its_initial_auth_state_request():
     auth_flow = Path("static/js/auth-flow.js").read_text(encoding="utf-8")
-    canvas = Path("templates/canvas.html").read_text(encoding="utf-8")
+    canvas = read_ui_source(Path("templates/canvas.html"))
 
     assert "function getAuthState" in auth_flow
     assert "function invalidateAuthState" in auth_flow
@@ -17,7 +19,7 @@ def test_canvas_deduplicates_its_initial_auth_state_request():
 
 
 def test_canvas_uses_dynamic_is_current_orator_check():
-    canvas = Path("templates/canvas.html").read_text(encoding="utf-8")
+    canvas = read_ui_source(Path("templates/canvas.html"))
     assert "function isCurrentOrator()" in canvas
     assert "isCurrentOrator() && agentWs" in canvas
     assert "if (!isCurrentOrator()) return;" in canvas
@@ -25,7 +27,7 @@ def test_canvas_uses_dynamic_is_current_orator_check():
 
 def test_auth_flow_and_canvas_check_server_run_id_for_auto_login():
     auth_flow = Path("static/js/auth-flow.js").read_text(encoding="utf-8")
-    canvas = Path("templates/canvas.html").read_text(encoding="utf-8")
+    canvas = read_ui_source(Path("templates/canvas.html"))
 
     assert "narratron_server_run_id" in auth_flow
     assert "server_run_id" in auth_flow

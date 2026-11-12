@@ -15,6 +15,8 @@ from playwright.sync_api import Page, Route, WebSocketRoute, expect, sync_playwr
 
 import object_registry
 
+from testing.ui.canvas_source import read_ui_source
+
 
 @pytest.fixture
 def remote_page() -> Iterator[Page]:
@@ -1120,7 +1122,7 @@ def test_login_gate_opens_login_and_reloads_original_theater() -> None:
     (390, "Desktop", True), (1280, "Desktop", False), (900, "iPhone Mobile", True),
 ])
 def test_canvas_device_navigation(width: int, user_agent: str, mobile: bool) -> None:
-    template = Path("templates/canvas.html").read_text(encoding="utf-8")
+    template = read_ui_source(Path("templates/canvas.html"))
     # Exercise the actual early navigation script before canvas resources load.
     head = template[:template.index('<link rel="icon"')]
     navigation = Path("static/js/device-navigation.js").read_text(encoding="utf-8")

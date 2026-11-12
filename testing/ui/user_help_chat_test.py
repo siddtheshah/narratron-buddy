@@ -7,6 +7,8 @@ from pathlib import Path
 from playwright.sync_api import Route, sync_playwright
 import pytest
 
+from testing.ui.canvas_source import read_ui_source
+
 
 @pytest.mark.parametrize("owner", [True, False])
 def test_help_settings_button_is_owner_only_and_requires_a_click(owner: bool) -> None:
@@ -67,7 +69,7 @@ def test_help_settings_button_is_owner_only_and_requires_a_click(owner: bool) ->
 
 
 def test_canvas_help_is_private_and_skips_the_live_agent() -> None:
-    template = Path("templates/canvas.html").read_text(encoding="utf-8")
+    template = read_ui_source(Path("templates/canvas.html"))
     form = re.search(r'<form id="chat-form"[^>]*>.*?</form>', template, re.DOTALL)
     assert form is not None
     script = Path("static/js/chat-controller.js").read_text(encoding="utf-8")

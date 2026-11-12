@@ -10,10 +10,12 @@ from playwright.sync_api import expect
 from pydantic import JsonValue
 from testing.reference_images import png_bytes
 
+from testing.ui.canvas_source import read_ui_source
+
 
 @pytest.fixture
 def scenes_chars_page() -> Iterator[Page]:
-    canvas_html = Path("templates/canvas.html").read_text(encoding="utf-8")
+    canvas_html = read_ui_source(Path("templates/canvas.html"))
     chat_css = Path("static/css/chat.css").read_text(encoding="utf-8")
 
     start_pane = canvas_html.index('<div id="stamp-manager-pane"')
@@ -139,7 +141,7 @@ def scenes_chars_page() -> Iterator[Page]:
 
 
 def test_canvas_html_and_css_scenes_characters_wiring() -> None:
-    canvas_html = Path("templates/canvas.html").read_text(encoding="utf-8")
+    canvas_html = read_ui_source(Path("templates/canvas.html"))
     chat_css = Path("static/css/chat.css").read_text(encoding="utf-8")
 
     # Tabs markup in Stamp Manager

@@ -7,10 +7,12 @@ import sys
 from playwright.sync_api import sync_playwright
 import pytest
 
+from testing.ui.canvas_source import read_ui_source
+
 
 @pytest.mark.parametrize("corner", ["top-left", "bottom-left", "bottom-right"])
 def test_visible_corner_controls_pack_against_edges(corner: str) -> None:
-    template = Path("templates/canvas.html").read_text(encoding="utf-8")
+    template = read_ui_source(Path("templates/canvas.html"))
     markup = template.split('            <div class="canvas-corner-controls', 1)[1]
     markup = '<div class="canvas-corner-controls' + markup.split('<!-- Image History Paging Controls -->', 1)[0]
     styles = re.search(r"<style>(.*?)</style>", template, re.DOTALL)

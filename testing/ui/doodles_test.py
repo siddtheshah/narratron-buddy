@@ -5,11 +5,13 @@ from pathlib import Path
 
 from testing.ui.base import UITestCase
 
+from testing.ui.canvas_source import read_ui_source
+
 
 class TestDoodles(UITestCase):
 
     def test_deselecting_drawing_color_enables_scrollable_narration_pane(self) -> None:
-        canvas = (Path(__file__).resolve().parents[2] / "templates" / "canvas.html").read_text(encoding="utf-8")
+        canvas = read_ui_source(Path(__file__).resolve().parents[2] / "templates" / "canvas.html")
         narration_js = (Path(__file__).resolve().parents[2] / "static" / "js" / "narration-pane.js").read_text(encoding="utf-8")
         narration_css = (Path(__file__).resolve().parents[2] / "static" / "css" / "narration-pane.css").read_text(encoding="utf-8")
         narration_html = (Path(__file__).resolve().parents[2] / "static" / "html" / "narration-pane.html").read_text(encoding="utf-8")
@@ -27,7 +29,7 @@ class TestDoodles(UITestCase):
         self.assertIn("overscroll-behavior: contain;", narration_css)
 
     def test_canvas_starts_without_a_drawing_color_and_click_controls_page_bar(self) -> None:
-        canvas = (Path(__file__).resolve().parents[2] / "templates" / "canvas.html").read_text(encoding="utf-8")
+        canvas = read_ui_source(Path(__file__).resolve().parents[2] / "templates" / "canvas.html")
 
         self.assertIn("let currentColor = null;", canvas)
         self.assertNotIn('class="color-btn active"', canvas)
@@ -42,14 +44,14 @@ class TestDoodles(UITestCase):
         self.assertIn("#history-paging-controls.canvas-selected,", canvas)
 
     def test_selected_white_color_uses_a_black_ring(self):
-        canvas = (Path(__file__).resolve().parents[2] / "templates" / "canvas.html").read_text(encoding="utf-8")
+        canvas = read_ui_source(Path(__file__).resolve().parents[2] / "templates" / "canvas.html")
 
         self.assertIn('.color-btn[data-color="#ffffff"].active {', canvas)
         self.assertIn("border-color: #000;", canvas)
         self.assertIn("box-shadow: 0 0 0 2px #000;", canvas)
 
     def test_text_annotation_uses_one_expandable_bottom_bar_control_and_collab_gating(self):
-        canvas = (Path(__file__).resolve().parents[2] / "templates" / "canvas.html").read_text(encoding="utf-8")
+        canvas = read_ui_source(Path(__file__).resolve().parents[2] / "templates" / "canvas.html")
         renderer = (Path(__file__).resolve().parents[2] / "static" / "js" / "canvas-renderers.js").read_text(encoding="utf-8")
         obs = (Path(__file__).resolve().parents[2] / "templates" / "obs.html").read_text(encoding="utf-8")
 
@@ -69,7 +71,7 @@ class TestDoodles(UITestCase):
         self.assertIn("redrawAllDoodles();", obs)
 
     def test_canvas_retries_active_doodle_websocket_connections(self):
-        canvas = (Path(__file__).resolve().parents[2] / "templates" / "canvas.html").read_text(encoding="utf-8")
+        canvas = read_ui_source(Path(__file__).resolve().parents[2] / "templates" / "canvas.html")
         self.assertIn("function connectDoodleSocket(initialConnection = false)", canvas)
         self.assertIn("scheduleDoodleReconnect", canvas)
         self.assertIn("document.visibilityState === 'visible' && document.hasFocus()", canvas)
@@ -80,7 +82,7 @@ class TestDoodles(UITestCase):
         self.assertIn("connectDoodleSocket(true);", canvas)
 
     def test_canvas_clip_sharing_mixes_opt_in_voice_and_tab_audio_locally(self):
-        canvas = (Path(__file__).resolve().parents[2] / "templates" / "canvas.html").read_text(encoding="utf-8")
+        canvas = read_ui_source(Path(__file__).resolve().parents[2] / "templates" / "canvas.html")
         obs = (Path(__file__).resolve().parents[2] / "templates" / "obs.html").read_text(encoding="utf-8")
         self.assertIn('id="clip-share-btn"', canvas)
         self.assertIn("new URL('/obs', window.location.origin)", canvas)
@@ -148,7 +150,7 @@ class TestDoodles(UITestCase):
         self.assertEqual(manager.doodles.doodles, [])
 
     def test_canvas_right_click_and_action_wheel_marker_toggle_wiring(self) -> None:
-        canvas = (Path(__file__).resolve().parents[2] / "templates" / "canvas.html").read_text(encoding="utf-8")
+        canvas = read_ui_source(Path(__file__).resolve().parents[2] / "templates" / "canvas.html")
         wheel_js = (Path(__file__).resolve().parents[2] / "static" / "js" / "action-wheel.js").read_text(encoding="utf-8")
 
         self.assertIn("let lastSelectedTool = { type: 'marker', color: '#ef4444' };", canvas)

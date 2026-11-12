@@ -5,10 +5,12 @@ from pathlib import Path
 from playwright.sync_api import expect, sync_playwright
 import pytest
 
+from testing.ui.canvas_source import read_ui_source
+
 
 @pytest.mark.parametrize("visual_pinned,music_pinned", [(False, False), (True, False), (False, True), (True, True)])
 def test_canvas_pin_button_toggles_image_and_music(visual_pinned: bool, music_pinned: bool) -> None:
-    content = Path("templates/canvas.html").read_text(encoding="utf-8")
+    content = read_ui_source(Path("templates/canvas.html"))
     pin_script = content.split("        function updateCanvasPinButton() {", 1)[1].split(
         "        const actionWheel = initializeActionWheel({", 1
     )[0]

@@ -6,9 +6,11 @@ from pathlib import Path
 
 from playwright.sync_api import expect, sync_playwright
 
+from testing.ui.canvas_source import read_ui_source
+
 
 def test_canvas_reveals_final_layout_after_chat_slide_and_window_resize() -> None:
-    template = Path("templates/canvas.html").read_text(encoding="utf-8")
+    template = read_ui_source(Path("templates/canvas.html"))
     styles = re.search(r"<style>(.*?)</style>", template, re.DOTALL)
     assert styles is not None
     start = template.index("        // Cover intermediate layouts")

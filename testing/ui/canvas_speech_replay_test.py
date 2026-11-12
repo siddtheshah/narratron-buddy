@@ -1,11 +1,13 @@
 import unittest
 from pathlib import Path
 
+from testing.ui.canvas_source import read_ui_source
+
 
 class TestCanvasSpeechReplayUI(unittest.TestCase):
     def test_speech_silencing_triggers_wired(self) -> None:
         canvas_path = Path("templates/canvas.html")
-        content = canvas_path.read_text(encoding="utf-8")
+        content = read_ui_source(canvas_path)
 
         # Push to talk interruption
         self.assertIn("function beginMicPress(source) {", content)

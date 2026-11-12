@@ -1,13 +1,15 @@
 import unittest
 from pathlib import Path
 
+from testing.ui.canvas_source import read_ui_source
+
 
 class TestStickyNotesUI(unittest.TestCase):
     def test_canvas_template_contains_sticky_notes_button_and_elements(self) -> None:
         canvas_path = Path("templates/canvas.html")
         self.assertTrue(canvas_path.exists(), "canvas.html should exist")
 
-        content = canvas_path.read_text(encoding="utf-8")
+        content = read_ui_source(canvas_path)
 
         self.assertIn('id="sticky-notes-toggle-btn"', content)
         self.assertIn('id="sticky-notes-loading"', content)
@@ -28,7 +30,7 @@ class TestStickyNotesUI(unittest.TestCase):
 
     def test_canvas_template_stickies_revealed_cache_with_timeout(self) -> None:
         canvas_path = Path("templates/canvas.html")
-        content = canvas_path.read_text(encoding="utf-8")
+        content = read_ui_source(canvas_path)
 
         self.assertIn('narratron_stickies_revealed', content)
         self.assertIn('isStickiesRevealedInCache', content)
@@ -41,7 +43,7 @@ class TestStickyNotesUI(unittest.TestCase):
 
     def test_canvas_template_stickies_visibility_managed_by_orator_state_not_url_role(self) -> None:
         canvas_path = Path("templates/canvas.html")
-        content = canvas_path.read_text(encoding="utf-8")
+        content = read_ui_source(canvas_path)
 
         # Verify initialRoleIsOrator based on urlParams is no longer used
         self.assertNotIn("initialRoleIsOrator", content)
@@ -54,7 +56,7 @@ class TestStickyNotesUI(unittest.TestCase):
 
     def test_canvas_renderers_and_stickies_exclude_selection_pointer_capture(self) -> None:
         canvas_path = Path("templates/canvas.html")
-        canvas_content = canvas_path.read_text(encoding="utf-8")
+        canvas_content = read_ui_source(canvas_path)
         renderer_path = Path("static/js/canvas-renderers.js")
         renderer_content = renderer_path.read_text(encoding="utf-8")
 
@@ -68,7 +70,7 @@ class TestStickyNotesUI(unittest.TestCase):
 
     def test_stickies_hidden_toggle_does_not_pin_button(self) -> None:
         canvas_path = Path("templates/canvas.html")
-        content = canvas_path.read_text(encoding="utf-8")
+        content = read_ui_source(canvas_path)
 
         # Ensure toggleBtn click listener does not pin the sticky notes window
         toggle_click_snippet = content[content.find("toggleBtn.addEventListener('click'") : content.find("toggleBtn.addEventListener('click'") + 400]

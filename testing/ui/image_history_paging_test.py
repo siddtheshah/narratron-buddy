@@ -4,10 +4,12 @@ from pathlib import Path
 
 from testing.ui.base import UITestCase
 
+from testing.ui.canvas_source import read_ui_source
+
 
 class TestImageHistoryPaging(UITestCase):
     def test_paging_bar_is_at_the_top_and_reveals_story_log_inspector(self):
-        canvas = Path("templates/canvas.html").read_text(encoding="utf-8")
+        canvas = read_ui_source(Path("templates/canvas.html"))
 
         self.assertIn("#history-paging-controls {", canvas)
         self.assertIn("top: 1.25rem;", canvas)
@@ -174,7 +176,7 @@ class TestImageHistoryPaging(UITestCase):
         self.assertEqual(reloaded_history[3]["animation"]["type"], "layered")
 
     def test_canvas_template_supports_animation_history_and_prompt_widget(self):
-        canvas = Path("templates/canvas.html").read_text(encoding="utf-8")
+        canvas = read_ui_source(Path("templates/canvas.html"))
         # Ensure displayHistoryImage checks animation signature and invokes playAnimation
         self.assertIn("const animSignature = getAnimationSignature(item.animation);", canvas)
         self.assertIn("playAnimation(item.animation);", canvas)
@@ -182,7 +184,7 @@ class TestImageHistoryPaging(UITestCase):
         self.assertIn("item.prompt || (item.animation && item.animation.scene_prompt)", canvas)
 
     def test_canvas_unloads_history_images_outside_sliding_window(self) -> None:
-        canvas = Path("templates/canvas.html").read_text(encoding="utf-8")
+        canvas = read_ui_source(Path("templates/canvas.html"))
         self.assertIn("const HISTORY_WINDOW_RADIUS = 5;", canvas)
         self.assertIn("const loadedHistoryResources = new Map();", canvas)
         self.assertIn("function unloadHistoryResource(resource)", canvas)

@@ -7,10 +7,12 @@ from pathlib import Path
 import pytest
 from playwright.sync_api import Page, sync_playwright
 
+from testing.ui.canvas_source import read_ui_source
+
 
 @pytest.fixture
 def text_page() -> Iterator[Page]:
-    template = Path("templates/canvas.html").read_text(encoding="utf-8")
+    template = read_ui_source(Path("templates/canvas.html"))
     styles = template[template.index("        #canvas-text-layer {"):
                       template.index("        .eraser-btn {", template.index("        #canvas-text-layer {"))]
     editor = template[template.index("        function applyTextAnnotation(action) {"):

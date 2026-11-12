@@ -3,10 +3,12 @@
 from pathlib import Path
 import unittest
 
+from testing.ui.canvas_source import read_ui_source
+
 
 class TestBeyond20ListenerWiring(unittest.TestCase):
     def setUp(self):
-        self.canvas_html = Path("templates/canvas.html").read_text(encoding="utf-8")
+        self.canvas_html = read_ui_source(Path("templates/canvas.html"))
         self.listener_js = Path("static/js/beyond20-listener.js").read_text(encoding="utf-8")
 
     def test_canvas_html_wires_contributors_and_collab_mode(self):

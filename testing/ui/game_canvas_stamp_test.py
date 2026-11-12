@@ -6,6 +6,8 @@ from playwright.sync_api import Route, expect, sync_playwright
 from game_engine.game_runtime import GameAction
 from testing.game_fixtures import make_example_canvas
 
+from testing.ui.canvas_source import read_ui_source
+
 
 def test_winning_checkers_refreshes_the_page_and_keeps_crown_when_panel_closes(tmp_path: Path) -> None:
     canvas = make_example_canvas(tmp_path)
@@ -14,7 +16,7 @@ def test_winning_checkers_refreshes_the_page_and_keeps_crown_when_panel_closes(t
     game.load({"definition_hash": game.definition_hash, "revision": 0, "state": {
         **game.program.definition.initial, "board": [1 if i == 42 else -1 if i == 35 else 0 for i in range(64)],
     }})
-    template = Path("templates/canvas.html").read_text(encoding="utf-8")
+    template = read_ui_source(Path("templates/canvas.html"))
     start = template.index("                gameRenderer.render(data.game_state);")
     refresh_output = template[start:template.index("                if (data.sticky_notes", start)]
     html = """<!doctype html><html><head><link rel="stylesheet" href="/static/css/chat.css"></head>

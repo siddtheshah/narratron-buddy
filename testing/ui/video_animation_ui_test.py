@@ -3,6 +3,8 @@
 from api_server.shared import PROJECT_ROOT
 from testing.ui.base import UITestCase
 
+from testing.ui.canvas_source import read_ui_source
+
 
 class TestVideoAnimationUI(UITestCase):
     def test_video_animation_is_exposed_silent_and_looping_in_canvas_renderers(self) -> None:
@@ -43,7 +45,7 @@ class TestVideoAnimationUI(UITestCase):
         media = (PROJECT_ROOT / "static" / "js" / "canvas-media.js").read_text(encoding="utf-8")
         renderer = (PROJECT_ROOT / "static" / "js" / "canvas-renderers.js").read_text(encoding="utf-8")
         self.assertIn("video_duration_seconds", renderer)
-        canvas = (PROJECT_ROOT / "templates" / "canvas.html").read_text(encoding="utf-8")
+        canvas = read_ui_source(PROJECT_ROOT / "templates" / "canvas.html")
         obs = (PROJECT_ROOT / "templates" / "obs.html").read_text(encoding="utf-8")
 
         # Verify full silence safeguards

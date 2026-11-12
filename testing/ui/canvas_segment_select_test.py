@@ -7,9 +7,11 @@ from pathlib import Path
 import pytest
 from playwright.sync_api import Page, sync_playwright
 
+from testing.ui.canvas_source import read_ui_source
+
 
 def test_canvas_html_and_renderer_segment_selection_wiring() -> None:
-    canvas_html = Path("templates/canvas.html").read_text(encoding="utf-8")
+    canvas_html = read_ui_source(Path("templates/canvas.html"))
     renderer_js = Path("static/js/canvas-renderers.js").read_text(encoding="utf-8")
 
     # Renderer support for selectable doodle segments and stamps
@@ -53,7 +55,7 @@ def test_canvas_html_and_renderer_segment_selection_wiring() -> None:
 
 @pytest.fixture
 def segment_page() -> Iterator[Page]:
-    template = Path("templates/canvas.html").read_text(encoding="utf-8")
+    template = read_ui_source(Path("templates/canvas.html"))
     styles = template[
         template.index("        #doodle-canvas {") : template.index(
             "        .status-dot {", template.index("        #doodle-canvas {")
@@ -152,7 +154,7 @@ def test_selection_box_follows_screen_drag_in_transformed_view(
 ) -> None:
     page = segment_page
     page.set_viewport_size({'width': 1000, 'height': 700})
-    template = Path('templates/canvas.html').read_text(encoding='utf-8')
+    template = read_ui_source(Path('templates/canvas.html'))
     box_styles = template[template.index('        .canvas-selection-box {'):template.index('        .canvas-text-editor {')]
     page.add_style_tag(content=box_styles)
     page.add_style_tag(content=Path('static/css/canvas-navigation.css').read_text(encoding='utf-8'))

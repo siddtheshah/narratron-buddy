@@ -2,9 +2,11 @@
 
 from api_server.shared import PROJECT_ROOT
 
+from testing.ui.canvas_source import read_ui_source
+
 
 def test_minimal_mode_removes_nonessential_compositor_work() -> None:
-    canvas = (PROJECT_ROOT / "templates" / "canvas.html").read_text(encoding="utf-8")
+    canvas = read_ui_source(PROJECT_ROOT / "templates" / "canvas.html")
 
     assert "Minimal Mode" in canvas
     assert "minimal-mode" in canvas

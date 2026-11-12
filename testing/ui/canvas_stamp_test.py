@@ -7,9 +7,11 @@ from pathlib import Path
 import pytest
 from playwright.sync_api import Page, expect, sync_playwright
 
+from testing.ui.canvas_source import read_ui_source
+
 
 def test_canvas_html_and_chat_css_stamp_wiring() -> None:
-    canvas_html = Path("templates/canvas.html").read_text(encoding="utf-8")
+    canvas_html = read_ui_source(Path("templates/canvas.html"))
     chat_css = Path("static/css/chat.css").read_text(encoding="utf-8")
     renderer_js = Path("static/js/canvas-renderers.js").read_text(encoding="utf-8")
 
@@ -49,7 +51,7 @@ def test_canvas_html_and_chat_css_stamp_wiring() -> None:
 
 
 def test_production_stamp_manager_separates_sources_and_places_theater_stamps(stamp_page: Page) -> None:
-    html = Path("templates/canvas.html").read_text(encoding="utf-8")
+    html = read_ui_source(Path("templates/canvas.html"))
     render = html[html.index("        function renderStampManagerGrid(stamps) {"):html.index("        // Canvas-state notifications")]
     stamp_page.add_script_tag(content="""
         let cachedTheaterStamps = [{id: 'theater:stage:hero.png', name: 'Theater Hero', url: '/theaters/stage/stamps/hero.png'}];
@@ -90,7 +92,7 @@ def test_production_stamp_manager_separates_sources_and_places_theater_stamps(st
 
 
 def test_production_stamp_drag_works_when_doodles_disabled(stamp_page: Page) -> None:
-    html = Path("templates/canvas.html").read_text(encoding="utf-8")
+    html = read_ui_source(Path("templates/canvas.html"))
     render = html[html.index("        function renderStampManagerGrid(stamps) {"):html.index("        // Canvas-state notifications")]
     stamp_page.add_script_tag(content="""
         let cachedTheaterStamps = [{id: 'theater:stage:dragon.png', name: 'Theater Dragon', url: '/theaters/stage/stamps/dragon.png'}];
@@ -132,7 +134,7 @@ def test_production_stamp_drag_works_when_doodles_disabled(stamp_page: Page) -> 
 
 @pytest.mark.parametrize("success", [True, False])
 def test_production_stamp_generation_permissions_pending_and_result(stamp_page: Page, success: bool) -> None:
-    html = Path("templates/canvas.html").read_text(encoding="utf-8")
+    html = read_ui_source(Path("templates/canvas.html"))
     start = html.index('            <div id="stamp-generation-status"')
     footer = html[start:html.index('    <script type="module">', start)]
     stamp_page.locator(".stamp-manager-footer").evaluate("(element, footer) => element.outerHTML = footer", footer)
@@ -226,7 +228,7 @@ def test_production_stamp_generation_permissions_pending_and_result(stamp_page: 
 def test_canvas_panel_tabs_remain_visible_and_preserve_stamp_composer(
     stamp_page: Page, viewport_width: int, owner: bool,
 ) -> None:
-    html = Path("templates/canvas.html").read_text(encoding="utf-8")
+    html = read_ui_source(Path("templates/canvas.html"))
     chat_css = Path("static/css/chat.css").read_text(encoding="utf-8")
     inline_css = html[html.index("<style>") + len("<style>"):html.index("</style>")]
     start = html.index('    <div id="chat-sidebar">')
@@ -1020,7 +1022,7 @@ def test_stamps_always_under_doodles_layering(stamp_page: Page) -> None:
 
 
 def test_stamp_generation_reference_tagging_autocomplete_and_submission(stamp_page: Page) -> None:
-    html = Path("templates/canvas.html").read_text(encoding="utf-8")
+    html = read_ui_source(Path("templates/canvas.html"))
     start = html.index('            <div id="stamp-generation-status"')
     footer = html[start:html.index('    <script type="module">', start)]
     stamp_page.locator(".stamp-manager-footer").evaluate("(element, footer) => element.outerHTML = footer", footer)

@@ -7,6 +7,8 @@ from PIL import Image
 from api_server.shared import PROJECT_ROOT
 from testing.ui.base import UITestCase
 
+from testing.ui.canvas_source import read_ui_source
+
 
 class TestTriFrameAnimationUI(UITestCase):
     def test_dummy_frames_are_exposed_and_wired_to_canvas_renderers(self) -> None:
@@ -35,7 +37,7 @@ class TestTriFrameAnimationUI(UITestCase):
 
         media = (PROJECT_ROOT / "static" / "js" / "canvas-media.js").read_text(encoding="utf-8")
         renderer = (PROJECT_ROOT / "static" / "js" / "canvas-renderers.js").read_text(encoding="utf-8")
-        canvas = (PROJECT_ROOT / "templates" / "canvas.html").read_text(encoding="utf-8")
+        canvas = read_ui_source(PROJECT_ROOT / "templates" / "canvas.html")
         obs = (PROJECT_ROOT / "templates" / "obs.html").read_text(encoding="utf-8")
         self.assertIn("playSequence", renderer)
         self.assertIn("playLayeredAnimation", renderer)

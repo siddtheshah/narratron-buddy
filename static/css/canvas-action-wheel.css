@@ -1,0 +1,185 @@
+
+        #orator-action-wheel {
+            --sec-default: #162235;
+            --sec-active: #4f46e5;
+            --sec-up: var(--sec-default);
+            --sec-upright: var(--sec-default);
+            --sec-downright: var(--sec-default);
+            --sec-down: var(--sec-default);
+            --sec-downleft: var(--sec-default);
+            --sec-upleft: var(--sec-default);
+            --wheel-divider: rgba(100, 116, 139, 0.45);
+            position: fixed;
+            width: 260px;
+            height: 260px;
+            transform: translate(-50%, -50%);
+            z-index: 10000;
+            pointer-events: none;
+            border-radius: 50%;
+            border: 1px solid #64748b;
+            box-shadow: 0 8px 40px #0009;
+            background: conic-gradient(from 0deg,
+                    var(--sec-up) 0deg 29.5deg,
+                    var(--wheel-divider) 29.5deg 30.5deg,
+                    var(--sec-upright) 30.5deg 89.5deg,
+                    var(--wheel-divider) 89.5deg 90.5deg,
+                    var(--sec-downright) 90.5deg 149.5deg,
+                    var(--wheel-divider) 149.5deg 150.5deg,
+                    var(--sec-down) 150.5deg 209.5deg,
+                    var(--wheel-divider) 209.5deg 210.5deg,
+                    var(--sec-downleft) 210.5deg 269.5deg,
+                    var(--wheel-divider) 269.5deg 270.5deg,
+                    var(--sec-upleft) 270.5deg 329.5deg,
+                    var(--wheel-divider) 329.5deg 330.5deg,
+                    var(--sec-up) 330.5deg 360deg);
+            color: #e2e8f0;
+            font: 600 12px/1.3 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            transition: box-shadow .15s ease-out, border-color .15s ease-out;
+        }
+
+        #orator-action-wheel[data-selected]:not([data-selected=""]) {
+            border-color: #818cf8;
+            box-shadow: 0 8px 40px #000c, 0 0 24px rgba(79, 70, 229, 0.45);
+        }
+
+        #orator-action-wheel[data-selected="up"],
+        #orator-action-wheel:has([data-direction="up"].selected) {
+            --sec-up: var(--sec-active);
+        }
+
+        #orator-action-wheel[data-selected="upright"],
+        #orator-action-wheel:has([data-direction="upright"].selected) {
+            --sec-upright: var(--sec-active);
+        }
+
+        #orator-action-wheel[data-selected="downright"],
+        #orator-action-wheel:has([data-direction="downright"].selected) {
+            --sec-downright: var(--sec-active);
+        }
+
+        #orator-action-wheel[data-selected="down"],
+        #orator-action-wheel:has([data-direction="down"].selected) {
+            --sec-down: var(--sec-active);
+        }
+
+        #orator-action-wheel[data-selected="downleft"],
+        #orator-action-wheel:has([data-direction="downleft"].selected) {
+            --sec-downleft: var(--sec-active);
+        }
+
+        #orator-action-wheel[data-selected="upleft"],
+        #orator-action-wheel:has([data-direction="upleft"].selected) {
+            --sec-upleft: var(--sec-active);
+        }
+
+        #orator-action-wheel .wheel-action {
+            position: absolute;
+            transform: translate(-50%, -50%);
+            width: 76px;
+            text-align: center;
+            pointer-events: none;
+            user-select: none;
+            color: #cbd5e1;
+            font-size: 11.5px;
+            font-weight: 600;
+            line-height: 1.25;
+            transition: transform 0.12s ease-out, color 0.12s ease-out, text-shadow 0.12s ease-out;
+            z-index: 5;
+        }
+
+        #action-wheel-rebind.rebinding,
+        #action-wheel-2-rebind.rebinding {
+            background: rgba(234, 179, 8, .25);
+            color: #fef08a;
+        }
+
+        #orator-action-wheel .wheel-action.selected {
+            color: #ffffff;
+            font-weight: 700;
+            transform: translate(-50%, -50%) scale(1.1);
+            text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9), 0 0 10px rgba(255, 255, 255, 0.4);
+        }
+
+        #orator-action-wheel [data-direction="up"] {
+            top: 46px;
+            left: 130px;
+        }
+
+        #orator-action-wheel [data-direction="upright"] {
+            top: 88px;
+            left: 203px;
+        }
+
+        #orator-action-wheel [data-direction="downright"] {
+            top: 172px;
+            left: 203px;
+        }
+
+        #orator-action-wheel [data-direction="down"] {
+            top: 214px;
+            left: 130px;
+        }
+
+        #orator-action-wheel [data-direction="downleft"] {
+            top: 172px;
+            left: 57px;
+        }
+
+        #orator-action-wheel [data-direction="upleft"] {
+            top: 88px;
+            left: 57px;
+        }
+
+        #orator-action-wheel .wheel-center {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 72px;
+            height: 72px;
+            border-radius: 50%;
+            background: #0f172a;
+            border: 1px solid #64748b;
+            box-shadow: 0 0 16px rgba(0, 0, 0, 0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            font-size: 10px;
+            font-weight: 500;
+            color: #94a3b8;
+            line-height: 1.3;
+            z-index: 10;
+            pointer-events: none;
+            user-select: none;
+            transition: all 0.15s ease;
+        }
+
+        #orator-action-wheel[data-selected=""] .wheel-center {
+            border-color: #818cf8;
+            color: #f8fafc;
+            box-shadow: 0 0 12px rgba(99, 102, 241, 0.4);
+        }
+
+        #orator-action-wheel[data-mode="secondary"][data-selected=""] .wheel-center {
+            border-color: #64748b;
+            color: #94a3b8;
+            box-shadow: 0 0 16px rgba(0, 0, 0, 0.5);
+        }
+
+        #orator-action-wheel [data-secondary] {
+            display: none;
+        }
+
+        #orator-action-wheel[data-mode="secondary"] [data-primary] {
+            display: none;
+        }
+
+        #orator-action-wheel[data-mode="secondary"] [data-secondary] {
+            display: block;
+        }
+
+        #orator-action-wheel[data-mode="secondary"] {
+            background: linear-gradient(to bottom,
+                    var(--sec-up) 0% 49.7%, var(--wheel-divider) 49.7% 50.3%, var(--sec-down) 50.3% 100%);
+        }

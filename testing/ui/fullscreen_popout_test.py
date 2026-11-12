@@ -23,10 +23,14 @@ class TestFullscreenPopout(UITestCase):
         self.addCleanup(popout_access_patcher.stop)
         self.client = TestClient(app)
 
-    def test_canvas_contains_fullscreen_and_popout_controls(self):
+    def test_canvas_contains_fullscreen_and_popout_controls(self) -> None:
         response = self.client.get("/canvas?theater_id=test_theater")
         self.assertEqual(response.status_code, 200)
         html = response.text
+        self.assertIn('src="/static/js/canvas.js"', html)
+        script = self.client.get("/static/js/canvas.js")
+        self.assertEqual(script.status_code, 200)
+        source = html + script.text
 
         for element in (
             'id="fullscreen-btn"',
@@ -38,14 +42,14 @@ class TestFullscreenPopout(UITestCase):
             'id="chat-side-toggle-btn"',
             'id="popout-expand-btn"',
         ):
-            self.assertIn(element, html)
+            self.assertIn(element, source)
 
         for element in (
             'id="popout-window-btn"',
             'id="popped-out-placeholder"',
             "openPopoutWindow",
         ):
-            self.assertNotIn(element, html)
+            self.assertNotIn(element, source)
 
     def test_popout_route_serves_chat_template(self):
         response = self.client.get("/popout?theater_id=test_theater")
@@ -65,6 +69,13 @@ class TestFullscreenPopout(UITestCase):
         response = self.client.get("/canvas?theater_id=test_theater")
         self.assertEqual(response.status_code, 200)
         html = response.text
+        self.assertIn('href="/static/css/canvas.css"', html)
+        self.assertIn('src="/static/js/canvas.js"', html)
+        css = self.client.get("/static/css/canvas.css")
+        script = self.client.get("/static/js/canvas.js")
+        self.assertEqual(css.status_code, 200)
+        self.assertEqual(script.status_code, 200)
+        source = css.text + script.text
 
         for rule in (
             "@media (max-width: 1280px)",
@@ -74,12 +85,14 @@ class TestFullscreenPopout(UITestCase):
             "SMALL_WINDOW_BREAKPOINT = 1280",
             "window.innerWidth <= SMALL_WINDOW_BREAKPOINT",
         ):
-            self.assertIn(rule, html)
+            self.assertIn(rule, source)
 
     def test_canvas_contains_fullscreen_retracted_chat_tab_rules(self) -> None:
         response = self.client.get("/canvas?theater_id=test_theater")
         self.assertEqual(response.status_code, 200)
-        html = response.text
+        self.assertIn('href="/static/css/canvas.css"', response.text)
+        css = self.client.get("/static/css/canvas.css")
+        self.assertEqual(css.status_code, 200)
 
         for rule in (
             "body.fullscreen-cinematic #chat-sidebar.collapsed",
@@ -92,6 +105,6 @@ class TestFullscreenPopout(UITestCase):
             "pointer-events: auto !important",
             "z-index: 9997 !important",
         ):
-            self.assertIn(rule, html)
+            self.assertIn(rule, css.text)
 
 

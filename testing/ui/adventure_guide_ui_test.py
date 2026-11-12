@@ -8,6 +8,8 @@ import object_registry
 from api_server.app import app
 from testing.ui.base import UITestCase
 
+from testing.ui.canvas_source import read_ui_source
+
 
 class TestAdventureGuideUI(UITestCase):
     def setUp(self):
@@ -51,7 +53,7 @@ class TestAdventureGuideUI(UITestCase):
         canvas_path = Path("templates/canvas.html")
         self.assertTrue(canvas_path.exists(), "canvas.html should exist")
 
-        content = canvas_path.read_text(encoding="utf-8")
+        content = read_ui_source(canvas_path)
 
         # Modal & Pullout Menu Elements
         self.assertIn('id="adventure-guide-modal"', content)

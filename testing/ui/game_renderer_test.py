@@ -7,12 +7,13 @@ from playwright.sync_api import Error, Page, Request, Route, expect, sync_playwr
 from game_engine.game_runtime import ViewNode
 from game_engine.game_state import GameAction
 from testing.game_fixtures import counter_definition, make_example_canvas, make_game, make_preview_checkers_game
+from testing.ui.canvas_source import read_ui_source
 
 
 @pytest.fixture
 def agent_game_page() -> Iterator[Page]:
     """Use the canvas's real game wiring and agent lifecycle with local routes."""
-    template = Path("templates/canvas.html").read_text(encoding="utf-8")
+    template = read_ui_source(Path("templates/canvas.html"))
     start = template.index("        const gameRenderer = createGameRenderer({")
     renderer_setup = template[start:template.index("        const a2uiCanvasRenderer", start)]
     start = template.index("        function setAgentStartedUI(started)")
@@ -175,7 +176,7 @@ def test_closing_game_during_summon_cancels_pending_open(agent_game_page: Page) 
 
 
 def test_canvas_game_permissions_do_not_interrupt_startup() -> None:
-    template = Path("templates/canvas.html").read_text(encoding="utf-8")
+    template = read_ui_source(Path("templates/canvas.html"))
     start = template.index("        const gameRenderer = createGameRenderer({")
     renderer_setup = template[start:template.index("        const a2uiCanvasRenderer", start)]
     start = template.index("        function isCollabModeEnabled()")

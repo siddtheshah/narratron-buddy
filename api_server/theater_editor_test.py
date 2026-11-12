@@ -1065,7 +1065,10 @@ def test_editor_and_deploy_navigation_are_present(builder: BuilderHarness) -> No
     assert 'Edit in Builder' in html
     canvas = builder.client.get("/canvas").text
     assert 'id="menu-item-theater-builder"' in canvas
-    assert "if (builderLink && isOwner)" in canvas
+    assert 'src="/static/js/canvas.js"' in canvas
+    script = builder.client.get("/static/js/canvas.js")
+    assert script.status_code == 200
+    assert "if (builderLink && isOwner)" in script.text
 
 
 def test_import_google_drive_image_success(builder: BuilderHarness) -> None:

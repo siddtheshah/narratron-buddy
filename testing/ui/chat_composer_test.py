@@ -7,10 +7,12 @@ from pathlib import Path
 import pytest
 from playwright.sync_api import Route, expect, sync_playwright
 
+from testing.ui.canvas_source import read_ui_source
+
 
 @pytest.mark.parametrize("view", ["canvas", "popout"])
 def test_chat_composer_sends_suggestions_and_wraps_text(view: str) -> None:
-    template = Path(f"templates/{view}.html").read_text(encoding="utf-8")
+    template = read_ui_source(Path(f"templates/{view}.html"))
     form = re.search(r'<form id="chat-form"[^>]*>.*?</form>', template, re.DOTALL)
     styles = re.search(r"<style>(.*?)</style>", template, re.DOTALL)
     assert form is not None

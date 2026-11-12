@@ -1,10 +1,12 @@
 from pathlib import Path
 
+from testing.ui.canvas_source import read_ui_source
+
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_canvas_contains_configurable_text_hotkey_controls() -> None:
-    content = (PROJECT_ROOT / "templates" / "canvas.html").read_text(encoding="utf-8")
+    content = read_ui_source(PROJECT_ROOT / "templates" / "canvas.html")
 
     # Check button and display elements exist under microphone controls modal
     assert 'id="menu-item-text-hotkey"' in content
@@ -19,7 +21,7 @@ def test_canvas_contains_configurable_text_hotkey_controls() -> None:
 
 
 def test_canvas_contains_text_hotkey_rebinding_and_storage_logic() -> None:
-    content = (PROJECT_ROOT / "templates" / "canvas.html").read_text(encoding="utf-8")
+    content = read_ui_source(PROJECT_ROOT / "templates" / "canvas.html")
 
     # Storage key for text hotkey preference
     assert "narratron_text_hotkey" in content
@@ -41,7 +43,7 @@ def test_canvas_contains_text_hotkey_rebinding_and_storage_logic() -> None:
 
 
 def test_canvas_text_hotkey_can_dismiss_orator_command() -> None:
-    content = (PROJECT_ROOT / "templates" / "canvas.html").read_text(encoding="utf-8")
+    content = read_ui_source(PROJECT_ROOT / "templates" / "canvas.html")
 
     # Both open and close paths are supported when hotkey is triggered
     assert "if (isOratorCommandOpen()) {" in content
@@ -51,7 +53,7 @@ def test_canvas_text_hotkey_can_dismiss_orator_command() -> None:
 
 
 def test_orator_howto_modal_documents_text_input_and_configuration() -> None:
-    content = (PROJECT_ROOT / "templates" / "canvas.html").read_text(encoding="utf-8")
+    content = read_ui_source(PROJECT_ROOT / "templates" / "canvas.html")
 
     howto_snippet = content.split('id="orator-howto-modal"', 1)[1].split('id="howto-ack-btn"', 1)[0]
 
@@ -64,7 +66,7 @@ def test_orator_howto_modal_documents_text_input_and_configuration() -> None:
     assert 'id="howto-mic-hotkey-display"' in howto_snippet
 
 def test_spacebar_cannot_summon_or_banish_agent() -> None:
-    content = (PROJECT_ROOT / "templates" / "canvas.html").read_text(encoding="utf-8")
+    content = read_ui_source(PROJECT_ROOT / "templates" / "canvas.html")
 
     # Spacebar is prevented on agentStartStopBtn keydown and keyup
     assert "agentStartStopBtn.addEventListener('keydown'" in content

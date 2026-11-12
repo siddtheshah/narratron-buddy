@@ -6,9 +6,11 @@ from pathlib import Path
 
 from playwright.sync_api import Route, expect, sync_playwright
 
+from testing.ui.canvas_source import read_ui_source
+
 
 def test_canvas_html_has_chat_name_display_element() -> None:
-    canvas_html = Path("templates/canvas.html").read_text(encoding="utf-8")
+    canvas_html = read_ui_source(Path("templates/canvas.html"))
     assert 'id="chat-name-display"' in canvas_html
     assert 'id="chat-name-input"' in canvas_html
     assert 'id="chat-login-chip"' in canvas_html
@@ -20,7 +22,7 @@ def test_canvas_html_has_chat_name_display_element() -> None:
 
 
 def test_canvas_authenticated_user_chat_name_display() -> None:
-    template = Path("templates/canvas.html").read_text(encoding="utf-8")
+    template = read_ui_source(Path("templates/canvas.html"))
     user_bar_match = re.search(r'<div id="chat-identity".*?</div>', template, re.DOTALL)
     assert user_bar_match is not None
     user_bar_html = user_bar_match.group(0)
@@ -81,7 +83,7 @@ def test_canvas_authenticated_user_chat_name_display() -> None:
 
 
 def test_canvas_unauthenticated_user_chat_name_input_visible() -> None:
-    template = Path("templates/canvas.html").read_text(encoding="utf-8")
+    template = read_ui_source(Path("templates/canvas.html"))
     user_bar_match = re.search(r'<div id="chat-identity".*?</div>', template, re.DOTALL)
     assert user_bar_match is not None
     user_bar_html = user_bar_match.group(0)
@@ -142,7 +144,7 @@ def test_canvas_unauthenticated_user_chat_name_input_visible() -> None:
 
 
 def test_canvas_unauthenticated_login_chip_triggers_modal() -> None:
-    template = Path("templates/canvas.html").read_text(encoding="utf-8")
+    template = read_ui_source(Path("templates/canvas.html"))
     user_bar_match = re.search(r'<div id="chat-identity".*?</div>', template, re.DOTALL)
     assert user_bar_match is not None
     user_bar_html = user_bar_match.group(0)
@@ -195,7 +197,7 @@ def test_canvas_unauthenticated_login_chip_triggers_modal() -> None:
 
 
 def test_canvas_unauthenticated_stamp_manager_triggers_modal() -> None:
-    template = Path("templates/canvas.html").read_text(encoding="utf-8")
+    template = read_ui_source(Path("templates/canvas.html"))
     assert "setStampManagerOpen" in template
     assert "openAuthModal" in template
 

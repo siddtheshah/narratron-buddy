@@ -51,7 +51,10 @@ class TestOBSCanvas(UITestCase):
         response = self.client.get("/canvas?theater_id=test_theater")
         self.assertEqual(response.status_code, 200)
         self.assertIn('id="agent-disconnected-indicator"', response.text)
-        self.assertIn('agentDisconnectedPulse', response.text)
+        self.assertIn('href="/static/css/canvas.css"', response.text)
+        css = self.client.get("/static/css/canvas.css")
+        self.assertEqual(css.status_code, 200)
+        self.assertIn('agentDisconnectedPulse', css.text)
 
     def test_obs_canvas_includes_narration_pane(self) -> None:
         response = self.client.get("/obs?theater_id=test_theater")
@@ -70,7 +73,9 @@ class TestOBSCanvas(UITestCase):
     def test_canvas_wires_mute_to_scene_speech(self) -> None:
         response = self.client.get("/canvas?theater_id=test_theater")
         self.assertEqual(response.status_code, 200)
-        html = response.text
-        self.assertIn("audioEnabled: () => !isMuted", html)
-        self.assertIn("stopSceneSpeech();", html)
+        self.assertIn('src="/static/js/canvas.js"', response.text)
+        script = self.client.get("/static/js/canvas.js")
+        self.assertEqual(script.status_code, 200)
+        self.assertIn("audioEnabled: () => !isMuted", script.text)
+        self.assertIn("stopSceneSpeech();", script.text)
 

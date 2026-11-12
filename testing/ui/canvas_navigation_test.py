@@ -8,10 +8,12 @@ from urllib.parse import urlsplit
 from playwright.sync_api import Route, expect, sync_playwright
 import pytest
 
+from testing.ui.canvas_source import read_ui_source
+
 
 def test_navigation_keeps_rendered_content_aligned_and_resets_locally() -> None:
     root = Path(__file__).resolve().parents[2]
-    template = (root / "templates/canvas.html").read_text(encoding="utf-8")
+    template = read_ui_source(root / "templates/canvas.html")
     controls = re.search(
         r'(<button id="canvas-navigation-toggle".*?</button>)', template, re.DOTALL
     )

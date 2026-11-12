@@ -6,10 +6,12 @@ from pathlib import Path
 import pytest
 from playwright.sync_api import Route, expect, sync_playwright
 
+from testing.ui.canvas_source import read_ui_source
+
 
 @pytest.mark.parametrize("viewport_width", [1000, 1400])
 def test_viewer_collaboration_bar_and_help(viewport_width: int) -> None:
-    template = Path("templates/canvas.html").read_text(encoding="utf-8")
+    template = read_ui_source(Path("templates/canvas.html"))
     css = Path("static/css/chat.css").read_text(encoding="utf-8")
     inline_css = template.split("<style>", 1)[1].split("</style>", 1)[0]
     start = template.index('    <div id="chat-sidebar">')

@@ -10,6 +10,8 @@ from components.canvas.canvas_state_service import CanvasStateService
 from components.theater_manager import TheaterManager
 from testing.ui.base import UITestCase
 
+from testing.ui.canvas_source import read_ui_source
+
 
 class TestCrossfade(UITestCase):
     def test_show_image_forwards_transition_and_effect_to_callback(self) -> None:
@@ -47,7 +49,7 @@ class TestCrossfade(UITestCase):
 
     def test_canvas_template_supports_crossfade(self):
         template_path = PROJECT_ROOT / "templates" / "canvas.html"
-        content = template_path.read_text(encoding="utf-8")
+        content = read_ui_source(template_path)
 
         for selector in (".t-crossfade", ".t-fade"):
             self.assertIn(selector, content)
@@ -56,7 +58,7 @@ class TestCrossfade(UITestCase):
 
     def test_canvas_template_contains_agent_activity_indicators(self):
         template_path = PROJECT_ROOT / "templates" / "canvas.html"
-        content = template_path.read_text(encoding="utf-8")
+        content = read_ui_source(template_path)
         self.assertIn('id="agent-drawing-indicator"', content)
         self.assertIn('id="agent-writing-indicator"', content)
         self.assertIn('id="agent-dice-indicator"', content)
@@ -69,7 +71,7 @@ class TestCrossfade(UITestCase):
 
     def test_canvas_template_renders_scene_descriptions_in_white_italics(self):
         template_path = PROJECT_ROOT / "templates" / "canvas.html"
-        content = template_path.read_text(encoding="utf-8")
+        content = read_ui_source(template_path)
 
         self.assertIn(".narration", content)
         self.assertIn(".scene-description", content)
@@ -79,7 +81,7 @@ class TestCrossfade(UITestCase):
 
     def test_canvas_ignores_superseded_latest_state_snapshots(self):
         template_path = PROJECT_ROOT / "templates" / "canvas.html"
-        content = template_path.read_text(encoding="utf-8")
+        content = read_ui_source(template_path)
 
         self.assertIn("let latestStateRequestSequence = 0;", content)
         self.assertIn("const requestSequence = ++latestStateRequestSequence;", content)

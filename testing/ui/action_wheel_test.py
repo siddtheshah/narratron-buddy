@@ -6,6 +6,8 @@ from urllib.parse import urlsplit
 import pytest
 from playwright.sync_api import Error, Page, Route, WebSocketRoute, sync_playwright
 
+from testing.ui.canvas_source import read_ui_source
+
 
 def mock_canvas_socket(route: WebSocketRoute) -> None:
     """Keep canvas subscriptions local while these tests exercise pointer controls."""
@@ -14,7 +16,7 @@ def mock_canvas_socket(route: WebSocketRoute) -> None:
 
 @pytest.fixture
 def wheel_page() -> Iterator[Page]:
-    template = Path("templates/canvas.html").read_text(encoding="utf-8")
+    template = read_ui_source(Path("templates/canvas.html"))
     source = Path("static/js/action-wheel.js").read_text(encoding="utf-8").replace("export ", "")
     markup = template[template.index('    <style>\n        #orator-action-wheel'):template.index('    <div id="action-wheel-status"')]
     script = source + '''window.sent = []; window.isOrator = true; window.centerTriggered = 0;
@@ -360,7 +362,7 @@ def test_action_wheel_initializes_on_full_canvas() -> None:
 
 def test_action_wheel_in_browser() -> None:
     source = Path("static/js/action-wheel.js").read_text(encoding="utf-8").replace("export ", "")
-    template = Path("templates/canvas.html").read_text(encoding="utf-8")
+    template = read_ui_source(Path("templates/canvas.html"))
     wheel_markup = template[template.index('    <style>\n        #orator-action-wheel'):template.index('    <div id="action-wheel-status"')]
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=True)

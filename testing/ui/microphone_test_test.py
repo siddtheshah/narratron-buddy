@@ -1,11 +1,13 @@
 from pathlib import Path
 
+from testing.ui.canvas_source import read_ui_source
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_canvas_contains_pcm_microphone_test_controls() -> None:
-    content = (PROJECT_ROOT / "templates" / "canvas.html").read_text(encoding="utf-8")
+    content = read_ui_source(PROJECT_ROOT / "templates" / "canvas.html")
 
     for element in (
         'id="menu-mic-test-record"',
@@ -19,14 +21,14 @@ def test_canvas_contains_pcm_microphone_test_controls() -> None:
 
 
 def test_first_time_orator_opens_microphone_configuration_after_tutorial() -> None:
-    content = (PROJECT_ROOT / "templates" / "canvas.html").read_text(encoding="utf-8")
+    content = read_ui_source(PROJECT_ROOT / "templates" / "canvas.html")
 
     assert "openOratorHowtoModal({ openMicConfigOnClose: true })" in content
     assert "if (openMicConfigOnClose) openMicConfigModal();" in content
 
 
 def test_enabling_mic_summons_an_inactive_agent_before_recording() -> None:
-    content = (PROJECT_ROOT / "templates" / "canvas.html").read_text(encoding="utf-8")
+    content = read_ui_source(PROJECT_ROOT / "templates" / "canvas.html")
 
     assert "agentConnectBtn.addEventListener('click'" in content
     assert "enableMic();" in content

@@ -7,6 +7,8 @@ from game_engine.game_runtime import GameAction
 from game_engine.game_state import GameState
 from testing.game_fixtures import panel_definition
 
+from testing.ui.canvas_source import read_ui_source
+
 
 def test_html_panel_binding_actions_permissions_and_network_isolation(tmp_path: Path) -> None:
     game_dir = tmp_path / "game"
@@ -158,7 +160,7 @@ def test_canvas_hotkeys_work_after_clicking_game_panel(tmp_path: Path) -> None:
     game = GameState(tmp_path, Mock(), Mock(), backend="python")
     assert not game.error
 
-    template = Path("templates/canvas.html").read_text(encoding="utf-8")
+    template = read_ui_source(Path("templates/canvas.html"))
     space_guard = template[
         template.index("        // Plain Space is reserved"):
         template.index("        function escapeHtml", template.index("        // Plain Space is reserved"))

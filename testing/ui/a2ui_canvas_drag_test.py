@@ -7,10 +7,12 @@ from pathlib import Path
 import pytest
 from playwright.sync_api import Page, sync_playwright
 
+from testing.ui.canvas_source import read_ui_source
+
 
 @pytest.fixture
 def surface_page() -> Iterator[Page]:
-    template = Path("templates/canvas.html").read_text(encoding="utf-8")
+    template = read_ui_source(Path("templates/canvas.html"))
     styles = template[template.index("        #a2ui-canvas-layer {") :
                       template.index("        @media (max-width: 700px) {", template.index("        @keyframes a2ui-arrive {"))]
     renderer = Path("static/js/a2ui-canvas-renderer.js").read_text(encoding="utf-8")

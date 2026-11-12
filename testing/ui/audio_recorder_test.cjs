@@ -170,7 +170,7 @@ test('speech captured before initialization returns delivers its first packet', 
     return () => options.onSpeechEnd();
   });
   // Exercise the actual canvas callback while its UI recording flag is false.
-  const canvas = fs.readFileSync(path.join(root, 'templates/canvas.html'), 'utf8');
+  const canvas = fs.readFileSync(path.join(root, 'static/js/canvas.js'), 'utf8');
   const handlerSource = canvas.slice(canvas.indexOf('function audioRecorderHandler(opusBuffer) {'))
     .split('// ========================================', 1)[0];
   h.context.agentWs = h.socket;

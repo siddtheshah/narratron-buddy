@@ -10,10 +10,12 @@ from playwright.sync_api import Page, sync_playwright
 
 from components.canvas.doodle_state import DoodleState
 
+from testing.ui.canvas_source import read_ui_source
+
 
 @pytest.fixture
 def undo_page() -> Iterator[Page]:
-    template = Path("templates/canvas.html").read_text(encoding="utf-8")
+    template = read_ui_source(Path("templates/canvas.html"))
     renderer = Path("static/js/canvas-renderers.js").read_text(encoding="utf-8")
     renderer = renderer[renderer.index("export function createDoodleRenderer("):]
     doodle_actions_module = Path("static/js/canvas-doodle-actions.js").read_text(encoding="utf-8")

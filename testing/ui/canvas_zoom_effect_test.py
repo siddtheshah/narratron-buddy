@@ -8,6 +8,8 @@ from urllib.parse import urlsplit
 from playwright.sync_api import Route, sync_playwright
 import pytest
 
+from testing.ui.canvas_source import read_ui_source
+
 
 @pytest.mark.parametrize("source_size", [(400, 400), (800, 200)])
 @pytest.mark.parametrize("fit_mode", ["contain", "cover"])
@@ -15,7 +17,7 @@ def test_zoom_keeps_image_effect_aligned(
     source_size: tuple[int, int], fit_mode: str,
 ) -> None:
     root = Path(__file__).resolve().parents[2]
-    template = (root / "templates/canvas.html").read_text(encoding="utf-8")
+    template = read_ui_source(root / "templates/canvas.html")
     styles = re.search(r"<style>(.*?)</style>", template, re.DOTALL)
     assert styles is not None
 

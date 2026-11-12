@@ -7,9 +7,11 @@ from urllib.parse import urlsplit
 
 from playwright.sync_api import Route, expect, sync_playwright
 
+from testing.ui.canvas_source import read_ui_source
+
 
 def test_report_modal_settings_submission_and_retry() -> None:
-    template = Path('templates/canvas.html').read_text(encoding='utf-8')
+    template = read_ui_source(Path('templates/canvas.html'))
     css = re.search(r'<style>(.*?)</style>', template, re.DOTALL).group(1)
     start = template.index('    <!-- Pullout Navigation & Help Menu Drawer -->')
     end = template.index('    <div id="clip-share-modal"', start)
