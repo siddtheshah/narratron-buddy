@@ -16,16 +16,18 @@ class TestImageHistoryPaging(UITestCase):
         self.assertIn('id="story-log-inspector"', canvas)
         self.assertIn('id="story-log-toggle-btn"', canvas)
         self.assertIn('from "/static/js/story-log-inspector.js"', canvas)
-        inspector = Path("static/js/story-log-inspector.js").read_text(encoding="utf-8")
-        self.assertIn("initializeStoryLogInspector", inspector)
+        inspector_shim = Path("static/js/story-log-inspector.js").read_text(encoding="utf-8")
+        self.assertIn("initializeStoryLogInspector", inspector_shim)
+        inspector_source = Path("frontend/canvas/story-log-inspector.ts").read_text(encoding="utf-8")
+        self.assertIn("initializeStoryLogInspector", inspector_source)
 
     def test_story_log_is_chronological_and_keeps_the_latest_action_visible(self):
-        inspector = Path("static/js/story-log-inspector.js").read_text(encoding="utf-8")
+        compiled = Path("static/generated/canvas/story-log-inspector.js").read_text(encoding="utf-8")
 
-        self.assertIn("return turns;", inspector)
-        self.assertIn("function positionLatestAction(inspector, content)", inspector)
-        self.assertIn("inspector.scrollTop = bottom;", inspector)
-        self.assertIn("requestAnimationFrame(() => positionLatestAction(inspector, content))", inspector)
+        self.assertIn("return turns;", compiled)
+        self.assertIn("function positionLatestAction(inspector, content)", compiled)
+        self.assertIn("inspector.scrollTop = bottom;", compiled)
+        self.assertIn("requestAnimationFrame(() => positionLatestAction(inspector, content))", compiled)
 
     def test_image_history_is_capped_at_100_entries(self):
         manager = self.make_canvas_state("history_cap")

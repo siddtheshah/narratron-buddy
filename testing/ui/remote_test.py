@@ -36,6 +36,10 @@ def remote_page() -> Iterator[Page]:
                 "/static/css/game-renderer.css": ("static/css/game-renderer.css", "text/css"),
                 "/static/js/remote-audio.js": ("static/js/remote-audio.js", "text/javascript"),
                 "/static/js/story-log-inspector.js": ("static/js/story-log-inspector.js", "text/javascript"),
+                "/static/generated/canvas/story-log-inspector.js": (
+                    "static/generated/canvas/story-log-inspector.js",
+                    "text/javascript",
+                ),
                 "/static/js/chat-controller.js": ("static/js/chat-controller.js", "text/javascript"),
                 "/static/js/chat-emotes.js": ("static/js/chat-emotes.js", "text/javascript"),
                 "/static/js/device-navigation.js": ("static/js/device-navigation.js", "text/javascript"),
