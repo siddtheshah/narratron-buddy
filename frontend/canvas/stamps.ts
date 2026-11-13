@@ -594,8 +594,11 @@ export function createCanvasStampsController(
   let internalIsOpen = false;
   let internalCachedUserStamps: StampItem[] | null = null;
   let internalCachedTheaterStamps: StampItem[] = [];
+  let userStampsEpoch = 0;
+  let theaterStampsEpoch = 0;
   let stampLoadError = '';
-  let isFetchingUserStamps = false;
+  let activeLoadRequestId = 0;
+  let inFlightLoadTheaterId: string | null = null;
   let nextStampGenerationId = 0;
   const pendingGenerations = new Map<number, PendingStampGeneration>();
 
@@ -607,12 +610,14 @@ export function createCanvasStampsController(
   const getCachedUserStamps = (): StampItem[] | null =>
     options.getCachedUserStamps ? options.getCachedUserStamps() : internalCachedUserStamps;
   const setCachedUserStamps = (stamps: StampItem[] | null): void => {
+    userStampsEpoch += 1;
     internalCachedUserStamps = stamps;
     options.setCachedUserStamps?.(stamps);
   };
   const getCachedTheaterStamps = (): StampItem[] =>
     options.getCachedTheaterStamps ? options.getCachedTheaterStamps() : internalCachedTheaterStamps;
   const setCachedTheaterStamps = (stamps: StampItem[]): void => {
+    theaterStampsEpoch += 1;
     internalCachedTheaterStamps = stamps;
     options.setCachedTheaterStamps?.(stamps);
   };
@@ -1102,12 +1107,19 @@ export function createCanvasStampsController(
   }
 
   async function loadUserStamps(): Promise<void> {
-    if (!stampManagerGrid || isFetchingUserStamps) return;
-    isFetchingUserStamps = true;
+    if (!stampManagerGrid) return;
+    const theaterId = options.getTheaterId() ?? '';
+    if (inFlightLoadTheaterId !== null && inFlightLoadTheaterId === theaterId) return;
+    const requestId = ++activeLoadRequestId;
+    inFlightLoadTheaterId = theaterId;
     if (stampManagerEmpty) stampManagerEmpty.style.display = 'none';
 
     try {
-      const theaterId = options.getTheaterId() ?? '';
+      const startUserStampsEpoch = userStampsEpoch;
+      const startUserStampsRef = getCachedUserStamps();
+      const startTheaterStampsEpoch = theaterStampsEpoch;
+      const startTheaterStampsRef = getCachedTheaterStamps();
+      const startTheaterStampsSnapshot = [...startTheaterStampsRef];
       const results = await Promise.allSettled([
         fetch('/api/users/me/stamps').then(async (res): Promise<unknown> => {
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -1120,6 +1132,8 @@ export function createCanvasStampsController(
           },
         ),
       ]);
+      if (requestId !== activeLoadRequestId) return;
+
       const userStamps =
         results[0].status === 'fulfilled' && Array.isArray(results[0].value)
           ? (results[0].value as StampItem[])
@@ -1128,19 +1142,54 @@ export function createCanvasStampsController(
         results[1].status === 'fulfilled' && Array.isArray(results[1].value)
           ? (results[1].value as StampItem[])
           : [];
-      setCachedUserStamps(userStamps);
-      setCachedTheaterStamps(theaterStamps);
-      stampLoadError = results.some((result) => result.status === 'rejected')
+
+      const userStampsChangedWhileInFlight =
+        userStampsEpoch !== startUserStampsEpoch || getCachedUserStamps() !== startUserStampsRef;
+      if (!userStampsChangedWhileInFlight) {
+        setCachedUserStamps(userStamps);
+      }
+
+      const isSameTheater = (options.getTheaterId() ?? '') === theaterId;
+      if (isSameTheater) {
+        const theaterStampsChangedWhileInFlight =
+          theaterStampsEpoch !== startTheaterStampsEpoch ||
+          getCachedTheaterStamps() !== startTheaterStampsRef;
+        if (!theaterStampsChangedWhileInFlight) {
+          setCachedTheaterStamps(theaterStamps);
+        } else if (results[1].status === 'fulfilled') {
+          // Preserve stamps added (and omit stamps removed) while the GET was in flight.
+          const startIds = new Set(startTheaterStampsSnapshot.map((stamp) => stamp.id));
+          const currentStamps = getCachedTheaterStamps();
+          const currentIds = new Set(currentStamps.map((stamp) => stamp.id));
+          const mergedStamps = new Map<string | number, StampItem>();
+          for (const stamp of theaterStamps) {
+            if (!startIds.has(stamp.id) || currentIds.has(stamp.id)) {
+              mergedStamps.set(stamp.id, stamp);
+            }
+          }
+          for (const stamp of currentStamps) {
+            mergedStamps.set(stamp.id, stamp);
+          }
+          setCachedTheaterStamps([...mergedStamps.values()]);
+        }
+      }
+
+      const hasFailedFetch =
+        results[0].status === 'rejected' || (isSameTheater && results[1].status === 'rejected');
+      stampLoadError = hasFailedFetch
         ? 'Some stamps could not be loaded. Reopen the manager to retry.'
         : '';
-      renderGrid(userStamps);
+      renderGrid(getCachedUserStamps() ?? []);
     } catch (err) {
+      if (requestId !== activeLoadRequestId) return;
       console.warn('Unable to load user stamps:', err);
       stampManagerGrid.innerHTML = '';
       if (stampManagerEmpty) stampManagerEmpty.style.display = 'flex';
       if (stampEmptyMessage) stampEmptyMessage.textContent = 'Unable to load stamps at this time.';
     } finally {
-      isFetchingUserStamps = false;
+      if (requestId === activeLoadRequestId) {
+        inFlightLoadTheaterId = null;
+      }
     }
   }
 
@@ -1375,10 +1424,12 @@ export function createCanvasStampsController(
       if (!response.ok) {
         throw new Error(typeof data.detail === 'string' ? data.detail : 'Unable to generate stamp.');
       }
-      // Responses may arrive out of order, with an older stamp list.
-      const mergedStamps = new Map(getCachedTheaterStamps().map((stamp) => [stamp.id, stamp]));
-      (data.stamps ?? []).forEach((stamp) => mergedStamps.set(stamp.id, stamp));
-      setCachedTheaterStamps([...mergedStamps.values()]);
+      if ((options.getTheaterId() ?? '') === theaterId) {
+        // Responses may arrive out of order, with an older stamp list.
+        const mergedStamps = new Map(getCachedTheaterStamps().map((stamp) => [stamp.id, stamp]));
+        (data.stamps ?? []).forEach((stamp) => mergedStamps.set(stamp.id, stamp));
+        setCachedTheaterStamps([...mergedStamps.values()]);
+      }
       resultMessage = `“${name}” saved to this theater and ready to use. Charged ${data.credits_charged} credits.`;
     } catch (error) {
       const errMsg = error instanceof Error ? error.message : '';

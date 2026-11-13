@@ -38,6 +38,7 @@ interface StampTestHarness {
   setDoodlesEnabled(value: boolean): void;
   getDoodlesEnabled(): boolean;
   setCurrentUser(user: StampUser | null): void;
+  setTheaterId(theaterId: string): void;
   setCachedUserStamps(stamps: StampItem[] | null): void;
   setCachedTheaterStamps(stamps: StampItem[]): void;
   stampNameFromPrompt(prompt: string): string;
@@ -49,6 +50,7 @@ declare global {
     stampHarness: StampTestHarness;
     generationRequests?: Array<{ url: string; method?: string; body?: string | null }>;
     generationResolvers?: Array<(value: { ok: boolean; json: () => Promise<unknown> }) => void>;
+    theaterStampsGetResolvers?: Array<(stamps: StampItem[]) => void>;
   }
 }
 
@@ -153,6 +155,7 @@ async function mountStampHarness(
     let activeOrator = false;
     let isOwner = false;
     let doodlesEnabled = true;
+    let theaterId = 'stage';
     let currentUser: StampUser | null = { id: 5, username: 'Alice' };
     const doodleActions: StampCanvasItem[] = [];
     const sent: SentDoodleMessage[] = [];
@@ -178,7 +181,7 @@ async function mountStampHarness(
     controller = stampsMod.createCanvasStampsController({
       canvas: canvasEl,
       imgContainer: document.getElementById('image-container'),
-      getTheaterId: () => 'stage',
+      getTheaterId: () => theaterId,
       getCurrentUser: () => currentUser,
       setCurrentUser: (user) => {
         currentUser = user;
@@ -257,6 +260,9 @@ async function mountStampHarness(
       getDoodlesEnabled: () => doodlesEnabled,
       setCurrentUser: (user) => {
         currentUser = user;
+      },
+      setTheaterId: (nextTheaterId) => {
+        theaterId = nextTheaterId;
       },
       setCachedUserStamps: (stamps) => {
         controller.setCachedUserStamps(stamps);
@@ -1483,4 +1489,119 @@ test('isSameStampKind handles theater, game, and user stamp matching and canvas.
     theaterStemMatch: true,
     gameStemMatch: true,
   });
+});
+
+test('in-flight loadUserStamps GET does not clobber concurrently generated stamps or switched theater stamps', async ({
+  canvas,
+  page,
+}) => {
+  await mountStampHarness(canvas, page, { withFullGenerationFooter: true });
+  await page.evaluate(() => {
+    window.generationResolvers = [];
+    window.theaterStampsGetResolvers = [];
+    window.fetch = async (input: RequestInfo | URL): Promise<Response> => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      if (url === '/api/users/me/stamps') {
+        return new Response(
+          JSON.stringify([{ id: 7, name: 'Star', url: '/api/stamps/7' }]),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        );
+      }
+      if (url === '/api/theaters/stage/stamps') {
+        return new Promise((resolve) => {
+          window.theaterStampsGetResolvers!.push((stamps) =>
+            resolve(
+              new Response(JSON.stringify(stamps), {
+                status: 200,
+                headers: { 'Content-Type': 'application/json' },
+              }),
+            ),
+          );
+        });
+      }
+      if (url === '/api/theaters/stage/stamps/generate') {
+        return new Promise((resolve) => {
+          window.generationResolvers!.push((mockResp) =>
+            resolve({
+              ok: mockResp.ok,
+              json: mockResp.json,
+            } as unknown as Response),
+          );
+        });
+      }
+      throw new Error(`Unexpected fetch URL: ${url}`);
+    };
+  });
+
+  // 1. Open the stamp manager to start loadUserStamps(), holding /api/theaters/stage/stamps open.
+  await page.evaluate(() => window.stampHarness.setOwner(true));
+  await page.locator('#chat-open-stamps-btn').click();
+  await page.waitForFunction(() => (window.theaterStampsGetResolvers?.length ?? 0) === 1);
+
+  // 2. While the GET is still in flight, generate a stamp and resolve it.
+  await page.locator('#stamp-generation-prompt').fill('A silver dragon');
+  await page.locator('#stamp-generation-prompt').press('Enter');
+  await page.waitForFunction(() => (window.generationResolvers?.length ?? 0) === 1);
+  await page.evaluate(() => {
+    window.generationResolvers![0]({
+      ok: true,
+      json: async () => ({
+        stamps: [
+          {
+            id: 'theater:stage:dragon.png',
+            name: 'Silver dragon',
+            url: '/theaters/stage/stamps/dragon.png',
+          },
+        ],
+        credits_charged: 4,
+      }),
+    });
+  });
+  await page.waitForFunction(() => window.stampHarness.controller.pendingGenerations.size === 0);
+  await expect(page.locator('.stamp-card[data-stamp-id="theater:stage:dragon.png"]')).toBeVisible();
+
+  // 3. Resolve the held-open stale GET with [] and verify Silver dragon is preserved alongside user stamps.
+  await page.evaluate(() => {
+    window.theaterStampsGetResolvers![0]([]);
+  });
+  await page.waitForFunction(
+    () => (window.stampHarness.controller.getCachedUserStamps()?.length ?? 0) === 1,
+  );
+  expect(
+    await page.evaluate(() =>
+      window.stampHarness.controller.getCachedTheaterStamps().map((s) => s.name),
+    ),
+  ).toEqual(['Silver dragon']);
+  await expect(page.locator('.stamp-card-name')).toHaveText(['Star', 'Silver dragon']);
+
+  // 4. Verify theater-switch isolation: an in-flight GET for 'stage' cannot overwrite 'other'.
+  await page.evaluate(() => {
+    window.stampHarness.setCachedTheaterStamps([]);
+    void window.stampHarness.controller.loadUserStamps();
+  });
+  await page.waitForFunction(() => (window.theaterStampsGetResolvers?.length ?? 0) === 2);
+  await page.evaluate(() => {
+    window.stampHarness.setTheaterId('other');
+    window.stampHarness.setCachedTheaterStamps([
+      {
+        id: 'theater:other:phoenix.png',
+        name: 'Phoenix',
+        url: '/theaters/other/stamps/phoenix.png',
+      },
+    ]);
+    window.theaterStampsGetResolvers![1]([
+      {
+        id: 'theater:stage:goblin.png',
+        name: 'Goblin scout',
+        url: '/theaters/stage/stamps/goblin.png',
+      },
+    ]);
+  });
+  // Allow the resolved promise microtasks to flush.
+  await expect(page.locator('.stamp-card[data-stamp-id="theater:other:phoenix.png"]')).toBeVisible();
+  expect(
+    await page.evaluate(() =>
+      window.stampHarness.controller.getCachedTheaterStamps().map((s) => s.name),
+    ),
+  ).toEqual(['Phoenix']);
 });

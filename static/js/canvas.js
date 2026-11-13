@@ -3049,7 +3049,7 @@ import { startCanvasStatePolling } from "/static/generated/canvas/state-polling.
             getCurrentUser: () => currentUser,
             setCurrentUser: user => { currentUser = user; },
             getMyUserId: () => myUserId,
-            getAuthState: getCanvasAuthState,
+            getAuthState: () => getCanvasAuthState(),
             openAuthModal: mode => {
                 if (typeof openAuthModal === 'function') openAuthModal(mode);
             },

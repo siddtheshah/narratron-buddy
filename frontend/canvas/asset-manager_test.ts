@@ -1694,3 +1694,204 @@ test('websocket animations updated event reloads animations panel', async ({ can
   doodleSocket!.send(JSON.stringify({ type: 'theater_animations_updated' }));
   await expect(page.locator('#animations-manager .asset-push-button')).toHaveCount(2);
 });
+
+test('stale in-flight scenes, characters, and extra asset GETs do not clobber websocket updates or switched theaters', async ({
+  canvas,
+  page,
+}) => {
+  await canvas.serveRoute(
+    (url) => url.origin === canvas.origin && url.pathname.startsWith('/img/'),
+    async (route) => route.fulfill({ status: 200, contentType: 'image/png', body: TINY_PNG_BYTES }),
+  );
+
+  let releaseCharactersGet: ((chars: TheaterCharacter[]) => void) | null = null;
+  let releaseScenesGet: ((scenes: TheaterScene[]) => void) | null = null;
+  let doodleSocket: WebSocketRoute | null = null;
+
+  await canvas.openCanvas({
+    isOrator: true,
+    viewport: { width: 1400, height: 900 },
+    apiRoutes: {
+      '/api/theaters/stage/characters': async (route) => {
+        const payload = await new Promise<TheaterCharacter[]>((resolve) => {
+          releaseCharactersGet = resolve;
+        });
+        await route.fulfill({ json: payload });
+      },
+      '/api/theaters/stage/scenes': async (route) => {
+        const payload = await new Promise<TheaterScene[]>((resolve) => {
+          releaseScenesGet = resolve;
+        });
+        await route.fulfill({ json: payload });
+      },
+    },
+    onWebSocket: (ws) => {
+      if (new URL(ws.url()).pathname === '/ws/doodle') {
+        doodleSocket = ws;
+      }
+    },
+  });
+
+  await expect.poll(() => doodleSocket !== null).toBe(true);
+  await page.locator('#chat-open-stamps-btn').click();
+
+  // 1. Hold /api/theaters/stage/characters open while theater_characters_updated arrives.
+  await page.locator('#stamp-tab-characters').click();
+  await expect.poll(() => releaseCharactersGet !== null).toBe(true);
+
+  doodleSocket!.send(
+    JSON.stringify({
+      type: 'theater_characters_updated',
+      characters: [
+        { id: 'elena', name: 'Elena', description: 'Brave warrior', image_url: '/img/elena.png' },
+      ],
+    }),
+  );
+  await expect(page.locator('#characters-manager-grid .character-card')).toHaveCount(1);
+  await expect(page.locator('#characters-manager-grid .character-card').first()).toContainText(
+    'Elena',
+  );
+
+  const charactersResponseDone = page.waitForResponse(
+    (res) => res.url().includes('/api/theaters/stage/characters'),
+  );
+  releaseCharactersGet!([]);
+  await charactersResponseDone;
+  await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 0)));
+
+  await expect(page.locator('#characters-manager-grid .character-card')).toHaveCount(1);
+  await expect(page.locator('#characters-manager-grid .character-card').first()).toContainText(
+    'Elena',
+  );
+  await expect(page.locator('#stamp-manager-count')).toHaveText('1');
+
+  // 2. Hold /api/theaters/stage/scenes open while theater_scenes_updated arrives.
+  await page.locator('#stamp-tab-scenes').click();
+  await expect.poll(() => releaseScenesGet !== null).toBe(true);
+
+  doodleSocket!.send(
+    JSON.stringify({
+      type: 'theater_scenes_updated',
+      scenes: [
+        {
+          id: 'mountain_pass',
+          name: 'Mountain Pass',
+          description: 'Snowy trail',
+          image_url: '/img/mountain.png',
+        },
+      ],
+    }),
+  );
+  await expect(page.locator('#scenes-manager-grid .scene-card')).toHaveCount(1);
+  await expect(page.locator('#scenes-manager-grid .scene-card').first()).toContainText(
+    'Mountain Pass',
+  );
+
+  const scenesResponseDone = page.waitForResponse(
+    (res) => res.url().includes('/api/theaters/stage/scenes'),
+  );
+  releaseScenesGet!([]);
+  await scenesResponseDone;
+  await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 0)));
+
+  await expect(page.locator('#scenes-manager-grid .scene-card')).toHaveCount(1);
+  await expect(page.locator('#scenes-manager-grid .scene-card').first()).toContainText(
+    'Mountain Pass',
+  );
+  await expect(page.locator('#stamp-manager-count')).toHaveText('1');
+});
+
+test('theater switch prevents in-flight scenes, characters, and animations GETs from clobbering new theater', async ({
+  canvas,
+  page,
+}) => {
+  await mountAssetManagerHarness(canvas, page, { isOrator: true, openManager: true });
+
+  let releaseStageScenes: ((scenes: TheaterScene[]) => void) | null = null;
+  let releaseStageAnimations: ((anims: Array<{ id: string; name: string }>) => void) | null = null;
+
+  await canvas.serveRoute(
+    (url) => url.origin === canvas.origin && url.pathname === '/api/theaters/stage/scenes',
+    async (route) => {
+      const payload = await new Promise<TheaterScene[]>((resolve) => {
+        releaseStageScenes = resolve;
+      });
+      await route.fulfill({ json: payload });
+    },
+  );
+  await canvas.serveRoute(
+    (url) => url.origin === canvas.origin && url.pathname === '/api/theaters/stage/animations',
+    async (route) => {
+      const payload = await new Promise<Array<{ id: string; name: string }>>((resolve) => {
+        releaseStageAnimations = resolve;
+      });
+      await route.fulfill({ json: payload });
+    },
+  );
+  await canvas.serveRoute(
+    (url) => url.origin === canvas.origin && url.pathname === '/api/theaters/other/scenes',
+    async (route) => {
+      await route.fulfill({
+        json: [{ id: 'other_scene', name: 'Other Theater Scene', image_url: null }],
+      });
+    },
+  );
+
+  // Start scenes load for 'stage', switch to 'other', and trigger 'other' load while 'stage' is in flight.
+  await page.locator('#stamp-tab-scenes').click();
+  await expect.poll(() => releaseStageScenes !== null).toBe(true);
+
+  const otherScenesDone = page.waitForResponse(
+    (res) => res.url().includes('/api/theaters/other/scenes'),
+  );
+  await page.evaluate(() => {
+    const h = (window as unknown as AssetHarnessWindow).__assetHarness;
+    h.theaterId = 'other';
+    h.cachedScenes = null;
+    void h.manager.loadTheaterScenes();
+  });
+  await otherScenesDone;
+  await expect(page.locator('#scenes-manager-grid .scene-card')).toHaveCount(1);
+  await expect(page.locator('#scenes-manager-grid .scene-card').first()).toContainText(
+    'Other Theater Scene',
+  );
+
+  const stageScenesDone = page.waitForResponse(
+    (res) => res.url().includes('/api/theaters/stage/scenes'),
+  );
+  releaseStageScenes!([{ id: 'stale_stage', name: 'Stale Stage Scene', image_url: null }]);
+  await stageScenesDone;
+  await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 0)));
+
+  await expect(page.locator('#scenes-manager-grid .scene-card')).toHaveCount(1);
+  await expect(page.locator('#scenes-manager-grid .scene-card').first()).toContainText(
+    'Other Theater Scene',
+  );
+  const cachedSceneIds = await page.evaluate(() =>
+    ((window as unknown as AssetHarnessWindow).__assetHarness.cachedScenes ?? []).map((s) => s.id),
+  );
+  expect(cachedSceneIds).toEqual(['other_scene']);
+
+  // Also verify loadExtraAssets('animations') checks theater identity on resolution.
+  await page.evaluate(() => {
+    const h = (window as unknown as AssetHarnessWindow).__assetHarness;
+    h.theaterId = 'stage';
+    h.manager.switchStampManagerTab('animations');
+  });
+  await expect.poll(() => releaseStageAnimations !== null).toBe(true);
+
+  await page.evaluate(() => {
+    const h = (window as unknown as AssetHarnessWindow).__assetHarness;
+    h.theaterId = 'other';
+    const panel = document.getElementById('animations-manager');
+    if (panel) panel.textContent = 'Other theater animations';
+  });
+  const stageAnimationsDone = page.waitForResponse(
+    (res) => res.url().includes('/api/theaters/stage/animations'),
+  );
+  releaseStageAnimations!([{ id: 'stale_anim', name: 'Stale Animation' }]);
+  await stageAnimationsDone;
+  await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 0)));
+
+  await expect(page.locator('#animations-manager')).toHaveText('Other theater animations');
+});

@@ -328,12 +328,64 @@ export function createCanvasAssetManager(
   const assetGenerationMessages = new Map<AssetGenerationKind, string>();
   let nextAssetGenerationId = 0;
 
+  interface TheaterCollectionState<
+    T extends { readonly url?: string | null; readonly image_url?: string | null },
+  > {
+    epoch: number;
+    activeRequestId: number;
+    inFlightTheaterId: string | null;
+    readonly tab: 'scenes' | 'characters';
+    readonly endpoint: 'scenes' | 'characters';
+    readonly getCached: () => T[] | null;
+    readonly setCached: (items: T[] | null) => void;
+    readonly renderGrid: (items: readonly T[] | null | undefined) => void;
+    readonly gridEl: HTMLElement | null;
+    readonly emptyEl: HTMLElement | null;
+    readonly emptyMessageEl: HTMLElement | null;
+    readonly errorText: string;
+  }
+
   let assetLoadVersion = 0;
   let assetMusicState: MusicSelectionState | null = null;
-  let isFetchingTheaterScenes = false;
-  let isFetchingTheaterCharacters = false;
   let isPushingScene = false;
   let isPushingCharacter = false;
+
+  const scenesCollectionState: TheaterCollectionState<TheaterScene> = {
+    epoch: 0,
+    activeRequestId: 0,
+    inFlightTheaterId: null,
+    tab: 'scenes',
+    endpoint: 'scenes',
+    getCached: getCachedScenes,
+    setCached: setCachedScenes,
+    renderGrid: (items) => renderScenesManagerGrid(items),
+    gridEl: el.scenesManagerGrid,
+    emptyEl: el.scenesManagerEmpty,
+    emptyMessageEl: el.scenesEmptyMessage,
+    errorText: 'Unable to load scenes at this time.',
+  };
+
+  const charactersCollectionState: TheaterCollectionState<TheaterCharacter> = {
+    epoch: 0,
+    activeRequestId: 0,
+    inFlightTheaterId: null,
+    tab: 'characters',
+    endpoint: 'characters',
+    getCached: getCachedCharacters,
+    setCached: setCachedCharacters,
+    renderGrid: (items) => renderCharactersManagerGrid(items),
+    gridEl: el.charactersManagerGrid,
+    emptyEl: el.charactersManagerEmpty,
+    emptyMessageEl: el.charactersEmptyMessage,
+    errorText: 'Unable to load characters at this time.',
+  };
+
+  function writeCollectionCache<
+    T extends { readonly url?: string | null; readonly image_url?: string | null },
+  >(state: TheaterCollectionState<T>, items: T[] | null): void {
+    state.epoch += 1;
+    state.setCached(items);
+  }
 
   const extraAssetPanels: Readonly<Record<ExtraAssetKind, HTMLElement | null>> = {
     playlists: el.playlistsManager,
@@ -554,7 +606,7 @@ export function createCanvasAssetManager(
       for (const scene of data.scenes || []) {
         mergedScenes.set(scene.id ?? scene.name, scene);
       }
-      setCachedScenes(Array.from(mergedScenes.values()));
+      writeCollectionCache(scenesCollectionState, Array.from(mergedScenes.values()));
       resultMessage = `“${name}” saved and ready to push to canvas. Charged ${data.credits_charged} credits.`;
     } catch (error) {
       if (getTheaterId() !== generationTheaterId) return;
@@ -641,7 +693,7 @@ export function createCanvasAssetManager(
             merged.set(asset.id || asset.name, asset);
           }
           const mergedList = Array.from(merged.values());
-          setCachedCharacters(mergedList);
+          writeCollectionCache(charactersCollectionState, mergedList);
           if (getActiveTab() === tab) {
             renderCharactersManagerGrid(mergedList);
           }
@@ -970,18 +1022,20 @@ export function createCanvasAssetManager(
     const panel = kind === 'playlists' ? el.playlistsManagerContent : extraAssetPanels[kind];
     if (!panel) return;
     const version = ++assetLoadVersion;
+    const tid = getTheaterId();
     panel.textContent = 'Loading…';
     if (el.stampManagerCount) {
       el.stampManagerCount.textContent = '…';
     }
     try {
-      const tid = getTheaterId();
       if (!tid) throw new Error('Unable to load assets.');
       const res = await fetch(`/api/theaters/${encodeURIComponent(tid)}/${kind}`);
       if (!res.ok) throw new Error('Unable to load assets.');
       if (kind === 'playlists') {
         const assets = (await res.json()) as TheaterPlaylist[];
-        if (version !== assetLoadVersion || getActiveTab() !== kind) return;
+        if (version !== assetLoadVersion || getActiveTab() !== kind || getTheaterId() !== tid) {
+          return;
+        }
         panel.replaceChildren();
         const count = assets.reduce((n, playlist) => n + playlist.tracks.length, 0);
         if (el.stampManagerCount) {
@@ -1082,7 +1136,9 @@ export function createCanvasAssetManager(
         panel.appendChild(listContainer);
       } else {
         const assets = (await res.json()) as TheaterAnimation[];
-        if (version !== assetLoadVersion || getActiveTab() !== kind) return;
+        if (version !== assetLoadVersion || getActiveTab() !== kind || getTheaterId() !== tid) {
+          return;
+        }
         panel.replaceChildren();
         const count = assets.length;
         if (el.stampManagerCount) {
@@ -1099,7 +1155,7 @@ export function createCanvasAssetManager(
         }
       }
     } catch (err) {
-      if (version === assetLoadVersion && getActiveTab() === kind) {
+      if (version === assetLoadVersion && getActiveTab() === kind && getTheaterId() === tid) {
         panel.textContent = err instanceof Error ? err.message : 'Unable to load assets.';
         if (el.stampManagerCount) {
           el.stampManagerCount.textContent = '—';
@@ -1209,34 +1265,50 @@ export function createCanvasAssetManager(
     }
   }
 
-  async function loadTheaterScenes(): Promise<void> {
+  async function loadTheaterCollection<
+    T extends { readonly url?: string | null; readonly image_url?: string | null },
+  >(state: TheaterCollectionState<T>): Promise<void> {
     const tid = getTheaterId();
-    if (!tid || isFetchingTheaterScenes) return;
-    isFetchingTheaterScenes = true;
+    if (!tid) return;
+    if (state.inFlightTheaterId !== null && state.inFlightTheaterId === tid) return;
+    const requestId = ++state.activeRequestId;
+    state.inFlightTheaterId = tid;
+    const startEpoch = state.epoch;
+    const startCachedRef = state.getCached();
     try {
-      const res = await fetch(`/api/theaters/${encodeURIComponent(tid)}/scenes`);
+      const res = await fetch(`/api/theaters/${encodeURIComponent(tid)}/${state.endpoint}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data: unknown = await res.json();
-      const scenes = Array.isArray(data) ? (data as TheaterScene[]) : [];
-      setCachedScenes(scenes);
-      preloadItemImages(scenes);
-      if (getActiveTab() === 'scenes') {
-        renderScenesManagerGrid(scenes);
+      if (requestId !== state.activeRequestId || getTheaterId() !== tid) return;
+      if (state.epoch !== startEpoch || state.getCached() !== startCachedRef) return;
+      const items = Array.isArray(data) ? (data as T[]) : [];
+      writeCollectionCache(state, items);
+      preloadItemImages(items);
+      if (getActiveTab() === state.tab) {
+        state.renderGrid(items);
       }
     } catch (err) {
-      console.warn('Unable to load theater scenes:', err);
-      if (getActiveTab() === 'scenes') {
-        if (el.scenesManagerGrid) el.scenesManagerGrid.innerHTML = '';
-        if (el.scenesManagerEmpty) {
-          el.scenesManagerEmpty.style.display = 'flex';
-          if (el.scenesEmptyMessage) {
-            el.scenesEmptyMessage.textContent = 'Unable to load scenes at this time.';
+      if (requestId !== state.activeRequestId || getTheaterId() !== tid) return;
+      if (state.epoch !== startEpoch || state.getCached() !== startCachedRef) return;
+      console.warn(`Unable to load theater ${state.endpoint}:`, err);
+      if (getActiveTab() === state.tab) {
+        if (state.gridEl) state.gridEl.innerHTML = '';
+        if (state.emptyEl) {
+          state.emptyEl.style.display = 'flex';
+          if (state.emptyMessageEl) {
+            state.emptyMessageEl.textContent = state.errorText;
           }
         }
       }
     } finally {
-      isFetchingTheaterScenes = false;
+      if (requestId === state.activeRequestId) {
+        state.inFlightTheaterId = null;
+      }
     }
+  }
+
+  async function loadTheaterScenes(): Promise<void> {
+    return loadTheaterCollection(scenesCollectionState);
   }
 
   function renderScenesManagerGrid(scenesInput: readonly TheaterScene[] | null | undefined): void {
@@ -1418,33 +1490,7 @@ export function createCanvasAssetManager(
   }
 
   async function loadTheaterCharacters(): Promise<void> {
-    const tid = getTheaterId();
-    if (!tid || isFetchingTheaterCharacters) return;
-    isFetchingTheaterCharacters = true;
-    try {
-      const res = await fetch(`/api/theaters/${encodeURIComponent(tid)}/characters`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data: unknown = await res.json();
-      const characters = Array.isArray(data) ? (data as TheaterCharacter[]) : [];
-      setCachedCharacters(characters);
-      preloadItemImages(characters);
-      if (getActiveTab() === 'characters') {
-        renderCharactersManagerGrid(characters);
-      }
-    } catch (err) {
-      console.warn('Unable to load theater characters:', err);
-      if (getActiveTab() === 'characters') {
-        if (el.charactersManagerGrid) el.charactersManagerGrid.innerHTML = '';
-        if (el.charactersManagerEmpty) {
-          el.charactersManagerEmpty.style.display = 'flex';
-          if (el.charactersEmptyMessage) {
-            el.charactersEmptyMessage.textContent = 'Unable to load characters at this time.';
-          }
-        }
-      }
-    } finally {
-      isFetchingTheaterCharacters = false;
-    }
+    return loadTheaterCollection(charactersCollectionState);
   }
 
   function renderCharactersManagerGrid(
@@ -1614,7 +1660,7 @@ export function createCanvasAssetManager(
       const characters = Array.isArray(payload.characters)
         ? (payload.characters as TheaterCharacter[])
         : [];
-      setCachedCharacters(characters);
+      writeCollectionCache(charactersCollectionState, characters);
       preloadItemImages(characters);
       if (isManagerOpen() && getActiveTab() === 'characters') {
         renderCharactersManagerGrid(characters);
@@ -1632,7 +1678,7 @@ export function createCanvasAssetManager(
     if (data.type === 'theater_scenes_updated') {
       const payload = data as { readonly scenes?: unknown };
       const scenes = Array.isArray(payload.scenes) ? (payload.scenes as TheaterScene[]) : [];
-      setCachedScenes(scenes);
+      writeCollectionCache(scenesCollectionState, scenes);
       preloadItemImages(scenes);
       if (isManagerOpen() && getActiveTab() === 'scenes') {
         renderScenesManagerGrid(scenes);
