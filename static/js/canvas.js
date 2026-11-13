@@ -659,7 +659,7 @@ import { startCanvasStatePolling } from "/static/generated/canvas/state-polling.
                 console.error("Failed to load device-aware-pcm.js:", err);
             });
         import { createDoodleRenderer, createImageRenderer } from "/static/js/canvas-renderers.js?v=zoom-effect-origin-20261030-1";
-        import { createA2UICanvasRenderer } from "/static/js/a2ui-canvas-renderer.js?v=20261005-1";
+        import { createA2UICanvasRenderer } from "/static/generated/canvas/a2ui-renderer.js";
         import { createGameRenderer } from "/static/js/game-renderer.js?v=17";
         import { getAnimationSignature, playCanvasAnimation } from "/static/generated/canvas/media.js";
         import { createCanvasScene } from "/static/js/canvas-scene.js";
