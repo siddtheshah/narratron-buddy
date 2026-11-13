@@ -1,7 +1,9 @@
 import { createAgentActivityController } from "/static/generated/canvas/agent-activity.js";
+import { createCanvasAssetManager } from "/static/generated/canvas/asset-manager.js";
 import { createCollabBarController } from "/static/generated/canvas/collab-bar.js";
 import { createLayoutResizeController } from "/static/generated/canvas/layout-resize.js";
 import { createCanvasPinControl } from "/static/generated/canvas/pin-control.js";
+import { createSpeechReplayControls } from "/static/generated/canvas/speech-replay.js";
 import { createTextAnnotations } from "/static/generated/canvas/text-annotations.js";
 import { startCanvasStatePolling } from "/static/generated/canvas/state-polling.js";
 
@@ -662,7 +664,7 @@ import { startCanvasStatePolling } from "/static/generated/canvas/state-polling.
         import { createA2UICanvasRenderer } from "/static/generated/canvas/a2ui-renderer.js";
         import { createGameRenderer } from "/static/js/game-renderer.js?v=17";
         import { getAnimationSignature, playCanvasAnimation } from "/static/generated/canvas/media.js";
-        import { createCanvasScene } from "/static/js/canvas-scene.js";
+        import { createCanvasScene } from "/static/generated/canvas/scene.js";
         import { createNarrationPane } from "/static/js/narration-pane.js";
 
         let lastTime = -1;
@@ -721,59 +723,20 @@ import { startCanvasStatePolling } from "/static/generated/canvas/state-polling.
             canEdit: () => isCurrentOrator(),
         });
         const latestSpeechReplayBtn = document.getElementById('latest-speech-replay-btn');
-        function updateSpeechReplayButtonUI(state) {
-            if (!latestSpeechReplayBtn) return;
-            const hasLatest = Boolean(state && state.hasLatestSpeech);
-            const isPlaying = Boolean(state && state.playing);
-            latestSpeechReplayBtn.disabled = !hasLatest;
-            latestSpeechReplayBtn.classList.toggle('playing', isPlaying);
-            latestSpeechReplayBtn.title = hasLatest
-                ? (isPlaying ? 'Replaying latest speech… (click to restart)' : 'Replay latest speech')
-                : 'No speech to replay';
-        }
+        let speechReplayControls = null;
 
         const { updateSceneDialogue, enqueueSceneSpeech, stopSceneSpeech, replayLatestSpeech } = createCanvasScene({
             narrationPane,
             audioEnabled: () => !isMuted,
-            onSpeechStateChange: updateSpeechReplayButtonUI,
+            onSpeechStateChange: (state) => speechReplayControls?.updateButtonState(state),
         });
 
-        latestSpeechReplayBtn?.addEventListener('click', () => {
-            replayLatestSpeech();
+        speechReplayControls = createSpeechReplayControls({
+            replayButton: latestSpeechReplayBtn,
+            replayLatestSpeech,
+            stopSceneSpeech,
+            getMicMode: () => micMode,
         });
-        latestSpeechReplayBtn?.addEventListener('pointerdown', (e) => e.stopPropagation());
-        latestSpeechReplayBtn?.addEventListener('mousedown', (e) => e.stopPropagation());
-
-        let vadSpeechTimer = null;
-        let isVadSpeaking = false;
-
-        function handleVadSpeechStart() {
-            if (micMode === 'push-to-talk') return;
-            if (isVadSpeaking) return;
-            isVadSpeaking = true;
-            if (vadSpeechTimer) {
-                clearTimeout(vadSpeechTimer);
-                vadSpeechTimer = null;
-            }
-            vadSpeechTimer = setTimeout(() => {
-                if (isVadSpeaking && micMode !== 'push-to-talk') {
-                    stopSceneSpeech();
-                }
-            }, 1000);
-        }
-
-        function handleVadSpeechEnd() {
-            isVadSpeaking = false;
-            if (vadSpeechTimer) {
-                clearTimeout(vadSpeechTimer);
-                vadSpeechTimer = null;
-            }
-        }
-
-        window.addEventListener('narratron:speech-start', handleVadSpeechStart);
-        window.addEventListener('narratron:speech-end', handleVadSpeechEnd);
-        window.addEventListener('vadstart', handleVadSpeechStart);
-        window.addEventListener('vadstop', handleVadSpeechEnd);
 
         // Generate anonymous user ID and read theater context
         const myUserId = "Viewer_" + Math.floor(Math.random() * 10000);
@@ -3490,199 +3453,12 @@ import { startCanvasStatePolling } from "/static/generated/canvas/state-polling.
             }
         });
 
-        const scenePresetMenu = document.getElementById('scene-generation-presets');
-        const pendingSceneGenerations = new Map();
-        let nextSceneGenerationId = 0;
-
-        function updateSceneGenerationStatus(message = '') {
-            const count = pendingSceneGenerations.size;
-            const pending = count ? `${count} scene${count === 1 ? '' : 's'} generating. You can generate another while you wait.` : '';
-            document.getElementById('scene-generation-status').textContent = [message, pending].filter(Boolean).join(' ');
-            document.getElementById('scene-generation-form').setAttribute('aria-busy', String(count > 0));
-        }
-
-        scenePresetMenu.querySelectorAll('[data-scene-type]').forEach(option => {
-            option.addEventListener('click', () => {
-                document.getElementById('scene-generation-type').value = option.dataset.sceneType;
-                document.getElementById('scene-generation-type-label').textContent = option.textContent;
-                scenePresetMenu.querySelectorAll('[data-scene-type]').forEach(item => {
-                    item.setAttribute('aria-pressed', String(item === option));
-                });
-                scenePresetMenu.open = false;
-                scenePresetMenu.querySelector('summary').focus();
-            });
-        });
-        document.addEventListener('pointerdown', event => {
-            if (!scenePresetMenu.contains(event.target)) scenePresetMenu.open = false;
-        });
-        scenePresetMenu.addEventListener('keydown', event => {
-            if (event.key === 'Escape') {
-                scenePresetMenu.open = false;
-                scenePresetMenu.querySelector('summary').focus();
-            }
-        });
-        document.getElementById('scene-generation-prompt').addEventListener('keydown', event => {
-            if (event.key !== 'Enter' || event.isComposing) return;
-            event.preventDefault();
-            if (!event.repeat) document.getElementById('scene-generation-form').requestSubmit();
-        });
-
-        document.getElementById('scene-generation-form')?.addEventListener('submit', async event => {
-            event.preventDefault();
-            if (!isTheaterStampOwner) return;
-            const promptInput = document.getElementById('scene-generation-prompt');
-            const typeInput = document.getElementById('scene-generation-type');
-            const prompt = promptInput.value.trim();
-            if (!prompt) return;
-            const sceneType = typeInput.value;
-            const name = stampNameFromPrompt(prompt);
-            const generationTheaterId = theaterId;
-            const jobId = ++nextSceneGenerationId;
-            pendingSceneGenerations.set(jobId, { name, prompt, sceneType });
-            promptInput.value = '';
-            renderScenesManagerGrid(cachedTheaterScenes || []);
-            updateSceneGenerationStatus();
-            let resultMessage = '';
-            try {
-                const response = await fetch(`/api/theaters/${encodeURIComponent(generationTheaterId)}/scenes/generate`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify((() => { const p = { name, prompt, scene_type: sceneType }; const refs = extractTaggedCanvasReferences(prompt); if (refs.length) p.references = refs; return p; })()),
-                });
-                const data = await response.json();
-                if (!response.ok) throw new Error(typeof data.detail === 'string' ? data.detail : 'Unable to generate scene.');
-                if (theaterId !== generationTheaterId) return;
-                // Concurrent requests can return snapshots in a different order.
-                const mergedScenes = new Map((cachedTheaterScenes || []).map(scene => [scene.id, scene]));
-                data.scenes.forEach(scene => mergedScenes.set(scene.id, scene));
-                cachedTheaterScenes = [...mergedScenes.values()];
-                resultMessage = `“${name}” saved and ready to push to canvas. Charged ${data.credits_charged} credits.`;
-            } catch (error) {
-                if (theaterId !== generationTheaterId) return;
-                resultMessage = `“${name}”: ${error.message || 'Unable to generate scene. Please try again.'}`;
-                if (!promptInput.value.trim()) promptInput.value = prompt;
-            } finally {
-                pendingSceneGenerations.delete(jobId);
-                if (theaterId === generationTheaterId) {
-                    if (activeStampManagerTab === 'scenes') renderScenesManagerGrid(cachedTheaterScenes || []);
-                    updateSceneGenerationStatus(resultMessage);
-                }
-            }
-        });
-
-        const assetGenerationKinds = { characters: 'character', animations: 'animation', playlists: 'music' };
-        const animationPresetMenu = document.getElementById('animation-generation-presets');
-        animationPresetMenu.querySelectorAll('[data-animation-type]').forEach(option => {
-            option.addEventListener('click', () => {
-                document.getElementById('animation-generation-type').value = option.dataset.animationType;
-                document.getElementById('animation-generation-type-label').textContent = option.textContent;
-                animationPresetMenu.querySelectorAll('[data-animation-type]').forEach(item => {
-                    item.setAttribute('aria-pressed', String(item === option));
-                });
-                animationPresetMenu.open = false;
-                animationPresetMenu.querySelector('summary').focus();
-            });
-        });
-        document.addEventListener('pointerdown', event => {
-            if (!animationPresetMenu.contains(event.target)) animationPresetMenu.open = false;
-        });
-        animationPresetMenu.addEventListener('keydown', event => {
-            if (event.key === 'Escape') {
-                animationPresetMenu.open = false;
-                animationPresetMenu.querySelector('summary').focus();
-            }
-        });
-        const pendingAssetGenerations = new Map();
-        const assetGenerationMessages = new Map();
-        let nextAssetGenerationId = 0;
+        const expandedPlaylists = new Set();
 
         function updateAssetGenerationUI() {
-            const kind = assetGenerationKinds[activeStampManagerTab];
-            for (const value of Object.values(assetGenerationKinds)) {
-                document.getElementById(`${value}-generation-form`).hidden = !isTheaterStampOwner || kind !== value;
+            if (typeof assetManager !== 'undefined' && assetManager) {
+                assetManager.updateAssetGenerationUI();
             }
-            const status = document.getElementById('asset-generation-status');
-            status.hidden = !isTheaterStampOwner || !kind;
-            const jobs = [...pendingAssetGenerations.values()].filter(job => job.kind === kind && job.theaterId === theaterId);
-            const note = kind === 'character' ? 'Uses image generation credits.' : `Uses ${kind || 'asset'} generation credits.`;
-            status.textContent = [assetGenerationMessages.get(kind) || `${note} Saved to this theater.`,
-                jobs.length ? `${jobs.length} generating. You can generate another while you wait.` : ''].filter(Boolean).join(' ');
-            const panel = document.getElementById('asset-generation-pending');
-            panel.replaceChildren();
-            panel.hidden = !jobs.length;
-            if (kind === 'character' && cachedTheaterCharacters !== null) {
-                charactersManagerEmpty.style.display = jobs.length || cachedTheaterCharacters.length ? 'none' : 'flex';
-            }
-            for (const job of jobs) {
-                const card = document.createElement('div');
-                card.className = 'scene-card asset-card-generating';
-                card.dataset.assetSearch = `${job.name} ${job.prompt}`;
-                card.setAttribute('aria-busy', 'true');
-                const placeholder = document.createElement('div');
-                placeholder.className = 'scene-card-thumb-container stamp-generation-placeholder';
-                const label = document.createElement('div');
-                label.className = 'scene-card-name';
-                label.textContent = job.name;
-                const progress = document.createElement('div');
-                progress.className = 'stamp-card-progress';
-                progress.textContent = 'Generating…';
-                card.append(placeholder, label, progress);
-                panel.appendChild(card);
-            }
-            if (kind) document.getElementById(`${kind}-generation-form`).setAttribute('aria-busy', String(jobs.length > 0));
-        }
-
-        for (const [tab, kind] of Object.entries(assetGenerationKinds)) {
-            const form = document.getElementById(`${kind}-generation-form`);
-            const input = document.getElementById(`${kind}-generation-prompt`);
-            input.addEventListener('keydown', event => {
-                if (event.key !== 'Enter' || event.isComposing) return;
-                event.preventDefault();
-                if (!event.repeat) form.requestSubmit();
-            });
-            form.addEventListener('submit', async event => {
-                event.preventDefault();
-                const prompt = input.value.trim();
-                if (!isTheaterStampOwner || !prompt) return;
-                const generationTheaterId = theaterId;
-                const name = stampNameFromPrompt(prompt);
-                const payload = { name, prompt };
-                if (kind === 'animation') payload.animation_type = document.getElementById('animation-generation-type').value;
-                if (kind === 'character' || kind === 'animation') {
-                    const taggedRefs = extractTaggedCanvasReferences(prompt);
-                    if (taggedRefs.length) payload.references = taggedRefs;
-                }
-                const id = ++nextAssetGenerationId;
-                pendingAssetGenerations.set(id, { kind, name, prompt, theaterId: generationTheaterId });
-                assetGenerationMessages.delete(kind);
-                input.value = '';
-                updateAssetGenerationUI();
-                try {
-                    const endpoint = kind === 'music' ? 'music' : tab;
-                    const response = await fetch(`/api/theaters/${encodeURIComponent(generationTheaterId)}/${endpoint}/generate`, {
-                        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
-                    });
-                    const data = await response.json();
-                    if (!response.ok) throw new Error(typeof data.detail === 'string' ? data.detail : `Unable to generate ${kind}.`);
-                    if (theaterId !== generationTheaterId) return;
-                    if (kind === 'character') {
-                        const merged = new Map((cachedTheaterCharacters || []).map(asset => [asset.id || asset.name, asset]));
-                        (data.characters || []).forEach(asset => merged.set(asset.id || asset.name, asset));
-                        cachedTheaterCharacters = [...merged.values()];
-                        if (activeStampManagerTab === tab) renderCharactersManagerGrid(cachedTheaterCharacters);
-                    } else if (activeStampManagerTab === tab) {
-                        await loadExtraAssets(tab);
-                    }
-                    assetGenerationMessages.set(kind, `“${name}” saved to this theater. Charged ${data.credits_charged} credits.`);
-                } catch (error) {
-                    if (theaterId !== generationTheaterId) return;
-                    assetGenerationMessages.set(kind, `“${name}”: ${error.message}`);
-                    if (!input.value.trim()) input.value = prompt;
-                } finally {
-                    pendingAssetGenerations.delete(id);
-                    if (theaterId === generationTheaterId) updateAssetGenerationUI();
-                }
-            });
         }
 
         function applyAssetSearch() {
@@ -4280,469 +4056,37 @@ import { startCanvasStatePolling } from "/static/generated/canvas/state-polling.
         // ========================================
         // Asset Manager Tab Switching (Scenes & Characters for Orator)
         // ========================================
-        function updateStampTabsVisibility() {
-            const isOrator = typeof isCurrentOrator === 'function' && isCurrentOrator();
-            if (stampManagerTabs) {
-                stampManagerTabs.style.display = isOrator ? 'flex' : 'none';
-            }
-            if (!isOrator && activeStampManagerTab !== 'stamps') {
-                switchStampManagerTab('stamps');
-            }
-        }
-
-        const preloadedImageUrls = new Set();
-        function preloadItemImages(items) {
-            if (!Array.isArray(items)) return;
-            items.forEach(item => {
-                const url = item && (item.url || item.image_url);
-                if (url && typeof url === 'string') {
-                    const effectiveUrl = typeof resolveWebpQualityUrl === 'function' ? resolveWebpQualityUrl(url) : url;
-                    if (!preloadedImageUrls.has(effectiveUrl)) {
-                        preloadedImageUrls.add(effectiveUrl);
-                        const img = new Image();
-                        img.src = effectiveUrl;
-                    }
-                }
-            });
-        }
-
-        function handleDoodleSocketData(data) {
-            if (!data || typeof data !== 'object') return false;
-            if (data.type === 'theater_characters_updated') {
-                cachedTheaterCharacters = data.characters || [];
-                preloadItemImages(cachedTheaterCharacters);
-                if (isStampManagerOpen && activeStampManagerTab === 'characters') renderCharactersManagerGrid(cachedTheaterCharacters);
-                return true;
-            }
-            if (data.type === 'theater_playlists_updated' || data.type === 'theater_animations_updated') {
-                const tab = data.type === 'theater_playlists_updated' ? 'playlists' : 'animations';
-                if (isStampManagerOpen && activeStampManagerTab === tab) loadExtraAssets(tab);
-                return true;
-            }
-            if (data.type === 'theater_scenes_updated') {
-                cachedTheaterScenes = data.scenes || [];
-                preloadItemImages(cachedTheaterScenes);
-                if (isStampManagerOpen && activeStampManagerTab === 'scenes') renderScenesManagerGrid(cachedTheaterScenes);
-                return true;
-            }
-            if (data.type === 'theater_stamps_updated') {
-                cachedTheaterStamps = data.stamps || [];
-                if (isStampManagerOpen) renderStampManagerGrid(cachedUserStamps || []);
-                return true;
-            }
-            return false;
-        }
-
-        const extraAssetPanels = {
-            playlists: document.getElementById('playlists-manager'),
-            animations: document.getElementById('animations-manager'),
-        };
-        let assetLoadVersion = 0;
-        let selectedPlaylist = '';
         let assetMusicState = null;
-        const expandedPlaylists = new Set();
-        const noMusicButton = createAssetButton({ id: 'no_music', name: 'No Music' }, 'playlists');
-        noMusicButton.id = 'no-music-button';
-        extraAssetPanels.playlists.prepend(noMusicButton);
-        for (const kind of ['playlists', 'animations']) {
-            document.getElementById(`stamp-tab-${kind}`)?.addEventListener('click', () => switchStampManagerTab(kind));
-        }
-
-        function revertAllOtherPushItems(currentElement) {
-            document.querySelectorAll('.asset-push-button, .playlist-push-button').forEach(btn => {
-                if (btn !== currentElement) {
-                    btn.classList.remove('pushing', 'pushed');
-                    const action = btn.querySelector('small');
-                    if (action && (action.textContent === 'Pushed!' || action.textContent === 'Pushing…')) {
-                        action.textContent = 'Push';
-                    }
-                }
-            });
-            document.querySelectorAll('.scene-card').forEach(card => {
-                if (card !== currentElement) {
-                    card.classList.remove('pushing');
-                    const badge = card.querySelector('.scene-card-push-badge');
-                    if (badge && (badge.textContent === 'Pushed!' || badge.textContent === 'Pushing...' || badge.textContent === 'Pushing…')) {
-                        badge.textContent = 'Push';
-                    }
-                }
-            });
-            document.querySelectorAll('.character-card').forEach(card => {
-                if (card !== currentElement) {
-                    card.classList.remove('pushing');
-                    const badge = card.querySelector('.character-card-push-badge');
-                    if (badge && (badge.textContent === 'Pushed!' || badge.textContent === 'Pushing...' || badge.textContent === 'Pushing…')) {
-                        badge.textContent = 'Push';
-                    }
-                }
-            });
-        }
-
-        function updateAssetPlaybackSelection(music) {
-            assetMusicState = music;
-            extraAssetPanels.playlists.querySelectorAll('.asset-push-button, .playlist-push-button').forEach(updateAssetPlaybackButton);
-        }
-
-        function updateAssetPlaybackButton(button) {
-            if (!assetMusicState || button.dataset.assetKind !== 'playlists') return;
-            const tracks = assetMusicState.tracks || [];
-            const silent = !(assetMusicState.music_id || assetMusicState.playlist) || tracks.length === 0;
-            const playingTrack = typeof currentTrackSrc !== 'undefined' && tracks.includes(currentTrackSrc)
-                ? currentTrackSrc : tracks[0];
-            const selected = button.dataset.assetId === 'no_music' ? silent : !silent && (
-                button.dataset.playlistName
-                    ? button.dataset.playlistName === (assetMusicState.music_id || assetMusicState.playlist)
-                    && tracks.includes(button.dataset.trackUrl)
-                    : button.dataset.trackUrl === playingTrack
-            );
-            button.classList.toggle('currently-playing', selected);
-            if (selected) button.setAttribute('aria-current', 'true');
-            else button.removeAttribute('aria-current');
-            const indicator = button.querySelector('.asset-playing-indicator');
-            indicator.hidden = !selected;
-            indicator.textContent = silent ? '✓ Selected' : assetMusicState.paused ? 'Ⅱ Paused' : '▶ Playing';
-            if (button.classList.contains('playlist-push-button')) {
-                const label = button.querySelector('.asset-label') || button.querySelector('span:not(.asset-playing-indicator)');
-                if (label) {
-                    label.hidden = selected;
-                    label.textContent = selected ? '' : 'Push';
-                }
-            }
-            if (!selected) {
-                const action = button.querySelector('small');
-                if (action && (action.textContent === 'Pushed!' || action.textContent === 'Pushing…')) {
-                    action.textContent = 'Push';
-                }
-            }
-        }
-
-        async function loadExtraAssets(kind) {
-            const panel = kind === 'playlists' ? document.getElementById('playlists-manager-content') : extraAssetPanels[kind];
-            const version = ++assetLoadVersion;
-            panel.textContent = 'Loading…';
-            stampManagerCount.textContent = '…';
-            try {
-                const tid = (typeof theaterId !== 'undefined' && theaterId) || (typeof currenttheaterId !== 'undefined' && currenttheaterId) || new URLSearchParams(window.location.search).get('theater_id');
-                const res = await fetch(`/api/theaters/${encodeURIComponent(tid)}/${kind}`);
-                if (!res.ok) throw new Error('Unable to load assets.');
-                const assets = await res.json();
-                if (version !== assetLoadVersion || activeStampManagerTab !== kind) return;
-                panel.replaceChildren();
-                const count = kind === 'playlists' ? assets.reduce((n, p) => n + p.tracks.length, 0) : assets.length;
-                stampManagerCount.textContent = `${count}`;
-                stampManagerCount.title = `${count} ${kind === 'playlists' ? 'tracks' : 'animations'}`;
-                if (!count) {
-                    panel.textContent = `No ${kind} found for this theater.`;
-                    return;
-                }
-                if (kind === 'playlists') {
-                    const listContainer = document.createElement('div');
-                    listContainer.className = 'playlist-accordion-list';
-                    assets.forEach((playlist, index) => {
-                        const initialExpanded = expandedPlaylists.has(playlist.name);
-                        const group = document.createElement('div');
-                        group.className = 'playlist-group';
-                        group.dataset.playlistName = playlist.name;
-                        if (!initialExpanded) {
-                            group.classList.add('minimized');
-                        }
-
-                        const header = document.createElement('div');
-                        header.className = 'playlist-header';
-
-                        const toggleBtn = document.createElement('button');
-                        toggleBtn.type = 'button';
-                        toggleBtn.className = 'playlist-header-toggle';
-                        toggleBtn.dataset.playlistName = playlist.name;
-                        toggleBtn.setAttribute('aria-expanded', initialExpanded ? 'true' : 'false');
-                        toggleBtn.setAttribute('aria-controls', `playlist-tracks-${index}`);
-                        toggleBtn.setAttribute('aria-label', `Toggle ${playlist.name} playlist`);
-
-                        const chevron = document.createElement('span');
-                        chevron.className = 'playlist-chevron';
-                        chevron.setAttribute('aria-hidden', 'true');
-                        chevron.textContent = initialExpanded ? '▼' : '▶';
-
-                        const title = document.createElement('span');
-                        title.className = 'playlist-title';
-                        title.textContent = playlist.name;
-
-                        const countBadge = document.createElement('span');
-                        countBadge.className = 'playlist-track-count';
-                        const trackCount = playlist.tracks ? playlist.tracks.length : 0;
-                        countBadge.textContent = `${trackCount} ${trackCount === 1 ? 'track' : 'tracks'}`;
-
-                        toggleBtn.append(chevron, title, countBadge);
-
-                        const pushBtn = createAssetButton(playlist, kind);
-                        pushBtn.classList.add('playlist-header-push');
-                        pushBtn.setAttribute('aria-label', `Push ${playlist.name}`);
-
-                        header.append(toggleBtn, pushBtn);
-
-                        const trackList = document.createElement('div');
-                        trackList.className = 'asset-track-list playlist-track-list';
-                        trackList.id = `playlist-tracks-${index}`;
-                        trackList.hidden = !initialExpanded;
-
-                        playlist.tracks.forEach(track => {
-                            trackList.appendChild(createAssetButton(track, kind));
-                        });
-
-                        const setExpanded = (expanded) => {
-                            toggleBtn.setAttribute('aria-expanded', `${expanded}`);
-                            chevron.textContent = expanded ? '▼' : '▶';
-                            trackList.hidden = !expanded;
-                            group.classList.toggle('minimized', !expanded);
-                            if (expanded) {
-                                expandedPlaylists.add(playlist.name);
-                            } else {
-                                expandedPlaylists.delete(playlist.name);
-                            }
-                        };
-
-                        toggleBtn.addEventListener('click', (e) => {
-                            e.stopPropagation();
-                            const isExpanded = toggleBtn.getAttribute('aria-expanded') === 'true';
-                            setExpanded(!isExpanded);
-                        });
-
-                        header.addEventListener('click', (e) => {
-                            if (e.target.closest('.playlist-header-push')) return;
-                            const isExpanded = toggleBtn.getAttribute('aria-expanded') === 'true';
-                            setExpanded(!isExpanded);
-                        });
-
-                        pushBtn.addEventListener('click', () => {
-                            if (toggleBtn.getAttribute('aria-expanded') !== 'true') {
-                                setExpanded(true);
-                            }
-                        });
-
-                        group.append(header, trackList);
-                        listContainer.appendChild(group);
-                    });
-                    panel.appendChild(listContainer);
-                } else if (kind === 'animations') {
-                    panel.className = 'animations-grid';
-                    assets.forEach(asset => panel.appendChild(createAssetButton(asset, kind)));
-                } else {
-                    panel.className = 'asset-track-list';
-                    assets.forEach(asset => panel.appendChild(createAssetButton(asset, kind)));
-                }
-            } catch (err) {
-                if (version === assetLoadVersion && activeStampManagerTab === kind) {
-                    panel.textContent = err.message;
-                    stampManagerCount.textContent = '—';
-                    const retry = document.createElement('button');
-                    retry.type = 'button';
-                    retry.className = 'panel-btn';
-                    retry.textContent = 'Retry';
-                    retry.addEventListener('click', () => loadExtraAssets(kind));
-                    panel.appendChild(retry);
-                }
-            }
-        }
-
-        function createAssetButton(asset, kind) {
-            const button = document.createElement('button');
-            button.type = 'button';
-            button.className = asset.tracks ? 'stamp-tab-btn playlist-push-button' : 'asset-push-button';
-            button.dataset.assetSearch = JSON.stringify(asset);
-            button.dataset.assetKind = kind;
-            button.dataset.assetId = asset.id;
-            button.dataset.playlistName = asset.tracks ? asset.name : '';
-            if (asset.tracks) button.dataset.playlist = asset.name;
-            button.dataset.trackUrl = asset.tracks ? asset.tracks[0]?.url || '' : asset.url || asset.id;
-            button.title = asset.description || `Push ${asset.name}`;
-
-            let action;
-            if (kind === 'animations') {
-                button.setAttribute('aria-label', `Push ${asset.name || 'animation'}`);
-                const thumbContainer = document.createElement('div');
-                thumbContainer.className = 'asset-thumb-container';
-
-                const mediaUrl = asset.url;
-                if (mediaUrl) {
-                    const isVideo = mediaUrl.endsWith('.mp4') || mediaUrl.endsWith('.webm') || asset.type === 'video';
-                    if (isVideo && (mediaUrl.endsWith('.mp4') || mediaUrl.endsWith('.webm'))) {
-                        const video = document.createElement('video');
-                        video.className = 'asset-thumb';
-                        video.src = `${mediaUrl}#t=0.001`;
-                        video.preload = 'metadata';
-                        video.muted = true;
-                        video.playsInline = true;
-                        video.onerror = () => {
-                            video.style.display = 'none';
-                            if (!thumbContainer.querySelector('.asset-fallback-thumb')) {
-                                const placeholder = document.createElement('div');
-                                placeholder.className = 'asset-fallback-thumb';
-                                placeholder.textContent = '🎬';
-                                thumbContainer.appendChild(placeholder);
-                            }
-                        };
-                        thumbContainer.appendChild(video);
-                    } else {
-                        const img = document.createElement('img');
-                        img.className = 'asset-thumb';
-                        img.src = mediaUrl;
-                        img.alt = asset.name || '';
-                        img.loading = 'lazy';
-                        img.onerror = () => {
-                            img.style.display = 'none';
-                            if (!thumbContainer.querySelector('.asset-fallback-thumb')) {
-                                const placeholder = document.createElement('div');
-                                placeholder.className = 'asset-fallback-thumb';
-                                placeholder.textContent = '🎬';
-                                thumbContainer.appendChild(placeholder);
-                            }
-                        };
-                        thumbContainer.appendChild(img);
-                    }
-                } else {
-                    const placeholder = document.createElement('div');
-                    placeholder.className = 'asset-fallback-thumb';
-                    placeholder.textContent = '🎬';
-                    thumbContainer.appendChild(placeholder);
-                }
-
-                const overlay = document.createElement('div');
-                overlay.className = 'asset-overlay';
-                action = document.createElement('small');
-                action.textContent = 'Push';
-                overlay.appendChild(action);
-                thumbContainer.appendChild(overlay);
-                button.appendChild(thumbContainer);
-
-                const label = document.createElement('span');
-                label.className = 'asset-label';
-                label.hidden = true;
-                label.style.display = 'none';
-                button.appendChild(label);
-            } else {
-                const label = document.createElement('span');
-                label.className = 'asset-label';
-                label.textContent = asset.tracks ? 'Push' : (asset.description || asset.name);
-                action = document.createElement('small');
-                action.textContent = 'Push';
-                action.hidden = Boolean(asset.tracks);
-                const indicator = document.createElement('span');
-                indicator.className = 'asset-playing-indicator';
-                indicator.hidden = true;
-                button.append(indicator, label, action);
-                updateAssetPlaybackButton(button);
-            }
-
-            button.addEventListener('click', async () => {
-                if (!isCurrentOrator()) return;
-                revertAllOtherPushItems(button);
-                button.disabled = true;
-                action.textContent = 'Pushing…';
-                button.classList.add('pushing');
-                try {
-                    const res = await fetch(`/api/theaters/${encodeURIComponent(theaterId)}/${kind}/push`, {
-                        method: 'POST', headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ id: asset.id }),
-                    });
-                    const data = await res.json();
-                    if (!res.ok) throw new Error(data.detail || 'Unable to push asset.');
-                    showShareToast(data.message);
-                    if (asset.tracks) {
-                        updateAssetPlaybackSelection({
-                            music_id: asset.name,
-                            playlist: asset.name,
-                            tracks: asset.tracks.map(t => t.url || t.id),
-                            paused: false
-                        });
-                    } else if (asset.id === 'no_music') {
-                        updateAssetPlaybackSelection({
-                            music_id: '',
-                            playlist: '',
-                            tracks: [],
-                            paused: false
-                        });
-                    } else if (kind === 'playlists') {
-                        const parentGroup = button.closest('.playlist-group');
-                        const plName = parentGroup ? parentGroup.dataset.playlistName : '';
-                        const trackUrl = button.dataset.trackUrl || asset.url || asset.id;
-                        currentTrackSrc = trackUrl;
-                        updateAssetPlaybackSelection({
-                            music_id: plName ? `${plName} / ${asset.name}` : asset.name,
-                            playlist: plName,
-                            tracks: [trackUrl],
-                            paused: false
-                        });
-                    }
-                    refreshCanvasState(['latest']);
-                    revertAllOtherPushItems(button);
-                    button.classList.add('pushed');
-                    action.textContent = 'Pushed!';
-                    setTimeout(() => {
-                        button.classList.remove('pushed');
-                        if (action.textContent === 'Pushed!') {
-                            action.textContent = 'Push';
-                        }
-                    }, 2000);
-                } catch (err) {
-                    showShareToast(err.message);
-                    action.textContent = 'Retry';
-                } finally {
-                    button.disabled = false;
-                    button.classList.remove('pushing');
-                }
-            });
-            return button;
-        }
-
-        function switchStampManagerTab(tab) {
-            const isOrator = typeof isCurrentOrator === 'function' && isCurrentOrator();
-            if (!isOrator && tab !== 'stamps') {
-                tab = 'stamps';
-            }
-            activeStampManagerTab = tab;
-            updateAssetGenerationUI();
-            queueMicrotask(applyAssetSearch);
-            ++assetLoadVersion;
-            const stampManagerBodyEl = document.getElementById('stamp-manager-body');
-            if (stampManagerBodyEl) {
-                stampManagerBodyEl.scrollTop = 0;
-            }
-            for (const kind of ['playlists', 'animations']) {
-                extraAssetPanels[kind].hidden = tab !== kind;
-                document.getElementById(`stamp-tab-${kind}`)?.classList.toggle('active', tab === kind);
-            }
-
-
-            stampTabStampsBtn?.classList.toggle('active', tab === 'stamps');
-            stampTabScenesBtn?.classList.toggle('active', tab === 'scenes');
-            stampTabCharactersBtn?.classList.toggle('active', tab === 'characters');
-
-            const stampGenForm = document.getElementById('stamp-generation-form');
-            const stampGenStatus = document.getElementById('stamp-generation-status');
-            const canGenerateScene = typeof isTheaterStampOwner !== 'undefined' && isTheaterStampOwner && tab === 'scenes';
-            document.getElementById('scene-generation-form').hidden = !canGenerateScene;
-            document.getElementById('scene-generation-status').hidden = !canGenerateScene;
-
-            if (tab === 'playlists' || tab === 'animations') {
-                for (const el of [stampManagerPermissionBanner, stampManagerGrid, stampManagerEmpty,
-                    scenesManagerGrid, scenesManagerEmpty, charactersManagerGrid, charactersManagerEmpty]) {
-                    if (el) el.style.display = 'none';
-                }
-                for (const el of [stampGenForm, stampGenStatus]) {
-                    if (el) el.hidden = true;
-                }
-                loadExtraAssets(tab);
-            } else if (tab === 'stamps') {
-                if (stampManagerPermissionBanner) stampManagerPermissionBanner.style.display = '';
-                if (stampManagerGrid) stampManagerGrid.style.display = '';
-                if (scenesManagerGrid) scenesManagerGrid.style.display = 'none';
-                if (scenesManagerEmpty) scenesManagerEmpty.style.display = 'none';
-                if (charactersManagerGrid) charactersManagerGrid.style.display = 'none';
-                if (charactersManagerEmpty) charactersManagerEmpty.style.display = 'none';
-
+        const assetManager = createCanvasAssetManager({
+            getTheaterId: () => (typeof theaterId !== 'undefined' && theaterId) || (typeof currenttheaterId !== 'undefined' && currenttheaterId) || new URLSearchParams(window.location.search).get('theater_id'),
+            isOrator: isCurrentOrator,
+            isStampOwner: () => Boolean(isTheaterStampOwner),
+            isManagerOpen: () => Boolean(isStampManagerOpen),
+            getActiveTab: () => activeStampManagerTab,
+            setActiveTab: (tab) => { activeStampManagerTab = tab; },
+            getCachedScenes: () => cachedTheaterScenes,
+            setCachedScenes: (scenes) => { cachedTheaterScenes = scenes; },
+            getCachedCharacters: () => cachedTheaterCharacters,
+            setCachedCharacters: (characters) => { cachedTheaterCharacters = characters; },
+            getCurrentTrackSrc: () => typeof currentTrackSrc !== 'undefined' ? currentTrackSrc : null,
+            setCurrentTrackSrc: (src) => { currentTrackSrc = src; },
+            nameFromPrompt: (prompt) => stampNameFromPrompt(prompt),
+            extractTaggedReferences: (prompt) => extractTaggedCanvasReferences(prompt),
+            applyAssetSearch: () => applyAssetSearch(),
+            resolveWebpQualityUrl: (url) => typeof resolveWebpQualityUrl === 'function' ? resolveWebpQualityUrl(url) : url,
+            showShareToast: (message) => {
+                if (typeof showShareToast === 'function') showShareToast(message);
+            },
+            fetchLatestImage: () => {
+                if (typeof fetchLatestImage === 'function') fetchLatestImage();
+                else if (typeof refreshCanvasState === 'function') refreshCanvasState(['latest']);
+            },
+            refreshCanvasState: (domains) => {
+                if (typeof refreshCanvasState === 'function') refreshCanvasState(domains);
+            },
+            onShowStampsTab: () => {
                 updateStampGenerationPermission();
                 updateStampManagerPermissionBanner();
-
                 if (stampManagerCount) {
                     const count = (typeof cachedUserStamps !== 'undefined' && cachedUserStamps) ? cachedUserStamps.length : 0;
                     stampManagerCount.textContent = `${count}/10`;
@@ -4750,443 +4094,55 @@ import { startCanvasStatePolling } from "/static/generated/canvas/state-polling.
                     const pendingCount = (typeof pendingStampGenerations !== 'undefined' && pendingStampGenerations && pendingStampGenerations.size) ? ` · ${pendingStampGenerations.size} generating` : '';
                     stampManagerCount.title = `${count} user stamps · ${theaterCount} theater stamps${pendingCount}`;
                 }
-
                 if (cachedUserStamps) {
                     renderStampManagerGrid(cachedUserStamps);
                 } else {
                     loadUserStamps();
                 }
-            } else if (tab === 'scenes') {
-                if (stampManagerPermissionBanner) stampManagerPermissionBanner.style.display = 'none';
-                if (stampManagerGrid) stampManagerGrid.style.display = 'none';
-                if (stampManagerEmpty) stampManagerEmpty.style.display = 'none';
-                if (charactersManagerGrid) charactersManagerGrid.style.display = 'none';
-                if (charactersManagerEmpty) charactersManagerEmpty.style.display = 'none';
-                if (scenesManagerGrid) scenesManagerGrid.style.display = 'grid';
+            },
+            onTheaterStampsUpdated: (stamps) => {
+                cachedTheaterStamps = stamps;
+                if (isStampManagerOpen) renderStampManagerGrid(cachedUserStamps || []);
+            },
+            expandedPlaylists,
+        });
 
-                if (stampGenForm) stampGenForm.hidden = true;
-                if (stampGenStatus) stampGenStatus.hidden = true;
-
-                if (stampManagerCount) {
-                    const count = cachedTheaterScenes ? cachedTheaterScenes.length : 0;
-                    stampManagerCount.textContent = `${count}`;
-                    stampManagerCount.title = `${count} adventure scenes`;
-                }
-
-                if (cachedTheaterScenes) {
-                    renderScenesManagerGrid(cachedTheaterScenes);
-                    preloadItemImages(cachedTheaterScenes);
-                } else {
-                    loadTheaterScenes();
-                }
-            } else if (tab === 'characters') {
-                if (stampManagerPermissionBanner) stampManagerPermissionBanner.style.display = 'none';
-                if (stampManagerGrid) stampManagerGrid.style.display = 'none';
-                if (stampManagerEmpty) stampManagerEmpty.style.display = 'none';
-                if (scenesManagerGrid) scenesManagerGrid.style.display = 'none';
-                if (scenesManagerEmpty) scenesManagerEmpty.style.display = 'none';
-                if (charactersManagerGrid) charactersManagerGrid.style.display = 'grid';
-
-                if (stampGenForm) stampGenForm.hidden = true;
-                if (stampGenStatus) stampGenStatus.hidden = true;
-
-                if (stampManagerCount) {
-                    const count = cachedTheaterCharacters ? cachedTheaterCharacters.length : 0;
-                    stampManagerCount.textContent = `${count}`;
-                    stampManagerCount.title = `${count} adventure characters`;
-                }
-
-                if (cachedTheaterCharacters) {
-                    renderCharactersManagerGrid(cachedTheaterCharacters);
-                    preloadItemImages(cachedTheaterCharacters);
-                } else {
-                    loadTheaterCharacters();
-                }
-            }
+        function updateStampTabsVisibility() {
+            assetManager.updateStampTabsVisibility();
         }
-
-        async function loadTheaterScenes() {
-            const tid = (typeof theaterId !== 'undefined' && theaterId) || (typeof currenttheaterId !== 'undefined' && currenttheaterId) || new URLSearchParams(window.location.search).get('theater_id');
-            if (!tid || isFetchingTheaterScenes) return;
-            isFetchingTheaterScenes = true;
-            try {
-                const res = await fetch(`/api/theaters/${encodeURIComponent(tid)}/scenes`);
-                if (!res.ok) throw new Error(`HTTP ${res.status}`);
-                const data = await res.json();
-                cachedTheaterScenes = Array.isArray(data) ? data : [];
-                preloadItemImages(cachedTheaterScenes);
-                if (activeStampManagerTab === 'scenes') {
-                    renderScenesManagerGrid(cachedTheaterScenes);
-                }
-            } catch (err) {
-                console.warn('Unable to load theater scenes:', err);
-                if (activeStampManagerTab === 'scenes') {
-                    if (scenesManagerGrid) scenesManagerGrid.innerHTML = '';
-                    if (scenesManagerEmpty) {
-                        scenesManagerEmpty.style.display = 'flex';
-                        if (scenesEmptyMessage) scenesEmptyMessage.textContent = 'Unable to load scenes at this time.';
-                    }
-                }
-            } finally {
-                isFetchingTheaterScenes = false;
-            }
+        function preloadItemImages(items) {
+            assetManager.preloadItemImages(items);
         }
-
+        function handleDoodleSocketData(data) {
+            return assetManager.handleDoodleSocketData(data);
+        }
+        function updateAssetPlaybackSelection(music) {
+            assetMusicState = music;
+            assetManager.updateAssetPlaybackSelection(music);
+        }
+        function loadExtraAssets(kind) {
+            return assetManager.loadExtraAssets(kind);
+        }
+        function switchStampManagerTab(tab) {
+            assetManager.switchStampManagerTab(tab);
+        }
+        function loadTheaterScenes() {
+            return assetManager.loadTheaterScenes();
+        }
         function renderScenesManagerGrid(scenes) {
-            if (!scenesManagerGrid) return;
-            scenes = scenes || [];
-            scenesManagerGrid.innerHTML = '';
-            pendingSceneGenerations.forEach((job, jobId) => {
-                const card = document.createElement('div');
-                card.className = 'scene-card scene-card-generating';
-                card.dataset.assetSearch = `${job.name} ${job.prompt}`;
-                card.dataset.generationId = String(jobId);
-                card.setAttribute('aria-busy', 'true');
-                card.setAttribute('aria-label', `${job.name}: Generating`);
-                card.title = `Generating “${job.name}” — ${job.prompt}`;
-                const thumb = document.createElement('div');
-                thumb.className = 'scene-card-thumb-container stamp-generation-placeholder';
-                thumb.setAttribute('aria-hidden', 'true');
-                const name = document.createElement('div');
-                name.className = 'scene-card-name';
-                name.textContent = job.name;
-                const progress = document.createElement('div');
-                progress.className = 'stamp-card-progress';
-                progress.textContent = 'Generating…';
-                card.append(thumb, name, progress);
-                scenesManagerGrid.appendChild(card);
-            });
-            if (stampManagerCount && activeStampManagerTab === 'scenes') {
-                stampManagerCount.textContent = `${scenes.length}` + (pendingSceneGenerations.size ? ` · ${pendingSceneGenerations.size} generating` : '');
-                stampManagerCount.title = `${scenes.length} adventure scenes` + (pendingSceneGenerations.size ? ` · ${pendingSceneGenerations.size} generating` : '');
-            }
-            if (scenes.length === 0 && pendingSceneGenerations.size === 0) {
-                if (scenesManagerEmpty) {
-                    scenesManagerEmpty.style.display = 'flex';
-                    if (scenesEmptyMessage) scenesEmptyMessage.textContent = 'No scenes found for this adventure.';
-                }
-                return;
-            }
-            if (scenesManagerEmpty) scenesManagerEmpty.style.display = 'none';
-
-            scenes.forEach(scene => {
-                const card = document.createElement('div');
-                card.className = 'scene-card';
-                card.dataset.assetSearch = JSON.stringify(scene);
-                card.setAttribute('role', 'button');
-                card.setAttribute('tabindex', '0');
-                card.setAttribute('title', `Click to push "${scene.name}"`);
-                card.dataset.sceneName = scene.name;
-                if (scene.id) card.dataset.sceneId = scene.id;
-
-                const thumbContainer = document.createElement('div');
-                thumbContainer.className = 'scene-card-thumb-container';
-
-                const imgUrl = scene.url || scene.image_url;
-                if (imgUrl) {
-                    const img = document.createElement('img');
-                    img.className = 'scene-card-thumb';
-                    img.src = imgUrl;
-                    img.alt = scene.name;
-                    img.loading = 'lazy';
-                    img.onerror = () => {
-                        img.style.display = 'none';
-                        if (!thumbContainer.querySelector('.scene-card-fallback-thumb')) {
-                            const placeholder = document.createElement('div');
-                            placeholder.className = 'scene-card-fallback-thumb';
-                            placeholder.style.cssText = 'width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:2rem;color:#64748b;';
-                            placeholder.textContent = '🎬';
-                            thumbContainer.appendChild(placeholder);
-                        }
-                    };
-                    thumbContainer.appendChild(img);
-                } else {
-                    const placeholder = document.createElement('div');
-                    placeholder.className = 'scene-card-fallback-thumb';
-                    placeholder.style.cssText = 'width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:2rem;color:#64748b;';
-                    placeholder.textContent = '🎬';
-                    thumbContainer.appendChild(placeholder);
-                }
-
-                const overlay = document.createElement('div');
-                overlay.className = 'scene-card-overlay';
-                const badge = document.createElement('span');
-                badge.className = 'scene-card-push-badge';
-                badge.textContent = 'Push';
-                overlay.appendChild(badge);
-                thumbContainer.appendChild(overlay);
-
-                card.appendChild(thumbContainer);
-
-                const nameEl = document.createElement('div');
-                nameEl.className = 'scene-card-name';
-                nameEl.textContent = scene.name;
-                card.appendChild(nameEl);
-
-                if (scene.description) {
-                    const descEl = document.createElement('div');
-                    descEl.className = 'scene-card-desc';
-                    descEl.textContent = scene.description;
-                    card.appendChild(descEl);
-                }
-
-                card.addEventListener('click', () => pushSceneToCanvas(scene, card));
-                card.addEventListener('keydown', (e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault();
-                        pushSceneToCanvas(scene, card);
-                    }
-                });
-
-                scenesManagerGrid.appendChild(card);
-            });
+            assetManager.renderScenesManagerGrid(scenes);
         }
-
-        async function pushSceneToCanvas(scene, cardEl) {
-            const tid = (typeof theaterId !== 'undefined' && theaterId) || (typeof currenttheaterId !== 'undefined' && currenttheaterId) || new URLSearchParams(window.location.search).get('theater_id');
-            if (!tid || isPushingScene) return;
-            const isOrator = typeof isCurrentOrator === 'function' && isCurrentOrator();
-            if (!isOrator) {
-                if (typeof showShareToast === 'function') {
-                    showShareToast('Only the active orator can push scenes.');
-                }
-                return;
-            }
-
-            revertAllOtherPushItems(cardEl);
-            isPushingScene = true;
-            if (cardEl) {
-                cardEl.classList.add('pushing');
-                const badge = cardEl.querySelector('.scene-card-push-badge');
-                if (badge) badge.textContent = 'Pushing...';
-            }
-
-            try {
-                const res = await fetch(`/api/theaters/${encodeURIComponent(tid)}/scenes/push`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ name: scene.name, scene_id: scene.id || '' })
-                });
-                const data = await res.json();
-                if (!res.ok) {
-                    throw new Error(typeof data.detail === 'string' ? data.detail : 'Failed to push scene.');
-                }
-                revertAllOtherPushItems(cardEl);
-                if (cardEl) {
-                    const badge = cardEl.querySelector('.scene-card-push-badge');
-                    if (badge) badge.textContent = 'Pushed!';
-                    setTimeout(() => {
-                        if (badge && badge.textContent === 'Pushed!') badge.textContent = 'Push';
-                    }, 2000);
-                }
-                if (typeof showShareToast === 'function') {
-                    showShareToast(`Pushed "${scene.name}".`);
-                }
-                if (typeof fetchLatestImage === 'function') {
-                    fetchLatestImage();
-                } else if (typeof refreshCanvasState === 'function') {
-                    refreshCanvasState(['latest']);
-                }
-            } catch (err) {
-                console.error('Error pushing scene to canvas:', err);
-                if (typeof showShareToast === 'function') {
-                    showShareToast(err.message || 'Error pushing scene.');
-                }
-                if (cardEl) {
-                    const badge = cardEl.querySelector('.scene-card-push-badge');
-                    if (badge) badge.textContent = 'Failed';
-                    setTimeout(() => {
-                        if (badge) badge.textContent = 'Push';
-                    }, 2000);
-                }
-            } finally {
-                isPushingScene = false;
-                if (cardEl) {
-                    cardEl.classList.remove('pushing');
-                }
-            }
+        function pushSceneToCanvas(scene, cardEl) {
+            return assetManager.pushSceneToCanvas(scene, cardEl);
         }
-
-        async function loadTheaterCharacters() {
-            const tid = (typeof theaterId !== 'undefined' && theaterId) || (typeof currenttheaterId !== 'undefined' && currenttheaterId) || new URLSearchParams(window.location.search).get('theater_id');
-            if (!tid || isFetchingTheaterCharacters) return;
-            isFetchingTheaterCharacters = true;
-            try {
-                const res = await fetch(`/api/theaters/${encodeURIComponent(tid)}/characters`);
-                if (!res.ok) throw new Error(`HTTP ${res.status}`);
-                const data = await res.json();
-                cachedTheaterCharacters = Array.isArray(data) ? data : [];
-                preloadItemImages(cachedTheaterCharacters);
-                if (activeStampManagerTab === 'characters') {
-                    renderCharactersManagerGrid(cachedTheaterCharacters);
-                }
-            } catch (err) {
-                console.warn('Unable to load theater characters:', err);
-                if (activeStampManagerTab === 'characters') {
-                    if (charactersManagerGrid) charactersManagerGrid.innerHTML = '';
-                    if (charactersManagerEmpty) {
-                        charactersManagerEmpty.style.display = 'flex';
-                        if (charactersEmptyMessage) charactersEmptyMessage.textContent = 'Unable to load characters at this time.';
-                    }
-                }
-            } finally {
-                isFetchingTheaterCharacters = false;
-            }
+        function loadTheaterCharacters() {
+            return assetManager.loadTheaterCharacters();
         }
-
         function renderCharactersManagerGrid(characters) {
-            if (!charactersManagerGrid) return;
-            charactersManagerGrid.innerHTML = '';
-            if (stampManagerCount && activeStampManagerTab === 'characters') {
-                stampManagerCount.textContent = `${characters.length}`;
-                stampManagerCount.title = `${characters.length} adventure characters`;
-            }
-            if (!characters || characters.length === 0) {
-                if (charactersManagerEmpty) {
-                    charactersManagerEmpty.style.display = 'flex';
-                    if (charactersEmptyMessage) charactersEmptyMessage.textContent = 'No characters found for this adventure.';
-                }
-                return;
-            }
-            if (charactersManagerEmpty) charactersManagerEmpty.style.display = 'none';
-
-            characters.forEach(char => {
-                const card = document.createElement('div');
-                card.className = 'character-card';
-                card.dataset.assetSearch = JSON.stringify(char);
-                card.setAttribute('role', 'button');
-                card.setAttribute('tabindex', '0');
-                card.setAttribute('title', `Click to push "${char.name}"`);
-                card.dataset.characterName = char.name;
-                if (char.id) card.dataset.characterId = char.id;
-
-                const thumbContainer = document.createElement('div');
-                thumbContainer.className = 'character-card-thumb-container';
-
-                const imgUrl = char.url || char.image_url;
-                if (imgUrl) {
-                    const img = document.createElement('img');
-                    img.className = 'character-card-thumb';
-                    img.src = imgUrl;
-                    img.alt = char.name;
-                    img.loading = 'lazy';
-                    img.onerror = () => {
-                        img.style.display = 'none';
-                        if (!thumbContainer.querySelector('.character-card-fallback-thumb')) {
-                            const placeholder = document.createElement('div');
-                            placeholder.className = 'character-card-fallback-thumb';
-                            placeholder.style.cssText = 'width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:2rem;color:#64748b;';
-                            placeholder.textContent = '👤';
-                            thumbContainer.appendChild(placeholder);
-                        }
-                    };
-                    thumbContainer.appendChild(img);
-                } else {
-                    const placeholder = document.createElement('div');
-                    placeholder.className = 'character-card-fallback-thumb';
-                    placeholder.style.cssText = 'width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:2rem;color:#64748b;';
-                    placeholder.textContent = '👤';
-                    thumbContainer.appendChild(placeholder);
-                }
-
-                const overlay = document.createElement('div');
-                overlay.className = 'character-card-overlay';
-                const badge = document.createElement('span');
-                badge.className = 'character-card-push-badge';
-                badge.textContent = 'Push';
-                overlay.appendChild(badge);
-                thumbContainer.appendChild(overlay);
-
-                card.appendChild(thumbContainer);
-
-                const nameEl = document.createElement('div');
-                nameEl.className = 'character-card-name';
-                nameEl.textContent = char.name;
-                card.appendChild(nameEl);
-
-                const textToShow = char.description || char.personality || char.quirk || '';
-                if (textToShow) {
-                    const descEl = document.createElement('div');
-                    descEl.className = 'character-card-desc';
-                    descEl.textContent = textToShow;
-                    card.appendChild(descEl);
-                }
-
-                card.addEventListener('click', () => pushCharacterToCanvas(char, card));
-                card.addEventListener('keydown', (e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault();
-                        pushCharacterToCanvas(char, card);
-                    }
-                });
-
-                charactersManagerGrid.appendChild(card);
-            });
+            assetManager.renderCharactersManagerGrid(characters);
         }
-
-        async function pushCharacterToCanvas(character, cardEl) {
-            const tid = (typeof theaterId !== 'undefined' && theaterId) || (typeof currenttheaterId !== 'undefined' && currenttheaterId) || new URLSearchParams(window.location.search).get('theater_id');
-            if (!tid || isPushingCharacter) return;
-            const isOrator = typeof isCurrentOrator === 'function' && isCurrentOrator();
-            if (!isOrator) {
-                if (typeof showShareToast === 'function') {
-                    showShareToast('Only the active orator can push characters.');
-                }
-                return;
-            }
-
-            revertAllOtherPushItems(cardEl);
-            isPushingCharacter = true;
-            if (cardEl) {
-                cardEl.classList.add('pushing');
-                const badge = cardEl.querySelector('.character-card-push-badge');
-                if (badge) badge.textContent = 'Pushing...';
-            }
-
-            try {
-                const res = await fetch(`/api/theaters/${encodeURIComponent(tid)}/characters/push`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ name: character.name, character_id: character.id || '' })
-                });
-                const data = await res.json();
-                if (!res.ok) {
-                    throw new Error(typeof data.detail === 'string' ? data.detail : 'Failed to push character.');
-                }
-                revertAllOtherPushItems(cardEl);
-                if (cardEl) {
-                    const badge = cardEl.querySelector('.character-card-push-badge');
-                    if (badge) badge.textContent = 'Pushed!';
-                    setTimeout(() => {
-                        if (badge && badge.textContent === 'Pushed!') badge.textContent = 'Push';
-                    }, 2000);
-                }
-                if (typeof showShareToast === 'function') {
-                    showShareToast(`Pushed "${character.name}".`);
-                }
-                if (typeof fetchLatestImage === 'function') {
-                    fetchLatestImage();
-                } else if (typeof refreshCanvasState === 'function') {
-                    refreshCanvasState(['latest']);
-                }
-            } catch (err) {
-                console.error('Error pushing character to canvas:', err);
-                if (typeof showShareToast === 'function') {
-                    showShareToast(err.message || 'Error pushing character.');
-                }
-                if (cardEl) {
-                    const badge = cardEl.querySelector('.character-card-push-badge');
-                    if (badge) badge.textContent = 'Failed';
-                    setTimeout(() => {
-                        if (badge) badge.textContent = 'Push';
-                    }, 2000);
-                }
-            } finally {
-                isPushingCharacter = false;
-                if (cardEl) {
-                    cardEl.classList.remove('pushing');
-                }
-            }
+        function pushCharacterToCanvas(character, cardEl) {
+            return assetManager.pushCharacterToCanvas(character, cardEl);
         }
 
         // ========================================
