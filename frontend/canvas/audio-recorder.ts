@@ -3,7 +3,7 @@ import {
   listenForSpeech,
   type ListenForSpeechOptions,
   type SpeechDataPacket,
-} from '/static/js/device-aware-pcm.js';
+} from '/static/generated/canvas/device-aware-pcm.js';
 
 export type OpusPacketHandler = (opusBuffer: ArrayBuffer) => void;
 export type AudioRecorderStartResult = readonly [null, null, null, boolean];
