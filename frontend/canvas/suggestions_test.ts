@@ -132,12 +132,16 @@ test('suggestions shows loading indicator during fetch and surfaces empty or err
   page,
 }) => {
   let failNext = true;
+  let releaseFirstFetch = (): void => {};
+  const firstFetchGate = new Promise<void>((resolve) => {
+    releaseFirstFetch = resolve;
+  });
 
   await canvas.openCanvas({
     apiRoutes: {
       '/theaters/stage/suggestions': async (route: Route) => {
         if (failNext) {
-          await new Promise((resolve) => setTimeout(resolve, 60));
+          await firstFetchGate;
           await route.fulfill({ status: 500, json: { detail: 'Failed' } });
           return;
         }
@@ -155,6 +159,7 @@ test('suggestions shows loading indicator during fetch and surfaces empty or err
   await toggleBtn.dispatchEvent('mouseenter');
   await expect(loading).toHaveCSS('display', 'flex');
   await expect(list).toHaveCSS('display', 'none');
+  releaseFirstFetch();
 
   await expect(list).toContainText('Unable to generate suggestions at this time.');
   await expect(loading).toHaveCSS('display', 'none');

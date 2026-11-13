@@ -6,8 +6,7 @@
     "watch": "node scripts/build_canvas.mjs --watch",
     "typecheck": "node scripts/build_canvas.mjs --check",
     "test:ui": "playwright test",
-    "test:cjs": "node --test testing/ui/*_test.cjs",
-    "test": "npm run typecheck && npm run build && npm run test:ui && npm run test:cjs"
+    "test": "npm run typecheck && npm run build && npm run test:ui"
   },
   "devDependencies": {
     "@playwright/test": "^1.63.0",

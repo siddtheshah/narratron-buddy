@@ -23,7 +23,7 @@
 Move canvas logic and its tests to TypeScript progressively, keeping existing JavaScript callers and the Python server working throughout the migration.
 
 - [x] Add the TypeScript build, watch, and type-check commands, plus TypeScript Playwright test configuration and dependency lockfile.
-  - Keep production TypeScript in `frontend/canvas/`, emit browser ES modules to `static/generated/canvas/`, and keep browser tests in `testing/ui/`.
+  - Keep production TypeScript in `frontend/canvas/`, emit browser ES modules to `static/generated/canvas/`, and place TypeScript browser tests in `frontend/canvas/*_test.ts` alongside shared fixtures in `testing/ui/` (while remaining Python tests stay in `testing/ui/`).
   - Include generated assets in local startup and deployment builds without overwriting existing JavaScript source files.
   - Support mixed JavaScript/TypeScript with `allowJs` and initially leave `checkJs` disabled; use strict checking for TypeScript and explicit types at migrated module boundaries.
   - Run a separate `tsc --noEmit` check because Playwright transpiles TypeScript tests without checking their types.
@@ -52,7 +52,13 @@ Move canvas logic and its tests to TypeScript progressively, keeping existing Ja
   - Coverage inventory: `frontend/canvas/MIGRATION.md` records all 17 baseline files and their replacements. Current disposition: all 102 frontend baseline definitions migrated, 0 pending, 2 backend definitions retained in `testing/ui/canvas_undo_test.py`.
   - Retained the two Python backend tests in `testing/ui/canvas_undo_test.py`; all 16 superseded Python frontend baseline suites have been removed after passing replacement checks.
   - Completed state polling: `frontend/canvas/state-polling.ts` and `state-polling_test.ts` (13 browser tests: all 12 former CJS cases plus module-shim compatibility); canvas, OBS, and popout import the compiled module directly.
-- [ ] Migrate remaining CJS test suites (`testing/ui/story_log_inspector_test.cjs` and `testing/ui/audio_recorder_test.cjs`) to TypeScript.
-- [ ] Follow with adjacent canvas suites, including action wheel, doodle history, doodles, and hotkey configuration.
-  - Scope remote, OBS, game UI, and live load/evaluation harnesses separately; keep backend state/API tests in Python.
+- [x] Migrate remaining CJS test suites (`testing/ui/story_log_inspector_test.cjs` and `testing/ui/audio_recorder_test.cjs`) to TypeScript.
+  - Migrated `story-log-inspector.ts` (`story-log-inspector_test.ts`), `audio-recorder.ts` (`audio-recorder_test.ts`), and `device-aware-pcm.ts` (`microphone-test_test.ts`, replacing `testing/ui/microphone_test_test.py`) with `@deprecated` re-export shims in `static/js/`.
+  - Deleted `testing/ui/story_log_inspector_test.cjs` and `testing/ui/audio_recorder_test.cjs`, and removed the obsolete `test:cjs` script from `package.json`.
+- [x] Follow with adjacent canvas suites, including action wheel, doodle history, doodles, and hotkey configuration.
+  - Migrated `action-wheel.ts` (`action-wheel_test.ts`) and `beyond20-listener.ts` (`beyond20-listener_test.ts`) with `@deprecated` re-export shims in `static/js/`.
+  - Replaced 13 additional Python frontend suites with TypeScript Playwright suites in `frontend/canvas/`: `accepted-suggestions_test.ts`, `chat-composer_test.ts`, `chat-highlight_test.ts`, `doodle-history_test.ts`, `doodles_test.ts`, `hide-canvas-text_test.ts`, `hotkey-config_test.ts`, `minimal-mode_test.ts`, `music-mute-persistence_test.ts`, `sticky-notes_test.ts`, and `suggestions_test.ts` (14 Python suites and 2 CJS suites replaced in total across Wave 2).
+- [ ] Migrate remaining raw JavaScript and Python frontend/mixed UI suites to TypeScript.
+  - Remaining raw JS in `static/js/` (22 non-shim files, 14,668 lines): `canvas.js`, `remote*` (`remote.js`, `remote-audio.js`, `remote-game.js`, `remote-login.js`), `theater-*` (`theater-editor.js`, `theater-report.js`), `game-*` (`game-renderer.js`, `game-runtime.js`, `game-panel.js`), `chat-controller.js`, `chat-emotes.js`, `auth-flow.js`, `image-effects.js`, `animation-effects.js`, shared UI helpers (`credit-purchase.js`, `friends.js`, `user-help.js`, `docs-navigation.js`, `narration-pane.js`, `device-navigation.js`, `splitting.min.js`), plus `testlab/static/audio-vad-lab.js` and inline `<script>` blocks in `templates/` and `testlab/`.
+  - Remaining Python UI suites in `testing/ui/` (`33` `*_test.py` files): 17 pure-frontend Playwright suites, 1 pure-frontend source-assertion suite (`auth_state_test.py`), and 11 mixed backend + frontend suites; scope remote, OBS, game UI, and live load/evaluation harnesses separately, and retain the 4 pure backend/state suites in Python (`agent_credits_test.py`, `canvas_undo_test.py`, `chat_prefix_test.py`, `load_canvas_drawing_test.py`).
 

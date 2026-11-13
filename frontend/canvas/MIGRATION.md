@@ -32,37 +32,60 @@ persistence, geometry, and race-condition checks.
 
 Current disposition: all 102 original frontend definitions across the 17 core files
 have TypeScript replacements, 0 frontend definitions remain pending, and 2 backend
-definitions remain in Python (`testing/ui/canvas_undo_test.py`). Core canvas
-modules (`a2ui-renderer.ts`, `agent-activity.ts`, `asset-manager.ts`, `bookmarks.ts`,
+definitions remain in Python (`testing/ui/canvas_undo_test.py`). All 24 production
+TypeScript modules in `frontend/canvas/` — the 19 core canvas modules
+(`a2ui-renderer.ts`, `agent-activity.ts`, `asset-manager.ts`, `bookmarks.ts`,
 `collab-bar.ts`, `cursor-state.ts`, `doodle-actions.ts`, `doodle-renderer.ts`,
 `doodle-types.ts`, `image-renderer.ts`, `layout-resize.ts`, `media.ts`,
 `navigation.ts`, `pin-control.ts`, `scene.ts`, `speech-replay.ts`, `stamps.ts`,
-`state-polling.ts`, and `text-annotations.ts`) compile from `frontend/canvas/` to
-`static/generated/canvas/`, with `@deprecated` re-export shims preserved in
-`static/js/` where legacy/OBS callers import them. Corner-controls and chat-name
-wiring remain in `static/js/canvas.js` and `static/js/chat-controller.js` and are
-covered by `corner-controls_test.ts` and `chat-name_test.ts`. Non-core Python
-renderer snippet tests (`testing/ui/doodles_test.py`, `doodle_history_test.py`,
-`hide_canvas_text_test.py`, and `sticky_notes_test.py`) still read
-`static/generated/canvas/doodle-renderer.js` until their suites move to TypeScript.
+`state-polling.ts`, and `text-annotations.ts`) plus 5 adjacent Wave-2 modules
+(`action-wheel.ts`, `audio-recorder.ts`, `beyond20-listener.ts`,
+`device-aware-pcm.ts`, and `story-log-inspector.ts`) — compile to
+`static/generated/canvas/`, with re-export shims preserved in `static/js/` where
+legacy/OBS/remote callers import them. Corner-controls and chat-name wiring
+remain in `static/js/canvas.js` and `static/js/chat-controller.js` and are
+covered by `corner-controls_test.ts` and `chat-name_test.ts`. The 4 former
+Python renderer snippet tests (`doodles_test.py`, `doodle_history_test.py`,
+`hide_canvas_text_test.py`, and `sticky_notes_test.py`) have moved to
+TypeScript in `frontend/canvas/`; only `testing/ui/image_history_paging_test.py`
+and `testing/ui/remote_test.py` still read compiled output directly
+(`static/generated/canvas/story-log-inspector.js`).
 
-Additional coverage outside this baseline:
+Additional coverage outside this baseline (16 additional `frontend/canvas/*_test.ts`
+suites beyond the 20 baseline-derived suites, plus `testing/ui/canvas_fixtures_test.ts`):
 
+- `accepted-suggestions_test.ts`: replaces `accepted_suggestions_test.py`.
+- `action-wheel_test.ts`: replaces `action_wheel_test.py` and covers `action-wheel.ts`.
+- `audio-recorder_test.ts`: replaces `audio_recorder_test.cjs` and covers `audio-recorder.ts`.
+- `beyond20-listener_test.ts`: replaces `beyond20_listener_test.py` and covers `beyond20-listener.ts`.
+- `chat-composer_test.ts`: replaces `chat_composer_test.py`.
+- `chat-highlight_test.ts`: replaces `chat_highlight_test.py`.
 - `cursor-state_test.ts`: store validation, subscription, interoperability, and real canvas controls.
-- `state-polling_test.ts`: all 12 original CJS cases plus module-shim compatibility.
+- `doodle-history_test.ts`: replaces `doodle_history_test.py`.
+- `doodles_test.ts`: replaces `doodles_test.py`.
+- `hide-canvas-text_test.ts`: replaces `hide_canvas_text_test.py`.
+- `hotkey-config_test.ts`: replaces `hotkey_config_test.py`.
 - `image-renderer_test.ts`: CDN policy, shim identity, sequence pixels and lifecycle,
   layered composition/effects, silent video fallback and looping, and load cancellation.
 - `media_test.ts`: manifest signatures, URL resolution, timing defaults, option forwarding,
   input immutability, and legacy shim identity.
+- `microphone-test_test.ts`: replaces `microphone_test_test.py` and covers `device-aware-pcm.ts`.
+- `minimal-mode_test.ts`: replaces `minimal_mode_ui_test.py`.
+- `music-mute-persistence_test.ts`: replaces `music_mute_persistence_test.py`.
+- `state-polling_test.ts`: all 12 original CJS cases plus module-shim compatibility.
+- `sticky-notes_test.ts`: replaces `sticky_notes_test.py`.
+- `story-log-inspector_test.ts`: replaces `story_log_inspector_test.cjs` and covers `story-log-inspector.ts`.
+- `suggestions_test.ts`: replaces `suggestions_test.py`.
 - `testing/ui/canvas_fixtures_test.ts`: asset serving, request isolation, service-worker
   blocking, secondary contexts, and full canvas mounting.
 - `testing/ui/triframe_animation_test.py` and `video_animation_ui_test.py` retain
   backend manifest/path/history checks.
-- Story-log inspector and audio-recorder CJS suites remain pending migration.
 
-Verification: `npm test` runs strict type checking, the production build, all
-TypeScript Playwright tests, and remaining CJS tests. Run Python checks with
-`uv run pytest`; generated modules are built by the UI fixture when stale.
+Verification: `npm test` runs strict type checking (`npm run typecheck`), the
+production build (`npm run build`), and all TypeScript Playwright tests
+(`npm run test:ui`; 37 test files). Both legacy CommonJS suites are migrated and
+deleted, and `test:cjs` has been removed from `package.json`. Run Python checks
+with `uv run pytest`; generated modules are built by the UI fixture when stale.
 
 ## Repository-Wide Migration Status (Beyond the Canvas Core)
 
@@ -72,21 +95,25 @@ fixtures) remains incomplete:
 
 ### Remaining Raw JavaScript
 
-- **`static/js/` (27 non-shim files, ~15.7k lines)**:
+- **`static/js/` (22 non-shim files, 14,668 lines)**:
   - Canvas orchestration still in JS: `canvas.js` (5,645 lines)
   - Remote controls: `remote.js` (1,691), `remote-audio.js` (137), `remote-game.js` (52), `remote-login.js` (8)
   - Effects: `image-effects.js` (1,644), `animation-effects.js` (799)
   - Theater builder & reporting: `theater-editor.js` (1,502), `theater-report.js` (101)
-  - Chat & extensions: `chat-controller.js` (795), `beyond20-listener.js` (178), `chat-emotes.js` (69)
+  - Chat: `chat-controller.js` (795), `chat-emotes.js` (69)
   - Games: `game-renderer.js` (567), `game-runtime.js` (188), `game-panel.js` (130)
-  - Auth, navigation, audio, & shared UI: `auth-flow.js` (531), `action-wheel.js` (376), `credit-purchase.js` (285), `friends.js` (211), `story-log-inspector.js` (206), `audio-recorder.js` (199), `user-help.js` (150), `docs-navigation.js` (79), `narration-pane.js` (32), `device-aware-pcm.js` (29), `device-navigation.js` (22), and vendored `splitting.min.js` (30).
-- **`static/js/` (9 `@deprecated` re-export shims)**: `a2ui-canvas-renderer.js`,
-  `canvas-bookmarks.js`, `canvas-cursor-state.js`, `canvas-doodle-actions.js`,
-  `canvas-media.js`, `canvas-navigation.js`, `canvas-renderers.js`, `canvas-scene.js`,
-  and `canvas-state-polling.js` remain for legacy/template imports.
-- **Other raw JS files**: `testlab/static/audio-vad-lab.js` (297 lines),
-  `scripts/build_canvas.mjs` (73 lines), `testing/ui/audio_recorder_test.cjs` (205 lines),
-  and `testing/ui/story_log_inspector_test.cjs` (125 lines).
+  - Auth, navigation, & shared UI: `auth-flow.js` (531), `credit-purchase.js` (285), `friends.js` (211), `user-help.js` (150), `docs-navigation.js` (79), `narration-pane.js` (32), `device-navigation.js` (22), and vendored `splitting.min.js` (30).
+- **`static/js/` (14 re-export shims: 13 `@deprecated`, plus `canvas-renderers.js`)**:
+  `a2ui-canvas-renderer.js`, `action-wheel.js`, `audio-recorder.js`,
+  `beyond20-listener.js`, `canvas-bookmarks.js`, `canvas-cursor-state.js`,
+  `canvas-doodle-actions.js`, `canvas-media.js`, `canvas-navigation.js`,
+  `canvas-renderers.js` (lacks `@deprecated` JSDoc), `canvas-scene.js`,
+  `canvas-state-polling.js`, `device-aware-pcm.js`, and `story-log-inspector.js`
+  remain for legacy/template imports.
+- **Other raw JS files**: `testlab/static/audio-vad-lab.js` (297 lines) and
+  `scripts/build_canvas.mjs` (73 lines). Both CommonJS test files
+  (`testing/ui/audio_recorder_test.cjs` and `testing/ui/story_log_inspector_test.cjs`)
+  have been migrated to TypeScript and deleted.
 - **Inline `<script>` blocks in HTML**:
   - 9 templates in `templates/`: `theater_creation.html` (746 lines), `obs.html` (632),
     `popout.html` (449), `adventures.html` (183), `stats.html` (154), `join_splash.html`
@@ -99,52 +126,50 @@ fixtures) remains incomplete:
   (with `"/static/js/*"` mapped in `paths`), and `tsconfig.build.json` /
   `scripts/build_canvas.mjs` only emit `frontend/canvas/` -> `static/generated/canvas/`.
 
-### Frontend Tests Still in Python or CommonJS (`testing/ui/`)
+### Frontend Tests Still in Python (`testing/ui/`)
 
-Of 47 `*_test.py` files and 2 `*_test.cjs` files in `testing/ui/`:
+Of 33 `*_test.py` files (and 0 `*_test.cjs` files) in `testing/ui/`:
 
-- **23 pure-frontend Playwright tests in Python**:
-  `accepted_suggestions_test.py`, `action_wheel_test.py`, `auth_password_reset_test.py`,
-  `auth_signup_test.py`, `beyond20_listener_test.py`, `chat_composer_test.py`,
-  `chat_highlight_test.py`, `doodle_history_test.py`, `friends_test.py`,
+- **17 pure-frontend Playwright tests in Python**:
+  `auth_password_reset_test.py`, `auth_signup_test.py`, `friends_test.py`,
   `game_canvas_stamp_test.py`, `game_form_test.py`, `game_panel_test.py`,
   `game_renderer_test.py` (also invokes `node` subprocesses), `game_runtime_test.py`,
   `join_splash_test.py`, `network_test.py` (exercises Python's `conftest.py` firewall),
   `obs_rendering_test.py`, `profile_stamps_test.py`, `theater_creation_test.py`,
   `theater_editor_test.py`, `theater_report_test.py`, `user_help_chat_test.py`, and
   `user_help_markdown_test.py`.
-- **9 pure-frontend source-assertion tests in Python**:
-  `auth_state_test.py`, `doodles_test.py`, `hide_canvas_text_test.py`,
-  `hotkey_config_test.py`, `microphone_test_test.py`, `minimal_mode_ui_test.py`,
-  `music_mute_persistence_test.py`, `sticky_notes_test.py`, and `suggestions_test.py`.
+- **1 pure-frontend source-assertion test in Python**:
+  `auth_state_test.py`.
 - **11 mixed backend + frontend tests in Python** (FastAPI/`CanvasStateManager` checks
   combined with template/JS assertions or Playwright):
   `adventure_guide_ui_test.py`, `adventure_runner_game_test.py`, `crossfade_test.py`,
   `fullscreen_popout_test.py`, `game_lab_test.py`, `image_history_paging_test.py`,
-  `obs_canvas_test.py`, `policy_pages_test.py`, `remote_test.py` (51 tests; mostly
+  `obs_canvas_test.py`, `policy_pages_test.py`, `remote_test.py` (mostly
   Playwright phone-viewport UI), `triframe_animation_test.py`, and
   `video_animation_ui_test.py`. Split frontend assertions into TypeScript and keep only
   backend state/route tests in Python.
-- **2 Node `vm` CommonJS suites**: `audio_recorder_test.cjs` and
-  `story_log_inspector_test.cjs` (strip ESM syntax via regex and run in `node:vm`).
+- **0 Node `vm` CommonJS suites**: `audio_recorder_test.cjs` and
+  `story_log_inspector_test.cjs` were migrated to `frontend/canvas/audio-recorder_test.ts`
+  and `frontend/canvas/story-log-inspector_test.ts` and deleted.
 - **4 pure Python/backend suites to retain in Python**: `agent_credits_test.py`,
   `canvas_undo_test.py`, `chat_prefix_test.py`, and `load_canvas_drawing_test.py`.
 
 ### TypeScript Testing Fixtures Status
 
-- **Existing fixture (`testing/ui/canvas_fixtures.ts`)**: Used by all 20
-  `frontend/canvas/*_test.ts` suites; enforces offline HTTP/WebSocket isolation,
-  blocks service workers, serves `/static/` assets, and provides `mount()` and
-  `openCanvas()`.
+- **Existing fixture (`testing/ui/canvas_fixtures.ts`)**: Used by all 36
+  `frontend/canvas/*_test.ts` suites (plus `testing/ui/canvas_fixtures_test.ts`);
+  enforces offline HTTP/WebSocket isolation, blocks service workers, serves `/static/`
+  assets, and provides `mount()` and `openCanvas()`.
 - **Gaps**:
   - Fixtures only target `/canvas`; there are no shared TypeScript page/API/WebSocket
     fixtures yet for `obs`, `popout`, `remote`, `theater-editor`, `theater-creation`,
     `profile`, `join-splash`, `friends`, `game-renderer`/`game-panel`, or `testlab`.
-  - 6 TypeScript suites (`agent-activity_test.ts`, `asset-manager_test.ts`,
-    `chat-name_test.ts` [also reads `static/js/canvas.js`], `collab-bar_test.ts`,
-    `corner-controls_test.ts`, and `navigation_test.ts`) still slice raw HTML/JS
-    substrings from disk via `fs.readFileSync` instead of using shared DOM/template
-    fixture helpers.
+  - 11 TypeScript suites (`action-wheel_test.ts`, `agent-activity_test.ts`,
+    `asset-manager_test.ts`, `beyond20-listener_test.ts`, `chat-composer_test.ts`,
+    `chat-highlight_test.ts`, `chat-name_test.ts` [also reads `static/js/canvas.js`],
+    `collab-bar_test.ts`, `corner-controls_test.ts`, `doodles_test.ts`, and
+    `navigation_test.ts`) still read raw HTML/JS from disk via `fs.readFileSync` /
+    `fs.promises.readFile` instead of using shared DOM/template fixture helpers.
   - Python UI fixture helpers (`testing/ui/conftest.py`, `testing/ui/canvas_source.py`,
     `testing/ui/base.py`) remain required until the Python frontend tests are migrated.
 

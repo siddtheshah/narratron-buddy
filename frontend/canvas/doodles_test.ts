@@ -814,6 +814,8 @@ test('doodles persist across page switches and reset when cleared', async ({ can
     },
   };
   let cursor = 0;
+  const subscribeCounts: Record<'first' | 'second', number> = { first: 0, second: 0 };
+  let initialSnapshotHandled = false;
 
   await canvas.openCanvas({
     isOrator: true,
@@ -828,6 +830,13 @@ test('doodles persist across page switches and reset when cleared', async ({ can
           { page_id: 'second', url: '/static/narratron-avatar.png', time: 2 },
         ],
       },
+      '/api/doodles': async (route: Route, url: URL) => {
+        const pageId = url.searchParams.get('page_id') ?? 'first';
+        if (pageId === 'first') {
+          initialSnapshotHandled = true;
+        }
+        await route.fulfill({ json: snapshots[pageId] ?? snapshots.first });
+      },
       '/api/theaters/stage/orator-action': async (route: Route) => {
         const body = JSON.parse(route.request().postData() || '{}') as { action?: string };
         if (body.action === 'next_image' && cursor < 1) cursor += 1;
@@ -837,11 +846,25 @@ test('doodles persist across page switches and reset when cleared', async ({ can
     },
     onWebSocket(ws: WebSocketRoute) {
       if (!ws.url().includes('/ws/doodle')) return;
+      const wsUrl = new URL(ws.url());
+      const initialPageId = wsUrl.searchParams.get('page_id');
+      if (initialPageId && Object.hasOwn(snapshots, initialPageId)) {
+        ws.send(JSON.stringify(snapshots[initialPageId]));
+        if (initialPageId === 'first') {
+          initialSnapshotHandled = true;
+        }
+      }
       ws.onMessage((raw) => {
         const msg = JSON.parse(String(raw)) as DoodleMsg;
         const pageId = msg.page_id ?? 'first';
         if (msg.type === 'subscribe_doodles') {
+          if (pageId === 'first' || pageId === 'second') {
+            subscribeCounts[pageId] += 1;
+          }
           ws.send(JSON.stringify(snapshots[pageId]));
+          if (pageId === 'first') {
+            initialSnapshotHandled = true;
+          }
           return;
         }
         if (msg.type === 'draw_batch' && msg.points) {
@@ -880,6 +903,7 @@ test('doodles persist across page switches and reset when cleared', async ({ can
       }),
     )
     .toBe(true);
+  await expect.poll(() => initialSnapshotHandled).toBe(true);
   const sampleCenterStroke = (): Promise<number[]> =>
     doodleCanvas.evaluate((el: HTMLCanvasElement) => {
       const ctx = el.getContext('2d')!;
@@ -890,6 +914,7 @@ test('doodles persist across page switches and reset when cleared', async ({ can
 
   // Draw red horizontal stroke across center on page 1.
   await page.locator('.color-btn[data-color="#ef4444"]').click();
+  await expect(doodleCanvas).not.toHaveClass(/drawing-disabled/);
   const box = (await doodleCanvas.boundingBox())!;
   await page.mouse.move(box.x + box.width * 0.4, box.y + box.height * 0.5);
   await page.mouse.down();
@@ -910,8 +935,12 @@ test('doodles persist across page switches and reset when cleared', async ({ can
   await expect.poll(() => sampleCenterStroke()).toEqual([0, 0, 0, 0]);
   await expect.poll(() => snapshots.first.batches.length).toBe(0);
 
+  const secondBefore = subscribeCounts.second;
+  const firstBefore = subscribeCounts.first;
   await page.locator('#page-next-btn').click();
+  await expect.poll(() => subscribeCounts.second).toBeGreaterThan(secondBefore);
   await page.locator('#page-prev-btn').click();
+  await expect.poll(() => subscribeCounts.first).toBeGreaterThan(firstBefore);
   expect(await sampleCenterStroke()).toEqual([0, 0, 0, 0]);
 });
 
