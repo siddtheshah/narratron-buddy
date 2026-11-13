@@ -114,8 +114,13 @@ def get_session(session_id: str) -> GameSession:
 def game_renderer_asset(kind: str, name: str) -> FileResponse:
     if (kind, name) not in (("js", "game-renderer.js"), ("js", "game-runtime.js"), ("js", "game-panel.js"), ("css", "game-renderer.css")):
         raise HTTPException(404, "Unknown game asset.")
+    asset_path = (
+        PROJECT_ROOT / "static" / "generated" / "canvas" / name
+        if kind == "js"
+        else PROJECT_ROOT / "static" / kind / name
+    )
     return FileResponse(
-        PROJECT_ROOT / "static" / kind / name,
+        asset_path,
         headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
     )
 
