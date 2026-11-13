@@ -1,0 +1,1825 @@
+/**
+ * Runtime image treatments for Narratron artwork.
+ *
+ * Usage:
+ *   import { attachImageEffect } from '/static/generated/canvas/image-effects.js';
+ *   const controller = attachImageEffect(document.querySelector('.my-image'), {
+ *     effect: 'gleam3', intensity: 0.75,
+ *   });
+ *   controller.setEffect('sparkle');
+ *   controller.destroy();
+ */
+
+export interface ImageEffectDefinition {
+  readonly label: string;
+  readonly classes: readonly string[];
+}
+
+export interface AttachImageEffectOptions {
+  effect?: string;
+  intensity?: number;
+}
+
+export interface ImageEffectController {
+  element: HTMLElement;
+  destroy(): void;
+  setEffect(effect: string): void;
+  setIntensity(intensity: number): void;
+  setPaused(isPaused: boolean): void;
+  setInverseBlurMapVisible(isVisible: boolean): void;
+  setGleam3SeedMapVisible(isVisible: boolean): void;
+  setTraceMapVisible(isVisible: boolean): void;
+}
+
+interface EffectLayer {
+  setEnabled(nextEnabled: boolean): void;
+  setPaused(nextPaused: boolean): void;
+  destroy(): void;
+}
+
+interface Gleam3Layer extends EffectLayer {
+  setSeedMapVisible(nextVisible: boolean): void;
+  setInverseMapVisible(nextVisible: boolean): void;
+}
+
+interface TraceLayer extends EffectLayer {
+  setMapVisible(nextVisible: boolean): void;
+}
+
+interface LayerLoop {
+  restart(): void;
+  stop(): void;
+}
+
+interface ValueFlowPeaks {
+  peakScores: Uint32Array;
+  maximumScore: number;
+}
+
+interface ValueNeighborhoodHistograms {
+  darkBin: Uint32Array;
+  mediumBin: Uint32Array;
+  brightBin: Uint32Array;
+  stride: number;
+}
+
+interface StarCandidate {
+  x: number;
+  y: number;
+  score: number;
+  red: number;
+  green: number;
+  blue: number;
+}
+
+interface StarPoint extends StarCandidate {
+  phase: number;
+  frequency: number;
+  radius: number;
+  rotation: number;
+}
+
+interface SourceColorIntegrals {
+  red: Float64Array;
+  green: Float64Array;
+  blue: Float64Array;
+  stride: number;
+}
+
+interface SeedCandidate {
+  index: number;
+  score: number;
+  imbalance: number;
+}
+
+interface GleamGaussian {
+  x: number;
+  y: number;
+  sigma: number;
+  amplitude: number;
+  lightColor: [number, number, number];
+  born: number;
+  lifetime: number;
+}
+
+interface HazeBubble {
+  x: number;
+  radius: number;
+  speed: number;
+  phase: number;
+  lightFactor?: number;
+}
+
+interface HazeBubbleState {
+  centerX: number;
+  centerY: number;
+  radius: number;
+  lightFactor: number;
+}
+
+export const IMAGE_EFFECTS: Readonly<Record<string, ImageEffectDefinition>> = Object.freeze({
+  none: { label: 'None', classes: [] },
+  creeping: { label: 'Creeping darkness', classes: ['fx-luminance', 'fx-fourier-shadows', 'fx-vignette'] },
+  dream: { label: 'Cloudy dreams', classes: ['fx-periodic-light', 'fx-bloom'] },
+  sparkle: { label: 'Starlight twinkle', classes: ['fx-star-twinkle'] },
+  gleam3: { label: 'Gleam 3', classes: ['fx-gleam3'] },
+  haze: { label: 'Drifting haze', classes: ['fx-haze'] },
+  trace: { label: 'Light trace', classes: ['fx-trace'] },
+});
+
+/** Visual defaults are owned by the canvas, not the agent tool contract. */
+export const IMAGE_EFFECT_DEFAULT_INTENSITIES: Readonly<Record<string, number>> = Object.freeze({
+  none: 0,
+  creeping: 0.65,
+  dream: 0.62,
+  sparkle: 0.72,
+  gleam3: 0.68,
+  haze: 0.75,
+  trace: 0.60,
+});
+
+const ALL_EFFECT_CLASSES: readonly string[] = Object.values(IMAGE_EFFECTS)
+  .flatMap(({ classes }) => classes);
+
+function clamp(value: number, minimum: number, maximum: number): number {
+  return Math.min(maximum, Math.max(minimum, value));
+}
+
+function normaliseIntensity(value: string | number): number {
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.min(1, Math.max(0, number)) : 0.72;
+}
+
+function smoothstep(edge0: number, edge1: number, value: number): number {
+  const progress = Math.min(1, Math.max(0, (value - edge0) / (edge1 - edge0)));
+  return progress * progress * (3 - 2 * progress);
+}
+
+function createEffectCanvas(frame: HTMLElement, className: string, hidden = false): HTMLCanvasElement {
+  const canvas = document.createElement('canvas');
+  canvas.className = className;
+  canvas.setAttribute('aria-hidden', 'true');
+  canvas.hidden = hidden;
+  frame.appendChild(canvas);
+  return canvas;
+}
+
+function createLayerLoop(
+  isActive: () => boolean,
+  drawFrame: (time: number) => void,
+  minIntervalMs = 0,
+): LayerLoop {
+  let animationFrame = 0;
+  let lastDraw = 0;
+
+  function animate(time: number): void {
+    if (minIntervalMs <= 0 || time - lastDraw >= minIntervalMs) {
+      drawFrame(time);
+      lastDraw = time;
+    }
+    if (isActive()) {
+      animationFrame = requestAnimationFrame(animate);
+    }
+  }
+
+  return {
+    restart(): void {
+      cancelAnimationFrame(animationFrame);
+      if (isActive()) {
+        animationFrame = requestAnimationFrame(animate);
+      }
+    },
+    stop(): void {
+      cancelAnimationFrame(animationFrame);
+    },
+  };
+}
+
+/** Returns a distribution-relative cutoff without sorting a full image buffer. */
+function histogramPercentile(values: Float32Array, fraction: number, maximum = 1, bins = 256): number {
+  const histogram = new Uint32Array(bins);
+  for (let index = 0; index < values.length; index += 1) {
+    const bin = clamp(Math.floor(values[index] / maximum * (bins - 1)), 0, bins - 1);
+    histogram[bin] += 1;
+  }
+  const target = Math.max(0, Math.ceil(values.length * fraction) - 1);
+  let cumulative = 0;
+  for (let bin = 0; bin < bins; bin += 1) {
+    cumulative += histogram[bin];
+    if (cumulative > target) return (bin + 0.5) / bins * maximum;
+  }
+  return maximum;
+}
+
+/**
+ * Follows each pixel's steepest increasing 8-neighbor path to a local HSV Value
+ * maximum. Every pixel contributes eight votes to its peak, including +8 for a peak itself.
+ */
+function buildValueFlowPeaks(values: Float32Array, width: number, height: number): ValueFlowPeaks {
+  const size = width * height;
+  const next = new Int32Array(size);
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const index = y * width + x;
+      let brightest = index;
+      let brightestValue = values[index];
+      for (let offsetY = -1; offsetY <= 1; offsetY += 1) {
+        for (let offsetX = -1; offsetX <= 1; offsetX += 1) {
+          if (offsetX === 0 && offsetY === 0) continue;
+          const neighborX = x + offsetX;
+          const neighborY = y + offsetY;
+          if (neighborX < 0 || neighborX >= width || neighborY < 0 || neighborY >= height) continue;
+          const neighbor = neighborY * width + neighborX;
+          if (values[neighbor] > brightestValue) {
+            brightest = neighbor;
+            brightestValue = values[neighbor];
+          }
+        }
+      }
+      next[index] = brightest;
+    }
+  }
+
+  const destinations = new Int32Array(size);
+  destinations.fill(-1);
+  for (let start = 0; start < size; start += 1) {
+    if (destinations[start] >= 0) continue;
+    const path: number[] = [];
+    let current = start;
+    while (destinations[current] < 0 && next[current] !== current) {
+      path.push(current);
+      current = next[current];
+    }
+    const peak = destinations[current] >= 0 ? destinations[current] : current;
+    destinations[current] = peak;
+    for (const index of path) destinations[index] = peak;
+  }
+
+  const peakScores = new Uint32Array(size);
+  let maximumScore = 8;
+  for (let index = 0; index < destinations.length; index += 1) {
+    const peak = destinations[index];
+    peakScores[peak] += 8;
+    maximumScore = Math.max(maximumScore, peakScores[peak]);
+  }
+  return { peakScores, maximumScore };
+}
+
+/**
+ * Builds a low-resolution alpha mask of the source image's bright regions.
+ * The mask is calculated once per source-image load, then reused for animation.
+ */
+function createLuminanceLayer(frame: HTMLElement, image: HTMLImageElement): EffectLayer {
+  const canvas = createEffectCanvas(frame, 'image-effect-luminance');
+  const analysisCanvas = document.createElement('canvas');
+  const maskCanvas = document.createElement('canvas');
+  const analysisContext = analysisCanvas.getContext('2d', { willReadFrequently: true });
+  const maskContext = maskCanvas.getContext('2d');
+  const outputContext = canvas.getContext('2d');
+  const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+  let enabled = false;
+  let paused = prefersReducedMotion.matches;
+  let maskReady = false;
+
+  const loop = createLayerLoop(
+    () => enabled && !paused,
+    (time) => draw(time),
+    0,
+  );
+
+  function clearMask(): void {
+    maskReady = false;
+    outputContext?.clearRect(0, 0, canvas.width, canvas.height);
+    canvas.hidden = true;
+  }
+
+  function analyse(): void {
+    if (!analysisContext || !maskContext || !image.complete || !image.naturalWidth) return;
+    const width = Math.min(360, image.naturalWidth);
+    const height = Math.max(1, Math.round(width * image.naturalHeight / image.naturalWidth));
+    analysisCanvas.width = maskCanvas.width = canvas.width = width;
+    analysisCanvas.height = maskCanvas.height = canvas.height = height;
+    analysisContext.clearRect(0, 0, width, height);
+    analysisContext.drawImage(image, 0, 0, width, height);
+
+    try {
+      const pixels = analysisContext.getImageData(0, 0, width, height);
+      const mask = maskContext.createImageData(width, height);
+      for (let index = 0; index < pixels.data.length; index += 4) {
+        const red = pixels.data[index] / 255;
+        const green = pixels.data[index + 1] / 255;
+        const blue = pixels.data[index + 2] / 255;
+        // Use display luminance: it follows what viewers perceive as bright in saturated art.
+        const luminance = 0.2126 * red + 0.7152 * green + 0.0722 * blue;
+        // Ignore normal midtones; preserve only a softly feathered upper highlight range.
+        const highlight = smoothstep(0.42, 0.82, luminance) ** 0.72;
+        mask.data[index] = 255;
+        mask.data[index + 1] = 238;
+        mask.data[index + 2] = 196;
+        mask.data[index + 3] = Math.round(highlight * 190);
+      }
+      maskContext.putImageData(mask, 0, 0);
+      maskReady = true;
+      canvas.hidden = !enabled;
+      draw(performance.now());
+    } catch (error) {
+      // A cross-origin image without CORS cannot expose pixels. Hide only this enhancement.
+      maskReady = false;
+      canvas.hidden = true;
+      console.warn('Luminance treatment needs a same-origin or CORS-enabled image.', error);
+    }
+  }
+
+  function draw(time: number): void {
+    if (!outputContext || !maskReady || !enabled) return;
+    const { width, height } = canvas;
+    const intensity = normaliseIntensity(frame.style.getPropertyValue('--fx-intensity'));
+    const phase = paused ? 0.35 : (Math.sin(time / 1350) + 1) / 2;
+    const center = width * (-0.12 + phase * 1.24);
+    const gradient = outputContext.createLinearGradient(center - width * 0.34, 0, center + width * 0.34, height);
+    gradient.addColorStop(0, 'rgba(255, 216, 130, 0)');
+    gradient.addColorStop(0.36, `rgba(255, 226, 163, ${0.05 + intensity * 0.14})`);
+    gradient.addColorStop(0.52, `rgba(255, 250, 225, ${0.14 + intensity * 0.36})`);
+    gradient.addColorStop(0.68, `rgba(255, 211, 121, ${0.04 + intensity * 0.12})`);
+    gradient.addColorStop(1, 'rgba(255, 216, 130, 0)');
+
+    outputContext.clearRect(0, 0, width, height);
+    outputContext.fillStyle = gradient;
+    outputContext.fillRect(0, 0, width, height);
+    outputContext.globalCompositeOperation = 'destination-in';
+    outputContext.drawImage(maskCanvas, 0, 0);
+    outputContext.globalCompositeOperation = 'source-over';
+  }
+
+  image.addEventListener('load', analyse);
+  const sourceObserver = new MutationObserver(clearMask);
+  sourceObserver.observe(image, { attributes: true, attributeFilter: ['src', 'srcset'] });
+  if (image.complete) analyse();
+
+  return {
+    setEnabled(nextEnabled: boolean): void {
+      enabled = nextEnabled;
+      canvas.hidden = !enabled;
+      if (enabled && !maskReady) analyse();
+      draw(performance.now());
+      loop.restart();
+    },
+    setPaused(nextPaused: boolean): void {
+      paused = nextPaused || prefersReducedMotion.matches;
+      draw(performance.now());
+      loop.restart();
+    },
+    destroy(): void {
+      loop.stop();
+      image.removeEventListener('load', analyse);
+      sourceObserver.disconnect();
+      canvas.remove();
+    },
+  };
+}
+
+/**
+ * Draws an animated Fourier field as a low-resolution darkening mask. Several
+ * waves with different directions and speeds create organic, non-repeating shadow drift.
+ */
+function createFourierShadowLayer(frame: HTMLElement, image: HTMLImageElement): EffectLayer {
+  const canvas = createEffectCanvas(frame, 'image-effect-fourier-shadows');
+  const context = canvas.getContext('2d');
+  const sourceCanvas = document.createElement('canvas');
+  const sourceContext = sourceCanvas.getContext('2d', { willReadFrequently: true });
+  const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+  let pixels: ImageData | undefined;
+  let brightnessWeights: Uint8Array | undefined;
+  let enabled = false;
+  let paused = prefersReducedMotion.matches;
+
+  const loop = createLayerLoop(
+    () => enabled && !paused,
+    (time) => draw(time),
+    42,
+  );
+
+  function resize(): void {
+    if (!image.naturalWidth) return;
+    const width = Math.min(190, image.naturalWidth);
+    const height = Math.max(1, Math.round(width * image.naturalHeight / image.naturalWidth));
+    canvas.width = width;
+    canvas.height = height;
+    pixels = context?.createImageData(width, height);
+    brightnessWeights = new Uint8Array(width * height);
+
+    if (!sourceContext) return;
+    sourceCanvas.width = width;
+    sourceCanvas.height = height;
+    sourceContext.clearRect(0, 0, width, height);
+    sourceContext.drawImage(image, 0, 0, width, height);
+
+    try {
+      const sourcePixels = sourceContext.getImageData(0, 0, width, height).data;
+      for (let index = 0; index < brightnessWeights.length; index += 1) {
+        const pixelIndex = index * 4;
+        const red = sourcePixels[pixelIndex] / 255;
+        const green = sourcePixels[pixelIndex + 1] / 255;
+        const blue = sourcePixels[pixelIndex + 2] / 255;
+        const luminance = 0.2126 * red + 0.7152 * green + 0.0722 * blue;
+        // Shadows begin in midlight and reach full strength over apparent highlights.
+        brightnessWeights[index] = Math.round(smoothstep(0.12, 0.55, luminance) ** 0.75 * 255);
+      }
+    } catch (error) {
+      // A CORS-restricted image cannot be sampled; retain a conservative effect instead.
+      brightnessWeights.fill(72);
+      console.warn('Luminance-weighted shadows need a same-origin or CORS-enabled image.', error);
+    }
+  }
+
+  function draw(time: number): void {
+    if (!context || !pixels || !enabled) return;
+    const { width, height } = canvas;
+    const intensity = normaliseIntensity(frame.style.getPropertyValue('--fx-intensity'));
+    const t = paused ? 0.8 : time * 0.000075;
+    const data = pixels.data;
+
+    for (let y = 0; y < height; y += 1) {
+      const v = y / height;
+      for (let x = 0; x < width; x += 1) {
+        const u = x / width;
+        // A compact Fourier series: mixed spatial frequencies, directions, and phase velocities.
+        const field =
+          0.24 * Math.sin(Math.PI * 2 * (1.18 * u + 0.43 * v + t * 0.82)) +
+          0.20 * Math.sin(Math.PI * 2 * (-2.16 * u + 0.96 * v - t * 1.18) + 1.1) +
+          0.16 * Math.sin(Math.PI * 2 * (3.42 * u - 1.12 * v + t * 0.63) + 2.4) +
+          0.14 * Math.sin(Math.PI * 2 * (-4.72 * u - 2.06 * v - t * 0.47) + 0.5) +
+          0.11 * Math.sin(Math.PI * 2 * (6.18 * u + 1.76 * v + t * 0.94) + 1.8) +
+          0.09 * Math.sin(Math.PI * 2 * (-7.56 * u + 3.28 * v - t * 0.39) + 2.9) +
+          0.06 * Math.sin(Math.PI * 2 * (9.22 * u - 4.14 * v + t * 0.28));
+        // More high-frequency modes create finer, more numerous drifting wavelets.
+        // Brightness weighting below still prevents them from darkening true shadows.
+        const shadow = smoothstep(-0.12, 0.42, field);
+        const index = (y * width + x) * 4;
+        data[index] = 6;
+        data[index + 1] = 10;
+        data[index + 2] = 24;
+        // Multiply-blended shadow strength is modulated by image lightness: dark pixels
+        // remain almost untouched while highlights carry the moving shadow pattern.
+        const brightnessWeight = brightnessWeights ? brightnessWeights[y * width + x] / 255 : 0.28;
+        data[index + 3] = Math.round(shadow * intensity * brightnessWeight ** 0.55 * 210);
+      }
+    }
+    context.putImageData(pixels, 0, 0);
+  }
+
+  image.addEventListener('load', resize);
+  if (image.complete) resize();
+
+  return {
+    setEnabled(nextEnabled: boolean): void {
+      enabled = nextEnabled;
+      canvas.hidden = !enabled;
+      if (enabled && !pixels) resize();
+      draw(performance.now());
+      loop.restart();
+    },
+    setPaused(nextPaused: boolean): void {
+      paused = nextPaused || prefersReducedMotion.matches;
+      draw(performance.now());
+      loop.restart();
+    },
+    destroy(): void {
+      loop.stop();
+      image.removeEventListener('load', resize);
+      canvas.remove();
+    },
+  };
+}
+
+/**
+ * A companion to the Fourier shadow layer: bright source areas emit a soft,
+ * periodically pulsing light field that blooms into their immediate surroundings.
+ */
+function createPeriodicLightLayer(frame: HTMLElement, image: HTMLImageElement): EffectLayer {
+  const canvas = createEffectCanvas(frame, 'image-effect-periodic-light');
+  const context = canvas.getContext('2d');
+  const sourceCanvas = document.createElement('canvas');
+  const sourceContext = sourceCanvas.getContext('2d', { willReadFrequently: true });
+  const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+  let pixels: ImageData | undefined;
+  let brightWeights: Uint8Array | undefined;
+  let enabled = false;
+  let paused = prefersReducedMotion.matches;
+
+  const loop = createLayerLoop(
+    () => enabled && !paused,
+    (time) => draw(time),
+    42,
+  );
+
+  function resize(): void {
+    if (!image.naturalWidth) return;
+    const width = Math.min(190, image.naturalWidth);
+    const height = Math.max(1, Math.round(width * image.naturalHeight / image.naturalWidth));
+    canvas.width = sourceCanvas.width = width;
+    canvas.height = sourceCanvas.height = height;
+    pixels = context?.createImageData(width, height);
+    brightWeights = new Uint8Array(width * height);
+    if (!sourceContext) return;
+
+    sourceContext.clearRect(0, 0, width, height);
+    sourceContext.drawImage(image, 0, 0, width, height);
+    try {
+      const sourcePixels = sourceContext.getImageData(0, 0, width, height).data;
+      for (let index = 0; index < brightWeights.length; index += 1) {
+        const pixelIndex = index * 4;
+        const luminance =
+          0.2126 * sourcePixels[pixelIndex] / 255 +
+          0.7152 * sourcePixels[pixelIndex + 1] / 255 +
+          0.0722 * sourcePixels[pixelIndex + 2] / 255;
+        brightWeights[index] = Math.round(smoothstep(0.20, 0.72, luminance) ** 0.72 * 255);
+      }
+    } catch (error) {
+      brightWeights.fill(72);
+      console.warn('Periodic light needs a same-origin or CORS-enabled image.', error);
+    }
+  }
+
+  function draw(time: number): void {
+    if (!context || !pixels || !enabled) return;
+    const { width, height } = canvas;
+    const intensity = normaliseIntensity(frame.style.getPropertyValue('--fx-intensity'));
+    const t = paused ? 0.65 : time * 0.000095;
+    const data = pixels.data;
+
+    for (let y = 0; y < height; y += 1) {
+      const v = y / height;
+      for (let x = 0; x < width; x += 1) {
+        const u = x / width;
+        const field =
+          0.38 * Math.sin(Math.PI * 2 * (1.12 * u + 0.52 * v + t)) +
+          0.26 * Math.sin(Math.PI * 2 * (-2.34 * u + 1.06 * v - t * 1.28) + 1.2) +
+          0.20 * Math.sin(Math.PI * 2 * (3.74 * u - 1.48 * v + t * 0.74) + 2.1) +
+          0.16 * Math.sin(Math.PI * 2 * (-5.68 * u - 2.20 * v - t * 0.46) + 0.6);
+        const pulse = 0.22 + 0.78 * smoothstep(-0.18, 0.46, field);
+        const index = (y * width + x) * 4;
+        data[index] = 255;
+        data[index + 1] = 224;
+        data[index + 2] = 156;
+        const brightWeight = brightWeights ? brightWeights[y * width + x] / 255 : 0.25;
+        data[index + 3] = Math.round(brightWeight ** 0.65 * pulse * intensity * 168);
+      }
+    }
+    context.putImageData(pixels, 0, 0);
+  }
+
+  image.addEventListener('load', resize);
+  if (image.complete) resize();
+
+  return {
+    setEnabled(nextEnabled: boolean): void {
+      enabled = nextEnabled;
+      canvas.hidden = !enabled;
+      if (enabled && !pixels) resize();
+      draw(performance.now());
+      loop.restart();
+    },
+    setPaused(nextPaused: boolean): void {
+      paused = nextPaused || prefersReducedMotion.matches;
+      draw(performance.now());
+      loop.restart();
+    },
+    destroy(): void {
+      loop.stop();
+      image.removeEventListener('load', resize);
+      canvas.remove();
+    },
+  };
+}
+
+/**
+ * Finds small bright local maxima against dark neighborhoods, then renders each
+ * point as an independently phased, four-pointed star flare. This keeps twinkles in night sky
+ * and dark-space details instead of treating all bright illustration edges as stars.
+ */
+function createStarTwinkleLayer(frame: HTMLElement, image: HTMLImageElement): EffectLayer {
+  const canvas = createEffectCanvas(frame, 'image-effect-star-twinkle');
+  const context = canvas.getContext('2d');
+  const sourceCanvas = document.createElement('canvas');
+  const sourceContext = sourceCanvas.getContext('2d', { willReadFrequently: true });
+  const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+  let stars: StarPoint[] = [];
+  let enabled = false;
+  let paused = prefersReducedMotion.matches;
+
+  const loop = createLayerLoop(
+    () => enabled && !paused,
+    (time) => draw(time),
+    42,
+  );
+
+  function hash(x: number, y: number, salt = 0): number {
+    const value = Math.sin(x * 12.9898 + y * 78.233 + salt * 37.719) * 43758.5453;
+    return value - Math.floor(value);
+  }
+
+  function analyse(): void {
+    if (!sourceContext || !image.naturalWidth) return;
+    const width = Math.min(420, image.naturalWidth);
+    const height = Math.max(1, Math.round(width * image.naturalHeight / image.naturalWidth));
+    canvas.width = sourceCanvas.width = width;
+    canvas.height = sourceCanvas.height = height;
+    sourceContext.clearRect(0, 0, width, height);
+    sourceContext.drawImage(image, 0, 0, width, height);
+
+    try {
+      const sourcePixels = sourceContext.getImageData(0, 0, width, height).data;
+      const luminance = new Float32Array(width * height);
+      for (let index = 0; index < luminance.length; index += 1) {
+        const pixelIndex = index * 4;
+        luminance[index] =
+          0.2126 * sourcePixels[pixelIndex] / 255 +
+          0.7152 * sourcePixels[pixelIndex + 1] / 255 +
+          0.0722 * sourcePixels[pixelIndex + 2] / 255;
+      }
+
+      const candidates: StarCandidate[] = [];
+      for (let y = 2; y < height - 2; y += 1) {
+        for (let x = 2; x < width - 2; x += 1) {
+          const index = y * width + x;
+          const center = luminance[index];
+          if (center < 0.52) continue;
+
+          let neighborTotal = 0;
+          let isPeak = true;
+          for (let offsetY = -2; offsetY <= 2; offsetY += 1) {
+            for (let offsetX = -2; offsetX <= 2; offsetX += 1) {
+              if (offsetX === 0 && offsetY === 0) continue;
+              const neighbor = luminance[(y + offsetY) * width + x + offsetX];
+              neighborTotal += neighbor;
+              if (neighbor > center) isPeak = false;
+            }
+          }
+          const neighborhood = neighborTotal / 24;
+          const contrast = center - neighborhood;
+          if (isPeak && neighborhood < 0.38 && contrast > 0.22) {
+            const pixelIndex = index * 4;
+            candidates.push({
+              x,
+              y,
+              score: center * contrast,
+              red: sourcePixels[pixelIndex],
+              green: sourcePixels[pixelIndex + 1],
+              blue: sourcePixels[pixelIndex + 2],
+            });
+          }
+        }
+      }
+
+      candidates.sort((left, right) => right.score - left.score);
+      stars = [];
+      for (const candidate of candidates) {
+        if (stars.some((star) => Math.hypot(star.x - candidate.x, star.y - candidate.y) < 3.2)) continue;
+        const random = hash(candidate.x, candidate.y);
+        stars.push({
+          ...candidate,
+          phase: random * Math.PI * 2,
+          frequency: 1.1 + hash(candidate.x, candidate.y, 1) * 1.9,
+          radius: (0.42 + Math.min(0.88, candidate.score * 1.9)) * 0.8,
+          rotation: (hash(candidate.x, candidate.y, 2) - 0.5) * 0.48,
+        });
+        if (stars.length === 160) break;
+      }
+      canvas.dataset.sparkleCount = String(stars.length);
+      draw(performance.now());
+    } catch (error) {
+      stars = [];
+      canvas.dataset.sparkleCount = '0';
+      console.warn('Starlight twinkle needs a same-origin or CORS-enabled image.', error);
+    }
+  }
+
+  function draw(time: number): void {
+    if (!context || !enabled) return;
+    const intensity = normaliseIntensity(frame.style.getPropertyValue('--fx-intensity'));
+    const t = paused ? 0.9 : time * 0.001;
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    context.globalCompositeOperation = 'lighter';
+
+    for (const star of stars) {
+      const wave = (Math.sin(t * star.frequency + star.phase) + 1) / 2;
+      const twinkle = 0.06 + 0.94 * wave ** 6;
+      const radius = star.radius * (1.1 + twinkle * 3.4) * intensity;
+      const gradient = context.createRadialGradient(star.x, star.y, 0, star.x, star.y, radius);
+      gradient.addColorStop(0, `rgba(${star.red}, ${star.green}, ${star.blue}, ${0.94 * twinkle})`);
+      gradient.addColorStop(0.24, `rgba(${star.red}, ${star.green}, ${star.blue}, ${0.52 * twinkle})`);
+      gradient.addColorStop(1, `rgba(${star.red}, ${star.green}, ${star.blue}, 0)`);
+      context.fillStyle = gradient;
+      context.fillRect(star.x - radius, star.y - radius, radius * 2, radius * 2);
+
+      if (twinkle > 0.58) {
+        const flare = radius * (1.45 + twinkle * 2.65);
+        const inset = flare * 0.17;
+        // A filled concave diamond has four actual points, unlike two crossed
+        // strokes; a small per-star rotation keeps the field from looking rigid.
+        context.save();
+        context.translate(star.x, star.y);
+        context.rotate(star.rotation);
+        context.fillStyle = `rgba(${star.red}, ${star.green}, ${star.blue}, ${(twinkle - 0.5) * 0.92})`;
+        context.beginPath();
+        context.moveTo(0, -flare);
+        context.lineTo(inset, -inset);
+        context.lineTo(flare, 0);
+        context.lineTo(inset, inset);
+        context.lineTo(0, flare);
+        context.lineTo(-inset, inset);
+        context.lineTo(-flare, 0);
+        context.lineTo(-inset, -inset);
+        context.closePath();
+        context.fill();
+        context.restore();
+      }
+    }
+    context.globalCompositeOperation = 'source-over';
+  }
+
+  image.addEventListener('load', analyse);
+  if (image.complete) analyse();
+
+  return {
+    setEnabled(nextEnabled: boolean): void {
+      enabled = nextEnabled;
+      canvas.hidden = !enabled;
+      if (enabled && !stars.length) analyse();
+      draw(performance.now());
+      loop.restart();
+    },
+    setPaused(nextPaused: boolean): void {
+      paused = nextPaused || prefersReducedMotion.matches;
+      draw(performance.now());
+      loop.restart();
+    },
+    destroy(): void {
+      loop.stop();
+      image.removeEventListener('load', analyse);
+      canvas.remove();
+    },
+  };
+}
+
+/**
+ * Separably blurs the HSV Value channel. Keeping this independent from RGB lets
+ * the treatment raise or lower brightness without rotating hue or changing
+ * saturation: scaling RGB by nextValue / value preserves both HSV H and S.
+ */
+function gaussianBlurValues(values: Float32Array, width: number, height: number, radius: number): Float32Array {
+  const sigma = Math.max(0.8, radius / 2);
+  const kernelRadius = Math.max(1, Math.ceil(sigma * 2.5));
+  const kernel = new Float32Array(kernelRadius * 2 + 1);
+  let kernelTotal = 0;
+  for (let offset = -kernelRadius; offset <= kernelRadius; offset += 1) {
+    const weight = Math.exp(-(offset * offset) / (2 * sigma * sigma));
+    kernel[offset + kernelRadius] = weight;
+    kernelTotal += weight;
+  }
+  for (let index = 0; index < kernel.length; index += 1) kernel[index] /= kernelTotal;
+
+  const horizontal = new Float32Array(values.length);
+  const blurred = new Float32Array(values.length);
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      let total = 0;
+      for (let offset = -kernelRadius; offset <= kernelRadius; offset += 1) {
+        total += values[y * width + Math.min(width - 1, Math.max(0, x + offset))] * kernel[offset + kernelRadius];
+      }
+      horizontal[y * width + x] = total;
+    }
+  }
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      let total = 0;
+      for (let offset = -kernelRadius; offset <= kernelRadius; offset += 1) {
+        total += horizontal[Math.min(height - 1, Math.max(0, y + offset)) * width + x] * kernel[offset + kernelRadius];
+      }
+      blurred[y * width + x] = total;
+    }
+  }
+  return blurred;
+}
+
+/**
+ * Builds summed-area histograms for dark, medium, and bright Value bins. This
+ * lets each Gleam 3 seed inspect its neighborhood without repeatedly scanning
+ * every pixel in it.
+ */
+function buildValueNeighborhoodHistograms(
+  values: Float32Array,
+  width: number,
+  height: number,
+  darkValueCutoff: number,
+  brightValueCutoff: number,
+): ValueNeighborhoodHistograms {
+  const stride = width + 1;
+  const darkBin = new Uint32Array(stride * (height + 1));
+  const mediumBin = new Uint32Array(stride * (height + 1));
+  const brightBin = new Uint32Array(stride * (height + 1));
+  for (let y = 1; y <= height; y += 1) {
+    let rowDarkPixels = 0;
+    let rowMediumPixels = 0;
+    let rowBrightPixels = 0;
+    for (let x = 1; x <= width; x += 1) {
+      const value = values[(y - 1) * width + x - 1];
+      if (value <= darkValueCutoff) rowDarkPixels += 1;
+      else if (value >= brightValueCutoff) rowBrightPixels += 1;
+      else rowMediumPixels += 1;
+      darkBin[y * stride + x] = darkBin[(y - 1) * stride + x] + rowDarkPixels;
+      mediumBin[y * stride + x] = mediumBin[(y - 1) * stride + x] + rowMediumPixels;
+      brightBin[y * stride + x] = brightBin[(y - 1) * stride + x] + rowBrightPixels;
+    }
+  }
+  return { darkBin, mediumBin, brightBin, stride };
+}
+
+function neighborhoodValueRatios(
+  histograms: ValueNeighborhoodHistograms,
+  width: number,
+  height: number,
+  index: number,
+  radius: number,
+): [number, number, number] {
+  const x = index % width;
+  const y = Math.floor(index / width);
+  const left = Math.max(0, x - radius);
+  const top = Math.max(0, y - radius);
+  const right = Math.min(width - 1, x + radius);
+  const bottom = Math.min(height - 1, y + radius);
+  const { darkBin, mediumBin, brightBin, stride } = histograms;
+  const countInBin = (bin: Uint32Array): number => bin[(bottom + 1) * stride + right + 1]
+    - bin[top * stride + right + 1]
+    - bin[(bottom + 1) * stride + left]
+    + bin[top * stride + left];
+  const pixelCount = (right - left + 1) * (bottom - top + 1);
+  return [countInBin(darkBin) / pixelCount, countInBin(mediumBin) / pixelCount, countInBin(brightBin) / pixelCount];
+}
+
+/**
+ * Gini coefficient of the observed ratios relative to a desired distribution.
+ * A zero score is a perfect target match; lower scores are more desirable.
+ */
+function targetRelativeGini(
+  observedRatios: readonly [number, number, number],
+  targetRatios: readonly [number, number, number],
+): number {
+  const relativeRatios = observedRatios.map((ratio, index) => ratio / targetRatios[index]);
+  const total = relativeRatios.reduce((sum, ratio) => sum + ratio, 0);
+  if (!total) return 1;
+  let differenceTotal = 0;
+  for (const first of relativeRatios) {
+    for (const second of relativeRatios) differenceTotal += Math.abs(first - second);
+  }
+  return differenceTotal / (2 * relativeRatios.length * total);
+}
+
+/**
+ * Gleam 3 builds a time-varying illumination mask from many short-lived
+ * Gaussians. Their centres are sampled from value-flow peaks, so broad bright
+ * basins receive more visits. Each Gaussian takes the hue of its local region
+ * instead of using one fixed illumination colour.
+ */
+function createGleam3Layer(frame: HTMLElement, image: HTMLImageElement): Gleam3Layer {
+  const canvas = createEffectCanvas(frame, 'image-effect-gleam3');
+  const seedMapCanvas = createEffectCanvas(frame, 'image-effect-gleam3-seed-map', true);
+  const inverseMapCanvas = createEffectCanvas(frame, 'image-effect-v-inverse-map', true);
+
+  const sourceCanvas = document.createElement('canvas');
+  const context = canvas.getContext('2d');
+  const seedMapContext = seedMapCanvas.getContext('2d');
+  const inverseMapContext = inverseMapCanvas.getContext('2d');
+  const sourceContext = sourceCanvas.getContext('2d', { willReadFrequently: true });
+  const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+  let sourcePixels: ImageData | undefined;
+  let outputPixels: ImageData | undefined;
+  let seedMask: Float32Array | undefined;
+  let flowSeedStrength: Float32Array | undefined;
+  let sourceColorIntegrals: SourceColorIntegrals | undefined;
+  let seedIndices: number[] = [];
+  let seedCumulativeWeights: number[] = [];
+  let seedWeightTotal = 0;
+  let gaussians: GleamGaussian[] = [];
+  let enabled = false;
+  let paused = prefersReducedMotion.matches;
+  let seedMapVisible = false;
+  let inverseMapVisible = false;
+  // Overlapping Gaussians may enrich the mask, but never make it grow without
+  // bound. This is energy saturation, not a colour-saturation adjustment.
+  const maximumGaussianEnergy = 2.0;
+
+  const loop = createLayerLoop(
+    () => enabled && !paused,
+    (time) => draw(time),
+    34,
+  );
+
+  function buildSourceColorIntegrals(pixels: ImageData, width: number, height: number): SourceColorIntegrals {
+    const stride = width + 1;
+    const length = stride * (height + 1);
+    const red = new Float64Array(length);
+    const green = new Float64Array(length);
+    const blue = new Float64Array(length);
+    for (let y = 0; y < height; y += 1) {
+      let rowRed = 0;
+      let rowGreen = 0;
+      let rowBlue = 0;
+      for (let x = 0; x < width; x += 1) {
+        const pixel = (y * width + x) * 4;
+        const integralIndex = (y + 1) * stride + x + 1;
+        rowRed += pixels.data[pixel];
+        rowGreen += pixels.data[pixel + 1];
+        rowBlue += pixels.data[pixel + 2];
+        red[integralIndex] = red[y * stride + x + 1] + rowRed;
+        green[integralIndex] = green[y * stride + x + 1] + rowGreen;
+        blue[integralIndex] = blue[y * stride + x + 1] + rowBlue;
+      }
+    }
+    return { red, green, blue, stride };
+  }
+
+  function averageGaussianRegion(x: number, y: number, sigma: number): [number, number, number] {
+    if (!sourceColorIntegrals) return [127.5, 127.5, 127.5];
+    const radius = Math.ceil(sigma * 3.25);
+    const left = Math.max(0, Math.floor(x - radius));
+    const right = Math.min(canvas.width - 1, Math.ceil(x + radius));
+    const top = Math.max(0, Math.floor(y - radius));
+    const bottom = Math.min(canvas.height - 1, Math.ceil(y + radius));
+    const { red, green, blue, stride } = sourceColorIntegrals;
+    const sumInRegion = (integral: Float64Array): number => integral[(bottom + 1) * stride + right + 1]
+      - integral[top * stride + right + 1]
+      - integral[(bottom + 1) * stride + left]
+      + integral[top * stride + left];
+    const count = (right - left + 1) * (bottom - top + 1);
+    return [sumInRegion(red) / count, sumInRegion(green) / count, sumInRegion(blue) / count];
+  }
+
+  function pickSeedIndex(): number | undefined {
+    if (!seedIndices.length || !seedWeightTotal) return undefined;
+    const target = Math.random() * seedWeightTotal;
+    let low = 0;
+    let high = seedCumulativeWeights.length - 1;
+    while (low < high) {
+      const middle = Math.floor((low + high) / 2);
+      if (seedCumulativeWeights[middle] < target) low = middle + 1;
+      else high = middle;
+    }
+    return seedIndices[low];
+  }
+
+  function renewGaussian(gaussian: GleamGaussian, time: number): void {
+    const index = pickSeedIndex();
+    if (index === undefined) return;
+    gaussian.x = index % canvas.width;
+    gaussian.y = Math.floor(index / canvas.width);
+    // Broader kernels make the temporal field read as drifting light instead
+    // of pin-prick sparkles while still retaining distinct Gaussian centres.
+    gaussian.sigma = 5.0 + Math.random() * 6.0;
+    gaussian.amplitude = 0.22 + Math.random() * 0.42;
+    const regionColor = averageGaussianRegion(gaussian.x, gaussian.y, gaussian.sigma);
+    // Screen blending needs a light source. Raising the regional average to
+    // full value preserves its hue while keeping the old illumination strength.
+    const maximumChannel = Math.max(...regionColor);
+    const lightScale = maximumChannel > 0 ? 255 / maximumChannel : 1;
+    gaussian.lightColor = [
+      clamp(regionColor[0] * lightScale, 0, 255),
+      clamp(regionColor[1] * lightScale, 0, 255),
+      clamp(regionColor[2] * lightScale, 0, 255),
+    ];
+    gaussian.born = time;
+    gaussian.lifetime = (620 + Math.random() * 1180) / 0.75;
+  }
+
+  function drawSeedMap(): void {
+    if (!seedMapContext || !sourcePixels || !flowSeedStrength) return;
+    const map = seedMapContext.createImageData(seedMapCanvas.width, seedMapCanvas.height);
+    for (let index = 0; index < flowSeedStrength.length; index += 1) {
+      const pixelIndex = index * 4;
+      const strength = flowSeedStrength[index];
+      if (strength > 0) {
+        // Cyan points visualize the exact value-flow distribution used for
+        // Gaussian birth sampling; brighter points carry more basin weight.
+        map.data[pixelIndex] = Math.round(94 + strength * 110);
+        map.data[pixelIndex + 1] = Math.round(182 + strength * 73);
+        map.data[pixelIndex + 2] = 255;
+      } else {
+        map.data[pixelIndex] = Math.round(sourcePixels.data[pixelIndex] * 0.10);
+        map.data[pixelIndex + 1] = Math.round(sourcePixels.data[pixelIndex + 1] * 0.10);
+        map.data[pixelIndex + 2] = Math.round(sourcePixels.data[pixelIndex + 2] * 0.10);
+      }
+      map.data[pixelIndex + 3] = 255;
+    }
+    seedMapContext.putImageData(map, 0, 0);
+  }
+
+  function drawInverseMap(values: Float32Array, blurredValues: Float32Array): void {
+    if (!inverseMapContext) return;
+    const map = inverseMapContext.createImageData(inverseMapCanvas.width, inverseMapCanvas.height);
+    for (let index = 0; index < values.length; index += 1) {
+      const pixelIndex = index * 4;
+      const residual = values[index] - blurredValues[index];
+      const strength = Math.min(1, Math.abs(residual) * 7.5);
+      // Warm pixels sit above their local Gaussian field; cool pixels sit below it.
+      if (residual >= 0) {
+        map.data[pixelIndex] = Math.round(26 + 229 * strength);
+        map.data[pixelIndex + 1] = Math.round(21 + 170 * strength);
+        map.data[pixelIndex + 2] = Math.round(14 + 62 * strength);
+      } else {
+        map.data[pixelIndex] = Math.round(12 + 58 * strength);
+        map.data[pixelIndex + 1] = Math.round(22 + 112 * strength);
+        map.data[pixelIndex + 2] = Math.round(30 + 225 * strength);
+      }
+      map.data[pixelIndex + 3] = 255;
+    }
+    inverseMapContext.putImageData(map, 0, 0);
+  }
+
+  function analyse(): void {
+    if (!sourceContext || !image.naturalWidth) return;
+    const width = Math.min(360, image.naturalWidth);
+    const height = Math.max(1, Math.round(width * image.naturalHeight / image.naturalWidth));
+    canvas.width = seedMapCanvas.width = inverseMapCanvas.width = sourceCanvas.width = width;
+    canvas.height = seedMapCanvas.height = inverseMapCanvas.height = sourceCanvas.height = height;
+    sourceContext.clearRect(0, 0, width, height);
+    sourceContext.drawImage(image, 0, 0, width, height);
+
+    try {
+      const pixels = sourceContext.getImageData(0, 0, width, height);
+      sourcePixels = pixels;
+      outputPixels = context?.createImageData(width, height);
+      sourceColorIntegrals = buildSourceColorIntegrals(pixels, width, height);
+      const values = new Float32Array(width * height);
+      for (let index = 0; index < values.length; index += 1) {
+        const pixelIndex = index * 4;
+        values[index] = Math.max(pixels.data[pixelIndex], pixels.data[pixelIndex + 1], pixels.data[pixelIndex + 2]) / 255;
+      }
+      const blurredValues = gaussianBlurValues(values, width, height, 6);
+      drawInverseMap(values, blurredValues);
+      const flow = buildValueFlowPeaks(values, width, height);
+      seedMask = new Float32Array(values.length);
+      flowSeedStrength = new Float32Array(values.length);
+      seedIndices = [];
+      seedCumulativeWeights = [];
+      seedWeightTotal = 0;
+      // Avoid a diffuse field of tiny basins: only peaks with meaningful
+      // upstream value-flow support may seed a renewing Gaussian.
+      const minimumFlowScore = Math.max(64, flow.maximumScore * 0.26);
+      // Prefer bright peaks whose 31px local neighborhood approaches 25% dark,
+      // 50% medium, and 25% bright. Rank candidates by target-relative Gini
+      // imbalance and retain the best half.
+      const darkNeighborhoodRadius = 15;
+      const darkValueCutoff = 0.25;
+      const brightValueCutoff = 0.75;
+      const targetValueRatios: readonly [number, number, number] = [0.25, 0.50, 0.25];
+      const valueNeighborhoodHistograms = buildValueNeighborhoodHistograms(
+        values,
+        width,
+        height,
+        darkValueCutoff,
+        brightValueCutoff,
+      );
+      const seedCandidates: SeedCandidate[] = [];
+      for (let index = 0; index < values.length; index += 1) {
+        const positiveResidual = Math.max(0, values[index] - blurredValues[index]);
+        seedMask[index] = smoothstep(0.015, 0.060, positiveResidual);
+        const score = flow.peakScores[index];
+        if (score >= minimumFlowScore) {
+          const valueRatios = neighborhoodValueRatios(
+            valueNeighborhoodHistograms,
+            width,
+            height,
+            index,
+            darkNeighborhoodRadius,
+          );
+          seedCandidates.push({
+            index,
+            score,
+            // Lower is better: zero when the neighborhood matches the target.
+            imbalance: targetRelativeGini(valueRatios, targetValueRatios),
+          });
+        }
+      }
+      seedCandidates.sort((first, second) => first.imbalance - second.imbalance || second.score - first.score);
+      const retainedSeedCandidates = seedCandidates.slice(0, Math.ceil(seedCandidates.length * 2 / 3));
+      for (const candidate of retainedSeedCandidates) {
+        const strength = Math.log1p(candidate.score) / Math.log1p(flow.maximumScore);
+        flowSeedStrength[candidate.index] = strength;
+        seedWeightTotal += 0.10 + strength * strength;
+        seedIndices.push(candidate.index);
+        seedCumulativeWeights.push(seedWeightTotal);
+      }
+      drawSeedMap();
+      const requestedGaussianCount = Math.min(156, Math.max(52, Math.round(seedIndices.length / 18)));
+      const gaussianCount = Math.min(requestedGaussianCount, Math.floor(seedIndices.length / 2));
+      gaussians = Array.from({ length: gaussianCount }, (): GleamGaussian => ({
+        x: 0,
+        y: 0,
+        sigma: 5.0,
+        amplitude: 0.22,
+        lightColor: [255, 255, 255],
+        born: 0,
+        lifetime: 1000,
+      }));
+      const now = performance.now();
+      gaussians.forEach((gaussian) => renewGaussian(gaussian, now - Math.random() * 1350));
+      canvas.dataset.gleam3SeedPixels = String(seedIndices.length);
+      canvas.dataset.gleam3SeedSource = 'value-flow';
+      canvas.dataset.gleam3FlowMaximumScore = String(flow.maximumScore);
+      canvas.dataset.gleam3MinimumFlowScore = String(minimumFlowScore);
+      canvas.dataset.gleam3ValueBalanceSeedsRemoved = String(seedCandidates.length - seedIndices.length);
+      canvas.dataset.gleam3Gaussians = String(gaussians.length);
+      canvas.dataset.gleam3MaximumEnergy = String(maximumGaussianEnergy);
+      canvas.hidden = !enabled;
+      seedMapCanvas.hidden = !seedMapVisible;
+      inverseMapCanvas.hidden = !inverseMapVisible;
+      draw(now);
+    } catch (error) {
+      sourcePixels = undefined;
+      outputPixels = undefined;
+      seedMask = undefined;
+      flowSeedStrength = undefined;
+      sourceColorIntegrals = undefined;
+      seedIndices = [];
+      seedCumulativeWeights = [];
+      gaussians = [];
+      canvas.hidden = true;
+      seedMapCanvas.hidden = true;
+      inverseMapCanvas.hidden = true;
+      canvas.dataset.gleam3SeedPixels = '0';
+      console.warn('Gleam 3 needs a same-origin or CORS-enabled image.', error);
+    }
+  }
+
+  function draw(time: number): void {
+    if (!context || !outputPixels || !seedMask || !enabled) return;
+    const variation = new Float32Array(seedMask.length);
+    const colourSums = new Float32Array(variation.length * 3);
+    for (const gaussian of gaussians) {
+      if (time - gaussian.born >= gaussian.lifetime) renewGaussian(gaussian, time);
+      const age = Math.max(0, Math.min(1, (time - gaussian.born) / gaussian.lifetime));
+      const envelope = Math.sin(Math.PI * age) ** 1.7;
+      const radius = Math.ceil(gaussian.sigma * 3.25);
+      const minX = Math.max(0, Math.floor(gaussian.x - radius));
+      const maxX = Math.min(canvas.width - 1, Math.ceil(gaussian.x + radius));
+      const minY = Math.max(0, Math.floor(gaussian.y - radius));
+      const maxY = Math.min(canvas.height - 1, Math.ceil(gaussian.y + radius));
+      const inverseTwoSigmaSquared = 1 / (2 * gaussian.sigma * gaussian.sigma);
+      for (let y = minY; y <= maxY; y += 1) {
+        for (let x = minX; x <= maxX; x += 1) {
+          const distanceSquared = (x - gaussian.x) ** 2 + (y - gaussian.y) ** 2;
+          const index = y * canvas.width + x;
+          const strength = gaussian.amplitude * envelope * Math.exp(-distanceSquared * inverseTwoSigmaSquared);
+          const colour = index * 3;
+          variation[index] += strength;
+          colourSums[colour] += strength * gaussian.lightColor[0];
+          colourSums[colour + 1] += strength * gaussian.lightColor[1];
+          colourSums[colour + 2] += strength * gaussian.lightColor[2];
+        }
+      }
+    }
+    const intensity = normaliseIntensity(frame.style.getPropertyValue('--fx-intensity'));
+    for (let index = 0; index < seedMask.length; index += 1) {
+      const pixelIndex = index * 4;
+      const cappedEnergy = Math.min(variation[index], maximumGaussianEnergy);
+      const temporalMask = 1 - Math.exp(-cappedEnergy * 1.55);
+      const alpha = seedMask[index] * temporalMask * intensity;
+      const colour = index * 3;
+      const energy = variation[index] || 1;
+      outputPixels.data[pixelIndex] = colourSums[colour] / energy;
+      outputPixels.data[pixelIndex + 1] = colourSums[colour + 1] / energy;
+      outputPixels.data[pixelIndex + 2] = colourSums[colour + 2] / energy;
+      outputPixels.data[pixelIndex + 3] = Math.round(alpha * 222);
+    }
+    context.putImageData(outputPixels, 0, 0);
+  }
+
+  image.addEventListener('load', analyse);
+  if (image.complete) analyse();
+
+  return {
+    setEnabled(nextEnabled: boolean): void {
+      enabled = nextEnabled;
+      canvas.hidden = !enabled;
+      if (enabled && !sourcePixels) analyse();
+      draw(performance.now());
+      loop.restart();
+    },
+    setPaused(nextPaused: boolean): void {
+      paused = nextPaused || prefersReducedMotion.matches;
+      draw(performance.now());
+      loop.restart();
+    },
+    setSeedMapVisible(nextVisible: boolean): void {
+      seedMapVisible = nextVisible;
+      seedMapCanvas.hidden = !seedMapVisible;
+    },
+    setInverseMapVisible(nextVisible: boolean): void {
+      inverseMapVisible = nextVisible;
+      inverseMapCanvas.hidden = !inverseMapVisible;
+    },
+    destroy(): void {
+      loop.stop();
+      image.removeEventListener('load', analyse);
+      canvas.remove();
+      seedMapCanvas.remove();
+      inverseMapCanvas.remove();
+    },
+  };
+}
+
+/** Map any continuous coordinate back into an image by mirrored reflection. */
+function mirrorCoordinate(value: number, maximum: number): number {
+  if (maximum <= 0) return 0;
+  const period = maximum * 2;
+  const wrapped = ((value % period) + period) % period;
+  return wrapped <= maximum ? wrapped : period - wrapped;
+}
+
+/** Soft, blurred copies of the source drift as slow atmospheric bubbles. */
+function createHazeLayer(frame: HTMLElement, image: HTMLImageElement): EffectLayer {
+  const canvas = createEffectCanvas(frame, 'image-effect-haze');
+  const sourceCanvas = document.createElement('canvas');
+  const bubbleCanvas = document.createElement('canvas');
+  const twistCanvas = document.createElement('canvas');
+  const twistSourceCanvas = document.createElement('canvas');
+  const context = canvas.getContext('2d');
+  const sourceContext = sourceCanvas.getContext('2d');
+  const bubbleContext = bubbleCanvas.getContext('2d');
+  const twistContext = twistCanvas.getContext('2d');
+  const twistSourceContext = twistSourceCanvas.getContext('2d', { willReadFrequently: true });
+  const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+  const bubbles: HazeBubble[] = [
+    { x: 0.25, radius: 0.11, speed: 0.000050, phase: 0.00 },
+    { x: 0.66, radius: 0.14, speed: 0.000041, phase: 0.35 },
+    { x: 0.46, radius: 0.09, speed: 0.000058, phase: 0.68 },
+    { x: 0.12, radius: 0.08, speed: 0.000053, phase: 0.13 },
+    { x: 0.84, radius: 0.12, speed: 0.000046, phase: 0.48 },
+    { x: 0.38, radius: 0.10, speed: 0.000061, phase: 0.82 },
+    { x: 0.57, radius: 0.07, speed: 0.000055, phase: 0.24 },
+    { x: 0.76, radius: 0.10, speed: 0.000044, phase: 0.59 },
+    { x: 0.21, radius: 0.09, speed: 0.000057, phase: 0.91 },
+  ];
+  let sourceReady = false;
+  let twistSourcePixels: ImageData | undefined;
+  let twistOutputPixels: ImageData | undefined;
+  let enabled = false;
+  let paused = prefersReducedMotion.matches;
+  let lastStrengthUpdate = performance.now();
+
+  const loop = createLayerLoop(
+    () => enabled && !paused,
+    (time) => draw(time),
+    42,
+  );
+
+  function analyse(): void {
+    if (!sourceContext || !image.naturalWidth) return;
+    const width = Math.min(420, image.naturalWidth);
+    const height = Math.max(1, Math.round(width * image.naturalHeight / image.naturalWidth));
+    canvas.width = sourceCanvas.width = bubbleCanvas.width = width;
+    canvas.height = sourceCanvas.height = bubbleCanvas.height = height;
+    sourceContext.clearRect(0, 0, width, height);
+    sourceContext.drawImage(image, 0, 0, width, height);
+    lastStrengthUpdate = performance.now();
+    const twistWidth = Math.min(300, width);
+    const twistHeight = Math.max(1, Math.round(twistWidth * height / width));
+    twistCanvas.width = twistSourceCanvas.width = twistWidth;
+    twistCanvas.height = twistSourceCanvas.height = twistHeight;
+    twistSourceContext?.clearRect(0, 0, twistWidth, twistHeight);
+    twistSourceContext?.drawImage(image, 0, 0, twistWidth, twistHeight);
+    try {
+      twistSourcePixels = twistSourceContext?.getImageData(0, 0, twistWidth, twistHeight);
+      twistOutputPixels = twistContext?.createImageData(twistWidth, twistHeight);
+    } catch (error) {
+      twistSourcePixels = undefined;
+      twistOutputPixels = undefined;
+      console.warn('Haze twist needs a same-origin or CORS-enabled image.', error);
+    }
+    sourceReady = true;
+    draw(performance.now());
+  }
+
+  function drawTwist(states: readonly HazeBubbleState[], intensity: number): void {
+    if (!twistContext || !twistSourcePixels || !twistOutputPixels) return;
+    const { width, height } = twistCanvas;
+    const scaleX = width / canvas.width;
+    const scaleY = height / canvas.height;
+    for (let y = 0; y < height; y += 1) {
+      for (let x = 0; x < width; x += 1) {
+        let sampleX = x;
+        let sampleY = y;
+        let opacity = 0;
+        for (let bubbleIndex = 0; bubbleIndex < states.length; bubbleIndex += 1) {
+          const state = states[bubbleIndex];
+          const centerX = state.centerX * scaleX;
+          const centerY = state.centerY * scaleY;
+          const surface = state.radius * Math.min(scaleX, scaleY);
+          const dx = x - centerX;
+          const dy = y - centerY;
+          const distance = Math.hypot(dx, dy);
+          const reach = surface * 2.75;
+          if (distance < 0.001 || distance >= reach) continue;
+          // The angular field is zero at the core, rises linearly to its
+          // maximum at the bubble surface, then decays proportionally to 1/r.
+          const peakTwist = 0.22 * intensity;
+          const vorticity = distance < surface
+            ? peakTwist * distance / surface
+            : peakTwist * surface / distance;
+          const edgeFade = 1 - smoothstep(surface * 2.15, reach, distance);
+          const signedVorticity = vorticity * edgeFade * (bubbleIndex % 2 ? -1 : 1);
+          sampleX += -dy * signedVorticity;
+          sampleY += dx * signedVorticity;
+          opacity = Math.max(opacity, signedVorticity === 0 ? 0 : Math.abs(signedVorticity) / (0.22 * intensity) * edgeFade);
+        }
+        const sourceX = Math.round(mirrorCoordinate(sampleX, width - 1));
+        const sourceY = Math.round(mirrorCoordinate(sampleY, height - 1));
+        const source = (sourceY * width + sourceX) * 4;
+        const target = (y * width + x) * 4;
+        twistOutputPixels.data[target] = twistSourcePixels.data[source];
+        twistOutputPixels.data[target + 1] = twistSourcePixels.data[source + 1];
+        twistOutputPixels.data[target + 2] = twistSourcePixels.data[source + 2];
+        twistOutputPixels.data[target + 3] = Math.round(opacity * 178);
+      }
+    }
+    twistContext.putImageData(twistOutputPixels, 0, 0);
+  }
+
+  function draw(time: number): void {
+    if (!context || !bubbleContext || !sourceReady || !enabled) return;
+    const { width, height } = canvas;
+    const intensity = normaliseIntensity(frame.style.getPropertyValue('--fx-intensity'));
+    const strengthDelta = Math.min(100, Math.max(0, time - lastStrengthUpdate));
+    const strengthMomentum = paused ? 0 : 1 - Math.exp(-strengthDelta / 550);
+    lastStrengthUpdate = time;
+    context.clearRect(0, 0, width, height);
+    const states: HazeBubbleState[] = [];
+    for (const bubble of bubbles) {
+      // Each bubble rises from below the artwork, crossing it on a repeating
+      // triangular (zigzag) course before restarting beneath the bottom edge.
+      const progress = paused ? bubble.phase : (bubble.phase + time * bubble.speed) % 1;
+      const zigzag = 1 - Math.abs(((progress * 3) % 2) - 1);
+      const centerX = width * (bubble.x + (zigzag - 0.5) * 0.32);
+      const centerY = height * (1.16 - progress * 1.32);
+      const radius = Math.min(width, height) * bubble.radius * (0.82 + intensity * 0.22);
+      let lightFactor = 1;
+      if (twistSourcePixels) {
+        const sampleX = clamp(Math.round(centerX * twistCanvas.width / width), 0, twistCanvas.width - 1);
+        const sampleY = clamp(Math.round(centerY * twistCanvas.height / height), 0, twistCanvas.height - 1);
+        let luminance = 0;
+        let samples = 0;
+        // A small local average prevents a single bright edge from causing a
+        // strength jump as the bubble passes across it.
+        for (let offsetY = -2; offsetY <= 2; offsetY += 1) {
+          for (let offsetX = -2; offsetX <= 2; offsetX += 1) {
+            const x = clamp(sampleX + offsetX, 0, twistCanvas.width - 1);
+            const y = clamp(sampleY + offsetY, 0, twistCanvas.height - 1);
+            const pixel = (y * twistCanvas.width + x) * 4;
+            luminance += (0.2126 * twistSourcePixels.data[pixel]
+              + 0.7152 * twistSourcePixels.data[pixel + 1]
+              + 0.0722 * twistSourcePixels.data[pixel + 2]) / 255;
+            samples += 1;
+          }
+        }
+        luminance /= samples;
+        // Shadows retain a quiet residual, while the effect reaches full
+        // energy only once the bubble passes through a lit part of the image.
+        const targetLightFactor = 0.16 + 0.84 * smoothstep(0.07, 0.56, luminance);
+        bubble.lightFactor = bubble.lightFactor === undefined
+          ? targetLightFactor
+          : bubble.lightFactor + (targetLightFactor - bubble.lightFactor) * strengthMomentum;
+        lightFactor = bubble.lightFactor;
+      }
+      states.push({ centerX, centerY, radius, lightFactor });
+      // Blur first, then use a very wide alpha falloff. This avoids a visible
+      // circular edge while preserving the strong, moving refraction inside.
+      bubbleContext.clearRect(0, 0, width, height);
+      bubbleContext.filter = `blur(${5 + intensity * 10}px)`;
+      bubbleContext.drawImage(sourceCanvas, -radius * 0.18, radius * 0.13, width + radius * 0.36, height - radius * 0.26);
+      bubbleContext.filter = 'none';
+      bubbleContext.globalCompositeOperation = 'destination-in';
+      const maskRadius = radius * 1.34;
+      const mask = bubbleContext.createRadialGradient(centerX, centerY, 0, centerX, centerY, maskRadius);
+      mask.addColorStop(0, 'rgba(255, 255, 255, .68)');
+      mask.addColorStop(0.34, 'rgba(255, 255, 255, .52)');
+      mask.addColorStop(0.68, 'rgba(255, 255, 255, .14)');
+      mask.addColorStop(1, 'rgba(255, 255, 255, 0)');
+      bubbleContext.fillStyle = mask;
+      bubbleContext.fillRect(0, 0, width, height);
+      bubbleContext.globalCompositeOperation = 'source-over';
+      context.save();
+      context.globalAlpha = (0.18 + intensity * 0.38) * lightFactor;
+      context.drawImage(bubbleCanvas, 0, 0);
+      context.restore();
+      const glow = context.createRadialGradient(centerX, centerY, 0, centerX, centerY, maskRadius);
+      glow.addColorStop(0, `rgba(218, 232, 255, ${0.045 + intensity * 0.11})`);
+      glow.addColorStop(0.7, `rgba(196, 215, 255, ${0.012 + intensity * 0.04})`);
+      glow.addColorStop(1, 'rgba(196, 215, 255, 0)');
+      context.fillStyle = glow;
+      context.beginPath();
+      context.arc(centerX, centerY, maskRadius, 0, Math.PI * 2);
+      context.fill();
+    }
+    drawTwist(states, intensity);
+    if (twistOutputPixels) {
+      context.save();
+      context.globalAlpha = 0.72;
+      context.drawImage(twistCanvas, 0, 0, width, height);
+      context.restore();
+    }
+  }
+
+  image.addEventListener('load', analyse);
+  if (image.complete) analyse();
+  return {
+    setEnabled(nextEnabled: boolean): void {
+      enabled = nextEnabled;
+      canvas.hidden = !enabled;
+      if (enabled && !sourceReady) analyse();
+      draw(performance.now());
+      loop.restart();
+    },
+    setPaused(nextPaused: boolean): void {
+      paused = nextPaused || prefersReducedMotion.matches;
+      draw(performance.now());
+      loop.restart();
+    },
+    destroy(): void {
+      loop.stop();
+      image.removeEventListener('load', analyse);
+      canvas.remove();
+    },
+  };
+}
+
+/**
+ * Finds connected pale highlight strokes. Each stroke receives a local progress
+ * coordinate, so one global phase sends a pulse along every detected line.
+ */
+function createTraceLayer(frame: HTMLElement, image: HTMLImageElement): TraceLayer {
+  const canvas = createEffectCanvas(frame, 'image-effect-trace');
+  const mapCanvas = createEffectCanvas(frame, 'image-effect-trace-map', true);
+
+  const sourceCanvas = document.createElement('canvas');
+  const context = canvas.getContext('2d');
+  const mapContext = mapCanvas.getContext('2d');
+  const sourceContext = sourceCanvas.getContext('2d', { willReadFrequently: true });
+  const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+  let outputPixels: ImageData | undefined;
+  let traceStrength: Float32Array | undefined;
+  let traceProgress: Float32Array | undefined;
+  let traceOrientationGroups: Int8Array | undefined;
+  let enabled = false;
+  let paused = prefersReducedMotion.matches;
+  let mapVisible = false;
+
+  const loop = createLayerLoop(
+    () => enabled && !paused,
+    (time) => draw(time),
+    34,
+  );
+
+  function analyse(): void {
+    if (!sourceContext || !image.naturalWidth) return;
+    const width = Math.min(420, image.naturalWidth);
+    const height = Math.max(1, Math.round(width * image.naturalHeight / image.naturalWidth));
+    canvas.width = mapCanvas.width = sourceCanvas.width = width;
+    canvas.height = mapCanvas.height = sourceCanvas.height = height;
+    sourceContext.clearRect(0, 0, width, height);
+    sourceContext.drawImage(image, 0, 0, width, height);
+    try {
+      const pixels = sourceContext.getImageData(0, 0, width, height);
+      const candidates = new Uint8Array(width * height);
+      const values = new Float32Array(candidates.length);
+      const saturations = new Float32Array(candidates.length);
+      for (let index = 0; index < candidates.length; index += 1) {
+        const pixel = index * 4;
+        const maximum = Math.max(pixels.data[pixel], pixels.data[pixel + 1], pixels.data[pixel + 2]) / 255;
+        const minimum = Math.min(pixels.data[pixel], pixels.data[pixel + 1], pixels.data[pixel + 2]) / 255;
+        values[index] = maximum;
+        saturations[index] = maximum > 0.001 ? (maximum - minimum) / maximum : 0;
+      }
+      const localValues = gaussianBlurValues(values, width, height, 14);
+      const relativeBrightness = new Float32Array(candidates.length);
+      for (let index = 0; index < candidates.length; index += 1) {
+        relativeBrightness[index] = Math.max(0, (values[index] - localValues[index]) / (0.08 + localValues[index]));
+      }
+      // All three gates adapt to the current image, making a pale line in a
+      // low-key scene as eligible as a pale line in a bright illustration.
+      const brightCutoff = histogramPercentile(values, 0.72);
+      const relativeBrightnessCutoff = Math.max(0.018, histogramPercentile(relativeBrightness, 0.70, 2));
+      const saturationCutoff = Math.min(0.46, histogramPercentile(saturations, 0.46) + 0.055);
+      for (let index = 0; index < candidates.length; index += 1) {
+        candidates[index] = values[index] >= brightCutoff
+          && relativeBrightness[index] >= relativeBrightnessCutoff
+          && saturations[index] <= saturationCutoff ? 1 : 0;
+      }
+      const nextTraceStrength = new Float32Array(candidates.length);
+      const nextTraceProgress = new Float32Array(candidates.length);
+      const nextTraceOrientationGroups = new Int8Array(candidates.length);
+      nextTraceOrientationGroups.fill(-1);
+      const orientationGroupCount = 4;
+      const orientationGroupSizes = new Uint32Array(orientationGroupCount);
+      const visited = new Uint8Array(candidates.length);
+      let lineCount = 0;
+      for (let start = 0; start < candidates.length; start += 1) {
+        if (!candidates[start] || visited[start]) continue;
+        const component: number[] = [];
+        const queue: number[] = [start];
+        visited[start] = 1;
+        for (let head = 0; head < queue.length; head += 1) {
+          const index = queue[head];
+          component.push(index);
+          const x = index % width;
+          const y = Math.floor(index / width);
+          for (let dy = -1; dy <= 1; dy += 1) {
+            for (let dx = -1; dx <= 1; dx += 1) {
+              const nextX = x + dx;
+              const nextY = y + dy;
+              if ((dx || dy) && nextX >= 0 && nextX < width && nextY >= 0 && nextY < height) {
+                const next = nextY * width + nextX;
+                if (candidates[next] && !visited[next]) {
+                  visited[next] = 1;
+                  queue.push(next);
+                }
+              }
+            }
+          }
+        }
+        if (component.length < 14) continue;
+        let meanX = 0;
+        let meanY = 0;
+        for (const index of component) {
+          meanX += index % width;
+          meanY += Math.floor(index / width);
+        }
+        meanX /= component.length;
+        meanY /= component.length;
+        let xx = 0;
+        let yy = 0;
+        let xy = 0;
+        for (const index of component) {
+          const dx = index % width - meanX;
+          const dy = Math.floor(index / width) - meanY;
+          xx += dx * dx;
+          yy += dy * dy;
+          xy += dx * dy;
+        }
+        const angle = 0.5 * Math.atan2(2 * xy, xx - yy);
+        const axisX = Math.cos(angle);
+        const axisY = Math.sin(angle);
+        const major = Math.max(xx, yy) / component.length;
+        const minor = Math.max(0.0001, Math.min(xx, yy) / component.length);
+        if (major / minor < 1.55) continue;
+        let minimumProjection = Infinity;
+        let maximumProjection = -Infinity;
+        for (const index of component) {
+          const projection = (index % width - meanX) * axisX + (Math.floor(index / width) - meanY) * axisY;
+          minimumProjection = Math.min(minimumProjection, projection);
+          maximumProjection = Math.max(maximumProjection, projection);
+        }
+        if (maximumProjection - minimumProjection < 7) continue;
+        // PCA gives the stroke an axis but not a direction. Recover that
+        // direction from the component's aggregate brightness gradient, so
+        // travel always heads from the darker end toward the brighter end.
+        let meanProjection = 0;
+        let meanBrightness = 0;
+        for (const index of component) {
+          meanProjection += (index % width - meanX) * axisX + (Math.floor(index / width) - meanY) * axisY;
+          meanBrightness += values[index];
+        }
+        meanProjection /= component.length;
+        meanBrightness /= component.length;
+        let brightnessGradient = 0;
+        for (const index of component) {
+          const projection = (index % width - meanX) * axisX + (Math.floor(index / width) - meanY) * axisY;
+          brightnessGradient += (projection - meanProjection) * (values[index] - meanBrightness);
+        }
+        const risesWithProjection = brightnessGradient >= 0;
+        // Unlike the geometric line axis, a brightness gradient has an
+        // actual heading. Keep the full 360° range, so two otherwise parallel
+        // regions moving in opposite directions belong to separate families.
+        const directedOrientation = ((angle + (risesWithProjection ? 0 : Math.PI)) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2);
+        const orientationGroup = clamp(Math.floor(directedOrientation / (Math.PI * 2) * orientationGroupCount), 0, orientationGroupCount - 1);
+        for (const index of component) {
+          const projection = (index % width - meanX) * axisX + (Math.floor(index / width) - meanY) * axisY;
+          const normalizedProgress = (projection - minimumProjection) / (maximumProjection - minimumProjection);
+          nextTraceProgress[index] = risesWithProjection ? normalizedProgress : 1 - normalizedProgress;
+          nextTraceStrength[index] = 1;
+          nextTraceOrientationGroups[index] = orientationGroup;
+          orientationGroupSizes[orientationGroup] += 1;
+        }
+        lineCount += 1;
+      }
+      traceStrength = nextTraceStrength;
+      traceProgress = nextTraceProgress;
+      traceOrientationGroups = nextTraceOrientationGroups;
+      outputPixels = context?.createImageData(width, height);
+      if (mapContext) {
+        const map = mapContext.createImageData(width, height);
+        const colours: ReadonlyArray<readonly [number, number, number]> = [
+          [105, 236, 255],
+          [152, 255, 166],
+          [255, 202, 105],
+          [226, 145, 255],
+        ];
+        for (let index = 0; index < nextTraceStrength.length; index += 1) {
+          const pixel = index * 4;
+          if (nextTraceStrength[index]) {
+            const group = nextTraceOrientationGroups[index];
+            map.data[pixel] = colours[group][0];
+            map.data[pixel + 1] = colours[group][1];
+            map.data[pixel + 2] = colours[group][2];
+            map.data[pixel + 3] = 230;
+          } else {
+            map.data[pixel] = pixels.data[pixel] * 0.12;
+            map.data[pixel + 1] = pixels.data[pixel + 1] * 0.12;
+            map.data[pixel + 2] = pixels.data[pixel + 2] * 0.12;
+            map.data[pixel + 3] = 255;
+          }
+        }
+        mapContext.putImageData(map, 0, 0);
+      }
+      canvas.dataset.traceLineCount = String(lineCount);
+      canvas.dataset.tracePixels = String(nextTraceStrength.reduce((total, strength) => total + (strength ? 1 : 0), 0));
+      canvas.dataset.traceBrightCutoff = brightCutoff.toFixed(3);
+      canvas.dataset.traceRelativeBrightnessCutoff = relativeBrightnessCutoff.toFixed(3);
+      canvas.dataset.traceSaturationCutoff = saturationCutoff.toFixed(3);
+      canvas.dataset.traceOrientationGroups = Array.from(orientationGroupSizes).join(',');
+      canvas.dataset.traceBrightnessDirected = 'true';
+      canvas.hidden = !enabled;
+      mapCanvas.hidden = !mapVisible;
+      draw(performance.now());
+    } catch (error) {
+      traceStrength = undefined;
+      traceProgress = undefined;
+      traceOrientationGroups = undefined;
+      outputPixels = undefined;
+      canvas.hidden = true;
+      mapCanvas.hidden = true;
+      console.warn('Light trace needs a same-origin or CORS-enabled image.', error);
+    }
+  }
+
+  function draw(time: number): void {
+    if (!context || !outputPixels || !traceStrength || !traceProgress || !traceOrientationGroups || !enabled) return;
+    const intensity = normaliseIntensity(frame.style.getPropertyValue('--fx-intensity'));
+    const orientationGroupCount = 4;
+    const sweepDuration = 2000;
+    const fadeDuration = 260;
+    const deadDuration = 1480;
+    const orientationSlotDuration = sweepDuration + fadeDuration * 2 + deadDuration;
+    const orientationCycleTime = paused ? 0 : time % (orientationSlotDuration * orientationGroupCount);
+    const activeOrientationGroup = paused ? 0 : Math.floor(orientationCycleTime / orientationSlotDuration);
+    const slotTime = paused ? 0 : orientationCycleTime - activeOrientationGroup * orientationSlotDuration;
+    let phase = 0.26;
+    let pulseEnvelope = 1;
+    if (!paused) {
+      if (slotTime < fadeDuration) {
+        phase = 0;
+        pulseEnvelope = slotTime / fadeDuration;
+      } else if (slotTime < fadeDuration + sweepDuration) {
+        phase = (slotTime - fadeDuration) / sweepDuration;
+      } else if (slotTime < fadeDuration * 2 + sweepDuration) {
+        phase = 1;
+        pulseEnvelope = 1 - (slotTime - fadeDuration - sweepDuration) / fadeDuration;
+      } else {
+        // Leave a clear beat of darkness between orientation families.
+        phase = 0;
+        pulseEnvelope = 0;
+      }
+    }
+    for (let index = 0; index < traceStrength.length; index += 1) {
+      const pixel = index * 4;
+      const distance = Math.abs(traceProgress[index] - phase);
+      // Trace paths are directional for this animation: reaching one end must
+      // not wrap the pulse around and flash the path's starting point.
+      const pulse = Math.exp(-(distance * distance) / 0.0019);
+      outputPixels.data[pixel] = 255;
+      outputPixels.data[pixel + 1] = 253;
+      outputPixels.data[pixel + 2] = 246;
+      const orientationIsActive = traceOrientationGroups[index] === activeOrientationGroup;
+      outputPixels.data[pixel + 3] = Math.round(traceStrength[index] * pulse * intensity * pulseEnvelope * (orientationIsActive ? 255 : 0));
+    }
+    context.putImageData(outputPixels, 0, 0);
+  }
+
+  image.addEventListener('load', analyse);
+  if (image.complete) analyse();
+  return {
+    setEnabled(nextEnabled: boolean): void {
+      enabled = nextEnabled;
+      canvas.hidden = !enabled;
+      if (enabled && !traceStrength) analyse();
+      draw(performance.now());
+      loop.restart();
+    },
+    setPaused(nextPaused: boolean): void {
+      paused = nextPaused || prefersReducedMotion.matches;
+      draw(performance.now());
+      loop.restart();
+    },
+    setMapVisible(nextVisible: boolean): void {
+      mapVisible = nextVisible;
+      mapCanvas.hidden = !mapVisible;
+    },
+    destroy(): void {
+      loop.stop();
+      image.removeEventListener('load', analyse);
+      canvas.remove();
+      mapCanvas.remove();
+    },
+  };
+}
+
+/** Attach a non-destructive animated treatment around an existing image element. */
+export function attachImageEffect(
+  image: HTMLImageElement,
+  options: AttachImageEffectOptions = {},
+): ImageEffectController {
+  if (!(image instanceof HTMLImageElement)) {
+    throw new TypeError('attachImageEffect expects an HTMLImageElement.');
+  }
+
+  const { effect = 'gleam3', intensity = 0.72 } = options;
+  const existingFrame = image.closest<HTMLElement>('.image-effect-frame');
+  let frame: HTMLElement;
+  if (existingFrame) {
+    frame = existingFrame;
+  } else {
+    const parent = image.parentNode;
+    if (!parent) {
+      throw new TypeError('attachImageEffect expects an image element attached to a parent node.');
+    }
+    frame = document.createElement('div');
+    frame.className = 'image-effect-frame';
+    parent.insertBefore(frame, image);
+    frame.appendChild(image);
+  }
+
+  image.classList.add('image-effect-source');
+  const luminanceLayer = createLuminanceLayer(frame, image);
+  const fourierShadowLayer = createFourierShadowLayer(frame, image);
+  const periodicLightLayer = createPeriodicLightLayer(frame, image);
+  const starTwinkleLayer = createStarTwinkleLayer(frame, image);
+  const gleam3Layer = createGleam3Layer(frame, image);
+  const hazeLayer = createHazeLayer(frame, image);
+  const traceLayer = createTraceLayer(frame, image);
+
+  const apply = (nextEffect: string = effect, nextIntensity: string | number = intensity): void => {
+    const definition = IMAGE_EFFECTS[nextEffect] || IMAGE_EFFECTS.gleam3;
+    const resolvedIntensity = normaliseIntensity(nextIntensity);
+    frame.classList.remove(...ALL_EFFECT_CLASSES);
+    frame.classList.add(...definition.classes);
+    frame.dataset.effect = nextEffect;
+    frame.style.setProperty('--fx-intensity', String(resolvedIntensity));
+    luminanceLayer.setEnabled(definition.classes.includes('fx-luminance'));
+    fourierShadowLayer.setEnabled(definition.classes.includes('fx-fourier-shadows'));
+    periodicLightLayer.setEnabled(definition.classes.includes('fx-periodic-light'));
+    starTwinkleLayer.setEnabled(definition.classes.includes('fx-star-twinkle'));
+    gleam3Layer.setEnabled(definition.classes.includes('fx-gleam3'));
+    hazeLayer.setEnabled(definition.classes.includes('fx-haze'));
+    traceLayer.setEnabled(definition.classes.includes('fx-trace'));
+  };
+
+  apply(effect, intensity);
+  return {
+    element: frame,
+    setEffect(nextEffect: string): void {
+      apply(nextEffect, frame.style.getPropertyValue('--fx-intensity'));
+    },
+    setIntensity(nextIntensity: number): void {
+      apply(frame.dataset.effect, nextIntensity);
+    },
+    setPaused(isPaused: boolean): void {
+      luminanceLayer.setPaused(isPaused);
+      fourierShadowLayer.setPaused(isPaused);
+      periodicLightLayer.setPaused(isPaused);
+      starTwinkleLayer.setPaused(isPaused);
+      gleam3Layer.setPaused(isPaused);
+      hazeLayer.setPaused(isPaused);
+      traceLayer.setPaused(isPaused);
+    },
+    setInverseBlurMapVisible(isVisible: boolean): void {
+      gleam3Layer.setInverseMapVisible(isVisible);
+    },
+    setGleam3SeedMapVisible(isVisible: boolean): void {
+      gleam3Layer.setSeedMapVisible(isVisible);
+    },
+    setTraceMapVisible(isVisible: boolean): void {
+      traceLayer.setMapVisible(isVisible);
+    },
+    destroy(): void {
+      frame.classList.remove(...ALL_EFFECT_CLASSES);
+      frame.style.removeProperty('--fx-intensity');
+      luminanceLayer.destroy();
+      fourierShadowLayer.destroy();
+      periodicLightLayer.destroy();
+      starTwinkleLayer.destroy();
+      gleam3Layer.destroy();
+      hazeLayer.destroy();
+      traceLayer.destroy();
+    },
+  };
+}
