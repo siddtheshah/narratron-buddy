@@ -1,7 +1,10 @@
 import { createAgentActivityController } from "/static/generated/canvas/agent-activity.js";
 import { createCanvasAssetManager } from "/static/generated/canvas/asset-manager.js";
 import { createCollabBarController } from "/static/generated/canvas/collab-bar.js";
+import { createCornerPanels } from "/static/generated/canvas/corner-panels.js";
 import { createLayoutResizeController } from "/static/generated/canvas/layout-resize.js";
+import { createMicConfigController } from "/static/generated/canvas/mic-config.js";
+import { createMusicPlayer, MUSIC_MUTED_STORAGE_KEY } from "/static/generated/canvas/music-player.js";
 import { createCanvasPinControl } from "/static/generated/canvas/pin-control.js";
 import { createSpeechReplayControls } from "/static/generated/canvas/speech-replay.js";
 import {
@@ -104,535 +107,24 @@ import { startCanvasStatePolling } from "/static/generated/canvas/state-polling.
             window.location.reload();
         };
 
-        // Scene Suggestions Hover & Element Fingerprint Caching Logic
-        (function initSuggestionsHandler() {
-            const btn = document.getElementById('suggestions-toggle-btn');
-            const list = document.getElementById('suggestions-list');
-            const loading = document.getElementById('suggestions-loading');
-            if (!btn || !list || !loading) return;
-
-            let cachedSuggestions = null;
-            let cachedFingerprint = null;
-            let isFetching = false;
-
-            function escapeHtml(str) {
-                return String(str)
-                    .replace(/&/g, '&amp;')
-                    .replace(/</g, '&lt;')
-                    .replace(/>/g, '&gt;')
-                    .replace(/"/g, '&quot;');
-            }
-
-            function renderSuggestions(items) {
-                if (!items || items.length === 0) {
-                    list.innerHTML = '<div style="font-size: 0.78rem; color: #94a3b8;">No suggestions available right now.</div>';
-                    return;
-                }
-                list.innerHTML = items.map(item => `
-                    <div class="suggestion-card">
-                        <div class="suggestion-card-header">
-                            <span class="suggestion-card-title">${escapeHtml(item.title || '')}</span>
-                            <span class="suggestion-card-badge">${escapeHtml(item.category || 'Idea')}</span>
-                        </div>
-                        <div class="suggestion-card-desc">${escapeHtml(item.description || '')}</div>
-                    </div>
-                `).join('');
-            }
-
-            async function triggerSuggestionsFetch() {
-                if (isFetching) return;
-                isFetching = true;
-
-                if (!cachedSuggestions) {
-                    loading.style.display = 'flex';
-                    list.style.display = 'none';
-                }
-
-                try {
-                    let currentTheaterId = new URLSearchParams(window.location.search).get('theater_id');
-                    if (!currentTheaterId && typeof theaterId !== 'undefined' && theaterId) {
-                        currentTheaterId = theaterId;
-                    }
-                    if (!currentTheaterId) {
-                        const pathParts = window.location.pathname.split('/').filter(Boolean);
-                        if (pathParts.length >= 2 && pathParts[0] === 'theaters') {
-                            currentTheaterId = pathParts[1];
-                        }
-                    }
-                    if (!currentTheaterId) {
-                        console.warn('Cannot fetch suggestions: theater_id missing.');
-                        if (!cachedSuggestions) {
-                            list.innerHTML = '<div style="font-size: 0.78rem; color: #cbd5e1;">Launch a theater to view suggestions.</div>';
-                        }
-                        return;
-                    }
-
-                    const response = await fetch(`/theaters/${encodeURIComponent(currentTheaterId)}/suggestions`);
-                    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-                    const data = await response.json();
-
-                    const newFingerprint = data.elements_fingerprint || '';
-                    const newSuggestions = data.suggestions || [];
-
-                    // Keep suggestions cached until elements update (fingerprint changes)
-                    if (!cachedSuggestions || newFingerprint !== cachedFingerprint) {
-                        cachedSuggestions = newSuggestions;
-                        cachedFingerprint = newFingerprint;
-                    }
-                    renderSuggestions(cachedSuggestions);
-                } catch (err) {
-                    console.error('Failed to load suggestions:', err);
-                    if (!cachedSuggestions) {
-                        list.innerHTML = '<div style="font-size: 0.78rem; color: #ef4444;">Unable to generate suggestions at this time.</div>';
-                    }
-                } finally {
-                    isFetching = false;
-                    loading.style.display = 'none';
-                    list.style.display = 'flex';
-                }
-            }
-
-            btn.addEventListener('pointerdown', (e) => e.stopPropagation());
-            btn.addEventListener('mousedown', (e) => e.stopPropagation());
-            btn.addEventListener('mouseenter', () => {
-                btn.classList.add('expanded');
-                triggerSuggestionsFetch();
-            });
-
-            btn.addEventListener('mouseleave', () => {
-                btn.classList.remove('expanded');
-            });
-        })();
-
-        // Story Planning Sticky Notes Hover Handler
-        (function initStickyNotesHandler() {
-            const btn = document.getElementById('sticky-notes-toggle-btn');
-            const list = document.getElementById('sticky-notes-list');
-            const loading = document.getElementById('sticky-notes-loading');
-            const badge = document.getElementById('sticky-notes-count-badge');
-            if (!btn || !list || !loading) return;
-
-            let cachedNotes = null;
-            let cachedHidden = [];
-            let hiddenRevealed = false;
-            let isFetching = false;
-            let isPinned = false;
-            const STICKIES_REVEAL_CACHE_TIMEOUT_MS = 60 * 60 * 1000; // 1 hour
-
-            function getStickiesRevealedCacheKey(tid) {
-                return `narratron_stickies_revealed:${tid || 'default'}`;
-            }
-
-            function isStickiesRevealedInCache(tid) {
-                try {
-                    const key = getStickiesRevealedCacheKey(tid);
-                    const raw = localStorage.getItem(key);
-                    if (!raw) return false;
-                    const parsed = JSON.parse(raw);
-                    if (parsed && typeof parsed === 'object') {
-                        if (typeof parsed.expiresAt === 'number' && Date.now() > parsed.expiresAt) {
-                            localStorage.removeItem(key);
-                            return false;
-                        }
-                        return Boolean(parsed.revealed);
-                    }
-                    if (typeof parsed === 'number') {
-                        if (Date.now() > parsed) {
-                            localStorage.removeItem(key);
-                            return false;
-                        }
-                        return true;
-                    }
-                } catch (_) { }
-                return false;
-            }
-
-            function setStickiesRevealedInCache(tid, revealed) {
-                try {
-                    const key = getStickiesRevealedCacheKey(tid);
-                    if (!revealed) {
-                        localStorage.removeItem(key);
-                        return;
-                    }
-                    const payload = {
-                        revealed: true,
-                        revealedAt: Date.now(),
-                        expiresAt: Date.now() + STICKIES_REVEAL_CACHE_TIMEOUT_MS
-                    };
-                    localStorage.setItem(key, JSON.stringify(payload));
-                } catch (_) { }
-            }
-
-            function isHiddenRevealed() {
-                const tid = resolveTheaterId();
-                if (isStickiesRevealedInCache(tid)) {
-                    return true;
-                }
-                return Boolean(hiddenRevealed);
-            }
-
-            function escapeHtml(str) {
-                return String(str)
-                    .replace(/&/g, '&amp;')
-                    .replace(/</g, '&lt;')
-                    .replace(/>/g, '&gt;')
-                    .replace(/"/g, '&quot;');
-            }
-
-            function isHiddenItem(item, hiddenSet) {
-                if (!item) return false;
-                if (item.hidden === true || item.is_hidden === true) return true;
-                const rawTopic = String(item.topic || item.name || '').trim().toLowerCase();
-                if (!rawTopic) return false;
-                if (hiddenSet.has(rawTopic)) return true;
-                const normalized = rawTopic.replace(/[_\s-]+/g, ' ');
-                for (const h of hiddenSet) {
-                    if (h.replace(/[_\s-]+/g, ' ') === normalized) return true;
-                }
-                return false;
-            }
-
-            function areNotesEqual(a, b) {
-                if (a === b) return true;
-                if (!Array.isArray(a) || !Array.isArray(b)) return false;
-                if (a.length !== b.length) return false;
-                for (let i = 0; i < a.length; i++) {
-                    const x = a[i], y = b[i];
-                    if (!x || !y) return false;
-                    if ((x.topic || x.name) !== (y.topic || y.name)) return false;
-                    if ((x.info || x.content) !== (y.info || y.content)) return false;
-                    if (Boolean(x.hidden || x.is_hidden) !== Boolean(y.hidden || y.is_hidden)) return false;
-                }
-                return true;
-            }
-
-            function areHiddenEqual(a, b) {
-                if (a === b) return true;
-                if (!Array.isArray(a) || !Array.isArray(b)) return false;
-                if (a.length !== b.length) return false;
-                const sA = new Set(a.map(x => String(typeof x === 'object' && x ? (x.topic || x.name || '') : x).trim().toLowerCase()));
-                const sB = new Set(b.map(x => String(typeof x === 'object' && x ? (x.topic || x.name || '') : x).trim().toLowerCase()));
-                if (sA.size !== sB.size) return false;
-                for (const item of sA) {
-                    if (!sB.has(item)) return false;
-                }
-                return true;
-            }
-
-            function renderStickyNotes(items, hiddenList) {
-                if (Array.isArray(items)) {
-                    cachedNotes = items;
-                }
-                if (Array.isArray(hiddenList) && hiddenList.length > 0) {
-                    cachedHidden = hiddenList;
-                }
-
-                const notes = cachedNotes || [];
-                const hiddenSet = new Set(
-                    (cachedHidden || []).map(h => {
-                        const val = typeof h === 'object' && h !== null ? (h.topic || h.name || '') : h;
-                        return String(val).trim().toLowerCase();
-                    }).filter(Boolean)
-                );
-
-                const visibleItems = [];
-                const hiddenItems = [];
-
-                for (const item of notes) {
-                    if (isHiddenItem(item, hiddenSet)) {
-                        hiddenItems.push(item);
-                    } else {
-                        visibleItems.push(item);
-                    }
-                }
-
-                const isRevealed = isHiddenRevealed();
-
-                if (badge) {
-                    if (notes.length > 0) {
-                        const countText = isRevealed
-                            ? String(notes.length)
-                            : (visibleItems.length > 0 ? String(visibleItems.length) : (hiddenItems.length > 0 ? `${hiddenItems.length} 🔒` : '0'));
-                        badge.textContent = countText;
-                        badge.style.display = 'inline-block';
-                    } else {
-                        badge.style.display = 'none';
-                    }
-                }
-
-                if (notes.length === 0) {
-                    list.innerHTML = '<div style="font-size: 0.78rem; color: #94a3b8;">No sticky notes active for this scene.</div>';
-                    return;
-                }
-
-                let html = '';
-
-                if (visibleItems.length === 0 && hiddenItems.length > 0) {
-                    html += '<div style="font-size: 0.78rem; color: #94a3b8; font-style: italic;">No standard sticky notes active.</div>';
-                } else {
-                    html += visibleItems.map(item => `
-                        <div class="sticky-note-card">
-                            <div class="sticky-note-card-header">
-                                <span class="sticky-note-card-topic">${escapeHtml(item.topic || item.name || '')}</span>
-                            </div>
-                            <div class="sticky-note-card-info">${escapeHtml(item.info || item.content || '')}</div>
-                        </div>
-                    `).join('');
-                }
-
-                if (hiddenItems.length > 0) {
-                    const count = hiddenItems.length;
-                    const label = isRevealed
-                        ? `🙈 Hide ${count} hidden sticky${count > 1 ? ' notes' : ' note'}`
-                        : `👁️ Show ${count} hidden sticky${count > 1 ? ' notes' : ' note'}`;
-                    const btnClass = isRevealed
-                        ? 'sticky-notes-hidden-toggle-btn revealed'
-                        : 'sticky-notes-hidden-toggle-btn';
-                    const containerDisplay = isRevealed ? 'flex' : 'none';
-
-                    html += `
-                        <div class="sticky-notes-hidden-section">
-                            <button type="button" id="sticky-notes-hidden-toggle-btn" class="${btnClass}" title="Toggle reveal of hidden stickies">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                    ${isRevealed
-                            ? '<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/>'
-                            : '<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/>'
-                        }
-                                </svg>
-                                <span class="sticky-notes-hidden-toggle-text">${label}</span>
-                            </button>
-                            <div id="sticky-notes-hidden-container" class="sticky-notes-hidden-container" style="display: ${containerDisplay};">
-                                ${hiddenItems.map(item => `
-                                    <div class="sticky-note-card is-hidden-sticky">
-                                        <div class="sticky-note-card-header">
-                                            <span class="sticky-note-card-topic">
-                                                ${escapeHtml(item.topic || item.name || '')}
-                                                <span class="sticky-note-hidden-badge">Hidden</span>
-                                            </span>
-                                        </div>
-                                        <div class="sticky-note-card-info">${escapeHtml(item.info || item.content || '')}</div>
-                                    </div>
-                                `).join('')}
-                            </div>
-                        </div>
-                    `;
-                }
-
-                list.innerHTML = html;
-
-                const toggleBtn = document.getElementById('sticky-notes-hidden-toggle-btn');
-                if (toggleBtn) {
-                    toggleBtn.addEventListener('click', (e) => {
-                        e.stopPropagation();
-                        e.preventDefault();
-                        const nextRevealed = !isHiddenRevealed();
-                        hiddenRevealed = nextRevealed;
-                        setStickiesRevealedInCache(resolveTheaterId(), nextRevealed);
-                        renderStickyNotes(cachedNotes, cachedHidden);
-                        if (nextRevealed) {
-                            const hiddenContainer = document.getElementById('sticky-notes-hidden-container');
-                            if (hiddenContainer) {
-                                hiddenContainer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-                            }
-                        }
-                    });
-                }
-            }
-
-            function resolveTheaterId() {
-                try {
-                    const sp = new URLSearchParams(window.location.search);
-                    const tid = sp.get('theater_id');
-                    if (tid) return tid;
-                } catch (_) { }
-                if (typeof window !== 'undefined') {
-                    if (window.currenttheaterId) return window.currenttheaterId;
-                    if (window.theaterId) return window.theaterId;
-                }
-                try {
-                    const pathParts = window.location.pathname.split('/').filter(Boolean);
-                    if (pathParts.length >= 2 && pathParts[0] === 'theaters') {
-                        return pathParts[1];
-                    }
-                } catch (_) { }
-                return null;
-            }
-
-            async function triggerStickyNotesFetch() {
-                if (isFetching) return;
-                isFetching = true;
-
-                if (!cachedNotes) {
-                    loading.style.display = 'flex';
-                    list.style.display = 'none';
-                }
-
-                try {
-                    const currentTheaterId = resolveTheaterId();
-                    if (!currentTheaterId) {
-                        return;
-                    }
-
-                    let joinKey = '';
-                    try {
-                        joinKey = new URLSearchParams(window.location.search).get('join_key') || '';
-                    } catch (_) { }
-                    const query = joinKey ? `?join_key=${encodeURIComponent(joinKey)}` : '';
-                    let response = null;
-                    try {
-                        response = await fetch(`/theaters/${encodeURIComponent(currentTheaterId)}/sticky-notes${query}`);
-                    } catch (_) { }
-
-                    if (!response || !response.ok) {
-                        try {
-                            const apiQuery = `theater_id=${encodeURIComponent(currentTheaterId)}${joinKey ? `&join_key=${encodeURIComponent(joinKey)}` : ''}`;
-                            response = await fetch(`/api/sticky-notes?${apiQuery}`);
-                        } catch (_) { }
-                    }
-
-                    if (response && response.ok) {
-                        const data = await response.json();
-                        let notesChanged = false;
-                        let hiddenChanged = false;
-                        if (Array.isArray(data.sticky_notes)) {
-                            if (!areNotesEqual(cachedNotes, data.sticky_notes)) {
-                                cachedNotes = data.sticky_notes;
-                                notesChanged = true;
-                            }
-                        }
-                        if (Array.isArray(data.hidden_stickies) && data.hidden_stickies.length > 0) {
-                            if (!areHiddenEqual(cachedHidden, data.hidden_stickies)) {
-                                cachedHidden = data.hidden_stickies;
-                                hiddenChanged = true;
-                            }
-                        }
-                        if (notesChanged || hiddenChanged || !list.hasChildNodes()) {
-                            renderStickyNotes(cachedNotes, cachedHidden);
-                        }
-                    }
-                } catch (err) {
-                    console.error('Failed to load sticky notes:', err);
-                    if (!cachedNotes) {
-                        list.innerHTML = '<div style="font-size: 0.78rem; color: #ef4444;">Unable to load sticky notes at this time.</div>';
-                    }
-                } finally {
-                    isFetching = false;
-                    loading.style.display = 'none';
-                    list.style.display = 'flex';
-                }
-            }
-
-            window.updateCanvasStickyNotes = function (notes, hidden) {
-                let notesChanged = false;
-                let hiddenChanged = false;
-
-                if (Array.isArray(notes)) {
-                    if (!areNotesEqual(cachedNotes, notes)) {
-                        cachedNotes = notes;
-                        notesChanged = true;
-                    }
-                }
-                if (Array.isArray(hidden) && hidden.length > 0) {
-                    if (!areHiddenEqual(cachedHidden, hidden)) {
-                        cachedHidden = hidden;
-                        hiddenChanged = true;
-                    }
-                }
-
-                if (notesChanged || hiddenChanged || !list.hasChildNodes()) {
-                    renderStickyNotes(cachedNotes, cachedHidden);
-                }
-            };
-
-            window.isStickiesRevealedInCache = isStickiesRevealedInCache;
-            window.setStickiesRevealedInCache = setStickiesRevealedInCache;
-            window.STICKIES_REVEAL_CACHE_TIMEOUT_MS = STICKIES_REVEAL_CACHE_TIMEOUT_MS;
-
-            btn.addEventListener('pointerdown', (e) => e.stopPropagation());
-            btn.addEventListener('mousedown', (e) => e.stopPropagation());
-
-            let leaveTimeout = null;
-            btn.addEventListener('mouseenter', () => {
-                if (leaveTimeout) {
-                    clearTimeout(leaveTimeout);
-                    leaveTimeout = null;
-                }
-                btn.classList.add('expanded');
-                triggerStickyNotesFetch();
-            });
-
-            btn.addEventListener('mouseleave', () => {
-                if (!isPinned) {
-                    if (leaveTimeout) clearTimeout(leaveTimeout);
-                    leaveTimeout = setTimeout(() => {
-                        if (!isPinned) {
-                            btn.classList.remove('expanded');
-                        }
-                        leaveTimeout = null;
-                    }, 250);
-                }
-            });
-
-            btn.addEventListener('click', (e) => {
-                if (e.target.closest('#sticky-notes-hidden-toggle-btn') || e.target.closest('.sticky-note-card')) {
-                    return;
-                }
-                isPinned = !isPinned;
-                btn.classList.toggle('expanded', isPinned);
-                if (isPinned) {
-                    triggerStickyNotesFetch();
-                }
-            });
-
-            // Initial fetch to load sticky notes and hidden configuration on canvas load
-            triggerStickyNotesFetch();
-        })();
-
-        // Hide All Text On Canvas Button Logic
-        (function initHideCanvasTextHandler() {
-            const btn = document.getElementById('hide-canvas-text-btn');
-            const imgContainer = document.getElementById('image-container');
-            if (!btn || !imgContainer) return;
-
-            const storageKey = 'narratron-hide-canvas-text';
-            let isHidden = false;
-
-            function setCanvasTextHidden(hidden, persist = true) {
-                isHidden = Boolean(hidden);
-                imgContainer.classList.toggle('hide-canvas-text', isHidden);
-                btn.classList.toggle('active', isHidden);
-                btn.setAttribute('aria-pressed', String(isHidden));
-                btn.title = isHidden ? 'Show all text on canvas' : 'Hide all text on canvas';
-                btn.setAttribute('aria-label', isHidden ? 'Show all text on canvas' : 'Hide all text on canvas');
-
-                const visibleIcon = btn.querySelector('.hide-text-icon-visible');
-                const hiddenIcon = btn.querySelector('.hide-text-icon-hidden');
-                if (visibleIcon) visibleIcon.style.display = isHidden ? 'none' : 'block';
-                if (hiddenIcon) hiddenIcon.style.display = isHidden ? 'block' : 'none';
-
-                if (persist) {
-                    try {
-                        localStorage.setItem(storageKey, String(isHidden));
-                    } catch (_) {}
-                }
-            }
-
-            btn.addEventListener('pointerdown', (e) => e.stopPropagation());
-            btn.addEventListener('mousedown', (e) => e.stopPropagation());
-            btn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                setCanvasTextHidden(!isHidden);
-            });
-
-            // Restore user's saved preference
-            try {
-                if (localStorage.getItem(storageKey) === 'true') {
-                    setCanvasTextHidden(true, false);
-                }
-            } catch (_) {}
-
-            window.setCanvasTextHidden = setCanvasTextHidden;
-        })();
+        // Corner panels: Scene Suggestions, Story Sticky Notes, and Hide Canvas Text
+        const cornerPanels = createCornerPanels({
+            getTheaterId: () => (typeof theaterId !== 'undefined' ? theaterId : null),
+            suggestionsButton: document.getElementById('suggestions-toggle-btn'),
+            suggestionsList: document.getElementById('suggestions-list'),
+            suggestionsLoading: document.getElementById('suggestions-loading'),
+            stickyNotesButton: document.getElementById('sticky-notes-toggle-btn'),
+            stickyNotesList: document.getElementById('sticky-notes-list'),
+            stickyNotesLoading: document.getElementById('sticky-notes-loading'),
+            stickyNotesBadge: document.getElementById('sticky-notes-count-badge'),
+            hideCanvasTextButton: document.getElementById('hide-canvas-text-btn'),
+            imageContainer: document.getElementById('image-container'),
+        });
+        window.updateCanvasStickyNotes = cornerPanels.updateCanvasStickyNotes;
+        window.isStickiesRevealedInCache = cornerPanels.isStickiesRevealedInCache;
+        window.setStickiesRevealedInCache = cornerPanels.setStickiesRevealedInCache;
+        window.STICKIES_REVEAL_CACHE_TIMEOUT_MS = cornerPanels.STICKIES_REVEAL_CACHE_TIMEOUT_MS;
+        window.setCanvasTextHidden = cornerPanels.setCanvasTextHidden;
 
         let startAudioRecorderWorklet;
         let setMicrophoneTransmissionEnabled;
@@ -666,8 +158,14 @@ import { startCanvasStatePolling } from "/static/generated/canvas/state-polling.
         let lastImageEffect = null;
         const MINIMAL_MODE_STORAGE_KEY = 'narratron.canvas.performance.minimalMode';
         const LEGACY_IMAGE_EFFECTS_STORAGE_KEY = 'narratron.canvas.performance.disableImageEffects';
-        const MUSIC_MUTED_STORAGE_KEY = 'narratron_music_muted';
-        let isMuted = localStorage.getItem(MUSIC_MUTED_STORAGE_KEY) === 'true';
+        let isMuted = (() => {
+            try {
+                return localStorage.getItem(MUSIC_MUTED_STORAGE_KEY) === 'true';
+            } catch (_) {
+                return false;
+            }
+        })();
+        let musicPlayer = null;
         let minimalMode = (() => {
             try {
                 // Preserve the old performance preference when upgrading to
@@ -956,372 +454,24 @@ import { startCanvasStatePolling } from "/static/generated/canvas/state-polling.
         }
 
         // Music player controls and state
-        let currentPlaylistTracks = [];
-        // Each playlist keeps its own shuffle cycle. A track is added to its
-        // played set as soon as it starts, so changing playlists does not reset
-        // the cycle when the user later returns to it.
-        const playlistPlaybackState = new Map();
-        let bgMusic = new Audio();
-        let outgoingMusic = null;
-        let isMusicPausedState = false;
-        let lastPlaylistTime = 0;
-        let activePlaylistName = null;
-        let fadeInterval = null;
-        let outgoingFadeInterval = null;
-        let currentTrackSrc = null;
-        let lastMusicStateSave = 0;
-        const musicPlaybackStorageKey = `narratron-music-playback:${theaterId}`;
-        let restoredMusicPlayback = loadMusicPlaybackState();
-
-        function loadMusicPlaybackState() {
-            try {
-                const saved = JSON.parse(theaterStorage.getItem(musicPlaybackStorageKey));
-                if (!saved || !saved.playlist || !saved.track) return null;
-
-                for (const [playlistName, playedTracks] of saved.playbackStates || []) {
-                    playlistPlaybackState.set(playlistName, {
-                        playedTracks: new Set(playedTracks),
-                        lastPlayedTrack: playedTracks[playedTracks.length - 1] || null,
-                    });
+        musicPlayer = createMusicPlayer({
+            theaterId,
+            muteButton: document.getElementById('music-mute-btn'),
+            statusElement: document.getElementById('music-status'),
+            volumeSlider: document.getElementById('music-volume-slider'),
+            volumePercentElement: document.getElementById('volume-percent'),
+            playbackStorage: typeof theaterStorage !== 'undefined' ? theaterStorage : null,
+            onMuteStopSpeech: () => {
+                if (typeof stopSceneSpeech === 'function') {
+                    stopSceneSpeech();
                 }
-                return saved;
-            } catch (error) {
-                console.warn("Could not restore saved music playback state:", error);
-                return null;
-            }
-        }
-
-        function saveMusicPlaybackState() {
-            if (!activePlaylistName || !currentTrackSrc || !bgMusic) return;
-            try {
-                theaterStorage.setItem(musicPlaybackStorageKey, JSON.stringify({
-                    playlist: activePlaylistName,
-                    track: currentTrackSrc,
-                    position: Number.isFinite(bgMusic.currentTime) ? bgMusic.currentTime : 0,
-                    playbackStates: [...playlistPlaybackState.entries()].map(([name, state]) => [
-                        name,
-                        [...state.playedTracks],
-                    ]),
-                }));
-            } catch (error) {
-                console.warn("Could not save music playback state:", error);
-            }
-        }
-
-        const musicMuteBtn = document.getElementById('music-mute-btn');
-        const musicStatusSpan = document.getElementById('music-status');
-        const musicVolumeSlider = document.getElementById('music-volume-slider');
-        const volumePercentSpan = document.getElementById('volume-percent');
-
-        function setMusicMuted(muted) {
-            isMuted = muted;
-            localStorage.setItem(MUSIC_MUTED_STORAGE_KEY, String(muted));
-            if (bgMusic) bgMusic.muted = muted;
-            if (outgoingMusic) outgoingMusic.muted = muted;
-            if (muted && typeof stopSceneSpeech === 'function') {
-                stopSceneSpeech();
-            }
-            musicMuteBtn.textContent = muted ? '🔇 Unmute' : '🔊 Mute';
-            musicMuteBtn.style.background = muted ? 'rgba(239, 68, 68, 0.2)' : 'rgba(255,255,255,0.08)';
-            musicMuteBtn.style.borderColor = muted ? 'rgba(239, 68, 68, 0.4)' : 'var(--glass-border)';
-        }
-
-        // Set initial volume and restore the user's saved mute preference
-        bgMusic.volume = parseFloat(musicVolumeSlider.value);
-        setMusicMuted(isMuted);
-
-        function setupBgMusicListeners(audioObj) {
-            if (!audioObj) return;
-            audioObj.addEventListener('ended', () => {
-                if (audioObj === bgMusic) {
-                    playNextTrack();
-                }
-            });
-            audioObj.addEventListener('timeupdate', () => {
-                if (audioObj === bgMusic && Date.now() - lastMusicStateSave >= 1000) {
-                    lastMusicStateSave = Date.now();
-                    saveMusicPlaybackState();
-                }
-            });
-        }
-        setupBgMusicListeners(bgMusic);
-        window.addEventListener('beforeunload', saveMusicPlaybackState);
-
-        function cancelFade() {
-            if (fadeInterval) {
-                clearInterval(fadeInterval);
-                fadeInterval = null;
-            }
-        }
-
-        function cancelOutgoingFade() {
-            if (outgoingFadeInterval) {
-                clearInterval(outgoingFadeInterval);
-                outgoingFadeInterval = null;
-            }
-            if (outgoingMusic) {
-                try {
-                    outgoingMusic.pause();
-                    outgoingMusic.src = "";
-                } catch (e) {
-                    console.warn("Error stopping outgoing music:", e);
-                }
-                outgoingMusic = null;
-            }
-        }
-
-        function gentleFadeInCurve(progress) {
-            // Quadratic ease-in for gentle volume swell
-            return Math.pow(progress, 2);
-        }
-
-        function gentleFadeOutCurve(progress) {
-            // Quadratic ease-out for smooth volume decrease
-            return Math.pow(1 - progress, 2);
-        }
-
-        function fadeIn(durationMs = 3500) {
-            cancelFade();
-            if (isMusicPausedState) {
-                if (bgMusic) try { bgMusic.pause(); } catch (e) { }
-                return;
-            }
-            const targetVolume = parseFloat(musicVolumeSlider.value);
-            if (isMuted || targetVolume === 0) {
-                if (bgMusic) bgMusic.volume = targetVolume;
-                return;
-            }
-
-            if (bgMusic) bgMusic.volume = 0;
-            const startTime = Date.now();
-
-            fadeInterval = setInterval(() => {
-                if (isMusicPausedState) {
-                    cancelFade();
-                    if (bgMusic) try { bgMusic.pause(); } catch (e) { }
-                    return;
-                }
-                const elapsed = Date.now() - startTime;
-                const progress = Math.min(1, elapsed / durationMs);
-                const currentTarget = parseFloat(musicVolumeSlider.value);
-                const gentleVal = gentleFadeInCurve(progress) * currentTarget;
-
-                if (bgMusic) {
-                    bgMusic.volume = Math.min(currentTarget, Math.max(0, gentleVal));
-                }
-
-                if (progress >= 1) {
-                    cancelFade();
-                    if (bgMusic && !isMuted) {
-                        bgMusic.volume = currentTarget;
-                    }
-                }
-            }, 30);
-        }
-
-        function fadeOut(onComplete, durationMs = 2500) {
-            cancelFade();
-            if (!bgMusic) {
-                if (onComplete) onComplete();
-                return;
-            }
-            if (bgMusic.paused || isMuted || bgMusic.volume === 0) {
-                try { bgMusic.pause(); } catch (e) { }
-                if (onComplete) onComplete();
-                return;
-            }
-
-            const startVolume = bgMusic.volume;
-            const startTime = Date.now();
-
-            fadeInterval = setInterval(() => {
-                const elapsed = Date.now() - startTime;
-                const progress = Math.min(1, elapsed / durationMs);
-                const gentleVal = startVolume * gentleFadeOutCurve(progress);
-
-                if (bgMusic) {
-                    bgMusic.volume = Math.max(0, gentleVal);
-                }
-
-                if (progress >= 1) {
-                    cancelFade();
-                    if (onComplete) onComplete();
-                }
-            }, 30);
-        }
-
-        function getPlaylistPlaybackState(playlistName, tracks) {
-            let state = playlistPlaybackState.get(playlistName);
-            if (!state) {
-                state = { playedTracks: new Set(), lastPlayedTrack: null };
-                playlistPlaybackState.set(playlistName, state);
-            }
-
-            // Keep the state valid if a playlist's contents change while the
-            // canvas is open (for example, after tracks are added or removed).
-            const availableTracks = new Set(tracks);
-            state.playedTracks = new Set(
-                [...state.playedTracks].filter(track => availableTracks.has(track))
-            );
-            return state;
-        }
-
-        function chooseNextTrack(playlistName, tracks) {
-            const state = getPlaylistPlaybackState(playlistName, tracks);
-            let candidates = tracks.filter(track => !state.playedTracks.has(track));
-
-            // Every song has played once: begin a new shuffle cycle.
-            if (candidates.length === 0) {
-                state.playedTracks.clear();
-                candidates = [...tracks];
-                // Avoid an immediate repeat at the cycle boundary when there
-                // is another track to choose from.
-                if (candidates.length > 1 && state.lastPlayedTrack) {
-                    candidates = candidates.filter(track => track !== state.lastPlayedTrack);
-                }
-            }
-
-            const track = candidates[Math.floor(Math.random() * candidates.length)];
-            state.playedTracks.add(track);
-            state.lastPlayedTrack = track;
-            return track;
-        }
-
-        function getRestoredTrack(playlistName, tracks) {
-            if (!restoredMusicPlayback) return null;
-
-            if (restoredMusicPlayback.playlist !== playlistName) {
-                // The agent selected a different playlist while this viewer was
-                // away, so its old track must not override the current choice.
-                restoredMusicPlayback = null;
-                theaterStorage.removeItem(musicPlaybackStorageKey);
-                return null;
-            }
-
-            const track = tracks.includes(restoredMusicPlayback.track)
-                ? restoredMusicPlayback.track
-                : null;
-            const position = Math.max(0, Number(restoredMusicPlayback.position) || 0);
-            restoredMusicPlayback = null;
-            return track ? { track, position } : null;
-        }
-
-        function playPlaylist(playlistName, tracks) {
-            console.log("Playing playlist tracks:", tracks);
-            currentPlaylistTracks = tracks;
-            if (currentPlaylistTracks.length > 0) {
-                playTrack(chooseNextTrack(playlistName, currentPlaylistTracks));
-            }
-        }
-
-        function playTrack(src, startTime = 0) {
-            console.log("Playing track:", src);
-            const blendDuration = 3500;
-            if (bgMusic && !bgMusic.paused && bgMusic.src && currentTrackSrc && currentTrackSrc !== src) {
-                // Crossfade / blend outgoing music with incoming track
-                cancelOutgoingFade();
-                outgoingMusic = bgMusic;
-                const outgoingStartVol = outgoingMusic.volume;
-                const fadeOutStartTime = Date.now();
-
-                // Detach listeners from outgoing music
-                outgoingMusic.onended = null;
-                outgoingMusic.ontimeupdate = null;
-
-                outgoingFadeInterval = setInterval(() => {
-                    const elapsed = Date.now() - fadeOutStartTime;
-                    const progress = Math.min(1, elapsed / blendDuration);
-                    const gentleVal = outgoingStartVol * gentleFadeOutCurve(progress);
-                    if (outgoingMusic) {
-                        outgoingMusic.volume = Math.max(0, gentleVal);
-                    }
-                    if (progress >= 1) {
-                        cancelOutgoingFade();
-                    }
-                }, 30);
-
-                bgMusic = new Audio();
-                setupBgMusicListeners(bgMusic);
-                startTrack(src, startTime, blendDuration);
-            } else {
-                startTrack(src, startTime, blendDuration);
-            }
-        }
-
-        function startTrack(src, startTime = 0, fadeDurationMs = 3500) {
-            currentTrackSrc = src;
-            if (assetMusicState) updateAssetPlaybackSelection(assetMusicState);
-            bgMusic.src = src;
-            bgMusic.muted = isMuted;
-            if (startTime > 0) {
-                const restorePosition = () => {
-                    bgMusic.currentTime = startTime;
-                };
-                if (bgMusic.readyState >= HTMLMediaElement.HAVE_METADATA) {
-                    restorePosition();
-                } else {
-                    bgMusic.addEventListener('loadedmetadata', restorePosition, { once: true });
-                }
-            }
-            const targetVol = parseFloat(musicVolumeSlider.value);
-            if (!isMuted && targetVol > 0) {
-                bgMusic.volume = 0;
-            } else {
-                bgMusic.volume = targetVol;
-            }
-            bgMusic.play().then(() => {
-                if (isMusicPausedState) {
-                    if (bgMusic) try { bgMusic.pause(); } catch (e) { }
-                    return;
-                }
-                fadeIn(fadeDurationMs);
-                saveMusicPlaybackState();
-            }).catch(err => {
-                console.warn("Audio autoplay blocked/failed. User interaction may be required. Error:", err);
-            });
-        }
-
-        function playNextTrack() {
-            if (currentPlaylistTracks.length === 0) return;
-            playTrack(chooseNextTrack(activePlaylistName, currentPlaylistTracks));
-        }
-        function stopPlaylist() {
-            console.log("Stopping playlist");
-            cancelOutgoingFade();
-            fadeOut(() => {
-                if (bgMusic) {
-                    bgMusic.pause();
-                    bgMusic.src = "";
-                }
-                currentPlaylistTracks = [];
-                currentTrackSrc = null;
-            }, 2500);
-        }
-
-        musicMuteBtn.addEventListener('click', () => {
-            setMusicMuted(!isMuted);
-            if (isMuted) {
-                cancelFade();
-            } else {
-                // Try to play if it was blocked or paused
-                if (bgMusic && bgMusic.paused && currentPlaylistTracks.length > 0) {
-                    bgMusic.volume = 0;
-                    bgMusic.play().then(() => fadeIn(2500)).catch(() => { });
-                } else {
-                    fadeIn(2000);
-                }
-            }
-        });
-
-        musicVolumeSlider.addEventListener('input', (e) => {
-            cancelFade();
-            const volume = parseFloat(e.target.value);
-            bgMusic.volume = volume;
-            volumePercentSpan.textContent = Math.round(volume * 100) + '%';
-
-            if (volume > 0 && isMuted) {
-                setMusicMuted(false);
-            }
+            },
+            onMutedChange: (muted) => {
+                isMuted = muted;
+            },
+            onTrackChange: () => {
+                if (assetMusicState) updateAssetPlaybackSelection(assetMusicState);
+            },
         });
 
         const promptBtn = document.getElementById('prompt-toggle-btn');
@@ -1807,44 +957,10 @@ import { startCanvasStatePolling } from "/static/generated/canvas/state-polling.
                 updateViewerCollabStatus(viewerCollabEnabled);
 
                 // Process music payload
-                if (data.music && data.music.time > lastPlaylistTime) {
-                    lastPlaylistTime = data.music.time;
-                    isMusicPausedState = Boolean(data.music.paused);
-                    const activeMusicId = data.music.music_id || data.music.playlist;
-                    if (activeMusicId) {
-                        if (activePlaylistName !== activeMusicId) {
-                            activePlaylistName = activeMusicId;
-                            musicStatusSpan.textContent = '\u{1F3B5} ' + activeMusicId;
-                            const restoredTrack = getRestoredTrack(activeMusicId, data.music.tracks);
-                            if (restoredTrack) {
-                                currentPlaylistTracks = data.music.tracks;
-                                playTrack(restoredTrack.track, restoredTrack.position);
-                            } else {
-                                playPlaylist(activeMusicId, data.music.tracks);
-                            }
-                        }
-
-                        if (data.music.paused) {
-                            musicStatusSpan.textContent = '\u{1F3B5} ' + activeMusicId + ' (Paused)';
-                            if (bgMusic) {
-                                try { bgMusic.pause(); } catch (e) { }
-                            }
-                            fadeOut(() => { if (bgMusic) try { bgMusic.pause(); } catch (e) { } }, 300);
-                        } else {
-                            musicStatusSpan.textContent = '\u{1F3B5} ' + activeMusicId;
-                            if (bgMusic && bgMusic.paused && currentPlaylistTracks.length > 0) {
-                                bgMusic.volume = 0;
-                                bgMusic.play().then(() => fadeIn(1500)).catch(err => console.warn(err));
-                            }
-                        }
-                    } else {
-                        activePlaylistName = null;
-                        musicStatusSpan.textContent = '\u{1F3B5} Silent';
-                        stopPlaylist();
-                    }
+                if (data.music) {
+                    musicPlayer?.applyMusicState(data.music);
+                    updateAssetPlaybackSelection(data.music);
                 }
-
-                if (data.music) updateAssetPlaybackSelection(data.music);
 
                 if (data.history && Array.isArray(data.history) && data.history.length > 0) {
                     imageHistory = data.history;
@@ -3271,8 +2387,8 @@ import { startCanvasStatePolling } from "/static/generated/canvas/state-polling.
             setCachedScenes: (scenes) => { cachedTheaterScenes = scenes; },
             getCachedCharacters: () => cachedTheaterCharacters,
             setCachedCharacters: (characters) => { cachedTheaterCharacters = characters; },
-            getCurrentTrackSrc: () => typeof currentTrackSrc !== 'undefined' ? currentTrackSrc : null,
-            setCurrentTrackSrc: (src) => { currentTrackSrc = src; },
+            getCurrentTrackSrc: () => musicPlayer ? musicPlayer.getCurrentTrackSrc() : null,
+            setCurrentTrackSrc: (src) => { musicPlayer?.setCurrentTrackSrc(src); },
             nameFromPrompt: (prompt) => stampNameFromPrompt(prompt),
             extractTaggedReferences: (prompt) => extractTaggedCanvasReferences(prompt),
             applyAssetSearch: () => applyAssetSearch(),
@@ -3489,7 +2605,7 @@ import { startCanvasStatePolling } from "/static/generated/canvas/state-polling.
 
                 // Show Orator How-To popup automatically on first visit
                 if (!localStorage.getItem('narratron_orator_howto_seen')) {
-                    setTimeout(() => openOratorHowtoModal({ openMicConfigOnClose: true }), 400);
+                    setTimeout(() => micConfig.openOratorHowtoModal({ openMicConfigOnClose: true }), 400);
                 }
             } else {
                 if (backBtn) backBtn.href = '/';
@@ -4304,7 +3420,7 @@ import { startCanvasStatePolling } from "/static/generated/canvas/state-polling.
                 throw new Error("Agent WebSocket is not ready for audio forwarding.");
             }
 
-            await refreshMicrophoneDevices(true);
+            await micConfig.refreshMicrophoneDevices(true);
             if (requestId !== micRequestId) return;
             const [node, context, stream, started] = await startAudioRecorderWorklet(
                 audioRecorderHandler, micMode !== 'push-to-talk' || micPressHeld
@@ -5039,7 +4155,7 @@ import { startCanvasStatePolling } from "/static/generated/canvas/state-polling.
         if (menuItemHowto) {
             menuItemHowto.addEventListener('click', () => {
                 closePulloutMenu();
-                openOratorHowtoModal();
+                micConfig.openOratorHowtoModal();
             });
         }
 
@@ -5066,312 +4182,59 @@ import { startCanvasStatePolling } from "/static/generated/canvas/state-polling.
             });
         }
 
-        // Microphone device selection
-        const micModeToggle = document.getElementById('menu-mic-mode-toggle');
-        if (micModeToggle) {
-            micModeToggle.checked = micMode === 'push-to-talk';
-            micModeToggle.addEventListener('change', () => {
-                cancelMicCapture();
-                micMode = micModeToggle.checked ? 'push-to-talk' : 'toggle';
-                localStorage.setItem('narratron_mic_mode', micMode);
-                updateMicToggleUI();
-            });
-        }
-        updateMicToggleUI();
-        const micDeviceSelect = document.getElementById('menu-mic-device-select');
-        const micDeviceRefresh = document.getElementById('menu-mic-device-refresh');
-        const micDeviceHint = document.getElementById('menu-mic-device-hint');
-        async function refreshMicrophoneDevices(requestPermission = false) {
-            if (!navigator.mediaDevices?.enumerateDevices || !micDeviceSelect) return;
-            try {
-                if (requestPermission) {
-                    const permissionStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                    permissionStream.getTracks().forEach(track => track.stop());
-                }
-                const selected = localStorage.getItem('narratron_mic_device_id') || '';
-                const devices = (await navigator.mediaDevices.enumerateDevices()).filter(device => device.kind === 'audioinput');
-                micDeviceSelect.replaceChildren(new Option('System default microphone', ''));
-                devices.forEach((device, index) => micDeviceSelect.add(new Option(device.label || `Microphone ${index + 1} (allow access to identify)`, device.deviceId)));
-                micDeviceSelect.value = [...micDeviceSelect.options].some(option => option.value === selected) ? selected : '';
-                window.NARRATRON_MIC_DEVICE_ID = micDeviceSelect.value;
-                if (micDeviceHint) micDeviceHint.textContent = devices.some(device => device.label) ? 'Your selection is used when you connect.' : 'Refresh and allow microphone access to identify devices.';
-            } catch (error) { if (micDeviceHint) micDeviceHint.textContent = 'Unable to list microphones. Check browser permissions.'; }
-        }
-        if (micDeviceRefresh) micDeviceRefresh.addEventListener('click', () => refreshMicrophoneDevices(true));
-        if (micDeviceSelect) micDeviceSelect.addEventListener('change', () => {
-            window.NARRATRON_MIC_DEVICE_ID = micDeviceSelect.value;
-            localStorage.setItem('narratron_mic_device_id', micDeviceSelect.value);
-            if (micDeviceHint) micDeviceHint.textContent = 'Saved in this browser. Reconnect to use this microphone.';
-        });
-        navigator.mediaDevices?.addEventListener('devicechange', () => refreshMicrophoneDevices());
-        refreshMicrophoneDevices();
-
-        // Microphone test: capture selected-device audio with the same 16 kHz,
-        // signed 16-bit PCM pipeline used for live narration, then play it locally.
-        const micTestRecordBtn = document.getElementById('menu-mic-test-record');
-        const micTestPlayBtn = document.getElementById('menu-mic-test-play');
-        const micTestStatus = document.getElementById('menu-mic-test-status');
-        const MIC_TEST_SAMPLE_RATE = 16000;
-        const MIC_TEST_MAX_MS = 10000;
-        let stopMicTestCapture = null;
-        let micTestStarting = false;
-        let micTestChunks = [];
-        let micTestBytes = 0;
-        let micTestTimer = null;
-        let micTestPlayback = null;
-        let micTestPlaybackContext = null;
-
-        function setMicTestStatus(message) {
-            if (micTestStatus) micTestStatus.textContent = message;
-        }
-
-        function setMicTestRecordingUI(recording) {
-            if (!micTestRecordBtn) return;
-            micTestRecordBtn.textContent = recording ? 'Stop recording' : 'Record test';
-            micTestRecordBtn.setAttribute('aria-pressed', String(recording));
-        }
-
-        function stopMicTestRecording(message = 'Recording ready. Play it back to verify your microphone.') {
-            if (micTestTimer) window.clearTimeout(micTestTimer);
-            micTestTimer = null;
-            const stop = stopMicTestCapture;
-            stopMicTestCapture = null;
-            if (typeof stop === 'function') stop();
-            setMicTestRecordingUI(false);
-            if (micTestPlayBtn) micTestPlayBtn.disabled = micTestBytes === 0;
-            setMicTestStatus(micTestBytes ? message : 'No audio was captured. Check browser microphone permission and try again.');
-        }
-
-        async function startMicTestRecording() {
-            if (micTestStarting) return;
-            if (stopMicTestCapture) {
-                stopMicTestRecording();
-                return;
-            }
-            if (isRecording) {
-                setMicTestStatus('Disconnect the live microphone before running a local mic test.');
-                return;
-            }
-            if (typeof listenForSpeech !== 'function') {
-                setMicTestStatus('Audio capture is still loading. Please try again in a moment.');
-                return;
-            }
-
-            micTestStarting = true;
-            micTestChunks = [];
-            micTestBytes = 0;
-            if (micTestPlayBtn) micTestPlayBtn.disabled = true;
-            setMicTestRecordingUI(true);
-            setMicTestStatus('Recording from the selected microphone… speak now (up to 10 seconds).');
-            try {
-                // A zero threshold deliberately includes quiet samples: this is a
-                // recording diagnostic, not a VAD test.
-                const stop = await listenForSpeech({
-                    deviceId: window.NARRATRON_MIC_DEVICE_ID || undefined,
-                    sampleRate: MIC_TEST_SAMPLE_RATE,
-                    vadThreshold: 0,
-                    continuous: true,
-                    onData: ({ pcm }) => {
-                        const chunk = new Uint8Array(pcm);
-                        micTestChunks.push(chunk);
-                        micTestBytes += chunk.byteLength;
-                    },
-                    onError: (error) => setMicTestStatus(`Microphone test failed: ${error.message}`),
-                });
-                stopMicTestCapture = stop;
-                micTestTimer = window.setTimeout(
-                    () => stopMicTestRecording('10-second recording ready. Play it back to verify your microphone.'),
-                    MIC_TEST_MAX_MS,
-                );
-            } catch (error) {
-                setMicTestRecordingUI(false);
-                setMicTestStatus(`Could not start microphone test: ${error.message}`);
-            } finally {
-                micTestStarting = false;
-            }
-        }
-
-        async function playMicTestRecording() {
-            if (!micTestBytes) return;
-            if (micTestPlayback) micTestPlayback.stop();
-            if (micTestPlaybackContext && micTestPlaybackContext.state !== 'closed') {
-                await micTestPlaybackContext.close();
-            }
-
-            const pcm = new Uint8Array(micTestBytes);
-            let offset = 0;
-            micTestChunks.forEach((chunk) => { pcm.set(chunk, offset); offset += chunk.byteLength; });
-            const context = new AudioContext({ sampleRate: MIC_TEST_SAMPLE_RATE });
-            const audioBuffer = context.createBuffer(1, pcm.byteLength / 2, MIC_TEST_SAMPLE_RATE);
-            const samples = audioBuffer.getChannelData(0);
-            const view = new DataView(pcm.buffer, pcm.byteOffset, pcm.byteLength);
-            for (let index = 0; index < samples.length; index += 1) samples[index] = view.getInt16(index * 2, true) / 32768;
-            const source = context.createBufferSource();
-            source.buffer = audioBuffer;
-            source.connect(context.destination);
-            source.onended = () => {
-                if (micTestPlayback === source) {
-                    micTestPlayback = null;
-                    setMicTestStatus('Playback finished. If you heard yourself clearly, your mic and PCM path are working.');
-                }
-                if (context.state !== 'closed') context.close();
-            };
-            micTestPlaybackContext = context;
-            micTestPlayback = source;
-            await context.resume();
-            source.start();
-            setMicTestStatus('Playing your PCM microphone test…');
-        }
-
-        if (micTestRecordBtn) micTestRecordBtn.addEventListener('click', startMicTestRecording);
-        if (micTestPlayBtn) micTestPlayBtn.addEventListener('click', playMicTestRecording);
-
-        // Microphone Sensitivity Slider Logic
-        const micSensSlider = document.getElementById('menu-mic-sensitivity-slider');
-        const micSensValDisplay = document.getElementById('menu-mic-sensitivity-val');
-
-        function setMicSensitivity(percentVal, saveDb = false) {
-            const val = Math.max(0, Math.min(100, parseInt(percentVal, 10) || 50));
-            if (micSensSlider) micSensSlider.value = val;
-            if (micSensValDisplay) micSensValDisplay.textContent = `${val}%`;
-
-            const s = val / 100.0;
-            // record-pcm uses RMS VAD.  Higher sensitivity lowers the threshold.
-            window.MIC_DETECT_THRESHOLD = 0.01 * Math.pow(10, (0.5 - s) * 2);
-            window.MIC_SENSITIVITY = s;
-
-            try {
-                localStorage.setItem('narratron_mic_sensitivity', val.toString());
-            } catch (e) { }
-
-            if (saveDb) {
-                fetch('/api/auth/mic-sensitivity', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ mic_sensitivity: s })
-                }).then(res => {
-                    if (res.ok) canvasAuthStatePromise = null;
-                }).catch(err => console.debug('Failed to sync mic_sensitivity to server:', err));
-            }
-        }
-
-        if (micSensSlider) {
-            micSensSlider.addEventListener('input', (e) => {
-                setMicSensitivity(e.target.value, false);
-            });
-            micSensSlider.addEventListener('change', (e) => {
-                setMicSensitivity(e.target.value, true);
-            });
-        }
-
-        (function initMicSensitivity() {
-            let initialVal = 50;
-            try {
-                const stored = localStorage.getItem('narratron_mic_sensitivity');
-                if (stored !== null && !isNaN(parseInt(stored, 10))) {
-                    initialVal = parseInt(stored, 10);
-                }
-            } catch (e) { }
-
-            getCanvasAuthState()
-                .then(data => {
-                    if (data && data.authenticated && data.user && data.user.mic_sensitivity !== undefined && data.user.mic_sensitivity !== null) {
-                        const userVal = Math.round(data.user.mic_sensitivity * 100);
-                        setMicSensitivity(userVal, false);
-                    } else {
-                        setMicSensitivity(initialVal, false);
+        // Microphone settings, PCM test, sensitivity, and Orator How-To modals
+        const micConfig = createMicConfigController({
+            micModeToggle: document.getElementById('menu-mic-mode-toggle'),
+            micDeviceSelect: document.getElementById('menu-mic-device-select'),
+            micDeviceRefresh: document.getElementById('menu-mic-device-refresh'),
+            micDeviceHint: document.getElementById('menu-mic-device-hint'),
+            micTestRecordBtn: document.getElementById('menu-mic-test-record'),
+            micTestPlayBtn: document.getElementById('menu-mic-test-play'),
+            micTestStatus: document.getElementById('menu-mic-test-status'),
+            micSensSlider: document.getElementById('menu-mic-sensitivity-slider'),
+            micSensValDisplay: document.getElementById('menu-mic-sensitivity-val'),
+            micConfigModal: document.getElementById('mic-config-modal'),
+            menuItemMicConfig: document.getElementById('menu-item-mic-config'),
+            micConfigCloseBtn: document.getElementById('mic-config-close-btn'),
+            micConfigDoneBtn: document.getElementById('mic-config-done-btn'),
+            oratorHowtoModal: document.getElementById('orator-howto-modal'),
+            howtoCloseBtn: document.getElementById('howto-close-btn'),
+            howtoAckBtn: document.getElementById('howto-ack-btn'),
+            getMicMode: () => micMode,
+            setMicMode: (mode) => {
+                micMode = mode;
+            },
+            isRecording: () => isRecording,
+            cancelMicCapture,
+            updateMicToggleUI,
+            getListenForSpeech: () => listenForSpeech,
+            getAuthState: getCanvasAuthState,
+            invalidateAuthStateCache: () => {
+                canvasAuthStatePromise = null;
+            },
+            onOpenMicConfig: () => {
+                closePulloutMenu();
+            },
+            onCloseMicConfig: () => {
+                actionWheel.cancelRebinding();
+                if (isRebindingHotkey) {
+                    isRebindingHotkey = false;
+                    if (menuItemHotkey) {
+                        menuItemHotkey.style.background = '';
+                        menuItemHotkey.style.color = '';
                     }
-                })
-                .catch(() => setMicSensitivity(initialVal, false));
-        })();
-
-        // ========================================
-        // Orator How-To Modal Logic
-        // ========================================
-        const micConfigModal = document.getElementById('mic-config-modal');
-        const menuItemMicConfig = document.getElementById('menu-item-mic-config');
-        const micConfigCloseBtn = document.getElementById('mic-config-close-btn');
-        const micConfigDoneBtn = document.getElementById('mic-config-done-btn');
-
-        function openMicConfigModal() {
-            if (!micConfigModal) return;
-            if (oratorHowtoModal) {
-                delete oratorHowtoModal.dataset.openMicConfigOnClose;
-                oratorHowtoModal.classList.remove('active');
-                oratorHowtoModal.setAttribute('aria-hidden', 'true');
-            }
-            closePulloutMenu();
-            refreshMicrophoneDevices();
-            micConfigModal.classList.add('active');
-            micConfigModal.setAttribute('aria-hidden', 'false');
-        }
-
-        function closeMicConfigModal() {
-            actionWheel.cancelRebinding();
-            if (!micConfigModal) return;
-            if (stopMicTestCapture) stopMicTestRecording();
-            if (isRebindingHotkey) {
-                isRebindingHotkey = false;
-                if (menuItemHotkey) {
-                    menuItemHotkey.style.background = '';
-                    menuItemHotkey.style.color = '';
+                    updateHotkeyUI();
                 }
-                updateHotkeyUI();
-            }
-            if (isRebindingTextHotkey) {
-                isRebindingTextHotkey = false;
-                if (menuItemTextHotkey) {
-                    menuItemTextHotkey.style.background = '';
-                    menuItemTextHotkey.style.color = '';
+                if (isRebindingTextHotkey) {
+                    isRebindingTextHotkey = false;
+                    if (menuItemTextHotkey) {
+                        menuItemTextHotkey.style.background = '';
+                        menuItemTextHotkey.style.color = '';
+                    }
+                    updateTextHotkeyUI();
                 }
-                updateTextHotkeyUI();
-            }
-            micConfigModal.classList.remove('active');
-            micConfigModal.setAttribute('aria-hidden', 'true');
-        }
-
-        if (menuItemMicConfig) menuItemMicConfig.addEventListener('click', openMicConfigModal);
-        if (micConfigCloseBtn) micConfigCloseBtn.addEventListener('click', closeMicConfigModal);
-        if (micConfigDoneBtn) micConfigDoneBtn.addEventListener('click', closeMicConfigModal);
-        if (micConfigModal) {
-            micConfigModal.addEventListener('click', (event) => {
-                if (event.target === micConfigModal) closeMicConfigModal();
-            });
-        }
-
-        const oratorHowtoModal = document.getElementById('orator-howto-modal');
-        const howtoCloseBtn = document.getElementById('howto-close-btn');
-        const howtoAckBtn = document.getElementById('howto-ack-btn');
-
-        function openOratorHowtoModal({ openMicConfigOnClose = false } = {}) {
-            if (!oratorHowtoModal) return;
-            oratorHowtoModal.dataset.openMicConfigOnClose = String(openMicConfigOnClose);
-            oratorHowtoModal.classList.add('active');
-            oratorHowtoModal.setAttribute('aria-hidden', 'false');
-        }
-
-        function closeOratorHowtoModal() {
-            if (!oratorHowtoModal) return;
-            const openMicConfigOnClose = oratorHowtoModal.dataset.openMicConfigOnClose === 'true';
-            delete oratorHowtoModal.dataset.openMicConfigOnClose;
-            oratorHowtoModal.classList.remove('active');
-            oratorHowtoModal.setAttribute('aria-hidden', 'true');
-            try {
-                localStorage.setItem('narratron_orator_howto_seen', 'true');
-            } catch (e) { }
-            if (openMicConfigOnClose) openMicConfigModal();
-        }
-
-        if (howtoCloseBtn) howtoCloseBtn.addEventListener('click', closeOratorHowtoModal);
-        if (howtoAckBtn) howtoAckBtn.addEventListener('click', closeOratorHowtoModal);
-
-        if (oratorHowtoModal) {
-            oratorHowtoModal.addEventListener('click', (e) => {
-                if (e.target === oratorHowtoModal) {
-                    closeOratorHowtoModal();
-                }
-            });
-        }
+            },
+        });
 
         // ========================================
         // Viewer Collaboration Guide Modal Logic
@@ -5394,10 +4257,10 @@ import { startCanvasStatePolling } from "/static/generated/canvas/state-polling.
                     closeOratorCommand();
                 } else if (pulloutOverlay && pulloutOverlay.classList.contains('active')) {
                     closePulloutMenu();
-                } else if (micConfigModal && micConfigModal.classList.contains('active')) {
-                    closeMicConfigModal();
-                } else if (oratorHowtoModal && oratorHowtoModal.classList.contains('active')) {
-                    closeOratorHowtoModal();
+                } else if (micConfig.isMicConfigOpen()) {
+                    micConfig.closeMicConfigModal();
+                } else if (micConfig.isOratorHowtoOpen()) {
+                    micConfig.closeOratorHowtoModal();
                 } else if (collabBar.isGuideOpen()) {
                     closeViewerCollabGuide();
                 } else if (adventureGuideModal && adventureGuideModal.classList.contains('active')) {
@@ -5636,10 +4499,10 @@ import { startCanvasStatePolling } from "/static/generated/canvas/state-polling.
 
         window.openPulloutMenu = openPulloutMenu;
         window.closePulloutMenu = closePulloutMenu;
-        window.openOratorHowtoModal = openOratorHowtoModal;
-        window.closeOratorHowtoModal = closeOratorHowtoModal;
-        window.openMicConfigModal = openMicConfigModal;
-        window.closeMicConfigModal = closeMicConfigModal;
+        window.openOratorHowtoModal = micConfig.openOratorHowtoModal;
+        window.closeOratorHowtoModal = micConfig.closeOratorHowtoModal;
+        window.openMicConfigModal = micConfig.openMicConfigModal;
+        window.closeMicConfigModal = micConfig.closeMicConfigModal;
         window.openTheaterConfigModal = openTheaterConfigModal;
         window.closeTheaterConfigModal = closeTheaterConfigModal;
         setupTheaterReport(theaterId, closePulloutMenu);
