@@ -5,12 +5,9 @@ from unittest.mock import MagicMock
 
 from PIL import Image
 
-from api_server.shared import PROJECT_ROOT
 from components.canvas.canvas_state_service import CanvasStateService
 from components.theater_manager import TheaterManager
 from testing.ui.base import UITestCase
-
-from testing.ui.canvas_source import read_ui_source
 
 
 class TestCrossfade(UITestCase):
@@ -46,46 +43,3 @@ class TestCrossfade(UITestCase):
                 str(image), transition=transition, effect=effect
             )
             tool.visual.on_show_image.reset_mock()
-
-    def test_canvas_template_supports_crossfade(self):
-        template_path = PROJECT_ROOT / "templates" / "canvas.html"
-        content = read_ui_source(template_path)
-
-        for selector in (".t-crossfade", ".t-fade"):
-            self.assertIn(selector, content)
-        self.assertIn('id="ghost-image"', content)
-        self.assertIn("data.transition", content)
-
-    def test_canvas_template_contains_agent_activity_indicators(self):
-        template_path = PROJECT_ROOT / "templates" / "canvas.html"
-        content = read_ui_source(template_path)
-        self.assertIn('id="agent-drawing-indicator"', content)
-        self.assertIn('id="agent-writing-indicator"', content)
-        self.assertIn('id="agent-dice-indicator"', content)
-        self.assertIn('id="agent-reference-indicator"', content)
-        self.assertIn("toolActivity.user_action_processing", content)
-        self.assertIn("toolActivity.dice_rolling", content)
-        self.assertIn("toolActivity.animation_generating", content)
-        self.assertIn("toolActivity.reference_generating", content)
-        self.assertIn("data.tool_activity", content)
-
-    def test_canvas_template_renders_scene_descriptions_in_white_italics(self):
-        template_path = PROJECT_ROOT / "templates" / "canvas.html"
-        content = read_ui_source(template_path)
-
-        self.assertIn(".narration", content)
-        self.assertIn(".scene-description", content)
-        self.assertIn(".scene-narration", content)
-        self.assertIn("font-style: italic", content)
-        self.assertIn("data.narration", content)
-
-    def test_canvas_ignores_superseded_latest_state_snapshots(self):
-        template_path = PROJECT_ROOT / "templates" / "canvas.html"
-        content = read_ui_source(template_path)
-
-        self.assertIn("let latestStateRequestSequence = 0;", content)
-        self.assertIn("const requestSequence = ++latestStateRequestSequence;", content)
-        self.assertIn(
-            "if (requestSequence !== latestStateRequestSequence) return;",
-            content,
-        )

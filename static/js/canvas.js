@@ -1,7 +1,10 @@
 import { createAgentActivityController } from "/static/generated/canvas/agent-activity.js";
 import { createCanvasAssetManager } from "/static/generated/canvas/asset-manager.js";
+import { createBatonManager } from "/static/generated/canvas/baton-manager.js";
 import { createCollabBarController } from "/static/generated/canvas/collab-bar.js";
 import { createCornerPanels } from "/static/generated/canvas/corner-panels.js";
+import { createDoodleSession, isActiveCanvasWindow } from "/static/generated/canvas/doodle-session.js";
+import { createHistoryPagingController } from "/static/generated/canvas/history-paging.js";
 import { createLayoutResizeController } from "/static/generated/canvas/layout-resize.js";
 import { createMicConfigController } from "/static/generated/canvas/mic-config.js";
 import { createMusicPlayer, MUSIC_MUTED_STORAGE_KEY } from "/static/generated/canvas/music-player.js";
@@ -12,7 +15,6 @@ import {
   stampNameFromPrompt,
   updateStampManagerProfileLinks,
 } from "/static/generated/canvas/stamps.js";
-import { createTextAnnotations } from "/static/generated/canvas/text-annotations.js";
 import { startCanvasStatePolling } from "/static/generated/canvas/state-polling.js";
 
         import { setupTheaterReport } from '/static/js/theater-report.js';
@@ -146,18 +148,13 @@ import { startCanvasStatePolling } from "/static/generated/canvas/state-polling.
             .catch((err) => {
                 console.error("Failed to load device-aware-pcm.js:", err);
             });
-        import { createDoodleRenderer, createImageRenderer } from "/static/js/canvas-renderers.js?v=zoom-effect-origin-20261030-1";
+        import { createImageRenderer } from "/static/js/canvas-renderers.js?v=zoom-effect-origin-20261030-1";
         import { createA2UICanvasRenderer } from "/static/generated/canvas/a2ui-renderer.js";
         import { createGameRenderer } from "/static/js/game-renderer.js?v=17";
         import { getAnimationSignature, playCanvasAnimation } from "/static/generated/canvas/media.js";
         import { createCanvasScene } from "/static/generated/canvas/scene.js";
         import { createNarrationPane } from "/static/js/narration-pane.js";
 
-        let lastTime = -1;
-        let lastImageRawUrl = null;
-        let lastImageEffect = null;
-        const MINIMAL_MODE_STORAGE_KEY = 'narratron.canvas.performance.minimalMode';
-        const LEGACY_IMAGE_EFFECTS_STORAGE_KEY = 'narratron.canvas.performance.disableImageEffects';
         let isMuted = (() => {
             try {
                 return localStorage.getItem(MUSIC_MUTED_STORAGE_KEY) === 'true';
@@ -166,18 +163,6 @@ import { startCanvasStatePolling } from "/static/generated/canvas/state-polling.
             }
         })();
         let musicPlayer = null;
-        let minimalMode = (() => {
-            try {
-                // Preserve the old performance preference when upgrading to
-                // Minimal Mode, which includes disabling image effects.
-                return localStorage.getItem(MINIMAL_MODE_STORAGE_KEY) === 'true'
-                    || localStorage.getItem(LEGACY_IMAGE_EFFECTS_STORAGE_KEY) === 'true';
-            } catch (_) {
-                return false;
-            }
-        })();
-        document.documentElement.classList.toggle('minimal-mode', minimalMode);
-        let isFirstCanvasLoad = true;
         // A state notification can arrive while the initial snapshot is still
         // in flight.  Only the most recently requested snapshot may update the
         // canvas, otherwise a late empty startup response can erase the first
@@ -266,7 +251,7 @@ import { startCanvasStatePolling } from "/static/generated/canvas/state-polling.
         const actionWheel = initializeActionWheel({
             isOrator: isCurrentOrator,
             canvasTarget: document.getElementById('image-container'),
-            onOpen: () => { isDrawing = false; flushDrawBatch(); },
+            onOpen: () => { doodleSession?.cancelDrawing(); },
             onCenterAction: () => {
                 if (typeof cycleCanvasCursor === 'function') {
                     cycleCanvasCursor();
@@ -296,9 +281,9 @@ import { startCanvasStatePolling } from "/static/generated/canvas/state-polling.
                 canvasPinned = Boolean(result.pinned);
                 musicPinned = Boolean(result.music_pinned);
                 if (result.orator_cursor !== undefined && result.orator_cursor !== null) {
-                    oratorCursorIndex = Number(result.orator_cursor);
-                    if (!isNavigating && currentViewIndex !== oratorCursorIndex) {
-                        displayHistoryImage(oratorCursorIndex, 'none');
+                    historyPaging.setOratorCursorIndex(Number(result.orator_cursor));
+                    if (!historyPaging.isNavigating() && historyPaging.getCurrentViewIndex() !== historyPaging.getOratorCursorIndex()) {
+                        displayHistoryImage(historyPaging.getOratorCursorIndex(), 'none');
                     }
                 }
                 updateCanvasPinButton();
@@ -495,26 +480,6 @@ import { startCanvasStatePolling } from "/static/generated/canvas/state-polling.
         function setPcmBroadcasting(isBroadcasting) {
             agentActivity.setPcmBroadcasting(isBroadcasting);
         }
-        let promptPinned = false;
-
-        promptBtn.addEventListener('mouseenter', () => {
-            promptBtn.classList.add('expanded');
-        });
-
-        promptBtn.addEventListener('mouseleave', () => {
-            if (!promptPinned) {
-                promptBtn.classList.remove('expanded');
-            }
-        });
-
-        promptBtn.addEventListener('click', () => {
-            promptPinned = !promptPinned;
-            if (!promptPinned) {
-                promptBtn.classList.remove('expanded');
-            } else {
-                promptBtn.classList.add('expanded');
-            }
-        });
 
         const currenttheaterId = theaterId;
 
@@ -554,75 +519,60 @@ import { startCanvasStatePolling } from "/static/generated/canvas/state-polling.
 
         const ghostImage = document.getElementById('ghost-image');
         const rendererCanvas = document.getElementById('canvas-renderer');
+        let historyPaging = null;
         const imageRenderer = createImageRenderer({
             canvas: rendererCanvas,
             image: currentImage,
             backgroundLayer: bgLayer,
             loadedClassNames: ['t-crossfade', 'loaded'],
-            imageEffectsEnabled: () => !minimalMode,
+            imageEffectsEnabled: () => !(historyPaging && historyPaging.isMinimalMode()),
         });
         const resizeRendererCanvas = imageRenderer.resize;
         const applyImageTransition = imageRenderer.applyTransition;
         const stopImageAnimation = imageRenderer.stopSequence ? imageRenderer.stopSequence.bind(imageRenderer) : null;
 
-        function resolveWebpQualityUrl(rawUrl) {
-            if (!rawUrl || typeof rawUrl !== 'string') return rawUrl;
-            if (!minimalMode) return rawUrl;
-            const pathPart = rawUrl.split('?')[0].split('#')[0].toLowerCase();
-            if (!pathPart.endsWith('.webp')) return rawUrl;
-            try {
-                const urlObj = new URL(rawUrl, window.location.origin);
-                if (!urlObj.searchParams.has('quality')) {
-                    urlObj.searchParams.set('quality', 'low');
-                }
-                if (rawUrl.startsWith('/') || !rawUrl.includes('://')) {
-                    return urlObj.pathname + urlObj.search + urlObj.hash;
-                }
-                return urlObj.toString();
-            } catch (_) {
-                const sep = rawUrl.includes('?') ? '&' : '?';
-                return `${rawUrl}${sep}quality=low`;
-            }
-        }
-        window.__resolveWebpQualityUrl = resolveWebpQualityUrl;
-
-        function setMinimalMode(enabled) {
-            const previousMode = minimalMode;
-            minimalMode = Boolean(enabled);
-            document.documentElement.classList.toggle('minimal-mode', minimalMode);
-            try {
-                localStorage.setItem(MINIMAL_MODE_STORAGE_KEY, String(minimalMode));
-                localStorage.removeItem(LEGACY_IMAGE_EFFECTS_STORAGE_KEY);
-            } catch (_) {
-                // Storage can be unavailable in private or restricted browser contexts.
-            }
-            if (minimalMode) stopImageAnimation?.();
-            imageRenderer.setImageEffectsEnabled?.(!minimalMode);
-            if (previousMode !== minimalMode && currentViewIndex >= 0 && currentViewIndex < imageHistory.length) {
-                if (typeof loadedHistoryResources !== 'undefined') {
-                    loadedHistoryResources.forEach((res) => unloadHistoryResource(res));
-                    loadedHistoryResources.clear();
-                }
-                displayHistoryImage(currentViewIndex, 'none');
-            }
-        }
-
         window.addEventListener('resize', resizeRendererCanvas);
         resizeRendererCanvas();
 
-        let imageHistory = [];
-        let currentViewIndex = -1;
-        let oratorCursorIndex = -1;
-        let isNavigating = false;
-        let isPagedBack = false;
-        let hasNewHeadWhilePagedBack = false;
-        let lastAnimationSignature = '';
+        const imgContainer = document.getElementById('image-container');
+        const pagingControls = document.getElementById('history-paging-controls');
+        let lastGameCanvasRevision = null;
+        let doodleSession = null;
+        let canvasBookmarks = null;
 
-        const canvasBookmarks = initializeCanvasBookmarks({
+        initializeStoryLogInspector(theaterId);
+
+        historyPaging = createHistoryPagingController({
+            theaterId,
+            isOrator: () => typeof isCurrentOrator === 'function' ? isCurrentOrator() : false,
+            imageRenderer,
+            playCanvasAnimation,
+            promptButton: promptBtn,
+            promptTextSpan,
+            currentImage,
+            ghostImage,
+            backgroundLayer: bgLayer,
+            pagingControls,
+            prevButton: document.getElementById('page-prev-btn'),
+            nextButton: document.getElementById('page-next-btn'),
+            headButton: document.getElementById('page-head-btn'),
+            syncButton: document.getElementById('page-sync-btn'),
+            pageIndicator: document.getElementById('page-indicator'),
+            newHeadBadge: document.getElementById('new-head-badge'),
+            imageContainer: imgContainer,
+            minimalModeInput: document.getElementById('minimal-mode-input'),
+            hasDoodleCanvas: () => Boolean(document.getElementById('doodle-canvas')),
+            isSelectionActive: () => Boolean(typeof window !== 'undefined' && window.isCanvasSelectionActive),
+            onRefreshBookmarks: () => canvasBookmarks?.refresh(),
+            onRefreshToolInteraction: () => doodleSession?.refreshCanvasToolInteraction(),
+            onDisplayPageDoodles: (item) => doodleSession?.displayPageDoodles(item),
+        });
+
+        canvasBookmarks = initializeCanvasBookmarks({
             theaterId,
             isOrator: isCurrentOrator,
-            getHistory: () => imageHistory,
-            getIndex: () => currentViewIndex,
+            getHistory: () => historyPaging.getHistory(),
+            getIndex: () => historyPaging.getCurrentViewIndex(),
             navigate: async index => {
                 const response = await fetch(`/api/theaters/${encodeURIComponent(theaterId)}/orator-action`, {
                     method: 'POST',
@@ -631,291 +581,20 @@ import { startCanvasStatePolling } from "/static/generated/canvas/state-polling.
                 });
                 if (!response.ok) throw new Error('Bookmark navigation failed');
                 const result = await response.json();
-                oratorCursorIndex = Number(result.orator_cursor);
-                displayHistoryImage(oratorCursorIndex, 'none');
+                historyPaging.setOratorCursorIndex(Number(result.orator_cursor));
+                historyPaging.displayHistoryImage(historyPaging.getOratorCursorIndex(), 'none');
             },
         });
 
-        function stepOratorPreviousImage() {
-            if (oratorCursorIndex > 0) {
-                oratorCursorIndex -= 1;
-            } else if (oratorCursorIndex < 0 && imageHistory.length > 1) {
-                oratorCursorIndex = imageHistory.length - 2;
-            } else if (currentViewIndex > 0) {
-                oratorCursorIndex = currentViewIndex - 1;
-            }
-            isNavigating = false;
-            isPagedBack = false;
-            hasNewHeadWhilePagedBack = false;
-            currentViewIndex = oratorCursorIndex;
-            if (oratorCursorIndex >= 0 && oratorCursorIndex < imageHistory.length) {
-                displayHistoryImage(oratorCursorIndex, 'none');
-            } else {
-                updatePagingControlsUI();
-            }
-        }
-
-        async function triggerOratorPreviousImage() {
-            stepOratorPreviousImage();
-            try {
-                const response = await fetch(`/api/theaters/${encodeURIComponent(theaterId)}/orator-action`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ action: 'previous_image' }),
-                });
-                const result = await response.json();
-                if (response.ok && result.orator_cursor !== undefined && result.orator_cursor !== null) {
-                    oratorCursorIndex = Number(result.orator_cursor);
-                    currentViewIndex = oratorCursorIndex;
-                    updatePagingControlsUI();
-                }
-            } catch (err) {
-                console.error("Failed to trigger previous image action:", err);
-            }
-        }
-
-        function stepOratorNextImage() {
-            if (oratorCursorIndex >= 0 && oratorCursorIndex < imageHistory.length - 1) {
-                oratorCursorIndex += 1;
-            } else if (currentViewIndex >= 0 && currentViewIndex < imageHistory.length - 1) {
-                oratorCursorIndex = currentViewIndex + 1;
-            }
-            isNavigating = false;
-            isPagedBack = false;
-            hasNewHeadWhilePagedBack = false;
-            currentViewIndex = oratorCursorIndex;
-            if (oratorCursorIndex >= 0 && oratorCursorIndex < imageHistory.length) {
-                displayHistoryImage(oratorCursorIndex, 'none');
-            } else {
-                updatePagingControlsUI();
-            }
-        }
-
-        async function triggerOratorNextImage() {
-            stepOratorNextImage();
-            try {
-                const response = await fetch(`/api/theaters/${encodeURIComponent(theaterId)}/orator-action`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ action: 'next_image' }),
-                });
-                const result = await response.json();
-                if (response.ok && result.orator_cursor !== undefined && result.orator_cursor !== null) {
-                    oratorCursorIndex = Number(result.orator_cursor);
-                    currentViewIndex = oratorCursorIndex;
-                    updatePagingControlsUI();
-                }
-            } catch (err) {
-                console.error("Failed to trigger next image action:", err);
-            }
-        }
-
-        const HISTORY_WINDOW_RADIUS = 5;
-        const loadedHistoryResources = new Map();
-
-        function unloadHistoryResource(resource) {
-            if (!resource) return;
-            if (resource.img) {
-                try {
-                    resource.img.onload = null;
-                    resource.img.onerror = null;
-                    resource.img.src = '';
-                } catch (e) { }
-                resource.img = null;
-            }
-            if (Array.isArray(resource.frames)) {
-                resource.frames.forEach((frame) => {
-                    if (frame) {
-                        try {
-                            frame.onload = null;
-                            frame.onerror = null;
-                            frame.src = '';
-                        } catch (e) { }
-                    }
-                });
-                resource.frames = [];
-            }
-            if (resource.video) {
-                try {
-                    resource.video.pause();
-                    resource.video.removeAttribute('src');
-                    resource.video.load();
-                } catch (e) { }
-                resource.video = null;
-            }
-        }
-
-        function pruneHistoryResources(centerIndex) {
-            if (typeof centerIndex !== 'number' || centerIndex < 0) return;
-            const minIndex = centerIndex - HISTORY_WINDOW_RADIUS;
-            const maxIndex = centerIndex + HISTORY_WINDOW_RADIUS;
-            for (const [index, resource] of loadedHistoryResources.entries()) {
-                if (index < minIndex || index > maxIndex) {
-                    unloadHistoryResource(resource);
-                    loadedHistoryResources.delete(index);
-                }
-            }
-        }
-
-        function trackHistoryResource(index, resource) {
-            if (index < 0) return;
-            if (loadedHistoryResources.has(index)) {
-                const prev = loadedHistoryResources.get(index);
-                if (prev !== resource) {
-                    unloadHistoryResource(prev);
-                }
-            }
-            loadedHistoryResources.set(index, resource);
-            pruneHistoryResources(currentViewIndex >= 0 ? currentViewIndex : index);
-        }
-
-        function preloadHistoryNeighbor(index) {
-            if (index < 0 || index >= imageHistory.length || loadedHistoryResources.has(index)) return;
-            const item = imageHistory[index];
-            if (!item || !item.url || item.animation) return;
-            const img = new Image();
-            img.src = resolveWebpQualityUrl(item.url);
-            trackHistoryResource(index, { type: 'image', img });
-        }
-
-        window.__historyResourceManager = {
-            loadedHistoryResources,
-            pruneHistoryResources,
-            unloadHistoryResource,
-            HISTORY_WINDOW_RADIUS,
-        };
-
-        initializeStoryLogInspector(theaterId);
-
-        function playAnimation(animation) {
-            if (minimalMode) {
-                // Animated media defeats the point of Minimal Mode. Present a
-                // still source where one exists, without starting a decoder or
-                // a requestAnimationFrame loop.
-                const stillUrl = animation.type === 'triframe'
-                    ? animation.frames?.[0]
-                    : animation.type === 'layered'
-                        ? animation.layers?.[0]?.url
-                        : animation.poster_url;
-                if (stillUrl) {
-                    applyImageTransition(resolveWebpQualityUrl(stillUrl), 'none', 'none');
-                }
-                return;
-            }
-            playCanvasAnimation(imageRenderer, animation, url => {
-                const effective = resolveWebpQualityUrl(url);
-                return animation.type === 'triframe'
-                    ? effective + (effective.includes('?') ? '&' : '?') + 't=' + Date.now()
-                    : effective;
-            });
-        }
-
-        function updatePagingControlsUI() {
-            canvasBookmarks.refresh();
-            const controls = document.getElementById('history-paging-controls');
-            const prevBtn = document.getElementById('page-prev-btn');
-            const nextBtn = document.getElementById('page-next-btn');
-            const headBtn = document.getElementById('page-head-btn');
-            const indicator = document.getElementById('page-indicator');
-            const newBadge = document.getElementById('new-head-badge');
-            const doodleCanvas = document.getElementById('doodle-canvas');
-
-            if (!controls) return;
-
-            const isOrator = typeof isCurrentOrator === 'function' ? isCurrentOrator() : false;
-            if (isOrator) {
-                isNavigating = false;
-                isPagedBack = false;
-                hasNewHeadWhilePagedBack = false;
-            }
-
-            const total = Math.max(1, imageHistory ? imageHistory.length : 1);
-            const currentNum = currentViewIndex >= 0 ? currentViewIndex + 1 : total;
-
-            if (indicator) {
-                indicator.textContent = `${currentNum} / ${total}`;
-            }
-
-            if (prevBtn) {
-                prevBtn.disabled = (currentViewIndex <= 0 || total <= 1);
-                prevBtn.style.opacity = prevBtn.disabled ? '0.35' : '1';
-                prevBtn.style.cursor = prevBtn.disabled ? 'default' : 'pointer';
-            }
-
-            if (nextBtn) {
-                nextBtn.disabled = (currentViewIndex >= total - 1 || total <= 1);
-                nextBtn.style.opacity = nextBtn.disabled ? '0.35' : '1';
-                nextBtn.style.cursor = nextBtn.disabled ? 'default' : 'pointer';
-            }
-
-            if (headBtn) {
-                headBtn.style.display = (!isOrator && isNavigating) ? 'flex' : 'none';
-            }
-
-            if (newBadge) {
-                newBadge.style.display = (!isOrator && isNavigating && hasNewHeadWhilePagedBack) ? 'inline-block' : 'none';
-            }
-
-            if (doodleCanvas) {
-                refreshCanvasToolInteraction();
-            }
-        }
-
-        function displayHistoryImage(index, transition = 'none') {
-            if (index < 0 || index >= imageHistory.length) return;
-            const isOrator = typeof isCurrentOrator === 'function' ? isCurrentOrator() : false;
-            if (isOrator) {
-                isNavigating = false;
-                isPagedBack = false;
-                hasNewHeadWhilePagedBack = false;
-            }
-            currentViewIndex = index;
-            isPagedBack = isNavigating;
-            if (!isNavigating) {
-                hasNewHeadWhilePagedBack = false;
-            }
-
-            pruneHistoryResources(currentViewIndex);
-
-            const item = imageHistory[currentViewIndex];
-            if (item) displayPageDoodles(item);
-            if (!item || (!item.url && !item.animation)) return;
-
-            promptBtn.classList.remove('expanded');
-            promptBtn.style.display = 'none';
-            promptPinned = false;
-            const promptText = item.prompt || (item.animation && item.animation.scene_prompt) || "";
-            if (promptText) {
-                promptTextSpan.textContent = promptText;
-                promptBtn.style.display = 'flex';
-            } else {
-                promptBtn.style.display = 'none';
-            }
-
-            const animSignature = getAnimationSignature(item.animation);
-            if (animSignature) {
-                playAnimation(item.animation);
-                trackHistoryResource(currentViewIndex, {
-                    type: 'animation',
-                    animation: item.animation,
-                });
-            } else if (item.url) {
-                const effectiveUrl = resolveWebpQualityUrl(item.url);
-                const imgUrl = effectiveUrl + (effectiveUrl.includes('?') ? '&' : '?') + 't=' + new Date().getTime();
-                applyImageTransition(imgUrl, transition, item.effect || 'gleam3');
-                const cachedImg = new Image();
-                cachedImg.src = imgUrl;
-                trackHistoryResource(currentViewIndex, {
-                    type: 'image',
-                    img: cachedImg,
-                });
-            }
-
-            preloadHistoryNeighbor(currentViewIndex - 1);
-            preloadHistoryNeighbor(currentViewIndex + 1);
-
-            updatePagingControlsUI();
-        }
+        const resolveWebpQualityUrl = (rawUrl) => historyPaging.resolveWebpQualityUrl(rawUrl);
+        window.__resolveWebpQualityUrl = resolveWebpQualityUrl;
+        window.__historyResourceManager = historyPaging.resourceManager;
+        const setMinimalMode = (enabled) => historyPaging.setMinimalMode(enabled);
+        const stepOratorPreviousImage = () => historyPaging.stepOratorPreviousImage();
+        const stepOratorNextImage = () => historyPaging.stepOratorNextImage();
+        const syncToOratorCursor = () => historyPaging.syncToOratorCursor();
+        const displayHistoryImage = (index, transition = 'none') => historyPaging.displayHistoryImage(index, transition);
+        const updatePagingControlsUI = () => historyPaging.updatePagingControlsUI();
 
         async function fetchLatestImage() {
             const requestSequence = ++latestStateRequestSequence;
@@ -962,211 +641,11 @@ import { startCanvasStatePolling } from "/static/generated/canvas/state-polling.
                     updateAssetPlaybackSelection(data.music);
                 }
 
-                if (data.history && Array.isArray(data.history) && data.history.length > 0) {
-                    imageHistory = data.history;
-                } else if (data.latest) {
-                    imageHistory = [{
-                        url: data.latest,
-                        prompt: data.prompt || (data.animation && data.animation.scene_prompt) || "",
-                        time: data.time || 0,
-                        transition: data.transition || "fade",
-                        effect: data.effect || "gleam3",
-                        path: data.latest,
-                        animation: data.animation || null
-                    }];
-                }
-                const isOrator = typeof isCurrentOrator === 'function' ? isCurrentOrator() : false;
-                if (!isOrator || isFirstCanvasLoad || oratorCursorIndex < 0) {
-                    if (data.orator_cursor !== undefined && data.orator_cursor !== null) {
-                        oratorCursorIndex = Math.max(0, Math.min(Number(data.orator_cursor), imageHistory.length - 1));
-                    } else if (imageHistory.length > 0) {
-                        oratorCursorIndex = imageHistory.length - 1;
-                    }
-                }
-                pruneHistoryResources(currentViewIndex >= 0 ? currentViewIndex : (oratorCursorIndex >= 0 ? oratorCursorIndex : imageHistory.length - 1));
-
-                const currentImageEffect = data.effect || 'gleam3';
-                const animationSignature = getAnimationSignature(data.animation);
-                // A show_image call may change only presentation (for example,
-                // applying haze to an image the fallback already displayed).
-                // Treat that as an update even when the URL has not changed.
-                const isNewImage = (data.latest || animationSignature) && (
-                    data.time > lastTime
-                    || data.latest !== lastImageRawUrl
-                    || currentImageEffect !== lastImageEffect
-                    || animationSignature !== lastAnimationSignature
-                );
-                if (isFirstCanvasLoad) {
-                    isFirstCanvasLoad = false;
-                    currentViewIndex = (oratorCursorIndex >= 0 && oratorCursorIndex < imageHistory.length)
-                        ? oratorCursorIndex
-                        : Math.max(0, imageHistory.length - 1);
-                    isNavigating = false;
-                    isPagedBack = false;
-                    hasNewHeadWhilePagedBack = false;
-                    pruneHistoryResources(currentViewIndex);
-                    if (data.latest || animationSignature) {
-                        lastTime = data.time;
-                        lastImageRawUrl = data.latest;
-                        lastImageEffect = currentImageEffect;
-                        lastAnimationSignature = animationSignature;
-                    }
-                    displayHistoryImage(currentViewIndex, 'none');
-                } else if (isNewImage || (!isOrator && !isNavigating && currentViewIndex !== oratorCursorIndex)) {
-                    lastTime = data.time;
-                    lastImageRawUrl = data.latest;
-                    lastImageEffect = currentImageEffect;
-                    lastAnimationSignature = animationSignature;
-                    const transition = (data.transition || 'crossfade').toLowerCase().trim();
-
-                    if (isOrator) {
-                        isNavigating = false;
-                        isPagedBack = false;
-                        hasNewHeadWhilePagedBack = false;
-                        if (data.orator_cursor !== undefined && data.orator_cursor !== null) {
-                            oratorCursorIndex = Math.max(0, Math.min(Number(data.orator_cursor), imageHistory.length - 1));
-                        } else {
-                            oratorCursorIndex = Math.max(0, imageHistory.length - 1);
-                        }
-                    }
-
-                    if (!isNavigating) {
-                        currentViewIndex = (oratorCursorIndex >= 0 && oratorCursorIndex < imageHistory.length)
-                            ? oratorCursorIndex
-                            : Math.max(0, imageHistory.length - 1);
-                        isPagedBack = false;
-                        hasNewHeadWhilePagedBack = false;
-                        pruneHistoryResources(currentViewIndex);
-
-                        displayHistoryImage(currentViewIndex, transition);
-                    } else {
-                        hasNewHeadWhilePagedBack = true;
-                        updatePagingControlsUI();
-                    }
-                } else if (!data.latest && !data.animation && imageHistory.length === 0) {
-                    bgLayer.style.backgroundImage = 'none';
-                    if (currentImage) currentImage.classList.remove('loaded');
-                    if (ghostImage) { ghostImage.src = ''; ghostImage.style.opacity = '0'; }
-                    if (promptBtn) promptBtn.style.display = 'none';
-                    loadedHistoryResources.forEach((res) => unloadHistoryResource(res));
-                    loadedHistoryResources.clear();
-                    updatePagingControlsUI();
-                } else {
-                    updatePagingControlsUI();
-                }
+                historyPaging.applyLatestState(data);
             } catch (err) {
                 console.error("Failed to fetch image data:", err);
             }
         }
-
-        document.getElementById('page-prev-btn')?.addEventListener('click', () => {
-            if (typeof isCurrentOrator === 'function' && isCurrentOrator()) {
-                if (currentViewIndex > 0) {
-                    void triggerOratorPreviousImage();
-                }
-            } else if (currentViewIndex > 0) {
-                isNavigating = true;
-                isPagedBack = true;
-                displayHistoryImage(currentViewIndex - 1, 'none');
-            }
-        });
-
-        document.getElementById('page-next-btn')?.addEventListener('click', () => {
-            if (typeof isCurrentOrator === 'function' && isCurrentOrator()) {
-                if (currentViewIndex < imageHistory.length - 1) {
-                    void triggerOratorNextImage();
-                }
-            } else if (currentViewIndex < imageHistory.length - 1) {
-                isNavigating = true;
-                isPagedBack = true;
-                displayHistoryImage(currentViewIndex + 1, 'none');
-            }
-        });
-
-        const syncToOratorCursor = () => {
-            if (typeof isCurrentOrator === 'function' && isCurrentOrator()) return;
-            isNavigating = false;
-            isPagedBack = false;
-            hasNewHeadWhilePagedBack = false;
-            const target = (oratorCursorIndex >= 0 && oratorCursorIndex < imageHistory.length)
-                ? oratorCursorIndex
-                : Math.max(0, imageHistory.length - 1);
-            if (target >= 0 && target < imageHistory.length) {
-                displayHistoryImage(target, 'crossfade');
-            } else {
-                updatePagingControlsUI();
-            }
-        };
-
-        document.getElementById('page-head-btn')?.addEventListener('click', syncToOratorCursor);
-        document.getElementById('page-sync-btn')?.addEventListener('click', syncToOratorCursor);
-
-        // Paging bar hover discovery: reveal controls when mouse moves near top center,
-        // without letting the discovery area block clicks to underlying canvas or interactive UI elements.
-        const pagingControls = document.getElementById('history-paging-controls');
-        const imgContainer = document.getElementById('image-container');
-        if (pagingControls && imgContainer) {
-            let pagingHoverTimeout = null;
-            imgContainer.addEventListener('pointermove', (e) => {
-                if (typeof window !== 'undefined' && window.isCanvasSelectionActive) return;
-                if (pagingControls.classList.contains('inspector-open')) return;
-                const rect = imgContainer.getBoundingClientRect();
-                const relY = e.clientY - rect.top;
-                const relX = e.clientX - rect.left;
-                const centerX = rect.width / 2;
-                // Discovery zone: within 70px of the container top and within 180px of center
-                const inZone = relY >= 0 && relY <= 70 && Math.abs(relX - centerX) <= 180;
-                if (inZone) {
-                    if (pagingHoverTimeout) {
-                        clearTimeout(pagingHoverTimeout);
-                        pagingHoverTimeout = null;
-                    }
-                    pagingControls.classList.add('hover-discovered');
-                } else if (pagingControls.classList.contains('hover-discovered')) {
-                    if (!pagingHoverTimeout) {
-                        pagingHoverTimeout = setTimeout(() => {
-                            pagingControls.classList.remove('hover-discovered');
-                            pagingHoverTimeout = null;
-                        }, 350);
-                    }
-                }
-            });
-            imgContainer.addEventListener('pointerleave', () => {
-                if (pagingHoverTimeout) {
-                    clearTimeout(pagingHoverTimeout);
-                    pagingHoverTimeout = null;
-                }
-                pagingControls.classList.remove('hover-discovered');
-            });
-        }
-
-        window.addEventListener('keydown', (e) => {
-            const active = document.activeElement;
-            if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable)) {
-                return;
-            }
-            if (e.key === 'ArrowLeft') {
-                if (typeof isCurrentOrator === 'function' && isCurrentOrator()) {
-                    if (currentViewIndex > 0) {
-                        void triggerOratorPreviousImage();
-                    }
-                } else if (currentViewIndex > 0) {
-                    isNavigating = true;
-                    isPagedBack = true;
-                    displayHistoryImage(currentViewIndex - 1, 'none');
-                }
-            } else if (e.key === 'ArrowRight') {
-                if (typeof isCurrentOrator === 'function' && isCurrentOrator()) {
-                    if (currentViewIndex < imageHistory.length - 1) {
-                        void triggerOratorNextImage();
-                    }
-                } else if (currentViewIndex < imageHistory.length - 1) {
-                    isNavigating = true;
-                    isPagedBack = true;
-                    displayHistoryImage(currentViewIndex + 1, 'none');
-                }
-            }
-        });
 
         let lastAgentThought = null;
 
@@ -1187,123 +666,89 @@ import { startCanvasStatePolling } from "/static/generated/canvas/state-polling.
 
         // Doodle Logic with Full HiDPI Persistence & Replay
         const canvas = document.getElementById('doodle-canvas');
-        const ctx = canvas ? canvas.getContext('2d') : null;
-        const colorBtns = document.querySelectorAll('.color-btn');
-        const clearBtn = document.getElementById('clear-doodle-btn');
-        const undoBtn = document.getElementById('undo-doodle-btn');
-        const brushSizeSlider = document.getElementById('brush-size');
-        const doodleToolbar = document.getElementById('doodle-toolbar');
         const doodlesToggleBtn = document.getElementById('doodles-toggle-btn');
-        const paletteToggle = document.getElementById('doodle-palette-toggle');
-        const paletteMenu = document.getElementById('doodle-palette-menu');
-        const textAnnotationToggle = document.getElementById('text-annotation-toggle');
-        const textAnnotationMenu = document.getElementById('text-annotation-menu');
-        const textAnnotationFont = document.getElementById('text-annotation-font');
-        const textAnnotationSize = document.getElementById('text-annotation-size');
-        const textAnnotationSizeValue = document.getElementById('text-annotation-size-value');
-        const textAnnotationColors = document.querySelectorAll('.text-annotation-color');
 
-        let currentColor = null;
-        let lastSelectedTool = { type: 'marker', color: '#ef4444' };
-        let currentBrushSize = 3;
-        let isDrawing = false;
-        let currentStrokeId = null;
-        let lastNormX = 0;
-        let lastNormY = 0;
-        let doodlesEnabled = true;
-        let displayedDoodlePageId = null;
-        let doodlePageRequestSequence = 0;
-        let lastGameCanvasRevision = null;
-        let textAnnotationMode = false;
-        let currentTextColor = '#ffffff';
-        let activeTextEditor = null;
+        doodleSession = createDoodleSession({
+            theaterId: currenttheaterId,
+            canvas,
+            imgContainer,
+            pagingControls,
+            doodleToolbar: document.getElementById('doodle-toolbar'),
+            doodlesToggleBtn,
+            paletteToggle: document.getElementById('doodle-palette-toggle'),
+            paletteMenu: document.getElementById('doodle-palette-menu'),
+            colorBtns: Array.from(document.querySelectorAll('.color-btn')),
+            clearBtn: document.getElementById('clear-doodle-btn'),
+            undoBtn: document.getElementById('undo-doodle-btn'),
+            brushSizeSlider: document.getElementById('brush-size'),
+            textAnnotationToggle: document.getElementById('text-annotation-toggle'),
+            textAnnotationMenu: document.getElementById('text-annotation-menu'),
+            textAnnotationFont: document.getElementById('text-annotation-font'),
+            textAnnotationSize: document.getElementById('text-annotation-size'),
+            textAnnotationSizeValue: document.getElementById('text-annotation-size-value'),
+            textAnnotationColors: Array.from(document.querySelectorAll('.text-annotation-color')),
+            textLayer: document.getElementById('canvas-text-layer'),
+            stampLayer: document.getElementById('canvas-stamp-layer'),
+            isOrator: () => typeof isCurrentOrator === 'function' && isCurrentOrator(),
+            isCollabModeEnabled: () => isCollabModeEnabled(),
+            isPagedBack: () => historyPaging.isPagedBack(),
+            getPage: () => historyPaging.getCurrentItem()?.canvas_page || null,
+            canPlaceStamps: () => canPlaceStamps(),
+            stopSceneSpeech: () => stopSceneSpeech(),
+            setDrawingColorSelected: (selected) => narrationPane.setDrawingColorSelected(selected),
+            onMoveStamp: (action, previous, commit) => stampsController.moveStampAnnotation(action, previous, commit),
+            onRemoveStamp: (action) => stampsController.removeStampAnnotation(action),
+            onSelectStamp: (action) => stampsController.selectStampAnnotation(action),
+            onApplyStampAnnotation: (action) => stampsController.applyStampAnnotation(action),
+            onBringStampToFront: (stampId) => stampsController.bringStampToFront(stampId),
+            onDoodlesDisplayChanged: () => {
+                if (typeof isStampManagerOpen !== 'undefined' && isStampManagerOpen) {
+                    updateStampManagerPermissionBanner();
+                    if (cachedUserStamps) renderStampManagerGrid(cachedUserStamps);
+                }
+            },
+            onHandleSocketData: (data) => typeof handleDoodleSocketData === 'function' && handleDoodleSocketData(data),
+            onToggleMicSocketMessage: () => {
+                if (isCurrentOrator() && agentConnectBtn && !agentConnectBtn.disabled) {
+                    agentConnectBtn.click();
+                }
+            },
+            onBatonStateSocketMessage: (batonState, activeViewers) => {
+                if (typeof updateBatonStateUI === 'function') {
+                    updateBatonStateUI(batonState, activeViewers);
+                }
+            },
+            isActionWheelRightClickBound: () => Boolean(
+                isCurrentOrator()
+                && actionWheel
+                && typeof actionWheel.isRightClickBound === 'function'
+                && actionWheel.isRightClickBound()
+            ),
+        });
 
-        // Stores all active doodle stroke segments for replay across window resizes
-        let doodleActions = [];
-        let doodleUndoStack = [];
-        let activeDeleteTransaction = null;
-        let pendingDrawBatch = null;
-        let drawBatchFrame = null;
-        // Keep drawing responsive even while reconnecting.  The queue
-        // is flushed only after the server's initial snapshot arrives,
-        // so that snapshot cannot overwrite locally drawn strokes.
-        const pendingDoodleMessages = [];
-        const inFlightDoodleMessages = new Map();
-        const pendingTextEdits = new Map();
-        let nextDoodleMessageId = 0;
-        let ws = null;
-        let doodleSocketReady = false;
-        let doodleReconnectTimer = null;
-        const DOODLE_RECONNECT_DELAY_MS = 5000;
-
-        function updateUndoButtonState() {
-            if (!undoBtn) return;
-            const canUndo = (doodleUndoManager ? doodleUndoManager.canUndo() : (doodleUndoStack && doodleUndoStack.length > 0)) && doodlesEnabled && !isPagedBack;
-            undoBtn.disabled = !canUndo;
-            undoBtn.style.opacity = canUndo ? '1' : '0.4';
-            undoBtn.style.cursor = canUndo ? 'pointer' : 'not-allowed';
-        }
-
-        function getDoodleUndoContext() {
-            return {
-                get doodleActions() { return doodleActions; },
-                set doodleActions(val) { doodleActions = val; },
-                doodleRenderer: typeof doodleRenderer !== 'undefined' ? doodleRenderer : null,
-                redrawAllDoodles: typeof redrawAllDoodles === 'function' ? redrawAllDoodles : () => {},
-                sendOrQueueDoodleMessage: typeof sendOrQueueDoodleMessage === 'function' ? sendOrQueueDoodleMessage : () => {},
-                restoreSegmentsToServer: typeof restoreSegmentsToServer === 'function' ? restoreSegmentsToServer : () => {},
-            };
-        }
-
-        const doodleUndoManager = typeof createDoodleUndoManager === 'function'
-            ? createDoodleUndoManager({
-                getStack: () => doodleUndoStack,
-                getContext: getDoodleUndoContext,
-                onStateChange: () => updateUndoButtonState(),
-                isEnabled: () => doodlesEnabled && !isPagedBack
-            })
-            : null;
-
-        function pushUndoAction(action) {
-            if (doodleUndoManager) {
-                doodleUndoManager.push(action);
-            } else {
-                const doodleAction = (action instanceof DoodleAction || (action && typeof action.undo === 'function'))
-                    ? action
-                    : (typeof DoodleAction !== 'undefined' ? DoodleAction.from(action) : action);
-                if (!doodleAction) return;
-                doodleUndoStack.push(doodleAction);
-                if (doodleUndoStack.length > 100) doodleUndoStack.shift();
-                if (typeof updateUndoButtonState === 'function') updateUndoButtonState();
-            }
-        }
-
-        function undoLastDoodleAction() {
-            if (doodleUndoManager) {
-                return doodleUndoManager.undo();
-            }
-            if (doodleUndoStack.length === 0) return false;
-            const action = doodleUndoStack.pop();
-            if (typeof updateUndoButtonState === 'function') updateUndoButtonState();
-            if (action && typeof action.undo === 'function') {
-                const context = getDoodleUndoContext();
-                return action.undo(context);
-            }
-            return false;
-        }
+        const doodleRenderer = doodleSession.doodleRenderer;
+        const doodleUndoManager = doodleSession.doodleUndoManager;
+        const resizeDoodleCanvas = () => doodleSession.resizeDoodleCanvas();
+        const redrawAllDoodles = () => doodleSession.redrawAllDoodles();
+        const displayPageDoodles = (item) => doodleSession.displayPageDoodles(item);
+        const requestPageDoodles = (pageId) => doodleSession.requestPageDoodles(pageId);
+        const sendOrQueueDoodleMessage = (message) => doodleSession.sendOrQueueDoodleMessage(message);
+        const flushDrawBatch = () => doodleSession.flushDrawBatch();
+        const pushUndoAction = (action) => doodleSession.pushUndoAction(action);
+        const undoLastDoodleAction = () => doodleSession.undoLastDoodleAction();
+        const updateTextAnnotationAvailability = () => doodleSession.updateTextAnnotationAvailability();
+        const setDoodlesDisplay = (enabled) => doodleSession.setDoodlesDisplay(enabled);
+        const cycleCanvasCursor = () => doodleSession.cycleCanvasCursor();
 
         window.doodleUndoManager = doodleUndoManager;
         try {
             Object.defineProperty(window, 'doodleUndoStack', {
-                get() { return doodleUndoManager ? doodleUndoManager.stack : doodleUndoStack; },
-                set(val) {
-                    if (doodleUndoManager) doodleUndoManager.stack = val;
-                    doodleUndoStack = val;
-                },
+                get() { return doodleSession.getDoodleUndoStack(); },
+                set(val) { doodleSession.setDoodleUndoStack(val); },
                 configurable: true
             });
         } catch (_) {
-            window.doodleUndoStack = doodleUndoStack;
+            window.doodleUndoStack = doodleSession.getDoodleUndoStack();
         }
         window.undoLastDoodleAction = undoLastDoodleAction;
         window.undoDoodleAction = undoLastDoodleAction;
@@ -1320,813 +765,6 @@ import { startCanvasStatePolling } from "/static/generated/canvas/state-polling.
         window.CompoundDeleteDoodleAction = typeof CompoundDeleteDoodleAction !== 'undefined' ? CompoundDeleteDoodleAction : undefined;
         window.ClearCanvasDoodleAction = typeof ClearCanvasDoodleAction !== 'undefined' ? ClearCanvasDoodleAction : undefined;
         window.restoreSegmentsToServer = typeof restoreSegmentsToServer !== 'undefined' ? restoreSegmentsToServer : undefined;
-
-        function renderDoodleBatch(data) {
-            const points = data.points;
-            if (!Array.isArray(points) || points.length < 4) return;
-            const batchStrokeId = data.stroke_id || data.client_message_id || ((typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : ('batch-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7)));
-            const rect = { width: canvas.clientWidth, height: canvas.clientHeight };
-            for (let index = 0; index < points.length - 2; index += 2) {
-                const action = {
-                    type: 'draw',
-                    stroke_id: batchStrokeId,
-                    x0: points[index], y0: points[index + 1],
-                    x1: points[index + 2], y1: points[index + 3],
-                    color: data.color, size: data.size || 3
-                };
-                doodleActions.push(action);
-                doodleRenderer.renderStrokeSegment(action);
-            }
-        }
-
-        function displayPageDoodles(item) {
-            const pageId = item.page_id || null;
-            if (displayedDoodlePageId === pageId) return;
-            flushDrawBatch();
-            isDrawing = false;
-            activeTextEditor?.remove();
-            activeTextEditor = null;
-            displayedDoodlePageId = pageId;
-            doodleActions = [];
-            if (typeof doodleUndoStack !== 'undefined') doodleUndoStack = [];
-            if (typeof updateUndoButtonState === 'function') updateUndoButtonState();
-            doodleRenderer?.clearSelectedSegments();
-            setDoodlesDisplay(item.doodles_enabled !== false);
-            redrawAllDoodles();
-            void requestPageDoodles(pageId);
-        }
-
-        async function requestPageDoodles(pageId = displayedDoodlePageId) {
-            if (!pageId) return;
-            const sequence = ++doodlePageRequestSequence;
-            if (ws && ws.readyState === WebSocket.OPEN) {
-                doodleSocketReady = false;
-                ws.send(JSON.stringify({type: 'subscribe_doodles', page_id: pageId}));
-                return;
-            }
-            try {
-                const params = new URLSearchParams({theater_id: currenttheaterId, page_id: pageId});
-                const response = await fetch('/api/doodles?' + params);
-                if (!response.ok) throw new Error(`Unable to load page doodles (${response.status}).`);
-                const snapshot = await response.json();
-                if (sequence === doodlePageRequestSequence) applyDoodleSnapshot(snapshot);
-            } catch (error) {
-                console.warn('Could not load page doodles.', error);
-            }
-        }
-
-        function applyDoodleSnapshot(data) {
-            if (data.page_id && displayedDoodlePageId && data.page_id !== displayedDoodlePageId) return;
-            displayedDoodlePageId = data.page_id || displayedDoodlePageId;
-            doodleActions = [];
-            (data.stamps || []).forEach(action => doodleActions.push(action));
-            (data.batches || []).forEach(renderDoodleBatch);
-            (data.annotations || []).forEach(action => doodleActions.push(action));
-            if (data.enabled !== undefined) setDoodlesDisplay(data.enabled);
-            redrawAllDoodles();
-        }
-
-        function flushDrawBatch() {
-            drawBatchFrame = null;
-            if (!pendingDrawBatch) return;
-            const batch = pendingDrawBatch;
-            pendingDrawBatch = null;
-            sendOrQueueDoodleMessage(batch);
-        }
-
-        function isActiveCanvasWindow() {
-            return document.visibilityState === 'visible' && document.hasFocus();
-        }
-
-        function sendOrQueueDoodleMessage(message) {
-            if (message.page_id === undefined && displayedDoodlePageId) {
-                message.page_id = displayedDoodlePageId;
-            }
-            if (!message.client_message_id) {
-                nextDoodleMessageId += 1;
-                message.client_message_id = `${Date.now()}-${nextDoodleMessageId}`;
-            }
-            if (ws && ws.readyState === WebSocket.OPEN && doodleSocketReady) {
-                try {
-                    ws.send(JSON.stringify(message));
-                    inFlightDoodleMessages.set(message.client_message_id, message);
-                } catch (_) {
-                    pendingDoodleMessages.push(message);
-                    scheduleDoodleReconnect(0);
-                }
-                return;
-            }
-            pendingDoodleMessages.push(message);
-            scheduleDoodleReconnect(0);
-        }
-
-        function flushQueuedDoodleMessages() {
-            if (!ws || ws.readyState !== WebSocket.OPEN || !doodleSocketReady) return;
-            const queuedMessages = pendingDoodleMessages.splice(0);
-            for (const message of queuedMessages) {
-                sendOrQueueDoodleMessage(message);
-                if (message.page_id && message.page_id !== displayedDoodlePageId) continue;
-                if (message.type === 'draw_batch') renderDoodleBatch(message);
-                if (message.type === 'clear') {
-                    doodleActions = [];
-                    redrawAllDoodles();
-                }
-                if (message.type === 'toggle_doodles') setDoodlesDisplay(message.enabled);
-                if (message.type === 'text') applyTextAnnotation(message);
-                if (message.type === 'stamp') applyStampAnnotation(message);
-                if (message.type === 'remove_stamp') {
-                    const idx = doodleActions.findIndex(a => a.type === 'stamp' && a.id === message.id);
-                    if (idx >= 0) {
-                        doodleActions.splice(idx, 1);
-                        redrawAllDoodles();
-                    }
-                }
-                if (message.type === 'remove_text') {
-                    const idx = doodleActions.findIndex(a => a.type === 'text' && a.id === message.id);
-                    if (idx >= 0) {
-                        doodleActions.splice(idx, 1);
-                        redrawAllDoodles();
-                    }
-                }
-                if (message.type === 'remove_draw') {
-                    const strokeId = message.stroke_id;
-                    const ids = Array.isArray(message.ids) ? new Set(message.ids) : null;
-                    doodleActions = doodleActions.filter(a => {
-                        if (a.type !== 'draw') return true;
-                        if (strokeId && a.stroke_id === strokeId) return false;
-                        if (ids && a.id && ids.has(a.id)) return false;
-                        return true;
-                    });
-                    redrawAllDoodles();
-                }
-            }
-        }
-
-        function scheduleDoodleReconnect(delay = DOODLE_RECONNECT_DELAY_MS) {
-            // A closed socket does not need to be revived merely to
-            // redraw server-persisted strokes. Reconnect only when
-            // this browser has local doodle changes to deliver.
-            if (!pendingDoodleMessages.length || doodleReconnectTimer || !isActiveCanvasWindow()) return;
-            doodleReconnectTimer = setTimeout(() => {
-                doodleReconnectTimer = null;
-                connectDoodleSocket();
-            }, delay);
-        }
-
-        function setDoodlesDisplay(enabled) {
-            doodlesEnabled = Boolean(enabled);
-            if (canvas) {
-                canvas.style.display = doodlesEnabled ? 'block' : 'none';
-                if (doodlesEnabled) doodleRenderer.resize(doodleActions);
-            }
-            if (doodleToolbar) {
-                doodleToolbar.style.display = doodlesEnabled ? 'flex' : 'none';
-            }
-            if (doodlesToggleBtn) {
-                doodlesToggleBtn.textContent = doodlesEnabled ? '✏️ Doodles: On' : '✏️ Doodles: Off';
-                doodlesToggleBtn.title = doodlesEnabled ? 'Hide doodles for this page.' : 'Show doodles for this page.';
-                doodlesToggleBtn.style.color = doodlesEnabled ? '#a5b4fc' : '#94a3b8';
-                doodlesToggleBtn.style.background = doodlesEnabled ? 'rgba(99, 102, 241, 0.2)' : 'rgba(255, 255, 255, 0.08)';
-                doodlesToggleBtn.style.borderColor = doodlesEnabled ? 'rgba(99, 102, 241, 0.4)' : 'var(--glass-border)';
-            }
-            updateTextAnnotationAvailability();
-            if (typeof updateUndoButtonState === 'function') updateUndoButtonState();
-            refreshCanvasToolInteraction();
-            if (typeof isStampManagerOpen !== 'undefined' && isStampManagerOpen) {
-                updateStampManagerPermissionBanner();
-                if (cachedUserStamps) renderStampManagerGrid(cachedUserStamps);
-            }
-        }
-
-        if (doodlesToggleBtn) {
-            doodlesToggleBtn.addEventListener('click', () => {
-                if (!isCurrentOrator()) return;
-                const newEnabled = !doodlesEnabled;
-                setDoodlesDisplay(newEnabled);
-                sendOrQueueDoodleMessage({ type: 'toggle_doodles', enabled: newEnabled });
-            });
-        }
-
-        if (brushSizeSlider) {
-            brushSizeSlider.addEventListener('input', (e) => {
-                currentBrushSize = parseInt(e.target.value);
-            });
-        }
-
-        const doodleRenderer = createDoodleRenderer({
-            canvas,
-            getPage: () => imageHistory[currentViewIndex]?.canvas_page || null,
-            isVisible: () => doodlesEnabled,
-            textLayer: document.getElementById('canvas-text-layer'),
-            canEditText: () => canAddTextAnnotation() && !isPagedBack && canvasCursorState.current.type === 'select',
-            onEditText: action => openTextAnnotationEditor(action),
-            onMoveText: (action, previous, commit) => moveTextAnnotation(action, previous, commit),
-            stampLayer: document.getElementById('canvas-stamp-layer'),
-            canMoveStamp: () => canPlaceStamps() && !isPagedBack && canvasCursorState.current.type === 'select',
-            onMoveStamp: (action, previous, commit) => moveStampAnnotation(action, previous, commit),
-            onRemoveStamp: action => removeStampAnnotation(action),
-            onSelectStamp: action => selectStampAnnotation(action),
-            onRemoveText: action => removeTextAnnotation(action),
-            canSelectSegment: () => doodlesEnabled && !isPagedBack && canvasCursorState.current.type === 'select',
-            onRemoveSegment: (removed) => {
-                const removedSet = new Set((removed || []).map(r => r.id || r));
-                const removedSegments = doodleActions.filter(a => removedSet.has(a.id) || removedSet.has(a));
-                doodleActions = doodleActions.filter(a => !removedSet.has(a.id) && !removedSet.has(a));
-                if (removedSegments.length > 0) {
-                    if (typeof activeDeleteTransaction !== 'undefined' && activeDeleteTransaction) {
-                        activeDeleteTransaction.segments.push(...removedSegments);
-                    } else if (typeof pushUndoAction === 'function') {
-                        pushUndoAction(typeof DeleteSegmentsDoodleAction === 'function'
-                            ? new DeleteSegmentsDoodleAction(removedSegments)
-                            : {
-                                type: 'delete_segments',
-                                segments: removedSegments
-                            });
-                    }
-                    sendOrQueueDoodleMessage({
-                        type: 'remove_draw',
-                        ids: removedSegments.map(s => s.id).filter(Boolean)
-                    });
-                }
-                redrawAllDoodles();
-            },
-        });
-        const resizeDoodleCanvas = () => doodleRenderer.resize(doodleActions);
-        const redrawAllDoodles = () => doodleRenderer.redraw(doodleActions);
-        const renderSegment = doodleRenderer.renderSegment;
-        const renderTextAnnotation = doodleRenderer.renderText;
-
-        window.addEventListener('resize', resizeDoodleCanvas);
-
-        function setPaletteOpen(open) {
-            if (!paletteToggle || !paletteMenu) return;
-            paletteToggle.setAttribute('aria-expanded', String(open));
-            paletteMenu.classList.toggle('open', open);
-            paletteMenu.hidden = !open;
-        }
-
-        function canAddTextAnnotation() {
-            return doodlesEnabled && (isCurrentOrator() || isCollabModeEnabled());
-        }
-
-        function setTextAnnotationMenuOpen(open) {
-            if (!textAnnotationToggle || !textAnnotationMenu) return;
-            textAnnotationToggle.setAttribute('aria-expanded', String(open));
-            textAnnotationMenu.classList.toggle('open', open);
-            textAnnotationMenu.hidden = !open;
-        }
-
-        function refreshCanvasToolInteraction() {
-            const textLayer = document.getElementById('canvas-text-layer');
-            if (textLayer) {
-                textLayer.hidden = !doodlesEnabled;
-                textLayer.style.zIndex = currentColor !== null ? '4' : '6';
-            }
-            const stampLayer = document.getElementById('canvas-stamp-layer');
-            if (stampLayer) {
-                stampLayer.hidden = !doodlesEnabled;
-                stampLayer.style.zIndex = '4';
-            }
-            const hasCanvasTool = currentColor !== null || textAnnotationMode;
-            const canvasInteractive = hasCanvasTool && doodlesEnabled && !isPagedBack;
-            canvas.classList.toggle('drawing-disabled', !canvasInteractive);
-            canvas.style.pointerEvents = canvasInteractive ? 'auto' : 'none';
-            canvas.style.cursor = canvasInteractive
-                ? (textAnnotationMode ? 'text' : 'crosshair')
-                : 'default';
-            narrationPane.setDrawingColorSelected(canvasInteractive);
-        }
-
-        function applyCanvasCursorState(state) {
-            // These values are projections for drawing code; only this function updates them.
-            currentColor = state.type === 'marker' ? state.color : null;
-            textAnnotationMode = state.type === 'text';
-            imgContainer.dataset.cursorMode = state.type;
-            isDrawing = false;
-            currentStrokeId = null;
-            flushDrawBatch();
-            activeTextEditor?.remove();
-            activeTextEditor = null;
-            if (state.type === 'marker') lastSelectedTool = { type: 'marker', color: state.color };
-            if (textAnnotationMode) lastSelectedTool = { type: 'text' };
-            doodleRenderer.cancelInteraction();
-            colorBtns.forEach(button => {
-                const active = state.type === 'marker' && button.dataset.color === state.color;
-                button.classList.toggle('active', active);
-                button.setAttribute('aria-pressed', String(active));
-            });
-            textAnnotationToggle?.classList.toggle('active', textAnnotationMode);
-            textAnnotationToggle?.setAttribute('aria-pressed', String(textAnnotationMode));
-            setTextAnnotationMenuOpen(false);
-            pagingControls?.classList.remove('canvas-selected');
-            refreshCanvasToolInteraction();
-        }
-
-        function setTextAnnotationMode(active, openMenu = active) {
-            if (active && !canAddTextAnnotation()) return;
-            canvasCursorState.select({ type: active ? 'text' : 'select' });
-            setTextAnnotationMenuOpen(Boolean(openMenu && textAnnotationMode));
-        }
-
-        function updateTextAnnotationAvailability() {
-            if (!textAnnotationToggle) return;
-            const available = canAddTextAnnotation();
-            textAnnotationToggle.disabled = !available;
-            textAnnotationToggle.title = available
-                ? 'Add text annotation'
-                : 'Text annotations require collaboration mode for viewers';
-            if (!available && textAnnotationMode) {
-                activeTextEditor?.remove();
-                activeTextEditor = null;
-                setTextAnnotationMode(false, false);
-            }
-        }
-
-        function setDrawingColor(color) {
-            canvasCursorState.select(color ? { type: 'marker', color } : { type: 'select' });
-        }
-
-        function cycleCanvasCursor() {
-            const current = canvasCursorState.current.type;
-            if (current === 'marker' || current === 'text') {
-                canvasCursorState.select({ type: 'select' });
-            } else if (current === 'select') {
-                canvasCursorState.select({ type: 'navigate' });
-            } else if (!doodlesEnabled) {
-                canvasCursorState.select({ type: 'select' });
-            } else if (lastSelectedTool.type === 'text' && canAddTextAnnotation()) {
-                setTextAnnotationMode(true, false);
-            } else {
-                const color = lastSelectedTool.type === 'marker' ? lastSelectedTool.color : '#ef4444';
-                setDrawingColor(color);
-            }
-        }
-
-        document.addEventListener('click', (event) => {
-            if (!imgContainer) return;
-            const clickedCanvas = imgContainer.contains(event.target);
-            const clickedDrawingControls = doodleToolbar?.contains(event.target);
-            if (!clickedCanvas && !clickedDrawingControls && (currentColor !== null || textAnnotationMode)) {
-                setDrawingColor(null);
-            }
-            pagingControls?.classList.toggle('canvas-selected', clickedCanvas && canvasCursorState.current.type === 'select');
-            if (textAnnotationMode) pagingControls?.classList.remove('canvas-selected');
-        });
-
-        document.addEventListener('contextmenu', (event) => {
-            if (!imgContainer) return;
-            const clickedCanvas = imgContainer === event.target || imgContainer.contains(event.target);
-            if (!clickedCanvas) return;
-            if (event.target.closest('button, a, select, [role="dialog"], #orator-command-overlay, #doodle-toolbar, #history-paging-controls')) {
-                return;
-            }
-            if (isCurrentOrator() && actionWheel && typeof actionWheel.isRightClickBound === 'function' && actionWheel.isRightClickBound()) {
-                return;
-            }
-            event.preventDefault();
-            cycleCanvasCursor();
-        });
-
-        textAnnotationToggle?.addEventListener('click', () => {
-            if (!canAddTextAnnotation()) return;
-            setTextAnnotationMode(!textAnnotationMode, !textAnnotationMode);
-        });
-
-        textAnnotationSize?.addEventListener('input', () => {
-            if (textAnnotationSizeValue) textAnnotationSizeValue.textContent = `${textAnnotationSize.value} px`;
-        });
-
-        textAnnotationColors.forEach(button => {
-            button.addEventListener('click', () => {
-                currentTextColor = button.dataset.color || '#ffffff';
-                textAnnotationColors.forEach(option => {
-                    const selected = option === button;
-                    option.classList.toggle('active', selected);
-                    option.setAttribute('aria-pressed', String(selected));
-                });
-                if (activeTextEditor) activeTextEditor.style.color = currentTextColor;
-            });
-        });
-
-        if (paletteToggle) {
-            paletteToggle.addEventListener('click', () => {
-                setPaletteOpen(paletteToggle.getAttribute('aria-expanded') !== 'true');
-            });
-        }
-
-        document.addEventListener('pointerdown', (event) => {
-            if (paletteMenu && !paletteMenu.hidden && !event.target.closest('.doodle-palette')) {
-                setPaletteOpen(false);
-            }
-            if (textAnnotationMenu && !textAnnotationMenu.hidden && !event.target.closest('.text-annotation-tool')) {
-                setTextAnnotationMenuOpen(false);
-            }
-        });
-
-        document.addEventListener('keydown', (event) => {
-            if (event.key === 'Escape' && paletteMenu && !paletteMenu.hidden) {
-                setPaletteOpen(false);
-                paletteToggle?.focus();
-            } else if (event.key === 'Escape' && textAnnotationMenu && !textAnnotationMenu.hidden) {
-                setTextAnnotationMenuOpen(false);
-                textAnnotationToggle?.focus();
-            }
-        });
-
-        colorBtns.forEach(btn => {
-            btn.addEventListener('click', () => {
-                const nextColor = btn.classList.contains('active') ? null : btn.dataset.color;
-                setDrawingColor(nextColor);
-                setPaletteOpen(false);
-            });
-        });
-        canvasCursorState.subscribe(applyCanvasCursorState);
-        applyCanvasCursorState(canvasCursorState.current);
-
-        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const wsUrl = `${wsProtocol}//${window.location.host}/ws/doodle` + (currenttheaterId ? `?theater_id=${encodeURIComponent(currenttheaterId)}` : '');
-        function connectDoodleSocket(initialConnection = false) {
-            // The first connection must not depend on focus: on a
-            // newly opened page, the script can run before the window
-            // has received focus. Subsequent retries stay limited to
-            // an active window by scheduleDoodleReconnect.
-            if ((!initialConnection && !isActiveCanvasWindow()) || (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING))) return;
-            const socketPageId = displayedDoodlePageId;
-            const socketUrl = socketPageId ? wsUrl + '&page_id=' + encodeURIComponent(socketPageId) : wsUrl;
-            const socket = new WebSocket(socketUrl);
-            ws = socket;
-            doodleSocketReady = false;
-
-            socket.onopen = () => {
-                // Reconnect to the page being browsed, which may differ from the orator.
-                if (displayedDoodlePageId && displayedDoodlePageId !== socketPageId) void requestPageDoodles();
-            };
-            socket.onclose = () => {
-                if (ws === socket) {
-                    doodleSocketReady = false;
-                    for (const message of inFlightDoodleMessages.values()) {
-                        pendingDoodleMessages.push(message);
-                    }
-                    inFlightDoodleMessages.clear();
-                    scheduleDoodleReconnect();
-                }
-            };
-            socket.onerror = () => socket.close();
-            socket.onmessage = (event) => {
-                const data = JSON.parse(event.data);
-                if (typeof handleDoodleSocketData === 'function' && handleDoodleSocketData(data)) return;
-                if (data.page_id && displayedDoodlePageId && data.page_id !== displayedDoodlePageId) return;
-                if (data.type === 'doodles_toggle') {
-                    setDoodlesDisplay(data.enabled);
-                } else if (data.type === 'clear') {
-                    doodleActions = [];
-                    redrawAllDoodles();
-                } else if (data.type === 'doodle_snapshot') {
-                    doodlePageRequestSequence += 1;
-                    applyDoodleSnapshot(data);
-                    doodleSocketReady = true;
-                    flushQueuedDoodleMessages();
-                } else if (data.type === 'doodle_ack') {
-                    inFlightDoodleMessages.delete(data.client_message_id);
-                    pendingTextEdits.delete(data.client_message_id);
-                } else if (data.type === 'text_annotation_rejected' || data.type === 'stamp_rejected') {
-                    inFlightDoodleMessages.delete(data.client_message_id);
-                    const index = doodleActions.findIndex(action => action.client_message_id === data.client_message_id);
-                    if (index >= 0) {
-                        const previous = pendingTextEdits.get(data.client_message_id);
-                        if (previous) doodleActions[index] = previous;
-                        else doodleActions.splice(index, 1);
-                        pendingTextEdits.delete(data.client_message_id);
-                        redrawAllDoodles();
-                    }
-                } else if (data.type === 'draw_batch') {
-                    renderDoodleBatch(data);
-                } else if (data.type === 'draw') {
-                    if (!data.stroke_id) {
-                        data.stroke_id = data.client_message_id || ((typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : ('stroke-' + Date.now()));
-                    }
-                    doodleActions.push(data);
-                    const rect = { width: canvas.clientWidth, height: canvas.clientHeight };
-                    renderSegment(
-                        data.x0 * rect.width, data.y0 * rect.height,
-                        data.x1 * rect.width, data.y1 * rect.height,
-                        data.color, data.size || 3
-                    );
-                } else if (data.type === 'text') {
-                    applyTextAnnotation(data);
-                } else if (data.type === 'stamp') {
-                    applyStampAnnotation(data);
-                } else if (data.type === 'select_stamp') {
-                    bringStampToFront(data.id);
-                } else if (data.type === 'remove_stamp') {
-                    const idx = doodleActions.findIndex(a => a.type === 'stamp' && a.id === data.id);
-                    if (idx >= 0) {
-                        doodleActions.splice(idx, 1);
-                        redrawAllDoodles();
-                    }
-                } else if (data.type === 'remove_text') {
-                    const idx = doodleActions.findIndex(a => a.type === 'text' && a.id === data.id);
-                    if (idx >= 0) {
-                        doodleActions.splice(idx, 1);
-                        redrawAllDoodles();
-                    }
-                } else if (data.type === 'remove_draw') {
-                    const strokeId = data.stroke_id;
-                    const ids = Array.isArray(data.ids) ? new Set(data.ids) : null;
-                    doodleActions = doodleActions.filter(a => {
-                        if (a.type !== 'draw') return true;
-                        if (strokeId && a.stroke_id === strokeId) return false;
-                        if (ids && a.id && ids.has(a.id)) return false;
-                        return true;
-                    });
-                    redrawAllDoodles();
-                } else if (data.type === 'toggle_mic') {
-                    if (isCurrentOrator() && agentConnectBtn && !agentConnectBtn.disabled) {
-                        agentConnectBtn.click();
-                    }
-                } else if (data.type === 'baton_state') {
-                    if (typeof updateBatonStateUI === 'function') {
-                        updateBatonStateUI(data.baton_state, data.active_viewers);
-                    }
-                }
-            };
-        }
-
-        document.addEventListener('visibilitychange', () => {
-            if (isActiveCanvasWindow()) scheduleDoodleReconnect(0);
-        });
-        window.addEventListener('focus', () => scheduleDoodleReconnect(0));
-        connectDoodleSocket(true);
-
-        function drawLine(nx0, ny0, nx1, ny1, color, size, emit) {
-            const strokeId = currentStrokeId || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : ('stroke-' + Date.now()));
-            const action = {
-                type: 'draw',
-                stroke_id: strokeId,
-                x0: nx0,
-                y0: ny0,
-                x1: nx1,
-                y1: ny1,
-                color: color,
-                size: size
-            };
-
-            doodleActions.push(action);
-            const rect = { width: canvas.clientWidth, height: canvas.clientHeight };
-            doodleRenderer.renderStrokeSegment(action);
-
-            if (!emit) return;
-
-            if (!pendingDrawBatch || pendingDrawBatch.color !== color || pendingDrawBatch.size !== size ||
-                pendingDrawBatch.stroke_id !== strokeId ||
-                pendingDrawBatch.points[pendingDrawBatch.points.length - 2] !== nx0 ||
-                pendingDrawBatch.points[pendingDrawBatch.points.length - 1] !== ny0) {
-                flushDrawBatch();
-                pendingDrawBatch = { type: 'draw_batch', stroke_id: strokeId, page_id: displayedDoodlePageId, color, size, points: [nx0, ny0] };
-            }
-            pendingDrawBatch.points.push(nx1, ny1);
-            if (!drawBatchFrame) drawBatchFrame = requestAnimationFrame(flushDrawBatch);
-        }
-
-        function getNormalizedCoords(e) {
-            return doodleRenderer.normalizedPoint(e);
-        }
-
-        function beginTextAnnotation(event) {
-            if (!textAnnotationMode || !canAddTextAnnotation() || event.target !== canvas) return;
-            event.preventDefault();
-            openTextAnnotationEditor(null, getNormalizedCoords(event));
-        }
-
-        function applyTextAnnotation(action) {
-            const index = doodleActions.findIndex(existing => existing.type === 'text' && existing.id === action.id);
-            if (index >= 0) doodleActions[index] = action;
-            else doodleActions.push(action);
-            redrawAllDoodles();
-        }
-
-        function moveTextAnnotation(action, previous, commit) {
-            textAnnotations.move(action, previous, commit);
-        }
-
-        function bringStampToFront(stampId) {
-            stampsController.bringStampToFront(stampId);
-        }
-
-        function selectStampAnnotation(action) {
-            stampsController.selectStampAnnotation(action);
-        }
-
-        function applyStampAnnotation(action) {
-            stampsController.applyStampAnnotation(action);
-        }
-
-        function moveStampAnnotation(action, previous, commit) {
-            stampsController.moveStampAnnotation(action, previous, commit);
-        }
-
-        function removeStampAnnotation(action) {
-            stampsController.removeStampAnnotation(action);
-        }
-
-        function removeTextAnnotation(action) {
-            const list = Array.isArray(action) ? action : (action ? [action] : []);
-            const removedItems = [];
-            list.forEach(item => {
-                const annotationId = item?.id || item;
-                const index = doodleActions.findIndex(
-                    existing => existing.type === 'text' && existing.id === annotationId
-                );
-                if (index >= 0) {
-                    const [removed] = doodleActions.splice(index, 1);
-                    removedItems.push(removed);
-                    sendOrQueueDoodleMessage({ type: 'remove_text', id: annotationId });
-                }
-            });
-            if (removedItems.length > 0) {
-                if (typeof activeDeleteTransaction !== 'undefined' && activeDeleteTransaction) {
-                    activeDeleteTransaction.texts.push(...removedItems);
-                } else if (typeof pushUndoAction === 'function') {
-                    pushUndoAction(typeof DeleteTextDoodleAction === 'function'
-                        ? new DeleteTextDoodleAction(removedItems)
-                        : {
-                            type: 'delete_text',
-                            items: removedItems
-                        });
-                }
-            }
-            redrawAllDoodles();
-        }
-
-        const textAnnotations = createTextAnnotations({
-            canvas,
-            container: imgContainer,
-            canEdit: canAddTextAnnotation,
-            isPagedBack: () => isPagedBack,
-            stopSpeech: stopSceneSpeech,
-            getActiveEditor: () => activeTextEditor,
-            setActiveEditor: editor => { activeTextEditor = editor; },
-            getDefaults: () => ({
-                color: currentTextColor,
-                font: textAnnotationFont?.value || 'Outfit',
-                size: Number(textAnnotationSize?.value || 32),
-            }),
-            getImagePlane: existing => imageHistory[currentViewIndex]?.canvas_page
-                ? doodleRenderer.imagePlane(existing) : null,
-            send: sendOrQueueDoodleMessage,
-            rememberEdit: (action, previous) => pendingTextEdits.set(action.client_message_id, previous),
-            apply: applyTextAnnotation,
-            pushUndo: pushUndoAction,
-        });
-
-        function openTextAnnotationEditor(existing, placement = existing) {
-            textAnnotations.open(existing, placement);
-        }
-
-        canvas.addEventListener('click', beginTextAnnotation);
-
-        function endDrawingStroke() {
-            if (!isDrawing && !currentStrokeId) return;
-            const strokeId = currentStrokeId;
-            isDrawing = false;
-            currentStrokeId = null;
-            flushDrawBatch();
-            if (strokeId) {
-                const strokeSegments = doodleActions.filter(a => a.type === 'draw' && a.stroke_id === strokeId);
-                if (strokeSegments.length > 0) {
-                    if (typeof pushUndoAction === 'function') {
-                        pushUndoAction(typeof DrawStrokeDoodleAction === 'function'
-                            ? new DrawStrokeDoodleAction(strokeId, strokeSegments)
-                            : {
-                                type: 'draw_stroke',
-                                stroke_id: strokeId,
-                                segments: [...strokeSegments]
-                            });
-                    }
-                }
-            }
-        }
-
-        canvas.addEventListener('mousedown', (e) => {
-            if (e.button !== 0) return;
-            if (!doodlesEnabled || !currentColor) return;
-            isDrawing = true;
-            currentStrokeId = (typeof crypto !== 'undefined' && crypto.randomUUID)
-                ? crypto.randomUUID()
-                : ('stroke-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7));
-            const coords = getNormalizedCoords(e);
-            lastNormX = coords.x;
-            lastNormY = coords.y;
-        });
-
-        canvas.addEventListener('mousemove', (e) => {
-            if (!isDrawing || !doodlesEnabled || !currentColor) return;
-            const coords = getNormalizedCoords(e);
-            drawLine(lastNormX, lastNormY, coords.x, coords.y, currentColor, currentBrushSize, true);
-            lastNormX = coords.x;
-            lastNormY = coords.y;
-        });
-
-        canvas.addEventListener('mouseup', endDrawingStroke);
-        canvas.addEventListener('mouseout', endDrawingStroke);
-
-        // Touch support for tablets/mobile
-        canvas.addEventListener('touchstart', (e) => {
-            if (!doodlesEnabled || !currentColor) return;
-            e.preventDefault();
-            isDrawing = true;
-            currentStrokeId = (typeof crypto !== 'undefined' && crypto.randomUUID)
-                ? crypto.randomUUID()
-                : ('stroke-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7));
-            const coords = getNormalizedCoords(e);
-            lastNormX = coords.x;
-            lastNormY = coords.y;
-        }, { passive: false });
-
-        canvas.addEventListener('touchmove', (e) => {
-            if (!isDrawing || !doodlesEnabled || !currentColor) return;
-            e.preventDefault();
-            const coords = getNormalizedCoords(e);
-            drawLine(lastNormX, lastNormY, coords.x, coords.y, currentColor, currentBrushSize, true);
-            lastNormX = coords.x;
-            lastNormY = coords.y;
-        }, { passive: false });
-
-        canvas.addEventListener('touchend', endDrawingStroke);
-
-        clearBtn.addEventListener('click', () => {
-            endDrawingStroke();
-            activeTextEditor?.remove();
-            activeTextEditor = null;
-            for (let index = pendingDoodleMessages.length - 1; index >= 0; index--) {
-                if (pendingDoodleMessages[index].page_id === displayedDoodlePageId) pendingDoodleMessages.splice(index, 1);
-            }
-            for (const [id, message] of inFlightDoodleMessages) {
-                if (message.page_id === displayedDoodlePageId) inFlightDoodleMessages.delete(id);
-            }
-            doodleRenderer?.clearSelectedSegments();
-            const previous = [...doodleActions];
-            if (previous.length > 0) {
-                if (typeof pushUndoAction === 'function') {
-                    pushUndoAction(typeof ClearCanvasDoodleAction === 'function'
-                        ? new ClearCanvasDoodleAction(previous)
-                        : {
-                            type: 'clear',
-                            previousActions: previous
-                        });
-                }
-            }
-            doodleActions = [];
-            redrawAllDoodles();
-            sendOrQueueDoodleMessage({ type: 'clear' });
-        });
-
-        undoBtn?.addEventListener('click', () => {
-            if (!doodlesEnabled || isPagedBack) return;
-            undoLastDoodleAction();
-        });
-
-        document.addEventListener('keydown', (event) => {
-            if (event.key === 'Delete' || event.key === 'Backspace') {
-                const active = document.activeElement;
-                if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable)) return;
-                activeDeleteTransaction = {
-                    type: 'compound_delete',
-                    segments: [],
-                    stamps: [],
-                    texts: []
-                };
-                queueMicrotask(() => {
-                    if (activeDeleteTransaction) {
-                        const tx = activeDeleteTransaction;
-                        activeDeleteTransaction = null;
-                        if (tx.segments.length > 0 || tx.stamps.length > 0 || tx.texts.length > 0) {
-                            if (typeof pushUndoAction === 'function') {
-                                pushUndoAction(typeof CompoundDeleteDoodleAction === 'function'
-                                    ? new CompoundDeleteDoodleAction(tx.segments, tx.stamps, tx.texts)
-                                    : tx);
-                            }
-                        }
-                    }
-                });
-            }
-        }, true);
-
-        window.addEventListener('keydown', (event) => {
-            const isZ = event.key === 'z' || event.key === 'Z' || event.code === 'KeyZ';
-            if ((event.ctrlKey || event.metaKey) && isZ && !event.shiftKey && !event.altKey) {
-                const active = document.activeElement;
-                if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable || (typeof active.getAttribute === 'function' && active.getAttribute('contenteditable') === 'true'))) return;
-                if (typeof doodlesEnabled !== 'undefined' && !doodlesEnabled) return;
-                if (typeof isPagedBack !== 'undefined' && isPagedBack) return;
-                event.preventDefault();
-                if (typeof undoLastDoodleAction === 'function') {
-                    undoLastDoodleAction();
-                }
-            }
-        }, true);
-
-        resizeDoodleCanvas();
 
         // ========================================
         // Asset Manager & Canvas Stamp Dropping
@@ -2172,25 +810,25 @@ import { startCanvasStatePolling } from "/static/generated/canvas/state-polling.
             hasContributorPermission: () => hasContributorsPermission(),
             isOrator: () => typeof isCurrentOrator === 'function' && isCurrentOrator(),
             isOwner: () => isTheaterStampOwner,
-            isDoodlesEnabled: () => typeof doodlesEnabled !== 'undefined' ? Boolean(doodlesEnabled) : true,
-            isPagedBack: () => isPagedBack,
+            isDoodlesEnabled: () => doodleSession.isDoodlesEnabled(),
+            isPagedBack: () => historyPaging.isPagedBack(),
             enableDoodles: () => {
                 setDoodlesDisplay(true);
                 sendOrQueueDoodleMessage({ type: 'toggle_doodles', enabled: true });
             },
             selectSelectCursor: () => canvasCursorState.select({ type: 'select' }),
-            getDoodleActions: () => doodleActions,
+            getDoodleActions: () => doodleSession.getDoodleActions(),
             redrawDoodles: () => redrawAllDoodles(),
             sendDoodleMessage: sendOrQueueDoodleMessage,
-            rememberPendingEdit: (clientMessageId, previous) => pendingTextEdits.set(clientMessageId, previous),
-            getActiveDeleteTransaction: () => typeof activeDeleteTransaction !== 'undefined' ? activeDeleteTransaction : null,
+            rememberPendingEdit: (clientMessageId, previous) => doodleSession.getPendingTextEdits().set(clientMessageId, previous),
+            getActiveDeleteTransaction: () => doodleSession.getActiveDeleteTransaction(),
             pushUndoAction: action => {
                 if (typeof pushUndoAction === 'function') pushUndoAction(action);
             },
             getActiveTab: () => activeStampManagerTab,
             isPlaylistExpanded: playlistName => expandedPlaylists.has(playlistName),
             resolveImageUrl: url => typeof resolveWebpQualityUrl === 'function' ? resolveWebpQualityUrl(url) : url,
-            getNormalizedDropPoint: event => typeof imageHistory !== 'undefined' && imageHistory[currentViewIndex]?.canvas_page
+            getNormalizedDropPoint: event => historyPaging.getCurrentItem()?.canvas_page
                 ? doodleRenderer.normalizedPoint(event) : null,
             getReferenceSources: () => ({
                 characters: typeof cachedTheaterCharacters !== 'undefined' ? cachedTheaterCharacters : window.cachedTheaterCharacters,
@@ -2572,11 +1210,9 @@ import { startCanvasStatePolling } from "/static/generated/canvas/state-polling.
             if (typeof updateStampTabsVisibility === 'function') updateStampTabsVisibility();
 
             if (isNowOrator) {
-                isNavigating = false;
-                isPagedBack = false;
-                hasNewHeadWhilePagedBack = false;
-                if (oratorCursorIndex >= 0 && oratorCursorIndex < imageHistory.length) {
-                    displayHistoryImage(oratorCursorIndex, 'none');
+                const cursorIndex = historyPaging.getOratorCursorIndex();
+                if (cursorIndex >= 0 && cursorIndex < historyPaging.getHistory().length) {
+                    displayHistoryImage(cursorIndex, 'none');
                 }
                 updatePagingControlsUI();
                 if (backBtn) backBtn.href = '/deploy?from=canvas';
@@ -2691,15 +1327,36 @@ import { startCanvasStatePolling } from "/static/generated/canvas/state-polling.
         // ========================================
         // Baton Passing & Co-Orator Management JS
         // ========================================
-        let activeViewersList = [];
-        let batonTimerInterval = null;
+        const batonManager = createBatonManager({
+            theaterId,
+            getCurrentUser: () => currentUser,
+            batonStatusBadge: document.getElementById('baton-status-badge'),
+            menuTakeBackBatonBtn: document.getElementById('menu-take-back-baton-btn'),
+            oratorsModal: document.getElementById('orators-modal'),
+            oratorsCloseBtn: document.getElementById('orators-close-btn'),
+            acceptBatonBtn: document.getElementById('accept-baton-btn'),
+            declineBatonBtn: document.getElementById('decline-baton-btn'),
+            onRoleChange: (isNowOrator) => applyRoleUI(isNowOrator),
+            onBatonStateUpdated: ({ batonState, isOwner, isContributor }) => {
+                currentBatonState = batonState;
+                isTheaterStampOwner = Boolean(isOwner);
+                updateStampGenerationPermission();
+                window._isContributor = Boolean(isContributor);
+                if (typeof gameRenderer !== 'undefined' && gameRenderer && typeof gameRenderer.render === 'function') {
+                    gameRenderer.render();
+                }
+                if (typeof isStampManagerOpen !== 'undefined' && isStampManagerOpen) {
+                    updateStampManagerPermissionBanner();
+                    if (cachedUserStamps) renderStampManagerGrid(cachedUserStamps);
+                }
+            },
+        });
 
-        const batonStatusBadge = document.getElementById('baton-status-badge');
-        const menuTakeBackBatonBtn = document.getElementById('menu-take-back-baton-btn');
-        const oratorsModal = document.getElementById('orators-modal');
-        const oratorsCloseBtn = document.getElementById('orators-close-btn');
-        const acceptBatonBtn = document.getElementById('accept-baton-btn');
-        const declineBatonBtn = document.getElementById('decline-baton-btn');
+        const checkBatonState = () => batonManager.checkBatonState();
+        const updateBatonStateUI = (batonState, activeViewers) => batonManager.updateBatonStateUI(batonState, activeViewers);
+        window.addContributor = (targetUserId) => { void batonManager.addContributor(targetUserId); };
+        window.removeContributor = (targetUserId) => { void batonManager.removeContributor(targetUserId); };
+        window.requestBatonPass = (targetUserId) => { void batonManager.requestBatonPass(targetUserId); };
 
         // Fetch current user details
         getCanvasAuthState()
@@ -2707,261 +1364,12 @@ import { startCanvasStatePolling } from "/static/generated/canvas/state-polling.
                 if (data.authenticated && data.user) {
                     currentUser = data.user;
                     if (currentBatonState) {
-                        updateBatonStateUI(currentBatonState, activeViewersList);
+                        updateBatonStateUI(currentBatonState, batonManager.getActiveViewers());
                     }
                     checkBatonState();
                 }
             })
             .catch(() => { });
-
-        function checkBatonState() {
-            if (!theaterId) return;
-            fetch(`/api/theaters/${encodeURIComponent(theaterId)}/baton`)
-                .then(res => res.ok ? res.json() : null)
-                .then(data => {
-                    if (data) {
-                        updateBatonStateUI(data, data.active_viewers || []);
-                    }
-                })
-                .catch(err => console.error("Error fetching baton state:", err));
-        }
-
-        function updateBatonStateUI(batonState, activeViewers) {
-            currentBatonState = batonState;
-            activeViewersList = activeViewers || [];
-
-            const isOwner = currentUser && batonState.owner && currentUser.id === batonState.owner.id;
-            isTheaterStampOwner = Boolean(isOwner);
-            updateStampGenerationPermission();
-            const isActiveOrator = currentUser && batonState.active_orator && currentUser.id === batonState.active_orator.id;
-            const isContributorInList = currentUser && (batonState.contributors || []).some(u => u.id === currentUser.id);
-            window._isContributor = Boolean(isOwner || isActiveOrator || isContributorInList);
-            if (typeof gameRenderer !== 'undefined' && gameRenderer && typeof gameRenderer.render === 'function') {
-                gameRenderer.render();
-            }
-
-            if (typeof isStampManagerOpen !== 'undefined' && isStampManagerOpen) {
-                updateStampManagerPermissionBanner();
-                if (cachedUserStamps) renderStampManagerGrid(cachedUserStamps);
-            }
-
-            // This is the single baton control: it identifies the current
-            // holder and opens the owner's assignment menu.
-            if (batonStatusBadge) {
-                const holder = batonState.active_orator || batonState.owner;
-                const holderName = holder && (holder.username || holder.name) || 'Unknown';
-                batonStatusBadge.textContent = `👑 @${holderName}`;
-                batonStatusBadge.disabled = !isOwner;
-                batonStatusBadge.style.cursor = isOwner ? 'pointer' : 'default';
-                batonStatusBadge.title = isOwner ? 'Open baton menu' : `Baton is held by @${holderName}`;
-                batonStatusBadge.style.background = isOwner ? '#ec4899' : 'rgba(236, 72, 153, 0.15)';
-                batonStatusBadge.style.color = isOwner ? '#fff' : '#f9a8d4';
-                batonStatusBadge.style.borderColor = isOwner ? '#fbcfe8' : 'rgba(236, 72, 153, 0.3)';
-                batonStatusBadge.style.boxShadow = isOwner ? '0 0 12px rgba(236, 72, 153, 0.45)' : 'none';
-            }
-
-            if (menuTakeBackBatonBtn) {
-                menuTakeBackBatonBtn.style.display = (isOwner && !isActiveOrator) ? 'inline-flex' : 'none';
-            }
-
-            const isNowOrator = Boolean(isActiveOrator || (isOwner && !batonState.active_orator));
-            applyRoleUI(isNowOrator);
-
-            // Check pending request targeting local user
-            if (batonState.baton_request && currentUser && batonState.baton_request.target_user_id === currentUser.id) {
-                showBatonRequestModal(batonState.baton_request);
-            } else {
-                hideBatonRequestModal();
-            }
-
-            // Refresh modal contents if open
-            if (oratorsModal && oratorsModal.classList.contains('active')) {
-                renderOratorManagementModalContent();
-            }
-        }
-
-        function showBatonRequestModal(batonReq) {
-            const modal = document.getElementById('baton-request-modal');
-            if (!modal) return;
-            if (modal.classList.contains('active')) return;
-
-            modal.classList.add('active');
-            modal.setAttribute('aria-hidden', 'false');
-
-            const timerBar = document.getElementById('baton-timer-bar');
-            const totalMs = 30000;
-            const startTime = Date.now();
-
-            if (batonTimerInterval) clearInterval(batonTimerInterval);
-
-            batonTimerInterval = setInterval(() => {
-                const elapsed = Date.now() - startTime;
-                const remaining = Math.max(0, totalMs - elapsed);
-                const pct = (remaining / totalMs) * 100;
-                if (timerBar) timerBar.style.width = `${pct}%`;
-
-                if (remaining <= 0) {
-                    clearInterval(batonTimerInterval);
-                    declineBatonPass();
-                }
-            }, 100);
-        }
-
-        function hideBatonRequestModal() {
-            const modal = document.getElementById('baton-request-modal');
-            if (modal) {
-                modal.classList.remove('active');
-                modal.setAttribute('aria-hidden', 'true');
-            }
-            if (batonTimerInterval) {
-                clearInterval(batonTimerInterval);
-                batonTimerInterval = null;
-            }
-        }
-
-        function acceptBatonPass() {
-            if (!theaterId) return;
-            fetch(`/api/theaters/${encodeURIComponent(theaterId)}/baton/accept`, { method: 'POST' })
-                .then(res => res.json())
-                .then(data => {
-                    hideBatonRequestModal();
-                    if (data && !data.detail) {
-                        updateBatonStateUI(data, data.active_viewers);
-                    }
-                })
-                .catch(err => console.error("Error accepting baton:", err));
-        }
-
-        function declineBatonPass() {
-            if (!theaterId) return;
-            fetch(`/api/theaters/${encodeURIComponent(theaterId)}/baton/decline`, { method: 'POST' })
-                .then(res => res.json())
-                .then(data => {
-                    hideBatonRequestModal();
-                    if (data && !data.detail) {
-                        updateBatonStateUI(data, data.active_viewers);
-                    }
-                })
-                .catch(err => console.error("Error declining baton:", err));
-        }
-
-        function takeBackBaton() {
-            if (!theaterId) return;
-            fetch(`/api/theaters/${encodeURIComponent(theaterId)}/baton/takeback`, { method: 'POST' })
-                .then(res => res.json())
-                .then(data => {
-                    if (data && !data.detail) {
-                        updateBatonStateUI(data, data.active_viewers);
-                    }
-                })
-                .catch(err => console.error("Error taking back baton:", err));
-        }
-
-        function renderOratorManagementModalContent() {
-            if (!currentBatonState) return;
-
-            const activeViewersContainer = document.getElementById('active-viewers-list');
-            const contributorsContainer = document.getElementById('contributors-list');
-            const allowedIds = (currentBatonState.contributors || []).map(u => u.id);
-
-            // Render Active Connected Viewers
-            if (activeViewersContainer) {
-                const viewers = activeViewersList.filter(u => u.id !== (currentBatonState.owner ? currentBatonState.owner.id : null));
-                if (viewers.length === 0) {
-                    activeViewersContainer.innerHTML = '<div style="font-size:0.85rem; color:#64748b; padding:6px;">No other connected viewers online.</div>';
-                } else {
-                    activeViewersContainer.innerHTML = viewers.map(v => {
-                        const isAllowed = allowedIds.includes(v.id);
-                        return `
-                            <div style="display:flex; align-items:center; justify-content:space-between; padding:6px 10px; background:rgba(255,255,255,0.05); border-radius:6px;">
-                                <span style="font-size:0.9rem; color:#fff;">👤 @${v.username}</span>
-                                ${isAllowed
-                                ? `<span style="font-size:0.75rem; color:#4ade80; font-weight:600;">Allowed</span>`
-                                : `<button onclick="addContributor(${v.id})" style="background:#6366f1; border:none; color:#fff; padding:4px 10px; border-radius:12px; font-size:0.75rem; cursor:pointer;">+ Contributor</button>`
-                            }
-                            </div>
-                        `;
-                    }).join('');
-                }
-            }
-
-            // Render Contributor List
-            if (contributorsContainer) {
-                const allowedList = currentBatonState.contributors || [];
-                if (allowedList.length === 0) {
-                    contributorsContainer.innerHTML = '<div style="font-size:0.85rem; color:#64748b; padding:6px;">No contributor added yet.</div>';
-                } else {
-                    contributorsContainer.innerHTML = allowedList.map(u => {
-                        const isTargeting = currentBatonState.baton_request && currentBatonState.baton_request.target_user_id === u.id;
-                        return `
-                            <div style="display:flex; align-items:center; justify-content:space-between; padding:6px 10px; background:rgba(255,255,255,0.05); border-radius:6px;">
-                                <span style="font-size:0.9rem; color:#fff;">🎙️ @${u.username}</span>
-                                <div style="display:flex; gap:6px;">
-                                    ${isTargeting
-                                ? `<span style="font-size:0.75rem; color:#fbbf24; padding:3px 8px; font-weight:600;">Pending 30s...</span>`
-                                : `<button onclick="requestBatonPass(${u.id})" style="background:#f59e0b; border:none; color:#fff; padding:4px 10px; border-radius:12px; font-size:0.75rem; cursor:pointer;">Pass Baton 🎙️</button>`
-                            }
-                                    <button onclick="removeContributor(${u.id})" style="background:rgba(239,68,68,0.2); border:1px solid rgba(239,68,68,0.4); color:#f87171; padding:4px 8px; border-radius:12px; font-size:0.75rem; cursor:pointer;">Remove</button>
-                                </div>
-                            </div>
-                        `;
-                    }).join('');
-                }
-            }
-        }
-
-        window.addContributor = function (targetUserId) {
-            if (!theaterId) return;
-            fetch(`/api/theaters/${encodeURIComponent(theaterId)}/baton/contributors`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ target_user_id: targetUserId })
-            }).then(r => r.json()).then(data => updateBatonStateUI(data, data.active_viewers));
-        };
-
-        window.removeContributor = function (targetUserId) {
-            if (!theaterId) return;
-            fetch(`/api/theaters/${encodeURIComponent(theaterId)}/baton/contributors/${targetUserId}`, {
-                method: 'DELETE'
-            }).then(r => r.json()).then(data => updateBatonStateUI(data, data.active_viewers));
-        };
-
-        window.requestBatonPass = function (targetUserId) {
-            if (!theaterId) return;
-            fetch(`/api/theaters/${encodeURIComponent(theaterId)}/baton/request`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ target_user_id: targetUserId, timeout_seconds: 30 })
-            }).then(r => r.json()).then(data => updateBatonStateUI(data, data.active_viewers));
-        };
-
-        if (batonStatusBadge) {
-            batonStatusBadge.addEventListener('click', () => {
-                if (batonStatusBadge.disabled) return;
-                if (oratorsModal) {
-                    oratorsModal.classList.add('active');
-                    oratorsModal.setAttribute('aria-hidden', 'false');
-                    renderOratorManagementModalContent();
-                }
-            });
-        }
-        if (oratorsCloseBtn) {
-            oratorsCloseBtn.addEventListener('click', () => {
-                if (oratorsModal) {
-                    oratorsModal.classList.remove('active');
-                    oratorsModal.setAttribute('aria-hidden', 'true');
-                }
-            });
-        }
-        if (menuTakeBackBatonBtn) {
-            menuTakeBackBatonBtn.addEventListener('click', takeBackBaton);
-        }
-        if (acceptBatonBtn) {
-            acceptBatonBtn.addEventListener('click', acceptBatonPass);
-        }
-        if (declineBatonBtn) {
-            declineBatonBtn.addEventListener('click', declineBatonPass);
-        }
 
 
 
@@ -4120,14 +2528,6 @@ import { startCanvasStatePolling } from "/static/generated/canvas/state-polling.
         const menuItemShare = document.getElementById('menu-item-share');
         const menuItemClip = document.getElementById('menu-item-clip');
         const menuItemObs = document.getElementById('menu-item-obs');
-        const minimalModeInput = document.getElementById('minimal-mode-input');
-
-        if (minimalModeInput) {
-            minimalModeInput.checked = minimalMode;
-            minimalModeInput.addEventListener('change', () => {
-                setMinimalMode(minimalModeInput.checked);
-            });
-        }
 
         function openPulloutMenu() {
             if (!pulloutOverlay) return;
@@ -4208,7 +2608,7 @@ import { startCanvasStatePolling } from "/static/generated/canvas/state-polling.
             cancelMicCapture,
             updateMicToggleUI,
             getListenForSpeech: () => listenForSpeech,
-            getAuthState: getCanvasAuthState,
+            getAuthState: () => getCanvasAuthState(),
             invalidateAuthStateCache: () => {
                 canvasAuthStatePromise = null;
             },
