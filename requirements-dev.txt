@@ -1,2 +1,8 @@
 -r requirements.txt
+playwright
+pytest
+pytest-asyncio
+pytest-env>=1.7.1
+pytest-socket>=0.8.1
+pytest-xdist>=3.8.0
 ruff>=0.12,<0.13

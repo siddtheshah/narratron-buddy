@@ -31,7 +31,7 @@ theaters.
 
 ## Prerequisites
 
-- Python 3.10+
+- Python 3.13+
 - Node.js 22 and npm (for the canvas TypeScript build)
 - [`uv`](https://github.com/astral-sh/uv) (fast Python package and project manager)
 - Windows (PowerShell examples below)
