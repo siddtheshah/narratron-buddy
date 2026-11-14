@@ -322,3 +322,93 @@ test('queues pre-commit speech, drops stale clips, caps queue at 32, and handles
     });
     expect(await page.evaluate(() => (window as unknown as RemoteAudioTestWindow).stubAudioInstances[1].getAttribute('src'))).toBeNull();
 });
+
+test('mixes incoming voice narration with playing music without interrupting music', async ({ canvas, page }) => {
+    await mountAudioHarness(canvas);
+    await page.locator('.preview-frame').click();
+
+    await page.evaluate(() => {
+        const win = window as unknown as RemoteAudioTestWindow;
+        win.audioController.update(
+            {
+                music: { music_id: 'tavern', tracks: ['/audio/tavern.mp3'], paused: false },
+                committed_scene_speech_generation: 1,
+            },
+            true,
+        );
+    });
+
+    const musicBeforeSpeech = await page.evaluate(() => {
+        const music = (window as unknown as RemoteAudioTestWindow).stubAudioInstances[0];
+        return {
+            src: music.getAttribute('src'),
+            paused: music.paused,
+            muted: music.muted,
+            playCalls: music.playCalls,
+        };
+    });
+    expect(musicBeforeSpeech).toEqual({
+        src: '/audio/tavern.mp3',
+        paused: false,
+        muted: false,
+        playCalls: 1,
+    });
+
+    // Deliver voice narration while music is playing.
+    await page.evaluate(() => {
+        const win = window as unknown as RemoteAudioTestWindow;
+        win.audioController.enqueueSpeech({ speech_generation: 1, audio_url: 'data:audio/wav;base64,UklGRg==' });
+    });
+
+    const duringSpeech = await page.evaluate(() => {
+        const [music, speech] = (window as unknown as RemoteAudioTestWindow).stubAudioInstances;
+        return {
+            musicSrc: music.getAttribute('src'),
+            musicPaused: music.paused,
+            musicMuted: music.muted,
+            musicPlayCalls: music.playCalls,
+            speechSrc: speech.getAttribute('src'),
+            speechPaused: speech.paused,
+            speechMuted: speech.muted,
+        };
+    });
+    expect(duringSpeech).toEqual({
+        musicSrc: '/audio/tavern.mp3',
+        musicPaused: false,
+        musicMuted: false,
+        musicPlayCalls: 1,
+        speechSrc: 'data:audio/wav;base64,UklGRg==',
+        speechPaused: false,
+        speechMuted: false,
+    });
+
+    // Advancing speech generation clears speech without pausing or restarting music.
+    await page.evaluate(() => {
+        const win = window as unknown as RemoteAudioTestWindow;
+        win.audioController.update(
+            {
+                music: { music_id: 'tavern', tracks: ['/audio/tavern.mp3'], paused: false },
+                committed_scene_speech_generation: 2,
+            },
+            true,
+        );
+    });
+
+    const afterSpeechCleared = await page.evaluate(() => {
+        const [music, speech] = (window as unknown as RemoteAudioTestWindow).stubAudioInstances;
+        return {
+            musicSrc: music.getAttribute('src'),
+            musicPaused: music.paused,
+            musicPlayCalls: music.playCalls,
+            speechSrc: speech.getAttribute('src'),
+            speechPaused: speech.paused,
+        };
+    });
+    expect(afterSpeechCleared).toEqual({
+        musicSrc: '/audio/tavern.mp3',
+        musicPaused: false,
+        musicPlayCalls: 1,
+        speechSrc: null,
+        speechPaused: true,
+    });
+});

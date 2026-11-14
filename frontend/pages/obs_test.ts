@@ -3,6 +3,7 @@ import path from 'node:path';
 import type { Page, Route, WebSocketRoute } from '@playwright/test';
 import {
   CANVAS_ORIGIN,
+  REPO_ROOT,
   TEMPLATES_DIR,
   expect,
   test,
@@ -689,4 +690,208 @@ test('obs plays triframe and silent looping video animations via playCanvasAnima
   };
   stateSocket!.send('{"type":"state_changed","domains":["latest"]}');
   await expect(page.locator('#image-container video')).toHaveCount(0);
+});
+
+function createObsWavDataUrl(durationSeconds = 1.5, frequencyHz = 440): string {
+  const sampleRate = 8000;
+  const numSamples = Math.floor(sampleRate * durationSeconds);
+  const dataSize = numSamples * 2;
+  const buffer = Buffer.alloc(44 + dataSize);
+  buffer.write('RIFF', 0);
+  buffer.writeUInt32LE(36 + dataSize, 4);
+  buffer.write('WAVE', 8);
+  buffer.write('fmt ', 12);
+  buffer.writeUInt32LE(16, 16);
+  buffer.writeUInt16LE(1, 20);
+  buffer.writeUInt16LE(1, 22);
+  buffer.writeUInt32LE(sampleRate, 24);
+  buffer.writeUInt32LE(sampleRate * 2, 28);
+  buffer.writeUInt16LE(2, 32);
+  buffer.writeUInt16LE(16, 34);
+  buffer.write('data', 36);
+  buffer.writeUInt32LE(dataSize, 40);
+  for (let i = 0; i < numSamples; i += 1) {
+    const sample = Math.round(Math.sin((2 * Math.PI * frequencyHz * i) / sampleRate) * 8000);
+    buffer.writeInt16LE(sample, 44 + i * 2);
+  }
+  return `data:audio/wav;base64,${buffer.toString('base64')}`;
+}
+
+test('obs mixes incoming voice narration with playing music without interrupting music', async ({
+  canvas,
+  page,
+}) => {
+  interface RealAudioRecord {
+    readonly audio: HTMLAudioElement;
+    pauseCalls: number;
+  }
+  interface RealAudioWindow extends Window {
+    __obsRealAudios: RealAudioRecord[];
+  }
+
+  const musicMp3 = await fs.promises.readFile(
+    path.join(REPO_ROOT, 'testing', 'testcases', 'music', 'music_test.mp3'),
+  );
+  const speechDataUrl = createObsWavDataUrl(1.5);
+  const obsHtml = await fs.promises.readFile(OBS_TEMPLATE_PATH, 'utf-8');
+
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.addInitScript(() => {
+    const win = window as unknown as RealAudioWindow;
+    win.__obsRealAudios = [];
+    const NativeAudio = window.Audio;
+    const origPause = NativeAudio.prototype.pause;
+    window.Audio = function (this: HTMLAudioElement, ...args: [string?]): HTMLAudioElement {
+      const audio = new NativeAudio(...args);
+      const record: RealAudioRecord = { audio, pauseCalls: 0 };
+      win.__obsRealAudios.push(record);
+      audio.pause = function (): void {
+        record.pauseCalls += 1;
+        return origPause.call(this);
+      };
+      return audio;
+    } as unknown as typeof Audio;
+  });
+
+  await canvas.serveRoute(
+    (url: URL) =>
+      url.origin === CANVAS_ORIGIN &&
+      (url.pathname === '/obs' || url.pathname.startsWith('/obs/')),
+    async (route: Route) => {
+      await route.fulfill({ contentType: 'text/html; charset=utf-8', body: obsHtml });
+    },
+  );
+  await canvas.serveRoute(
+    (url: URL) => url.origin === CANVAS_ORIGIN && url.pathname === '/image.png',
+    async (route: Route) => {
+      await route.fulfill({
+        contentType: 'image/png',
+        body: ONE_BY_ONE_PNG,
+        headers: { 'Access-Control-Allow-Origin': '*' },
+      });
+    },
+  );
+  await canvas.serveRoute('https://fonts.googleapis.com/**', async (route: Route) => {
+    await route.fulfill({ status: 200, contentType: 'text/css; charset=utf-8', body: '' });
+  });
+  await canvas.serveRoute(
+    (url: URL) => url.origin === CANVAS_ORIGIN && url.pathname === '/audio/music_test.mp3',
+    async (route: Route) => {
+      await route.fulfill({ status: 200, contentType: 'audio/mpeg', body: musicMp3 });
+    },
+  );
+
+  let latestPayload: Record<string, unknown> = {
+    latest: '/image.png?v=1',
+    time: 1,
+    effect: 'none',
+    narration: 'Quiet hall.',
+    committed_scene_speech_generation: 1,
+    music: {
+      playlist: 'tavern',
+      tracks: ['/audio/music_test.mp3'],
+      time: 1,
+      paused: false,
+    },
+  };
+  await canvas.serveRoute('**/api/latest?**', async (route: Route) => {
+    await route.fulfill({ json: latestPayload });
+  });
+
+  let stateSocket: WebSocketRoute | null = null;
+  await page.routeWebSocket('**/ws/**', (ws: WebSocketRoute) => {
+    if (ws.url().includes('/ws/canvas-state')) {
+      stateSocket = ws;
+      ws.send('{"type":"state_ready"}');
+    } else {
+      ws.send('{"type":"doodle_snapshot","batches":[],"annotations":[],"stamps":[]}');
+    }
+  });
+
+  await page.goto(`${CANVAS_ORIGIN}/obs/mix-stage?join_key=OBSKEY`);
+  await expect.poll(() => stateSocket !== null).toBe(true);
+
+  // Trigger user interaction; obs.ts retries syncMusic on pointerdown if autoplay was blocked.
+  await page.locator('#image-container').dispatchEvent('pointerdown');
+  await page.locator('#image-container').click();
+
+  await page.waitForFunction(() => {
+    const win = window as unknown as RealAudioWindow;
+    const music = win.__obsRealAudios.find((r) => r.audio.src.includes('/audio/music_test.mp3'));
+    return Boolean(music && !music.audio.paused && !music.audio.muted && music.audio.currentTime > 0.1);
+  });
+
+  const musicTimeBeforeSpeech = await page.evaluate(() => {
+    const win = window as unknown as RealAudioWindow;
+    const music = win.__obsRealAudios.find((r) => r.audio.src.includes('/audio/music_test.mp3'));
+    return music ? music.audio.currentTime : 0;
+  });
+
+  stateSocket!.send(
+    JSON.stringify({
+      type: 'scene_speech_ready',
+      audio_url: speechDataUrl,
+      speech_generation: 1,
+    }),
+  );
+
+  await page.waitForFunction((prevMusicTime: number) => {
+    const win = window as unknown as RealAudioWindow;
+    const music = win.__obsRealAudios.find((r) => r.audio.src.includes('/audio/music_test.mp3'));
+    const speech = win.__obsRealAudios.find((r) => r.audio.src.startsWith('data:audio/wav;base64,'));
+    return Boolean(
+      music &&
+        speech &&
+        !speech.audio.paused &&
+        !speech.audio.muted &&
+        speech.audio.volume > 0 &&
+        speech.audio.currentTime > 0.1 &&
+        !music.audio.paused &&
+        !music.audio.muted &&
+        music.audio.volume > 0 &&
+        music.audio.currentTime > prevMusicTime,
+    );
+  }, musicTimeBeforeSpeech);
+
+  const duringSpeech = await page.evaluate(() => {
+    const win = window as unknown as RealAudioWindow;
+    const music = win.__obsRealAudios.find((r) => r.audio.src.includes('/audio/music_test.mp3'))!;
+    const speech = win.__obsRealAudios.find((r) => r.audio.src.startsWith('data:audio/wav;base64,'))!;
+    return {
+      musicPaused: music.audio.paused,
+      musicPauseCalls: music.pauseCalls,
+      musicCurrentTime: music.audio.currentTime,
+      speechPaused: speech.audio.paused,
+      speechVolume: speech.audio.volume,
+    };
+  });
+  expect(duringSpeech.musicPaused).toBe(false);
+  expect(duringSpeech.musicPauseCalls).toBe(0);
+  expect(duringSpeech.musicCurrentTime).toBeGreaterThan(musicTimeBeforeSpeech);
+  expect(duringSpeech.speechPaused).toBe(false);
+  expect(duringSpeech.speechVolume).toBe(1);
+
+  // Advancing speech generation clears speech while music keeps playing uninterrupted.
+  latestPayload = {
+    ...latestPayload,
+    time: 2,
+    narration: 'Next scene.',
+    committed_scene_speech_generation: 2,
+  };
+  stateSocket!.send('{"type":"state_changed","domains":["latest"]}');
+  await expect(page.locator('.scene-description')).toHaveText('Next scene.');
+
+  const afterSpeechAdvance = await page.evaluate(() => {
+    const win = window as unknown as RealAudioWindow;
+    const music = win.__obsRealAudios.find((r) => r.audio.src.includes('/audio/music_test.mp3'))!;
+    return {
+      musicPaused: music.audio.paused,
+      musicPauseCalls: music.pauseCalls,
+      musicCurrentTime: music.audio.currentTime,
+    };
+  });
+  expect(afterSpeechAdvance.musicPaused).toBe(false);
+  expect(afterSpeechAdvance.musicPauseCalls).toBe(0);
+  expect(afterSpeechAdvance.musicCurrentTime).toBeGreaterThanOrEqual(duringSpeech.musicCurrentTime);
 });

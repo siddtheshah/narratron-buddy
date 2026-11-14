@@ -1,5 +1,7 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import type { WebSocketRoute } from '@playwright/test';
-import { expect, test } from '../../testing/ui/canvas_fixtures';
+import { REPO_ROOT, expect, test } from '../../testing/ui/canvas_fixtures';
 
 type SceneModule = typeof import('/static/generated/canvas/scene.js');
 type SpeechReplayModule = typeof import('/static/generated/canvas/speech-replay.js');
@@ -430,4 +432,213 @@ test('canvas.html VAD 1000ms interruption stops active speech in toggle mic mode
 
   await expect(replayBtn).not.toHaveClass(/playing/, { timeout: 2500 });
   expect(await page.evaluate(() => (window as unknown as AudioTrackingWindow).__playedAudio[0].paused)).toBe(true);
+});
+
+function createTestWavDataUrl(durationSeconds = 1.5, frequencyHz = 440): string {
+  const sampleRate = 8000;
+  const numSamples = Math.floor(sampleRate * durationSeconds);
+  const dataSize = numSamples * 2;
+  const buffer = Buffer.alloc(44 + dataSize);
+  buffer.write('RIFF', 0);
+  buffer.writeUInt32LE(36 + dataSize, 4);
+  buffer.write('WAVE', 8);
+  buffer.write('fmt ', 12);
+  buffer.writeUInt32LE(16, 16);
+  buffer.writeUInt16LE(1, 20);
+  buffer.writeUInt16LE(1, 22);
+  buffer.writeUInt32LE(sampleRate, 24);
+  buffer.writeUInt32LE(sampleRate * 2, 28);
+  buffer.writeUInt16LE(2, 32);
+  buffer.writeUInt16LE(16, 34);
+  buffer.write('data', 36);
+  buffer.writeUInt32LE(dataSize, 40);
+  for (let i = 0; i < numSamples; i += 1) {
+    const sample = Math.round(Math.sin((2 * Math.PI * frequencyHz * i) / sampleRate) * 8000);
+    buffer.writeInt16LE(sample, 44 + i * 2);
+  }
+  return `data:audio/wav;base64,${buffer.toString('base64')}`;
+}
+
+test('canvas.html mixes incoming voice narration with playing music without interrupting music', async ({
+  canvas,
+  page,
+}) => {
+  interface RealAudioRecord {
+    readonly audio: HTMLAudioElement;
+    playCalls: number;
+    pauseCalls: number;
+  }
+  interface RealAudioWindow extends Window {
+    __realAudios: RealAudioRecord[];
+  }
+
+  const musicMp3 = await fs.promises.readFile(
+    path.join(REPO_ROOT, 'testing', 'testcases', 'music', 'music_test.mp3'),
+  );
+  const speechDataUrl = createTestWavDataUrl(1.5);
+
+  await page.addInitScript(() => {
+    const win = window as unknown as RealAudioWindow;
+    win.__realAudios = [];
+    const NativeAudio = window.Audio;
+    const origPause = NativeAudio.prototype.pause;
+    const origPlay = NativeAudio.prototype.play;
+
+    window.Audio = function (this: HTMLAudioElement, ...args: [string?]): HTMLAudioElement {
+      const audio = new NativeAudio(...args);
+      const record: RealAudioRecord = { audio, playCalls: 0, pauseCalls: 0 };
+      win.__realAudios.push(record);
+      audio.play = function (): Promise<void> {
+        record.playCalls += 1;
+        return origPlay.call(this);
+      };
+      audio.pause = function (): void {
+        record.pauseCalls += 1;
+        return origPause.call(this);
+      };
+      return audio;
+    } as unknown as typeof Audio;
+  });
+
+  await canvas.serveRoute('/audio/music_test.mp3', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'audio/mpeg', body: musicMp3 });
+  });
+
+  let stateSocket: WebSocketRoute | null = null;
+  let latestPayload: Record<string, unknown> = {
+    latest: '',
+    time: 1,
+    narration: 'The tavern settles into a quiet melody.',
+    committed_scene_speech_generation: 1,
+  };
+
+  await canvas.openCanvas({
+    isOrator: true,
+    localStorage: {
+      narratron_music_muted: 'false',
+    },
+    apiRoutes: {
+      '/api/latest': async (route) => {
+        await route.fulfill({ json: latestPayload });
+      },
+    },
+    onWebSocket: (ws) => {
+      if (new URL(ws.url()).pathname === '/ws/canvas-state') {
+        stateSocket = ws;
+        ws.send(JSON.stringify({ type: 'state_ready' }));
+      }
+    },
+  });
+
+  await expect.poll(() => stateSocket !== null).toBe(true);
+
+  // Grant browser autoplay activation before starting music.
+  await page.locator('#image-container').click();
+
+  latestPayload = {
+    ...latestPayload,
+    time: 2,
+    music: {
+      music_id: 'tavern',
+      tracks: ['/audio/music_test.mp3'],
+      time: 2,
+      paused: false,
+    },
+  };
+  stateSocket!.send(JSON.stringify({ type: 'state_changed', domains: ['latest'] }));
+
+  await expect(page.locator('#music-status')).toHaveText('🎵 tavern');
+  await page.waitForFunction(() => {
+    const win = window as unknown as RealAudioWindow;
+    const music = win.__realAudios.find((r) => r.audio.src.includes('/audio/music_test.mp3'));
+    return Boolean(
+      music &&
+        !music.audio.paused &&
+        !music.audio.muted &&
+        music.audio.volume > 0 &&
+        music.audio.currentTime > 0.1,
+    );
+  });
+
+  const musicTimeBeforeSpeech = await page.evaluate(() => {
+    const win = window as unknown as RealAudioWindow;
+    const music = win.__realAudios.find((r) => r.audio.src.includes('/audio/music_test.mp3'));
+    return music ? music.audio.currentTime : 0;
+  });
+
+  // Deliver voice narration while music is actively playing.
+  stateSocket!.send(
+    JSON.stringify({
+      type: 'scene_speech_ready',
+      audio_url: speechDataUrl,
+      speech_generation: 1,
+    }),
+  );
+
+  await expect(page.locator('#latest-speech-replay-btn')).toHaveClass(/playing/);
+
+  // Both music and voice narration play concurrently without interrupting music.
+  await page.waitForFunction((prevMusicTime: number) => {
+    const win = window as unknown as RealAudioWindow;
+    const music = win.__realAudios.find((r) => r.audio.src.includes('/audio/music_test.mp3'));
+    const speech = win.__realAudios.find((r) => r.audio.src.startsWith('data:audio/wav;base64,'));
+    return Boolean(
+      music &&
+        speech &&
+        !speech.audio.paused &&
+        !speech.audio.muted &&
+        speech.audio.volume > 0 &&
+        speech.audio.currentTime > 0.1 &&
+        !music.audio.paused &&
+        !music.audio.muted &&
+        music.audio.volume > 0 &&
+        music.audio.currentTime > prevMusicTime,
+    );
+  }, musicTimeBeforeSpeech);
+
+  const duringSpeech = await page.evaluate(() => {
+    const win = window as unknown as RealAudioWindow;
+    const music = win.__realAudios.find((r) => r.audio.src.includes('/audio/music_test.mp3'))!;
+    const speech = win.__realAudios.find((r) => r.audio.src.startsWith('data:audio/wav;base64,'))!;
+    return {
+      musicPaused: music.audio.paused,
+      musicMuted: music.audio.muted,
+      musicPauseCalls: music.pauseCalls,
+      musicCurrentTime: music.audio.currentTime,
+      speechPaused: speech.audio.paused,
+      speechMuted: speech.audio.muted,
+      speechVolume: speech.audio.volume,
+    };
+  });
+
+  expect(duringSpeech.musicPaused).toBe(false);
+  expect(duringSpeech.musicMuted).toBe(false);
+  expect(duringSpeech.musicPauseCalls).toBe(0);
+  expect(duringSpeech.musicCurrentTime).toBeGreaterThan(musicTimeBeforeSpeech);
+  expect(duringSpeech.speechPaused).toBe(false);
+  expect(duringSpeech.speechMuted).toBe(false);
+  expect(duringSpeech.speechVolume).toBe(1);
+
+  // Advancing to a new scene generation stops older speech without interrupting music.
+  latestPayload = {
+    ...latestPayload,
+    time: 3,
+    narration: 'The door creaks open.',
+    committed_scene_speech_generation: 2,
+  };
+  stateSocket!.send(JSON.stringify({ type: 'state_changed', domains: ['latest'] }));
+  await expect(page.locator('#latest-speech-replay-btn')).not.toHaveClass(/playing/);
+
+  const afterSpeechAdvance = await page.evaluate(() => {
+    const win = window as unknown as RealAudioWindow;
+    const music = win.__realAudios.find((r) => r.audio.src.includes('/audio/music_test.mp3'))!;
+    return {
+      musicPaused: music.audio.paused,
+      musicPauseCalls: music.pauseCalls,
+      musicCurrentTime: music.audio.currentTime,
+    };
+  });
+  expect(afterSpeechAdvance.musicPaused).toBe(false);
+  expect(afterSpeechAdvance.musicPauseCalls).toBe(0);
+  expect(afterSpeechAdvance.musicCurrentTime).toBeGreaterThanOrEqual(duringSpeech.musicCurrentTime);
 });
