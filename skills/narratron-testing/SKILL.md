@@ -49,6 +49,19 @@ Tests are organized into two primary categories:
 
 ### Running Tests
 
+#### Swarm Worker vs. Coordinator Test Scope
+
+When working in a multi-agent swarm:
+
+- **Swarm workers** must **not** run the full test suite (`npm test`, unfiltered `npm run test:ui` / `npx playwright test`, or unfiltered `uv run pytest`) on their own. Running full suites across multiple parallel workers causes heavy CPU/memory contention and slows down execution.
+- **Swarm workers** should run **only targeted checks** for the modules and files they own or touched, for example:
+  - `npm run typecheck`
+  - `npm run build`
+  - `npx playwright test frontend/canvas/<specific>_test.ts`
+  - `uv run pytest <specific_test_file.py>`
+  - `uv run ruff check <touched_py_files>`
+- **The coordinator** (or a post-merge integration check) is responsible for running the full test suite (`npm test` and full `uv run pytest`) when appropriate, such as after integrating wave branches.
+
 #### Frontend TypeScript & UI Test Suites (`npm`)
 
 Always use the npm scripts defined in `package.json`:
