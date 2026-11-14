@@ -336,7 +336,7 @@ class TestTheaterAPI(BaseTestCase):
             200,
         )
 
-    def test_theater_config_api_get_and_post(self):
+    def test_theater_config_api_get_and_post(self) -> None:
         owner = object_registry.db.register_user("config_owner", "config-owner@example.com", "Password123")
         object_registry.db.add_user_credits(owner["id"], 50.0, 2.5)
         self.assertTrue(object_registry.db.record_deployment("config_theater", owner["id"], "KEY-CONFIG", cost=5.0))
@@ -353,6 +353,19 @@ class TestTheaterAPI(BaseTestCase):
         data = get_res.json()
         self.assertIn("config_yaml", data)
         self.assertEqual(data["theater_id"], "config_theater")
+
+        # 1b. Join-key-only POST is rejected; saving config requires owner auth
+        unauth_post = self.client.post(
+            "/api/theaters/config_theater/config",
+            json={"config_yaml": "agent:\n  name: Unauthorized\n"},
+        )
+        self.assertEqual(unauth_post.status_code, 401)
+
+        login_res = self.client.post(
+            "/api/auth/login",
+            json={"username_or_email": "config_owner", "password": "Password123"},
+        )
+        self.assertEqual(login_res.status_code, 200)
 
         # 2. POST invalid YAML
         bad_post = self.client.post(
@@ -1243,7 +1256,7 @@ music:
             # Ensure no file path entry is duplicated in the ZIP export
             self.assertEqual(len(filenames), len(set(filenames)), f"Duplicate zip file entries found: {filenames}")
 
-    def test_password_reset_api_flow(self):
+    def test_password_reset_api_flow(self) -> None:
         # 1. Register user
         reg_res = self.client.post("/api/auth/register", json={
             "age_attested": True,
@@ -1254,9 +1267,13 @@ music:
         self.assertEqual(reg_res.status_code, 200)
 
         # 2. Request forgot password
-        forgot_res = self.client.post("/api/auth/forgot-password", json={
-            "username_or_email": "pwreset@example.com"
-        })
+        with (
+            patch.dict(os.environ, {"PUBLIC_BASE_URL": "https://narratron.example"}),
+            patch("api_server.auth.send_password_reset_email", return_value={"sent": True, "method": "smtp"}) as mock_send_email,
+        ):
+            forgot_res = self.client.post("/api/auth/forgot-password", json={
+                "username_or_email": "pwreset@example.com"
+            })
         self.assertEqual(forgot_res.status_code, 200)
         data = forgot_res.json()
         self.assertEqual(data["status"], "ok")
@@ -1271,6 +1288,11 @@ music:
             )
             token = cursor.fetchone()["token"]
         self.assertTrue(len(token) > 10)
+        mock_send_email.assert_called_once_with(
+            "pwreset@example.com",
+            "pw_reset_user",
+            f"https://narratron.example/deploy?reset_token={token}",
+        )
 
         # 3. Validate token
         val_res = self.client.get(f"/api/auth/reset-password/validate?token={token}")

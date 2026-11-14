@@ -99,3 +99,15 @@ def test_can_access_agent_websocket_accepts_query_param_join_key():
     request = SimpleNamespace(cookies={}, query_params={"join_key": "VALID-KEY"})
     assert shared.can_access_agent_websocket(request, deployment)
 
+
+def test_can_access_agent_websocket_handles_missing_or_blank_join_key() -> None:
+    request = SimpleNamespace(cookies={}, query_params={"join_key": "   "})
+    assert not shared.can_access_agent_websocket(request, {"theater_id": "stage", "user_id": 10})
+    assert not shared.can_access_agent_websocket(
+        request, {"theater_id": "stage", "user_id": 10, "join_key": None}, join_key="ANY"
+    )
+    assert not shared.can_access_agent_websocket(
+        request, {"theater_id": "stage", "user_id": 10, "join_key": "   "}
+    )
+    assert not shared.can_access_agent_websocket(request, {"user_id": 10, "join_key": "VALID-KEY"}, join_key="VALID-KEY")
+

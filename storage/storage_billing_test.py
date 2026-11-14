@@ -212,6 +212,7 @@ class TestZeroCreditsApiIntegration(unittest.TestCase):
         import importlib
         app_module = importlib.import_module('api_server.app')
         import object_registry
+        from types import SimpleNamespace
         from unittest.mock import AsyncMock, MagicMock, patch
 
         user = self.db.register_user("zeroclient", "zeroclient@example.com", "Password123")
@@ -224,12 +225,13 @@ class TestZeroCreditsApiIntegration(unittest.TestCase):
         self.assertTrue(deployed)
 
         manager = MagicMock()
-        mock_req = MagicMock()
+        mock_req = SimpleNamespace(cookies={}, query_params={}, headers={}, state=SimpleNamespace())
 
         with (
             patch.object(object_registry, "db", self.db),
             patch.object(object_registry, "live_agent_manager", manager),
             patch.object(app_module, "get_current_user_async", AsyncMock(return_value={"id": uid})),
+            patch("api_server.shared.get_current_user_async", AsyncMock(return_value={"id": uid})),
         ):
             # Summoning agent should fail with 402 insufficient_credits
             response = asyncio.run(app_module.start_agent_endpoint(theater_id, mock_req))
@@ -240,7 +242,7 @@ class TestZeroCreditsApiIntegration(unittest.TestCase):
             manager.stop_session.assert_called_once_with(theater_id=theater_id)
 
             # Checking agent status should report insufficient_credits
-            status_payload = asyncio.run(app_module.get_agent_status_endpoint(theater_id))
+            status_payload = asyncio.run(app_module.get_agent_status_endpoint(theater_id, mock_req))
             self.assertTrue(status_payload.get("insufficient_credits"))
             self.assertFalse(status_payload.get("agent_running"))
 

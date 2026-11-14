@@ -294,6 +294,7 @@ def test_forgot_password_keeps_unknown_account_response_generic() -> None:
     test_app = FastAPI()
     test_app.post("/forgot-password")(auth.forgot_password)
     with (
+        patch.dict(os.environ, {"PUBLIC_BASE_URL": "https://narratron.example"}),
         patch.object(object_registry, "db", registry_db),
         patch.object(auth, "send_password_reset_email") as send_email,
         TestClient(test_app) as client,
@@ -305,4 +306,22 @@ def test_forgot_password_keeps_unknown_account_response_generic() -> None:
         "status": "ok",
         "message": "If an account with that email or username exists, a password reset link has been sent.",
     }
+    send_email.assert_not_called()
+
+
+def test_forgot_password_fails_uniformly_when_public_base_url_missing() -> None:
+    registry_db = MagicMock()
+    registry_db.create_password_reset_token.return_value = None
+    test_app = FastAPI()
+    test_app.post("/forgot-password")(auth.forgot_password)
+    with (
+        patch.dict(os.environ, {"PUBLIC_BASE_URL": ""}),
+        patch.object(object_registry, "db", registry_db),
+        patch.object(auth, "send_password_reset_email") as send_email,
+        TestClient(test_app) as client,
+    ):
+        result = client.post("/forgot-password", json={"username_or_email": "unknown"})
+
+    assert result.status_code == 500
+    registry_db.create_password_reset_token.assert_not_called()
     send_email.assert_not_called()

@@ -150,6 +150,7 @@ def update_mic_sensitivity_endpoint(req: MicSensitivityRequest, request: Request
 
 @app.post("/api/auth/forgot-password")
 def forgot_password(req: ForgotPasswordRequest, request: Request) -> dict[str, str]:
+    base_url = _public_base_url()
     token_user = object_registry.db.create_password_reset_token(req.username_or_email)
     if not token_user:
         return {
@@ -158,7 +159,6 @@ def forgot_password(req: ForgotPasswordRequest, request: Request) -> dict[str, s
         }
 
     token, user = token_user
-    base_url = _public_base_url()
     reset_link = f"{base_url}/deploy?reset_token={token}"
 
     delivery = send_password_reset_email(user["email"], user["username"], reset_link)

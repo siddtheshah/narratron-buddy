@@ -238,10 +238,12 @@ def _grant_canvas_access(response: Response, request: Request, theater_id: str, 
     )
 
 
-def _valid_join_key(expected_key: str, candidate_key: Optional[str]) -> bool:
-    return bool(candidate_key) and hmac.compare_digest(
-        expected_key.strip().upper(), candidate_key.strip().upper()
-    )
+def _valid_join_key(expected_key: Optional[str], candidate_key: Optional[str]) -> bool:
+    if not expected_key or not candidate_key:
+        return False
+    expected = expected_key.strip().upper()
+    candidate = candidate_key.strip().upper()
+    return bool(expected) and bool(candidate) and hmac.compare_digest(expected, candidate)
 
 
 def can_access_agent_websocket(
@@ -268,8 +270,11 @@ def can_access_agent_websocket(
         }:
             return True
 
-    candidate_key = _extract_candidate_join_key(request, deployment["theater_id"], join_key)
-    return _valid_join_key(deployment["join_key"], candidate_key)
+    theater_id = deployment.get("theater_id")
+    if not theater_id:
+        return False
+    candidate_key = _extract_candidate_join_key(request, theater_id, join_key)
+    return _valid_join_key(deployment.get("join_key"), candidate_key)
 
 
 def can_control_agent_websocket(

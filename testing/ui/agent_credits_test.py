@@ -113,10 +113,18 @@ class TestAgentCreditsEnforcement(unittest.TestCase):
         self.assertEqual(json_data.get("agent_running"), False)
         mock_agent_mgr.stop_session.assert_called_once_with(theater_id="theater_rich")
 
+    @patch("api_server.app.get_current_user_async", AsyncMock(return_value={"id": 77}))
+    @patch("api_server.shared.get_current_user_async", AsyncMock(return_value={"id": 77}))
     @patch("object_registry.db")
     @patch("object_registry.live_agent_manager")
-    def test_get_agent_status_stops_session_when_credits_le_zero(self, mock_agent_mgr, mock_db):
-        mock_db.get_deployment.return_value = {"theater_id": "theater_depleted", "user_id": 77}
+    def test_get_agent_status_stops_session_when_credits_le_zero(
+        self, mock_agent_mgr: MagicMock, mock_db: MagicMock
+    ) -> None:
+        mock_db.get_deployment.return_value = {
+            "theater_id": "theater_depleted",
+            "user_id": 77,
+            "join_key": "KEY-DEPLETED",
+        }
         mock_db.get_user_by_id.return_value = {"id": 77, "credits": -1.0}
         mock_session = MagicMock()
         mock_session.status = "active"
