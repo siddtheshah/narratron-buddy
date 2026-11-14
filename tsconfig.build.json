@@ -6,6 +6,7 @@
     "outDir": "static/generated/canvas",
     "noEmit": false,
     "sourceMap": true,
+    "inlineSources": true,
     "declaration": false
   },
   "include": [
