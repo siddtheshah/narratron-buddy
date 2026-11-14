@@ -1,5 +1,5 @@
 import type { ToolActivitySnapshot } from './agent-activity.js';
-import type { AgentSocket, AudioRecorderStartResult, OpusPacketHandler } from './audio-recorder.js';
+import type { AgentSocket, AudioRecorderStartResult, OpusPacketHandler } from '../audio/audio-recorder.js';
 import { isActiveCanvasWindow as defaultIsActiveCanvasWindow } from './doodle-session.js';
 import type { MicMode } from './mic-config.js';
 

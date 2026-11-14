@@ -3,6 +3,7 @@ from pathlib import Path
 from unittest.mock import create_autospec
 
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 from fastapi.testclient import TestClient
 from playwright.sync_api import Dialog, Route, expect, sync_playwright
 from pytest import MonkeyPatch
@@ -25,6 +26,11 @@ def test_manual_lab_plays_checkers_and_resets(
     monkeypatch.setattr(game_lab, "_sessions", {})
     app = FastAPI()
     app.include_router(game_lab.router)
+    app.mount(
+        "/static/generated",
+        StaticFiles(directory=game_lab.PROJECT_ROOT / "static" / "generated"),
+        name="static-generated",
+    )
     client = TestClient(app)
 
     def route_request(route: Route) -> None:

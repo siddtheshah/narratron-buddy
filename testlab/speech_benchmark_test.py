@@ -15,7 +15,7 @@ def test_speech_benchmark_routes() -> None:
     client = TestClient(app)
     page = client.get("/speech-benchmark")
     assert page.status_code == 200
-    script_response = client.get("/static/generated/canvas/testlab-speech-benchmark.js")
+    script_response = client.get("/static/generated/testlab/testlab-speech-benchmark.js")
     assert script_response.status_code == 200
     assert script_response.headers["content-type"].split(";")[0] in {"text/javascript", "application/javascript"}
     data = client.get("/api/speech-benchmark/catalog").json()

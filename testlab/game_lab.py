@@ -122,7 +122,7 @@ def game_renderer_asset(kind: str, name: str) -> FileResponse:
     ):
         raise HTTPException(404, "Unknown game asset.")
     asset_path = (
-        PROJECT_ROOT / "static" / "generated" / "canvas" / name
+        PROJECT_ROOT / "static" / "generated" / ("testlab" if name == "testlab-game-lab.js" else "game") / name
         if kind == "js"
         else PROJECT_ROOT / "static" / kind / name
     )

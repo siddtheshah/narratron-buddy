@@ -6,7 +6,7 @@ import {
   parseSubmittedAction,
   type SubmittedGameAction,
 } from '../../testing/ui/game_fixtures';
-import type { GamePayload } from './game-renderer.js';
+import type { GamePayload } from '../game/game-renderer.js';
 
 const snapshots = loadGameSnapshots();
 
@@ -84,7 +84,7 @@ test('winning checkers refreshes the page and keeps crown when panel closes', as
     `,
     moduleScripts: [
       `
-      import { createGameRenderer } from '/static/generated/canvas/game-renderer.js';
+      import { createGameRenderer } from '/static/generated/game/game-renderer.js';
       import { createDoodleRenderer } from '/static/generated/canvas/doodle-renderer.js';
       let lastGameCanvasRevision = null;
       const stamps = createDoodleRenderer({

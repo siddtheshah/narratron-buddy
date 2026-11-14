@@ -599,7 +599,7 @@ test('roll HTML is sanitized in canvas chat-controller renderer', async ({ canva
     }) => {
       const win = window as unknown as Beyond20HarnessWindow;
       win.auditRoll = 0;
-      const mod = await window.__importModule<ChatControllerModule>('/static/generated/canvas/chat-controller.js');
+      const mod = await window.__importModule<ChatControllerModule>('/static/generated/shared/chat-controller.js');
       const container = document.getElementById('chat-messages');
       if (!container) throw new Error('Missing #chat-messages');
 

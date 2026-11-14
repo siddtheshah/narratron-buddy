@@ -15,13 +15,12 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "paths": {
-      "/static/generated/canvas/*": ["./frontend/canvas/*"]
+      "/static/generated/*": ["./frontend/*"]
     }
   },
   "include": [
     "playwright.config.ts",
     "testing/ui/**/*.ts",
-    "frontend/canvas/**/*.ts",
-    "frontend/canvas/**/*.d.ts"
+    "frontend/**/*.ts"
   ]
 }

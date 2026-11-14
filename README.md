@@ -74,7 +74,7 @@ uv run ruff check .
 
 `npm test` checks TypeScript types for production code and tests, builds the
 browser modules, and runs the TypeScript Playwright suite in Chromium. Frontend
-tests live beside their sources in `frontend/canvas/*_test.ts`; shared fixtures
+tests live beside their sources in `frontend/**/*_test.ts`; shared fixtures
 and their tests live in `testing/ui/`. Python tests cover backend behavior and
 the remaining browser/server integration checks. Both suites isolate unexpected
 network access; live provider evaluations are separate.
@@ -89,9 +89,10 @@ npm run test:ui -- frontend/canvas/cursor-state_test.ts --workers=4
 
 `npm run test:ui` uses existing generated assets, so rebuild after changing
 TypeScript or keep `npm run watch` running. Generated files in
-`static/generated/canvas/` are ignored by Git; edit `frontend/canvas/*.ts` and use
+`static/generated/` are ignored by Git; edit `frontend/**/*.ts` and use
 `.js` extensions for relative browser imports. Templates load modules from
-`/static/generated/canvas/`. Docker compiles these assets in its Node build stage.
+`/static/generated/<consumer>/`. See the [frontend layout](frontend/README.md).
+Docker compiles these assets in its Node build stage.
 
 See the [testing guide](skills/narratron-testing/SKILL.md) for fixtures, offline
 guards, and evaluation commands, and the

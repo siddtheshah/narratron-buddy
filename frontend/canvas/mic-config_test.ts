@@ -4,7 +4,7 @@ type MicConfigModule = typeof import('/static/generated/canvas/mic-config.js');
 type MicConfigController = import('/static/generated/canvas/mic-config.js').MicConfigController;
 type MicMode = import('/static/generated/canvas/mic-config.js').MicMode;
 type ListenForSpeechOptions =
-  import('/static/generated/canvas/device-aware-pcm.js').ListenForSpeechOptions;
+  import('/static/generated/audio/device-aware-pcm.js').ListenForSpeechOptions;
 
 interface MockAudioPlaybackRecord {
   readonly sampleRate: number;

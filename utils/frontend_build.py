@@ -1,4 +1,4 @@
-"""Ensure compiled Canvas TypeScript assets exist and are up to date locally."""
+"""Ensure compiled frontend TypeScript assets exist and are up to date locally."""
 
 from __future__ import annotations
 
@@ -41,7 +41,7 @@ def _is_build_input(path: Path) -> bool:
 
 
 def _collect_emitted_sources(frontend_dir: Path) -> list[Path]:
-    """Return all TypeScript source files under frontend/canvas/ that emit JS."""
+    """Return all TypeScript source files under frontend/ that emit JS."""
     if not frontend_dir.exists():
         return []
     sources: list[Path] = []
@@ -56,7 +56,7 @@ def _collect_emitted_sources(frontend_dir: Path) -> list[Path]:
 
 
 def _latest_input_mtime_ns(project_root: Path, frontend_dir: Path) -> int:
-    """Return the newest modification timestamp across canvas sources and TS build configs."""
+    """Return the newest modification timestamp across frontend sources and TS build configs."""
     latest = 0
     for path in frontend_dir.rglob("*"):
         if _is_build_input(path):
@@ -69,12 +69,12 @@ def _latest_input_mtime_ns(project_root: Path, frontend_dir: Path) -> int:
 
 
 def _needs_build(project_root: Path) -> bool:
-    """Return True when frontend/canvas/ sources exist and generated JS is missing or stale."""
-    frontend_dir = project_root / "frontend" / "canvas"
+    """Return True when frontend/ sources exist and generated JS is missing or stale."""
+    frontend_dir = project_root / "frontend"
     sources = _collect_emitted_sources(frontend_dir)
     if not sources:
         return False
-    generated_dir = project_root / "static" / "generated" / "canvas"
+    generated_dir = project_root / "static" / "generated"
     latest_input = _latest_input_mtime_ns(project_root, frontend_dir)
     for source_path in sources:
         output_path = generated_dir / source_path.relative_to(frontend_dir).with_suffix(".js")
@@ -110,7 +110,7 @@ def _acquire_build_lock(lock_path: Path) -> Iterator[None]:
 
 
 def ensure_canvas_assets_built(project_root: Path = PROJECT_ROOT) -> None:
-    """Build static/generated/canvas/ when local frontend/canvas/ sources are missing output or stale."""
+    """Build static/generated/ when local frontend/ sources are missing output or stale."""
     if not _needs_build(project_root):
         return
     digest = hashlib.sha256(str(project_root.resolve()).encode("utf-8")).hexdigest()[:12]
@@ -121,7 +121,7 @@ def ensure_canvas_assets_built(project_root: Path = PROJECT_ROOT) -> None:
         npm_executable = shutil.which("npm")
         if npm_executable is None:
             raise RuntimeError(
-                "Canvas TypeScript sources exist in frontend/canvas/ but static/generated/canvas/ "
+                "frontend TypeScript sources exist in frontend/ but static/generated/ "
                 "is missing or stale, and 'npm' was not found on PATH. Run 'npm ci && npm run build'."
             )
         subprocess.run([npm_executable, "run", "build"], cwd=project_root, check=True)

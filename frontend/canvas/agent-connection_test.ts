@@ -10,7 +10,7 @@ type StartAudioRecorderWorkletFn =
   import('/static/generated/canvas/agent-connection.js').StartAudioRecorderWorkletFn;
 type ToolActivitySnapshot =
   import('/static/generated/canvas/agent-activity.js').ToolActivitySnapshot;
-type OpusPacketHandler = import('/static/generated/canvas/audio-recorder.js').OpusPacketHandler;
+type OpusPacketHandler = import('/static/generated/audio/audio-recorder.js').OpusPacketHandler;
 type MicMode = import('/static/generated/canvas/mic-config.js').MicMode;
 
 interface AgentHarnessWindow extends Window {

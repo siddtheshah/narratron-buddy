@@ -26,7 +26,7 @@ def assert_browser_matches_server(game: GameState, steps: list[GameStep]) -> Non
         page.route('http://game.test/**', route_request)
         page.goto('http://game.test/')
         page.evaluate('''async payload => {
-            const {createLocalGame} = await import('/static/generated/canvas/game-runtime.js');
+            const {createLocalGame} = await import('/static/generated/game/game-runtime.js');
             window.runtime = createLocalGame(payload.client);
             window.previewState = payload.state;
         }''', payload)

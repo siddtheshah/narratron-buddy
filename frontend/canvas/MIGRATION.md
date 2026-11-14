@@ -1,5 +1,9 @@
 # Canvas TypeScript migration coverage
 
+This is the historical migration inventory. Browser sources now live in consumer
+folders under `frontend/`; see [the current layout](../README.md). Compiled URLs
+mirror those folders under `/static/generated/`.
+
 The core baseline is commit `b5632e9`, before the TypeScript migration:
 17 Python files, 104 test definitions before parametrization. Two definitions
 exercise Python backend state/handlers and remain in Python. The other 102 are
@@ -199,12 +203,12 @@ conversion for this frontend migration.
 
 - [x] Extract embedded JavaScript into compiler-checked TypeScript sources while
   preserving audio-worklet and sandbox behavior:
-  - Extracted `runGamePanelBridge` into `frontend/canvas/game-panel-bridge.ts`
+  - Extracted `runGamePanelBridge` into `frontend/game/game-panel-bridge.ts`
     (compiled and type-checked by `tsc`, serialized with `.toString()` inside
     `game-panel.ts` to preserve the CSP nonce inline `<script>` inside
     `sandbox="allow-scripts"`).
   - Extracted `registerPcmWorkletProcessor` and `buildPcmWorkletSource` into
-    `frontend/canvas/pcm-worklet-processor.ts`, used by `device-aware-pcm.ts`,
+    `frontend/audio/pcm-worklet-processor.ts`, used by `device-aware-pcm.ts`,
     `remote.ts`, and `testlab-audio-vad.ts` to construct their Blob
     AudioWorklet modules without un-typed string sources; verified with real
     Chromium `OfflineAudioContext` + `AudioWorkletNode` resampling tests.
@@ -415,11 +419,11 @@ module execution; the remaining 15 are FastAPI `TestClient` / unit suites
     payloads (`as GenerateApiResponse`, `as PushApiResponse`, `as TheaterPlaylist[]`)
     without runtime guards and uses DOM/event casts (`as HTMLFormElement | null`,
     `as KeyboardEvent`).
-  - Wave-3 unguarded JSON/AST/snapshot casts: `frontend/canvas/chat-controller.ts`
+  - Wave-3 unguarded JSON/AST/snapshot casts: `frontend/shared/chat-controller.ts`
     (`await response.json() as ...` across `ChatApplySettingsResult`,
     `SuggestionVoteSummary[]`, `ChatMessage[]`, `PrivateHelpResult`, `ChatPostResult`),
     `frontend/canvas/theater-report.ts` (`(body as ReportErrorResponse).detail`), and
-    `frontend/canvas/game-runtime.ts` (`arg as CelAstNode`,
+    `frontend/game/game-runtime.ts` (`arg as CelAstNode`,
     `Object.create(null) as GameRecord`, `JSON.parse(snapshot) as LocalGameSnapshot`,
     `transition.bindings as readonly GameBinding[]`).
   - Several `frontend/canvas/*_test.ts` files (including `theater-report_test.ts`)
@@ -437,7 +441,7 @@ module execution; the remaining 15 are FastAPI `TestClient` / unit suites
 - **Backend Logic Integrity**: Production backend logic is intact relative to the pre-migration baseline (`b5632e9`). Only 5 production Python paths were touched, all limited to build/static integration:
   - `object_registry.py`: runs `ensure_canvas_assets_built()` during FastAPI `lifespan`.
   - `utils/frontend_build.py`: builds stale or missing `static/generated/canvas/` assets.
-  - `api_server/pages.py`: keeps the unversioned canonical `/static/generated/canvas/auth-flow.js` URL so ES module imports share one auth-state cache.
+  - `api_server/pages.py`: keeps the unversioned canonical `/static/generated/shared/auth-flow.js` URL so ES module imports share one auth-state cache.
   - `testlab/server.py`: mounts `/static/generated` alongside `/effects-static`.
   - `testlab/game_lab.py`: serves `game-panel-bridge.js` and `testlab-game-lab.js` from `static/generated/canvas/`.
 
@@ -454,7 +458,7 @@ module execution; the remaining 15 are FastAPI `TestClient` / unit suites
   - `frontend/canvas/baton-manager.ts:335-377,392-396` and `frontend/canvas/canvas.ts:1838-1846`: `void addContributor(...)` / `removeContributor` / `requestBatonPass` callers do not catch rejected promises on non-2xx responses.
   - `frontend/canvas/history-paging.ts:315-322`: `updatePagingControlsUI` returns early when `pagingControls` is absent before resetting `navigating` / `pagedBack` / `hasNewHeadWhilePagedBack` when `isOrator()` is true.
   - `frontend/canvas/canvas.ts:1170`: `getCachedTheaterStamps` does not fall back to `window.cachedTheaterStamps`.
-  - `templates/join_splash.html:1315`: retains `?v=20261008-support-chat` query param on `/static/generated/canvas/user-help.js`.
+  - `templates/join_splash.html:1315`: retains `?v=20261008-support-chat` query param on `/static/generated/pages/user-help.js`.
   - `testing/ui/canvas_source.py`: `read_ui_source` is no longer imported anywhere in the repository.
 
 ### Resolution & Regression Coverage (2026-11-14)

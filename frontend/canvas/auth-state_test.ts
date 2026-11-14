@@ -3,9 +3,9 @@ import path from 'node:path';
 import type { WebSocketRoute } from '@playwright/test';
 import { CANVAS_ORIGIN, expect, REPO_ROOT, STATIC_DIR, test } from '../../testing/ui/canvas_fixtures';
 
-type AuthFlowModule = typeof import('/static/generated/canvas/auth-flow.js');
+type AuthFlowModule = typeof import('/static/generated/shared/auth-flow.js');
 
-const AUTH_FLOW_MODULE_URL = '/static/generated/canvas/auth-flow.js';
+const AUTH_FLOW_MODULE_URL = '/static/generated/shared/auth-flow.js';
 
 test('auth-flow deduplicates /api/auth/me, supports invalidateAuthState, and retries transient errors', async ({
   canvas,

@@ -108,7 +108,7 @@ test.describe('Adventure Runner Game UI', () => {
         const file = parts[2];
         if (kind === 'js' && file) {
           const body = await fs.promises.readFile(
-            path.join(REPO_ROOT, 'static', 'generated', 'canvas', file),
+            path.join(REPO_ROOT, 'static', 'generated', 'game', file),
             'utf-8',
           );
           await route.fulfill({ body, contentType: 'application/javascript; charset=utf-8' });

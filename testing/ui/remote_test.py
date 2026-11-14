@@ -23,53 +23,53 @@ def remote_page() -> Iterator[Page]:
             path = urlsplit(route.request.url).path
             files = {
                 "/remote": ("templates/remote.html", "text/html"),
-                "/static/generated/canvas/remote.js": (
-                    "static/generated/canvas/remote.js",
+                "/static/generated/remote/remote.js": (
+                    "static/generated/remote/remote.js",
                     "text/javascript",
                 ),
-                "/static/generated/canvas/remote-game.js": (
-                    "static/generated/canvas/remote-game.js",
+                "/static/generated/remote/remote-game.js": (
+                    "static/generated/remote/remote-game.js",
                     "text/javascript",
                 ),
-                "/static/generated/canvas/game-renderer.js": (
-                    "static/generated/canvas/game-renderer.js",
+                "/static/generated/game/game-renderer.js": (
+                    "static/generated/game/game-renderer.js",
                     "text/javascript",
                 ),
-                "/static/generated/canvas/game-runtime.js": (
-                    "static/generated/canvas/game-runtime.js",
+                "/static/generated/game/game-runtime.js": (
+                    "static/generated/game/game-runtime.js",
                     "text/javascript",
                 ),
-                "/static/generated/canvas/game-panel.js": (
-                    "static/generated/canvas/game-panel.js",
+                "/static/generated/game/game-panel.js": (
+                    "static/generated/game/game-panel.js",
                     "text/javascript",
                 ),
-                "/static/generated/canvas/game-panel-bridge.js": (
-                    "static/generated/canvas/game-panel-bridge.js",
+                "/static/generated/game/game-panel-bridge.js": (
+                    "static/generated/game/game-panel-bridge.js",
                     "text/javascript",
                 ),
-                "/static/generated/canvas/pcm-worklet-processor.js": (
-                    "static/generated/canvas/pcm-worklet-processor.js",
+                "/static/generated/audio/pcm-worklet-processor.js": (
+                    "static/generated/audio/pcm-worklet-processor.js",
                     "text/javascript",
                 ),
                 "/static/css/game-renderer.css": ("static/css/game-renderer.css", "text/css"),
-                "/static/generated/canvas/remote-audio.js": (
-                    "static/generated/canvas/remote-audio.js",
+                "/static/generated/remote/remote-audio.js": (
+                    "static/generated/remote/remote-audio.js",
                     "text/javascript",
                 ),
-                "/static/generated/canvas/story-log-inspector.js": (
-                    "static/generated/canvas/story-log-inspector.js",
+                "/static/generated/shared/story-log-inspector.js": (
+                    "static/generated/shared/story-log-inspector.js",
                     "text/javascript",
                 ),
-                "/static/generated/canvas/chat-controller.js": (
-                    "static/generated/canvas/chat-controller.js",
+                "/static/generated/shared/chat-controller.js": (
+                    "static/generated/shared/chat-controller.js",
                     "text/javascript",
                 ),
-                "/static/generated/canvas/chat-emotes.js": (
-                    "static/generated/canvas/chat-emotes.js",
+                "/static/generated/shared/chat-emotes.js": (
+                    "static/generated/shared/chat-emotes.js",
                     "text/javascript",
                 ),
-                "/static/generated/canvas/device-navigation.js": (
-                    "static/generated/canvas/device-navigation.js",
+                "/static/generated/shared/device-navigation.js": (
+                    "static/generated/shared/device-navigation.js",
                     "text/javascript",
                 ),
                 "/static/css/remote.css": ("static/css/remote.css", "text/css"),

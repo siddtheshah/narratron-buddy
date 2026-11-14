@@ -29,12 +29,12 @@ Tests are organized into three categories:
      - `services/live_stream_service_test.py` (tests `services/live_stream_service.py`)
 
 2. **Frontend TypeScript Tests**:
-   - Placed **directly adjacent** to their source files in `frontend/canvas/` using the `*_test.ts` convention:
+   - Placed **directly adjacent** to their source files under `frontend/` using the `*_test.ts` convention:
      - `frontend/canvas/cursor-state_test.ts` (tests `frontend/canvas/cursor-state.ts`)
      - `frontend/canvas/bookmarks_test.ts` (tests `frontend/canvas/bookmarks.ts`)
      - `frontend/canvas/navigation_test.ts` (tests `frontend/canvas/navigation.ts`)
      - `frontend/canvas/doodle-actions_test.ts` (tests `frontend/canvas/doodle-actions.ts`)
-     - `frontend/canvas/state-polling_test.ts` (tests `frontend/canvas/state-polling.ts`)
+     - `frontend/shared/state-polling_test.ts` (tests `frontend/shared/state-polling.ts`)
    - Shared browser test fixtures and their self-tests live in `testing/ui/`:
      - `testing/ui/canvas_fixtures.ts` (shared Playwright fixture)
      - `testing/ui/canvas_fixtures_test.ts` (self-tests for `canvas_fixtures.ts`)
@@ -88,7 +88,7 @@ npx playwright test -g "cursor-state"
 # Run TypeScript type-checking across project & tests (tsc --noEmit)
 npm run typecheck
 
-# Build production TypeScript modules (frontend/canvas/ -> static/generated/canvas/)
+# Build production TypeScript modules (frontend/ -> static/generated/)
 npm run build
 
 # Watch mode for interactive TypeScript development
@@ -137,24 +137,24 @@ uv run pytest adventures
 ### Canvas TypeScript Layout & Testing Patterns
 
 The browser TypeScript migration is complete. See
-[`frontend/canvas/MIGRATION.md`](../../frontend/canvas/MIGRATION.md) for the
-coverage inventory and optional follow-up work. Follow these patterns for new
+[`frontend/canvas/MIGRATION.md`](../../frontend/canvas/MIGRATION.md) for the historical
+coverage inventory and [frontend/README.md](../../frontend/README.md) for the current layout. Follow these patterns for new
 modules and tests:
 
 1. **Source Organization & Compilation**:
-   - Production TypeScript source code resides in `frontend/canvas/<module>.ts`.
-   - The build compiles modules to browser ES modules in `static/generated/canvas/<module>.js`.
+   - Production TypeScript source code resides in `frontend/<consumer>/<module>.ts`.
+   - The build compiles modules to browser ES modules in `static/generated/<consumer>/<module>.js`.
    - `static/generated/` is gitignored and compiled automatically during `Dockerfile` builds and local startup via `utils/frontend_build.py`.
-   - Relative imports between TypeScript files in `frontend/canvas/` must use the `.js` extension (e.g., `import { canvasCursorState } from './cursor-state.js';`) to align with native browser ES module resolution.
+   - Relative imports between TypeScript files under `frontend/` must use the `.js` extension (e.g., `import { canvasCursorState } from './cursor-state.js';`) to align with native browser ES module resolution.
 
 2. **Canonical Module Imports**:
-   - Import migrated modules directly via their canonical compiled URL (`/static/generated/canvas/<module>.js`).
+   - Import migrated modules directly via their canonical compiled URL (`/static/generated/<consumer>/<module>.js`).
    - Ensure all templates, modules, and tests import via the same canonical URL so singleton module instances remain shared (compatibility re-export shims under `static/js/` have been retired).
 
 3. **Writing Playwright Tests with `canvas_fixtures.ts`**:
    - Use the shared fixture in `testing/ui/canvas_fixtures.ts`:
      ```ts
-     // From frontend/canvas/<module>_test.ts:
+     // From frontend/<consumer>/<module>_test.ts:
      import { expect, test } from '../../testing/ui/canvas_fixtures';
 
      test('module interaction', async ({ canvas, page }) => {

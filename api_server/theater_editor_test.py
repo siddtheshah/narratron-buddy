@@ -1064,7 +1064,7 @@ def test_editor_deploy_and_canvas_routes_serve_pages_and_assets(builder: Builder
     ensure_canvas_assets_built()
     assert builder.client.get("/theater-editor").status_code == 200
     assert builder.client.get("/deploy").status_code == 200
-    deploy_script = builder.client.get("/static/generated/canvas/theater-creation.js")
+    deploy_script = builder.client.get("/static/generated/pages/theater-creation.js")
     assert deploy_script.status_code == 200
     assert builder.client.get("/canvas").status_code == 200
     script = builder.client.get("/static/generated/canvas/canvas.js")

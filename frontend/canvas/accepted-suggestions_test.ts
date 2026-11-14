@@ -30,7 +30,7 @@ interface AcceptedSuggestionWindow extends Window {
   controller: ChatController;
 }
 
-const CHAT_CONTROLLER_MODULE_URL = '/static/generated/canvas/chat-controller.js';
+const CHAT_CONTROLLER_MODULE_URL = '/static/generated/shared/chat-controller.js';
 
 test('accepted suggestion remains visible alongside new pending suggestion', async ({
   canvas,

@@ -47,7 +47,7 @@ interface ChatHarnessWindow extends Window {
   resolveDelayedAuth?: (state: CanvasAuthStateResponse) => void;
 }
 
-const CHAT_CONTROLLER_MODULE_URL = '/static/generated/canvas/chat-controller.js';
+const CHAT_CONTROLLER_MODULE_URL = '/static/generated/shared/chat-controller.js';
 
 function loadChatIdentityHtml(): string {
   const template = fs.readFileSync(path.join(TEMPLATES_DIR, 'canvas.html'), 'utf-8');

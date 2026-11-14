@@ -252,7 +252,7 @@ class TestTheaterAPI(BaseTestCase):
         self.assertIn('id="cfgAdventureMode"', response.text)
         self.assertIn('id="theaterNameConfig"', response.text)
         self.assertIn('id="theaterName"', response.text)
-        self.assertIn('/static/generated/canvas/theater-creation.js', response.text)
+        self.assertIn('/static/generated/pages/theater-creation.js', response.text)
         self.assertNotIn("<th>Status</th>", response.text)
         self.assertIn('href="/docs"', response.text)
         self.assertIn("pricingModal", response.text)

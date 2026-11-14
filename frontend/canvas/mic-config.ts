@@ -1,4 +1,4 @@
-import type { ListenForSpeechOptions } from './device-aware-pcm.js';
+import type { ListenForSpeechOptions } from '../audio/device-aware-pcm.js';
 
 export type MicMode = 'toggle' | 'push-to-talk';
 

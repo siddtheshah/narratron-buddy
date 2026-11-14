@@ -1,8 +1,8 @@
 import { expect, test, type CanvasHarness } from '../../testing/ui/canvas_fixtures';
 import type { Page, WebSocketRoute } from '@playwright/test';
 
-type DeviceAwarePcmModule = typeof import('./device-aware-pcm.js');
-type PcmWorkletProcessorModule = typeof import('./pcm-worklet-processor.js');
+type DeviceAwarePcmModule = typeof import('../audio/device-aware-pcm.js');
+type PcmWorkletProcessorModule = typeof import('../audio/pcm-worklet-processor.js');
 
 interface MockPlaybackBuffer {
   readonly sampleRate: number;
@@ -261,7 +261,7 @@ test('device-aware-pcm module supports non-continuous VAD and handles getUserMed
   await mountPcmHarness(canvas, page);
   const result = await page.evaluate(async () => {
     const canonical = await window.__importModule<DeviceAwarePcmModule>(
-      '/static/generated/canvas/device-aware-pcm.js',
+      '/static/generated/audio/device-aware-pcm.js',
     );
 
     const events: string[] = [];
@@ -536,7 +536,7 @@ test('compiled PCM audio worklets load and resample inside real AudioWorkletGlob
   await canvas.mount();
   const result = await page.evaluate(async () => {
     const { buildPcmWorkletSource } = await window.__importModule<PcmWorkletProcessorModule>(
-      '/static/generated/canvas/pcm-worklet-processor.js',
+      '/static/generated/audio/pcm-worklet-processor.js',
     );
     const runWorklet = async (
       sourceCode: string,

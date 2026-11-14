@@ -13,15 +13,15 @@ _BASE_URL = "http://testlab.test"
 def test_static_generated_mount_serves_canvas_modules_without_shadowing_effects_static() -> None:
     """Verify /static/generated serves built canvas assets alongside /effects-static."""
     with TestClient(app) as client:
-        image_generated = client.get("/static/generated/canvas/image-effects.js")
+        image_generated = client.get("/static/generated/shared/image-effects.js")
         assert image_generated.status_code == 200
         assert image_generated.headers["content-type"].split(";")[0] in {"text/javascript", "application/javascript"}
 
-        animation_generated = client.get("/static/generated/canvas/animation-effects.js")
+        animation_generated = client.get("/static/generated/shared/animation-effects.js")
         assert animation_generated.status_code == 200
         assert animation_generated.headers["content-type"].split(";")[0] in {"text/javascript", "application/javascript"}
 
-        vad_generated = client.get("/static/generated/canvas/testlab-audio-vad.js")
+        vad_generated = client.get("/static/generated/testlab/testlab-audio-vad.js")
         assert vad_generated.status_code == 200
         assert vad_generated.headers["content-type"].split(";")[0] in {"text/javascript", "application/javascript"}
 
@@ -32,10 +32,10 @@ def test_static_generated_mount_serves_canvas_modules_without_shadowing_effects_
 def test_lab_pages_resolve_migrated_canvas_modules_without_404() -> None:
     """Verify effects, animation-benchmark, layered-animation, and vad pages load modules cleanly."""
     expected_modules = [
-        ("/effects", "/static/generated/canvas/image-effects.js"),
-        ("/animation-benchmark", "/static/generated/canvas/animation-effects.js"),
-        ("/layered-animation", "/static/generated/canvas/animation-effects.js"),
-        ("/vad", "/static/generated/canvas/testlab-audio-vad.js"),
+        ("/effects", "/static/generated/shared/image-effects.js"),
+        ("/animation-benchmark", "/static/generated/shared/animation-effects.js"),
+        ("/layered-animation", "/static/generated/shared/animation-effects.js"),
+        ("/vad", "/static/generated/testlab/testlab-audio-vad.js"),
     ]
     with TestClient(app) as client, sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=True)
@@ -103,5 +103,5 @@ def test_startup_builds_canvas_assets() -> None:
     with patch("testlab.server.ensure_canvas_assets_built") as build:
         with TestClient(app) as client:
             build.assert_called_once_with()
-            response = client.get("/static/generated/canvas/game-renderer.js")
+            response = client.get("/static/generated/game/game-renderer.js")
             assert response.status_code == 200

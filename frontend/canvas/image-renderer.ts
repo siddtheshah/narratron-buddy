@@ -3,7 +3,7 @@ import {
     type ImageEffectController,
     IMAGE_EFFECTS,
     IMAGE_EFFECT_DEFAULT_INTENSITIES,
-} from "./image-effects.js";
+} from "../shared/image-effects.js";
 import {
     layerTransform,
     layerOpacity,
@@ -16,7 +16,7 @@ import {
     calculateMeshGrid,
     type ImageCentroid,
     type MeshVertex,
-} from "./animation-effects.js";
+} from "../shared/animation-effects.js";
 
 
 export interface ImageRendererOptions {

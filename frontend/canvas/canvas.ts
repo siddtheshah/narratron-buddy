@@ -22,7 +22,7 @@ import type {
 import { createBatonManager, type BatonState, type BatonUser } from './baton-manager.js';
 import { initializeBeyond20Listener } from './beyond20-listener.js';
 import { initializeCanvasBookmarks, type CanvasBookmarksController } from './bookmarks.js';
-import { initializeChatController } from './chat-controller.js';
+import { initializeChatController } from '../shared/chat-controller.js';
 import { createClipShareController } from './clip-share.js';
 import { createCollabBarController } from './collab-bar.js';
 import {
@@ -56,7 +56,7 @@ import {
   type DoodleSessionController,
 } from './doodle-session.js';
 import { createFullscreenControlsController } from './fullscreen-controls.js';
-import { createGameRenderer, type GamePayload } from './game-renderer.js';
+import { createGameRenderer, type GamePayload } from '../game/game-renderer.js';
 import {
   createHistoryPagingController,
   type HistoryItem,
@@ -96,8 +96,8 @@ import {
   type StampItem,
   type StampUser,
 } from './stamps.js';
-import { startCanvasStatePolling } from './state-polling.js';
-import { initializeStoryLogInspector } from './story-log-inspector.js';
+import { startCanvasStatePolling } from '../shared/state-polling.js';
+import { initializeStoryLogInspector } from '../shared/story-log-inspector.js';
 import {
   createTheaterModalsController,
   type TheaterModalsController,
@@ -476,7 +476,7 @@ let setMicrophoneTransmissionEnabled: SetMicrophoneTransmissionEnabledFn | undef
 let stopMicrophone: StopMicrophoneFn | undefined;
 let listenForSpeech: ListenForSpeechFn | undefined;
 
-import('./audio-recorder.js')
+import('../audio/audio-recorder.js')
   .then((module) => {
     startAudioRecorderWorklet = module.startAudioRecorderWorklet;
     setMicrophoneTransmissionEnabled = module.setMicrophoneTransmissionEnabled;
@@ -486,7 +486,7 @@ import('./audio-recorder.js')
     console.error('Failed to load audio-recorder.js:', err);
   });
 
-import('./device-aware-pcm.js')
+import('../audio/device-aware-pcm.js')
   .then((module) => {
     listenForSpeech = module.listenForSpeech;
   })

@@ -17,12 +17,13 @@ def test_skips_build_when_frontend_sources_are_absent(tmp_path: Path) -> None:
     run_mock.assert_not_called()
 
 
-def test_skips_build_when_generated_outputs_are_up_to_date(tmp_path: Path) -> None:
-    source = tmp_path / "frontend" / "canvas" / "cursor-state.ts"
+@pytest.mark.parametrize("consumer", ["canvas", "pages", "shared", "remote", "testlab", "audio", "game"])
+def test_skips_build_when_generated_outputs_are_up_to_date(tmp_path: Path, consumer: str) -> None:
+    source = tmp_path / "frontend" / consumer / "module.ts"
     source.parent.mkdir(parents=True)
     source.write_text("export const x = 1;\n", encoding="utf-8")
 
-    output = tmp_path / "static" / "generated" / "canvas" / "cursor-state.js"
+    output = tmp_path / "static" / "generated" / consumer / "module.js"
     output.parent.mkdir(parents=True)
     output.write_text("export const x = 1;\n", encoding="utf-8")
 
@@ -34,8 +35,9 @@ def test_skips_build_when_generated_outputs_are_up_to_date(tmp_path: Path) -> No
     run_mock.assert_not_called()
 
 
-def test_runs_npm_build_when_generated_output_is_missing_or_stale(tmp_path: Path) -> None:
-    source = tmp_path / "frontend" / "canvas" / "cursor-state.ts"
+@pytest.mark.parametrize("consumer", ["canvas", "pages", "shared", "remote", "testlab", "audio", "game"])
+def test_runs_npm_build_when_generated_output_is_missing_or_stale(tmp_path: Path, consumer: str) -> None:
+    source = tmp_path / "frontend" / consumer / "module.ts"
     source.parent.mkdir(parents=True)
     source.write_text("export const x = 1;\n", encoding="utf-8")
 
@@ -47,7 +49,7 @@ def test_runs_npm_build_when_generated_output_is_missing_or_stale(tmp_path: Path
 
     run_mock.assert_called_once_with(["npm", "run", "build"], cwd=tmp_path, check=True)
 
-    output = tmp_path / "static" / "generated" / "canvas" / "cursor-state.js"
+    output = tmp_path / "static" / "generated" / consumer / "module.js"
     output.parent.mkdir(parents=True)
     output.write_text("export const x = 1;\n", encoding="utf-8")
     os.utime(output, (1000, 1000))

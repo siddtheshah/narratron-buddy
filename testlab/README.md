@@ -10,8 +10,8 @@ npm run build
 uv run python -m uvicorn testlab.server:app --host 127.0.0.1 --port 8015
 ```
 
-The lab serves compiled modules from `/static/generated/canvas/`. Run
-`npm run watch` in another terminal while editing `frontend/canvas/testlab-*.ts`;
+The lab serves compiled modules from `/static/generated/testlab/`. Run
+`npm run watch` in another terminal while editing `frontend/testlab/testlab-*.ts`;
 the standalone server does not rebuild assets automatically. Browser regression
 tests live alongside those modules; run `npm test` for type checking, the build,
 and all TypeScript Playwright tests. Python route/API tests remain in

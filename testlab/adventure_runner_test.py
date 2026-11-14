@@ -480,7 +480,7 @@ def test_adventure_runner_lab_api_routes(sample_adventure):
     # 1. GET /adventure-runner page
     page = client.get("/adventure-runner")
     assert page.status_code == 200
-    script = client.get("/static/generated/canvas/testlab-adventure-runner.js")
+    script = client.get("/static/generated/testlab/testlab-adventure-runner.js")
     assert script.status_code == 200
     assert script.headers["content-type"].split(";")[0] in {"text/javascript", "application/javascript"}
 

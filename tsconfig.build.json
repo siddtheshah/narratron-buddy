@@ -2,18 +2,17 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "types": [],
-    "rootDir": "frontend/canvas",
-    "outDir": "static/generated/canvas",
+    "rootDir": "frontend",
+    "outDir": "static/generated",
     "noEmit": false,
     "sourceMap": true,
     "inlineSources": true,
     "declaration": false
   },
   "include": [
-    "frontend/canvas/**/*.ts",
-    "frontend/canvas/**/*.d.ts"
+    "frontend/**/*.ts"
   ],
   "exclude": [
-    "frontend/canvas/**/*_test.ts"
+    "frontend/**/*_test.ts"
   ]
 }

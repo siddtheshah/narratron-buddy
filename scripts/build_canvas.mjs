@@ -4,8 +4,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const frontendCanvasDir = path.join(rootDir, 'frontend', 'canvas');
-const outputDir = path.join(rootDir, 'static', 'generated', 'canvas');
+const frontendDir = path.join(rootDir, 'frontend');
+const outputDir = path.join(rootDir, 'static', 'generated');
 const tscBin = path.join(
   rootDir,
   'node_modules',
@@ -46,7 +46,7 @@ function runTsc(args) {
 const args = process.argv.slice(2);
 const isCheck = args.includes('--check');
 const isWatch = args.includes('--watch');
-const hasInputs = hasSourceFiles(frontendCanvasDir);
+const hasInputs = hasSourceFiles(frontendDir);
 
 if (isCheck) {
   runTsc(['-p', 'tsconfig.json', '--noEmit']);
@@ -62,7 +62,7 @@ if (!isWatch) {
 fs.mkdirSync(outputDir, { recursive: true });
 
 if (!hasInputs && !isWatch) {
-  console.log('No source files in frontend/canvas/; ensured static/generated/canvas exists.');
+  console.log('No source files in frontend/; ensured static/generated exists.');
   process.exit(0);
 }
 

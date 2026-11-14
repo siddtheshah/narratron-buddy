@@ -4,9 +4,9 @@ import {
   parseSubmittedAction,
   type SubmittedGameAction,
 } from '../../testing/ui/game_fixtures';
-import type { GamePayload, GameRenderer } from './game-renderer.js';
+import type { GamePayload, GameRenderer } from '../game/game-renderer.js';
 
-type GameRendererModule = typeof import('./game-renderer.js');
+type GameRendererModule = typeof import('../game/game-renderer.js');
 
 interface FormTestWindow extends Window {
   editable: boolean;
@@ -14,7 +14,7 @@ interface FormTestWindow extends Window {
   compromised?: boolean;
 }
 
-const RENDERER_MODULE_URL = '/static/generated/canvas/game-renderer.js';
+const RENDERER_MODULE_URL = '/static/generated/game/game-renderer.js';
 const snapshots = loadGameSnapshots();
 
 test('form text, numbers, bounds, XSS safety, and permissions', async ({ canvas, page }) => {

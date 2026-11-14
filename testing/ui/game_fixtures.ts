@@ -1,11 +1,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import type { GamePayload } from '../../frontend/canvas/game-renderer.js';
+import type { GamePayload } from '../../frontend/game/game-renderer.js';
 import type {
   GameRecord,
   LocalGameActionInput,
   RenderedGameNode,
-} from '../../frontend/canvas/game-runtime.js';
+} from '../../frontend/game/game-runtime.js';
 import { REPO_ROOT } from './canvas_fixtures';
 
 export interface RuntimeStepExpectation {

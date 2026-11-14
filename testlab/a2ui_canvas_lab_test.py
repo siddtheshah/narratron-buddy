@@ -44,7 +44,7 @@ def test_a2ui_canvas_server_accepts_flexible_configuration(monkeypatch):
 
     page = client.get("/a2ui-canvas")
     assert page.status_code == 200
-    script = client.get("/static/generated/canvas/testlab-a2ui-canvas-lab.js")
+    script = client.get("/static/generated/testlab/testlab-a2ui-canvas-lab.js")
     assert script.status_code == 200
     assert script.headers["content-type"].split(";")[0] in {"text/javascript", "application/javascript"}
 
