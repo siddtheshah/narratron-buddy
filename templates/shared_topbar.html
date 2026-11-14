@@ -33,35 +33,4 @@
     </div>
   </nav>
 </header>
-<script>
-  (() => {
-    const topbar = document.querySelector('header.narratron-topbar');
-    const toggle = topbar.querySelector('.mobile-menu-toggle');
-    const menu = topbar.querySelector('.nav-links');
-    const scrim = topbar.querySelector('.mobile-menu-scrim');
-
-    const closeMenu = () => {
-      topbar.classList.remove('mobile-menu-open');
-      toggle.setAttribute('aria-expanded', 'false');
-      toggle.setAttribute('aria-label', 'Open navigation menu');
-    };
-
-    toggle.addEventListener('click', () => {
-      const isOpen = topbar.classList.toggle('mobile-menu-open');
-      toggle.setAttribute('aria-expanded', String(isOpen));
-      toggle.setAttribute('aria-label', isOpen ? 'Close navigation menu' : 'Open navigation menu');
-    });
-    scrim.addEventListener('click', closeMenu);
-    menu.addEventListener('click', (event) => {
-      if (event.target.closest('a, button')) {
-        closeMenu();
-      }
-    });
-    document.addEventListener('keydown', (event) => {
-      if (event.key === 'Escape') {
-        closeMenu();
-      }
-    });
-    window.matchMedia('(min-width: 761px)').addEventListener('change', closeMenu);
-  })();
-</script>
+<script type="module" src="/static/generated/canvas/shared-topbar.js"></script>

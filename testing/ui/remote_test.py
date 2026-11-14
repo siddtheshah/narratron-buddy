@@ -70,6 +70,10 @@ def remote_page() -> Iterator[Page]:
                     "text/javascript",
                 ),
                 "/static/js/device-navigation.js": ("static/js/device-navigation.js", "text/javascript"),
+                "/static/generated/canvas/device-navigation.js": (
+                    "static/generated/canvas/device-navigation.js",
+                    "text/javascript",
+                ),
                 "/static/css/remote.css": ("static/css/remote.css", "text/css"),
                 "/static/css/chat.css": ("static/css/chat.css", "text/css"),
             }
