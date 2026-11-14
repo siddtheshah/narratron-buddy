@@ -12,9 +12,9 @@ from testing.ui.canvas_source import read_ui_source
 
 @pytest.mark.parametrize("owner", [True, False])
 def test_help_settings_button_is_owner_only_and_requires_a_click(owner: bool) -> None:
-    script = Path("static/js/chat-controller.js").read_text(encoding="utf-8")
+    script = Path("static/generated/canvas/chat-controller.js").read_text(encoding="utf-8")
     script = script.replace("export function", "function").replace("import { initializeChatEmotes } from './chat-emotes.js';", "")
-    emotes = Path("static/js/chat-emotes.js").read_text(encoding="utf-8").replace("export function", "function")
+    emotes = Path("static/generated/canvas/chat-emotes.js").read_text(encoding="utf-8").replace("export function", "function")
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(channel="msedge" if sys.platform == "win32" else None)
         page = browser.new_page()
@@ -33,7 +33,7 @@ def test_help_settings_button_is_owner_only_and_requires_a_click(owner: bool) ->
                 return {ok: true, json: async () => ({applied: true, agent_running: true, message: 'Settings saved and agent restarted.'})};
             };
         """)
-        page.add_script_tag(content=emotes + script)
+        page.add_script_tag(content=f"{emotes}\n{script}")
         page.evaluate("""async owner => {
             window.controller = initializeChatController({
                 messagesContainer: document.querySelector('#chat-messages'), theaterId: 'stage',
@@ -72,9 +72,9 @@ def test_canvas_help_is_private_and_skips_the_live_agent() -> None:
     template = read_ui_source(Path("templates/canvas.html"))
     form = re.search(r'<form id="chat-form"[^>]*>.*?</form>', template, re.DOTALL)
     assert form is not None
-    script = Path("static/js/chat-controller.js").read_text(encoding="utf-8")
+    script = Path("static/generated/canvas/chat-controller.js").read_text(encoding="utf-8")
     script = script.replace("export function", "function").replace("import { initializeChatEmotes } from './chat-emotes.js';", "")
-    emotes = Path("static/js/chat-emotes.js").read_text(encoding="utf-8").replace("export function", "function")
+    emotes = Path("static/generated/canvas/chat-emotes.js").read_text(encoding="utf-8").replace("export function", "function")
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(channel="msedge" if sys.platform == "win32" else None)
         page = browser.new_page(viewport={"width": 390, "height": 780})
@@ -98,7 +98,7 @@ def test_canvas_help_is_private_and_skips_the_live_agent() -> None:
                 return {ok: true, json: async () => []};
             };
         """)
-        page.add_script_tag(content=emotes + script + """
+        page.add_script_tag(content=f"{emotes}\n{script}\n" + """
             window.controller = initializeChatController({
                 messagesContainer: document.querySelector('#chat-messages'),
                 chatForm: document.querySelector('#chat-form'),

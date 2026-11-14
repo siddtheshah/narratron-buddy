@@ -31,8 +31,20 @@ def remote_page() -> Iterator[Page]:
                 "/static/js/remote.js": ("static/js/remote.js", "text/javascript"),
                 "/static/js/remote-game.js": ("static/js/remote-game.js", "text/javascript"),
                 "/static/js/game-renderer.js": ("static/js/game-renderer.js", "text/javascript"),
+                "/static/generated/canvas/game-renderer.js": (
+                    "static/generated/canvas/game-renderer.js",
+                    "text/javascript",
+                ),
                 "/static/js/game-runtime.js": ("static/js/game-runtime.js", "text/javascript"),
+                "/static/generated/canvas/game-runtime.js": (
+                    "static/generated/canvas/game-runtime.js",
+                    "text/javascript",
+                ),
                 "/static/js/game-panel.js": ("static/js/game-panel.js", "text/javascript"),
+                "/static/generated/canvas/game-panel.js": (
+                    "static/generated/canvas/game-panel.js",
+                    "text/javascript",
+                ),
                 "/static/css/game-renderer.css": ("static/css/game-renderer.css", "text/css"),
                 "/static/js/remote-audio.js": ("static/js/remote-audio.js", "text/javascript"),
                 "/static/js/story-log-inspector.js": ("static/js/story-log-inspector.js", "text/javascript"),
@@ -41,7 +53,15 @@ def remote_page() -> Iterator[Page]:
                     "text/javascript",
                 ),
                 "/static/js/chat-controller.js": ("static/js/chat-controller.js", "text/javascript"),
+                "/static/generated/canvas/chat-controller.js": (
+                    "static/generated/canvas/chat-controller.js",
+                    "text/javascript",
+                ),
                 "/static/js/chat-emotes.js": ("static/js/chat-emotes.js", "text/javascript"),
+                "/static/generated/canvas/chat-emotes.js": (
+                    "static/generated/canvas/chat-emotes.js",
+                    "text/javascript",
+                ),
                 "/static/js/device-navigation.js": ("static/js/device-navigation.js", "text/javascript"),
                 "/static/css/remote.css": ("static/css/remote.css", "text/css"),
                 "/static/css/chat.css": ("static/css/chat.css", "text/css"),

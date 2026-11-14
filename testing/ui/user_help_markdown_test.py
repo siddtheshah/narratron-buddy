@@ -21,7 +21,7 @@ def test_help_markdown_renders_and_escapes_model_html(view: str) -> None:
     message = {"author": "Narratron User Help", "type": "user_help",
                "text": answer, "html": render_markdown(answer)}
     if view == "canvas":
-        script = Path("static/js/chat-controller.js").read_text(encoding="utf-8")
+        script = Path("static/generated/canvas/chat-controller.js").read_text(encoding="utf-8")
         script = script.replace("export function", "function")
         script = script.replace("import { initializeChatEmotes } from './chat-emotes.js';", "")
         setup = "window.renderChatMessage = initializeChatController().renderChatMessage;"
@@ -43,7 +43,7 @@ def test_help_markdown_renders_and_escapes_model_html(view: str) -> None:
         page.goto("http://narratron.test/")
         page.add_style_tag(content=Path("static/css/chat.css").read_text(encoding="utf-8"))
         page.add_script_tag(content="window.fetch = async () => ({ok: true, json: async () => []});")
-        page.add_script_tag(content=script + setup)
+        page.add_script_tag(content=f"{script}\n{setup}")
         page.evaluate("msg => document.querySelector('#messages').appendChild(renderChatMessage(msg))", message)
 
         help_body = page.locator(".help-markdown")
