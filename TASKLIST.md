@@ -8,6 +8,26 @@
   - The current lifecycle endpoints accept a theater ID without checking the caller's identity or authorization.
 - [ ] Cloudflare
 
+## Package & Dependency Updates
+- [ ] **High-Priority Python Security Updates (`uv.lock`):**
+  - [ ] `authlib` `1.8.0` -> `1.9.5` (`CVE-2026-114616`..`114619`: zero-len HMAC, OIDC nonce bypass, JWT `aud`, scope validation).
+  - [ ] `pillow` `12.3.0` -> `13.0.0` (`CVE-2026-112900` Ghostscript RCE, `CVE-2026-96639` OOB write, TIFF DoS; requires Python `>=3.11`).
+  - [ ] `grpcio` `1.84.0` -> `1.85.1` (`GHSA-2xm2-c8xx-p9vh`: remove compromised eMudhra/emSign CAs from `roots.pem`).
+  - [ ] `certifi` `2026.7.22` -> `2026.10.23` (remove compromised eMudhra/emSign CA roots).
+  - [ ] `aiohttp` `3.14.3` -> `3.14.5` (`CVE-2026-128126` & `CVE-2026-128130` DoS/memory exhaustion).
+  - [ ] `websockets` `15.0.1` -> `17.4` (cap fragmented message frame count to prevent memory-exhaustion DoS; verify `uvicorn` compatibility).
+  - [ ] `joserfc` `1.7.5` -> `1.8.0` (`CVE-2026-119284` Compact JWS DoS + JWK/JWS/JWE hardening; requires Python `>=3.11`).
+  - [ ] `pyarrow` `25.0.1` -> `26.0.1` (`CVE-2026-92287`: Parquet KMS client SSRF / credential leak).
+  - [ ] `sqlparse` `0.6.0` -> `0.6.1` (`CVE-2026-112307` & `GHSA-3r5h-5jcg-gmgg` DoS; final EOL release — plan migration off `sqlparse`).
+- [ ] **Dockerfile & Runtime Image Updates:**
+  - [ ] Upgrade `golang:1.25-bookworm` (EOL Aug 2026) -> `golang:1.26+` (verify `game_engine/cel_go_worker` build).
+  - [ ] Upgrade `ghcr.io/astral-sh/uv:0.6.5` -> `>=0.11.6` (`CVE-2025-54368`, `CVE-2026-114110`).
+  - [ ] Run production container as a non-root user instead of `root`.
+- [ ] **Manifest & Build Hygiene (`pyproject.toml`, `requirements*.txt`):**
+  - [ ] Raise `requires-python` from `>=3.10` (EOL Oct 2026) to `>=3.11` or `>=3.13` (matching `Dockerfile` `python:3.13-slim`) to unblock `pillow>=13.0.0` and `joserfc>=1.8.0`.
+  - [ ] Move `playwright`, `pytest`, `pytest-asyncio`, and `pytest-xdist` from main `dependencies` to `[dependency-groups] dev`.
+  - [ ] Sync `requirements.txt` and `requirements-dev.txt` with `pyproject.toml` (`aiosqlite`, `sqlalchemy`, `pytest-env`, `pytest-socket`, and `google-adk[db]`/`openai[realtime]` extras).
+
 ## Quality Testing
 - [ ] Test Deepseek V4.1-flash as an alternative to gemini.
    - Can use LiteLLM as a wrapper to get compatibility with ADK agents in story modules.
