@@ -29,7 +29,15 @@ def remote_page() -> Iterator[Page]:
             files = {
                 "/remote": ("templates/remote.html", "text/html"),
                 "/static/js/remote.js": ("static/js/remote.js", "text/javascript"),
+                "/static/generated/canvas/remote.js": (
+                    "static/generated/canvas/remote.js",
+                    "text/javascript",
+                ),
                 "/static/js/remote-game.js": ("static/js/remote-game.js", "text/javascript"),
+                "/static/generated/canvas/remote-game.js": (
+                    "static/generated/canvas/remote-game.js",
+                    "text/javascript",
+                ),
                 "/static/js/game-renderer.js": ("static/js/game-renderer.js", "text/javascript"),
                 "/static/generated/canvas/game-renderer.js": (
                     "static/generated/canvas/game-renderer.js",
@@ -47,6 +55,10 @@ def remote_page() -> Iterator[Page]:
                 ),
                 "/static/css/game-renderer.css": ("static/css/game-renderer.css", "text/css"),
                 "/static/js/remote-audio.js": ("static/js/remote-audio.js", "text/javascript"),
+                "/static/generated/canvas/remote-audio.js": (
+                    "static/generated/canvas/remote-audio.js",
+                    "text/javascript",
+                ),
                 "/static/js/story-log-inspector.js": ("static/js/story-log-inspector.js", "text/javascript"),
                 "/static/generated/canvas/story-log-inspector.js": (
                     "static/generated/canvas/story-log-inspector.js",
