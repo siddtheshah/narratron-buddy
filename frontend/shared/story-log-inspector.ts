@@ -244,6 +244,10 @@ export function initializeStoryLogInspector(
     if (embedded) return { setOpen: toggleStoryLog };
 
     if (toggleBtn) {
+        toggleBtn.addEventListener('keydown', (e: KeyboardEvent) => {
+            // Keep push-to-talk keys from activating the button after a click leaves it focused.
+            if (e.key === ' ' || e.key === 'Enter') e.preventDefault();
+        });
         toggleBtn.addEventListener('click', (e: MouseEvent) => {
             e.stopPropagation();
             toggleStoryLog();

@@ -430,6 +430,16 @@ test('paging bar hover discovery zone and story log toggle inside real canvas.ht
   // Story Log toggle opens #story-log-inspector cleanly
   await page.locator('#story-log-toggle-btn').click({ force: true });
   await expect(page.locator('#story-log-inspector')).toBeVisible();
+
+  // Clicking again leaves focus on Log; push-to-talk must not reopen it.
+  const logToggle = page.locator('#story-log-toggle-btn');
+  await logToggle.click({ force: true });
+  await expect(logToggle).toBeFocused();
+  for (const key of ['Shift+Space', 'Space', 'Enter']) {
+    await page.keyboard.press(key);
+    await expect(logToggle).toHaveAttribute('aria-expanded', 'false');
+    await expect(page.locator('#story-log-inspector')).not.toBeVisible();
+  }
 });
 
 test('becoming orator clears browsing state without paging controls', async ({ canvas, page }) => {
