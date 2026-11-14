@@ -27,10 +27,7 @@ class TestOBSCanvas(UITestCase):
             'id="canvas-renderer"',
             'id="doodle-canvas"',
             'id="current-image"',
-            "function syncMusic(music)",
-            "const bgMusic = new Audio();",
-            "action: 'hide-overlay'",
-            "action === 'pause-audio'",
+            'import { initObsCanvas } from "/static/generated/canvas/obs.js";',
         ):
             self.assertIn(element, html)
         for element in (
@@ -41,6 +38,16 @@ class TestOBSCanvas(UITestCase):
             'id="history-paging-controls"',
         ):
             self.assertNotIn(element, html)
+
+        obs_script = self.client.get("/static/generated/canvas/obs.js")
+        self.assertEqual(obs_script.status_code, 200)
+        for snippet in (
+            "function syncMusic(music)",
+            "const bgMusic = new Audio();",
+            "action: 'hide-overlay'",
+            "action === 'pause-audio'",
+        ):
+            self.assertIn(snippet, obs_script.text)
 
     def test_obs_theater_path_route(self) -> None:
         response = self.client.get("/obs/test_theater_123")
@@ -63,12 +70,14 @@ class TestOBSCanvas(UITestCase):
 
         self.assertIn('id="narration-pane-mount"', html)
         self.assertIn('/static/css/narration-pane.css', html)
-        self.assertIn('import { createNarrationPane } from "/static/js/narration-pane.js";', html)
-        self.assertIn('const narrationPane = await createNarrationPane(', html)
-        self.assertIn('narrationPane.setDrawingColorSelected(false);', html)
-        self.assertIn('createCanvasScene({', html)
-        self.assertIn('/static/js/canvas-scene.js', html)
+        self.assertIn('import { initObsCanvas } from "/static/generated/canvas/obs.js";', html)
         self.assertIn('.scene-description', html)
+
+        obs_script = self.client.get("/static/generated/canvas/obs.js")
+        self.assertEqual(obs_script.status_code, 200)
+        self.assertIn("createNarrationPane(", obs_script.text)
+        self.assertIn("narrationPane.setDrawingColorSelected(false);", obs_script.text)
+        self.assertIn("createCanvasScene({", obs_script.text)
 
     def test_canvas_wires_mute_to_scene_speech(self) -> None:
         response = self.client.get("/canvas?theater_id=test_theater")

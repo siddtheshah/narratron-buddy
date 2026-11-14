@@ -61,9 +61,13 @@ class TestFullscreenPopout(UITestCase):
             'id="dock-back-btn"',
             'id="chat-messages"',
             'id="popout-prompt-text"',
-            "narratron_popout_channel",
+            "/static/generated/canvas/popout.js",
         ):
             self.assertIn(element, html)
+
+        popout_script = self.client.get("/static/generated/canvas/popout.js")
+        self.assertEqual(popout_script.status_code, 200)
+        self.assertIn("narratron_popout_channel", popout_script.text)
 
     def test_canvas_contains_smaller_monitor_chat_rules(self) -> None:
         response = self.client.get("/canvas?theater_id=test_theater")

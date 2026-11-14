@@ -46,7 +46,8 @@ class TestVideoAnimationUI(UITestCase):
         renderer = (PROJECT_ROOT / "frontend" / "canvas" / "image-renderer.ts").read_text(encoding="utf-8")
         self.assertIn("video_duration_seconds", renderer)
         canvas = read_ui_source(PROJECT_ROOT / "templates" / "canvas.html")
-        obs = (PROJECT_ROOT / "templates" / "obs.html").read_text(encoding="utf-8")
+        obs_html = (PROJECT_ROOT / "templates" / "obs.html").read_text(encoding="utf-8")
+        obs = (PROJECT_ROOT / "frontend" / "canvas" / "obs.ts").read_text(encoding="utf-8")
 
         # Verify full silence safeguards
         self.assertIn("video.muted = true", renderer)
@@ -67,5 +68,6 @@ class TestVideoAnimationUI(UITestCase):
 
         # Verify wiring in canvas and OBS templates
         self.assertIn("playCanvasAnimation", canvas)
+        self.assertIn("/static/generated/canvas/obs.js", obs_html)
         self.assertIn("playCanvasAnimation", obs)
         self.assertIn("playVideoAnimation", media)
