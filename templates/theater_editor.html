@@ -9,9 +9,9 @@
   <link rel="stylesheet" href="/static/css/auth-flow.css">
   <link rel="stylesheet" href="/static/css/theater-editor.css">
   <link rel="stylesheet" href="/static/css/credit-purchase.css">
-  <script src="/static/js/auth-flow.js"></script>
-  <script src="/static/js/credit-purchase.js"></script>
-  <script src="/static/js/theater-editor.js" defer></script>
+  <script type="module" src="/static/generated/canvas/auth-flow.js"></script>
+  <script type="module" src="/static/generated/canvas/credit-purchase.js"></script>
+  <script type="module" src="/static/generated/canvas/theater-editor.js"></script>
 </head>
 <body>
   <!-- SHARED_TOPBAR -->
@@ -27,7 +27,7 @@
     <section id="login-gate" class="welcome-card" hidden>
       <span class="welcome-icon" aria-hidden="true">✦</span><h2>Your next story starts here.</h2>
       <p>Log in to build theaters, upload assets, and create with your AI assistant.</p>
-      <button type="button" onclick="openAuthModal('login')">Log in to build</button>
+      <button type="button" id="login-gate-button">Log in to build</button>
     </section>
     <section id="start-panel" class="welcome-card" hidden>
       <span class="welcome-icon" aria-hidden="true">✦</span><h2>Start with a spark.</h2>
