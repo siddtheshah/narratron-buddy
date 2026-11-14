@@ -3,6 +3,7 @@ import { createCanvasAssetManager } from "/static/generated/canvas/asset-manager
 import { createCollabBarController } from "/static/generated/canvas/collab-bar.js";
 import { createCornerPanels } from "/static/generated/canvas/corner-panels.js";
 import { createLayoutResizeController } from "/static/generated/canvas/layout-resize.js";
+import { createMicConfigController } from "/static/generated/canvas/mic-config.js";
 import { createMusicPlayer, MUSIC_MUTED_STORAGE_KEY } from "/static/generated/canvas/music-player.js";
 import { createCanvasPinControl } from "/static/generated/canvas/pin-control.js";
 import { createSpeechReplayControls } from "/static/generated/canvas/speech-replay.js";
@@ -2604,7 +2605,7 @@ import { startCanvasStatePolling } from "/static/generated/canvas/state-polling.
 
                 // Show Orator How-To popup automatically on first visit
                 if (!localStorage.getItem('narratron_orator_howto_seen')) {
-                    setTimeout(() => openOratorHowtoModal({ openMicConfigOnClose: true }), 400);
+                    setTimeout(() => micConfig.openOratorHowtoModal({ openMicConfigOnClose: true }), 400);
                 }
             } else {
                 if (backBtn) backBtn.href = '/';
@@ -3419,7 +3420,7 @@ import { startCanvasStatePolling } from "/static/generated/canvas/state-polling.
                 throw new Error("Agent WebSocket is not ready for audio forwarding.");
             }
 
-            await refreshMicrophoneDevices(true);
+            await micConfig.refreshMicrophoneDevices(true);
             if (requestId !== micRequestId) return;
             const [node, context, stream, started] = await startAudioRecorderWorklet(
                 audioRecorderHandler, micMode !== 'push-to-talk' || micPressHeld
@@ -4154,7 +4155,7 @@ import { startCanvasStatePolling } from "/static/generated/canvas/state-polling.
         if (menuItemHowto) {
             menuItemHowto.addEventListener('click', () => {
                 closePulloutMenu();
-                openOratorHowtoModal();
+                micConfig.openOratorHowtoModal();
             });
         }
 
@@ -4181,312 +4182,59 @@ import { startCanvasStatePolling } from "/static/generated/canvas/state-polling.
             });
         }
 
-        // Microphone device selection
-        const micModeToggle = document.getElementById('menu-mic-mode-toggle');
-        if (micModeToggle) {
-            micModeToggle.checked = micMode === 'push-to-talk';
-            micModeToggle.addEventListener('change', () => {
-                cancelMicCapture();
-                micMode = micModeToggle.checked ? 'push-to-talk' : 'toggle';
-                localStorage.setItem('narratron_mic_mode', micMode);
-                updateMicToggleUI();
-            });
-        }
-        updateMicToggleUI();
-        const micDeviceSelect = document.getElementById('menu-mic-device-select');
-        const micDeviceRefresh = document.getElementById('menu-mic-device-refresh');
-        const micDeviceHint = document.getElementById('menu-mic-device-hint');
-        async function refreshMicrophoneDevices(requestPermission = false) {
-            if (!navigator.mediaDevices?.enumerateDevices || !micDeviceSelect) return;
-            try {
-                if (requestPermission) {
-                    const permissionStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                    permissionStream.getTracks().forEach(track => track.stop());
-                }
-                const selected = localStorage.getItem('narratron_mic_device_id') || '';
-                const devices = (await navigator.mediaDevices.enumerateDevices()).filter(device => device.kind === 'audioinput');
-                micDeviceSelect.replaceChildren(new Option('System default microphone', ''));
-                devices.forEach((device, index) => micDeviceSelect.add(new Option(device.label || `Microphone ${index + 1} (allow access to identify)`, device.deviceId)));
-                micDeviceSelect.value = [...micDeviceSelect.options].some(option => option.value === selected) ? selected : '';
-                window.NARRATRON_MIC_DEVICE_ID = micDeviceSelect.value;
-                if (micDeviceHint) micDeviceHint.textContent = devices.some(device => device.label) ? 'Your selection is used when you connect.' : 'Refresh and allow microphone access to identify devices.';
-            } catch (error) { if (micDeviceHint) micDeviceHint.textContent = 'Unable to list microphones. Check browser permissions.'; }
-        }
-        if (micDeviceRefresh) micDeviceRefresh.addEventListener('click', () => refreshMicrophoneDevices(true));
-        if (micDeviceSelect) micDeviceSelect.addEventListener('change', () => {
-            window.NARRATRON_MIC_DEVICE_ID = micDeviceSelect.value;
-            localStorage.setItem('narratron_mic_device_id', micDeviceSelect.value);
-            if (micDeviceHint) micDeviceHint.textContent = 'Saved in this browser. Reconnect to use this microphone.';
-        });
-        navigator.mediaDevices?.addEventListener('devicechange', () => refreshMicrophoneDevices());
-        refreshMicrophoneDevices();
-
-        // Microphone test: capture selected-device audio with the same 16 kHz,
-        // signed 16-bit PCM pipeline used for live narration, then play it locally.
-        const micTestRecordBtn = document.getElementById('menu-mic-test-record');
-        const micTestPlayBtn = document.getElementById('menu-mic-test-play');
-        const micTestStatus = document.getElementById('menu-mic-test-status');
-        const MIC_TEST_SAMPLE_RATE = 16000;
-        const MIC_TEST_MAX_MS = 10000;
-        let stopMicTestCapture = null;
-        let micTestStarting = false;
-        let micTestChunks = [];
-        let micTestBytes = 0;
-        let micTestTimer = null;
-        let micTestPlayback = null;
-        let micTestPlaybackContext = null;
-
-        function setMicTestStatus(message) {
-            if (micTestStatus) micTestStatus.textContent = message;
-        }
-
-        function setMicTestRecordingUI(recording) {
-            if (!micTestRecordBtn) return;
-            micTestRecordBtn.textContent = recording ? 'Stop recording' : 'Record test';
-            micTestRecordBtn.setAttribute('aria-pressed', String(recording));
-        }
-
-        function stopMicTestRecording(message = 'Recording ready. Play it back to verify your microphone.') {
-            if (micTestTimer) window.clearTimeout(micTestTimer);
-            micTestTimer = null;
-            const stop = stopMicTestCapture;
-            stopMicTestCapture = null;
-            if (typeof stop === 'function') stop();
-            setMicTestRecordingUI(false);
-            if (micTestPlayBtn) micTestPlayBtn.disabled = micTestBytes === 0;
-            setMicTestStatus(micTestBytes ? message : 'No audio was captured. Check browser microphone permission and try again.');
-        }
-
-        async function startMicTestRecording() {
-            if (micTestStarting) return;
-            if (stopMicTestCapture) {
-                stopMicTestRecording();
-                return;
-            }
-            if (isRecording) {
-                setMicTestStatus('Disconnect the live microphone before running a local mic test.');
-                return;
-            }
-            if (typeof listenForSpeech !== 'function') {
-                setMicTestStatus('Audio capture is still loading. Please try again in a moment.');
-                return;
-            }
-
-            micTestStarting = true;
-            micTestChunks = [];
-            micTestBytes = 0;
-            if (micTestPlayBtn) micTestPlayBtn.disabled = true;
-            setMicTestRecordingUI(true);
-            setMicTestStatus('Recording from the selected microphone… speak now (up to 10 seconds).');
-            try {
-                // A zero threshold deliberately includes quiet samples: this is a
-                // recording diagnostic, not a VAD test.
-                const stop = await listenForSpeech({
-                    deviceId: window.NARRATRON_MIC_DEVICE_ID || undefined,
-                    sampleRate: MIC_TEST_SAMPLE_RATE,
-                    vadThreshold: 0,
-                    continuous: true,
-                    onData: ({ pcm }) => {
-                        const chunk = new Uint8Array(pcm);
-                        micTestChunks.push(chunk);
-                        micTestBytes += chunk.byteLength;
-                    },
-                    onError: (error) => setMicTestStatus(`Microphone test failed: ${error.message}`),
-                });
-                stopMicTestCapture = stop;
-                micTestTimer = window.setTimeout(
-                    () => stopMicTestRecording('10-second recording ready. Play it back to verify your microphone.'),
-                    MIC_TEST_MAX_MS,
-                );
-            } catch (error) {
-                setMicTestRecordingUI(false);
-                setMicTestStatus(`Could not start microphone test: ${error.message}`);
-            } finally {
-                micTestStarting = false;
-            }
-        }
-
-        async function playMicTestRecording() {
-            if (!micTestBytes) return;
-            if (micTestPlayback) micTestPlayback.stop();
-            if (micTestPlaybackContext && micTestPlaybackContext.state !== 'closed') {
-                await micTestPlaybackContext.close();
-            }
-
-            const pcm = new Uint8Array(micTestBytes);
-            let offset = 0;
-            micTestChunks.forEach((chunk) => { pcm.set(chunk, offset); offset += chunk.byteLength; });
-            const context = new AudioContext({ sampleRate: MIC_TEST_SAMPLE_RATE });
-            const audioBuffer = context.createBuffer(1, pcm.byteLength / 2, MIC_TEST_SAMPLE_RATE);
-            const samples = audioBuffer.getChannelData(0);
-            const view = new DataView(pcm.buffer, pcm.byteOffset, pcm.byteLength);
-            for (let index = 0; index < samples.length; index += 1) samples[index] = view.getInt16(index * 2, true) / 32768;
-            const source = context.createBufferSource();
-            source.buffer = audioBuffer;
-            source.connect(context.destination);
-            source.onended = () => {
-                if (micTestPlayback === source) {
-                    micTestPlayback = null;
-                    setMicTestStatus('Playback finished. If you heard yourself clearly, your mic and PCM path are working.');
-                }
-                if (context.state !== 'closed') context.close();
-            };
-            micTestPlaybackContext = context;
-            micTestPlayback = source;
-            await context.resume();
-            source.start();
-            setMicTestStatus('Playing your PCM microphone test…');
-        }
-
-        if (micTestRecordBtn) micTestRecordBtn.addEventListener('click', startMicTestRecording);
-        if (micTestPlayBtn) micTestPlayBtn.addEventListener('click', playMicTestRecording);
-
-        // Microphone Sensitivity Slider Logic
-        const micSensSlider = document.getElementById('menu-mic-sensitivity-slider');
-        const micSensValDisplay = document.getElementById('menu-mic-sensitivity-val');
-
-        function setMicSensitivity(percentVal, saveDb = false) {
-            const val = Math.max(0, Math.min(100, parseInt(percentVal, 10) || 50));
-            if (micSensSlider) micSensSlider.value = val;
-            if (micSensValDisplay) micSensValDisplay.textContent = `${val}%`;
-
-            const s = val / 100.0;
-            // record-pcm uses RMS VAD.  Higher sensitivity lowers the threshold.
-            window.MIC_DETECT_THRESHOLD = 0.01 * Math.pow(10, (0.5 - s) * 2);
-            window.MIC_SENSITIVITY = s;
-
-            try {
-                localStorage.setItem('narratron_mic_sensitivity', val.toString());
-            } catch (e) { }
-
-            if (saveDb) {
-                fetch('/api/auth/mic-sensitivity', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ mic_sensitivity: s })
-                }).then(res => {
-                    if (res.ok) canvasAuthStatePromise = null;
-                }).catch(err => console.debug('Failed to sync mic_sensitivity to server:', err));
-            }
-        }
-
-        if (micSensSlider) {
-            micSensSlider.addEventListener('input', (e) => {
-                setMicSensitivity(e.target.value, false);
-            });
-            micSensSlider.addEventListener('change', (e) => {
-                setMicSensitivity(e.target.value, true);
-            });
-        }
-
-        (function initMicSensitivity() {
-            let initialVal = 50;
-            try {
-                const stored = localStorage.getItem('narratron_mic_sensitivity');
-                if (stored !== null && !isNaN(parseInt(stored, 10))) {
-                    initialVal = parseInt(stored, 10);
-                }
-            } catch (e) { }
-
-            getCanvasAuthState()
-                .then(data => {
-                    if (data && data.authenticated && data.user && data.user.mic_sensitivity !== undefined && data.user.mic_sensitivity !== null) {
-                        const userVal = Math.round(data.user.mic_sensitivity * 100);
-                        setMicSensitivity(userVal, false);
-                    } else {
-                        setMicSensitivity(initialVal, false);
+        // Microphone settings, PCM test, sensitivity, and Orator How-To modals
+        const micConfig = createMicConfigController({
+            micModeToggle: document.getElementById('menu-mic-mode-toggle'),
+            micDeviceSelect: document.getElementById('menu-mic-device-select'),
+            micDeviceRefresh: document.getElementById('menu-mic-device-refresh'),
+            micDeviceHint: document.getElementById('menu-mic-device-hint'),
+            micTestRecordBtn: document.getElementById('menu-mic-test-record'),
+            micTestPlayBtn: document.getElementById('menu-mic-test-play'),
+            micTestStatus: document.getElementById('menu-mic-test-status'),
+            micSensSlider: document.getElementById('menu-mic-sensitivity-slider'),
+            micSensValDisplay: document.getElementById('menu-mic-sensitivity-val'),
+            micConfigModal: document.getElementById('mic-config-modal'),
+            menuItemMicConfig: document.getElementById('menu-item-mic-config'),
+            micConfigCloseBtn: document.getElementById('mic-config-close-btn'),
+            micConfigDoneBtn: document.getElementById('mic-config-done-btn'),
+            oratorHowtoModal: document.getElementById('orator-howto-modal'),
+            howtoCloseBtn: document.getElementById('howto-close-btn'),
+            howtoAckBtn: document.getElementById('howto-ack-btn'),
+            getMicMode: () => micMode,
+            setMicMode: (mode) => {
+                micMode = mode;
+            },
+            isRecording: () => isRecording,
+            cancelMicCapture,
+            updateMicToggleUI,
+            getListenForSpeech: () => listenForSpeech,
+            getAuthState: getCanvasAuthState,
+            invalidateAuthStateCache: () => {
+                canvasAuthStatePromise = null;
+            },
+            onOpenMicConfig: () => {
+                closePulloutMenu();
+            },
+            onCloseMicConfig: () => {
+                actionWheel.cancelRebinding();
+                if (isRebindingHotkey) {
+                    isRebindingHotkey = false;
+                    if (menuItemHotkey) {
+                        menuItemHotkey.style.background = '';
+                        menuItemHotkey.style.color = '';
                     }
-                })
-                .catch(() => setMicSensitivity(initialVal, false));
-        })();
-
-        // ========================================
-        // Orator How-To Modal Logic
-        // ========================================
-        const micConfigModal = document.getElementById('mic-config-modal');
-        const menuItemMicConfig = document.getElementById('menu-item-mic-config');
-        const micConfigCloseBtn = document.getElementById('mic-config-close-btn');
-        const micConfigDoneBtn = document.getElementById('mic-config-done-btn');
-
-        function openMicConfigModal() {
-            if (!micConfigModal) return;
-            if (oratorHowtoModal) {
-                delete oratorHowtoModal.dataset.openMicConfigOnClose;
-                oratorHowtoModal.classList.remove('active');
-                oratorHowtoModal.setAttribute('aria-hidden', 'true');
-            }
-            closePulloutMenu();
-            refreshMicrophoneDevices();
-            micConfigModal.classList.add('active');
-            micConfigModal.setAttribute('aria-hidden', 'false');
-        }
-
-        function closeMicConfigModal() {
-            actionWheel.cancelRebinding();
-            if (!micConfigModal) return;
-            if (stopMicTestCapture) stopMicTestRecording();
-            if (isRebindingHotkey) {
-                isRebindingHotkey = false;
-                if (menuItemHotkey) {
-                    menuItemHotkey.style.background = '';
-                    menuItemHotkey.style.color = '';
+                    updateHotkeyUI();
                 }
-                updateHotkeyUI();
-            }
-            if (isRebindingTextHotkey) {
-                isRebindingTextHotkey = false;
-                if (menuItemTextHotkey) {
-                    menuItemTextHotkey.style.background = '';
-                    menuItemTextHotkey.style.color = '';
+                if (isRebindingTextHotkey) {
+                    isRebindingTextHotkey = false;
+                    if (menuItemTextHotkey) {
+                        menuItemTextHotkey.style.background = '';
+                        menuItemTextHotkey.style.color = '';
+                    }
+                    updateTextHotkeyUI();
                 }
-                updateTextHotkeyUI();
-            }
-            micConfigModal.classList.remove('active');
-            micConfigModal.setAttribute('aria-hidden', 'true');
-        }
-
-        if (menuItemMicConfig) menuItemMicConfig.addEventListener('click', openMicConfigModal);
-        if (micConfigCloseBtn) micConfigCloseBtn.addEventListener('click', closeMicConfigModal);
-        if (micConfigDoneBtn) micConfigDoneBtn.addEventListener('click', closeMicConfigModal);
-        if (micConfigModal) {
-            micConfigModal.addEventListener('click', (event) => {
-                if (event.target === micConfigModal) closeMicConfigModal();
-            });
-        }
-
-        const oratorHowtoModal = document.getElementById('orator-howto-modal');
-        const howtoCloseBtn = document.getElementById('howto-close-btn');
-        const howtoAckBtn = document.getElementById('howto-ack-btn');
-
-        function openOratorHowtoModal({ openMicConfigOnClose = false } = {}) {
-            if (!oratorHowtoModal) return;
-            oratorHowtoModal.dataset.openMicConfigOnClose = String(openMicConfigOnClose);
-            oratorHowtoModal.classList.add('active');
-            oratorHowtoModal.setAttribute('aria-hidden', 'false');
-        }
-
-        function closeOratorHowtoModal() {
-            if (!oratorHowtoModal) return;
-            const openMicConfigOnClose = oratorHowtoModal.dataset.openMicConfigOnClose === 'true';
-            delete oratorHowtoModal.dataset.openMicConfigOnClose;
-            oratorHowtoModal.classList.remove('active');
-            oratorHowtoModal.setAttribute('aria-hidden', 'true');
-            try {
-                localStorage.setItem('narratron_orator_howto_seen', 'true');
-            } catch (e) { }
-            if (openMicConfigOnClose) openMicConfigModal();
-        }
-
-        if (howtoCloseBtn) howtoCloseBtn.addEventListener('click', closeOratorHowtoModal);
-        if (howtoAckBtn) howtoAckBtn.addEventListener('click', closeOratorHowtoModal);
-
-        if (oratorHowtoModal) {
-            oratorHowtoModal.addEventListener('click', (e) => {
-                if (e.target === oratorHowtoModal) {
-                    closeOratorHowtoModal();
-                }
-            });
-        }
+            },
+        });
 
         // ========================================
         // Viewer Collaboration Guide Modal Logic
@@ -4509,10 +4257,10 @@ import { startCanvasStatePolling } from "/static/generated/canvas/state-polling.
                     closeOratorCommand();
                 } else if (pulloutOverlay && pulloutOverlay.classList.contains('active')) {
                     closePulloutMenu();
-                } else if (micConfigModal && micConfigModal.classList.contains('active')) {
-                    closeMicConfigModal();
-                } else if (oratorHowtoModal && oratorHowtoModal.classList.contains('active')) {
-                    closeOratorHowtoModal();
+                } else if (micConfig.isMicConfigOpen()) {
+                    micConfig.closeMicConfigModal();
+                } else if (micConfig.isOratorHowtoOpen()) {
+                    micConfig.closeOratorHowtoModal();
                 } else if (collabBar.isGuideOpen()) {
                     closeViewerCollabGuide();
                 } else if (adventureGuideModal && adventureGuideModal.classList.contains('active')) {
@@ -4751,10 +4499,10 @@ import { startCanvasStatePolling } from "/static/generated/canvas/state-polling.
 
         window.openPulloutMenu = openPulloutMenu;
         window.closePulloutMenu = closePulloutMenu;
-        window.openOratorHowtoModal = openOratorHowtoModal;
-        window.closeOratorHowtoModal = closeOratorHowtoModal;
-        window.openMicConfigModal = openMicConfigModal;
-        window.closeMicConfigModal = closeMicConfigModal;
+        window.openOratorHowtoModal = micConfig.openOratorHowtoModal;
+        window.closeOratorHowtoModal = micConfig.closeOratorHowtoModal;
+        window.openMicConfigModal = micConfig.openMicConfigModal;
+        window.closeMicConfigModal = micConfig.closeMicConfigModal;
         window.openTheaterConfigModal = openTheaterConfigModal;
         window.closeTheaterConfigModal = closeTheaterConfigModal;
         setupTheaterReport(theaterId, closePulloutMenu);
