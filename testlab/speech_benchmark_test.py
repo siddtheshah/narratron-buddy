@@ -15,8 +15,11 @@ def test_speech_benchmark_routes():
     client = TestClient(app)
     page = client.get("/speech-benchmark").text
     assert "Speech Provider Bench" in page
-    assert "Voice tags / filters (selects a voice)" in page
-    assert "Selected voice:" in page
+    assert "/static/generated/canvas/testlab-speech-benchmark.js" in page
+    script_response = client.get("/static/generated/canvas/testlab-speech-benchmark.js")
+    assert script_response.status_code == 200
+    assert "Voice tags / filters (selects a voice)" in script_response.text
+    assert "Selected voice:" in script_response.text
     data = client.get("/api/speech-benchmark/catalog").json()
     gemini = next(provider for provider in data["providers"] if provider["id"] == "gemini-flash-tts")
     assert gemini["model"] == "gemini-3.8-flash-tts"

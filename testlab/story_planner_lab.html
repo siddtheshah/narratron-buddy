@@ -199,59 +199,7 @@
       </section>
     </div>
   </main>
-  <script>
-    let sessionId = null, poller = null, lastEventCount = 0;
-    const $ = id => document.getElementById(id);
-    const show = (id, value, empty = '—') => { const el = $(id); el.textContent = value || empty; el.classList.toggle('empty', !value); };
-    function render(payload) {
-      const state = payload.state || {};
-      show('characters', JSON.stringify(state.characters || [], null, 2));
-      show('notepad', JSON.stringify(state.notepad || {}, null, 2));
-      const events = payload.events || [];
-      if (events.length !== lastEventCount && events.length) $('ack').textContent = 'Planner result received through callback queue.';
-      lastEventCount = events.length;
-      show('events', events.length ? JSON.stringify(events, null, 2) : '');
-    }
-    async function refresh() {
-      if (!sessionId) return;
-      const response = await fetch(`/api/story-planner/sessions/${sessionId}`);
-      if (response.ok) render(await response.json());
-    }
-    $('new-session').onclick = async () => {
-      $('new-session').disabled = true;
-      try {
-        const response = await fetch('/api/story-planner/sessions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ planner_model: $('model').value, nodes_ahead: Number($('nodes').value) }) });
-        const payload = await response.json(); if (!response.ok) throw new Error(payload.detail || 'Could not create session.');
-        sessionId = payload.id; lastEventCount = 0; render(payload);
-        $('action').disabled = $('nudge').disabled = $('submit').disabled = false;
-        $('ack').textContent = `Session ${sessionId.slice(0, 8)} is ready.`;
-        clearInterval(poller); poller = setInterval(refresh, 500);
-      } catch (error) { $('ack').textContent = error.message; } finally { $('new-session').disabled = false; }
-    };
-    $('submit').onclick = async () => {
-      const action = $('action').value.trim();
-      const nudge = $('nudge').value.trim();
-      if (!action || !sessionId) return;
-      $('submit').disabled = true;
-      try {
-        const response = await fetch(`/api/story-planner/sessions/${sessionId}/actions`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action, nudge }),
-        });
-        const payload = await response.json();
-        if (!response.ok) throw new Error(payload.detail || 'Could not submit action.');
-        $('ack').textContent = payload.acknowledgement.message || payload.acknowledgement.status;
-        $('action').value = '';
-        $('nudge').value = '';
-        render(payload.session);
-      } catch (error) {
-        $('ack').textContent = error.message;
-      } finally {
-        $('submit').disabled = false;
-      }
-    };
-  </script>
+  <script type="module" src="/static/generated/canvas/testlab-story-planner-lab.js"></script>
 </body>
 
 </html>
