@@ -188,9 +188,49 @@ stale.
 
 ## Repository-Wide Migration Status (Beyond the Canvas Core)
 
-While the 17-file / 102-definition Canvas core baseline and all authored browser
-JavaScript/inline-script migrations are complete, retiring the legacy compatibility
-shims, disabling `allowJs`, and consolidating test fixtures remain pending:
+The 17-file / 102-definition Canvas core baseline and standalone authored browser
+JavaScript/HTML script extractions are complete. The migration is not yet fully
+type-checked end to end: executable JavaScript strings, two mixed Python suites,
+and compatibility scaffolding remain. The Python backend and vendored libraries
+do not require conversion for this frontend migration.
+
+### Outstanding Work (Verification on 2026-11-13)
+
+- [ ] Extract embedded JavaScript into compiler-checked TypeScript sources while
+  preserving audio-worklet and sandbox behavior:
+  - `device-aware-pcm.ts`: `PROCESSOR_WORKLET_SOURCE`.
+  - `remote.ts`: `processorCode` for the remote PCM worklet.
+  - `testlab-audio-vad.ts`: `PROCESSOR_WORKLET_SOURCE`.
+  - `game-panel.ts`: the iframe `bridge` script.
+  These strings execute as JavaScript; placing them inside `.ts` files does not
+  make their contents subject to TypeScript checking.
+- [ ] Replace frontend source-text assertions in
+  `testing/ui/triframe_animation_test.py` and
+  `testing/ui/video_animation_ui_test.py` with behavioral TypeScript browser
+  assertions (or remove duplicates after confirming equivalent existing coverage).
+  Retain their backend manifest, path, state, and history checks in Python.
+- [ ] Update remaining template/module/test callers to canonical generated module
+  URLs, then retire the 35 `static/js/` compatibility shims and
+  `testlab/static/audio-vad-lab.js`. Remove `allowJs: true` and obsolete JavaScript
+  include/path configuration once callers no longer need it; verify typecheck,
+  build, browser tests, and Python asset-serving integration afterward.
+- [ ] Correct stale examples in `skills/narratron-testing/SKILL.md`: it still
+  references the deleted CJS suites, the removed `npm run test:cjs` command, and
+  the deleted `canvas_corner_controls_test.py` file.
+- [ ] Optional hardening: consolidate shared page/API/WebSocket fixtures and
+  tighten payload casts and discriminated unions described below. Consider
+  `noUncheckedIndexedAccess` and `exactOptionalPropertyTypes` separately.
+
+Verification on `ts-migration`: 80 production TypeScript modules and 99 frontend
+TypeScript suites were confirmed. Strict typecheck and production build passed;
+all 626 Playwright tests passed. The following targeted Python run passed all
+175 tests:
+
+```powershell
+uv run pytest -n 4 utils/frontend_build_test.py api_server/app_test.py api_server/pages_test.py testlab/server_test.py testlab/a2ui_canvas_lab_test.py testlab/adventure_runner_test.py testlab/speech_benchmark_test.py testing/ui
+```
+
+This verification did not run the full Python backend suite or a Docker build.
 
 ### Remaining Raw JavaScript
 
@@ -215,6 +255,10 @@ shims, disabling `allowJs`, and consolidating test fixtures remain pending:
   CommonJS test files (`testing/ui/audio_recorder_test.cjs` and
   `testing/ui/story_log_inspector_test.cjs`) have been migrated to TypeScript and
   deleted.
+- **Embedded executable JavaScript**: audio-worklet source strings in
+  `device-aware-pcm.ts`, `remote.ts`, and `testlab-audio-vad.ts`, and the iframe
+  bridge string in `game-panel.ts`, remain outside TypeScript's checks. The
+  standalone-file counts above exclude these strings.
 - **Inline `<script>` blocks in HTML**:
   - **0 remaining non-trivial inline `<script>` templates** in `templates/`
     (`adventures.html`, `gift.html`, `join_splash.html`, `shared_topbar.html`,
@@ -264,17 +308,20 @@ pure-frontend suites, 5 Wave-4 pure-frontend suites, and 6 Wave-5 pure-frontend
 suites — `auth_password_reset_test.py`, `auth_signup_test.py`, `auth_state_test.py`,
 `join_splash_test.py`, `theater_creation_test.py`, and `theater_editor_test.py` — have
 been migrated to TypeScript and deleted, while `remote_test.py` and the 7 Wave-5
-split suites have been trimmed to backend/route/testlab checks):
+split suites mostly retain backend/route/testlab checks, with the two animation
+suites still containing frontend source assertions):
 
-- **0 pure-frontend Playwright or source-assertion tests** remain in `testing/ui/`
-  outside `testlab/` / firewall checks.
+- **0 standalone pure-frontend suites** remain in `testing/ui/` outside
+  `testlab/` / firewall checks, but **2 mixed animation suites** still assert
+  against frontend source text (`triframe_animation_test.py` and
+  `video_animation_ui_test.py`). Their frontend assertions remain to migrate.
 - **1 Python Playwright firewall test**: `network_test.py` (exercises Python's
   `conftest.py` offline firewall).
 - **2 testlab Playwright integration suites**: `adventure_runner_game_test.py`
   (frontend game-harness checks split to `adventure-runner-game_test.ts`; Python
   retains testlab server integration) and `game_lab_test.py`.
-- **8 backend FastAPI / `CanvasStateManager` route & manifest suites** (frontend
-  assertions moved to TypeScript; Python retains route/backend state checks):
+- **8 FastAPI / `CanvasStateManager` route & manifest suites** (the first six
+  retain backend checks; the last two also retain frontend source assertions):
   `adventure_guide_ui_test.py`, `crossfade_test.py`, `fullscreen_popout_test.py`,
   `image_history_paging_test.py`, `obs_canvas_test.py`, `policy_pages_test.py`,
   `triframe_animation_test.py`, and `video_animation_ui_test.py`.
