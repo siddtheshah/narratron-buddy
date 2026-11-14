@@ -412,6 +412,19 @@ test('obs processes doodle WebSocket draw, draw_batch, text, stamp ordering, sel
     });
   });
 
+  await canvas.serveRoute('**/api/doodles?**', async (route: Route) => {
+    await route.fulfill({
+      json: {
+        type: 'doodle_snapshot',
+        page_id: 'page-1',
+        enabled: true,
+        batches: [],
+        annotations: [],
+        stamps: [],
+      },
+    });
+  });
+
   await page.routeWebSocket('**/ws/doodle?**', (ws: WebSocketRoute) => {
     doodleWs = ws;
     ws.send(JSON.stringify({ type: 'doodle_snapshot', page_id: 'page-1', enabled: true, batches: [], annotations: [], stamps: [] }));
