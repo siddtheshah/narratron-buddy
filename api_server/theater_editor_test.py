@@ -1059,10 +1059,16 @@ def test_stale_generation_request_cannot_change_or_charge_the_draft(builder: Bui
 
 
 def test_editor_and_deploy_navigation_are_present(builder: BuilderHarness) -> None:
+    from utils.frontend_build import ensure_canvas_assets_built
+
+    ensure_canvas_assets_built()
     assert builder.client.get("/theater-editor").status_code == 200
     html = builder.client.get("/deploy").text
     assert 'href="/theater-editor"' in html
-    assert 'Edit in Builder' in html
+    assert 'src="/static/generated/canvas/theater-creation.js"' in html
+    deploy_script = builder.client.get("/static/generated/canvas/theater-creation.js")
+    assert deploy_script.status_code == 200
+    assert 'Edit in Builder' in deploy_script.text
     canvas = builder.client.get("/canvas").text
     assert 'id="menu-item-theater-builder"' in canvas
     assert 'src="/static/js/canvas.js"' in canvas
