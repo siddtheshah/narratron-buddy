@@ -12,7 +12,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@splidejs/splide@4.1.4/dist/css/splide.min.css">
   <link rel="stylesheet" href="/static/css/auth-flow.css">
-  <script src="/static/js/auth-flow.js"></script>
+  <script type="module" src="/static/generated/canvas/auth-flow.js"></script>
   <style>
     :root {
       --bg-gradient: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #311042 100%);
@@ -1129,9 +1129,8 @@
       <div class="input-group">
         <input type="text" id="joinKeyInput" class="join-input" placeholder="XXXXXX" maxlength="12"
           aria-label="Theater code" aria-describedby="join-key-hint"
-          autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false"
-          onkeydown="if(event.key==='Enter') submitJoinKey()">
-        <button class="join-btn" onclick="submitJoinKey()">Join</button>
+          autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false">
+        <button type="button" id="join-key-submit" class="join-btn">Join</button>
       </div>
       <div id="errorMessage" class="error-msg"></div>
       <aside class="adventure-options" aria-label="Host a theater">
@@ -1315,132 +1314,7 @@
   <script type="module" src="/static/generated/canvas/friends.js"></script>
   <script type="module" src="/static/generated/canvas/user-help.js?v=20261008-support-chat"></script>
   <script src="https://cdn.jsdelivr.net/npm/@splidejs/splide@4.1.4/dist/js/splide.min.js"></script>
-  <script>
-    const joinOptions = document.querySelector('.join-options');
-    const joinCards = [...document.querySelectorAll('.join-options-track > .join-card')];
-    const mobileJoinView = window.matchMedia('(max-width: 760px)');
-    let showFriendCard = false;
-
-    function updateJoinCards() {
-      joinOptions.classList.toggle('show-friends', showFriendCard);
-      joinCards.forEach((card, index) => {
-        const inactive = mobileJoinView.matches && index !== Number(showFriendCard);
-        card.inert = inactive;
-        if (inactive) card.setAttribute('aria-hidden', 'true');
-        else card.removeAttribute('aria-hidden');
-      });
-    }
-
-    document.querySelectorAll('[data-join-card]').forEach(button => {
-      button.addEventListener('click', () => {
-        showFriendCard = button.dataset.joinCard === 'friends';
-        updateJoinCards();
-        joinCards[Number(showFriendCard)].querySelector('.join-card-switch').focus({preventScroll: true});
-      });
-    });
-    mobileJoinView.addEventListener('change', updateJoinCards);
-    updateJoinCards();
-
-    const carouselSlides = [...document.querySelectorAll('.carousel-slide')];
-    let activeSlide = 0;
-    new Splide('#featuresCarousel', {
-      type: 'loop',
-      perPage: 3,
-      perMove: 1,
-      gap: '24px',
-      pagination: false,
-      speed: 450,
-      breakpoints: {
-        900: { perPage: 2 },
-        640: { perPage: 1, gap: '16px' },
-      },
-    }).mount();
-
-    function loadSlideImage(slide) {
-      if (!slide || slide.dataset.loaded) return;
-      const src = slide.dataset.src;
-      if (src) {
-        slide.style.backgroundImage = `url('${src}')`;
-        slide.dataset.loaded = 'true';
-      }
-    }
-
-    // Mark initial slide as loaded
-    if (carouselSlides[0]) {
-      carouselSlides[0].dataset.loaded = 'true';
-    }
-
-    function preloadNextSlide(nextIdx) {
-      const slide = carouselSlides[nextIdx];
-      if (slide && !slide.dataset.loaded) {
-        const img = new Image();
-        img.onload = () => loadSlideImage(slide);
-        img.onerror = () => loadSlideImage(slide);
-        img.src = slide.dataset.src;
-      }
-    }
-
-    if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches && carouselSlides.length > 1) {
-      // Stagger load the second slide shortly after initial page load
-      window.setTimeout(() => {
-        preloadNextSlide(1);
-      }, 1800);
-
-      window.setInterval(() => {
-        const outgoingSlide = carouselSlides[activeSlide];
-
-        // Keep panning during the fade-out, then reset only when hidden.
-        outgoingSlide.classList.remove('is-active');
-        window.setTimeout(() => {
-          outgoingSlide.classList.remove('is-panning');
-        }, 1800);
-
-        activeSlide = (activeSlide + 1) % carouselSlides.length;
-        loadSlideImage(carouselSlides[activeSlide]);
-        carouselSlides[activeSlide].classList.add('is-panning', 'is-active');
-
-        // Preload the next slide ahead of the subsequent transition
-        const nextSlideIndex = (activeSlide + 1) % carouselSlides.length;
-        preloadNextSlide(nextSlideIndex);
-      }, 7000);
-    }
-
-    async function submitJoinKey() {
-      const input = document.getElementById('joinKeyInput');
-      const err = document.getElementById('errorMessage');
-      const enteredKey = input.value.trim().toUpperCase();
-      const key = /^[A-Z0-9]{6}$/.test(enteredKey) ? `KEY-${enteredKey}` : enteredKey;
-
-      err.style.display = 'none';
-      err.textContent = '';
-
-      if (!key) {
-        err.textContent = 'Please enter a valid Join Key.';
-        err.style.display = 'block';
-        return;
-      }
-
-      try {
-        const resp = await fetch('/api/theaters/resolve-join-key', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ join_key: key })
-        });
-
-        const data = await resp.json();
-        if (resp.ok && data.theater_id) {
-          window.location.href = `/canvas?theater_id=${encodeURIComponent(data.theater_id)}`;
-        } else {
-          err.textContent = data.detail || 'Invalid or expired Join Key.';
-          err.style.display = 'block';
-        }
-      } catch (e) {
-        err.textContent = 'Failed to connect to server. Please try again.';
-        err.style.display = 'block';
-      }
-    }
-
-  </script>
+  <script type="module" src="/static/generated/canvas/join-splash.js"></script>
 </body>
 
 </html>

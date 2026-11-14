@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/css/auth-flow.css">
-  <script src="/static/js/auth-flow.js"></script>
+  <script type="module" src="/static/generated/canvas/auth-flow.js"></script>
 
   <style>
     :root {
@@ -490,14 +490,14 @@
     <div class="toolbar">
       <div class="search-box">
         <span class="search-icon">🔍</span>
-        <input type="text" id="searchInput" placeholder="Search by title, tag, or story keywords..." oninput="filterAdventures()">
+        <input type="text" id="searchInput" placeholder="Search by title, tag, or story keywords...">
       </div>
       <div class="filter-tags" id="filterTags">
-        <button class="tag-btn active" onclick="selectTag('all')">All Adventures</button>
-        <button class="tag-btn" onclick="selectTag('Sci-Fi')">Sci-Fi</button>
-        <button class="tag-btn" onclick="selectTag('Dark Fantasy')">Dark Fantasy</button>
-        <button class="tag-btn" onclick="selectTag('Norse Fantasy')">Norse</button>
-        <button class="tag-btn" onclick="selectTag('Showcase')">Showcase</button>
+        <button type="button" class="tag-btn active" data-tag="all">All Adventures</button>
+        <button type="button" class="tag-btn" data-tag="Sci-Fi">Sci-Fi</button>
+        <button type="button" class="tag-btn" data-tag="Dark Fantasy">Dark Fantasy</button>
+        <button type="button" class="tag-btn" data-tag="Norse Fantasy">Norse</button>
+        <button type="button" class="tag-btn" data-tag="Showcase">Showcase</button>
       </div>
     </div>
 
@@ -518,189 +518,7 @@
     </div>
   </div>
 
-  <script>
-    let allAdventures = [];
-    let activeTag = 'all';
-    let pendingDeployAdventureId = null;
-
-    // Format ISO dates into human readable strings
-    function formatDate(isoStr) {
-      if (!isoStr) return 'Recently Added';
-      try {
-        const d = new Date(isoStr);
-        if (isNaN(d.getTime())) return 'Recently Added';
-        return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-      } catch (e) {
-        return 'Recently Added';
-      }
-    }
-
-    async function loadAdventures() {
-      const grid = document.getElementById('adventuresGrid');
-      try {
-        const res = await fetch('/api/adventures');
-        if (!res.ok) throw new Error('Failed to load adventures');
-        allAdventures = await res.json();
-        renderAdventures();
-      } catch (err) {
-        grid.innerHTML = `
-          <div style="grid-column: 1 / -1; text-align: center; padding: 3rem; background: var(--glass-bg); border-radius: var(--radius);">
-            <div style="font-size: 2.5rem; margin-bottom: 0.75rem;">⚠️</div>
-            <h3 style="margin-bottom: 0.5rem; color: #fff;">Could not load adventures</h3>
-            <p style="color: var(--text-secondary); margin-bottom: 1rem;">${err.message || 'Please check your connection and try again.'}</p>
-            <button class="btn btn-secondary" onclick="loadAdventures()">↻ Retry</button>
-          </div>
-        `;
-      }
-    }
-
-    function selectTag(tag) {
-      activeTag = tag;
-      document.querySelectorAll('.tag-btn').forEach(b => {
-        if (tag === 'all' && b.innerText.includes('All')) b.classList.add('active');
-        else if (b.innerText.toLowerCase().includes(tag.toLowerCase())) b.classList.add('active');
-        else b.classList.remove('active');
-      });
-      filterAdventures();
-    }
-
-    function filterAdventures() {
-      const query = (document.getElementById('searchInput').value || '').toLowerCase().trim();
-      const filtered = allAdventures.filter(adv => {
-        const title = (adv.title || '').toLowerCase();
-        const desc = (adv.description || '').toLowerCase();
-        const genre = (adv.genre || '').toLowerCase();
-        const tags = (adv.tags || []).map(t => t.toLowerCase());
-
-        const matchesQuery = !query || title.includes(query) || desc.includes(query) || tags.some(t => t.includes(query)) || genre.includes(query);
-        const matchesTag = activeTag === 'all' || genre.includes(activeTag.toLowerCase()) || tags.some(t => t.includes(activeTag.toLowerCase()));
-
-        return matchesQuery && matchesTag;
-      });
-
-      renderFiltered(filtered);
-    }
-
-    function renderAdventures() {
-      filterAdventures();
-    }
-
-    function renderFiltered(adventures) {
-      const grid = document.getElementById('adventuresGrid');
-      if (!adventures || adventures.length === 0) {
-        grid.innerHTML = `
-          <div style="grid-column: 1 / -1; text-align: center; padding: 4rem 1rem; background: var(--glass-bg); border-radius: var(--radius); border: 1px dashed var(--glass-border);">
-            <div style="font-size: 2.5rem; margin-bottom: 0.75rem;">🔍</div>
-            <h3 style="margin-bottom: 0.5rem; color: #fff;">No adventures matched your search</h3>
-            <p style="color: var(--text-secondary); margin-bottom: 1.2rem;">Try searching for a different keyword or genre.</p>
-            <button class="btn btn-secondary btn-sm" onclick="document.getElementById('searchInput').value=''; selectTag('all');">Clear Filters</button>
-          </div>
-        `;
-        return;
-      }
-
-      grid.innerHTML = adventures.map(adv => {
-        const coverUrl = `/api/adventures/${encodeURIComponent(adv.id)}/cover`;
-        const formattedDate = formatDate(adv.created_at);
-        const genre = adv.genre || 'Adventure';
-        const loreCount = adv.lore_count || 0;
-        const trackCount = adv.track_count || 0;
-        const refCount = adv.reference_count || 0;
-
-        return `
-          <div class="card" id="card-${adv.id}">
-            <div class="card-cover-container">
-              <img class="card-cover" src="${coverUrl}" alt="${adv.title}" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
-              <div class="card-cover-placeholder" style="display: none;">🗺️</div>
-              <div class="card-cover-overlay"></div>
-              <div class="card-badges">
-                <span class="badge-date">📅 ${formattedDate}</span>
-                <span class="badge-genre">${genre}</span>
-              </div>
-            </div>
-
-            <div class="card-body">
-              <h2 class="card-title">${adv.title || adv.id}</h2>
-              <p class="card-desc">${adv.description || 'Step into this premade Narratron adventure experience.'}</p>
-
-              <div class="card-meta-pills">
-                ${loreCount > 0 ? `<span class="meta-pill" title="${loreCount} Lore Documents">📜 ${loreCount} Lore Docs</span>` : ''}
-                ${trackCount > 0 ? `<span class="meta-pill" title="${trackCount} Audio Tracks">🎵 ${trackCount} Soundtracks</span>` : ''}
-                ${refCount > 0 ? `<span class="meta-pill" title="${refCount} Reference Images">🖼️ ${refCount} Reference Visuals</span>` : ''}
-                ${adv.difficulty ? `<span class="meta-pill" title="Difficulty">⚡ ${adv.difficulty}</span>` : ''}
-              </div>
-
-              <div class="card-actions">
-                <button class="btn btn-primary" onclick="deployAndPlay('${adv.id}', '${(adv.title || '').replace(/'/g, "\\'")}')">
-                  <span>🚀 Play Adventure</span>
-                </button>
-                <a href="/deploy?creation_path=adventure&preset=${encodeURIComponent(adv.id)}" class="btn btn-secondary btn-sm" title="Configure settings before deploying">
-                  <span>⚙️ Deployer</span>
-                </a>
-              </div>
-            </div>
-          </div>
-        `;
-      }).join('');
-    }
-
-    async function deployAndPlay(adventureId, title) {
-      currentUser = window.currentUser || currentUser;
-      if (!currentUser) {
-        pendingDeployAdventureId = adventureId;
-        openAuthModal('login');
-        return;
-      }
-
-      const overlay = document.getElementById('deployOverlay');
-      const titleEl = document.getElementById('deployModalTitle');
-      titleEl.innerText = `Launching "${title || 'Adventure'}"...`;
-      overlay.classList.add('show');
-
-      try {
-        const formData = new FormData();
-        formData.append('name', title || 'Narratron Adventure');
-        formData.append('creation_mode', 'adventure');
-        formData.append('preset_adventure_id', adventureId);
-        formData.append('enable_adventure_mode', 'true');
-
-        const res = await fetch('/api/theaters/create-and-deploy', {
-          method: 'POST',
-          body: formData,
-        });
-
-        const data = await res.json();
-        if (!res.ok) {
-          throw new Error(data.detail || 'Failed to deploy adventure theater.');
-        }
-
-        const theaterId = data.theater_id || (data.theater && data.theater.theater_id);
-        if (theaterId) {
-          window.location.href = `/canvas?theater_id=${encodeURIComponent(theaterId)}`;
-        } else {
-          window.location.href = '/deploy';
-        }
-      } catch (err) {
-        overlay.classList.remove('show');
-        alert('Could not launch adventure: ' + (err.message || err));
-      }
-    }
-
-    // Auto-resume deploy after auth login if triggered
-    window.onAuthSuccess = function(action, data) {
-      if ((action === 'login' || action === 'register') && pendingDeployAdventureId) {
-        const targetAdvId = pendingDeployAdventureId;
-        pendingDeployAdventureId = null;
-        const adv = allAdventures.find(a => a.id === targetAdvId);
-        const title = adv ? adv.title : 'Narratron Adventure';
-        deployAndPlay(targetAdvId, title);
-      }
-    };
-
-    window.addEventListener('load', () => {
-      loadAdventures();
-    });
-  </script>
+  <script type="module" src="/static/generated/canvas/adventures.js"></script>
 </body>
 
 </html>

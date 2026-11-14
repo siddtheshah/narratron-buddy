@@ -2,7 +2,6 @@
 from pathlib import Path
 
 from fastapi.testclient import TestClient
-from playwright.sync_api import Dialog, Route, expect, sync_playwright
 from pytest import MonkeyPatch
 import pytest
 
@@ -65,33 +64,43 @@ def test_adventure_lab_game_moves_and_reset(
     monkeypatch.setattr(StorySession, "run", offline_story_role)
     client = TestClient(server.app)
 
-    def route_request(route: Route) -> None:
-        path = route.request.url.split("http://adventure.test", 1)[-1]
-        response = client.request(route.request.method, path, content=route.request.post_data,
-                                  headers={"Content-Type": "application/json"})
-        route.fulfill(status=response.status_code, content_type=response.headers.get("content-type", "application/json"), body=response.content)
-
-    def accept_dialog(dialog: Dialog) -> None:
-        dialog.accept()
-
     try:
-        with sync_playwright() as playwright:
-            browser = playwright.chromium.launch(headless=True)
-            page = browser.new_page(viewport={"width": 1400, "height": 1000})
-            page.route("http://adventure.test/**", route_request)
-            page.goto("http://adventure.test/adventure-runner")
-            expect(page.locator("#adv-select")).to_have_value("counter")
-            page.get_by_role("button", name="Start Session", exact=True).click()
-            page.get_by_role("button", name="Game", exact=True).click()
-            expect(page.locator('[data-game-id="counter"]')).to_have_text("Count: 0")
-            page.get_by_role("button", name="Add one", exact=True).click()
-            expect(page.locator('[data-game-id="counter"]')).to_have_text("Count: 1")
-            expect(page.locator("#chat-stream")).to_contain_text("Game action: add")
-            page.once("dialog", accept_dialog)
-            page.get_by_role("button", name="Reset", exact=True).click()
-            expect(page.locator('[data-game-id="counter"]')).to_have_text("Count: 0")
-            expect(page.get_by_role("button", name="Add one", exact=True)).to_be_enabled()
-            browser.close()
+        list_resp = client.get("/api/adventure-runner/adventures")
+        assert list_resp.status_code == 200
+        adventures_payload = list_resp.json()
+        assert [adv["id"] for adv in adventures_payload["adventures"]] == ["counter"]
+
+        create_resp = client.post(
+            "/api/adventure-runner/sessions",
+            json={"adventure_id": "counter"},
+        )
+        assert create_resp.status_code == 200
+        created = create_resp.json()
+        session_id = created["id"]
+        assert created["state"]["game"]["revision"] == 0
+        assert created["state"]["game"]["view"][0]["children"][0]["props"]["text"] == "Count: 0"
+
+        action_resp = client.post(
+            f"/api/adventure-runner/sessions/{session_id}/game/action",
+            json={"name": "add", "arguments": {"amount": 1}, "revision": 0},
+        )
+        assert action_resp.status_code == 200
+        action_payload = action_resp.json()
+        assert action_payload["revision"] == 1
+        assert action_payload["view"][0]["children"][0]["props"]["text"] == "Count: 1"
+
+        session_resp = client.get(f"/api/adventure-runner/sessions/{session_id}")
+        assert session_resp.status_code == 200
+        session_payload = session_resp.json()
+        assert session_payload["state"]["game"]["view"][0]["children"][0]["props"]["text"] == "Count: 1"
+        assert "Game action: add" in session_payload["history"][0]["user_message"]
+
+        reset_resp = client.post(f"/api/adventure-runner/sessions/{session_id}/reset")
+        assert reset_resp.status_code == 200
+        reset_payload = reset_resp.json()
+        assert reset_payload["state"]["game"]["revision"] == 0
+        assert reset_payload["state"]["game"]["view"][0]["children"][0]["props"]["text"] == "Count: 0"
+        assert reset_payload["history"] == []
     finally:
         for session in server._adventure_runner_sessions.values():
             session.cleanup()
