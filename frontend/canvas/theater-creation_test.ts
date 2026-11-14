@@ -242,12 +242,12 @@ async function setupDeployHarness(
   );
 
   await page.addInitScript(() => {
-    window.currentUser = { id: 'owner', credits: 100 };
     localStorage.setItem('narratron.deployAcknowledgement.v1', 'accepted');
     window.alert = () => {};
   });
 
   await page.goto(`${CANVAS_ORIGIN}/deploy`);
+  await expect(page.locator('#userAccountBar .credit-badge')).toBeVisible();
   return { state, defaultConfigYaml };
 }
 
@@ -494,6 +494,7 @@ test('deleting theater asks for confirmation once until reloaded', async ({ canv
   state.theaters = [...seedTheaters];
   state.deletedTheaters = [];
   await page.reload();
+  await expect(page.locator('#userAccountBar .credit-badge')).toBeVisible();
   expect(await page.evaluate(() => window.theaterDeletionConfirmed)).toBe(false);
   await expect(page.locator('#theatersTableBody tr')).toHaveCount(3);
 
