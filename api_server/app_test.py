@@ -218,12 +218,16 @@ def test_agent_credit_checks_use_owner_after_baton_handoff(
         patch.object(object_registry, "db", registry_db),
         patch.object(object_registry, "live_agent_manager", manager),
         patch.object(app_module, "get_current_user_async", AsyncMock(return_value=accounts[99])),
+        patch("api_server.shared.get_current_user_async", AsyncMock(return_value=accounts[99])),
     ):
         url = f"/api/theaters/stage/agent/{endpoint}"
         response = client.post(url) if endpoint == "start" else client.get(url)
 
     assert response.status_code == (402 if endpoint == "start" and owner_credits <= 0 else 200)
-    assert response.json()["credits"] == owner_credits
+    if endpoint == "start":
+        assert response.json()["credits"] == owner_credits
+    else:
+        assert "credits" not in response.json()
     assert response.json()["insufficient_credits"] == (owner_credits <= 0)
     assert response.json()["agent_running"] == (owner_credits > 0)
     registry_db.get_user_by_id.assert_called_once_with(11)
@@ -323,17 +327,24 @@ def test_stop_agent_allows_active_orator() -> None:
     manager.stop_session.assert_called_once_with(theater_id="stage")
 
 
-def test_agent_status_reads_active_session_from_registry_manager():
+def test_agent_status_reads_active_session_from_registry_manager() -> None:
+    deployment = {"theater_id": "stage", "user_id": 11, "join_key": "KEY-1"}
     registry_db = MagicMock()
-    registry_db.get_deployment.return_value = {"user_id": 11}
+    registry_db.get_deployment.return_value = deployment
     registry_db.get_user_by_id.return_value = {"id": 11, "credits": 3.5}
     manager = MagicMock()
     manager.get_session.return_value = SimpleNamespace(
         status="running", websocket_connected=True, created_at="now", last_active_at="later"
     )
+    req = SimpleNamespace(cookies={}, query_params={}, headers={}, state=SimpleNamespace())
 
-    with patch.object(object_registry, "db", registry_db), patch.object(object_registry, "live_agent_manager", manager):
-        result = asyncio.run(app_module.get_agent_status_endpoint("stage"))
+    with (
+        patch.object(object_registry, "db", registry_db),
+        patch.object(object_registry, "live_agent_manager", manager),
+        patch.object(app_module, "_require_canvas_access_async", AsyncMock(return_value=deployment)),
+        patch.object(app_module, "get_current_user_async", AsyncMock(return_value={"id": 11})),
+    ):
+        result = asyncio.run(app_module.get_agent_status_endpoint("stage", req))
 
     assert result["agent_running"] is True
     assert result["websocket_connected"] is True
@@ -492,6 +503,41 @@ def test_cel_tracing_can_be_explicitly_requested(caplog: pytest.LogCaptureFixtur
         assert "CEL trace probe" in caplog.messages
     finally:
         cel_logger.setLevel(previous_level)
+
+
+def test_get_agent_status_enforces_access_hides_credits_from_non_owners_and_protects_stop() -> None:
+    deployment = {"theater_id": "stage", "user_id": 10, "join_key": "KEY-1"}
+    session = SimpleNamespace(status="running", websocket_connected=True, created_at="t0", last_active_at="t1")
+    live_mgr = MagicMock()
+    live_mgr.get_session.return_value = session
+    req = SimpleNamespace(cookies={}, query_params={}, headers={}, state=SimpleNamespace())
+
+    # Unauthorized caller is rejected and cannot trigger stop_session
+    with patch.object(app_module, "_require_canvas_access_async", AsyncMock(side_effect=HTTPException(status_code=403, detail="Forbidden"))), \
+         patch.object(object_registry, "live_agent_manager", live_mgr):
+        with pytest.raises(HTTPException) as err:
+            asyncio.run(app_module.get_agent_status_endpoint("stage", req))
+        assert err.value.status_code == 403
+        live_mgr.stop_session.assert_not_called()
+
+    # Join-key / non-owner caller: credits omitted and stop_session NOT called even when has_credits=False
+    with patch.object(app_module, "_require_canvas_access_async", AsyncMock(return_value=deployment)), \
+         patch.object(app_module, "get_current_user_async", AsyncMock(return_value=None)), \
+         patch.object(app_module, "get_theater_owner_credits", return_value=(False, 0.0, 10)), \
+         patch.object(object_registry, "live_agent_manager", live_mgr):
+        res = asyncio.run(app_module.get_agent_status_endpoint("stage", req))
+        assert "credits" not in res
+        assert res["insufficient_credits"] is True
+        live_mgr.stop_session.assert_not_called()
+
+    # Owner caller: credits included and stop_session called when has_credits=False
+    with patch.object(app_module, "_require_canvas_access_async", AsyncMock(return_value=deployment)), \
+         patch.object(app_module, "get_current_user_async", AsyncMock(return_value={"id": 10})), \
+         patch.object(app_module, "get_theater_owner_credits", return_value=(False, 0.0, 10)), \
+         patch.object(object_registry, "live_agent_manager", live_mgr):
+        res_owner = asyncio.run(app_module.get_agent_status_endpoint("stage", req))
+        assert res_owner["credits"] == 0.0
+        live_mgr.stop_session.assert_called_once_with(theater_id="stage")
 
 
 if __name__ == "__main__":

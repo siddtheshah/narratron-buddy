@@ -354,3 +354,106 @@ def test_authenticated_user_only_sees_own_theaters(
     response = client.get("/api/theaters")
     assert response.status_code == 200
     assert response.json() == []
+
+
+def test_save_theater_config_requires_owner_auth(
+    test_environment: tuple[TestClient, Path, dict[str, str | int]],
+) -> None:
+    client, _, _ = test_environment
+    payload = {"config_yaml": "live_agent: {}\n"}
+
+    # Unauthenticated caller with valid join key is rejected (401)
+    anon_res = client.post("/api/theaters/secret_stage/config?join_key=KEY-SECRET", json=payload)
+    assert anon_res.status_code == 401
+
+    # Non-owner with valid join key is rejected (403)
+    object_registry.db.register_user("non_owner", "nonowner@example.com", "Password123")
+    client.post("/api/auth/login", json={"username_or_email": "non_owner", "password": "Password123"})
+    non_owner_res = client.post("/api/theaters/secret_stage/config?join_key=KEY-SECRET", json=payload)
+    assert non_owner_res.status_code == 403
+
+    # Owner on nonexistent theater gets 404
+    client.post("/api/auth/login", json={"username_or_email": "sec_owner", "password": "Password123"})
+    missing_res = client.post("/api/theaters/missing_stage/config", json=payload)
+    assert missing_res.status_code == 404
+
+    # Owner on own theater succeeds (200)
+    owner_res = client.post("/api/theaters/secret_stage/config", json=payload)
+    assert owner_res.status_code == 200
+
+
+def test_retitle_theater_enforces_safe_path_404_and_owner(
+    test_environment: tuple[TestClient, Path, dict[str, str | int]],
+) -> None:
+    client, _, _ = test_environment
+    client.post("/api/auth/login", json={"username_or_email": "sec_owner", "password": "Password123"})
+
+    assert client.post("/api/theaters/bad:id/retitle", json={"name": "New"}).status_code == 400
+    assert client.post("/api/theaters/no_such_stage/retitle", json={"name": "New"}).status_code == 404
+
+    with patch.object(object_registry.db, "get_deployment", return_value={"theater_id": "secret_stage", "user_id": None}):
+        assert client.post("/api/theaters/secret_stage/retitle", json={"name": "New"}).status_code == 403
+
+    object_registry.db.register_user("other_retitle", "other_retitle@example.com", "Password123")
+    client.post("/api/auth/login", json={"username_or_email": "other_retitle", "password": "Password123"})
+    assert client.post("/api/theaters/secret_stage/retitle", json={"name": "Hijack"}).status_code == 403
+
+    client.post("/api/auth/login", json={"username_or_email": "sec_owner", "password": "Password123"})
+    ok_res = client.post("/api/theaters/secret_stage/retitle", json={"name": "Updated Title"})
+    assert ok_res.status_code == 200
+    assert ok_res.json()["name"] == "Updated Title"
+
+
+def test_serve_theater_output_and_stamp_set_security_headers_and_block_glob(
+    test_environment: tuple[TestClient, Path, dict[str, str | int]],
+) -> None:
+    client, _, _ = test_environment
+    theater = object_registry.theater_manager.theater("secret_stage")
+    stamps_dir = theater.stamps_dir()
+    stamps_dir.mkdir(parents=True, exist_ok=True)
+    (stamps_dir / "stamp.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+
+    output_dir = theater.output_dir()
+    output_dir.mkdir(parents=True, exist_ok=True)
+    (output_dir / "scene.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+
+    stamp_res = client.get("/theaters/secret_stage/stamps/stamp.png?join_key=KEY-SECRET")
+    assert stamp_res.status_code == 200
+    assert stamp_res.headers["x-content-type-options"] == "nosniff"
+    assert stamp_res.headers["content-security-policy"] == "sandbox; default-src 'none'"
+
+    output_res = client.get("/theaters/secret_stage/output/scene.png?join_key=KEY-SECRET")
+    assert output_res.status_code == 200
+    assert output_res.headers["x-content-type-options"] == "nosniff"
+    assert output_res.headers["content-security-policy"] == "sandbox; default-src 'none'"
+
+    glob_res = client.get("/theaters/secret_stage/output/*.png?join_key=KEY-SECRET")
+    assert glob_res.status_code == 404
+
+
+def test_create_and_deploy_theater_rejects_traversal_in_reference_and_playlist_uploads(
+    test_environment: tuple[TestClient, Path, dict[str, str | int]],
+) -> None:
+    client, _, _ = test_environment
+    client.post("/api/auth/login", json={"username_or_email": "sec_owner", "password": "Password123"})
+
+    ref_res = client.post(
+        "/api/theaters/create-and-deploy",
+        data={"name": "Bad Ref"},
+        files=[("reference_files", ("../evil.png", b"pngdata", "image/png"))],
+    )
+    assert ref_res.status_code == 400
+
+    pl_file_res = client.post(
+        "/api/theaters/create-and-deploy",
+        data={"name": "Bad Playlist File"},
+        files=[("playlist_ambient", ("../evil.mp3", b"mp3data", "audio/mpeg"))],
+    )
+    assert pl_file_res.status_code == 400
+
+    pl_name_res = client.post(
+        "/api/theaters/create-and-deploy",
+        data={"name": "Bad Playlist Name"},
+        files=[("playlist_../bad", ("track.mp3", b"mp3data", "audio/mpeg"))],
+    )
+    assert pl_name_res.status_code == 400

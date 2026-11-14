@@ -21,6 +21,7 @@ from api_server import (
 )
 
 from api_server import can_access_agent_websocket as can_access_agent_websocket
+from api_server.shared import _require_canvas_access_async
 
 load_dotenv()
 
@@ -214,33 +215,50 @@ async def stop_agent_endpoint(
 
 
 @app.get("/api/theaters/{theater_id}/agent/status")
-async def get_agent_status_endpoint(theater_id: str) -> dict[str, str | bool | float | None]:
+async def get_agent_status_endpoint(
+    theater_id: str,
+    request: Request,
+) -> dict[str, str | bool | float | None]:
     """API endpoint to check if an agent session is active in memory."""
-    has_credits, credits_bal, owner_id = get_theater_owner_credits(theater_id)
+    deployment = await _require_canvas_access_async(request, theater_id)
+    current_user = await get_current_user_async(request)
+    is_owner = bool(
+        current_user
+        and deployment.get("user_id") is not None
+        and current_user.get("id") == deployment.get("user_id")
+    )
+    can_control = can_control_agent_websocket(deployment, current_user=current_user)
+
+    has_credits, credits_bal, _owner_id = get_theater_owner_credits(theater_id)
     if not has_credits:
         session = object_registry.live_agent_manager.get_session(theater_id=theater_id)
-        if session and session.status != "stopped":
+        if can_control and session and session.status != "stopped":
             object_registry.live_agent_manager.stop_session(theater_id=theater_id)
-        return {
+        payload: dict[str, str | bool | float | None] = {
             "theater_id": theater_id,
             "agent_running": False,
             "websocket_connected": False,
             "status": "stopped",
             "insufficient_credits": True,
-            "credits": credits_bal,
         }
+        if is_owner:
+            payload["credits"] = credits_bal
+        return payload
 
     session = object_registry.live_agent_manager.get_session(theater_id=theater_id)
     if not session or session.status == "stopped":
-        return {
+        payload = {
             "theater_id": theater_id,
             "agent_running": False,
             "websocket_connected": False,
             "status": "stopped",
             "insufficient_credits": False,
-            "credits": credits_bal,
         }
-    return {
+        if is_owner:
+            payload["credits"] = credits_bal
+        return payload
+
+    payload = {
         "theater_id": theater_id,
         "agent_running": True,
         "websocket_connected": session.websocket_connected,
@@ -248,8 +266,10 @@ async def get_agent_status_endpoint(theater_id: str) -> dict[str, str | bool | f
         "created_at": session.created_at,
         "last_active_at": session.last_active_at,
         "insufficient_credits": False,
-        "credits": credits_bal,
     }
+    if is_owner:
+        payload["credits"] = credits_bal
+    return payload
 # ========================================
 # Live Agent WebSocket Endpoint
 # ========================================

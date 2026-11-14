@@ -20,13 +20,35 @@ def test_safe_path_param_rejects_traversal_and_unsafe_characters():
         assert error.value.status_code == 400
 
 
-def test_canvas_grants_handles_invalid_cookie_and_round_trips_new_grant():
+def test_canvas_grants_handles_invalid_cookie_and_round_trips_new_grant() -> None:
     assert shared._canvas_access_grants(SimpleNamespace(cookies={"canvas_access": "not-base64"})) == {}
     response = Response()
-    request = SimpleNamespace(cookies={})
+    request = SimpleNamespace(cookies={}, headers={}, url=SimpleNamespace(scheme="http"))
     shared._grant_canvas_access(response, request, "stage", "JOIN")
     encoded = response.headers["set-cookie"].split("canvas_access=")[1].split(";")[0]
     assert json.loads(base64.urlsafe_b64decode(encoded + "=" * (-len(encoded) % 4))) == {"stage": "JOIN"}
+    assert "samesite=lax" in response.headers["set-cookie"].lower()
+    assert "secure" not in response.headers["set-cookie"].lower()
+
+    https_response = Response()
+    https_request = SimpleNamespace(
+        cookies={},
+        headers={"x-forwarded-proto": "https"},
+        url=SimpleNamespace(scheme="http"),
+    )
+    shared._grant_canvas_access(https_response, https_request, "stage", "JOIN")
+    assert "secure" in https_response.headers["set-cookie"].lower()
+
+
+def test_public_base_url_validates_origin(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("PUBLIC_BASE_URL", "https://narratron.example/")
+    assert shared._public_base_url() == "https://narratron.example"
+
+    for bad_value in ("", "https://attacker.example/path", "ftp://narratron.example"):
+        monkeypatch.setenv("PUBLIC_BASE_URL", bad_value)
+        with pytest.raises(HTTPException) as error:
+            shared._public_base_url()
+        assert error.value.status_code == 500
 
 
 def test_current_user_does_not_treat_query_user_id_as_authentication():

@@ -11,7 +11,7 @@ from pydantic import BaseModel, ConfigDict
 import stripe
 
 import object_registry
-from api_server.shared import app, get_current_user
+from api_server.shared import app, get_current_user, _public_base_url
 from utils.auth_cache import auth_session_cache
 from pricing.pricing_controller import PricingController
 
@@ -167,10 +167,10 @@ def buy_credits(req: BuyCreditsRequest, request: Request) -> dict:
         raise HTTPException(status_code=503, detail="Stripe library is not installed on the server.")
 
     stripe.api_key = stripe_key
-    base_url = str(request.base_url).rstrip("/")
 
     # Stripe Checkout Session (Redirect flow)
     if req.checkout_mode or payment_method in ("stripe_checkout", "stripe"):
+        base_url = _public_base_url()
         try:
             line_item = {"price": pkg["price_id"], "quantity": 1}
             session = stripe.checkout.Session.create(

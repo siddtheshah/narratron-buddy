@@ -1288,9 +1288,12 @@ class _DatabaseManagerBase:
             )
             if cost > 0.0:
                 cursor.execute(
-                    "UPDATE users SET credits = credits - ?, lifetime_credits_used = lifetime_credits_used + ? WHERE id = ?",
-                    (cost, cost, user_id),
+                    "UPDATE users SET credits = credits - ?, lifetime_credits_used = lifetime_credits_used + ? WHERE id = ? AND credits >= ?",
+                    (cost, cost, user_id, cost),
                 )
+                if cursor.rowcount == 0:
+                    conn.rollback()
+                    raise ValueError("Insufficient credits for theater deployment.")
             conn.commit()
             return True
 

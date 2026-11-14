@@ -8,7 +8,7 @@ from pydantic import BaseModel, JsonValue, StrictBool
 
 from utils.auth_cache import auth_session_cache
 import object_registry
-from api_server.shared import app, get_current_user
+from api_server.shared import app, get_current_user, _is_https_request, _public_base_url
 from storage.database import (
     DatabaseConnectionTimeout,
     MIN_PASSWORD_LENGTH,
@@ -49,7 +49,7 @@ class MicSensitivityRequest(BaseModel):
 # ========================================
 
 @app.post("/api/auth/register")
-def register_user(req: RegisterRequest, response: Response) -> dict[str, JsonValue]:
+def register_user(req: RegisterRequest, response: Response, request: Request) -> dict[str, JsonValue]:
     if not req.age_attested:
         raise HTTPException(status_code=400, detail="You must confirm that you are at least 13 years old to create an account.")
     username_clean = req.username.strip()
@@ -68,7 +68,14 @@ def register_user(req: RegisterRequest, response: Response) -> dict[str, JsonVal
     try:
         user = object_registry.db.register_user(req.username, req.email, req.password, age_attested=True)
         token = object_registry.db.create_auth_session(user["id"])
-        response.set_cookie(key="auth_token", value=token, httponly=True, max_age=604800)
+        response.set_cookie(
+            key="auth_token",
+            value=token,
+            httponly=True,
+            samesite="lax",
+            secure=_is_https_request(request),
+            max_age=604800,
+        )
         logger.info("Registration request completed in %.2fs.", time.monotonic() - started_at)
         return {"status": "ok", "user": user}
     except ValueError as e:
@@ -79,12 +86,19 @@ def register_user(req: RegisterRequest, response: Response) -> dict[str, JsonVal
         raise
 
 @app.post("/api/auth/login")
-def login_user(req: LoginRequest, response: Response):
+def login_user(req: LoginRequest, response: Response, request: Request) -> dict[str, JsonValue]:
     user = object_registry.db.authenticate_user(req.username_or_email, req.password)
     if not user:
         raise HTTPException(status_code=401, detail="Invalid username/email or password.")
     token = object_registry.db.create_auth_session(user["id"])
-    response.set_cookie(key="auth_token", value=token, httponly=True, max_age=604800)
+    response.set_cookie(
+        key="auth_token",
+        value=token,
+        httponly=True,
+        samesite="lax",
+        secure=_is_https_request(request),
+        max_age=604800,
+    )
     return {"status": "ok", "user": user}
 
 @app.post("/api/auth/logout")
@@ -97,12 +111,13 @@ def logout_user(request: Request, response: Response):
     return {"status": "ok"}
 
 @app.post("/api/auth/auto-login")
-def auto_login_user(response: Response):
+def auto_login_user(response: Response, request: Request) -> dict[str, JsonValue]:
     if not object_registry.FLAGS.testing_use_local:
         raise HTTPException(status_code=403, detail="Auto-login is only permitted with --testing_use_local.")
     return login_user(
         LoginRequest(username_or_email="localtest", password="narratron"),
         response,
+        request,
     )
 
 @app.get("/api/auth/me")
@@ -143,7 +158,7 @@ def forgot_password(req: ForgotPasswordRequest, request: Request) -> dict[str, s
         }
 
     token, user = token_user
-    base_url = str(request.base_url).rstrip("/")
+    base_url = _public_base_url()
     reset_link = f"{base_url}/deploy?reset_token={token}"
 
     delivery = send_password_reset_email(user["email"], user["username"], reset_link)

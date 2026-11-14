@@ -859,7 +859,12 @@ async def serve_theater_stamp(
     response = FileResponse(
         target_file,
         stat_result=target_file.stat(),
-        headers={"Cache-Control": "private, max-age=3600", "Vary": "Cookie"},
+        headers={
+            "Cache-Control": "private, max-age=3600",
+            "Vary": "Cookie",
+            "X-Content-Type-Options": "nosniff",
+            "Content-Security-Policy": "sandbox; default-src 'none'",
+        },
     )
     if StaticFiles().is_not_modified(response.headers, request.headers):
         return NotModifiedResponse(response.headers)
@@ -997,20 +1002,30 @@ async def serve_theater_output(
     await _require_canvas_access_async(request, theater_id, join_key=join_key)
     _safe_path_param(theater_id, "theater_id")
     output_dir = object_registry.theater_manager.theater(theater_id).output_dir()
+    resolved_output_dir = output_dir.resolve()
     file_path = (output_dir / filename).resolve()
-    if output_dir.resolve() not in file_path.parents:
+    if resolved_output_dir not in file_path.parents:
         raise HTTPException(status_code=400, detail="Invalid output path")
     if not file_path.exists():
         # Check subdirectories of output directory (e.g. output/images/filename)
-        sub_path = output_dir / "images" / filename
-        if sub_path.exists():
+        sub_path = (output_dir / "images" / filename).resolve()
+        if resolved_output_dir in sub_path.parents and sub_path.exists():
             file_path = sub_path
         else:
-            found = list(output_dir.rglob(filename))
+            safe_name = Path(filename).name
+            if not safe_name or safe_name != filename or any(ch in safe_name for ch in "*?[]"):
+                raise HTTPException(status_code=404, detail="Theater output file not found")
+            found = [
+                candidate
+                for candidate in resolved_output_dir.rglob("*")
+                if candidate.is_file() and candidate.name == safe_name
+            ]
             if found:
                 file_path = found[0]
             else:
                 raise HTTPException(status_code=404, detail="Theater output file not found")
+    if not file_path.is_file():
+        raise HTTPException(status_code=404, detail="Theater output file not found")
 
     target_file = file_path
     target_quality = _resolve_requested_quality(quality)
@@ -1020,6 +1035,8 @@ async def serve_theater_output(
     output_headers = {
         "Cache-Control": "no-store" if filename == "story_log.jsonl" else "private, max-age=3600",
         "Vary": "Cookie",
+        "X-Content-Type-Options": "nosniff",
+        "Content-Security-Policy": "sandbox; default-src 'none'",
     }
     response = FileResponse(target_file, headers=output_headers, stat_result=target_file.stat())
     if filename != "story_log.jsonl" and StaticFiles().is_not_modified(response.headers, request.headers):
@@ -1280,10 +1297,21 @@ async def get_theater_config_endpoint(theater_id: str, request: Request):
     return {"theater_id": theater_id, "config_yaml": content}
 
 @app.post("/api/theaters/{theater_id}/config")
-async def save_theater_config_endpoint(theater_id: str, req: SaveTheaterConfigRequest, request: Request):
+async def save_theater_config_endpoint(
+    theater_id: str,
+    req: SaveTheaterConfigRequest,
+    request: Request,
+) -> dict[str, str]:
     """Save raw theater.yaml configuration directly to local theater directory and DB."""
-    await _require_canvas_access_async(request, theater_id)
     _safe_path_param(theater_id, "theater_id")
+    current_user = await get_current_user_async(request)
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Authentication required.")
+    deployment = object_registry.db.get_deployment(theater_id)
+    if not deployment:
+        raise HTTPException(status_code=404, detail="Theater not found.")
+    if deployment.get("user_id") is None or deployment["user_id"] != current_user["id"]:
+        raise HTTPException(status_code=403, detail="Only the theater owner can modify theater configuration.")
 
     try:
         config_data = yaml.safe_load(req.config_yaml)
@@ -1573,12 +1601,26 @@ async def create_and_deploy_theater(request: Request):
                             )
                         lore_files.append((rel_path, content))
                 elif key == "reference_files":
-                    reference_files.append((filename, content))
+                    try:
+                        parts = validate_asset_path(filename)
+                    except ValueError as error:
+                        raise HTTPException(status_code=400, detail=str(error)) from error
+                    reference_files.append(("/".join(parts), content))
                 elif key.startswith("playlist_"):
                     pl_name = key[len("playlist_"):]
+                    _safe_path_param(pl_name, "playlist_name")
+                    try:
+                        parts = validate_asset_path(filename)
+                    except ValueError as error:
+                        raise HTTPException(status_code=400, detail=str(error)) from error
+                    if len(parts) != 1:
+                        raise HTTPException(
+                            status_code=400,
+                            detail="Playlist track filename must be a single path component.",
+                        )
                     if pl_name not in playlists_data:
                         playlists_data[pl_name] = []
-                    playlists_data[pl_name].append((filename, content))
+                    playlists_data[pl_name].append((parts[0], content))
 
     # Build theater configuration
     if advanced_config:
@@ -1714,14 +1756,21 @@ def destroy_theater(theater_id: str, request: Request) -> dict[str, str]:
 
 @app.patch("/api/theaters/{theater_id}")
 @app.post("/api/theaters/{theater_id}/retitle")
-async def retitle_theater(theater_id: str, req: RetitleTheaterRequest, request: Request):
+async def retitle_theater(
+    theater_id: str,
+    req: RetitleTheaterRequest,
+    request: Request,
+) -> dict[str, str]:
     """Update the title of an existing theater. Requires owner authentication."""
+    _safe_path_param(theater_id, "theater_id")
     user = await get_current_user_async(request)
     if not user:
         raise HTTPException(status_code=401, detail="Authentication required to retitle theater.")
 
     dep = object_registry.db.get_deployment(theater_id)
-    if dep and dep.get("user_id") is not None and dep["user_id"] != user["id"]:
+    if not dep:
+        raise HTTPException(status_code=404, detail="Theater not found.")
+    if dep.get("user_id") is None or dep["user_id"] != user["id"]:
         raise HTTPException(status_code=403, detail="Permission denied. Only the theater owner can retitle this theater.")
 
     new_name = req.name.strip()

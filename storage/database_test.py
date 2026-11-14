@@ -636,11 +636,60 @@ class TestDeploymentCreditsAndPersistence(BaseTestCase):
             pass
         super().tearDown()
 
-    def test_record_deployment_insufficient_credits(self):
+    def test_record_deployment_insufficient_credits(self) -> None:
         # User has default 0.0 credits; recording deployment costing 150 should fail
         with self.assertRaises(ValueError) as ctx:
             self.db.record_deployment("expensive_theater", self.user["id"], "KEY-EXP", cost=150.0)
         self.assertIn("insufficient credits", str(ctx.exception).lower())
+
+    def test_record_deployment_atomic_credit_guard_rolls_back_on_race(self) -> None:
+        self.db.add_user_credits(self.user["id"], 20.0, 1.0)
+        real_get_conn = self.db._get_connection
+
+        class RacedCursor:
+            def __init__(self, inner: object) -> None:
+                self._inner = inner
+                self.rowcount = 0
+
+            def execute(self, sql: str, params: tuple[object, ...] = ()) -> object:
+                if sql.startswith("UPDATE users SET credits = credits - ?"):
+                    # Simulate concurrent debit draining credits before UPDATE runs.
+                    self._inner.execute("UPDATE users SET credits = 5.0 WHERE id = ?", (self.user_id,))
+                result = self._inner.execute(sql, params)
+                self.rowcount = self._inner.rowcount
+                return result
+
+            def fetchone(self) -> object:
+                return self._inner.fetchone()
+
+        class RacedConn:
+            def __init__(self, inner: object, user_id: int) -> None:
+                self._inner = inner
+                self._user_id = user_id
+
+            def __enter__(self) -> "RacedConn":
+                self._inner.__enter__()
+                return self
+
+            def __exit__(self, *args: object) -> None:
+                self._inner.__exit__(*args)
+
+            def cursor(self) -> RacedCursor:
+                cur = RacedCursor(self._inner.cursor())
+                cur.user_id = self._user_id
+                return cur
+
+            def rollback(self) -> None:
+                self._inner.rollback()
+
+            def commit(self) -> None:
+                self._inner.commit()
+
+        with patch.object(self.db, "_get_connection", side_effect=lambda: RacedConn(real_get_conn(), self.user["id"])):
+            with self.assertRaises(ValueError) as ctx:
+                self.db.record_deployment("raced_theater", self.user["id"], "KEY-RACE", cost=10.0)
+        self.assertIn("insufficient credits", str(ctx.exception).lower())
+        self.assertIsNone(self.db.get_deployment("raced_theater"))
 
     def test_add_user_credits_validation(self):
         with self.assertRaises(ValueError) as ctx:

@@ -8,6 +8,7 @@ import logging
 import os
 import re
 from typing import Optional
+from urllib.parse import urlsplit
 
 from fastapi import Request, Response, WebSocket, HTTPException
 from fastapi.responses import JSONResponse
@@ -191,6 +192,35 @@ def _canvas_access_grants(request: Request | WebSocket) -> dict[str, str]:
         return {}
 
 
+def _public_base_url() -> str:
+    """Return the operator-configured canonical origin for external callback and reset URLs."""
+    value = os.getenv("PUBLIC_BASE_URL", "").strip().rstrip("/")
+    parsed = urlsplit(value)
+    if (
+        not value
+        or parsed.scheme not in {"https", "http"}
+        or not parsed.netloc
+        or parsed.username
+        or parsed.password
+        or parsed.path not in {"", "/"}
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise HTTPException(
+            status_code=500,
+            detail="PUBLIC_BASE_URL must be a canonical absolute origin, such as https://app.example.com.",
+        )
+    return value
+
+
+def _is_https_request(request: Request | WebSocket) -> bool:
+    """Return True when the incoming request arrived over HTTPS (directly or via proxy)."""
+    forwarded_proto = request.headers.get("x-forwarded-proto", "").split(",")[0].strip().lower()
+    if forwarded_proto == "https":
+        return True
+    return request.url.scheme.lower() == "https"
+
+
 def _grant_canvas_access(response: Response, request: Request, theater_id: str, join_key: str) -> None:
     """Store a verified join key outside the URL for subsequent canvas requests."""
     grants = _canvas_access_grants(request)
@@ -203,6 +233,7 @@ def _grant_canvas_access(response: Response, request: Request, theater_id: str, 
         value=encoded_grants,
         httponly=True,
         samesite="lax",
+        secure=_is_https_request(request),
         max_age=60 * 60 * 12,
     )
 

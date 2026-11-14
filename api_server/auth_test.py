@@ -1,5 +1,6 @@
 """Unit coverage for authentication routes using registry-backed service doubles."""
 
+import os
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -15,8 +16,19 @@ from storage.database import DatabaseConnectionTimeout
 from utils.email_service import EmailSendResult
 
 
-def request(*, cookies=None, base_url="http://testserver/"):
-    return SimpleNamespace(cookies=cookies or {}, base_url=base_url)
+def request(
+    *,
+    cookies: dict[str, str] | None = None,
+    base_url: str = "http://testserver/",
+    scheme: str = "http",
+    headers: dict[str, str] | None = None,
+) -> SimpleNamespace:
+    return SimpleNamespace(
+        cookies=cookies or {},
+        base_url=base_url,
+        headers=headers or {},
+        url=SimpleNamespace(scheme=scheme),
+    )
 
 
 def test_register_creates_session_on_registry_database() -> None:
@@ -26,19 +38,20 @@ def test_register_creates_session_on_registry_database() -> None:
     response = Response()
 
     with patch.object(object_registry, "db", registry_db):
-        result = auth.register_user(auth.RegisterRequest(username="ada", email="a@b.test", password="secret", age_attested=True), response)
+        result = auth.register_user(auth.RegisterRequest(username="ada", email="a@b.test", password="secret", age_attested=True), response, request())
 
     assert result == {"status": "ok", "user": {"id": 4, "username": "ada"}}
     registry_db.register_user.assert_called_once_with("ada", "a@b.test", "secret", age_attested=True)
     registry_db.create_auth_session.assert_called_once_with(4)
     assert "auth_token=session-token" in response.headers["set-cookie"]
+    assert "samesite=lax" in response.headers["set-cookie"].lower()
 
 
 def test_register_translates_registry_validation_error() -> None:
     registry_db = MagicMock()
     registry_db.register_user.side_effect = ValueError("email is taken")
     with patch.object(object_registry, "db", registry_db), pytest.raises(HTTPException, match="email is taken") as error:
-        auth.register_user(auth.RegisterRequest(username="ada", email="a@b.test", password="secret", age_attested=True), Response())
+        auth.register_user(auth.RegisterRequest(username="ada", email="a@b.test", password="secret", age_attested=True), Response(), request())
     assert error.value.status_code == 400
 
 
@@ -52,6 +65,7 @@ def test_register_rejects_invalid_username_length(invalid_username: str) -> None
         auth.register_user(
             auth.RegisterRequest(username=invalid_username, email="a@b.test", password="secret", age_attested=True),
             Response(),
+            request(),
         )
     assert error.value.status_code == 400
     assert "between 3 and 50 characters" in str(error.value.detail)
@@ -68,6 +82,7 @@ def test_register_rejects_invalid_password_length(invalid_password: str) -> None
         auth.register_user(
             auth.RegisterRequest(username="validuser", email="a@b.test", password=invalid_password, age_attested=True),
             Response(),
+            request(),
         )
     assert error.value.status_code == 400
     assert "between 6 and 128 characters" in str(error.value.detail)
@@ -91,7 +106,7 @@ def test_login_rejects_unknown_user_without_creating_a_session():
     registry_db = MagicMock()
     registry_db.authenticate_user.return_value = None
     with patch.object(object_registry, "db", registry_db), pytest.raises(HTTPException) as error:
-        auth.login_user(auth.LoginRequest(username_or_email="none", password="bad"), Response())
+        auth.login_user(auth.LoginRequest(username_or_email="none", password="bad"), Response(), request())
     assert error.value.status_code == 401
     registry_db.create_auth_session.assert_not_called()
 
@@ -139,7 +154,7 @@ def test_auto_login_endpoint_in_local_mode():
     registry_db.create_auth_session.return_value = "local-session"
     response = Response()
     with patch.object(object_registry, "db", registry_db):
-        result = auth.auto_login_user(response)
+        result = auth.auto_login_user(response, request())
 
     assert result["status"] == "ok"
     assert result["user"] == user
@@ -154,7 +169,7 @@ def test_auto_login_endpoint_forbidden_without_testing_flag():
     registry_db = MagicMock()
     response = Response()
     with patch.object(object_registry, "db", registry_db), pytest.raises(HTTPException) as error:
-        auth.auto_login_user(response)
+        auth.auto_login_user(response, request())
 
     assert error.value.status_code == 403
     registry_db.authenticate_user.assert_not_called()
@@ -212,6 +227,7 @@ def test_forgot_password_returns_retryable_error_when_email_not_sent(
     test_app.post("/forgot-password")(auth.forgot_password)
     with (
         flagsaver.flagsaver(testing_use_local=False),
+        patch.dict(os.environ, {"PUBLIC_BASE_URL": "https://narratron.example"}),
         patch.object(object_registry, "db", registry_db),
         patch.object(auth, "send_password_reset_email", return_value=delivery),
         TestClient(test_app) as client,
@@ -239,18 +255,37 @@ def test_forgot_password_accepts_delivery_or_explicit_local_simulation(
     test_app.post("/forgot-password")(auth.forgot_password)
     with (
         flagsaver.flagsaver(testing_use_local=local_mode),
+        patch.dict(os.environ, {"PUBLIC_BASE_URL": "https://narratron.example"}),
         patch.object(object_registry, "db", registry_db),
         patch.object(auth, "send_password_reset_email", return_value=delivery) as send_email,
         TestClient(test_app) as client,
     ):
-        result = client.post("/forgot-password", json={"username_or_email": "ada"})
+        result = client.post(
+            "/forgot-password",
+            json={"username_or_email": "ada"},
+            headers={"Host": "evil.example"},
+        )
 
     assert result.status_code == 200
     assert result.json()["status"] == "ok"
     assert "private-reset-token" not in result.text
     send_email.assert_called_once_with(
-        "ada@example.test", "ada", "http://testserver/deploy?reset_token=private-reset-token",
+        "ada@example.test", "ada", "https://narratron.example/deploy?reset_token=private-reset-token",
     )
+
+
+def test_login_sets_secure_and_samesite_lax_cookie_over_https() -> None:
+    registry_db = MagicMock()
+    registry_db.authenticate_user.return_value = {"id": 9, "username": "ada"}
+    registry_db.create_auth_session.return_value = "https-session"
+    response = Response()
+    https_req = request(scheme="https")
+    with patch.object(object_registry, "db", registry_db):
+        auth.login_user(auth.LoginRequest(username_or_email="ada", password="secret"), response, https_req)
+    cookie_header = response.headers["set-cookie"].lower()
+    assert "samesite=lax" in cookie_header
+    assert "secure" in cookie_header
+    assert "httponly" in cookie_header
 
 
 def test_forgot_password_keeps_unknown_account_response_generic() -> None:

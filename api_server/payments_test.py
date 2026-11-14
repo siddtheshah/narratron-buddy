@@ -72,15 +72,25 @@ class TestPaymentsFlow(BaseTestCase):
     def test_package_checkout_uses_configured_stripe_price_id(self):
         """Predefined packs must use Stripe Price objects, never ad-hoc prices."""
         checkout_session = MagicMock(id="cs_pro", url="https://checkout.example/pro")
-        with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_test_example"}), \
+        with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_test_example", "PUBLIC_BASE_URL": "https://narratron.example"}), \
              patch("api_server.payments.stripe.checkout.Session.create", return_value=checkout_session) as create:
             object_registry.FLAGS.allow_mock_payments = False
             object_registry.FLAGS.testing_use_local = False
-            response = self.client.post("/api/payments/buy-credits", json={
-                "package_id": "pro", "payment_method": "stripe_checkout",
-            })
+            response = self.client.post(
+                "/api/payments/buy-credits",
+                json={"package_id": "pro", "payment_method": "stripe_checkout"},
+                headers={"Host": "evil.example"},
+            )
 
         self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            create.call_args.kwargs["success_url"],
+            "https://narratron.example/deploy?payment=success&session_id={CHECKOUT_SESSION_ID}",
+        )
+        self.assertEqual(
+            create.call_args.kwargs["cancel_url"],
+            "https://narratron.example/deploy?payment=cancelled",
+        )
         self.assertEqual(create.call_args.kwargs["line_items"], [{
             "price": "price_1TzbisRjBSgVFVM6Jmyk0IcL", "quantity": 1,
         }])
@@ -151,7 +161,7 @@ class TestPaymentsFlow(BaseTestCase):
     def test_fixed_packages_and_default_use_configured_prices(self) -> None:
         object_registry.FLAGS.allow_mock_payments = False
         object_registry.FLAGS.testing_use_local = False
-        with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_test_example"}), \
+        with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_test_example", "PUBLIC_BASE_URL": "https://narratron.example"}), \
              patch("api_server.payments.stripe.checkout.Session.create", return_value=MagicMock(id="cs_fixed", url="https://checkout.example/fixed")) as create:
             for package_id in (None, "starter", "pro", "ultra"):
                 with self.subTest(package_id=package_id):
