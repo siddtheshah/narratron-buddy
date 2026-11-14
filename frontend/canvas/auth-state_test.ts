@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { WebSocketRoute } from '@playwright/test';
-import { CANVAS_ORIGIN, expect, STATIC_DIR, test } from '../../testing/ui/canvas_fixtures';
+import { CANVAS_ORIGIN, expect, REPO_ROOT, STATIC_DIR, test } from '../../testing/ui/canvas_fixtures';
 
 type AuthFlowModule = typeof import('/static/generated/canvas/auth-flow.js');
 
@@ -63,10 +63,17 @@ test('canvas uses dynamic isCurrentOrator check and deduplicates initial /api/au
   canvas,
   page,
 }) => {
-  const canvasScript = fs.readFileSync(path.join(STATIC_DIR, 'js', 'canvas.js'), 'utf-8');
+  const canvasScript = fs.readFileSync(
+    path.join(REPO_ROOT, 'frontend', 'canvas', 'canvas.ts'),
+    'utf-8',
+  );
+  const hotkeyScript = fs.readFileSync(
+    path.join(REPO_ROOT, 'frontend', 'canvas', 'hotkey-controls.ts'),
+    'utf-8',
+  );
   expect(canvasScript).toContain('function isCurrentOrator()');
   expect(canvasScript).toContain('isCurrentOrator() && agentWs');
-  expect(canvasScript).toContain('if (!isCurrentOrator()) return;');
+  expect(hotkeyScript).toContain('if (!isCurrentOrator()) return;');
 
   let authMeCount = 0;
   let activeOratorId = 1;

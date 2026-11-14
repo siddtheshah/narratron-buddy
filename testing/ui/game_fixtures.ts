@@ -86,7 +86,6 @@ export interface SubmittedGameAction {
 }
 
 let cachedSnapshots: GameSnapshots | null = null;
-let cachedCanvasJs: string | null = null;
 
 export function loadGameSnapshots(): GameSnapshots {
   if (!cachedSnapshots) {
@@ -94,26 +93,6 @@ export function loadGameSnapshots(): GameSnapshots {
     cachedSnapshots = JSON.parse(fs.readFileSync(filePath, 'utf-8')) as GameSnapshots;
   }
   return cachedSnapshots;
-}
-
-export function readCanvasJsSource(): string {
-  if (cachedCanvasJs === null) {
-    cachedCanvasJs = fs.readFileSync(path.join(REPO_ROOT, 'static', 'js', 'canvas.js'), 'utf-8');
-  }
-  return cachedCanvasJs;
-}
-
-export function sliceCanvasJs(startMarker: string, endMarker: string): string {
-  const source = readCanvasJsSource();
-  const start = source.indexOf(startMarker);
-  if (start < 0) {
-    throw new Error(`Could not find start marker in static/js/canvas.js: ${startMarker}`);
-  }
-  const end = source.indexOf(endMarker, start);
-  if (end <= start) {
-    throw new Error(`Could not find end marker in static/js/canvas.js: ${endMarker}`);
-  }
-  return source.slice(start, end);
 }
 
 export function parseSubmittedAction(postData: string | null): SubmittedGameAction {

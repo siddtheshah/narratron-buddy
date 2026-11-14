@@ -10,7 +10,11 @@ import re
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-CANVAS_ASSETS = {"/static/css/canvas.css", "/static/css/canvas-action-wheel.css", "/static/js/canvas.js"}
+CANVAS_ASSETS = {
+    "/static/css/canvas.css",
+    "/static/css/canvas-action-wheel.css",
+    "/static/generated/canvas/canvas.js",
+}
 
 
 def read_ui_source(path: Path) -> str:

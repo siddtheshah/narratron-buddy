@@ -13,8 +13,12 @@ test.describe('Adventure Guide UI', () => {
       path.join(TEMPLATES_DIR, 'canvas.html'),
       'utf-8',
     );
-    const canvasJs = await fs.promises.readFile(
-      path.join(REPO_ROOT, 'static', 'js', 'canvas.js'),
+    const canvasTs = await fs.promises.readFile(
+      path.join(REPO_ROOT, 'frontend', 'canvas', 'canvas.ts'),
+      'utf-8',
+    );
+    const theaterModalsTs = await fs.promises.readFile(
+      path.join(REPO_ROOT, 'frontend', 'canvas', 'theater-modals.ts'),
       'utf-8',
     );
 
@@ -30,10 +34,10 @@ test.describe('Adventure Guide UI', () => {
     expect(canvasHtml).toContain("Play In-Character, Don't Force Control");
     expect(canvasHtml).toContain('disable adventure mode and take full control');
 
-    expect(canvasJs).toContain('openAdventureGuideModal');
-    expect(canvasJs).toContain('closeAdventureGuideModal');
-    expect(canvasJs).toContain('initAdventureGuide');
-    expect(canvasJs).toContain('narratron_adventure_guide_seen');
+    expect(canvasTs).toContain('openAdventureGuideModal');
+    expect(canvasTs).toContain('closeAdventureGuideModal');
+    expect(canvasTs).toContain('initAdventureGuide');
+    expect(theaterModalsTs).toContain('narratron_adventure_guide_seen');
   });
 
   test('auto-opens adventure guide once per theater and reopens from pullout menu', async ({

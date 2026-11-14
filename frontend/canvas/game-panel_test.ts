@@ -1,8 +1,5 @@
 import { expect, test } from '../../testing/ui/canvas_fixtures';
-import {
-  loadGameSnapshots,
-  sliceCanvasJs,
-} from '../../testing/ui/game_fixtures';
+import { loadGameSnapshots } from '../../testing/ui/game_fixtures';
 import type { GamePayload, GameRenderer } from './game-renderer.js';
 
 type GamePanelModule = typeof import('./game-panel.js');
@@ -22,6 +19,7 @@ const PANEL_MODULE_URL = '/static/generated/canvas/game-panel.js';
 const PANEL_SHIM_URL = '/static/js/game-panel.js';
 const RENDERER_MODULE_URL = '/static/generated/canvas/game-renderer.js';
 const RENDERER_SHIM_URL = '/static/js/game-renderer.js';
+const HOTKEYS_MODULE_URL = '/static/generated/canvas/hotkey-controls.js';
 
 const snapshots = loadGameSnapshots();
 
@@ -201,23 +199,6 @@ test('html panel binding, actions, permissions, sizing, and network isolation', 
 
 test('canvas hotkeys work after clicking game panel', async ({ canvas, page }) => {
   canvas.allowPageErrors();
-  const spaceGuard = sliceCanvasJs(
-    '        // Plain Space is reserved',
-    '        function escapeHtml',
-  );
-  const commandSetup = sliceCanvasJs(
-    "        const oratorCommandOverlay = document.getElementById('orator-command-overlay');",
-    '        const suggestionsHiddenStorageKey =',
-  );
-  const fullHotkeySetup = sliceCanvasJs(
-    '        // Configurable Mic Hotkey Logic',
-    '        window.setMicHotkey =',
-  );
-  const micBtnIdx = fullHotkeySetup.indexOf('        const micHotkeyBtn = null;');
-  if (micBtnIdx < 0) {
-    throw new Error('Could not find micHotkeyBtn marker in hotkey setup');
-  }
-  const hotkeySetup = fullHotkeySetup.slice(micBtnIdx);
 
   const panelPayload: GamePayload = {
     ...snapshots.panel_0,
@@ -258,33 +239,41 @@ test('canvas hotkeys work after clicking game panel', async ({ canvas, page }) =
     moduleScripts: [
       `
       import { createGameRenderer } from '${RENDERER_MODULE_URL}';
-      const theaterId = 'test';
-      const isCurrentOrator = () => true;
-      const stopSceneSpeech = () => {};
-      const actionWheel = { cancelRebinding: () => {} };
+      import { createHotkeyControlsController } from '${HOTKEYS_MODULE_URL}';
       const agentStartStopBtn = document.getElementById('agent-start-stop-btn');
       const agentConnectBtn = document.getElementById('agent-connect-btn');
-      window.micMode = 'vad';
-      let micMode = 'vad';
-      let micPressHeld = false;
+      window.micMode = 'toggle';
+      let micMode = 'toggle';
       let micPressSource = null;
       window.micClicks = 0;
       window.micPressLog = [];
       agentConnectBtn.addEventListener('click', () => { window.micClicks += 1; });
       const beginMicPress = source => {
-        micPressHeld = true;
         micPressSource = source;
         window.micPressLog.push('begin:' + source);
       };
       const releaseMicPress = () => {
-        micPressHeld = false;
         micPressSource = null;
         window.micPressLog.push('release');
       };
       window.setMicMode = mode => { micMode = mode; window.micMode = mode; };
-      ${spaceGuard}
-      ${commandSetup}
-      ${hotkeySetup}
+      createHotkeyControlsController({
+        isCurrentOrator: () => true,
+        getMicMode: () => micMode,
+        getMicPressSource: () => micPressSource,
+        beginMicPress,
+        releaseMicPress,
+        agentStartStopBtn,
+        agentConnectBtn,
+        oratorCommandOverlay: document.getElementById('orator-command-overlay'),
+        oratorCommandForm: document.getElementById('orator-command-form'),
+        oratorCommandInput: document.getElementById('orator-command-input'),
+        oratorCommandStatus: document.getElementById('orator-command-status'),
+        dismissHotkeyDisplay: document.getElementById('orator-command-dismiss-hotkey'),
+        getTheaterId: () => 'test',
+        stopSceneSpeech: () => {},
+        onRebindStart: () => {},
+      });
       const renderer = createGameRenderer({
         container: document.getElementById('game-state-layer'),
         toggleButton: document.getElementById('game-state-toggle-btn'),

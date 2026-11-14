@@ -3,7 +3,6 @@ import { expect, test, type CanvasHarness } from '../../testing/ui/canvas_fixtur
 import {
   loadGameSnapshots,
   parseSubmittedAction,
-  sliceCanvasJs,
 } from '../../testing/ui/game_fixtures';
 import type { GamePayload, GameRenderer } from './game-renderer.js';
 
@@ -30,20 +29,9 @@ interface RendererTestWindow extends Window {
 
 const RENDERER_MODULE_URL = '/static/generated/canvas/game-renderer.js';
 const RENDERER_SHIM_URL = '/static/js/game-renderer.js';
+const AGENT_CONNECTION_MODULE_URL = '/static/generated/canvas/agent-connection.js';
 
 const snapshots = loadGameSnapshots();
-
-function buildAgentLifecycleHtml(): string {
-  const rendererSetup = sliceCanvasJs(
-    '        const gameRenderer = createGameRenderer({',
-    '        const a2uiCanvasRenderer',
-  );
-  const lifecycle = sliceCanvasJs(
-    '        function setAgentStartedUI(started)',
-    '        // Check agent status when active',
-  );
-  return { rendererSetup, lifecycle } as unknown as string;
-}
 
 async function setupAgentGamePage(
   canvas: CanvasHarness,
@@ -52,17 +40,10 @@ async function setupAgentGamePage(
     onStart?: (route: Route) => Promise<void> | void;
   } = {},
 ): Promise<{ starts: string[]; allRequests: string[] }> {
-  const rendererSetup = sliceCanvasJs(
-    '        const gameRenderer = createGameRenderer({',
-    '        const a2uiCanvasRenderer',
-  );
-  const lifecycle = sliceCanvasJs(
-    '        function setAgentStartedUI(started)',
-    '        // Check agent status when active',
-  );
-
   const starts: string[] = [];
   const allRequests: string[] = [];
+
+  await page.routeWebSocket(/\/ws\/test\/agent/, () => {});
 
   await canvas.serveRoute(
     (url) =>
@@ -95,30 +76,62 @@ async function setupAgentGamePage(
       <button id="agent-start-stop-btn"></button>
       <button id="game-state-toggle-btn" hidden></button>
       <div id="game-state-layer" hidden></div>
+      <div id="insufficient-credits-modal" hidden>
+        <p id="credits-modal-message"></p>
+      </div>
     `,
     moduleScripts: [
       `
       import { createGameRenderer } from '${RENDERER_SHIM_URL}';
+      import { createAgentConnectionController } from '${AGENT_CONNECTION_MODULE_URL}';
       const theaterId = 'test';
-      const currenttheaterId = theaterId;
-      let isAgentStarted = false;
-      let agentReconnectTimer = null;
       const agentStartStopBtn = document.getElementById('agent-start-stop-btn');
-      const agentConnectBtn = null;
-      const agentWs = { readyState: WebSocket.OPEN };
+      const creditsModal = document.getElementById('insufficient-credits-modal');
+      const creditsModalMessage = document.getElementById('credits-modal-message');
       window.orator = true;
-      const isCurrentOrator = () => window.orator;
-      const isActiveCanvasWindow = () => true;
-      const isCollabModeEnabled = () => false;
-      const hasContributorsPermission = () => false;
-      const fetchLatestImage = () => {};
-      const connectAgent = async () => {};
-      const cleanupAgentConnection = () => {};
-      const showInsufficientCreditsModal = message => { window.creditMessage = message; };
-      const showShareToast = message => { window.startErrorMessage = message; };
-      ${rendererSetup}
-      ${lifecycle}
-      window.checkAgentStatus = checkAgentStatus;
+      Object.defineProperty(window, 'creditMessage', {
+        get() {
+          if (!creditsModal?.classList.contains('active')) return undefined;
+          return creditsModalMessage?.textContent || undefined;
+        },
+        configurable: true,
+      });
+      let agentConnection = null;
+      const gameRenderer = createGameRenderer({
+        container: document.getElementById('game-state-layer'),
+        toggleButton: document.getElementById('game-state-toggle-btn'),
+        actionUrl: () => '/api/game/action?theater_id=' + encodeURIComponent(theaterId),
+        canContribute: () => false,
+        canMove: () => window.orator,
+        canEdit: () => window.orator,
+        refresh: () => {},
+        beforeOpen: async () => {
+          if (window.orator && !agentConnection.isAgentStarted()) {
+            await agentConnection.startAgentTheater();
+          }
+        },
+      });
+      agentConnection = createAgentConnectionController({
+        theaterId,
+        agentStartStopBtn,
+        agentConnectBtn: null,
+        statusIndicator: null,
+        insufficientCreditsModal: creditsModal,
+        creditsModalMessage,
+        isCurrentOrator: () => window.orator,
+        isActiveCanvasWindow: () => true,
+        getMicMode: () => 'toggle',
+        refreshMicrophoneDevices: async () => {},
+        getStartAudioRecorderWorklet: () => undefined,
+        getSetMicrophoneTransmissionEnabled: () => undefined,
+        getStopMicrophone: () => undefined,
+        closeGameRenderer: () => gameRenderer.close(),
+        showShareToast: message => { window.startErrorMessage = message; },
+        updateAgentThought: () => {},
+        setPcmBroadcasting: () => {},
+        stopSceneSpeech: () => {},
+      });
+      window.checkAgentStatus = () => agentConnection.checkAgentStatus();
       window.gameRenderer = gameRenderer;
       gameRenderer.render({
         definition_hash: 'test',
@@ -126,7 +139,7 @@ async function setupAgentGamePage(
         state: {},
         view: [{ kind: 'text', props: { text: 'Game ready' } }],
       });
-      setAgentStartedUI(false);
+      agentConnection.setAgentStartedUI(false);
       `,
     ],
   });
@@ -199,9 +212,6 @@ async function setupMovableGamePage(canvas: CanvasHarness, page: Page): Promise<
   await page.getByRole('button', { name: 'Toggle game' }).click();
   await expect(page.locator('.game-panel')).toBeVisible();
 }
-
-// Keep TypeScript happy about unused helper check
-void buildAgentLifecycleHtml;
 
 test('deprecated game-renderer shim re-exports createGameRenderer', async ({ canvas, page }) => {
   await canvas.mount();
@@ -331,51 +341,17 @@ test('closing game during summon cancels pending open', async ({ canvas, page })
 });
 
 test('canvas game permissions do not interrupt startup', async ({ canvas, page }) => {
-  const rendererSetup = sliceCanvasJs(
-    '        const gameRenderer = createGameRenderer({',
-    '        const a2uiCanvasRenderer',
-  );
-  const permissionHelpers = sliceCanvasJs(
-    '        function isCollabModeEnabled()',
-    '        // Beyond20',
-  );
-
-  const fullSource = (await import('../../testing/ui/game_fixtures')).readCanvasJsSource();
-  const declarations = [
-    'let currentUser = null;',
-    'let viewerCollabEnabled = false;',
-    'let currentBatonState = null;',
-  ] as const;
-  const parts: Array<{ pos: number; code: string }> = declarations.map((decl) => {
-    const pos = fullSource.indexOf(decl);
-    if (pos < 0) throw new Error(`Missing declaration in canvas.js: ${decl}`);
-    return { pos, code: decl };
-  });
-  parts.push({ pos: fullSource.indexOf(rendererSetup), code: rendererSetup });
-  const rolePos = fullSource.indexOf('        applyRoleUI(false);');
-  if (rolePos < 0) throw new Error('Missing applyRoleUI(false) in canvas.js');
-  parts.push({ pos: rolePos, code: 'gameRenderer.render();' });
-  parts.sort((a, b) => a.pos - b.pos);
-  const script = parts.map((p) => p.code).join('\n');
-
-  await canvas.mount({
-    html: '<button id="game-state-toggle-btn" hidden></button><div id="game-state-layer" hidden></div>',
-    moduleScripts: [
-      `
-      import { createGameRenderer } from '${RENDERER_SHIM_URL}';
-      const isCurrentOrator = () => Boolean(window._isActiveOratorState);
-      const fetchLatestImage = () => {};
-      ${permissionHelpers}
-      ${script}
-      window.canvasInitialized = true;
-      `,
-    ],
+  await canvas.openCanvas({
+    isOrator: false,
+    apiRoutes: {
+      '/api/latest': async (route) => {
+        await route.fulfill({ json: { game_state: snapshots.counter_badge_0 } });
+      },
+    },
   });
 
+  await expect(page.locator('#game-state-toggle-btn')).toBeVisible();
   expect(canvas.pageErrors).toEqual([]);
-  expect(
-    await page.evaluate(() => (window as unknown as AgentGameWindow).canvasInitialized),
-  ).toBe(true);
 });
 
 test('checkers renderer moves, mobile geometry, viewer/contributor permissions, SVG asset, and error recovery', async ({

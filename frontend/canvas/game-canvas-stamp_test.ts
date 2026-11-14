@@ -4,7 +4,6 @@ import { expect, REPO_ROOT, test } from '../../testing/ui/canvas_fixtures';
 import {
   loadGameSnapshots,
   parseSubmittedAction,
-  sliceCanvasJs,
   type SubmittedGameAction,
 } from '../../testing/ui/game_fixtures';
 import type { GamePayload } from './game-renderer.js';
@@ -25,10 +24,12 @@ test('winning checkers refreshes the page and keeps crown when panel closes', as
   let currentGame: GamePayload = snapshots.checkers_near_win_0;
   let hasWon = false;
 
-  const refreshOutput = sliceCanvasJs(
-    '                gameRenderer.render(data.game_state);',
-    '                if (data.sticky_notes',
+  const canvasTs = fs.readFileSync(
+    path.join(REPO_ROOT, 'frontend', 'canvas', 'canvas.ts'),
+    'utf-8',
   );
+  expect(canvasTs).toContain('const gameCanvasRevision = data.game_state?.canvas_revision;');
+  expect(canvasTs).toContain('void requestPageDoodles();');
 
   await canvas.serveRoute(
     (url) =>
@@ -83,8 +84,8 @@ test('winning checkers refreshes the page and keeps crown when panel closes', as
     `,
     moduleScripts: [
       `
-      import { createGameRenderer } from '/static/js/game-renderer.js';
-      import { createDoodleRenderer } from '/static/js/canvas-renderers.js';
+      import { createGameRenderer } from '/static/generated/canvas/game-renderer.js';
+      import { createDoodleRenderer } from '/static/generated/canvas/doodle-renderer.js';
       let lastGameCanvasRevision = null;
       const stamps = createDoodleRenderer({
         canvas: document.querySelector('#drawing'),
@@ -97,7 +98,12 @@ test('winning checkers refreshes the page and keeps crown when panel closes', as
       }
       async function refresh() {
         const data = await (await fetch('/latest')).json();
-        ${refreshOutput}
+        gameRenderer.render(data.game_state);
+        const gameCanvasRevision = data.game_state?.canvas_revision;
+        if (gameCanvasRevision !== undefined && gameCanvasRevision !== lastGameCanvasRevision) {
+          lastGameCanvasRevision = gameCanvasRevision;
+          void requestPageDoodles();
+        }
       }
       const gameRenderer = createGameRenderer({
         container: document.querySelector('#game'),
