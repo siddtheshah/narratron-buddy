@@ -46,10 +46,13 @@ def test_a2ui_canvas_server_accepts_flexible_configuration(monkeypatch):
     assert page.status_code == 200
     assert "A2UI Canvas Lab" in page.text
     assert "Rendered preview" in page.text
-    assert "translate(-50%, -50%)" in page.text
+    assert "/static/generated/canvas/testlab-a2ui-canvas-lab.js" in page.text
+    script = client.get("/static/generated/canvas/testlab-a2ui-canvas-lab.js")
+    assert script.status_code == 200
+    assert "translate(-50%, -50%)" in script.text
     # The server stores the test payload beneath run.result; the preview must
     # unwrap that envelope before looking for surfaces.
-    assert "run?.result?.surfaces?run.result:run" in page.text
+    assert "run?.result?.surfaces ? run.result : run" in script.text
 
     images = client.get("/api/a2ui-canvas/images")
     assert images.status_code == 200

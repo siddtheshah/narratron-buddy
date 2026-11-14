@@ -116,21 +116,19 @@ export interface AdventureRunnerController {
   destroy(): void;
 }
 
-declare global {
-  interface Window {
-    switchTab?: (tabId: string, btn?: HTMLElement | null) => void;
-    setQuickAction?: (text: string) => void;
-    toggleToolArgs?: (turnId: string, toolIdx: number) => void;
-    toggleLoreDrawer?: (turnId: string) => void;
-    viewLoreDocument?: (docPath: string) => Promise<void>;
-    closeLoreModal?: () => void;
-    closeLoreModalOnBackdrop?: (event: MouseEvent) => void;
-    copyModalLoreContent?: (btn: HTMLButtonElement) => void;
-    copyToolArgs?: (turnId: string, toolIdx: number, btn: HTMLButtonElement) => void;
-    copyToolResult?: (turnId: string, toolIdx: number, btn: HTMLButtonElement) => void;
-    closeToolArgs?: (turnId: string) => void;
-    formatJsonHtml?: (obj: unknown) => string;
-  }
+interface AdventureRunnerWindow extends Window {
+  switchTab?: (tabId: string, btn?: HTMLElement | null) => void;
+  setQuickAction?: (text: string) => void;
+  toggleToolArgs?: (turnId: string, toolIdx: number) => void;
+  toggleLoreDrawer?: (turnId: string) => void;
+  viewLoreDocument?: (docPath: string) => Promise<void>;
+  closeLoreModal?: () => void;
+  closeLoreModalOnBackdrop?: (event: MouseEvent) => void;
+  copyModalLoreContent?: (btn: HTMLButtonElement) => void;
+  copyToolArgs?: (turnId: string, toolIdx: number, btn: HTMLButtonElement) => void;
+  copyToolResult?: (turnId: string, toolIdx: number, btn: HTMLButtonElement) => void;
+  closeToolArgs?: (turnId: string) => void;
+  formatJsonHtml?: (obj: unknown) => string;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -1118,18 +1116,19 @@ export function initAdventureRunner(): AdventureRunnerController | null {
   btnSend.addEventListener('click', onSendClick);
   userInput.addEventListener('keydown', onUserInputKeydown);
 
-  window.switchTab = switchTab;
-  window.setQuickAction = setQuickAction;
-  window.toggleToolArgs = toggleToolArgs;
-  window.toggleLoreDrawer = toggleLoreDrawer;
-  window.viewLoreDocument = viewLoreDocument;
-  window.closeLoreModal = closeLoreModal;
-  window.closeLoreModalOnBackdrop = closeLoreModalOnBackdrop;
-  window.copyModalLoreContent = copyModalLoreContent;
-  window.copyToolArgs = copyToolArgs;
-  window.copyToolResult = copyToolResult;
-  window.closeToolArgs = closeToolArgs;
-  window.formatJsonHtml = formatJsonHtml;
+  const win = window as AdventureRunnerWindow;
+  win.switchTab = switchTab;
+  win.setQuickAction = setQuickAction;
+  win.toggleToolArgs = toggleToolArgs;
+  win.toggleLoreDrawer = toggleLoreDrawer;
+  win.viewLoreDocument = viewLoreDocument;
+  win.closeLoreModal = closeLoreModal;
+  win.closeLoreModalOnBackdrop = closeLoreModalOnBackdrop;
+  win.copyModalLoreContent = copyModalLoreContent;
+  win.copyToolArgs = copyToolArgs;
+  win.copyToolResult = copyToolResult;
+  win.closeToolArgs = closeToolArgs;
+  win.formatJsonHtml = formatJsonHtml;
 
   void loadAdventures();
 
