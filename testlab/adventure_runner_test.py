@@ -481,9 +481,13 @@ def test_adventure_runner_lab_api_routes(sample_adventure):
     page = client.get("/adventure-runner")
     assert page.status_code == 200
     assert "Adventure Runner Lab" in page.text
-    assert "toggleToolArgs" in page.text
+    assert "/static/generated/canvas/testlab-adventure-runner.js" in page.text
     assert "tool-details-container" in page.text
-    assert "formatJsonHtml" in page.text
+    script = client.get("/static/generated/canvas/testlab-adventure-runner.js")
+    assert script.status_code == 200
+    assert "toggleToolArgs" in script.text
+    assert "tool-details-container" in script.text
+    assert "formatJsonHtml" in script.text
 
     # 2. GET index has adventure-runner card
     index = client.get("/")
