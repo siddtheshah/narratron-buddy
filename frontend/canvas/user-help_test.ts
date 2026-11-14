@@ -11,6 +11,7 @@ import {
 
 type UserHelpModule = typeof import('/static/generated/canvas/user-help.js');
 type ChatControllerModule = typeof import('/static/generated/canvas/chat-controller.js');
+type PopoutModule = typeof import('/static/generated/canvas/popout.js');
 
 interface HelpRequestRecord {
   readonly url: string;
@@ -41,6 +42,7 @@ interface ChatHelpHarnessWindow extends Window {
 const USER_HELP_MODULE_URL = '/static/generated/canvas/user-help.js';
 const USER_HELP_SHIM_URL = '/static/js/user-help.js';
 const CHAT_CONTROLLER_MODULE_URL = '/static/generated/canvas/chat-controller.js';
+const POPOUT_MODULE_URL = '/static/generated/canvas/popout.js';
 
 function loadJoinSplashVisitorHelp(): { styles: string; markup: string } {
   const template = fs.readFileSync(path.join(TEMPLATES_DIR, 'join_splash.html'), 'utf-8');
@@ -68,21 +70,8 @@ function loadCanvasChatFormMarkup(): string {
   return formMatch[0];
 }
 
-function loadPopoutChatRendererScript(): string {
-  const template = fs.readFileSync(path.join(TEMPLATES_DIR, 'popout.html'), 'utf-8');
-  const startMarker = '        function getAuthorColor(';
-  const endMarker = '        let currentChatUsername = "";';
-  const start = template.indexOf(startMarker);
-  const end = template.indexOf(endMarker, start);
-  if (start < 0 || end <= start) {
-    throw new Error('Could not locate renderChatMessage in templates/popout.html');
-  }
-  return template.slice(start, end);
-}
-
 const VISITOR_HELP_FIXTURE = loadJoinSplashVisitorHelp();
 const CANVAS_CHAT_FORM_MARKUP = loadCanvasChatFormMarkup();
-const POPOUT_CHAT_RENDERER_SCRIPT = loadPopoutChatRendererScript();
 
 async function mountVisitorHelp(
   canvas: CanvasHarness,
@@ -526,13 +515,15 @@ for (const view of ['canvas', 'popout'] as const) {
         { moduleUrl: CHAT_CONTROLLER_MODULE_URL, msg: helpMessage },
       );
     } else {
-      await page.addScriptTag({
-        content: `window.fetch = async () => ({ ok: true, json: async () => [] });\n${POPOUT_CHAT_RENDERER_SCRIPT}`,
-      });
-      await page.evaluate((msg) => {
-        const win = window as unknown as ChatHelpHarnessWindow;
-        document.querySelector('#messages')!.appendChild(win.renderChatMessage!(msg));
-      }, helpMessage);
+      await page.evaluate(
+        async ({ moduleUrl, msg }) => {
+          const { renderChatMessage } = await window.__importModule<PopoutModule>(moduleUrl);
+          const win = window as unknown as ChatHelpHarnessWindow;
+          win.renderChatMessage = renderChatMessage;
+          document.querySelector('#messages')!.appendChild(renderChatMessage(msg));
+        },
+        { moduleUrl: POPOUT_MODULE_URL, msg: helpMessage },
+      );
     }
 
     const helpBody = page.locator('.help-markdown');
