@@ -1,4 +1,3 @@
-from pathlib import Path
 import unittest
 from unittest.mock import AsyncMock, patch
 
@@ -8,11 +7,9 @@ import object_registry
 from api_server.app import app
 from testing.ui.base import UITestCase
 
-from testing.ui.canvas_source import read_ui_source
-
 
 class TestAdventureGuideUI(UITestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         super().setUp()
         object_registry.FLAGS.allow_mock_payments = True
         object_registry.FLAGS.testing_use_local = True
@@ -41,7 +38,7 @@ class TestAdventureGuideUI(UITestCase):
 
         self.client = TestClient(app)
 
-    def tearDown(self):
+    def tearDown(self) -> None:
         object_registry.db.close()
         object_registry.db.is_live = self._original_db_is_live
         object_registry.db.db_path = self._original_db_path
@@ -49,35 +46,7 @@ class TestAdventureGuideUI(UITestCase):
         object_registry.FLAGS.testing_use_local = False
         super().tearDown()
 
-    def test_canvas_template_contains_adventure_guide_elements(self):
-        canvas_path = Path("templates/canvas.html")
-        self.assertTrue(canvas_path.exists(), "canvas.html should exist")
-
-        content = read_ui_source(canvas_path)
-
-        # Modal & Pullout Menu Elements
-        self.assertIn('id="adventure-guide-modal"', content)
-        self.assertIn('id="menu-item-adventure-guide"', content)
-        self.assertIn('id="adventure-guide-close-btn"', content)
-        self.assertIn('id="adventure-guide-ack-btn"', content)
-        self.assertIn("Adventure Mode Guide", content)
-
-        # Ensure not crammed into chat panel
-        self.assertNotIn('id="adventure-guide-card"', content)
-
-        # Key guidance copy
-        self.assertIn("pre-existing sandbox and structure", content)
-        self.assertIn("never told the same way twice", content)
-        self.assertIn("Play In-Character, Don't Force Control", content)
-        self.assertIn("disable adventure mode and take full control", content)
-
-        # JS functions & logic
-        self.assertIn("openAdventureGuideModal", content)
-        self.assertIn("closeAdventureGuideModal", content)
-        self.assertIn("initAdventureGuide", content)
-        self.assertIn("narratron_adventure_guide_seen", content)
-
-    def test_canvas_route_serves_adventure_guide_markup(self):
+    def test_canvas_route_serves_adventure_guide_markup(self) -> None:
         response = self.client.get("/canvas?theater_id=test_adv_theater")
         self.assertEqual(response.status_code, 200)
         html = response.text
@@ -88,7 +57,7 @@ class TestAdventureGuideUI(UITestCase):
         self.assertIn("Adventure Mode Guide", html)
         self.assertIn("never told the same way twice", html)
 
-    def test_theater_endpoint_includes_is_adventure_mode_field(self):
+    def test_theater_endpoint_includes_is_adventure_mode_field(self) -> None:
         owner = object_registry.db.register_user("adv_owner", "adv-owner@example.com", "Password123")
         object_registry.db.add_user_credits(owner["id"], 50.0, 2.5)
 

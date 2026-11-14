@@ -33,7 +33,7 @@ const FRIENDS_SHIM_URL = '/static/js/friends.js';
 function prepareTemplateHtml(templateName: string, authScript: string): string {
   let html = fs.readFileSync(path.join(TEMPLATES_DIR, templateName), 'utf-8');
   html = html.replace(
-    /<script[^>]+src="(?!\/static\/generated\/canvas\/(?:friends|profile)\.js)[^"]+"[^>]*><\/script>/g,
+    /<script[^>]+src="(?!\/static\/generated\/canvas\/(?:friends|join-splash|profile)\.js)[^"]+"[^>]*><\/script>/g,
     '',
   );
   html = html.replace(/<link[^>]+href="https?:\/\/[^>]*>/g, '');

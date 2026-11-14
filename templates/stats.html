@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/css/auth-flow.css">
-  <script src="/static/js/auth-flow.js"></script>
+  <script type="module" src="/static/generated/canvas/auth-flow.js"></script>
   <style>
     :root {
       --bg-gradient: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #311042 100%);
@@ -512,7 +512,7 @@
           <div class="live-dot"></div>
           Live Tracking
         </div>
-        <button class="nav-btn" onclick="fetchStats()">
+        <button type="button" id="refresh-stats-btn" class="nav-btn">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
             stroke-linecap="round" stroke-linejoin="round">
             <polyline points="23 4 23 10 17 10"></polyline>
@@ -635,160 +635,7 @@
     Narratron Stats Tracking & Analytics System &copy; 2026 &middot; <a href="/terms">Terms</a> &middot; <a href="/privacy">Privacy</a>
   </footer>
 
-  <script>
-    async function fetchStats() {
-      try {
-        const res = await fetch('/api/stats');
-        if (!res.ok) throw new Error('Failed to load stats data');
-        const data = await res.json();
-        renderDashboard(data);
-      } catch (err) {
-        console.error(err);
-      }
-    }
-
-    function renderDashboard(data) {
-      // Metric values
-      document.getElementById('val-accounts').textContent = data.total_accounts.toLocaleString();
-      document.getElementById('val-active-7d').textContent = data.active_users_7d.toLocaleString();
-      document.getElementById('val-total-views').textContent = data.total_theater_views.toLocaleString();
-      document.getElementById('val-views-7d').textContent = data.theater_views_7d.toLocaleString();
-
-      // Render Views Bar Chart
-      renderBarChart('chart-daily-views', data.daily_views_7d, 'views', false);
-
-      // Render Active Users Bar Chart
-      renderBarChart('chart-daily-users', data.daily_active_users_7d, 'active_users', true);
-
-      // Render Top Theaters Table
-      renderTopTheaters(data.top_viewed_theaters);
-    }
-
-    function renderBarChart(containerId, list, key, isAlt) {
-      const container = document.getElementById(containerId);
-      container.innerHTML = '';
-
-      if (!list || list.length === 0) {
-        container.innerHTML = '<div class="empty-state">No chart data available</div>';
-        return;
-      }
-
-      const maxVal = Math.max(...list.map(item => item[key] || 0), 1);
-
-      list.forEach(item => {
-        const val = item[key] || 0;
-        const pct = Math.max((val / maxVal) * 100, 4); // Min height 4%
-        const dateStr = item.date ? item.date.slice(5) : ''; // MM-DD
-
-        const col = document.createElement('div');
-        col.className = 'bar-col';
-        col.innerHTML = `
-          <div class="bar-wrapper">
-            <div class="bar-val">${val}</div>
-            <div class="bar-fill ${isAlt ? 'alt' : ''}" style="height: ${pct}%;"></div>
-          </div>
-          <div class="bar-label">${dateStr}</div>
-        `;
-        container.appendChild(col);
-      });
-    }
-
-    function renderTopTheaters(theaters) {
-      const tbody = document.getElementById('top-theaters-body');
-      tbody.innerHTML = '';
-
-      if (!theaters || theaters.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="5" class="empty-state">No theater view history recorded yet.</td></tr>';
-        return;
-      }
-
-      theaters.forEach((s, idx) => {
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-          <td style="font-weight: 600; color: var(--text-muted);">#${idx + 1}</td>
-          <td class="theater-name">${escapeHtml(s.name || s.theater_id)}</td>
-          <td><span class="theater-id-tag">${escapeHtml(s.theater_id)}</span></td>
-          <td><span class="views-badge">👁️ ${s.views}</span></td>
-          <td>
-            <button type="button" class="nav-btn view-canvas-btn" data-narratron-theater-id="${escapeHtml(s.theater_id)}" style="padding: 6px 12px; font-size: 0.85rem;">
-              View Canvas
-            </button>
-          </td>
-        `;
-        tr.querySelector('.view-canvas-btn').addEventListener('click', () => openJoinKeyModal(s.theater_id));
-        tbody.appendChild(tr);
-      });
-    }
-
-    let pendingtheaterId = null;
-    const joinModal = document.getElementById('join-modal');
-    const joinKeyInput = document.getElementById('join-key-input');
-    const joinError = document.getElementById('join-error');
-
-    function openJoinKeyModal(theaterId) {
-      pendingtheaterId = theaterId;
-      document.getElementById('join-narratron-theater-id').textContent = theaterId;
-      joinKeyInput.value = '';
-      joinError.textContent = '';
-      joinModal.hidden = false;
-      joinKeyInput.focus();
-    }
-
-    function closeJoinKeyModal() {
-      joinModal.hidden = true;
-      pendingtheaterId = null;
-    }
-
-    async function submitJoinKey() {
-      const joinKey = joinKeyInput.value.trim();
-      joinError.textContent = '';
-      if (!joinKey) {
-        joinError.textContent = 'Please enter a Join Key.';
-        return;
-      }
-      try {
-        const response = await fetch('/api/theaters/resolve-join-key', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ join_key: joinKey }),
-        });
-        const data = await response.json();
-        if (!response.ok || data.theater_id !== pendingtheaterId) {
-          joinError.textContent = response.ok
-            ? 'That Join Key belongs to a different theater.'
-            : (data.detail || 'Invalid Join Key.');
-          return;
-        }
-        window.location.href = `/canvas?theater_id=${encodeURIComponent(data.theater_id)}`;
-      } catch (error) {
-        joinError.textContent = 'Unable to verify the Join Key. Please try again.';
-      }
-    }
-
-    document.getElementById('join-cancel').addEventListener('click', closeJoinKeyModal);
-    document.getElementById('join-submit').addEventListener('click', submitJoinKey);
-    joinKeyInput.addEventListener('keydown', (event) => {
-      if (event.key === 'Enter') submitJoinKey();
-      if (event.key === 'Escape') closeJoinKeyModal();
-    });
-    joinModal.addEventListener('click', (event) => {
-      if (event.target === joinModal) closeJoinKeyModal();
-    });
-
-    function escapeHtml(str) {
-      if (!str) return '';
-      return String(str)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#039;');
-    }
-
-    // Initial fetch and 10s auto-refresh
-    fetchStats();
-    setInterval(fetchStats, 10000);
-  </script>
+  <script type="module" src="/static/generated/canvas/stats.js"></script>
 </body>
 
 </html>
