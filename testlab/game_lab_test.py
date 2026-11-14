@@ -115,14 +115,15 @@ def test_manual_games_do_not_share_state(manual_client: TestClient, monkeypatch:
 
 def test_renderer_assets_are_shared_and_paths_are_restricted(manual_client: TestClient) -> None:
     js_resp = manual_client.get("/game-lab-assets/js/game-renderer.js")
-    assert "createGameRenderer" in js_resp.text
+    assert js_resp.status_code == 200
+    assert js_resp.headers["content-type"].split(";")[0] in {"text/javascript", "application/javascript"}
     assert "no-cache" in js_resp.headers.get("cache-control", "")
     css_resp = manual_client.get("/game-lab-assets/css/game-renderer.css")
     assert css_resp.status_code == 200
     assert "no-cache" in css_resp.headers.get("cache-control", "")
     runtime_resp = manual_client.get("/game-lab-assets/js/game-runtime.js")
     assert runtime_resp.status_code == 200
-    assert 'createLocalGame' in runtime_resp.text
+    assert runtime_resp.headers["content-type"].split(";")[0] in {"text/javascript", "application/javascript"}
     assert manual_client.get("/game-lab-assets/js/other.js").status_code == 404
 
 

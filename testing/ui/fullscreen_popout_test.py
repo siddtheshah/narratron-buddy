@@ -24,40 +24,11 @@ class TestFullscreenPopout(UITestCase):
         self.addCleanup(popout_access_patcher.stop)
         self.client = TestClient(app)
 
-    def test_canvas_contains_fullscreen_and_popout_controls(self) -> None:
-        response = self.client.get("/canvas?theater_id=test_theater")
-        self.assertEqual(response.status_code, 200)
-        html = response.text
-        self.assertIn('src="/static/generated/canvas/canvas.js"', html)
-        self.assertIn('href="/static/css/canvas.css"', html)
-
-        for element in (
-            'id="fullscreen-btn"',
-            'id="obs-theater-btn"',
-            'id="fullscreen-icon"',
-            'id="chat-side-toggle-btn"',
-            'id="popout-expand-btn"',
-        ):
-            self.assertIn(element, html)
-
-        for element in (
-            'id="popout-window-btn"',
-            'id="popped-out-placeholder"',
-        ):
-            self.assertNotIn(element, html)
-
-    def test_popout_route_serves_chat_template(self) -> None:
-        response = self.client.get("/popout?theater_id=test_theater")
-        self.assertEqual(response.status_code, 200)
-        html = response.text
-
-        for element in (
-            "Narratron Pop-out Chat",
-            'id="dock-back-btn"',
-            'id="chat-messages"',
-            'id="popout-prompt-text"',
-            "/static/generated/canvas/popout.js",
-        ):
-            self.assertIn(element, html)
-
-
+    def test_canvas_and_popout_routes_serve_html(self) -> None:
+        # Controls and interactions are covered by fullscreen_popout_test.ts
+        # and popout_test.ts; Python verifies the authorized server routes.
+        for route in ("/canvas", "/popout"):
+            with self.subTest(route=route):
+                response = self.client.get(f"{route}?theater_id=test_theater")
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.headers["content-type"].split(";")[0], "text/html")

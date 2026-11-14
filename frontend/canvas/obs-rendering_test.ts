@@ -129,6 +129,14 @@ for (const obsPath of ['/obs?theater_id=test&join_key=JOIN', '/obs/test?join_key
     await page.goto(`${CANVAS_ORIGIN}${obsPath}`);
 
     await expect(page.locator('.scene-description')).toHaveText('The curtain rises.');
+    await expect(page).toHaveTitle('Narratron OBS Canvas');
+    await expect(page.locator('#canvas-renderer')).toBeVisible();
+    await expect(page.locator('#doodle-canvas')).toBeAttached();
+    // The module replaces the mount placeholder with the live narration pane.
+    await expect(page.locator('.scene-description')).toBeVisible();
+    for (const selector of ['#chat-sidebar', '#fullscreen-btn', '#bottom-bar', '#prompt-toggle-btn', '#history-paging-controls']) {
+      await expect(page.locator(selector)).toHaveCount(0);
+    }
     await expect(page.locator('#current-image')).toHaveJSProperty('complete', true);
     await expect(page.locator('#current-image')).toHaveJSProperty('naturalWidth', 1);
 

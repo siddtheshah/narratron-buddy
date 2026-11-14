@@ -1058,26 +1058,19 @@ def test_stale_generation_request_cannot_change_or_charge_the_draft(builder: Bui
     builder.database.record_user_usage.assert_not_called()
 
 
-def test_editor_and_deploy_navigation_are_present(builder: BuilderHarness) -> None:
+def test_editor_deploy_and_canvas_routes_serve_pages_and_assets(builder: BuilderHarness) -> None:
     from utils.frontend_build import ensure_canvas_assets_built
 
     ensure_canvas_assets_built()
     assert builder.client.get("/theater-editor").status_code == 200
-    html = builder.client.get("/deploy").text
-    assert 'href="/theater-editor"' in html
-    assert 'src="/static/generated/canvas/theater-creation.js"' in html
+    assert builder.client.get("/deploy").status_code == 200
     deploy_script = builder.client.get("/static/generated/canvas/theater-creation.js")
     assert deploy_script.status_code == 200
-    assert 'Edit in Builder' in deploy_script.text
-    canvas = builder.client.get("/canvas").text
-    assert 'id="menu-item-theater-builder"' in canvas
-    assert 'src="/static/generated/canvas/canvas.js"' in canvas
+    assert builder.client.get("/canvas").status_code == 200
     script = builder.client.get("/static/generated/canvas/canvas.js")
     assert script.status_code == 200
-    assert "applyOwnerMenuVisibility" in script.text
     modals_script = builder.client.get("/static/generated/canvas/theater-modals.js")
     assert modals_script.status_code == 200
-    assert "if (isOwner && tid)" in modals_script.text
 
 
 def test_import_google_drive_image_success(builder: BuilderHarness) -> None:

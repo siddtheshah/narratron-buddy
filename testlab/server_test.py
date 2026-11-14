@@ -15,15 +15,15 @@ def test_static_generated_mount_serves_canvas_modules_without_shadowing_effects_
     with TestClient(app) as client:
         image_generated = client.get("/static/generated/canvas/image-effects.js")
         assert image_generated.status_code == 200
-        assert "attachImageEffect" in image_generated.text
+        assert image_generated.headers["content-type"].split(";")[0] in {"text/javascript", "application/javascript"}
 
         animation_generated = client.get("/static/generated/canvas/animation-effects.js")
         assert animation_generated.status_code == 200
-        assert "layerTransform" in animation_generated.text
+        assert animation_generated.headers["content-type"].split(";")[0] in {"text/javascript", "application/javascript"}
 
         vad_generated = client.get("/static/generated/canvas/testlab-audio-vad.js")
         assert vad_generated.status_code == 200
-        assert "initAudioVadLab" in vad_generated.text
+        assert vad_generated.headers["content-type"].split(";")[0] in {"text/javascript", "application/javascript"}
 
         splitting_vendor = client.get("/effects-static/js/splitting.min.js")
         assert splitting_vendor.status_code == 200

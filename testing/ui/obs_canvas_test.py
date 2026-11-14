@@ -18,46 +18,10 @@ class TestOBSCanvas(UITestCase):
         self.addCleanup(access_patcher.stop)
         self.client = TestClient(app)
 
-    def test_obs_route_omits_ui_chrome(self) -> None:
-        response = self.client.get("/obs?theater_id=test_theater")
-        self.assertEqual(response.status_code, 200)
-        html = response.text
-
-        for element in (
-            "Narratron OBS Canvas",
-            'id="canvas-renderer"',
-            'id="doodle-canvas"',
-            'id="current-image"',
-            'import { initObsCanvas } from "/static/generated/canvas/obs.js";',
-        ):
-            self.assertIn(element, html)
-        for element in (
-            'id="chat-sidebar"',
-            'id="fullscreen-btn"',
-            'id="bottom-bar"',
-            'id="prompt-toggle-btn"',
-            'id="history-paging-controls"',
-        ):
-            self.assertNotIn(element, html)
-
-    def test_obs_theater_path_route(self) -> None:
-        response = self.client.get("/obs/test_theater_123")
-        self.assertEqual(response.status_code, 200)
-        self.assertIn("Narratron OBS Canvas", response.text)
-
-    def test_canvas_includes_disconnected_indicator(self) -> None:
-        response = self.client.get("/canvas?theater_id=test_theater")
-        self.assertEqual(response.status_code, 200)
-        self.assertIn('id="agent-disconnected-indicator"', response.text)
-        self.assertIn('href="/static/css/canvas.css"', response.text)
-
-    def test_obs_canvas_includes_narration_pane(self) -> None:
-        response = self.client.get("/obs?theater_id=test_theater")
-        self.assertEqual(response.status_code, 200)
-        html = response.text
-
-        self.assertIn('id="narration-pane-mount"', html)
-        self.assertIn("/static/css/narration-pane.css", html)
-        self.assertIn('import { initObsCanvas } from "/static/generated/canvas/obs.js";', html)
-        self.assertIn(".scene-description", html)
-
+    def test_canvas_and_obs_routes_serve_html(self) -> None:
+        # OBS rendering and omitted controls are verified in obs-rendering_test.ts.
+        for route in ("/canvas?theater_id=test_theater", "/obs?theater_id=test_theater", "/obs/test_theater_123"):
+            with self.subTest(route=route):
+                response = self.client.get(route)
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.headers["content-type"].split(";")[0], "text/html")

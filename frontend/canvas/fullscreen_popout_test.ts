@@ -56,6 +56,7 @@ test('fullscreen mode swaps SVG icon, activates cinematic UI fade, collapses sid
   await page.setViewportSize({ width: 1400, height: 900 });
   await canvas.openCanvas({ isOrator: true });
   await installFullscreenMock(page);
+  await expect(page.locator('#agent-disconnected-indicator')).toBeAttached();
 
   // Legacy popout window buttons were removed in favor of slide-out chat panel.
   await expect(page.locator('#popout-window-btn')).toHaveCount(0);

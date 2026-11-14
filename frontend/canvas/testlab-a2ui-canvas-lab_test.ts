@@ -156,6 +156,15 @@ test.describe('Testlab A2UI Canvas Lab TS module', () => {
     await expect(page.locator('#submit')).toBeEnabled();
     await expect(page.locator('#empty-stage')).toHaveJSProperty('hidden', true);
     await expect(page.locator('#stage .surface')).toHaveCount(1);
+    // Verify placement from the nested API result in rendered coordinates.
+    const stage = await page.locator('#stage').boundingBox();
+    const surface = await page.locator('#stage .surface').boundingBox();
+    expect(stage).not.toBeNull();
+    expect(surface).not.toBeNull();
+    // Allow one CSS pixel for the stage border and subpixel layout rounding.
+    expect(Math.abs(surface!.x + surface!.width / 2 - (stage!.x + stage!.width * 0.25))).toBeLessThanOrEqual(1);
+    expect(Math.abs(surface!.y + surface!.height / 2 - (stage!.y + stage!.height * 0.70))).toBeLessThanOrEqual(1);
+    expect(Math.abs(surface!.width - stage!.width * 0.30)).toBeLessThanOrEqual(1);
     await expect(page.locator('#stage .a2ui-text.heading')).toHaveText('Knight Status');
     await expect(page.locator('#stage .a2ui-progress.health')).toContainText('80/100');
     await expect(page.locator('#stage .a2ui-icon')).toHaveText('⚔');

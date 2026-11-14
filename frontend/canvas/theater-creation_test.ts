@@ -268,6 +268,7 @@ test('mobile theater actions open remote instead of canvas', async ({ canvas, pa
   await expect(remoteLink).not.toBeVisible();
   await expect(exportBtn).toBeVisible();
   await expect(builderBtn).toBeVisible();
+  await expect(builderBtn).toHaveAttribute('href', '/theater-editor?theater_id=stage');
   await expect(destroyBtn).toBeVisible();
 
   await page.setViewportSize({ width: 390, height: 844 });
@@ -287,6 +288,18 @@ test('mobile theater actions open remote instead of canvas', async ({ canvas, pa
 
   await remoteLink.click();
   await expect(page).toHaveURL(`${CANVAS_ORIGIN}/remote?theater_id=stage`);
+});
+
+test('personal theater listing excludes theaters owned by others', async ({ canvas, page }) => {
+  const { state } = await setupDeployHarness(canvas, page);
+  state.theaters = [
+    { theater_id: 'owned-stage', name: 'Owned Stage', is_owner: true },
+    { theater_id: 'shared-stage', name: 'Shared Stage', is_owner: false },
+  ];
+  await page.evaluate(() => window.loadTheaters?.());
+  await expect(page.locator('#activeTheatersPanel')).toContainText('Owned Stage');
+  await expect(page.locator('#activeTheatersPanel')).not.toContainText('Shared Stage');
+  await expect(page.getByRole('link', { name: 'Edit in Builder', exact: true })).toHaveCount(1);
 });
 
 test('deploy uses the shared credit purchase modal', async ({ canvas, page }) => {

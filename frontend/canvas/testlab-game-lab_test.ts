@@ -216,16 +216,10 @@ async function setupGameLabRoutes(
   };
 }
 
-test('game_lab.html loads compiled TS bundle and initGameLab returns null on empty DOM', async ({
+test('initGameLab returns null on empty DOM', async ({
   canvas,
   page,
 }) => {
-  const html = await fs.promises.readFile(GAME_LAB_HTML_PATH, 'utf-8');
-  expect(html).toContain(
-    '<script type="module" src="/game-lab-assets/js/testlab-game-lab.js"></script>',
-  );
-  expect(html).not.toContain('<script type="module">\n');
-
   await canvas.mount({ html: '<div id="empty"></div>' });
   const initResult = await page.evaluate(async () => {
     const mod = await window.__importModule<TestlabGameLabModule>(

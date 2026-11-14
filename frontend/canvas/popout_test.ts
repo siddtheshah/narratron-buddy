@@ -108,6 +108,9 @@ test('popout initializes guest/member identity, tabs, BroadcastChannel sync, and
 
   // 1. Guest flow without theater_id shows "No Theater Selected" and persists random guest name.
   await page.goto(`${CANVAS_ORIGIN}/popout`);
+  await expect(page).toHaveTitle('Narratron - Pop-out Chat');
+  await expect(page.locator('#chat-messages')).toBeAttached();
+  await expect(page.locator('#popout-prompt-text')).toBeAttached();
   await expect(page.locator('#popout-narratron-theater-id')).toHaveText('No Theater Selected');
   await expect(page.locator('#chat-name-badge')).toHaveText('Anon');
   const guestName = await page.locator('#chat-name-input').inputValue();
