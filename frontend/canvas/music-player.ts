@@ -33,6 +33,7 @@ export interface CreateMusicPlayerOptions {
   readonly volumePercentElement: HTMLElement | null;
   readonly playbackStorage?: Storage | null;
   readonly onMuteStopSpeech?: () => void;
+  readonly onMutedChange?: (muted: boolean) => void;
   readonly onTrackChange?: (trackSrc: string) => void;
   readonly createAudio?: () => HTMLAudioElement;
 }
@@ -79,6 +80,7 @@ export function createMusicPlayer(options: CreateMusicPlayerOptions): MusicPlaye
     volumePercentElement,
     playbackStorage = null,
     onMuteStopSpeech,
+    onMutedChange,
     onTrackChange,
     createAudio = () => new Audio(),
   } = options;
@@ -169,6 +171,7 @@ export function createMusicPlayer(options: CreateMusicPlayerOptions): MusicPlaye
       muteButton.style.background = muted ? 'rgba(239, 68, 68, 0.2)' : 'rgba(255,255,255,0.08)';
       muteButton.style.borderColor = muted ? 'rgba(239, 68, 68, 0.4)' : 'var(--glass-border)';
     }
+    onMutedChange?.(muted);
   }
 
   function setupBgMusicListeners(audioObj: HTMLAudioElement | null): void {

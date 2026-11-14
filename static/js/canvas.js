@@ -157,6 +157,13 @@ import { startCanvasStatePolling } from "/static/generated/canvas/state-polling.
         let lastImageEffect = null;
         const MINIMAL_MODE_STORAGE_KEY = 'narratron.canvas.performance.minimalMode';
         const LEGACY_IMAGE_EFFECTS_STORAGE_KEY = 'narratron.canvas.performance.disableImageEffects';
+        let isMuted = (() => {
+            try {
+                return localStorage.getItem(MUSIC_MUTED_STORAGE_KEY) === 'true';
+            } catch (_) {
+                return false;
+            }
+        })();
         let musicPlayer = null;
         let minimalMode = (() => {
             try {
@@ -211,7 +218,7 @@ import { startCanvasStatePolling } from "/static/generated/canvas/state-polling.
 
         const { updateSceneDialogue, enqueueSceneSpeech, stopSceneSpeech, replayLatestSpeech } = createCanvasScene({
             narrationPane,
-            audioEnabled: () => (musicPlayer ? !musicPlayer.isMuted() : localStorage.getItem(MUSIC_MUTED_STORAGE_KEY) !== 'true'),
+            audioEnabled: () => !isMuted,
             onSpeechStateChange: (state) => speechReplayControls?.updateButtonState(state),
         });
 
@@ -457,6 +464,9 @@ import { startCanvasStatePolling } from "/static/generated/canvas/state-polling.
                 if (typeof stopSceneSpeech === 'function') {
                     stopSceneSpeech();
                 }
+            },
+            onMutedChange: (muted) => {
+                isMuted = muted;
             },
             onTrackChange: () => {
                 if (assetMusicState) updateAssetPlaybackSelection(assetMusicState);

@@ -20,6 +20,7 @@ interface MusicHarnessWindow extends Window {
     emit(eventName: string): void;
   }>;
   stoppedSpeechCount: number;
+  mutedEvents: boolean[];
   trackChanges: string[];
 }
 
@@ -39,6 +40,7 @@ function installMockAudioAndSetupScript(): string {
     window.mockAudios = [];
     window.mockAudioInstances = [];
     window.stoppedSpeechCount = 0;
+    window.mutedEvents = [];
     window.trackChanges = [];
 
     window.__createMockAudio = function () {
@@ -116,6 +118,9 @@ test('music player cycles through playlist without repeating until exhausted and
       volumePercentElement: document.getElementById('volume-percent'),
       onMuteStopSpeech: () => {
         win.stoppedSpeechCount += 1;
+      },
+      onMutedChange: (muted: boolean) => {
+        win.mutedEvents.push(muted);
       },
       onTrackChange: (src: string) => {
         win.trackChanges.push(src);
@@ -247,6 +252,9 @@ test('music player applies server music state, pauses, resumes, restores positio
       onMuteStopSpeech: () => {
         win.stoppedSpeechCount += 1;
       },
+      onMutedChange: (muted: boolean) => {
+        win.mutedEvents.push(muted);
+      },
       onTrackChange: (src: string) => {
         win.trackChanges.push(src);
       },
@@ -338,6 +346,9 @@ test('music player applies server music state, pauses, resumes, restores positio
 
   // Clearing active playlist stops music (mute/silent path pauses and clears immediately).
   await page.locator('#music-mute-btn').click();
+  expect(
+    await page.evaluate(() => (window as unknown as MusicHarnessWindow).mutedEvents),
+  ).toEqual([false, true, false, true]);
   await page.evaluate(() => {
     const win = window as unknown as MusicHarnessWindow;
     win.musicPlayer!.applyMusicState({
