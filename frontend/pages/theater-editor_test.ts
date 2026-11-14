@@ -98,6 +98,10 @@ interface EditorRouteState {
   purchaseRequest: PurchaseRequestPayload | null;
   savedAtPurchase: Record<string, string> | null;
   lastSaveRequest: SaveRequestPayload | null;
+  holdSave: boolean;
+  releaseSave: (() => void) | null;
+  saveError: string | null;
+  saveRequests: SaveRequestPayload[];
   lastMoveRequest: MoveRequestPayload | null;
   lastGenerationRequest: GenerationRequestPayload | null;
   lastAttachGameRequest: AttachGameRequestPayload | null;
@@ -278,6 +282,10 @@ async function setupEditorHarness(
     purchaseRequest: null,
     savedAtPurchase: null,
     lastSaveRequest: null,
+    holdSave: false,
+    releaseSave: null,
+    saveError: null,
+    saveRequests: [],
     lastMoveRequest: null,
     lastGenerationRequest: null,
     lastAttachGameRequest: null,
@@ -381,6 +389,18 @@ async function setupEditorHarness(
       } else if (pathname.endsWith('/save')) {
         const body = JSON.parse(route.request().postData() ?? '{}') as SaveRequestPayload;
         state.lastSaveRequest = body;
+        state.saveRequests.push(body);
+        if (state.holdSave) {
+          await new Promise<void>((resolve) => { state.releaseSave = resolve; });
+        }
+        if (state.saveError) {
+          await route.fulfill({ status: 503, json: { detail: state.saveError } });
+          return;
+        }
+        if (body.revision !== state.draft.draft.revision) {
+          await route.fulfill({ status: 409, json: { detail: 'Stale revision' } });
+          return;
+        }
         state.draft.draft.name = body.name;
         state.draft.draft.revision += 1;
         if (body.persist) {
@@ -609,7 +629,9 @@ async function setupEditorHarness(
         state.lastUploadedFilenames = parsed.filenames;
         const discarded = state.discardedFiles;
         for (const filename of parsed.filenames.filter((name) => !discarded.includes(name))) {
-          const destPath = filename.includes('/') ? filename : `references/${filename}`;
+          const destPath = parsed.fields['bucket'] === 'true'
+            ? `uploads/${filename}`
+            : filename.includes('/') ? filename : `references/${filename}`;
           if (!state.draft.files.some((file) => file.path === destPath)) {
             state.draft.files.push({
               path: destPath,
@@ -731,7 +753,7 @@ for (const width of [1280, 390] as const) {
     await expect(page.locator('.file-button[title="theater.yaml"]')).toBeVisible();
     expect(
       await page.locator('#file-list > details > summary .folder-name').allTextContents(),
-    ).toEqual(['lore', 'playlists', 'references']);
+    ).toEqual(['lore', 'playlists', 'references', 'stamps', 'uploads']);
 
     await page.locator('details[data-path="references"] > summary').click();
     const charsFolder = page.locator('details[data-path="references/characters"]');
@@ -813,6 +835,76 @@ test('edits and folder choices survive save and reload', async ({ canvas, page }
   await page.locator('#start-default').click();
   await expect(page.locator('#builder-status')).toHaveText('Default theater ready. Make it your own.');
   await expect(captain).not.toBeVisible();
+});
+
+test('background save preserves newer edits, focus, and file browsing', async ({ canvas, page }) => {
+  const state = await setupEditorHarness(canvas, page);
+  await page.locator('details[data-path="lore"] > summary').click();
+  await page.locator('.file-button[title="lore/guide.txt"]').click();
+  await page.locator('#file-editor').fill('First version');
+  state.holdSave = true;
+  await page.locator('#save-draft').click();
+  await expect.poll(() => state.releaseSave !== null).toBe(true);
+  await expect(page.locator('#draft-state')).toHaveText('Saving…');
+  await expect(page.locator('#file-editor')).toBeEnabled();
+  await expect(page.locator('#assistant-input')).toBeEnabled();
+  await page.locator('#file-editor').fill('Newer version');
+  await page.locator('.file-button[title="theater.yaml"]').click();
+  await page.locator('#file-editor').fill('name: New world');
+  await page.locator('#draft-name').fill('New name');
+  await page.locator('#file-editor').focus();
+  state.holdSave = false;
+  state.releaseSave?.();
+  await expect(page.locator('#builder-status')).toHaveText('Theater saved. Newer edits still need saving.');
+  await expect(page.locator('#file-editor')).toBeFocused();
+  await expect(page.locator('#file-editor')).toHaveValue('name: New world');
+  await expect(page.locator('#draft-name')).toHaveValue('New name');
+  await expect(page.locator('#draft-state')).toHaveText('Unsaved changes');
+  expect(state.savedFiles['lore/guide.txt']).toBe('First version');
+  await page.locator('.file-button[title="lore/guide.txt"]').click();
+  await expect(page.locator('#file-editor')).toHaveValue('Newer version');
+  await page.locator('#save-draft').click();
+  await expect(page.locator('#draft-state')).toHaveText('Saved theater');
+  expect(state.savedFiles['lore/guide.txt']).toBe('Newer version');
+  expect(state.savedFiles['theater.yaml']).toBe('name: New world');
+  expect(state.saveRequests[1].revision).toBe(1);
+  expect(state.saveRequests[1].name).toBe('New name');
+});
+
+test('failed background save keeps edits for retry', async ({ canvas, page }) => {
+  const state = await setupEditorHarness(canvas, page);
+  await page.locator('.file-button[title="theater.yaml"]').click();
+  await page.locator('#file-editor').fill('name: Keep me');
+  state.holdSave = true;
+  state.saveError = 'Storage temporarily unavailable';
+  await page.locator('#save-draft').click();
+  await expect.poll(() => state.releaseSave !== null).toBe(true);
+  await page.locator('#file-editor').fill('name: Keep my newer edits too');
+  state.holdSave = false;
+  state.releaseSave?.();
+  await expect(page.locator('#builder-status')).toHaveText('Storage temporarily unavailable');
+  await expect(page.locator('#draft-state')).toHaveText('Unsaved changes');
+  await expect(page.locator('#save-draft')).toBeEnabled();
+  state.saveError = null;
+  await page.locator('#save-draft').click();
+  await expect(page.locator('#draft-state')).toHaveText('Saved theater');
+  expect(state.savedFiles['theater.yaml']).toBe('name: Keep my newer edits too');
+});
+
+test('creating a file waits for background save and uses the saved revision', async ({ canvas, page }) => {
+  const state = await setupEditorHarness(canvas, page);
+  state.holdSave = true;
+  await page.locator('#save-draft').click();
+  await expect.poll(() => state.releaseSave !== null).toBe(true);
+  await page.locator('#new-file').click();
+  await page.locator('#new-file-path').fill('lore/new.txt');
+  await page.locator('#new-file-dialog button[value="create"]').click();
+  expect(state.saveRequests).toHaveLength(1);
+  state.holdSave = false;
+  state.releaseSave?.();
+  await expect(page.locator('#builder-status')).toHaveText('Created lore/new.txt. Select it to begin writing.');
+  expect(state.saveRequests).toHaveLength(2);
+  expect(state.saveRequests[1].revision).toBe(1);
 });
 
 test('nested assets preview and new files join the tree', async ({ canvas, page }) => {
@@ -1968,4 +2060,57 @@ test('attach predefined game from library ui', async ({ canvas, page }) => {
   await expect(page.locator('.file-button[title="game/crest.svg"]')).toBeVisible();
   await expect(page.locator('#selected-path')).toHaveText('game/game.yaml');
   await expect(page.locator('#file-editor')).toHaveValue('version: 2\n# Checkers\n');
+});
+
+test('file drop uploads loose files into uploads folder and supports moving them', async ({
+  canvas,
+  page,
+}) => {
+  await setupEditorHarness(canvas, page);
+
+  const dataTransfer = await page.evaluateHandle(() => {
+    const dt = new DataTransfer();
+    dt.items.add(new File(['Harbor notes'], 'notes.txt', { type: 'text/plain' }));
+    return dt;
+  });
+
+  await page.dispatchEvent('body', 'dragenter', { dataTransfer });
+  await expect(page.locator('#workspace')).toHaveClass(/\breceiving-files\b/);
+
+  await page.dispatchEvent('body', 'dragleave', { dataTransfer });
+  await expect(page.locator('#workspace')).not.toHaveClass(/\breceiving-files\b/);
+
+  await page.dispatchEvent('body', 'dragenter', { dataTransfer });
+  await page.dispatchEvent('body', 'dragover', { dataTransfer });
+  await page.dispatchEvent('body', 'drop', { dataTransfer });
+  await expect(page.locator('#workspace')).not.toHaveClass(/\breceiving-files\b/);
+
+  await expect(page.locator('#builder-status')).toHaveText(
+    'Uploaded 1 files. Files are in uploads/. Drag them into folders or use Organize uploads.',
+  );
+  await expect(page.locator('details.file-folder[data-path="uploads"]')).toHaveAttribute('open', '');
+  const uploadedBtn = page.locator('.file-button[data-path="uploads/notes.txt"]');
+  await expect(uploadedBtn).toBeVisible();
+
+  await uploadedBtn.dragTo(page.locator('details[data-path="lore"] > summary'));
+  await expect(page.locator('#builder-status')).toHaveText('Moved notes.txt to lore.');
+  await expect(page.locator('.file-button[data-path="lore/notes.txt"]')).toBeVisible();
+  await expect(page.locator('.file-button[data-path="uploads/notes.txt"]')).toHaveCount(0);
+});
+
+test('file drop before opening a theater shows helpful status', async ({ canvas, page }) => {
+  await setupEditorHarness(canvas, page);
+  await page.locator('#new-draft').click();
+  await expect(page.locator('#start-panel')).toBeVisible();
+
+  const dataTransfer = await page.evaluateHandle(() => {
+    const dt = new DataTransfer();
+    dt.items.add(new File(['Harbor notes'], 'notes.txt', { type: 'text/plain' }));
+    return dt;
+  });
+
+  await page.dispatchEvent('body', 'drop', { dataTransfer });
+  await expect(page.locator('#builder-status')).toHaveText(
+    'Open or create a theater before dropping files.',
+  );
 });

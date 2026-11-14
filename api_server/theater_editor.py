@@ -223,7 +223,7 @@ async def create_draft(body: CreateDraftRequest, request: Request) -> DraftRespo
     return await asyncio.to_thread(response, info)
 
 
-async def read_uploads(files: list[UploadFile], folder: bool, root: Path, existing: set[str]) -> tuple[dict[str, bytes], list[str]]:
+async def read_uploads(files: list[UploadFile], folder: bool, root: Path, existing: set[str], bucket: bool = False) -> tuple[dict[str, bytes], list[str]]:
     if len(files) > MAX_FILES:
         raise ValueError("Upload supports at most 500 files.")
     uploaded: dict[str, bytes] = {}
@@ -232,7 +232,7 @@ async def read_uploads(files: list[UploadFile], folder: bool, root: Path, existi
     for upload in files:
         filename = upload.filename or ""
         try:
-            relative = upload_path(filename, folder)
+            relative = upload_path(filename, folder, bucket)
             safe_asset_path(root, relative)
         except IneligibleAssetError:
             discarded.append(filename)
@@ -254,11 +254,11 @@ async def read_uploads(files: list[UploadFile], folder: bool, root: Path, existi
 
 
 @app.post("/api/theater-editor/drafts/import")
-async def import_draft(request: Request, files: list[UploadFile] = File(...), name: str = Form("My Theater", min_length=1, max_length=120), folder: bool = Form(False)) -> ImportDraftResponse:
+async def import_draft(request: Request, files: list[UploadFile] = File(...), name: str = Form("My Theater", min_length=1, max_length=120), folder: bool = Form(False), bucket: bool = Form(False)) -> ImportDraftResponse:
     owner_id = await require_user(request)
     builder = store()
     with invalid_input():
-        uploaded, discarded = await read_uploads(files, folder, builder.root / "_import", set())
+        uploaded, discarded = await read_uploads(files, folder, builder.root / "_import", set(), bucket)
         info = await asyncio.to_thread(builder.create, owner_id, name, "live_agent: {}\n", initial_files=uploaded, populate_default=False)
         await asyncio.to_thread(initialize_theater, info)
     result = await asyncio.to_thread(response, info)
@@ -329,13 +329,13 @@ async def save_draft(theater_id: str, body: SaveDraftRequest, request: Request) 
 
 
 @app.post("/api/theater-editor/{theater_id}/upload")
-async def upload_assets(theater_id: str, request: Request, files: list[UploadFile] = File(...), revision: int = Form(...), folder: bool = Form(False)) -> ImportDraftResponse:
+async def upload_assets(theater_id: str, request: Request, files: list[UploadFile] = File(...), revision: int = Form(...), folder: bool = Form(False), bucket: bool = Form(False)) -> ImportDraftResponse:
     async with _draft_locks.setdefault(theater_id, asyncio.Lock()):
         info = await require_draft(request, theater_id)
         with invalid_input():
             check_revision(info, revision)
             existing = {item.path for item in await asyncio.to_thread(store().files, theater_id)}
-            uploaded, discarded = await read_uploads(files, folder, store().directory(theater_id), existing)
+            uploaded, discarded = await read_uploads(files, folder, store().directory(theater_id), existing, bucket)
             await asyncio.to_thread(write_checkout, info, uploaded)
         result = await asyncio.to_thread(response, info)
         return ImportDraftResponse(**result.model_dump(), imported_files=len(uploaded), discarded_files=discarded)

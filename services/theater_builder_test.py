@@ -110,6 +110,26 @@ def test_upload_rejects_outdated_layouts_instead_of_rewriting_paths(tmp_path: Pa
         safe_asset_path(tmp_path, upload_path(filename, False))
 
 
+@pytest.mark.parametrize("name,folder,expected", [
+    ("hero.webp", False, "uploads/hero.webp"),
+    ("nested/rain.mp3", False, "uploads/rain.mp3"),
+    ("notes.md", False, "uploads/notes.md"),
+    ("intro.mp4", False, "uploads/intro.mp4"),
+    ("world/lore/guide.txt", True, "lore/guide.txt"),
+])
+def test_bucket_upload_places_loose_files_in_uploads_and_keeps_folder_layout(
+    tmp_path: Path, name: str, folder: bool, expected: str
+) -> None:
+    relative = upload_path(name, folder, bucket=True)
+    assert relative == expected
+    safe_asset_path(tmp_path, relative)
+
+
+def test_uploads_folder_rejects_ineligible_extensions(tmp_path: Path) -> None:
+    with pytest.raises(ValueError):
+        safe_asset_path(tmp_path, upload_path("script.py", False, bucket=True))
+
+
 def test_default_draft_matches_example_theater_and_preserves_assets_on_publish(tmp_path: Path) -> None:
     store = TheaterBuilderStore(tmp_path / "repository")
     info = store.create(7, "World", "live_agent: {}\n")

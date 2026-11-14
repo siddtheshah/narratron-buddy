@@ -91,3 +91,4 @@
 .game-card-badge{font-size:.65rem;color:#cbd5e1;background:#182032;border:1px solid var(--line);border-radius:4px;padding:.12rem .4rem}
 .game-library-empty{padding:1.5rem;text-align:center;color:var(--muted);font-size:.82rem;border:1px dashed var(--line);border-radius:8px}
 
+.file-drop-zone{display:flex;flex-direction:column;gap:.35rem;width:100%;text-align:left;margin:0 0 1rem;padding:1rem;border:1px dashed var(--line);background:transparent}.file-drop-zone b{font-size:.85rem}.file-drop-zone span{font-size:.75rem;color:var(--muted);line-height:1.5}.receiving-files .file-drop-zone{border-color:#a5b4fc;background:#252d48;outline:2px dashed #818cf8;outline-offset:3px}

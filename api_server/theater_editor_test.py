@@ -432,6 +432,27 @@ def test_flat_dump_upload_is_organized_and_invalid_batch_is_rejected(builder: Bu
     assert duplicate.status_code == 400
 
 
+def test_bucket_upload_places_loose_files_in_uploads_and_allows_deploy(builder: BuilderHarness) -> None:
+    data = builder.create()
+    base = f"/api/theater-editor/{data['draft']['theater_id']}"
+    result = builder.client.post(
+        f"{base}/upload",
+        data={"revision": data["draft"]["revision"], "bucket": "true"},
+        files=[
+            ("files", ("hero.webp", b"image")),
+            ("files", ("rain.mp3", b"audio")),
+            ("files", ("guide.md", b"Guide")),
+            ("files", ("intro.mp4", b"video")),
+        ],
+    )
+    assert result.status_code == 200, result.text
+    paths = {item["path"] for item in result.json()["files"]}
+    assert {"uploads/hero.webp", "uploads/rain.mp3", "uploads/guide.md", "uploads/intro.mp4"} <= paths
+
+    deployed = builder.client.post(f"{base}/deploy", json={"revision": result.json()["draft"]["revision"]})
+    assert deployed.status_code == 200, deployed.text
+
+
 def test_upload_assets_rejects_file_over_10mb(builder: BuilderHarness) -> None:
     data = builder.create()
     base = f"/api/theater-editor/{data['draft']['theater_id']}"

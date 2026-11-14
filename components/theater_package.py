@@ -36,6 +36,7 @@ def safe_asset_path(root: Path, relative: str) -> Path:
     allowed |= len(parts) >= 3 and parts[0] == "playlists" and suffix in AUDIO_EXTENSIONS
     allowed |= len(parts) == 3 and parts[0] == "playlists" and parts[-1] == "description.txt"
     allowed |= len(parts) >= 2 and parts[0] == "lore" and suffix in {".txt", ".md"}
+    allowed |= len(parts) >= 2 and parts[0] == "uploads" and suffix in IMAGE_EXTENSIONS | AUDIO_EXTENSIONS | TEXT_EXTENSIONS | {".mp4"}
     # Saved animations are editable assets shared with the live canvas.
     allowed |= len(parts) == 3 and parts[0] == "animations" and (
         suffix in IMAGE_EXTENSIONS or parts[-1] in {"video.mp4", "video.json", "layered.json", "triframe.json", "animation.json"}

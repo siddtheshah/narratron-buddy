@@ -32,7 +32,7 @@ def refresh_checkout_metadata(info: DraftInfo, manager: TheaterManager) -> None:
                                    if item.kind == "image" and item.path.startswith("references/")]
     metadata.mounted_playlists = {}
     for item in files:
-        if item.kind == "audio":
+        if item.kind == "audio" and item.path.startswith("playlists/"):
             playlist, filename = item.path.removeprefix("playlists/").split("/", 1)
             metadata.mounted_playlists.setdefault(playlist, []).append(filename)
     manager._save_metadata(metadata)

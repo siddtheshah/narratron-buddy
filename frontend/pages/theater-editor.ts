@@ -435,6 +435,8 @@ export function initializeTheaterEditor(): TheaterEditorController | null {
   let state: TheaterEditorState | null = null;
   let selected: TheaterDraftFile | null = null;
   let busy = false;
+  let saveInFlight: Promise<void> | null = null;
+  let backgroundSaving = false;
   let textDirty = false;
   let nameDirty = false;
   let opening = false;
@@ -466,12 +468,14 @@ export function initializeTheaterEditor(): TheaterEditorController | null {
   }
 
   function unsaved(): boolean {
-    return dirty() || Boolean(state && state.draft.revision !== state.draft.saved_revision);
+    return Boolean(saveInFlight) || dirty() || Boolean(state && state.draft.revision !== state.draft.saved_revision);
   }
 
   function updateSaveState(): void {
-    requireEl('draft-state').textContent = unsaved() ? 'Unsaved changes' : 'Saved theater';
-    requireEl('file-save-state').textContent = dirty()
+    requireEl('draft-state').textContent = saveInFlight ? 'Saving…' : unsaved() ? 'Unsaved changes' : 'Saved theater';
+    requireEl('file-save-state').textContent = saveInFlight
+      ? 'Saving in the background. You can keep editing.'
+      : dirty()
       ? 'Save your edits before leaving.'
       : unsaved()
         ? 'Changes are in your working theater. Save theater to keep them.'
@@ -538,6 +542,8 @@ export function initializeTheaterEditor(): TheaterEditorController | null {
       });
     status(progress);
     try {
+      // Mutations and reloads must use the revision returned by an ongoing save.
+      if (saveInFlight) await saveInFlight;
       await action();
     } catch (error: unknown) {
       status(getErrorMessage(error), true);
@@ -706,19 +712,55 @@ export function initializeTheaterEditor(): TheaterEditorController | null {
   }
 
   async function save(persist = false): Promise<void> {
+    while (saveInFlight) await saveInFlight;
     if (!state) return;
     captureText();
     if (!dirty() && !persist) return;
-    const next = await post<TheaterEditorState>('/save', {
-      revision: state.draft.revision,
-      name: requireInput('draft-name').value.trim(),
-      writes: [...pendingWrites].map(([path, content]) => ({ path, content })),
-      persist,
-    });
-    pendingWrites.clear();
-    nameDirty = false;
-    textDirty = false;
-    render(next);
+    const savingState = state;
+    const name = requireInput('draft-name').value.trim();
+    const writes = new Map(pendingWrites);
+    const operation = (async (): Promise<void> => {
+      const next = await post<TheaterEditorState>('/save', {
+        revision: savingState.draft.revision,
+        name,
+        writes: [...writes].map(([path, content]) => ({ path, content })),
+        persist,
+      });
+      // Authentication or navigation may have replaced the editor session.
+      if (state !== savingState) return;
+      captureText();
+      for (const [path, content] of writes) {
+        if (pendingWrites.get(path) === content) pendingWrites.delete(path);
+      }
+      nameDirty = requireInput('draft-name').value.trim() !== name;
+      // Updating metadata alone preserves focus, selection, and newer local edits.
+      state = next;
+    })();
+    saveInFlight = operation;
+    updateSaveState();
+    try {
+      await operation;
+    } finally {
+      saveInFlight = null;
+      updateSaveState();
+    }
+  }
+
+  async function saveInBackground(): Promise<void> {
+    if (busy || backgroundSaving || activeGenerations > 0) return;
+    backgroundSaving = true;
+    const button = requireButton('save-draft');
+    button.disabled = true;
+    status('Saving theater… You can keep editing.');
+    try {
+      await save(true);
+      status(dirty() ? 'Theater saved. Newer edits still need saving.' : 'Theater saved.');
+    } catch (error: unknown) {
+      status(getErrorMessage(error), true);
+    } finally {
+      backgroundSaving = false;
+      button.disabled = busy;
+    }
   }
 
   async function moveFile(source: string, targetFolder: string): Promise<void> {
@@ -799,6 +841,15 @@ export function initializeTheaterEditor(): TheaterEditorController | null {
     }
     if (!references.folders.has('scenes')) {
       references.folders.set('scenes', { folders: new Map(), files: [], count: 0 });
+    }
+    for (const name of ['uploads', 'lore', 'stamps', 'playlists']) {
+      if (!root.folders.has(name)) {
+        root.folders.set(name, { folders: new Map(), files: [], count: 0 });
+      }
+    }
+    const playlists = root.folders.get('playlists');
+    if (playlists && !playlists.folders.has('default')) {
+      playlists.folders.set('default', { folders: new Map(), files: [], count: 0 });
     }
 
     function appendFiles(parent: HTMLElement, files: readonly TheaterDraftFile[]): void {
@@ -1047,6 +1098,7 @@ export function initializeTheaterEditor(): TheaterEditorController | null {
     await run(async () => {
       const form = new FormData();
       form.append('folder', String(folder));
+      form.append('bucket', String(!folder));
       for (const file of files) {
         const relativeName = folder
           ? file.webkitRelativePath || customRelativePaths.get(file) || file.name
@@ -1069,13 +1121,18 @@ export function initializeTheaterEditor(): TheaterEditorController | null {
         requireEl('assistant-proposal').hidden = true;
       }
       render(result);
+      if (!folder) {
+        expandedFolders.set('uploads', true);
+        const uploadsFolder = document.querySelector<HTMLDetailsElement>('.file-folder[data-path="uploads"]');
+        if (uploadsFolder) uploadsFolder.open = true;
+      }
       clearPreview();
       const discarded = result.discarded_files ?? [];
       const summary = discarded.length
         ? ` Discarded ${discarded.length} ineligible files: ${discarded.join(', ')}.`
         : '';
       status(
-        `Uploaded ${result.imported_files ?? files.length} files.${summary} Ask the assistant to organize them or develop your world.`,
+        `Uploaded ${result.imported_files ?? files.length} files.${summary} ${folder ? 'Ask the assistant to organize them or develop your world.' : 'Files are in uploads/. Drag them into folders or use Organize uploads.'}`,
       );
     }, 'Uploading theater assets…');
   }
@@ -1181,7 +1238,7 @@ export function initializeTheaterEditor(): TheaterEditorController | null {
     }
 
     captureText();
-    if (dirty()) {
+    if (dirty() || saveInFlight) {
       try {
         await save();
       } catch {
@@ -1367,7 +1424,7 @@ export function initializeTheaterEditor(): TheaterEditorController | null {
     status('Your assistant is shaping a proposal…');
     try {
       captureText();
-      if (dirty()) await save();
+      await save();
       message('user', prompt);
       const result = await post<AssistantResponse>('/assistant', {
         prompt,
@@ -2023,6 +2080,51 @@ export function initializeTheaterEditor(): TheaterEditorController | null {
   requireButton('start-folder').addEventListener('click', () => folderInput.click());
   requireButton('upload-folder').addEventListener('click', () => folderInput.click());
   requireButton('upload-assets').addEventListener('click', () => assetsInput.click());
+  requireButton('drop-upload-files').addEventListener('click', () => assetsInput.click());
+  const workspace = requireEl('workspace');
+  let fileDragDepth = 0;
+  function resetFileDrop(): void {
+    fileDragDepth = 0;
+    workspace.classList.remove('receiving-files');
+  }
+  document.addEventListener('dragenter', (event: DragEvent) => {
+    if (!event.dataTransfer?.types.includes('Files')) return;
+    event.preventDefault();
+    fileDragDepth++;
+    if (state && !busy && activeGenerations === 0 && !pendingUpload) {
+      workspace.classList.add('receiving-files');
+    }
+  });
+  document.addEventListener('dragleave', (event: DragEvent) => {
+    if (!event.dataTransfer?.types.includes('Files')) return;
+    if (--fileDragDepth <= 0) resetFileDrop();
+  });
+  document.addEventListener('dragover', (event: DragEvent) => {
+    if (!event.dataTransfer?.types.includes('Files')) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect =
+      state && !busy && activeGenerations === 0 && !pendingUpload ? 'copy' : 'none';
+  }, true);
+  document.addEventListener('drop', (event: DragEvent) => {
+    if (!event.dataTransfer?.types.includes('Files')) return;
+    event.preventDefault();
+    event.stopPropagation();
+    resetFileDrop();
+    if (!state) {
+      status('Open or create a theater before dropping files.', true);
+      return;
+    }
+    if (busy || activeGenerations > 0 || pendingUpload) {
+      status('Please wait for the current operation to finish before uploading files.', true);
+      return;
+    }
+    const files = Array.from(event.dataTransfer.files);
+    if (!files.length) return;
+    void handleUploadRequest(files, false).catch((error: unknown) => {
+      status(getErrorMessage(error), true);
+    });
+  }, true);
+  document.addEventListener('dragend', resetFileDrop);
 
   folderInput.addEventListener('change', (event: Event) => {
     const input = event.target;
@@ -2083,10 +2185,7 @@ export function initializeTheaterEditor(): TheaterEditorController | null {
   });
 
   requireButton('save-draft').addEventListener('click', () => {
-    void run(async () => {
-      await save(true);
-      status('Theater saved.');
-    }, 'Saving theater…');
+    void saveInBackground();
   });
 
   requireButton('download-draft').addEventListener('click', () => {
@@ -2121,7 +2220,13 @@ export function initializeTheaterEditor(): TheaterEditorController | null {
     }, 'Deploying your theater…');
   });
 
-  requireButton('new-draft').addEventListener('click', () => {
+  requireButton('new-draft').addEventListener('click', async () => {
+    try {
+      if (saveInFlight) await saveInFlight;
+    } catch (error: unknown) {
+      status(getErrorMessage(error), true);
+      return;
+    }
     if (unsaved() && !confirm('Leave without saving this theater and start another?')) return;
     state = null;
     pendingWrites.clear();
@@ -2140,7 +2245,7 @@ export function initializeTheaterEditor(): TheaterEditorController | null {
 
   requireButton('organize-assets').addEventListener('click', () => {
     void ask(
-      'Organize my uploaded assets into meaningful reference subfolders, references/characters/ folders, references/scenes/ folders, stamps/ tokens, lore documents, and named playlists. Update all file references where necessary.',
+      'Organize the files waiting in uploads/ into meaningful reference subfolders, references/characters/ folders, references/scenes/ folders, stamps/ tokens, lore documents, and named playlists. Propose file moves for my review. Preserve extensions and update all file references where necessary.',
     );
   });
 

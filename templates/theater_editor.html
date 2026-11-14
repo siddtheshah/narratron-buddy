@@ -42,7 +42,7 @@
     <section id="workspace" hidden>
       <div class="draft-toolbar">
         <label for="draft-name" class="sr-only">Theater name</label><input id="draft-name" maxlength="120">
-        <span class="draft-badge" id="draft-state">Theater</span><div class="toolbar-actions">
+        <span class="draft-badge" id="draft-state" role="status">Theater</span><div class="toolbar-actions">
           <button class="secondary" id="new-draft" type="button">New theater</button>
           <button class="secondary" id="reload-draft" type="button">Reload</button>
           <button class="secondary" id="save-draft" type="button">Save theater</button>
@@ -51,11 +51,12 @@
           <button id="deploy-draft" type="button">Save & test →</button>
         </div>
       </div>
+      <button id="drop-upload-files" class="file-drop-zone secondary" type="button"><b>Drop files anywhere in the editor, or browse</b><span>Images, audio, video, and text wait in uploads/. Drag them into folders or use Organize uploads when you’re ready.</span></button>
       <div class="builder-grid">
         <aside class="files-panel panel" aria-label="Theater files">
           <div class="panel-heading"><h2>Your theater</h2><span id="file-count"></span></div>
           <div class="upload-actions"><button class="secondary" id="upload-assets" type="button">＋ Assets</button><button class="secondary" id="upload-folder" type="button">＋ Folder</button><button class="secondary" id="attach-game" type="button">＋ Game</button><button class="secondary gdrive-btn" id="import-google-link" type="button"><svg class="gdrive-icon" viewBox="0 0 87.3 78" width="13" height="13" aria-hidden="true" focusable="false"><path d="m6.6 66.85 3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8h-27.5c0 1.55.4 3.1 1.2 4.5z" fill="#0066da"/><path d="m43.65 25-13.75-23.8c-1.35.8-2.5 1.9-3.3 3.3l-25.4 44c-.8 1.4-1.2 2.95-1.2 4.5h27.5z" fill="#00ac47"/><path d="m73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75 7.65-13.25c.8-1.4 1.2-2.95 1.2-4.5h-27.502l5.852 11.5z" fill="#ea4335"/><path d="m43.65 25 13.75-23.8c-1.35-.8-2.9-1.2-4.5-1.2h-18.5c-1.6 0-3.15.45-4.5 1.2z" fill="#00832d"/><path d="m59.8 53h-32.3l-13.75 23.8c1.35.8 2.9 1.2 4.5 1.2h50.8c1.6 0 3.15-.45 4.5-1.2z" fill="#2684fc"/><path d="m73.4 26.5-12.7-22c-.8-1.4-1.95-2.5-3.3-3.3l-13.75 23.8 16.15 28h27.45c0-1.55-.4-3.1-1.2-4.5z" fill="#ffba00"/></svg><span>Google Link</span></button></div>
-          <p class="hint">Loose images, audio, and text are sorted automatically. Ineligible files are discarded from imports.</p>
+          <p class="hint">Loose files stay in uploads/ until you organize them. Folder imports preserve theater layouts. Unsupported files are skipped.</p>
           <nav id="file-list" aria-label="Files"></nav>
           <button class="text-button" id="new-file" type="button">＋ Create a text file</button>
         </aside>
@@ -83,7 +84,7 @@
           </div>
           <div id="assistant-messages" role="log" aria-live="polite"><div class="message assistant">Tell me about your world. I can write lore, tune your theater, organize uploads, and propose artwork, character portraits, stamps, and music.</div></div>
           <div id="assistant-proposal" hidden></div>
-          <div class="assistant-shortcuts"><button class="secondary" id="organize-assets" type="button">Organize assets</button><button class="secondary" id="suggest-world" type="button">Develop this world</button><button class="secondary" id="harvest-doc-shortcut" type="button">Harvest Google Doc</button></div>
+          <div class="assistant-shortcuts"><button class="secondary" id="organize-assets" type="button">Organize uploads</button><button class="secondary" id="suggest-world" type="button">Develop this world</button><button class="secondary" id="harvest-doc-shortcut" type="button">Harvest Google Doc</button></div>
           <form id="assistant-form"><label for="assistant-input" class="sr-only">Message the assistant</label><textarea id="assistant-input" maxlength="4000" rows="3" placeholder="A misty harbor, a missing cartographer…" required></textarea><button id="assistant-send" type="submit">Send →</button></form>
           <details class="manual-generation"><summary>Generate an asset directly</summary><form id="generation-form">
             <label for="generation-kind">Asset type</label><select id="generation-kind"><option value="reference">Reference image</option><option value="stamp">Stamp token</option><option value="character">Character portrait</option><option value="scene">Scene visual</option><option value="playlist">Playlist track</option><option value="animation">Animation</option></select>
@@ -96,7 +97,7 @@
       </div>
     </section>
     <input type="file" id="folder-input" webkitdirectory multiple hidden>
-    <input type="file" id="assets-input" accept=".png,.jpg,.jpeg,.webp,.gif,.mp3,.wav,.ogg,.flac,.m4a,.aac,.txt,.md,.yaml,.yml,.json,.svg,.html" multiple hidden>
+    <input type="file" id="assets-input" accept=".png,.jpg,.jpeg,.webp,.gif,.mp3,.wav,.ogg,.flac,.m4a,.aac,.txt,.md,.yaml,.yml,.json,.svg,.html,.mp4" multiple hidden>
     <dialog id="external-authoring-dialog" class="external-authoring-dialog" aria-labelledby="external-authoring-title">
       <div class="dialog-header">
         <h2 id="external-authoring-title">Build in your favorite AI app</h2>
