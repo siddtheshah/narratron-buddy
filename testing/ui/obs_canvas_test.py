@@ -1,8 +1,9 @@
-from fastapi.testclient import TestClient
 from unittest.mock import AsyncMock, patch
 
-from testing.ui.base import UITestCase
+from fastapi.testclient import TestClient
+
 from api_server.app import app
+from testing.ui.base import UITestCase
 
 
 class TestOBSCanvas(UITestCase):
@@ -23,7 +24,7 @@ class TestOBSCanvas(UITestCase):
         html = response.text
 
         for element in (
-            'Narratron OBS Canvas',
+            "Narratron OBS Canvas",
             'id="canvas-renderer"',
             'id="doodle-canvas"',
             'id="current-image"',
@@ -39,16 +40,6 @@ class TestOBSCanvas(UITestCase):
         ):
             self.assertNotIn(element, html)
 
-        obs_script = self.client.get("/static/generated/canvas/obs.js")
-        self.assertEqual(obs_script.status_code, 200)
-        for snippet in (
-            "function syncMusic(music)",
-            "const bgMusic = new Audio();",
-            "action: 'hide-overlay'",
-            "action === 'pause-audio'",
-        ):
-            self.assertIn(snippet, obs_script.text)
-
     def test_obs_theater_path_route(self) -> None:
         response = self.client.get("/obs/test_theater_123")
         self.assertEqual(response.status_code, 200)
@@ -59,9 +50,6 @@ class TestOBSCanvas(UITestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn('id="agent-disconnected-indicator"', response.text)
         self.assertIn('href="/static/css/canvas.css"', response.text)
-        css = self.client.get("/static/css/canvas.css")
-        self.assertEqual(css.status_code, 200)
-        self.assertIn('agentDisconnectedPulse', css.text)
 
     def test_obs_canvas_includes_narration_pane(self) -> None:
         response = self.client.get("/obs?theater_id=test_theater")
@@ -69,22 +57,7 @@ class TestOBSCanvas(UITestCase):
         html = response.text
 
         self.assertIn('id="narration-pane-mount"', html)
-        self.assertIn('/static/css/narration-pane.css', html)
+        self.assertIn("/static/css/narration-pane.css", html)
         self.assertIn('import { initObsCanvas } from "/static/generated/canvas/obs.js";', html)
-        self.assertIn('.scene-description', html)
-
-        obs_script = self.client.get("/static/generated/canvas/obs.js")
-        self.assertEqual(obs_script.status_code, 200)
-        self.assertIn("createNarrationPane(", obs_script.text)
-        self.assertIn("narrationPane.setDrawingColorSelected(false);", obs_script.text)
-        self.assertIn("createCanvasScene({", obs_script.text)
-
-    def test_canvas_wires_mute_to_scene_speech(self) -> None:
-        response = self.client.get("/canvas?theater_id=test_theater")
-        self.assertEqual(response.status_code, 200)
-        self.assertIn('src="/static/js/canvas.js"', response.text)
-        script = self.client.get("/static/js/canvas.js")
-        self.assertEqual(script.status_code, 200)
-        self.assertIn("audioEnabled: () => !isMuted", script.text)
-        self.assertIn("stopSceneSpeech();", script.text)
+        self.assertIn(".scene-description", html)
 

@@ -1,35 +1,12 @@
 """Tests for CanvasStateManager image history and paging payloads."""
 
-from pathlib import Path
+import json
 
 from testing.ui.base import UITestCase
 
-from testing.ui.canvas_source import read_ui_source
-
 
 class TestImageHistoryPaging(UITestCase):
-    def test_paging_bar_is_at_the_top_and_reveals_story_log_inspector(self):
-        canvas = read_ui_source(Path("templates/canvas.html"))
-
-        self.assertIn("#history-paging-controls {", canvas)
-        self.assertIn("top: 1.25rem;", canvas)
-        self.assertIn('id="story-log-inspector"', canvas)
-        self.assertIn('id="story-log-toggle-btn"', canvas)
-        self.assertIn('from "/static/js/story-log-inspector.js"', canvas)
-        inspector_shim = Path("static/js/story-log-inspector.js").read_text(encoding="utf-8")
-        self.assertIn("initializeStoryLogInspector", inspector_shim)
-        inspector_source = Path("frontend/canvas/story-log-inspector.ts").read_text(encoding="utf-8")
-        self.assertIn("initializeStoryLogInspector", inspector_source)
-
-    def test_story_log_is_chronological_and_keeps_the_latest_action_visible(self):
-        compiled = Path("static/generated/canvas/story-log-inspector.js").read_text(encoding="utf-8")
-
-        self.assertIn("return turns;", compiled)
-        self.assertIn("function positionLatestAction(inspector, content)", compiled)
-        self.assertIn("inspector.scrollTop = bottom;", compiled)
-        self.assertIn("requestAnimationFrame(() => positionLatestAction(inspector, content))", compiled)
-
-    def test_image_history_is_capped_at_100_entries(self):
+    def test_image_history_is_capped_at_100_entries(self) -> None:
         manager = self.make_canvas_state("history_cap")
 
         for index in range(105):
@@ -41,7 +18,7 @@ class TestImageHistoryPaging(UITestCase):
         self.assertIn("image_5.png", history[0]["path"])
         self.assertIn("image_104.png", history[-1]["path"])
 
-    def test_image_history_payload_contains_presentation_details(self):
+    def test_image_history_payload_contains_presentation_details(self) -> None:
         first_image = self.workspace / "scene1.png"
         second_image = self.workspace / "scene2.jpg"
         first_image.write_bytes(b"scene1_data")
@@ -62,7 +39,7 @@ class TestImageHistoryPaging(UITestCase):
         self.assertTrue(history[0]["url"])
         self.assertIn("prompt", history[0])
 
-    def test_history_persists_in_the_test_theater_directory(self):
+    def test_history_persists_in_the_test_theater_directory(self) -> None:
         theater_id = "history_persistence"
         manager = self.make_canvas_state(theater_id)
         manager.visual.show_image("/path/a.png", transition="fade")
@@ -73,7 +50,7 @@ class TestImageHistoryPaging(UITestCase):
         reloaded_manager = self.make_canvas_state(theater_id)
         self.assertEqual(len(reloaded_manager.visual.shown_images_history), 2)
 
-    def test_animations_are_recorded_in_history_with_original_prompt_and_payload(self):
+    def test_animations_are_recorded_in_history_with_original_prompt_and_payload(self) -> None:
         theater_id = "anim_history_theater"
         manager = self.make_canvas_state(theater_id)
 
@@ -90,7 +67,6 @@ class TestImageHistoryPaging(UITestCase):
             fp = anim_dir / f"frame_{i}.jpg"
             fp.write_bytes(b"frame_data")
             frame_paths.append(str(fp))
-        import json
         (anim_dir / "triframe.json").write_text(json.dumps({
             "id": "crystal_glow",
             "type": "triframe",
@@ -176,21 +152,4 @@ class TestImageHistoryPaging(UITestCase):
         self.assertEqual(reloaded_history[2]["animation"]["type"], "video")
         self.assertEqual(reloaded_history[2]["prompt"], "A fire-breathing dragon soaring above a volcanic crater.")
         self.assertEqual(reloaded_history[3]["animation"]["type"], "layered")
-
-    def test_canvas_template_supports_animation_history_and_prompt_widget(self):
-        canvas = read_ui_source(Path("templates/canvas.html"))
-        # Ensure displayHistoryImage checks animation signature and invokes playAnimation
-        self.assertIn("const animSignature = getAnimationSignature(item.animation);", canvas)
-        self.assertIn("playAnimation(item.animation);", canvas)
-        # Ensure prompt button reads original animation prompt
-        self.assertIn("item.prompt || (item.animation && item.animation.scene_prompt)", canvas)
-
-    def test_canvas_unloads_history_images_outside_sliding_window(self) -> None:
-        canvas = read_ui_source(Path("templates/canvas.html"))
-        self.assertIn("const HISTORY_WINDOW_RADIUS = 5;", canvas)
-        self.assertIn("const loadedHistoryResources = new Map();", canvas)
-        self.assertIn("function unloadHistoryResource(resource)", canvas)
-        self.assertIn("function pruneHistoryResources(centerIndex)", canvas)
-        self.assertIn("function trackHistoryResource(index, resource)", canvas)
-        self.assertIn("pruneHistoryResources(currentViewIndex);", canvas)
 

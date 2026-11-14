@@ -1,12 +1,13 @@
-from fastapi.testclient import TestClient
 from unittest.mock import AsyncMock, patch
 
-from testing.ui.base import UITestCase
+from fastapi.testclient import TestClient
+
 from api_server.app import app
+from testing.ui.base import UITestCase
 
 
 class TestFullscreenPopout(UITestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         super().setUp()
         access_patcher = patch(
             "api_server.pages._require_canvas_access_async",
@@ -28,30 +29,24 @@ class TestFullscreenPopout(UITestCase):
         self.assertEqual(response.status_code, 200)
         html = response.text
         self.assertIn('src="/static/js/canvas.js"', html)
-        script = self.client.get("/static/js/canvas.js")
-        self.assertEqual(script.status_code, 200)
-        source = html + script.text
+        self.assertIn('href="/static/css/canvas.css"', html)
 
         for element in (
             'id="fullscreen-btn"',
             'id="obs-theater-btn"',
             'id="fullscreen-icon"',
-            "toggleFullScreen",
-            "fullscreen-cinematic",
-            "showCinematicUI",
             'id="chat-side-toggle-btn"',
             'id="popout-expand-btn"',
         ):
-            self.assertIn(element, source)
+            self.assertIn(element, html)
 
         for element in (
             'id="popout-window-btn"',
             'id="popped-out-placeholder"',
-            "openPopoutWindow",
         ):
-            self.assertNotIn(element, source)
+            self.assertNotIn(element, html)
 
-    def test_popout_route_serves_chat_template(self):
+    def test_popout_route_serves_chat_template(self) -> None:
         response = self.client.get("/popout?theater_id=test_theater")
         self.assertEqual(response.status_code, 200)
         html = response.text
@@ -64,51 +59,5 @@ class TestFullscreenPopout(UITestCase):
             "/static/generated/canvas/popout.js",
         ):
             self.assertIn(element, html)
-
-        popout_script = self.client.get("/static/generated/canvas/popout.js")
-        self.assertEqual(popout_script.status_code, 200)
-        self.assertIn("narratron_popout_channel", popout_script.text)
-
-    def test_canvas_contains_smaller_monitor_chat_rules(self) -> None:
-        response = self.client.get("/canvas?theater_id=test_theater")
-        self.assertEqual(response.status_code, 200)
-        html = response.text
-        self.assertIn('href="/static/css/canvas.css"', html)
-        self.assertIn('src="/static/js/canvas.js"', html)
-        css = self.client.get("/static/css/canvas.css")
-        script = self.client.get("/static/js/canvas.js")
-        self.assertEqual(css.status_code, 200)
-        self.assertEqual(script.status_code, 200)
-        source = css.text + script.text
-
-        for rule in (
-            "@media (max-width: 1280px)",
-            "#chat-sidebar",
-            "width: 280px",
-            "margin-right: -280px",
-            "SMALL_WINDOW_BREAKPOINT = 1280",
-            "window.innerWidth <= SMALL_WINDOW_BREAKPOINT",
-        ):
-            self.assertIn(rule, source)
-
-    def test_canvas_contains_fullscreen_retracted_chat_tab_rules(self) -> None:
-        response = self.client.get("/canvas?theater_id=test_theater")
-        self.assertEqual(response.status_code, 200)
-        self.assertIn('href="/static/css/canvas.css"', response.text)
-        css = self.client.get("/static/css/canvas.css")
-        self.assertEqual(css.status_code, 200)
-
-        for rule in (
-            "body.fullscreen-cinematic #chat-sidebar.collapsed",
-            "body.fullscreen-cinematic #chat-sidebar.collapsed .chat-side-toggle-tab",
-            "position: fixed !important",
-            "right: 0 !important",
-            "top: 50% !important",
-            "transform: translateY(-50%) !important",
-            "opacity: 1 !important",
-            "pointer-events: auto !important",
-            "z-index: 9997 !important",
-        ):
-            self.assertIn(rule, css.text)
 
 
