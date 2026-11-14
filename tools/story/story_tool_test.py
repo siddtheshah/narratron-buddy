@@ -1,4 +1,3 @@
-from providers import DecisionProvider
 """Boundary tests for the story subsystem composition root."""
 
 import unittest
@@ -14,6 +13,7 @@ from components.canvas_state import CanvasStateManager
 from components.reference_manager import ReferenceManager
 from components.theater_manager import Theater, TheaterManager
 from providers import (
+    DecisionProvider,
     ImageProvider,
     SpeechProvider,
     SpeechSynthesisRequest,

@@ -238,7 +238,7 @@ def test_video_technique_with_references_generates_starting_image_via_image_prov
 def test_video_technique_with_image_to_video_provider_generates_starting_image_without_references(tmp_path: Path) -> None:
     from PIL import Image as PILImage
     import io
-    from providers.image_provider import ImageGenerationResult, ImageReference
+    from providers.image_provider import ImageGenerationResult
 
     img = PILImage.new("RGB", (32, 32), color="red")
     buf = io.BytesIO()

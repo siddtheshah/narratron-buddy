@@ -7,9 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from PIL import Image
 import json
-import yaml
 
-from components.notepad import parse_planning_schema
 from storage.theater_repository import TheaterRepository
 
 from services.theater_builder import (

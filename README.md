@@ -43,12 +43,10 @@ If you do not have `uv` installed, follow the official installation guide from A
 
 ## Install
 
-Create a virtual environment and install dependencies using `uv`:
+Install Python dependencies (including development and test tools) using `uv`:
 
 ```powershell
-uv venv
-. .venv\Scripts\Activate.ps1
-uv pip install -r requirements.txt
+uv sync --locked
 ```
 
 Install and build the frontend dependencies from the repository root:
@@ -63,12 +61,42 @@ Server startup rebuilds missing or stale canvas assets automatically. Use
 
 ### Development checks
 
-Install development dependencies and run the linter with `uv`:
+Install the Chromium browsers required by the Node and Python Playwright
+packages, then run the checks from the repository root:
 
 ```powershell
-uv pip install -r requirements-dev.txt
+npx playwright install chromium
+uv run python -m playwright install chromium
+npm test
+uv run pytest -n 4
 uv run ruff check .
 ```
+
+`npm test` checks TypeScript types for production code and tests, builds the
+browser modules, and runs the TypeScript Playwright suite in Chromium. Frontend
+tests live beside their sources in `frontend/canvas/*_test.ts`; shared fixtures
+and their tests live in `testing/ui/`. Python tests cover backend behavior and
+the remaining browser/server integration checks. Both suites isolate unexpected
+network access; live provider evaluations are separate.
+
+For a focused browser test, build first and pass Playwright options through the
+UI script:
+
+```powershell
+npm run build
+npm run test:ui -- frontend/canvas/cursor-state_test.ts --workers=4
+```
+
+`npm run test:ui` uses existing generated assets, so rebuild after changing
+TypeScript or keep `npm run watch` running. Generated files in
+`static/generated/canvas/` are ignored by Git; edit `frontend/canvas/*.ts` and use
+`.js` extensions for relative browser imports. Templates load modules from
+`/static/generated/canvas/`. Docker compiles these assets in its Node build stage.
+
+See the [testing guide](skills/narratron-testing/SKILL.md) for fixtures, offline
+guards, and evaluation commands, and the
+[migration inventory](frontend/canvas/MIGRATION.md) for coverage parity and
+remaining optional improvements.
 
 ### Gcloud Setup
 

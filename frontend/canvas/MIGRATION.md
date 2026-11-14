@@ -236,6 +236,18 @@ production build, and all 615 Chromium tests. The full core Python suite,
 `uv run pytest -n 4`, passed all 3249 tests (76 warnings). Ruff passed for the
 changed Python files. A Docker build was not run.
 
+Follow-up verification on 2026-11-14 reproduced timing races in the chat
+submission/initial-scroll test and the music benchmark note-save test. The
+tests now wait for the initial scroll frame and completed chat notifications,
+and save notes through a single blur-triggered change event. Both affected
+suites passed ten repetitions (60 tests); a fresh `npm test` passed all 615
+tests, type checking, and the production build. The full core Python run again
+passed 3249 tests (76 warnings), and the three Python suites touched by import
+cleanup passed 105 tests. `uv run ruff check .` passed repository-wide.
+README, Test Lab setup, the testing skill, and the task list now describe the
+completed migration, browser installation, and separate build requirements for
+focused UI runs. Docker and live provider evaluations were not run.
+
 ### Remaining Raw JavaScript
 
 - **`static/js/` (0 authored raw JS files; 1 vendored classic `<script>` file, 30 lines)**:

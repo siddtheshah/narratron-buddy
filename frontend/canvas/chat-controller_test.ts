@@ -562,6 +562,10 @@ test('submission pipeline forwards orator non-suggestion messages, handles /help
 
   const messagesEl = page.locator('#chat-messages');
   await expect(messagesEl.locator('.chat-message')).toHaveCount(20);
+  // Initial rendering schedules its follow-to-bottom update on the next frame.
+  await expect.poll(() => messagesEl.evaluate((el) =>
+    el.scrollTop + el.clientHeight >= el.scrollHeight,
+  )).toBe(true);
 
   // Scroll up to top; a background fetchChat(false) must preserve scrollTop = 0.
   await messagesEl.evaluate((el) => {
@@ -577,17 +581,20 @@ test('submission pipeline forwards orator non-suggestion messages, handles /help
   await chatInput.fill('Hello agent');
   await chatInput.press('Enter');
   await expect(messagesEl.locator('.chat-message')).toHaveCount(21);
-  expect(
-    await page.evaluate(() => (window as unknown as ChatControllerHarnessWindow).wsSent),
+  await expect.poll(
+    () => page.evaluate(() => (window as unknown as ChatControllerHarnessWindow).wsSent),
   ).toEqual([JSON.stringify({ type: 'text', text: 'Hello agent' })]);
-  expect(
-    await page.evaluate(() => (window as unknown as ChatControllerHarnessWindow).broadcasts),
+  await expect.poll(
+    () => page.evaluate(() => (window as unknown as ChatControllerHarnessWindow).broadcasts),
   ).toEqual([{ type: 'chat_sent', text: 'Hello agent' }]);
 
   // Suggestion does NOT forward to agentWs.
   await chatInput.fill('Open the gate');
   await chatInput.press('Control+Enter');
   await expect(messagesEl.locator('.chat-message')).toHaveCount(22);
+  await expect.poll(
+    () => page.evaluate(() => (window as unknown as ChatControllerHarnessWindow).broadcasts),
+  ).toHaveLength(2);
   expect(
     await page.evaluate(() => (window as unknown as ChatControllerHarnessWindow).wsSent),
   ).toHaveLength(1);

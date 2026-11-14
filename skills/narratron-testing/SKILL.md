@@ -11,16 +11,16 @@ This skill provides comprehensive instructions for running and maintaining tests
 
 ### File Location & Naming
 
-Tests are organized into two primary categories:
+Tests are organized into three categories:
 
 1. **Python Unit Tests**: Follow the `*_test.py` naming convention and are placed **directly adjacent** to the modules they test.
    - **Tools**:
      - `tools/image/image_tool_test.py` (tests `tools/image/image_tool.py`)
      - `tools/music_tool_test.py` (tests `tools/music_tool.py`)
-     - `tools/notes_tool_test.py` (tests `tools/notes_tool.py`)
+     - `tools/notepad_tool_test.py` (tests `tools/notepad_tool.py`)
      - `tools/chat_tool_test.py` (tests `tools/chat_tool.py`)
    - **Components**:
-     - `components/canvas_state_test.py` (tests `components/canvas_state.py`)
+     - `components/canvas/canvas_state_manager_test.py` (tests `components/canvas/canvas_state_manager.py`)
    - **Utilities**:
      - `utils/config_loader_test.py` (tests `utils/config_loader.py`)
      - `utils/image_utils_test.py` (tests `utils/image_utils.py`)
@@ -64,11 +64,21 @@ When working in a multi-agent swarm:
 Always use the npm scripts defined in `package.json`:
 
 ```bash
+# Install locked dependencies and Chromium (once per checkout/environment)
+npm ci
+npx playwright install chromium
+uv sync --locked
+uv run python -m playwright install chromium
+
 # Run the complete frontend verification suite (typecheck + build + test:ui)
 npm test
 
+# Build first when running UI tests separately; Playwright does not build assets
+npm run build
 # Run only Playwright TypeScript UI tests (*_test.ts)
 npm run test:ui
+# Forward filters and worker limits to Playwright through this script:
+npm run test:ui -- frontend/canvas/cursor-state_test.ts --workers=4
 # Or run with playwright flags directly:
 npx playwright test
 npx playwright test frontend/canvas/cursor-state_test.ts
@@ -124,9 +134,12 @@ uv run pytest adventures
 
 ---
 
-### Incremental Canvas TypeScript Migration & Testing Patterns
+### Canvas TypeScript Layout & Testing Patterns
 
-When migrating canvas logic from JavaScript to TypeScript:
+The browser TypeScript migration is complete. See
+[`frontend/canvas/MIGRATION.md`](../../frontend/canvas/MIGRATION.md) for the
+coverage inventory and optional follow-up work. Follow these patterns for new
+modules and tests:
 
 1. **Source Organization & Compilation**:
    - Production TypeScript source code resides in `frontend/canvas/<module>.ts`.
@@ -141,7 +154,8 @@ When migrating canvas logic from JavaScript to TypeScript:
 3. **Writing Playwright Tests with `canvas_fixtures.ts`**:
    - Use the shared fixture in `testing/ui/canvas_fixtures.ts`:
      ```ts
-     import { expect, test } from './canvas_fixtures';
+     // From frontend/canvas/<module>_test.ts:
+     import { expect, test } from '../../testing/ui/canvas_fixtures';
 
      test('module interaction', async ({ canvas, page }) => {
        await canvas.mount({
@@ -150,14 +164,16 @@ When migrating canvas logic from JavaScript to TypeScript:
        });
 
        const result = await page.evaluate(async () => {
-         const { myModule } = await window.__importModule('/static/generated/canvas/my-module.js');
+         const { myModule } = await window.__importModule<typeof import('./my-module.js')>(
+           '/static/generated/canvas/my-module.js',
+         );
          return myModule.getState();
        });
        expect(result).toBe(true);
      });
      ```
    - For full canvas page testing, use `canvas.openCanvas({ isOrator: true, ... })` which loads `templates/canvas.html` with mocked backend APIs (`/api/*`, `/theaters/*`, and `wss://...`).
-   - Use `window.__importModule(url)` in browser evaluations to prevent bundlers/transpilers from rewriting dynamic browser `import()` into CommonJS `require()`.
+   - Use `window.__importModule<typeof import('./my-module.js')>(url)` in browser evaluations for typed access without rewriting dynamic browser `import()` into CommonJS `require()`.
 
 4. **Test Migration & Parity Verification**:
    - Replace regex/string source-slicing assertions with behavioral browser assertions against real modules.
@@ -177,7 +193,7 @@ Windows asyncio uses a loopback TCP socket pair for its wakeup pipe. The test ha
 
 Test startup removes inherited integration credentials and isolates gcloud's credential directory. Environment and runtime flag changes are restored after each test. Shared application services and default storage constructors use fresh test-owned directories; the registry database and canvas-state cache are reset per test. Import-time text providers are replaced only while the registry is constructed, so provider unit tests continue to exercise real factories with explicit mocks. The planner fixture joins background workers before removing runner mocks. Tests that only inspect cooldown scheduling mock timer creation so callbacks cannot run after their temporary files have been removed.
 
-- **Gemini API / Vertex AI**: Always mock `genai.Client` in `ImageTools` tests using `unittest.mock.patch("tools.image_tool.genai.Client")` to avoid external API calls during unit tests.
+- **Gemini API / Vertex AI**: Mock clients at the provider boundary used by the code under test (for example, `unittest.mock.patch("providers.gemini_image_provider.genai.Client")`). Configure the complete expected interface and keep external calls offline.
 - **FileSystem & Time**: Use `tempfile.mkdtemp()` for isolated output directories and clean up in `tearDown()`.
 - **Callbacks**: Use `unittest.mock.MagicMock()` for `on_show_image`, `on_play_playlist`, `on_pause_playlist`, `on_resume_playlist`, and `on_send_chat_message`.
 
@@ -204,7 +220,7 @@ testing/
 │   ├── remote_test.py            # Backend FastAPI/baton-credits checks
 │   ├── triframe_animation_test.py # Backend animation manifest/state checks
 │   ├── conftest.py               # Pytest fixtures and frontend build triggers
-│   └── base.py                   # Shared unittest Playwright fixture for Python
+│   └── base.py                   # Shared unittest state/storage fixture for Python
 ├── testcases/         # Evaluation test scenarios containing expectations.json and audio files
 │   └── desert_basic/
 │       ├── expectations.json

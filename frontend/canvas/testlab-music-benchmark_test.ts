@@ -262,7 +262,7 @@ test.describe('Testlab Music Provider Bench TS module', () => {
     // Save note on test-base-plus-adapter card (sorted after 'lyria')
     const noteBox = page.locator('#galleryResults .generation-note').nth(1);
     await noteBox.fill('Clean transition');
-    await noteBox.dispatchEvent('change');
+    await noteBox.blur();
     await expect.poll(() => noteUpdates.length).toBe(1);
     expect(noteUpdates[0]).toEqual({ itemId: 'music-item-1', note: 'Clean transition' });
   });

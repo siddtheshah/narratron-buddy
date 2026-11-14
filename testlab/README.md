@@ -1,10 +1,21 @@
 # Narratron Test Lab
 
-Run the two browser diagnostics without starting the full Narratron app:
+Install dependencies and build the TypeScript browser modules from the repository
+root before starting the standalone Test Lab:
 
 ```powershell
-python -m uvicorn testlab.server:app --host 127.0.0.1 --port 8015
+uv sync --locked
+npm ci
+npm run build
+uv run python -m uvicorn testlab.server:app --host 127.0.0.1 --port 8015
 ```
+
+The lab serves compiled modules from `/static/generated/canvas/`. Run
+`npm run watch` in another terminal while editing `frontend/canvas/testlab-*.ts`;
+the standalone server does not rebuild assets automatically. Browser regression
+tests live alongside those modules; run `npm test` for type checking, the build,
+and all TypeScript Playwright tests. Python route/API tests remain in
+`testlab/*_test.py`.
 
 Open `http://127.0.0.1:8015/` for the Test Lab index. It links to microphone/VAD testing, image effects, image/music/text provider benchmarks, and the asynchronous story-planner bridge.
 
@@ -17,20 +28,20 @@ Use the **Voice tags / filters** field on a provider card to benchmark its autom
 To inspect the live Gemini Extended Voice Library and its available filter values, set `GEMINI_API_KEY` and run:
 
 ```powershell
-uv run python testlab/list_gemini_voice_tags.py
+uv run python scripts/list_gemini_voice_tags.py
 ```
 
 To bypass the browser and exercise one real Vertex-backed planner turn, run:
 
 ```powershell
-python testlab/story_planner_smoke.py
+uv run python testlab/story_planner_smoke.py
 ```
 
 To exercise one real A2UI Canvas generation turn in an isolated temporary theater,
 using a two-knight health-bar scenario, run:
 
 ```powershell
-python testlab/a2ui_canvas_smoke.py
+uv run python testlab/a2ui_canvas_smoke.py
 ```
 
 Add `--image testlab/images/trace-knight-sword.png` to include a canvas image in the request.
