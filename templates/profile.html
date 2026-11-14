@@ -16,7 +16,7 @@
 <body>
   <!-- SHARED_TOPBAR -->
   <main><div id="profile"><p class="empty">Loading profile…</p></div></main>
-  <script src="/static/js/friends.js"></script>
+  <script type="module" src="/static/generated/canvas/friends.js"></script>
   <script>
     const username = decodeURIComponent(location.pathname.split('/').pop());
     const el = document.getElementById('profile'); let profilePicker = null; let selectedProfileColor = '#818cf8';
@@ -88,7 +88,15 @@
         };
       }
       const stampFileInput=document.getElementById('stamp-file-input'); const stampFileChosen=document.getElementById('stamp-file-chosen'); const stampUploadBtn=document.getElementById('stamp-upload-btn'); const stampNameInput=document.getElementById('stamp-name-input'); const stampUploadStatus=document.getElementById('stamp-upload-status'); if (stampFileInput) stampFileInput.onchange=()=>{const file=stampFileInput.files[0]; stampFileChosen.textContent=file ? file.name : 'No file chosen'; if(file && !stampNameInput.value.trim()) stampNameInput.value=file.name.replace(/\.[^/.]+$/,'');}; if(stampUploadBtn) stampUploadBtn.onclick=async()=>{if(!stampFileInput.files.length){stampUploadStatus.style.color='#f87171';stampUploadStatus.textContent='Please choose an image file first.';return;}const formData=new FormData();formData.append('file',stampFileInput.files[0]);if(stampNameInput.value.trim())formData.append('name',stampNameInput.value.trim());stampUploadBtn.disabled=true;stampUploadStatus.textContent='Uploading stamp…';try{const resp=await fetch('/api/users/me/stamps',{method:'POST',body:formData});const data=await resp.json().catch(()=>({}));if(resp.ok){stampUploadStatus.style.color='#86efac';stampUploadStatus.textContent='Stamp uploaded!';load('stamps');}else{stampUploadStatus.style.color='#f87171';stampUploadStatus.textContent=data.detail || 'Could not upload stamp.';stampUploadBtn.disabled=false;}}catch(_){stampUploadStatus.style.color='#f87171';stampUploadStatus.textContent='Network error while uploading stamp.';stampUploadBtn.disabled=false;}};
-    } load(location.hash === '#gifts' ? 'gifts' : 'overview');
+    }
+    const initialTab = location.hash === '#gifts' ? 'gifts' : 'overview';
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', () => {
+        void load(initialTab);
+      });
+    } else {
+      void load(initialTab);
+    }
   </script>
 </body>
 </html>
