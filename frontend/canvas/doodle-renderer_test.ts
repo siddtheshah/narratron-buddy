@@ -287,3 +287,18 @@ for (const pagedBack of [false, true]) {
     expect(await selected(page)).toEqual({ segments: 0, stamps: 0, texts: 0 });
   });
 }
+
+test('text selection accepts annotation elements from another document', async ({ page }) => {
+  const result = await page.evaluate(() => {
+    const frame = document.createElement('iframe');
+    document.body.append(frame);
+    const foreignDoc = frame.contentDocument!;
+    const annotation: DoodleAnnotation = { type: 'text', id: 'foreign-text', text: 'Clue' };
+    const node = Object.assign(foreignDoc.createElement('div'), { annotation });
+    node.dataset.annotationId = 'foreign-text';
+    const renderer = window.selectionHarness.renderer;
+    renderer.selectText(node);
+    return { selected: renderer.isTextSelected(node), ids: renderer.getSelectedTexts().map(item => item.id) };
+  });
+  expect(result).toEqual({ selected: true, ids: ['foreign-text'] });
+});

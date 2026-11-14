@@ -1,5 +1,7 @@
 """Tests for Test Lab static mounts and ES module loading."""
 
+from unittest.mock import patch
+
 from fastapi.testclient import TestClient
 from playwright.sync_api import Request, Response, Route, sync_playwright
 
@@ -95,3 +97,11 @@ def test_lab_pages_resolve_migrated_canvas_modules_without_404() -> None:
                 page.close()
         finally:
             browser.close()
+
+
+def test_startup_builds_canvas_assets() -> None:
+    with patch("testlab.server.ensure_canvas_assets_built") as build:
+        with TestClient(app) as client:
+            build.assert_called_once_with()
+            response = client.get("/static/generated/canvas/game-renderer.js")
+            assert response.status_code == 200

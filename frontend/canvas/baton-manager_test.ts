@@ -270,3 +270,27 @@ test('viewer baton prompt handles accept, takeback, and 30s auto-decline countdo
     '/api/theaters/th-baton/baton/decline',
   ]);
 });
+
+for (const action of ['add-contributor', 'remove-contributor', 'pass-baton']) {
+  test(`canvas handles rejected ${action} requests from modal and globals`, async ({ canvas, page }) => {
+    const failures: string[] = [];
+    page.on('console', msg => { if (msg.type() === 'error') failures.push(msg.text()); });
+    const state = { owner: { id: 1, username: 'Owner' }, active_orator: { id: 1, username: 'Owner' },
+      contributors: [{ id: 3, username: 'Contributor' }], active_viewers: [{ id: 2, username: 'Viewer' }] };
+    await canvas.openCanvas({ isOrator: true, user: { id: 1, username: 'Owner' }, apiRoutes: {
+      '/api/theaters/stage/baton': state,
+      '/api/theaters/stage/baton/contributors': async route => { await route.fulfill({ status: 403, json: { detail: 'Denied' } }); },
+      '/api/theaters/stage/baton/contributors/3': async route => { await route.fulfill({ status: 403, json: { detail: 'Denied' } }); },
+      '/api/theaters/stage/baton/request': async route => { await route.fulfill({ status: 403, json: { detail: 'Denied' } }); },
+    } });
+    await page.locator('#baton-status-badge').click();
+    await page.locator(`[data-baton-action="${action}"]`).first().click();
+    await expect.poll(() => failures.filter(msg => msg.includes('Denied')).length).toBe(1);
+    await page.evaluate(action => {
+      if (action === 'add-contributor') window.addContributor?.(2);
+      else if (action === 'remove-contributor') window.removeContributor?.(3);
+      else window.requestBatonPass?.(2);
+    }, action);
+    await expect.poll(() => failures.filter(msg => msg.includes('Denied')).length).toBe(2);
+  });
+}

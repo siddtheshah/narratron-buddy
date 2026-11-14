@@ -571,3 +571,14 @@ test('mic shortcut supports toggle, push-to-talk keydown/keyup, button-key Enter
   await page.keyboard.press('Shift+Space');
   await expect(page.locator('#orator-command-overlay')).not.toHaveClass(/active/);
 });
+
+test('canvas reserves plain Space while rebinding the action wheel', async ({ canvas, page }) => {
+  await canvas.openCanvas({ isOrator: true });
+  await page.evaluate(() => document.getElementById('action-wheel-rebind')?.click());
+  const rebind = page.locator('#action-wheel-rebind');
+  await expect(rebind).toHaveClass(/rebinding/);
+  await page.keyboard.press('Space');
+  await expect(rebind).toHaveClass(/rebinding/);
+  await page.keyboard.press('Escape');
+  await expect(rebind).not.toHaveClass(/rebinding/);
+});

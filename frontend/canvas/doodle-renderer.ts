@@ -462,7 +462,7 @@ export function createDoodleRenderer({ canvas, isVisible = () => true, textLayer
         const rawItems = Array.isArray(item) ? item : (item ? [item] : []);
         const items = rawItems.map(it => {
             if (!it) return null;
-            if (it instanceof HTMLElement) return it;
+            if (typeof it !== 'string' && 'nodeType' in it && it.nodeType === 1) return it as AnnotationNode;
             const targetId = typeof it === 'string' ? it : it.id;
             return annotationChildren(textLayer).find(node => node.dataset?.annotationId === targetId || node.annotation?.id === targetId) || null;
         }).filter((node): node is AnnotationNode => node !== null);
@@ -1223,8 +1223,8 @@ export function createDoodleRenderer({ canvas, isVisible = () => true, textLayer
             if (typeof target === "string") {
                 return Array.from(selectedTextItems).some(node => node.dataset?.annotationId === target || node.annotation?.id === target);
             }
-            if (target instanceof HTMLElement) {
-                return selectedTextItems.has(target);
+            if ('nodeType' in target && target.nodeType === 1) {
+                return selectedTextItems.has(target as AnnotationNode);
             }
             if (target.id) {
                 return Array.from(selectedTextItems).some(node => node.dataset?.annotationId === target.id || node.annotation?.id === target.id);

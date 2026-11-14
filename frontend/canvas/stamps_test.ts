@@ -1605,3 +1605,40 @@ test('in-flight loadUserStamps GET does not clobber concurrently generated stamp
     ),
   ).toEqual(['Phoenix']);
 });
+
+for (const key of ['Delete', 'Backspace']) {
+  test(`canvas stamp deletion with ${key} can be undone`, async ({ canvas, page }) => {
+    await serveMockStampAssets(canvas);
+    const sent: SentDoodleMessage[] = [];
+    const snapshot = {
+      type: 'doodle_snapshot', page_id: 'p1', enabled: true, batches: [], annotations: [],
+      stamps: [{ type: 'stamp', id: 'dragon', stamp_id: 10, name: 'Dragon',
+        url: '/api/stamps/10', x: 0.4, y: 0.4, size: 80 }],
+    };
+    await canvas.openCanvas({
+      isOrator: true,
+      apiRoutes: {
+        '/api/latest': { latest: '/static/narratron-avatar.png', time: 1, orator_cursor: 0,
+          history: [{ page_id: 'p1', url: '/static/narratron-avatar.png', time: 1 }] },
+        '/api/doodles': snapshot,
+      },
+      onWebSocket(ws) {
+        if (!ws.url().includes('/ws/doodle')) return;
+        ws.onMessage(raw => {
+          const message = JSON.parse(String(raw)) as SentDoodleMessage;
+          if (message.type === 'subscribe_doodles') ws.send(JSON.stringify(snapshot));
+          else sent.push(message);
+        });
+      },
+    });
+    const stamps = page.locator('.canvas-stamp-annotation');
+    await expect(stamps).toHaveCount(1);
+    await stamps.first().click();
+    await page.keyboard.press(key);
+    await expect(stamps).toHaveCount(0);
+    await expect.poll(() => sent.some(msg => msg.type === 'remove_stamp')).toBe(true);
+    await page.keyboard.press('Control+z');
+    await expect(stamps).toHaveCount(1);
+    await expect.poll(() => sent.some(msg => msg.type === 'stamp')).toBe(true);
+  });
+}

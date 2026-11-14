@@ -427,3 +427,63 @@ module execution; the remaining 15 are FastAPI `TestClient` / unit suites
     unknown as Response` fetch stubs in `stamps_test.ts` (prefer `new Response(...)`),
     and `undefined as unknown as CanvasAssetManager` in `asset-manager_test.ts`
     (prefer `CanvasAssetManager | null`).
+
+## Post-Migration Verification & Identified Regressions (2026-11-14)
+
+### Automated Suite & Backend Integrity Status
+
+- **Frontend Checks**: `npm run typecheck`, `npm run build` (82 production `.ts` modules compiled to `static/generated/canvas/`), and `npm run test:ui` (615 Chromium tests across 100 suites) all passed.
+- **Python & Linting Checks**: Core Python test suites (`uv run pytest`) and `uv run ruff check .` passed with 0 failures.
+- **Backend Logic Integrity**: Production backend logic is intact relative to the pre-migration baseline (`b5632e9`). Only 5 production Python paths were touched, all limited to build/static integration:
+  - `object_registry.py`: runs `ensure_canvas_assets_built()` during FastAPI `lifespan`.
+  - `utils/frontend_build.py`: builds stale or missing `static/generated/canvas/` assets.
+  - `api_server/pages.py`: keeps the unversioned canonical `/static/generated/canvas/auth-flow.js` URL so ES module imports share one auth-state cache.
+  - `testlab/server.py`: mounts `/static/generated` alongside `/effects-static`.
+  - `testlab/game_lab.py`: serves `game-panel-bridge.js` and `testlab-game-lab.js` from `static/generated/canvas/`.
+
+### Confirmed Regressions & Action Items
+
+- **[HIGH] Stamp keyboard deletion undo broken on `/canvas`** (`frontend/canvas/canvas.ts:1114-1123`, `frontend/canvas/stamps.ts:794-810`, `frontend/canvas/doodle-session.ts:1139-1158`): `getActiveDeleteTransaction` in `canvas.ts` returns `{ stamps: tx.stamps.map(...) }`, allocating a detached array copy. `activeTx.stamps.push(removed)` in `stamps.ts` mutates the copy instead of `doodleSession`'s live `tx.stamps` array and skips `pushUndoAction`, so deleting selected stamps with `Delete` or `Backspace` is omitted from `doodleUndoStack`.
+- **[MEDIUM] Dropped backend `CanvasStateService` doodle persistence test** (`b5632e9:testing/ui/doodles_test.py:116-150`): `TestDoodles.test_doodles_persist_and_reset_when_cleared` verified `self.make_canvas_state(theater_id)` auto-persisting `manager.doodles.add(...)` and `{"type": "clear"}` to `theater.json` on disk without calling `persist()`, and was lost when `testing/ui/doodles_test.py` was deleted instead of retaining the backend check in Python.
+- **[MEDIUM] Static `testing/testdata/game_snapshots.json` unverified against live Python `game_engine`**: The 5 migrated `frontend/canvas/game-*_test.ts` suites read static JSON snapshots from `testing/testdata/game_snapshots.json`, and no Python test currently asserts that `game_snapshots.json` stays in sync with live `GameState` / `game_client.py` / `panel_html.py` output.
+- **[MEDIUM] Gitignored local `games/*` and `adventures/*` UI tests still import `/static/js/game-renderer.js`**: `games/initiative-tracker/game/game_ui_test.py:19`, `adventures/peaks-of-tianmu/tests/ui/preview_test.py:31,164`, `adventures/the-trader/game/game_ui_test.py:37`, and `adventures/wacky-chess/game/game_ui_test.py:56` fail with `FileNotFoundError` when invoked directly because `static/js/game-renderer.js` was retired.
+- **[MEDIUM] Standalone `testlab/server.py` does not call `ensure_canvas_assets_built()`**: Starting `testlab.server:app` or running `uv run pytest testlab/` on a clean checkout without a prior build serves `404` or stale JS from `/static/generated/canvas/`.
+- **[LOW] Capture-phase listener ordering for plain `Space`** (`frontend/canvas/canvas.ts:572,1526`): `createHotkeyControlsController` (`onPlainSpace` capture listener) is initialized after `initializeActionWheel`, allowing plain `Space` to reach `actionWheel`'s capture-phase `keydown` listener during shortcut rebinding.
+- **[LOW] Minor cleanup items**:
+  - `frontend/canvas/doodle-renderer.ts:465,1226`: `selectMovableText` and `isTextSelected` use `instanceof HTMLElement` instead of `.nodeType`.
+  - `frontend/canvas/baton-manager.ts:335-377,392-396` and `frontend/canvas/canvas.ts:1838-1846`: `void addContributor(...)` / `removeContributor` / `requestBatonPass` callers do not catch rejected promises on non-2xx responses.
+  - `frontend/canvas/history-paging.ts:315-322`: `updatePagingControlsUI` returns early when `pagingControls` is absent before resetting `navigating` / `pagedBack` / `hasNewHeadWhilePagedBack` when `isOrator()` is true.
+  - `frontend/canvas/canvas.ts:1170`: `getCachedTheaterStamps` does not fall back to `window.cachedTheaterStamps`.
+  - `templates/join_splash.html:1315`: retains `?v=20261008-support-chat` query param on `/static/generated/canvas/user-help.js`.
+  - `testing/ui/canvas_source.py`: `read_ui_source` is no longer imported anywhere in the repository.
+
+### Resolution & Regression Coverage (2026-11-14)
+
+The action items above have been addressed:
+
+- Stamp removal appends normalized annotations to the live doodle deletion
+  transaction. Full-canvas tests cover undo after both Delete and Backspace.
+- `testing/ui/doodles_test.py` retains the backend persistence test, including
+  verifying that clear operations persist to disk and survive reloading.
+- `testing/game_snapshots_test.py` checks every game fixture against live engine
+  payloads, browser programs, actions, panel HTML, and victory stamps. It normalizes
+  HTML line endings and runtime-specific page IDs, stamp IDs, and local asset paths.
+- The four ignored local game UI test files now use generated module URLs and
+  build assets before running. Stale `game.*` imports were updated to
+  `game_engine.*`; `testing/game_browser.py` retains their live browser comparator.
+- Standalone testlab startup builds missing/stale assets through its FastAPI
+  lifespan. A testlab session fixture also builds assets for direct route tests.
+- Hotkey controls initialize before the action wheel, preserving plain Space
+  during rebinding. Full-canvas coverage verifies the listener ordering.
+- Text selection uses node identity across documents; baton UI callers catch
+  request failures; orator paging state resets even without paging controls;
+  theater stamp caches fall back to the window cache; the stale help module query
+  parameter and unused Python source expansion helper were removed.
+
+Validation: typecheck, build, all **623** Chromium tests, all **103** testlab tests,
+the **28** targeted Python snapshot/persistence/build checks, Ruff, and
+`git diff --check` passed. The ignored local packages passed **8 of 9** UI tests;
+the remaining Trader parity test loads the generated modules successfully but
+fails on a duplicate `subclass_affiliation` key in its authored CEL game data,
+outside the migration import fixes. Local ignored file edits are not part of the
+tracked repository diff.

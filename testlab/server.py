@@ -1,5 +1,7 @@
 """Standalone development server for the browser-based Narratron test labs."""
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 import json
 import logging
 import mimetypes
@@ -20,6 +22,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
 from utils.config_loader import get_app_config
+from utils.frontend_build import ensure_canvas_assets_built
 
 from providers import (
     ImageGenerationRequest,
@@ -74,7 +77,14 @@ PROJECT_ROOT = ROOT.parent
 load_dotenv(PROJECT_ROOT / ".env")
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Narratron Test Lab")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    ensure_canvas_assets_built()
+    yield
+
+
+app = FastAPI(title="Narratron Test Lab", lifespan=lifespan)
 app.include_router(game_lab_router)
 app.include_router(decision_lab_router)
 STATIC_GENERATED = PROJECT_ROOT / "static" / "generated"

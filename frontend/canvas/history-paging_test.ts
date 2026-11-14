@@ -431,3 +431,20 @@ test('paging bar hover discovery zone and story log toggle inside real canvas.ht
   await page.locator('#story-log-toggle-btn').click({ force: true });
   await expect(page.locator('#story-log-inspector')).toBeVisible();
 });
+
+test('becoming orator clears browsing state without paging controls', async ({ canvas, page }) => {
+  await canvas.mount({ html: PAGING_HTML.replace('id="history-paging-controls"', 'id="unused-controls"') });
+  await mountHistoryPaging(page);
+  const state = await page.evaluate(() => {
+    const win = window as unknown as PagingHarnessWindow;
+    win.historyPaging.applyLatestState({ orator_cursor: 1, history: [
+      { page_id: 'p1', url: '', time: 1 }, { page_id: 'p2', url: '', time: 2 },
+    ] });
+    document.getElementById('page-prev-btn')?.click();
+    const before = { navigating: win.historyPaging.isNavigating(), pagedBack: win.historyPaging.isPagedBack() };
+    win.isOratorFlag = true;
+    win.historyPaging.updatePagingControlsUI();
+    return { before, navigating: win.historyPaging.isNavigating(), pagedBack: win.historyPaging.isPagedBack() };
+  });
+  expect(state).toEqual({ before: { navigating: true, pagedBack: true }, navigating: false, pagedBack: false });
+});

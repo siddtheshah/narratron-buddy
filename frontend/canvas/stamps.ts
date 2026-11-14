@@ -91,7 +91,7 @@ export interface StampAnnotation extends StampAnnotationItem {
 }
 
 export interface DeleteTransaction {
-  readonly stamps: StampCanvasItem[];
+  readonly stamps: StampAnnotationItem[];
 }
 
 export interface StampGenerationResponse {
@@ -801,7 +801,7 @@ export function createCanvasStampsController(
       options.sendDoodleMessage({ type: 'remove_stamp', id: action.id });
       const activeTx = options.getActiveDeleteTransaction?.() ?? null;
       if (activeTx) {
-        activeTx.stamps.push(removed);
+        activeTx.stamps.push(toStampAnnotationItem(removed));
       } else {
         options.pushUndoAction?.(new DeleteStampDoodleAction([toStampAnnotationItem(removed)]));
       }

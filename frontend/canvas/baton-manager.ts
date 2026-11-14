@@ -389,11 +389,17 @@ export function createBatonManager(
     const userId = parseUserId(button.dataset.userId);
     if (userId === null) return;
     if (action === 'add-contributor') {
-      void addContributor(userId);
+      void addContributor(userId).catch((error: unknown) => {
+        console.error('Unable to update baton permissions:', error);
+      });
     } else if (action === 'pass-baton') {
-      void requestBatonPass(userId);
+      void requestBatonPass(userId).catch((error: unknown) => {
+        console.error('Unable to update baton permissions:', error);
+      });
     } else if (action === 'remove-contributor') {
-      void removeContributor(userId);
+      void removeContributor(userId).catch((error: unknown) => {
+        console.error('Unable to update baton permissions:', error);
+      });
     }
   };
 

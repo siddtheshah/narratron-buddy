@@ -312,14 +312,14 @@ export function createHistoryPagingController(
 
   function updatePagingControlsUI(): void {
     onRefreshBookmarks?.();
-    if (!pagingControls) return;
-
     const orator = isOrator();
     if (orator) {
       navigating = false;
       pagedBack = false;
       hasNewHeadWhilePagedBack = false;
     }
+
+    if (!pagingControls) return;
 
     const total = Math.max(1, imageHistory.length || 1);
     const currentNum = currentViewIndex >= 0 ? currentViewIndex + 1 : total;

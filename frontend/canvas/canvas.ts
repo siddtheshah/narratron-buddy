@@ -180,6 +180,7 @@ declare global {
     _isActiveOratorState?: boolean;
     _isContributor?: boolean;
     cachedTheaterReferences?: readonly ReferenceItem[] | null;
+    cachedTheaterStamps?: StampItem[] | null;
     cachedTheaterCharacters?: readonly TheaterCharacter[] | null;
     cachedTheaterScenes?: readonly TheaterScene[] | null;
     updateCanvasStickyNotes?: CornerPanelsController['updateCanvasStickyNotes'];
@@ -342,7 +343,8 @@ let isTheaterStampOwner = false;
 let isStampManagerOpen = false;
 let activeStampManagerTab: StampManagerTab = 'stamps';
 let cachedUserStamps: StampItem[] | null = null;
-let cachedTheaterStamps: StampItem[] = [];
+const emptyTheaterStamps: StampItem[] = [];
+let cachedTheaterStamps: StampItem[] | null = null;
 let cachedTheaterScenes: TheaterScene[] | null = null;
 let cachedTheaterCharacters: TheaterCharacter[] | null = null;
 let assetMusicState: MusicSelectionState | null = null;
@@ -568,50 +570,6 @@ function updateCanvasPinButton(): void {
 }
 
 const myUserId = `Viewer_${Math.floor(Math.random() * 10000)}`;
-
-actionWheel = initializeActionWheel({
-  isOrator: isCurrentOrator,
-  canvasTarget: document.getElementById('image-container'),
-  onOpen: () => {
-    doodleSession?.cancelDrawing();
-  },
-  onCenterAction: () => {
-    doodleSession?.cycleCanvasCursor();
-  },
-  onRebindStart: () => {
-    hotkeyControls?.cancelRebinding();
-  },
-  onPreviousImage: () => {
-    historyPaging?.stepOratorPreviousImage();
-  },
-  sendAction: async (action) => {
-    const response = await fetch(
-      `/api/theaters/${encodeURIComponent(theaterId ?? '')}/orator-action`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action }),
-      },
-    );
-    const result = (await response.json()) as TheaterActionResponse;
-    if (!response.ok) {
-      throw new Error(result.detail || 'Unable to apply action.');
-    }
-    canvasPinned = Boolean(result.pinned);
-    musicPinned = Boolean(result.music_pinned);
-    if (result.orator_cursor !== undefined && result.orator_cursor !== null && historyPaging) {
-      historyPaging.setOratorCursorIndex(Number(result.orator_cursor));
-      if (
-        !historyPaging.isNavigating() &&
-        historyPaging.getCurrentViewIndex() !== historyPaging.getOratorCursorIndex()
-      ) {
-        historyPaging.displayHistoryImage(historyPaging.getOratorCursorIndex(), 'none');
-      }
-    }
-    updateCanvasPinButton();
-    actionWheel?.updateState(canvasPinned, musicPinned);
-  },
-});
 
 function getActiveAgentSocket(): WebSocket | null {
   const agentWs = agentConnection?.getAgentWs() ?? null;
@@ -1111,16 +1069,7 @@ stampsController = createCanvasStampsController({
       client_message_id: previous.client_message_id,
     });
   },
-  getActiveDeleteTransaction: () => {
-    const tx = doodleSession?.getActiveDeleteTransaction();
-    if (!tx) return null;
-    return {
-      stamps: tx.stamps.map((stamp) => ({
-        ...stamp,
-        type: stamp.type ?? 'stamp',
-      })),
-    };
-  },
+  getActiveDeleteTransaction: () => doodleSession?.getActiveDeleteTransaction() ?? null,
   pushUndoAction,
   getActiveTab: () => activeStampManagerTab,
   isPlaylistExpanded: (playlistName) => expandedPlaylists.has(playlistName),
@@ -1167,7 +1116,7 @@ stampsController = createCanvasStampsController({
   setCachedUserStamps: (stamps) => {
     cachedUserStamps = stamps;
   },
-  getCachedTheaterStamps: () => cachedTheaterStamps,
+  getCachedTheaterStamps: () => cachedTheaterStamps ?? window.cachedTheaterStamps ?? emptyTheaterStamps,
   setCachedTheaterStamps: (stamps) => {
     cachedTheaterStamps = stamps;
   },
@@ -1547,6 +1496,50 @@ hotkeyControls = createHotkeyControlsController({
   onRebindStart: () => actionWheel?.cancelRebinding(),
 });
 
+actionWheel = initializeActionWheel({
+  isOrator: isCurrentOrator,
+  canvasTarget: document.getElementById('image-container'),
+  onOpen: () => {
+    doodleSession?.cancelDrawing();
+  },
+  onCenterAction: () => {
+    doodleSession?.cycleCanvasCursor();
+  },
+  onRebindStart: () => {
+    hotkeyControls?.cancelRebinding();
+  },
+  onPreviousImage: () => {
+    historyPaging?.stepOratorPreviousImage();
+  },
+  sendAction: async (action) => {
+    const response = await fetch(
+      `/api/theaters/${encodeURIComponent(theaterId ?? '')}/orator-action`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action }),
+      },
+    );
+    const result = (await response.json()) as TheaterActionResponse;
+    if (!response.ok) {
+      throw new Error(result.detail || 'Unable to apply action.');
+    }
+    canvasPinned = Boolean(result.pinned);
+    musicPinned = Boolean(result.music_pinned);
+    if (result.orator_cursor !== undefined && result.orator_cursor !== null && historyPaging) {
+      historyPaging.setOratorCursorIndex(Number(result.orator_cursor));
+      if (
+        !historyPaging.isNavigating() &&
+        historyPaging.getCurrentViewIndex() !== historyPaging.getOratorCursorIndex()
+      ) {
+        historyPaging.displayHistoryImage(historyPaging.getOratorCursorIndex(), 'none');
+      }
+    }
+    updateCanvasPinButton();
+    actionWheel?.updateState(canvasPinned, musicPinned);
+  },
+});
+
 compatWindow.setMicHotkey = hotkeyControls.setMicHotkey;
 window.setTextHotkey = hotkeyControls.setTextHotkey;
 window.setTextCommandHotkey = hotkeyControls.setTextHotkey;
@@ -1836,13 +1829,19 @@ const updateBatonStateUI = (
 ): void => batonManager.updateBatonStateUI(batonState, activeViewers);
 
 window.addContributor = (targetUserId: string | number): void => {
-  void batonManager.addContributor(targetUserId);
+  void batonManager.addContributor(targetUserId).catch((error: unknown) => {
+    console.error('Unable to update baton permissions:', error);
+  });
 };
 window.removeContributor = (targetUserId: string | number): void => {
-  void batonManager.removeContributor(targetUserId);
+  void batonManager.removeContributor(targetUserId).catch((error: unknown) => {
+    console.error('Unable to update baton permissions:', error);
+  });
 };
 window.requestBatonPass = (targetUserId: string | number): void => {
-  void batonManager.requestBatonPass(targetUserId);
+  void batonManager.requestBatonPass(targetUserId).catch((error: unknown) => {
+    console.error('Unable to update baton permissions:', error);
+  });
 };
 
 // Fetch current user details
