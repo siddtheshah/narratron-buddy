@@ -1,5 +1,7 @@
 /** Premade Adventures page: catalog fetch, search/tag filtering, and instant deploy. */
 
+import type {} from './auth-flow.js';
+
 export interface AdventureSummary {
   readonly id: string;
   readonly title?: string;
@@ -11,12 +13,6 @@ export interface AdventureSummary {
   readonly track_count?: number;
   readonly reference_count?: number;
   readonly difficulty?: string;
-}
-
-export interface AuthUserSummary {
-  readonly id?: number;
-  readonly username?: string;
-  readonly credits?: number;
 }
 
 interface DeployTheaterResponse {
@@ -33,14 +29,6 @@ export interface AdventuresController {
   filterAdventures(): void;
   deployAndPlay(adventureId: string, title?: string): Promise<void>;
   destroy(): void;
-}
-
-declare global {
-  interface Window {
-    currentUser?: AuthUserSummary | null;
-    openAuthModal?: (tab?: string) => void;
-    onAuthSuccess?: (action?: string, data?: unknown) => void;
-  }
 }
 
 export function formatAdventureDate(isoStr: string | undefined): string {

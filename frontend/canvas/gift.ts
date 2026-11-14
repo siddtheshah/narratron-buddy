@@ -1,5 +1,7 @@
 /** Credit gift landing page: validates gift token and claims credits on sign-in. */
 
+import type {} from './auth-flow.js';
+
 export interface GiftUserSummary {
   readonly id?: number;
   readonly username?: string;
@@ -30,15 +32,6 @@ export interface GiftPageController {
   loadGift(): Promise<void>;
   claimGift(): Promise<void>;
   destroy(): void;
-}
-
-declare global {
-  interface Window {
-    currentUser?: GiftUserSummary | null;
-    openAuthModal?: (tab?: string) => void;
-    checkAuthStatus?: (options?: { refresh?: boolean }) => Promise<GiftAuthState | undefined>;
-    invalidateAuthState?: () => void;
-  }
 }
 
 async function readErrorDetail(response: Response): Promise<string | null> {

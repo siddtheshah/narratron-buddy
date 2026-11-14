@@ -3,13 +3,8 @@
  * Manages chat identity, message rendering, suggestions, Beyond20 roll cards, and message submission.
  */
 
+import type {} from './auth-flow.js';
 import { initializeChatEmotes } from './chat-emotes.js';
-
-declare global {
-  interface Window {
-    openAuthModal?: (tab?: string) => void;
-  }
-}
 
 export interface ChatAuthUser {
   readonly id?: number;

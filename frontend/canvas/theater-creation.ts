@@ -1,5 +1,9 @@
 /** Theater Deployer page: creation paths, presets, config editor, theater list, and pricing modal. */
 
+import type {} from './auth-flow.js';
+import type {} from './credit-purchase.js';
+import type {} from './device-navigation.js';
+
 export type CreationPath = 'blank' | 'adventure';
 
 export interface AdventurePreset {
@@ -81,11 +85,6 @@ export interface CreationAuthUser {
   readonly credits?: number;
 }
 
-interface NarratronNavigationApi {
-  isMobile(): boolean;
-  theaterUrl(theaterId: string): string;
-}
-
 export interface TheaterCreationController {
   selectCreationPath(mode: string): void;
   onAdventurePresetSelected(): void;
@@ -100,10 +99,6 @@ export interface TheaterCreationController {
 
 declare global {
   interface Window {
-    currentUser?: CreationAuthUser | null;
-    NarratronNavigation?: NarratronNavigationApi;
-    openBuyCreditsModal?: (reason?: string | null) => void;
-    checkAuthStatus?: (options?: { refresh?: boolean }) => Promise<unknown>;
     theaterDeletionConfirmed?: boolean;
     openPricingModal?: () => void;
     closePricingModal?: () => void;

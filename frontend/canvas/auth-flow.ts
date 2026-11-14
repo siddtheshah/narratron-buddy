@@ -3,6 +3,8 @@
  * Encapsulates authentication state, user account header bar, and the Auth Modal across pages.
  */
 
+import type {} from './credit-purchase.js';
+
 export type AuthTab = 'login' | 'register' | 'forgot' | 'reset';
 
 export interface AuthUser {
@@ -49,10 +51,10 @@ declare global {
     submitForgotPassword?: () => Promise<void>;
     submitResetPassword?: () => Promise<void>;
     submitLogout?: () => Promise<void>;
+    getAuthState?: (options?: AuthRefreshOptions) => Promise<AuthStateResponse>;
     checkAuthStatus?: (options?: AuthRefreshOptions) => Promise<AuthStateResponse | undefined>;
     invalidateAuthState?: () => void;
     onAuthSuccess?: (action?: string, data?: unknown) => void;
-    openBuyCreditsModal?: (reason?: string | null) => void;
   }
 }
 
@@ -629,7 +631,7 @@ export function initAuthFlow(): void {
   }
 }
 
-Reflect.set(window, 'getAuthState', getAuthState);
+window.getAuthState = getAuthState;
 window.invalidateAuthState = invalidateAuthState;
 window.checkAuthStatus = checkAuthStatus;
 window.openAuthModal = openAuthModal;

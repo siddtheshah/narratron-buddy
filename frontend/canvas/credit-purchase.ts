@@ -1,6 +1,7 @@
 /** Shared credit purchasing flow for Deploy and Theater Builder. */
 
 import { checkAuthStatus, openAuthModal } from './auth-flow.js';
+import type {} from './theater-creation.js';
 
 export type CreditPackageId = 'starter' | 'pro' | 'ultra';
 
@@ -33,8 +34,8 @@ interface BuyCreditsResponse {
 
 declare global {
   interface Window {
-    openPricingModal?: () => void;
     beforeCreditPurchase?: () => void | Promise<void>;
+    openBuyCreditsModal?: (reason?: string | null) => void;
     closeBuyCreditsModal?: () => void;
     toggleCardFields?: (show: boolean) => void;
     selectCreditPackage?: (pkgId: CreditPackageId, credits: number, usd: number) => void;

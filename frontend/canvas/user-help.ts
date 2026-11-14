@@ -1,11 +1,12 @@
 /** Basic help and optional paid research; bank-style floating support chat widget. */
 
+import type {} from './auth-flow.js';
+
 declare global {
   interface Window {
     toggleVisitorHelp?: () => void;
     openVisitorHelp?: () => void;
     closeVisitorHelp?: () => void;
-    openAuthModal?: (tab?: string) => void;
   }
 }
 

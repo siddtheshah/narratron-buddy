@@ -1,5 +1,8 @@
 /** Theater Builder workspace, file tree, live preview, AI assistant, and asset generation. */
 
+import type {} from './auth-flow.js';
+import type {} from './credit-purchase.js';
+
 export type TheaterFileKind = 'text' | 'image' | 'audio' | 'video';
 
 export type GenerationKind =
@@ -171,14 +174,6 @@ interface AuthChangedDetail {
 
 export interface TheaterEditorController {
   initialize(): Promise<void>;
-}
-
-declare global {
-  interface Window {
-    checkAuthStatus?: (options?: { refresh?: boolean }) => Promise<unknown>;
-    onAuthSuccess?: (mode?: string, data?: unknown) => void;
-    beforeCreditPurchase?: () => Promise<void>;
-  }
 }
 
 function extractUserId(user: unknown): string | number | null {

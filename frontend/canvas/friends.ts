@@ -1,5 +1,7 @@
 /** Friend controls shared by profiles and the join page. */
 
+import type {} from './auth-flow.js';
+
 export type FriendStatus = 'incoming' | 'accepted' | 'outgoing';
 export type FriendAction = 'request' | 'accept' | 'remove';
 
@@ -12,7 +14,7 @@ export interface FriendAuthState {
   readonly authenticated: boolean;
   readonly user?: {
     readonly username: string;
-  };
+  } | null;
 }
 
 export interface FriendshipRecord {
@@ -46,8 +48,6 @@ declare global {
   interface Window {
     setupProfileFriends?: (profile: ProfileSummary) => Promise<void>;
     activateTab?: (id: string) => void;
-    getAuthState?: () => Promise<FriendAuthState>;
-    openAuthModal?: (tab?: string) => void;
   }
 }
 
