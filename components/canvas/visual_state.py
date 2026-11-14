@@ -208,16 +208,23 @@ class VisualState:
         requested = str(value).strip()
         direct_path = Path(requested)
         if direct_path.is_file():
-            char_dir = self.theater.characters_dir()
-            if char_dir is not None:
-                try:
-                    if direct_path.resolve().is_relative_to(Path(char_dir).resolve()):
-                        return None
-                except (ValueError, OSError):
-                    pass
-            if {"characters", "updated_references"}.intersection(part.lower() for part in direct_path.parts):
-                return None
-            return str(direct_path)
+            allowed_roots = [
+                Path(directory).resolve()
+                for directory in (self.theater.references_dir(), self.theater.image_artifacts_dir())
+                if directory is not None
+            ]
+            direct_resolved = direct_path.resolve()
+            if any(direct_resolved.is_relative_to(root) for root in allowed_roots):
+                char_dir = self.theater.characters_dir()
+                if char_dir is not None:
+                    try:
+                        if direct_resolved.is_relative_to(Path(char_dir).resolve()):
+                            return None
+                    except (ValueError, OSError):
+                        pass
+                if {"characters", "updated_references"}.intersection(part.lower() for part in direct_resolved.parts):
+                    return None
+                return str(direct_path)
 
         normalized = self._normalize_image_alias(requested)
         resolved = self._image_aliases.get(normalized)
@@ -235,7 +242,7 @@ class VisualState:
         for directory in (self.theater.references_dir(), self.theater.image_artifacts_dir()):
             if directory is None:
                 continue
-            root = Path(directory)
+            root = Path(directory).resolve()
             for candidate in (
                 root / requested,
                 root / base_name,
@@ -244,8 +251,13 @@ class VisualState:
                 root / f"{requested}.jpg",
                 root / f"{requested}.jpeg",
             ):
-                if candidate.is_file():
-                    if candidate.is_relative_to(root / "characters"):
+                resolved_candidate = candidate.resolve()
+                if not resolved_candidate.is_relative_to(root):
+                    continue
+                if resolved_candidate.is_file():
+                    if resolved_candidate.is_relative_to(root / "characters"):
+                        continue
+                    if {"characters", "updated_references"}.intersection(part.lower() for part in resolved_candidate.parts):
                         continue
                     self.register_image(str(candidate), requested)
                     return str(candidate)

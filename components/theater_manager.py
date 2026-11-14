@@ -494,6 +494,43 @@ class Theater:
         return None
 
 
+MAX_ZIP_COMPRESSION_RATIO = 100
+_ZIP_READ_CHUNK_BYTES = 65536
+
+
+def _read_zip_entry_bounded(
+    archive: zipfile.ZipFile,
+    info: zipfile.ZipInfo,
+    filename: str,
+    max_file_bytes: int,
+    remaining_total_bytes: int,
+) -> bytes:
+    """Stream-read a ZIP entry while enforcing per-file, total, and ratio limits."""
+    if info.file_size > max_file_bytes:
+        raise ValueError(f"File '{info.filename}' exceeds maximum allowed size of 10MB.")
+    if info.file_size > remaining_total_bytes:
+        raise ValueError("ZIP uncompressed size exceeds allowable limit.")
+    if info.compress_size > 0 and info.file_size > 1024 * 1024 and (info.file_size / info.compress_size) > MAX_ZIP_COMPRESSION_RATIO:
+        raise ValueError(f"File '{filename}' exceeds maximum allowed compression ratio.")
+
+    chunks: List[bytes] = []
+    entry_bytes = 0
+    with archive.open(info, "r") as entry:
+        while True:
+            chunk = entry.read(_ZIP_READ_CHUNK_BYTES)
+            if not chunk:
+                break
+            entry_bytes += len(chunk)
+            if entry_bytes > max_file_bytes:
+                raise ValueError(f"File '{filename}' exceeds maximum allowed size of 10MB.")
+            if entry_bytes > remaining_total_bytes:
+                raise ValueError("ZIP uncompressed size exceeds allowable limit.")
+            if info.compress_size > 0 and entry_bytes > 1024 * 1024 and (entry_bytes / info.compress_size) > MAX_ZIP_COMPRESSION_RATIO:
+                raise ValueError(f"File '{filename}' exceeds maximum allowed compression ratio.")
+            chunks.append(chunk)
+    return b"".join(chunks)
+
+
 def extract_asset_package(
     zip_bytes: bytes, max_bytes: int = MAX_ZIP_BYTES,
 ) -> Tuple[List[Tuple[str, bytes]], Dict[str, List[Tuple[str, bytes]]], List[Tuple[str, bytes]], Optional[str]]:
@@ -505,6 +542,7 @@ def extract_asset_package(
     playlists_data: Dict[str, List[Tuple[str, bytes]]] = {}
     lore_files: List[Tuple[str, bytes]] = []
     theater_config_yaml: Optional[str] = None
+    max_total_uncompressed = max_bytes * 2
     total_uncompressed = 0
     try:
         with zipfile.ZipFile(io.BytesIO(zip_bytes), "r") as archive:
@@ -513,17 +551,19 @@ def extract_asset_package(
                 parts = validate_asset_path(info.filename.rstrip("/") if info.is_dir() else info.filename)
                 if info.is_dir():
                     continue
-                total_uncompressed += info.file_size
-                if total_uncompressed > max_bytes * 2:
-                    raise ValueError("ZIP uncompressed size exceeds allowable limit.")
                 parts = [part for part in parts if part != "__MACOSX"]
                 if not parts or parts[-1].startswith("."):
                     continue
-                if info.file_size > MAX_FILE_BYTES:
-                    raise ValueError(f"File '{info.filename}' exceeds maximum allowed size of 10MB.")
-                filename, content = parts[-1], archive.read(info.filename)
-                if len(content) > MAX_FILE_BYTES:
-                    raise ValueError(f"File '{filename}' exceeds maximum allowed size of 10MB.")
+                filename = parts[-1]
+                remaining_budget = max_total_uncompressed - total_uncompressed
+                content = _read_zip_entry_bounded(
+                    archive,
+                    info,
+                    filename,
+                    MAX_FILE_BYTES,
+                    remaining_budget,
+                )
+                total_uncompressed += len(content)
                 if "/".join(parts[-2:]) in GAME_FILES:
                     reference_files.append((f"game/{parts[-1]}", content))
                 elif "game" in parts and parts.index("game") < len(parts) - 1 and (filename.lower().endswith(".svg") or parts[parts.index("game") + 1:] == ["panel.html"]):

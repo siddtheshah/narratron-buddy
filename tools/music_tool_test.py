@@ -366,5 +366,24 @@ class TestMusicTools(BaseTestCase):
         result = tools._apply_default_style(prompt)
         self.assertEqual(result, prompt)
 
+    def test_create_music_sanitizes_traversal_handle_on_catalog_reuse(self) -> None:
+        temp_root = Path(self.temp_dir)
+        catalog_track = temp_root / "catalog.mp3"
+        catalog_track.write_bytes(b"ID3catalog")
+        self.music_tools.music_catalog.find_match = MagicMock(
+            return_value={
+                "id": 1,
+                "filename": "forest.mp3",
+                "path": str(catalog_track),
+                "score": 0.99,
+            }
+        )
+        result = self.music_tools.create_music("calm forest ambience", handle="../../evil")
+        self.assertIn("Reused a matching private catalog track", result)
+        output_files = list(Path(self.music_tools.output_dir).glob("*.mp3"))
+        self.assertEqual(len(output_files), 1)
+        self.assertTrue(output_files[0].name.startswith("evil_"))
+        self.assertFalse(list(temp_root.glob("evil_*.mp3")))
+
 if __name__ == "__main__":
     unittest.main()

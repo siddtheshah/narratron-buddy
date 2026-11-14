@@ -194,11 +194,16 @@ class MusicTools(BaseTools):
         match = self.music_catalog.find_match(effective_prompt)
         if match:
             self.cancel_orator_bypass()
-            alias_key = handle or re.sub(r'[^a-zA-Z0-9_-]', '_', Path(match["filename"]).stem)
-            filename = f"{alias_key}_{int(time.time())}.mp3"
-            destination = Path(self.output_dir) / filename
+            raw_name = handle or Path(match["filename"]).stem
+            safe_name = re.sub(r'[^a-zA-Z0-9_-]', '_', raw_name).strip("_") or "track"
+            filename = f"{safe_name}_{int(time.time())}.mp3"
+            output_root = Path(self.output_dir).resolve()
+            destination = (output_root / filename).resolve()
+            if not destination.is_relative_to(output_root):
+                raise ValueError(f"Invalid music handle: {handle!r}")
             shutil.copy2(match["path"], destination)
             self.theater.storage_changed()
+            alias_key = handle or safe_name
             track_url = f"/theaters/{self.active_theater_id}/output/music/{filename}" if self.active_theater_id else f"/output/music/{filename}"
             self.music_aliases[alias_key] = track_url
             self.music_aliases[alias_key.lower()] = track_url

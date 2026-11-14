@@ -559,4 +559,20 @@ def test_create_theater_accepts_and_lists_supported_audio_formats(tmp_path: Path
     assert [item["filename"] for item in listed["battle"]] == [name for name, _ in tracks]
 
 
+def test_extract_asset_package_rejects_zip_bomb_and_forged_file_size() -> None:
+    bomb = io.BytesIO()
+    with zipfile.ZipFile(bomb, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("references/huge.txt", b"A" * (2 * 1024 * 1024))
+    with pytest.raises(ValueError, match="compression ratio|exceeds"):
+        extract_asset_package(bomb.getvalue(), max_bytes=1024 * 1024)
+
+    cumulative = io.BytesIO()
+    with zipfile.ZipFile(cumulative, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("references/part1.txt", b"B" * (70 * 1024))
+        archive.writestr("references/part2.txt", b"C" * (70 * 1024))
+    assert len(cumulative.getvalue()) < 64 * 1024
+    with pytest.raises(ValueError, match="exceeds"):
+        extract_asset_package(cumulative.getvalue(), max_bytes=64 * 1024)
+
+
 

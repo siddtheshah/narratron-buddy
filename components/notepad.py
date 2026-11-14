@@ -7,10 +7,11 @@ from dataclasses import dataclass
 import json
 import logging
 import re
+import string
 from threading import RLock
 from typing import Any, Callable, Dict, Literal, Optional
 
-from jinja2 import Template
+from jinja2.sandbox import SandboxedEnvironment
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, create_model
 
 from typing import TYPE_CHECKING
@@ -153,19 +154,39 @@ def parse_planning_schema(schema: dict[str, JsonValue] | None) -> OrderedDict[st
 parse_sticky_definitions = parse_planning_schema
 
 
-def render_structured_sticky(definition: Dict[str, Any], value: Any) -> str:
+_SANDBOXED_JINJA_ENV = SandboxedEnvironment()
+
+
+def _render_safe_format(template: str, value: dict[str, JsonValue]) -> str:
+    """Render a `{field}` template using direct key lookups without attribute access."""
+    parts: list[str] = []
+    for literal_text, field_name, format_spec, conversion in string.Formatter().parse(template):
+        parts.append(literal_text)
+        if field_name is None:
+            continue
+        if not field_name.isidentifier() or conversion is not None or format_spec:
+            raise ValueError(f"Unsupported template placeholder: {field_name!r}")
+        if field_name not in value:
+            raise KeyError(field_name)
+        parts.append(str(value[field_name]))
+    return "".join(parts)
+
+
+def render_structured_sticky(definition: Dict[str, JsonValue], value: JsonValue) -> str:
     if value is None:
         return ""
-    if isinstance(value, str):
+    if type(value) is str:
         return value.strip()[:MAX_STICKY_NOTE_INFO_CHARS]
     template = definition.get("render") or definition.get("display_template")
-    if isinstance(value, dict):
-        if template:
+    if type(value) is dict:
+        if type(template) is str and template:
             try:
-                try:
-                    rendered = template.format(**value) if "{" in template else Template(template).render(**value)
-                except (KeyError, IndexError, ValueError):
-                    rendered = Template(template).render(**value)
+                if "{{" in template or "{%" in template:
+                    rendered = _SANDBOXED_JINJA_ENV.from_string(template).render(**value)
+                elif "{" in template:
+                    rendered = _render_safe_format(template, value)
+                else:
+                    rendered = template
                 return rendered.strip()[:MAX_STICKY_NOTE_INFO_CHARS]
             except Exception:
                 logger.warning("[Notepad] Failed to render template for '%s'", definition.get("topic"))

@@ -1616,3 +1616,15 @@ def test_next_image_navigation(tmp_path: Path) -> None:
     assert state.orator_cursor == 2
 
 
+def test_resolve_image_path_rejects_arbitrary_files_and_traversal(tmp_path: Path) -> None:
+    theater = TheaterManager(tmp_path / "theaters").theater("safe")
+    theater.references_dir().mkdir(parents=True, exist_ok=True)
+    outside = tmp_path / "outside.png"
+    outside.write_bytes(b"secret")
+
+    visual = VisualState(theater)
+    assert visual.resolve_image_path(str(outside)) is None
+    assert visual.resolve_image_path("../../outside.png") is None
+    assert visual.resolve_image_path("../../../outside") is None
+
+

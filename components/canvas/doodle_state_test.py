@@ -471,5 +471,39 @@ def test_snapshot_webp_uses_custom_stamp_resolver() -> None:
         assert center_pixel == (0, 0, 255)
 
 
+def test_resolve_stamp_image_rejects_file_uri_traversal_and_ancestor_walk(tmp_path: Path) -> None:
+    secret_file = tmp_path / "secret.png"
+    secret_file.write_bytes(b"SECRET")
+    ancestor_stamps = tmp_path / "stamps"
+    ancestor_stamps.mkdir()
+    (ancestor_stamps / "ancestor.png").write_bytes(b"ANCESTOR")
+
+    nested_dir = tmp_path / "nested" / "canvas"
+    nested_dir.mkdir(parents=True)
+    base_path = nested_dir / "base.png"
+    base_path.write_bytes(b"BASE")
+
+    theater_stamps = tmp_path / "theater_stamps"
+    theater_stamps.mkdir()
+    mock_theater = MagicMock()
+    mock_theater.theater_id = "test_theater"
+    mock_theater.stamps_dir.return_value = theater_stamps
+    mock_theater.manager = None
+
+    state = DoodleState(lambda: None, theater=mock_theater)
+    assert state.resolve_stamp_image({"type": "stamp", "url": f"file://{secret_file}"}, image_path=str(base_path)) is None
+    assert state.resolve_stamp_image({"type": "stamp", "url": str(secret_file)}, image_path=str(base_path)) is None
+    assert state.resolve_stamp_image({"type": "stamp", "url": "../../secret.png"}, image_path=str(base_path)) is None
+    assert state.resolve_stamp_image({"type": "stamp", "url": "ancestor.png"}, image_path=str(base_path)) is None
+    assert state.resolve_stamp_image(
+        {"type": "stamp", "stamp_id": "theater:test_theater:../secret.png"},
+        image_path=str(base_path),
+    ) is None
+    assert state.resolve_stamp_image(
+        {"type": "stamp", "url": "/theaters/test_theater/stamps/ancestor.png"},
+        image_path=str(base_path),
+    ) is None
+
+
 
 

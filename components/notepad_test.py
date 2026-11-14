@@ -11,7 +11,7 @@ from pydantic import JsonValue
 from components.canvas.story_state import StoryState
 from components.canvas_state import CanvasStateManager
 from components.theater_manager import Theater
-from components.notepad import Notepad, parse_planning_schema
+from components.notepad import Notepad, parse_planning_schema, render_structured_sticky
 
 
 class TestNotepad(unittest.TestCase):
@@ -614,6 +614,19 @@ def test_adventure_reads_contract_visibility_and_retains_all_topics(tmp_path: Pa
 def test_planning_schema_rejects_old_fields_and_non_string_values(entry: dict[str, JsonValue]) -> None:
     with pytest.raises(ValueError):
         parse_planning_schema({"Stats": entry})
+
+
+def test_render_structured_sticky_blocks_ssti_and_format_attribute_traversal() -> None:
+    assert render_structured_sticky({"topic": "Stats", "render": "HP: {hp}"}, {"hp": "10"}) == "HP: 10"
+    assert render_structured_sticky({"topic": "Stats", "render": "HP: {{ hp }}"}, {"hp": "10"}) == "HP: 10"
+    assert render_structured_sticky(
+        {"topic": "Stats", "render": "{hp.__class__.__init__.__globals__}"},
+        {"hp": "10"},
+    ) == "hp: 10"
+    assert render_structured_sticky(
+        {"topic": "Stats", "render": "{{ ''.__class__.__mro__[1].__subclasses__() }}"},
+        {"hp": "10"},
+    ) == "hp: 10"
 
 
 if __name__ == "__main__":

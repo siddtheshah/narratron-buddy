@@ -367,35 +367,46 @@ class DoodleState:
             b64_content = url.split(";base64,", 1)[1]
             return base64.b64decode(b64_content)
 
-        clean_url = url.removeprefix("file://")
+        if url.lower().startswith("file://"):
+            return None
 
-        if clean_url:
-            path = Path(clean_url)
+        allowed_roots: list[Path] = []
+        if self.theater is not None:
             try:
-                if path.is_file():
-                    return path.read_bytes()
+                allowed_roots.append(self.theater.stamps_dir().resolve())
             except OSError:
                 pass
-
-        if image_path and clean_url:
+        base_dir: Path | None = None
+        if image_path:
             img_file = Path(image_path).resolve()
             base_dir = img_file.parent
+            allowed_roots.append(base_dir)
+            allowed_roots.append((base_dir / "stamps").resolve())
+
+        def _read_contained(candidate: Path, roots: list[Path]) -> bytes | None:
             try:
-                if (base_dir / clean_url).is_file():
-                    return (base_dir / clean_url).read_bytes()
-            except OSError:
+                resolved = candidate.resolve()
+                if any(resolved.is_relative_to(root) for root in roots) and resolved.is_file():
+                    return resolved.read_bytes()
+            except (OSError, ValueError):
                 pass
-            ancestors = [base_dir, *img_file.parents]
-            for ancestor in ancestors:
-                try:
-                    rel_candidate = ancestor / clean_url.lstrip("/\\")
-                    if rel_candidate.is_file():
-                        return rel_candidate.read_bytes()
-                    stamp_name = Path(clean_url).name
-                    if stamp_name and (ancestor / "stamps" / stamp_name).is_file():
-                        return (ancestor / "stamps" / stamp_name).read_bytes()
-                except OSError:
-                    pass
+            return None
+
+        if url and allowed_roots:
+            url_path = Path(url)
+            if url_path.is_absolute():
+                found = _read_contained(url_path, allowed_roots)
+                if found is not None:
+                    return found
+            elif base_dir is not None:
+                found = _read_contained(base_dir / url, allowed_roots)
+                if found is not None:
+                    return found
+                stamp_name = url_path.name
+                if stamp_name:
+                    found = _read_contained(base_dir / "stamps" / stamp_name, [(base_dir / "stamps").resolve()])
+                    if found is not None:
+                        return found
 
         target_theater_id = ""
         target_filename = ""
@@ -414,39 +425,41 @@ class DoodleState:
                 target_theater_id = seg_theater_id
                 target_filename = unquote(after_stamps.split("?")[0])
 
+        def _is_safe_theater_id(tid: str) -> bool:
+            return bool(tid) and tid not in (".", "..") and "/" not in tid and "\\" not in tid and Path(tid).name == tid
+
         if target_filename:
             if self.theater is not None:
                 try:
-                    cand = self.theater.stamps_dir() / target_filename
-                    if cand.is_file():
-                        return cand.read_bytes()
+                    stamps_root = self.theater.stamps_dir().resolve()
+                    found = _read_contained(stamps_root / target_filename, [stamps_root])
+                    if found is not None:
+                        return found
                 except OSError:
                     pass
-                if target_theater_id and self.theater.manager is not None:
+                if _is_safe_theater_id(target_theater_id) and self.theater.manager is not None:
                     try:
                         other_theater = self.theater.manager.theater(target_theater_id)
-                        cand = other_theater.stamps_dir() / target_filename
-                        if cand.is_file():
-                            return cand.read_bytes()
+                        other_root = other_theater.stamps_dir().resolve()
+                        found = _read_contained(other_root / target_filename, [other_root])
+                        if found is not None:
+                            return found
                     except OSError:
                         pass
             try:
                 from components.theater_manager import get_ephemeral_root
-                if target_theater_id:
-                    cand = get_ephemeral_root() / target_theater_id / "stamps" / target_filename
-                    if cand.is_file():
-                        return cand.read_bytes()
+                if _is_safe_theater_id(target_theater_id):
+                    eph_root = (get_ephemeral_root() / target_theater_id / "stamps").resolve()
+                    found = _read_contained(eph_root / target_filename, [eph_root])
+                    if found is not None:
+                        return found
             except Exception:
                 pass
-            if image_path:
-                img_file = Path(image_path).resolve()
-                for ancestor in [img_file.parent, *img_file.parents]:
-                    cand = ancestor / "stamps" / target_filename
-                    try:
-                        if cand.is_file():
-                            return cand.read_bytes()
-                    except OSError:
-                        pass
+            if base_dir is not None:
+                local_stamps_root = (base_dir / "stamps").resolve()
+                found = _read_contained(local_stamps_root / target_filename, [local_stamps_root])
+                if found is not None:
+                    return found
 
         numeric_stamp_id: int | None = None
         raw_stamp_id = action.get("stamp_id")
