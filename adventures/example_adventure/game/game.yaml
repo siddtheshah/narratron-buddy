@@ -280,6 +280,16 @@ invariants: ['constants.indices.all(i, state.board[i] == 0 || (i / 8 + i % 8) % 
 
 # Actions: parameters, legality checks, intermediate calculations, complete next state.
 transitions:
+  # A committed request wakes game control without changing gameplay data.
+  request_narratron_action:
+    actor: player
+    permission: contributor
+    description: Ask Narratron to review the current game and take any justified action.
+    parameters:
+      type: object
+      additionalProperties: false
+    result: state
+    triggering: true
   select:
     permission: contributor
     parameters:
@@ -438,6 +448,9 @@ panel:
         "symbol": state.board[cell] == 2 || state.board[cell] == -2 ? "♛" : ""
       })
   actions:
+    request_narratron_action:
+      permission: contributor
+      name: '"request_narratron_action"'
     reset:
       name: '"reset"'
       confirmation: Start a new game? This replaces the current position.
@@ -604,6 +617,7 @@ panel:
 
 # Guidance and a concise state projection for Narratron.
 instructions: |-
+  request_narratron_action is a player UI request that changes no gameplay state and spends no resources. Review current state and committed events for justified Narratron actions; it grants no rewards, consent, or extra turn. If nothing is due, take no action.
   Checkers game in the Library of Origins. You play Ivory (turn == -1) against the player's Red (turn == 1). When turn == -1 and moves are available, use 'narratron_move' to advance an Ivory piece.
   On your turn in an unfinished game, you may instead use 'narratron_concede' with no arguments to resign, including when the player asks you to concede. This awards Red the win and the victory crown on the current canvas page. Commit the action before describing the concession as completed.
 model_state: |-
