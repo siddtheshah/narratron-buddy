@@ -5,13 +5,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Narratron - Theater Deployer</title>
-    <script src="/static/js/device-navigation.js"></script>
+    <script type="module" src="/static/generated/canvas/device-navigation.js"></script>
     <link rel="icon" type="image/png" href="/favicon.png">
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/css/auth-flow.css">
-    <script src="/static/js/auth-flow.js"></script>
+    <script type="module" src="/static/generated/canvas/auth-flow.js"></script>
     <link rel="stylesheet" href="/static/css/credit-purchase.css">
-    <script src="/static/js/credit-purchase.js"></script>
+    <script type="module" src="/static/generated/canvas/credit-purchase.js"></script>
     <style>
         :root {
             --bg-color: #0b0d12;
@@ -972,7 +972,7 @@
             <div class="canvas-return-banner" id="canvasReturnBanner" role="status">
                 <span>Ready to make it your own? Use the <a href="/theater-editor">Theater Editor</a> to add reference
                     images and music, or expand Fresh Canvas settings to configure your tools.</span>
-                <button class="btn btn-secondary btn-sm" type="button" onclick="dismissCanvasReturnBanner()">Got
+                <button class="btn btn-secondary btn-sm" id="dismissCanvasReturnBtn" type="button">Got
                     it</button>
             </div>
         </div>
@@ -989,13 +989,13 @@
                 <!-- Theater Creation Path Cards -->
                 <div class="creation-paths-container">
                     <div class="creation-paths-grid">
-                        <div class="path-card active" id="pathCardBlank" onclick="selectCreationPath('blank')">
+                        <div class="path-card active" id="pathCardBlank">
                             <div class="path-icon">✨</div>
                             <div class="path-title">Fresh Canvas</div>
                             <div class="path-desc">Start with default assets and optional tool settings</div>
                         </div>
 
-                        <div class="path-card" id="pathCardAdventure" onclick="selectCreationPath('adventure')">
+                        <div class="path-card" id="pathCardAdventure">
                             <div class="path-icon">🗺️</div>
                             <div class="path-title">New Adventure</div>
                             <div class="path-desc">Jump into a player-led, choice-driven story</div>
@@ -1217,7 +1217,7 @@
 
                     <div class="form-group" style="margin-top: 1rem;">
                         <label for="adventurePresetSelect">Premade Adventure Preset</label>
-                        <select id="adventurePresetSelect" onchange="onAdventurePresetSelected()">
+                        <select id="adventurePresetSelect">
                             <option value="">✨ Custom / Blank Adventure (No Preset)</option>
                         </select>
                         <small>Selecting a preset automatically mounts its lore documents, playlists, character
@@ -1257,7 +1257,7 @@
                     </div>
                 </div>
 
-<button class="btn btn-primary" id="deployBtn" onclick="deployNewTheater()" style="margin-top: 1rem;">
+<button class="btn btn-primary" id="deployBtn" type="button" style="margin-top: 1rem;">
                     <span id="deploySpinner" style="display: none;">⏳</span>
                     <span id="deployBtnText">🚀 Deploy Theater</span>
                 </button>
@@ -1270,7 +1270,7 @@
                 <div class="panel-title">
                     <span>🌐</span> Deployed Theaters
                 </div>
-                <button class="btn btn-secondary btn-sm" onclick="loadTheaters()">🔄 Refresh</button>
+                <button class="btn btn-secondary btn-sm" id="refreshTheatersBtn" type="button">🔄 Refresh</button>
             </div>
 
             <div class="table-responsive">
@@ -1310,7 +1310,7 @@
                 <span>I have the necessary rights to use any reference data or assets I provide.</span>
             </label>
             <button class="btn btn-primary" id="deploymentAcknowledgementButton"
-                style="width: 100%; margin-top: 0.75rem;" onclick="acceptDeploymentAcknowledgement()" disabled>
+                style="width: 100%; margin-top: 0.75rem;" type="button" disabled>
                 I Understand &amp; Agree
             </button>
         </div>
@@ -1327,14 +1327,13 @@
             </p>
             <div class="form-group" style="margin-bottom: 1.25rem;">
                 <input type="text" id="canvasJoinKeyInput" placeholder="KEY-XXXXXX"
-                    style="text-transform: uppercase; letter-spacing: 2px; text-align: center; font-size: 1.1rem;"
-                    onkeypress="if(event.key==='Enter') submitCanvasJoinKey()">
+                    style="text-transform: uppercase; letter-spacing: 2px; text-align: center; font-size: 1.1rem;">
             </div>
-            <button class="btn btn-primary" style="width: 100%;" onclick="submitCanvasJoinKey()">Launch Canvas
+            <button class="btn btn-primary" id="joinKeySubmitBtn" type="button" style="width: 100%;">Launch Canvas
                 →</button>
             <div class="modal-error" id="joinKeyModalError"></div>
-            <button class="btn btn-secondary btn-sm" style="width: 100%; margin-top: 1rem;"
-                onclick="closeJoinKeyModal()">Cancel</button>
+            <button class="btn btn-secondary btn-sm" id="joinKeyCancelBtn" type="button"
+                style="width: 100%; margin-top: 1rem;">Cancel</button>
         </div>
     </div>
 
@@ -1351,7 +1350,7 @@
                         Live rate information retrieved dynamically from Narratron Pricing Controller
                     </p>
                 </div>
-                <button onclick="closePricingModal()"
+                <button id="closePricingHeaderBtn" type="button"
                     style="background: transparent; border: none; color: var(--text-muted); font-size: 1.25rem; cursor: pointer; padding: 4px 8px; border-radius: 6px;">&times;</button>
             </div>
 
@@ -1366,7 +1365,7 @@
                     <span id="pricingLastUpdated"
                         style="color: var(--text-muted); font-size: 0.75rem; margin-left: 6px;"></span>
                 </div>
-                <button class="btn btn-secondary btn-sm" onclick="fetchPricingRates()"
+                <button class="btn btn-secondary btn-sm" id="refreshPricingRatesBtn" type="button"
                     style="padding: 4px 10px; font-size: 0.78rem; display: flex; align-items: center; gap: 4px;">
                     🔄 Refresh Rates
                 </button>
@@ -1481,14 +1480,12 @@
                                 style="font-size: 0.75rem; font-weight: 600; color: #d8b4fe; display: block; margin-bottom: 4px;">Story
                                 Turns</label>
                             <input type="number" id="calcStoryTurnsInput" min="0" max="1000" step="1" value="0"
-                                oninput="calculateLivePricingEstimate()"
                                 style="width: 100%; background: #0f172a; border: 1px solid rgba(168,85,247,0.35); border-radius: 6px; padding: 6px 10px; color: white; font-weight: 600; font-size: 0.9rem;">
                         </div>
                         <div style="display: flex; flex-direction: column; justify-content: flex-end;">
                             <label
                                 style="font-size: 0.75rem; font-weight: 600; color: #fbbf24; display: flex; align-items: center; gap: 7px; min-height: 34px; cursor: pointer;">
                                 <input type="checkbox" id="calcCharacterVoicingInput"
-                                    onchange="calculateLivePricingEstimate()"
                                     style="accent-color: #fbbf24; width: 16px; height: 16px; cursor: pointer;">
                                 Character voicing
                             </label>
@@ -1498,7 +1495,6 @@
                                 style="font-size: 0.75rem; font-weight: 600; color: #67e8f9; display: block; margin-bottom: 4px;">Canvas
                                 Tool Uses</label>
                             <input type="number" id="calcInteractiveCanvasInput" min="0" max="1000" step="1" value="0"
-                                oninput="calculateLivePricingEstimate()"
                                 style="width: 100%; background: #0f172a; border: 1px solid rgba(34,211,238,0.35); border-radius: 6px; padding: 6px 10px; color: white; font-weight: 600; font-size: 0.9rem;">
                         </div>
                         <div>
@@ -1506,7 +1502,6 @@
                                 style="font-size: 0.75rem; font-weight: 600; color: #94a3b8; display: block; margin-bottom: 4px;">Live agent
                                 tool calls</label>
                             <input type="number" id="calcToolCallsInput" min="0" step="1" value="100"
-                                oninput="calculateLivePricingEstimate()"
                                 style="width: 100%; background: #0f172a; border: 1px solid rgba(255,255,255,0.15); border-radius: 6px; padding: 6px 10px; color: white; font-weight: 600; font-size: 0.9rem;">
                         </div>
                         <div>
@@ -1514,7 +1509,6 @@
                                 style="font-size: 0.75rem; font-weight: 600; color: #94a3b8; display: block; margin-bottom: 4px;">Images
                                 Created</label>
                             <input type="number" id="calcImagesInput" min="0" max="100" step="1" value="10"
-                                oninput="calculateLivePricingEstimate()"
                                 style="width: 100%; background: #0f172a; border: 1px solid rgba(255,255,255,0.15); border-radius: 6px; padding: 6px 10px; color: white; font-weight: 600; font-size: 0.9rem;">
                         </div>
                         <div>
@@ -1522,7 +1516,6 @@
                                 style="font-size: 0.75rem; font-weight: 600; color: #94a3b8; display: block; margin-bottom: 4px;">Music
                                 Tracks</label>
                             <input type="number" id="calcMusicInput" min="0" max="50" step="1" value="2"
-                                oninput="calculateLivePricingEstimate()"
                                 style="width: 100%; background: #0f172a; border: 1px solid rgba(255,255,255,0.15); border-radius: 6px; padding: 6px 10px; color: white; font-weight: 600; font-size: 0.9rem;">
                         </div>
                         <div>
@@ -1530,7 +1523,6 @@
                                 style="font-size: 0.75rem; font-weight: 600; color: #94a3b8; display: block; margin-bottom: 4px;">Storage
                                 (GB)</label>
                             <input type="number" id="calcStorageInput" min="0" max="50" step="0.5" value="1.0"
-                                oninput="calculateLivePricingEstimate()"
                                 style="width: 100%; background: #0f172a; border: 1px solid rgba(255,255,255,0.15); border-radius: 6px; padding: 6px 10px; color: white; font-weight: 600; font-size: 0.9rem;">
                         </div>
                     </div>
@@ -1556,11 +1548,10 @@
 
             <!-- Action buttons -->
             <div style="display: flex; gap: 10px;">
-                <button class="btn btn-primary" style="flex: 1; font-weight: 600;"
-                    onclick="closePricingModal(); openBuyCreditsModal();">
+                <button class="btn btn-primary" id="pricingBuyCreditsBtn" type="button" style="flex: 1; font-weight: 600;">
                     ⚡ Get Credits Now
                 </button>
-                <button class="btn btn-secondary" style="flex: 1;" onclick="closePricingModal()">
+                <button class="btn btn-secondary" id="closePricingFooterBtn" type="button" style="flex: 1;">
                     Close
                 </button>
             </div>
@@ -1568,752 +1559,7 @@
     </div>
 
 
-    <script>
-        let currentUser = window.currentUser || null;
-        function getDefaultTheaterName() {
-            const day = new Date().toLocaleDateString('en-US', {
-                month: 'short', day: 'numeric', year: 'numeric',
-            });
-            return `Theater ${day}`;
-        }
-        const defaultTheaterName = getDefaultTheaterName();
-        document.getElementById('theaterName').value = defaultTheaterName;
-        const deploymentAcknowledgementStorageKey = 'narratron.deployAcknowledgement.v1';
-        const canvasReturnSuggestionStorageKey = 'narratron.canvasReturnSuggestion.v1';
-
-        function hasDeploymentAcknowledgement() {
-            return localStorage.getItem(deploymentAcknowledgementStorageKey) === 'accepted';
-        }
-
-        function updateDeploymentAcknowledgementButton() {
-            const safeContent = document.getElementById('safeContentAcknowledgement')?.checked;
-            const referenceRights = document.getElementById('referenceRightsAcknowledgement')?.checked;
-            const button = document.getElementById('deploymentAcknowledgementButton');
-            if (button) button.disabled = !(safeContent && referenceRights);
-        }
-
-        function showDeploymentAcknowledgement() {
-            if (!hasDeploymentAcknowledgement()) {
-                document.getElementById('deploymentAcknowledgementModal')?.classList.add('active');
-            }
-        }
-
-        function acceptDeploymentAcknowledgement() {
-            const safeContent = document.getElementById('safeContentAcknowledgement')?.checked;
-            const referenceRights = document.getElementById('referenceRightsAcknowledgement')?.checked;
-            if (!safeContent || !referenceRights) return;
-
-            localStorage.setItem(deploymentAcknowledgementStorageKey, 'accepted');
-            document.getElementById('deploymentAcknowledgementModal')?.classList.remove('active');
-        }
-
-        function dismissCanvasReturnBanner() {
-            document.getElementById('canvasReturnBanner')?.classList.remove('visible');
-        }
-
-        function showCanvasReturnSuggestion() {
-            const params = new URLSearchParams(window.location.search);
-            if (params.get('from') !== 'canvas' || localStorage.getItem(canvasReturnSuggestionStorageKey)) return;
-
-            localStorage.setItem(canvasReturnSuggestionStorageKey, 'seen');
-            selectCreationPath('blank');
-            document.getElementById('canvasReturnBanner')?.classList.add('visible');
-            params.delete('from');
-            const query = params.toString();
-            window.history.replaceState({}, document.title, `${window.location.pathname}${query ? `?${query}` : ''}${window.location.hash}`);
-        }
-
-        document.getElementById('safeContentAcknowledgement')?.addEventListener('change', updateDeploymentAcknowledgementButton);
-        document.getElementById('referenceRightsAcknowledgement')?.addEventListener('change', updateDeploymentAcknowledgementButton);
-
-        // Listen for auth state changes to update local currentUser and reload theaters
-        window.addEventListener('narratron:auth-changed', (e) => {
-            currentUser = e.detail?.user || window.currentUser || null;
-            loadTheaters();
-        });
-
-        // Creation Path State & Switcher
-        const deployQuery = new URLSearchParams(window.location.search);
-        const requestedCreationPath = deployQuery.get('creation_path');
-        let currentCreationPath = ['blank', 'adventure'].includes(requestedCreationPath)
-            ? requestedCreationPath
-            : 'blank';
-
-        function selectCreationPath(mode) {
-            currentCreationPath = mode === 'adventure' ? 'adventure' : 'blank';
-
-            const cardBlank = document.getElementById('pathCardBlank');
-            const cardAdventure = document.getElementById('pathCardAdventure');
-
-            const secBlank = document.getElementById('pathSectionBlank');
-            const secAdventure = document.getElementById('pathSectionAdventure');
-
-            const deployBtnText = document.getElementById('deployBtnText');
-            const theaterNameConfig = document.getElementById('theaterNameConfig');
-
-            [cardBlank, cardAdventure].forEach(c => c && c.classList.remove('active'));
-            [secBlank, secAdventure].forEach(s => s && (s.style.display = 'none'));
-            if (theaterNameConfig) theaterNameConfig.style.display = 'block';
-
-            if (currentCreationPath === 'adventure') {
-                if (cardAdventure) cardAdventure.classList.add('active');
-                if (secAdventure) secAdventure.style.display = 'block';
-                if (deployBtnText) deployBtnText.innerText = 'Start Adventure';
-            } else {
-                if (cardBlank) cardBlank.classList.add('active');
-                if (secBlank) secBlank.style.display = 'block';
-                if (deployBtnText) deployBtnText.innerText = '🚀 Deploy Theater';
-            }
-        }
-
-        let theaterDefaultConfigLoaded = false;
-        let theaterDefaultConfigRequest = null;
-        let advancedConfigIsCanonical = false;
-
-        let availableAdventurePresets = [];
-
-        async function loadAdventurePresets() {
-            const select = document.getElementById('adventurePresetSelect');
-            if (!select) return;
-            try {
-                const res = await fetch('/api/adventures');
-                if (!res.ok) return;
-                availableAdventurePresets = await res.json();
-
-                select.innerHTML = '<option value="">✨ Custom / Blank Adventure (No Preset)</option>' +
-                    availableAdventurePresets.map(adv =>
-                        `<option value="${adv.id}">${adv.title || adv.id} (${adv.genre || 'Adventure'})</option>`
-                    ).join('');
-
-                const presetParam = deployQuery.get('preset');
-                if (presetParam) {
-                    select.value = presetParam;
-                    onAdventurePresetSelected();
-                }
-            } catch (e) {
-                console.warn('Failed to load adventure presets:', e);
-            }
-        }
-
-        function onAdventurePresetSelected() {
-            const select = document.getElementById('adventurePresetSelect');
-            const card = document.getElementById('adventurePresetCard');
-            const selectedId = select ? select.value : '';
-
-            if (!selectedId) {
-                if (card) card.style.display = 'none';
-                return;
-            }
-
-            const adv = availableAdventurePresets.find(a => a.id === selectedId);
-            if (!adv) {
-                if (card) card.style.display = 'none';
-                return;
-            }
-
-            if (card) {
-                card.style.display = 'block';
-                const banner = document.getElementById('presetCardBanner');
-                const genre = document.getElementById('presetCardGenre');
-                const title = document.getElementById('presetCardTitle');
-                const desc = document.getElementById('presetCardDesc');
-                const pills = document.getElementById('presetCardPills');
-
-                if (banner) {
-                    banner.style.backgroundImage = `url('/api/adventures/${encodeURIComponent(adv.id)}/cover')`;
-                }
-                if (genre) genre.innerText = adv.genre || 'Adventure';
-                if (title) title.innerText = adv.title || adv.id;
-                if (desc) desc.innerText = adv.description || '';
-                if (pills) {
-                    const items = [];
-                    if (adv.lore_count) items.push(`<span>📜 ${adv.lore_count} Lore Docs</span>`);
-                    if (adv.track_count) items.push(`<span>🎵 ${adv.track_count} Soundtracks</span>`);
-                    if (adv.reference_count) items.push(`<span>🖼️ ${adv.reference_count} References</span>`);
-                    if (adv.difficulty) items.push(`<span>⚡ ${adv.difficulty}</span>`);
-                    pills.innerHTML = items.join(' • ');
-                }
-            }
-
-            const nameInput = document.getElementById('theaterName');
-            if (nameInput && (nameInput.value === defaultTheaterName || !nameInput.value.trim())) {
-                nameInput.value = adv.title || adv.id;
-            }
-        }
-
-        if (deployQuery.get('adventure_mode') === 'true' || deployQuery.get('preset')) {
-            const adventureModeInput = document.getElementById('cfgAdventureMode');
-            if (adventureModeInput) adventureModeInput.checked = true;
-        }
-        selectCreationPath(currentCreationPath);
-        loadAdventurePresets();
-
-        async function loadTheaterDefaultConfig() {
-            if (theaterDefaultConfigLoaded) return;
-            if (theaterDefaultConfigRequest) return theaterDefaultConfigRequest;
-
-            const editor = document.getElementById('theaterConfigEditor');
-            const status = document.getElementById('theaterConfigEditorStatus');
-            if (!editor) return;
-
-            theaterDefaultConfigRequest = (async () => {
-                editor.value = 'Loading theater_default.yaml...';
-                editor.disabled = true;
-                if (status) status.textContent = 'Loading theater_default.yaml...';
-
-                try {
-                    const response = await fetch('/api/theaters/default-config');
-                    const data = await response.json();
-                    if (!response.ok) {
-                        throw new Error(data.detail || 'Failed to load theater_default.yaml');
-                    }
-                    editor.value = data.config_yaml || '';
-                    theaterDefaultConfigLoaded = true;
-                    if (status) status.textContent = 'Loaded from theater_default.yaml. Changes apply only to this new theater.';
-                } catch (error) {
-                    editor.value = '';
-                    if (status) status.textContent = error.message || 'Could not load theater_default.yaml.';
-                } finally {
-                    editor.disabled = false;
-                    theaterDefaultConfigRequest = null;
-                }
-            })();
-            return theaterDefaultConfigRequest;
-        }
-
-        document.getElementById('simpleConfig')?.addEventListener('toggle', (event) => {
-            if (event.currentTarget.open) {
-                document.getElementById('advancedConfig').open = false;
-                advancedConfigIsCanonical = false;
-            }
-        });
-        document.getElementById('advancedConfig')?.addEventListener('toggle', (event) => {
-            if (event.currentTarget.open) {
-                document.getElementById('simpleConfig').open = false;
-                advancedConfigIsCanonical = true;
-                loadTheaterDefaultConfig();
-            }
-        });
-
-        // Deploy Theater
-        async function deployNewTheater() {
-            currentUser = window.currentUser || currentUser;
-            if (!hasDeploymentAcknowledgement()) {
-                showDeploymentAcknowledgement();
-                return;
-            }
-
-            if (!currentUser) {
-                openAuthModal('login');
-                return;
-            }
-
-            const enteredName = document.getElementById('theaterName').value.trim();
-            const name = !enteredName || enteredName === defaultTheaterName ? getDefaultTheaterName() : enteredName;
-            const style = document.getElementById('theaterStyle').value.trim();
-            const specialInstructions = document.getElementById('theaterSpecialInstructions').value.trim();
-            const deployBtn = document.getElementById('deployBtn');
-            const deploySpinner = document.getElementById('deploySpinner');
-            const deployBtnText = document.getElementById('deployBtnText');
-
-            deployBtn.disabled = true;
-            deploySpinner.style.display = 'inline-block';
-            deployBtnText.innerText = 'Deploying Theater...';
-
-            try {
-                if (theaterDefaultConfigRequest) await theaterDefaultConfigRequest;
-                const formData = new FormData();
-                formData.append('name', name);
-                formData.append('creation_mode', currentCreationPath);
-                const useBlankConfig = currentCreationPath === 'blank';
-                if (useBlankConfig) {
-                    formData.append('agent_style', style);
-                    formData.append('agent_special_instructions', specialInstructions);
-                    formData.append('advanced_config_canonical', advancedConfigIsCanonical);
-                    formData.append('use_generated_music', document.getElementById('cfgUseGeneratedMusic')?.checked ? 'true' : 'false');
-                    formData.append('enable_image_generation', document.getElementById('cfgImageGeneration')?.checked ? 'true' : 'false');
-                    formData.append('enable_scene_animations', document.getElementById('cfgSceneAnimations')?.checked ? 'true' : 'false');
-                    formData.append('enable_interactive_canvas',
-                        document.getElementById('cfgInteractiveCanvas')?.checked ? 'true' : 'false');
-                }
-                formData.append('enable_adventure_mode',
-                    currentCreationPath === 'adventure' || (useBlankConfig && document.getElementById('cfgAdventureMode')?.checked) ? 'true' : 'false');
-                if (currentCreationPath === 'adventure') {
-                    formData.append('story_planning_style', document.getElementById('storyPlanningStyle')?.value.trim() || '');
-                }
-
-                const presetAdventureId = document.getElementById('adventurePresetSelect')?.value || '';
-                if (currentCreationPath === 'adventure' && presetAdventureId) {
-                    formData.append('preset_adventure_id', presetAdventureId);
-                }
-
-                const theaterConfigYaml = document.getElementById('theaterConfigEditor')?.value.trim();
-                if (useBlankConfig && advancedConfigIsCanonical && theaterConfigYaml) {
-                    formData.append('advanced_config', theaterConfigYaml);
-                }
-
-                const response = await fetch('/api/theaters/create-and-deploy', {
-                    method: 'POST',
-                    body: formData,
-                });
-
-                let result = {};
-                const contentType = response.headers.get('content-type');
-                if (contentType && contentType.includes('application/json')) {
-                    try {
-                        result = await response.json();
-                    } catch (e) {
-                        result = {};
-                    }
-                } else {
-                    const text = await response.text();
-                    result = { detail: text || response.statusText || `Server error (${response.status})` };
-                }
-
-                if (response.ok && result.theater_id) {
-                    window.location.href = window.NarratronNavigation.theaterUrl(result.theater_id);
-                } else {
-                    alert('Error deploying theater: ' + (result.detail || `Server error (${response.status})`));
-                }
-            } catch (err) {
-                console.error(err);
-                alert('Failed to deploy theater: ' + err.message);
-            } finally {
-                deployBtn.disabled = false;
-                deploySpinner.style.display = 'none';
-                deployBtnText.innerText = '🚀 Deploy Theater';
-            }
-        }
-
-        function escapeHtml(str) {
-            if (!str) return '';
-            return String(str)
-                .replace(/&/g, '&amp;')
-                .replace(/</g, '&lt;')
-                .replace(/>/g, '&gt;')
-                .replace(/"/g, '&quot;')
-                .replace(/'/g, '&#039;');
-        }
-
-        function escapeJs(str) {
-            if (!str) return '';
-            return String(str)
-                .replace(/\\/g, '\\\\')
-                .replace(/'/g, "\\'")
-                .replace(/"/g, '\\"');
-        }
-
-        // Active Theaters / Personal Sessions List
-        async function loadTheaters() {
-            currentUser = window.currentUser || currentUser;
-            const body = document.getElementById('theatersTableBody');
-            const panelTitle = document.getElementById('theatersPanelTitle');
-            try {
-                const res = await fetch('/api/theaters');
-                if (res.status === 401) {
-                    if (panelTitle) panelTitle.innerHTML = `<span>👤</span> Personal Sessions`;
-                    body.innerHTML = `<tr><td colspan="4" class="empty-state">Please log in to view your theaters.</td></tr>`;
-                    return;
-                }
-                const theaters = await res.json();
-
-                if (currentUser) {
-                    if (panelTitle) panelTitle.innerHTML = `<span>👤</span> Personal Sessions`;
-                } else {
-                    if (panelTitle) panelTitle.innerHTML = `<span>🌐</span> Global Theaters`;
-                }
-
-                let displayTheaters = theaters || [];
-                if (currentUser) {
-                    displayTheaters = displayTheaters.filter(s => s.is_owner);
-                }
-
-                displayTheaters.sort((a, b) => {
-                    const timeA = a.last_used_at || a.created_at || '';
-                    const timeB = b.last_used_at || b.created_at || '';
-                    return timeB.localeCompare(timeA);
-                });
-
-                if (displayTheaters.length === 0) {
-                    const emptyMsg = currentUser
-                        ? 'No personal sessions found. Create your first theater above!'
-                        : 'No global theaters deployed yet.';
-                    body.innerHTML = `<tr><td colspan="4" class="empty-state">${emptyMsg}</td></tr>`;
-                    return;
-                }
-
-                body.innerHTML = '';
-                displayTheaters.forEach(s => {
-                    const tr = document.createElement('tr');
-                    const refCount = s.mounted_references ? s.mounted_references.length : 0;
-                    const plCount = s.mounted_playlists ? Object.keys(s.mounted_playlists).length : 0;
-
-                    let joinKeyHtml = `<span class="badge join-key-badge">${s.join_key}</span>`;
-                    if (s.is_owner && s.join_key && !s.join_key.includes('Owner')) {
-                        joinKeyHtml += `<button class="copy-key-btn" onclick="copyJoinKey('${s.join_key}', this)">📋 Copy</button>`;
-                    }
-
-                    let actionsHtml = `<button class="btn-sm btn-success theater-action-icon canvas-launch" title="Launch Canvas" aria-label="Launch Canvas" onclick="openCanvas('${s.theater_id}', ${s.is_owner ? 'true' : 'false'}, '${s.join_key || ''}')"><span aria-hidden="true">▶</span></button>`;
-                    actionsHtml += ` <a href="/remote?theater_id=${encodeURIComponent(s.theater_id)}" class="btn-sm btn-success theater-action-icon remote-launch" title="Open Mobile" aria-label="Open Mobile"><span aria-hidden="true">📱</span><span>Open Mobile</span></a>`;
-                    actionsHtml += ` <a href="/api/theaters/${s.theater_id}/export-assets" class="btn-sm btn-secondary theater-action-icon export-theater-btn" title="Export Assets" aria-label="Export Assets" download><span aria-hidden="true">📦</span></a>`;
-                    if (s.is_owner) {
-                        actionsHtml += ` <a href="/theater-editor?theater_id=${encodeURIComponent(s.theater_id)}" class="btn-sm btn-secondary theater-action-icon builder-launch" title="Edit in Builder" aria-label="Edit in Builder"><span aria-hidden="true">✦</span></a>`;
-                        actionsHtml += ` <button class="btn-sm btn-danger destroy-theater-btn" onclick="destroyTheater('${s.theater_id}')">Destroy</button>`;
-                    }
-
-                    const safeName = escapeHtml(s.name);
-                    const jsName = escapeJs(s.name);
-                    const ownerBadge = s.is_owner ? '<span style="color:#a78bfa; font-size:0.75rem;">(Owner)</span>' : '';
-                    const editIconHtml = s.is_owner
-                        ? `<button class="copy-key-btn" onclick="startEditingTitle('${s.theater_id}', '${jsName}')" title="Retitle Theater" style="margin-left:6px; padding:2px 6px; font-size:0.75rem;">✏️ Edit</button>`
-                        : '';
-
-                    tr.innerHTML = `
-                        <td>
-                            <div id="nameCell-${s.theater_id}" style="display:flex; align-items:center; gap:6px;">
-                                <strong>${safeName}</strong> ${ownerBadge} ${editIconHtml}
-                            </div>
-                        </td>
-                        <td>${joinKeyHtml}</td>
-                        <td>${refCount} refs, ${plCount} playlists</td>
-                        <td>${actionsHtml}</td>
-                    `;
-                    body.appendChild(tr);
-                });
-            } catch (err) {
-                console.error('Error loading theaters:', err);
-                body.innerHTML = `<tr><td colspan="4" class="empty-state">Error loading active theaters.</td></tr>`;
-            }
-        }
-
-        function startEditingTitle(theaterId, currentName) {
-            const cell = document.getElementById(`nameCell-${theaterId}`);
-            if (!cell) return;
-            cell.innerHTML = `
-                <input type="text" id="editTitleInput-${theaterId}" value="${escapeHtml(currentName)}" style="padding:4px 8px; font-size:0.85rem; border-radius:6px; background:rgba(11,13,18,0.9); border:1px solid var(--accent-primary); color:var(--text-primary); width:180px;" onkeydown="if(event.key==='Enter'){ event.preventDefault(); saveTheaterTitle('${theaterId}'); } else if(event.key==='Escape'){ loadTheaters(); }">
-                <button class="btn-sm btn-success" style="padding:2px 8px; font-size:0.75rem;" onclick="saveTheaterTitle('${theaterId}')">Save</button>
-                <button class="btn-sm btn-secondary" style="padding:2px 8px; font-size:0.75rem;" onclick="loadTheaters()">Cancel</button>
-            `;
-            const input = document.getElementById(`editTitleInput-${theaterId}`);
-            if (input) {
-                input.focus();
-                input.select();
-            }
-        }
-
-        async function saveTheaterTitle(theaterId) {
-            const input = document.getElementById(`editTitleInput-${theaterId}`);
-            if (!input) return;
-            const newName = input.value.trim();
-            if (!newName) {
-                alert('Theater title cannot be empty.');
-                return;
-            }
-            try {
-                const res = await fetch(`/api/theaters/${theaterId}/retitle`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ name: newName })
-                });
-                const data = await res.json();
-                if (res.ok && data.status === 'ok') {
-                    loadTheaters();
-                } else {
-                    alert('Error updating title: ' + (data.detail || 'Failed to rename theater.'));
-                }
-            } catch (e) {
-                alert('Failed to update title: ' + e.message);
-            }
-        }
-
-        function copyJoinKey(key, btn) {
-            navigator.clipboard.writeText(key).then(() => {
-                const orig = btn.innerText;
-                btn.innerText = '✓ Copied';
-                setTimeout(() => { btn.innerText = orig; }, 2000);
-            });
-        }
-
-        let pendingCanvastheaterId = null;
-
-        function openCanvas(theaterId, isOwner = false, joinKey = '') {
-            if (window.NarratronNavigation.isMobile()) {
-                window.location.href = window.NarratronNavigation.theaterUrl(theaterId);
-                return;
-            }
-            if (isOwner) {
-                window.location.href = `/canvas?theater_id=${encodeURIComponent(theaterId)}`;
-                return;
-            }
-            pendingCanvastheaterId = theaterId;
-            document.getElementById('prompttheaterIdDisplay').textContent = theaterId;
-            document.getElementById('canvasJoinKeyInput').value = '';
-            document.getElementById('joinKeyModalError').style.display = 'none';
-            document.getElementById('joinKeyModal').classList.add('active');
-        }
-
-        function closeJoinKeyModal() {
-            document.getElementById('joinKeyModal').classList.remove('active');
-            pendingCanvastheaterId = null;
-        }
-
-        async function submitCanvasJoinKey() {
-            const key = document.getElementById('canvasJoinKeyInput').value.trim();
-            const err = document.getElementById('joinKeyModalError');
-            err.style.display = 'none';
-
-            if (!key) {
-                err.textContent = 'Please enter a valid Join Key.';
-                err.style.display = 'block';
-                return;
-            }
-
-            try {
-                const res = await fetch('/api/theaters/resolve-join-key', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ join_key: key })
-                });
-                const data = await res.json();
-                if (res.ok && data.theater_id) {
-                    if (data.theater_id !== pendingCanvastheaterId) {
-                        err.textContent = `This Join Key belongs to a different theater (${data.name || data.theater_id}).`;
-                        err.style.display = 'block';
-                        return;
-                    }
-                    closeJoinKeyModal();
-                    const isOwnerTheater = (data.user_id && currentUser && data.user_id === currentUser.id);
-                    window.location.href = window.NarratronNavigation.theaterUrl(data.theater_id);
-                } else {
-                    err.textContent = data.detail || 'Invalid Join Key.';
-                    err.style.display = 'block';
-                }
-            } catch (e) {
-                err.textContent = 'Error validating Join Key: ' + e.message;
-                err.style.display = 'block';
-            }
-        }
-
-
-        let theaterDeletionConfirmed = false;
-        window.theaterDeletionConfirmed = false;
-
-        async function destroyTheater(theaterId) {
-            if (!window.theaterDeletionConfirmed && !theaterDeletionConfirmed) {
-                if (!confirm(`Are you sure you want to delete theater ${theaterId}?`)) return;
-                window.theaterDeletionConfirmed = true;
-                theaterDeletionConfirmed = true;
-            }
-            try {
-                try {
-                    await fetch(`/api/theaters/${encodeURIComponent(theaterId)}/agent/stop`, { method: 'POST' });
-                } catch (stopErr) {
-                    console.warn('Failed to stop agent session prior to theater deletion:', stopErr);
-                }
-                const res = await fetch(`/api/theaters/${encodeURIComponent(theaterId)}`, { method: 'DELETE' });
-                if (!res.ok) {
-                    const data = await res.json();
-                    alert(data.detail || 'Failed to destroy theater.');
-                    return;
-                }
-                loadTheaters();
-            } catch (err) {
-                alert('Error destroying theater: ' + err.message);
-            }
-        }
-        window.destroyTheater = destroyTheater;
-        window.deleteTheater = destroyTheater;
-
-        // Pricing Modal Logic & Live Query
-        let currentPricingRates = null;
-
-        async function fetchPricingRates() {
-            const statusText = document.getElementById('pricingLiveStatusText');
-            const updatedText = document.getElementById('pricingLastUpdated');
-            if (statusText) statusText.innerText = 'Fetching live rates...';
-
-            try {
-                const response = await fetch('/api/pricing');
-                if (!response.ok) {
-                    throw new Error(`Failed to fetch pricing rates: ${response.status}`);
-                }
-                const data = await response.json();
-                currentPricingRates = data;
-
-                if (document.getElementById('rateCreditsPerUsd')) {
-                    document.getElementById('rateCreditsPerUsd').innerText = data.credits_per_usd.toFixed(1);
-                }
-                if (document.getElementById('rateUsdPerCredit')) {
-                    document.getElementById('rateUsdPerCredit').innerText = `$${data.usd_per_credit.toFixed(2)}`;
-                }
-                if (document.getElementById('rateLiveAgentToolCall')) {
-                    document.getElementById('rateLiveAgentToolCall').innerText = data.live_agent_tool_call_credit_rate.toFixed(3);
-                }
-                if (document.getElementById('rateLiveAgentToolCallUsd')) {
-                    document.getElementById('rateLiveAgentToolCallUsd').innerText = `$${(data.live_agent_tool_call_credit_rate * data.usd_per_credit).toFixed(4)}`;
-                }
-                const storyPlanningRate = data.story_planning_credit_rate ?? 0.5;
-                if (document.getElementById('rateStoryPlanning')) {
-                    document.getElementById('rateStoryPlanning').innerText = storyPlanningRate.toFixed(2);
-                }
-                if (document.getElementById('rateStoryPlanningUsd')) {
-                    document.getElementById('rateStoryPlanningUsd').innerText = `$${(storyPlanningRate * data.usd_per_credit).toFixed(2)}`;
-                }
-                const characterVoicingRate = data.character_voicing_turn_credit_rate ?? 0.25;
-                if (document.getElementById('rateCharacterVoicing')) {
-                    document.getElementById('rateCharacterVoicing').innerText = characterVoicingRate.toFixed(2);
-                }
-                if (document.getElementById('rateCharacterVoicingUsd')) {
-                    document.getElementById('rateCharacterVoicingUsd').innerText = `$${(characterVoicingRate * data.usd_per_credit).toFixed(2)}`;
-                }
-                const interactiveCanvasRate = data.interactive_canvas_tool_credit_rate ?? data.interactive_canvas_credit_rate ?? 0.25;
-                if (document.getElementById('rateInteractiveCanvas')) {
-                    document.getElementById('rateInteractiveCanvas').innerText = interactiveCanvasRate.toFixed(2);
-                }
-                if (document.getElementById('rateInteractiveCanvasUsd')) {
-                    document.getElementById('rateInteractiveCanvasUsd').innerText = `$${(interactiveCanvasRate * data.usd_per_credit).toFixed(2)}`;
-                }
-                if (document.getElementById('rateImage')) {
-                    document.getElementById('rateImage').innerText = data.image_credit_rate.toFixed(1);
-                }
-                if (document.getElementById('rateImageUsd')) {
-                    document.getElementById('rateImageUsd').innerText = `$${(data.image_credit_rate * data.usd_per_credit).toFixed(2)}`;
-                }
-                if (document.getElementById('rateMusic')) {
-                    document.getElementById('rateMusic').innerText = (data.music_credit_rate || 2.0).toFixed(1);
-                }
-                if (document.getElementById('rateMusicUsd')) {
-                    document.getElementById('rateMusicUsd').innerText = `$${((data.music_credit_rate || 2.0) * data.usd_per_credit).toFixed(2)}`;
-                }
-                const layeredAnimationRate = data.layered_animation_credit_rate ?? 6.5;
-                if (document.getElementById('rateLayeredAnimation')) {
-                    document.getElementById('rateLayeredAnimation').innerText = layeredAnimationRate.toFixed(1);
-                }
-                if (document.getElementById('rateLayeredAnimationUsd')) {
-                    document.getElementById('rateLayeredAnimationUsd').innerText = `$${(layeredAnimationRate * data.usd_per_credit).toFixed(2)}`;
-                }
-                if (document.getElementById('rateStorageDaily')) {
-                    document.getElementById('rateStorageDaily').innerText = data.storage_gb_daily_rate.toFixed(3);
-                }
-                if (statusText) statusText.innerText = 'Live Rates Active';
-                if (updatedText) {
-                    const now = new Date();
-                    updatedText.innerText = `Updated: ${now.toLocaleTimeString()}`;
-                }
-
-                calculateLivePricingEstimate();
-            } catch (err) {
-                console.error('Error loading pricing rates:', err);
-                if (statusText) statusText.innerText = 'Error loading rates';
-            }
-        }
-
-        async function calculateLivePricingEstimate() {
-            const toolCallsInput = document.getElementById('calcToolCallsInput');
-            const imagesInput = document.getElementById('calcImagesInput');
-            const musicInput = document.getElementById('calcMusicInput');
-            const storyTurnsInput = document.getElementById('calcStoryTurnsInput');
-            const characterVoicingInput = document.getElementById('calcCharacterVoicingInput');
-            const interactiveCanvasInput = document.getElementById('calcInteractiveCanvasInput');
-            const storageInput = document.getElementById('calcStorageInput');
-
-            if (!toolCallsInput || !imagesInput || !storageInput) return;
-
-            const toolCalls = parseInt(toolCallsInput.value, 10) || 0;
-            const images = parseInt(imagesInput.value) || 0;
-            const music = musicInput ? (parseInt(musicInput.value) || 0) : 0;
-            const storyTurns = storyTurnsInput ? (parseInt(storyTurnsInput.value) || 0) : 0;
-            const voicedTurns = characterVoicingInput?.checked ? storyTurns : 0;
-            const interactiveCanvasUses = interactiveCanvasInput ? (parseInt(interactiveCanvasInput.value) || 0) : 0;
-            const storageGb = parseFloat(storageInput.value) || 0;
-
-            try {
-                const queryParams = new URLSearchParams({
-                    live_agent_tool_calls: toolCalls,
-                    images_created: images,
-                    music_created: music,
-                    story_plans: storyTurns,
-                    character_voiced_turns: voicedTurns,
-                    interactive_canvas_used: interactiveCanvasUses,
-                    gb_amount: storageGb,
-                    days: 30
-                });
-                const res = await fetch(`/api/pricing?${queryParams.toString()}`);
-                if (res.ok) {
-                    const data = await res.json();
-                    const calc = data.calculation || {};
-                    const usageCredits = calc.usage_credits || 0.0;
-                    const storageCredits = calc.storage_credits || 0.0;
-                    const totalCredits = usageCredits + storageCredits;
-                    const totalUsd = totalCredits * (data.usd_per_credit || 0.05);
-
-                    if (document.getElementById('calcTotalCredits')) {
-                        document.getElementById('calcTotalCredits').innerText = `⚡ ${totalCredits.toFixed(1)} Cr`;
-                    }
-                    if (document.getElementById('calcTotalUsd')) {
-                        document.getElementById('calcTotalUsd').innerText = `~$${totalUsd.toFixed(2)} USD`;
-                    }
-                    if (document.getElementById('calcBreakdownText')) {
-                        const voicingDetail = voicedTurns ? ` + character voicing` : '';
-                        document.getElementById('calcBreakdownText').innerText = `${toolCalls} live-agent tool calls + ${images} images + ${music} music tracks + ${storyTurns} story turns${voicingDetail} + ${interactiveCanvasUses} canvas tool uses + ${storageGb} GB/mo`;
-                    }
-                }
-            } catch (e) {
-                console.error('Error calculating live pricing estimate:', e);
-            }
-        }
-
-        function openPricingModal() {
-            const modal = document.getElementById('pricingModal');
-            if (modal) {
-                modal.classList.add('active');
-                fetchPricingRates();
-            }
-        }
-
-        function closePricingModal() {
-            const modal = document.getElementById('pricingModal');
-            if (modal) {
-                modal.classList.remove('active');
-            }
-        }
-
-        document.addEventListener('click', (e) => {
-            const modal = document.getElementById('pricingModal');
-            if (modal && e.target === modal) {
-                closePricingModal();
-            }
-        });
-
-        async function checkPaymentStatusInURL() {
-            const urlParams = new URLSearchParams(window.location.search);
-            const paymentStatus = urlParams.get('payment');
-            const sessionId = urlParams.get('session_id');
-
-            if (paymentStatus === 'success' && sessionId) {
-                try {
-                    const res = await fetch(`/api/payments/verify-session?session_id=${encodeURIComponent(sessionId)}`);
-                    const data = await res.json();
-                    if (res.ok && data.verified) {
-                        await checkAuthStatus();
-                        alert(`🎉 Payment Successful! Added +${data.credits_added || 0} Credits to your account.`);
-                        window.history.replaceState({}, document.title, window.location.pathname);
-                    }
-                } catch (e) {
-                    console.error('Error verifying Stripe session:', e);
-                }
-            }
-        }
-
-        // Initialize on load
-        async function initPage() {
-            showDeploymentAcknowledgement();
-            showCanvasReturnSuggestion();
-            await loadTheaters();
-            checkPaymentStatusInURL();
-        }
-        initPage();
-    </script>
+    <script type="module" src="/static/generated/canvas/theater-creation.js"></script>
 </body>
 
 </html>
