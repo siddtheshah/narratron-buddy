@@ -19,7 +19,6 @@ import type {
 type RemoteModule = typeof import('./remote.js');
 
 const CANONICAL_URL = '/static/generated/canvas/remote.js';
-const SHIM_URL = '/static/js/remote.js';
 
 interface RemoteUser {
     id: number;
@@ -202,22 +201,6 @@ async function swipePanel(page: Page, dx: number, dy: number, selector = '#remot
         { dx, dy },
     );
 }
-
-test('deprecated remote shim re-exports initializeRemote without auto-init on bare pages', async ({
-    canvas,
-    page,
-}) => {
-    await canvas.mount();
-    const sameExport = await page.evaluate(
-        async ({ canonicalUrl, shimUrl }) => {
-            const canonical = await window.__importModule<RemoteModule>(canonicalUrl);
-            const shim = await window.__importModule<RemoteModule>(shimUrl);
-            return canonical.initializeRemote === shim.initializeRemote;
-        },
-        { canonicalUrl: CANONICAL_URL, shimUrl: SHIM_URL },
-    );
-    expect(sameExport).toBe(true);
-});
 
 test('missing theater_id shows error status and toast without crashing', async ({ canvas, page }) => {
     await mountRemote(canvas, { query: '' });
@@ -1998,10 +1981,6 @@ for (const [width, userAgent, shouldRedirect] of [
     }) => {
         const templateHtml = await fs.promises.readFile(path.join(TEMPLATES_DIR, 'canvas.html'), 'utf-8');
         const head = templateHtml.slice(0, templateHtml.indexOf('<link rel="icon"'));
-        const navigationJs = await fs.promises.readFile(
-            path.resolve(TEMPLATES_DIR, '..', 'static', 'js', 'device-navigation.js'),
-            'utf-8',
-        );
         const generatedNavigationJs = await fs.promises.readFile(
             path.resolve(TEMPLATES_DIR, '..', 'static', 'generated', 'canvas', 'device-navigation.js'),
             'utf-8',
@@ -2012,9 +1991,7 @@ for (const [width, userAgent, shouldRedirect] of [
         try {
             await page.route('**/*', async (route: Route) => {
                 const url = new URL(route.request().url());
-                if (url.pathname === '/static/js/device-navigation.js') {
-                    await route.fulfill({ body: navigationJs, contentType: 'text/javascript; charset=utf-8' });
-                } else if (url.pathname === '/static/generated/canvas/device-navigation.js') {
+                if (url.pathname === '/static/generated/canvas/device-navigation.js') {
                     await route.fulfill({
                         body: generatedNavigationJs,
                         contentType: 'text/javascript; charset=utf-8',

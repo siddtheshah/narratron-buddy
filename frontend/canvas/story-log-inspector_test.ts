@@ -16,7 +16,6 @@ interface StoryLogHarnessWindow extends Window {
 }
 
 const CANONICAL_URL = '/static/generated/canvas/story-log-inspector.js';
-const SHIM_URL = '/static/js/story-log-inspector.js';
 
 const INSPECTOR_HTML = `
   <div id="history-paging-controls">
@@ -462,35 +461,4 @@ test('embedded mode controls remote-story-log via setOpen', async ({ canvas, pag
     (window as unknown as StoryLogHarnessWindow).storyLogController?.setOpen(false);
   });
   await expect(log).not.toHaveClass(/open/);
-});
-
-test('deprecated shim re-exports the canonical initializeStoryLogInspector and works end-to-end', async ({
-  canvas,
-  page,
-}) => {
-  await page.route('**/theaters/shim-stage/output/story_log.jsonl', async (route: Route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: 'text/plain; charset=utf-8',
-      body: jsonl([{ type: 'user_action', action: 'Loaded via shim' }]),
-    });
-  });
-
-  await mountInspector(canvas, page, {
-    moduleUrl: SHIM_URL,
-    theaterId: 'shim-stage',
-  });
-
-  const sameReference = await page.evaluate(
-    async ({ canonicalUrl, shimUrl }: { canonicalUrl: string; shimUrl: string }) => {
-      const canonical = await window.__importModule<StoryLogModule>(canonicalUrl);
-      const shim = await window.__importModule<StoryLogModule>(shimUrl);
-      return canonical.initializeStoryLogInspector === shim.initializeStoryLogInspector;
-    },
-    { canonicalUrl: CANONICAL_URL, shimUrl: SHIM_URL },
-  );
-  expect(sameReference).toBe(true);
-
-  await page.locator('#story-log-toggle-btn').click();
-  await expect(page.locator('#story-log-content')).toContainText('Loaded via shim');
 });

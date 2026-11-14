@@ -19,7 +19,6 @@ interface AudioTrackingWindow extends Window {
 }
 
 const SCENE_MODULE_URL = '/static/generated/canvas/scene.js';
-const SCENE_SHIM_URL = '/static/js/canvas-scene.js';
 const SPEECH_REPLAY_MODULE_URL = '/static/generated/canvas/speech-replay.js';
 
 function installMockAudioScript(): string {
@@ -68,7 +67,7 @@ function installMockAudioScript(): string {
   `;
 }
 
-test('scene module and deprecated shim share identity and handle generation-aware speech, captions, and replay', async ({
+test('scene module handles generation-aware speech, captions, and replay', async ({
   canvas,
   page,
 }) => {
@@ -78,9 +77,8 @@ test('scene module and deprecated shim share identity and handle generation-awar
   });
 
   const result = await page.evaluate(
-    async ({ sceneUrl, shimUrl, replayUrl }) => {
+    async ({ sceneUrl, replayUrl }) => {
       const sceneMod = await window.__importModule<SceneModule>(sceneUrl);
-      const shimMod = await window.__importModule<SceneModule>(shimUrl);
       const replayMod = await window.__importModule<SpeechReplayModule>(replayUrl);
 
       const overlay = document.getElementById('narration-pane') as HTMLElement;
@@ -162,7 +160,6 @@ test('scene module and deprecated shim share identity and handle generation-awar
       const afterUnmutedReplay = (window as unknown as AudioTrackingWindow).__playedAudio.length;
 
       return {
-        sameCreateCanvasScene: sceneMod.createCanvasScene === shimMod.createCanvasScene,
         beforeCommit,
         afterCommit,
         afterStale,
@@ -184,10 +181,9 @@ test('scene module and deprecated shim share identity and handle generation-awar
         stateCount: states.length,
       };
     },
-    { sceneUrl: SCENE_MODULE_URL, shimUrl: SCENE_SHIM_URL, replayUrl: SPEECH_REPLAY_MODULE_URL },
+    { sceneUrl: SCENE_MODULE_URL, replayUrl: SPEECH_REPLAY_MODULE_URL },
   );
 
-  expect(result.sameCreateCanvasScene).toBe(true);
   expect(result.beforeCommit).toBe(0);
   expect(result.afterCommit).toBe(1);
   expect(result.afterStale).toBe(1);

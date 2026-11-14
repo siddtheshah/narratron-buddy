@@ -221,7 +221,7 @@ test('shared scene preserves speech until scene commit', async ({ canvas, page }
 
   const result = await page.evaluate(async () => {
     const { createCanvasScene } = await window.__importModule<SceneModule>(
-      '/static/js/canvas-scene.js',
+      '/static/generated/canvas/scene.js',
     );
     const element = document.createElement('div');
     const scene = createCanvasScene({
@@ -348,7 +348,7 @@ test('canvas scene speech is silenced when muted', async ({ canvas, page }) => {
 
   const result = await page.evaluate(async () => {
     const { createCanvasScene } = await window.__importModule<SceneModule>(
-      '/static/js/canvas-scene.js',
+      '/static/generated/canvas/scene.js',
     );
     const element = document.createElement('div');
     let muted = true;
@@ -389,7 +389,7 @@ test('scene speech interrupt, replay, and next scene', async ({ canvas, page }) 
 
   const result = await page.evaluate(async () => {
     const { createCanvasScene } = await window.__importModule<SceneModule>(
-      '/static/js/canvas-scene.js',
+      '/static/generated/canvas/scene.js',
     );
     const scene = createCanvasScene({
       narrationPane: { element: document.createElement('div'), prepare: () => {} },

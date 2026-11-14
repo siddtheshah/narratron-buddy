@@ -76,7 +76,7 @@ for (const view of VIEWS) {
 
       await page.evaluate(async () => {
         const { initializeChatController } = await window.__importModule<ChatControllerModule>(
-          '/static/js/chat-controller.js',
+          '/static/generated/canvas/chat-controller.js',
         );
         const win = window as unknown as ComposerHarnessWindow;
         win.controller = initializeChatController({

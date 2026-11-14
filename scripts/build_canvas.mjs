@@ -22,7 +22,7 @@ function hasSourceFiles(dir) {
       if (hasSourceFiles(path.join(dir, entry.name))) {
         return true;
       }
-    } else if (/\.(ts|tsx|js|jsx)$/i.test(entry.name)) {
+    } else if (/\.ts$/i.test(entry.name)) {
       return true;
     }
   }

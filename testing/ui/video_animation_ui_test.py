@@ -1,14 +1,11 @@
-"""UI-facing regression coverage for video animation playback in the canvas."""
+"""Backend state regression coverage for video animation manifests and history."""
 
-from api_server.shared import PROJECT_ROOT
 from testing.ui.base import UITestCase
-
-from testing.ui.canvas_source import read_ui_source
 
 
 class TestVideoAnimationUI(UITestCase):
     def test_video_animation_is_exposed_silent_and_looping_in_canvas_renderers(self) -> None:
-        """Verify video animation state exposes loop/muted flags and canvas-renderers wires them."""
+        """Verify video animation state exposes loop/muted flags and prompt history."""
         theater_id = "dummy_video_theater"
         manager = self.make_canvas_state(theater_id)
         anim_dir = manager.theater.animations_dir() / "flight_123"
@@ -41,33 +38,3 @@ class TestVideoAnimationUI(UITestCase):
         self.assertEqual(len(state["history"]), 1)
         self.assertEqual(state["history"][0]["prompt"], "A soaring griffin over snow-capped mountains.")
         self.assertEqual(state["history"][0]["animation"]["type"], "video")
-
-        media = (PROJECT_ROOT / "frontend" / "canvas" / "media.ts").read_text(encoding="utf-8")
-        renderer = (PROJECT_ROOT / "frontend" / "canvas" / "image-renderer.ts").read_text(encoding="utf-8")
-        self.assertIn("video_duration_seconds", renderer)
-        canvas = read_ui_source(PROJECT_ROOT / "templates" / "canvas.html")
-        obs_html = (PROJECT_ROOT / "templates" / "obs.html").read_text(encoding="utf-8")
-        obs = (PROJECT_ROOT / "frontend" / "canvas" / "obs.ts").read_text(encoding="utf-8")
-
-        # Verify full silence safeguards
-        self.assertIn("video.muted = true", renderer)
-        self.assertIn("video.defaultMuted = true", renderer)
-        self.assertIn("video.volume = 0", renderer)
-        self.assertIn('video.setAttribute("muted", "")', renderer)
-        self.assertIn("silenceVideo", renderer)
-
-        # Verify auto-loop safeguards
-        self.assertIn("autoLoop", renderer)
-        self.assertIn("restartVideoLoop", renderer)
-        self.assertIn('video.addEventListener("ended", restartVideoLoop)', renderer)
-        self.assertIn('video.currentTime = 0', renderer)
-
-        # Verify DOM attachment and cleanup for decoder reliability
-        self.assertIn("sizingElement.appendChild(video)", renderer)
-        self.assertIn("currentVideo.parentElement.removeChild(currentVideo)", renderer)
-
-        # Verify wiring in canvas and OBS templates
-        self.assertIn("playCanvasAnimation", canvas)
-        self.assertIn("/static/generated/canvas/obs.js", obs_html)
-        self.assertIn("playCanvasAnimation", obs)
-        self.assertIn("playVideoAnimation", media)

@@ -1,13 +1,10 @@
-"""UI-facing regression coverage for tri-frame animations without a live provider."""
+"""Backend state regression coverage for tri-frame animations without a live provider."""
 
 from pathlib import Path
 
 from PIL import Image
 
-from api_server.shared import PROJECT_ROOT
 from testing.ui.base import UITestCase
-
-from testing.ui.canvas_source import read_ui_source
 
 
 class TestTriFrameAnimationUI(UITestCase):
@@ -34,19 +31,3 @@ class TestTriFrameAnimationUI(UITestCase):
             for number in range(1, 4)
         ])
         self.assertTrue(all(Path(path).is_file() for path in frame_paths))
-
-        media = (PROJECT_ROOT / "frontend" / "canvas" / "media.ts").read_text(encoding="utf-8")
-        renderer = (PROJECT_ROOT / "frontend" / "canvas" / "image-renderer.ts").read_text(encoding="utf-8")
-        canvas = read_ui_source(PROJECT_ROOT / "templates" / "canvas.html")
-        obs_html = (PROJECT_ROOT / "templates" / "obs.html").read_text(encoding="utf-8")
-        obs = (PROJECT_ROOT / "frontend" / "canvas" / "obs.ts").read_text(encoding="utf-8")
-        self.assertIn("playSequence", renderer)
-        self.assertIn("playLayeredAnimation", renderer)
-        self.assertIn("crossfadeDuration", renderer)
-        self.assertIn('image.style.opacity = "0"', renderer)
-        self.assertIn('backgroundLayer.style.backgroundImage = "none"', renderer)
-        self.assertIn("playCanvasAnimation", canvas)
-        self.assertIn("/static/generated/canvas/obs.js", obs_html)
-        self.assertIn("playCanvasAnimation", obs)
-        self.assertIn("playSequence", media)
-        self.assertIn("playLayeredAnimation", media)

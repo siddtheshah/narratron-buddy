@@ -16,34 +16,10 @@ interface PanelTestWindow extends Window {
 }
 
 const PANEL_MODULE_URL = '/static/generated/canvas/game-panel.js';
-const PANEL_SHIM_URL = '/static/js/game-panel.js';
 const RENDERER_MODULE_URL = '/static/generated/canvas/game-renderer.js';
-const RENDERER_SHIM_URL = '/static/js/game-renderer.js';
 const HOTKEYS_MODULE_URL = '/static/generated/canvas/hotkey-controls.js';
 
 const snapshots = loadGameSnapshots();
-
-test('deprecated game-panel shim re-exports all exports', async ({ canvas, page }) => {
-  await canvas.mount();
-  const sameExports = await page.evaluate(
-    async ({ canonicalUrl, shimUrl }) => {
-      const canonical = await window.__importModule<GamePanelModule>(canonicalUrl);
-      const shim = await window.__importModule<GamePanelModule>(shimUrl);
-      return (
-        canonical.DEFAULT_PANEL_WIDTH === shim.DEFAULT_PANEL_WIDTH &&
-        canonical.DEFAULT_PANEL_HEIGHT === shim.DEFAULT_PANEL_HEIGHT &&
-        canonical.MIN_PANEL_WIDTH === shim.MIN_PANEL_WIDTH &&
-        canonical.MAX_PANEL_WIDTH === shim.MAX_PANEL_WIDTH &&
-        canonical.MIN_PANEL_HEIGHT === shim.MIN_PANEL_HEIGHT &&
-        canonical.MAX_PANEL_HEIGHT === shim.MAX_PANEL_HEIGHT &&
-        canonical.createPanelFrame === shim.createPanelFrame &&
-        canonical.extractPanelSize === shim.extractPanelSize
-      );
-    },
-    { canonicalUrl: PANEL_MODULE_URL, shimUrl: PANEL_SHIM_URL },
-  );
-  expect(sameExports).toBe(true);
-});
 
 test('html panel binding, actions, permissions, sizing, and network isolation', async ({
   canvas,
@@ -86,7 +62,7 @@ test('html panel binding, actions, permissions, sizing, and network isolation', 
       const response = await fetch('/latest');
       win.renderer.render((await response.json()) as GamePayload);
     },
-    { moduleUrl: RENDERER_SHIM_URL },
+    { moduleUrl: RENDERER_MODULE_URL },
   );
 
   const unsafeConstant =

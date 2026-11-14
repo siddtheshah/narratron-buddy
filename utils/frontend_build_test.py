@@ -81,7 +81,7 @@ def test_ignores_tests_excluded_from_production_build(tmp_path: Path) -> None:
     output.write_text("export const x = 1;\n", encoding="utf-8")
     os.utime(source, (1000, 1000))
     os.utime(output, (2000, 2000))
-    for name in ("cursor-state_test.ts", "legacy_test.js"):
+    for name in ("cursor-state_test.ts", "legacy_test.js", "legacy.js", "legacy.jsx", "legacy.tsx"):
         (source.parent / name).write_text("// Not emitted by tsconfig.build.json\n", encoding="utf-8")
 
     with patch("utils.frontend_build.subprocess.run") as run_mock:

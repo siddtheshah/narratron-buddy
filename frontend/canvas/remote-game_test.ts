@@ -12,7 +12,6 @@ interface RemoteGameTestWindow extends Window {
 }
 
 const CANONICAL_URL = '/static/generated/canvas/remote-game.js';
-const SHIM_URL = '/static/js/remote-game.js';
 
 const GAME_HTML = `
   <div style="width: 340px;">
@@ -56,19 +55,6 @@ const COUNTER_GAME: GamePayload = {
         },
     ],
 };
-
-test('deprecated remote-game shim re-exports initializeRemoteGame', async ({ canvas, page }) => {
-    await canvas.mount();
-    const sameExport = await page.evaluate(
-        async ({ canonicalUrl, shimUrl }) => {
-            const canonical = await window.__importModule<RemoteGameModule>(canonicalUrl);
-            const shim = await window.__importModule<RemoteGameModule>(shimUrl);
-            return canonical.initializeRemoteGame === shim.initializeRemoteGame;
-        },
-        { canonicalUrl: CANONICAL_URL, shimUrl: SHIM_URL },
-    );
-    expect(sameExport).toBe(true);
-});
 
 test('throws explicit error when required DOM elements are missing', async ({ canvas, page }) => {
     await canvas.mount({ html: '<div id="remote-game-viewport"></div>' });
@@ -142,7 +128,7 @@ test('auto-fits panel width, handles zoom bounds and fit reset, and dispatches a
             });
             win.gameController.render(game);
         },
-        { url: SHIM_URL, gameJson: JSON.stringify(COUNTER_GAME) },
+        { url: CANONICAL_URL, gameJson: JSON.stringify(COUNTER_GAME) },
     );
 
     const frame = page.frameLocator('#remote-game-content iframe');

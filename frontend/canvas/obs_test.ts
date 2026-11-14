@@ -575,3 +575,118 @@ test('obs clip=1 mode activates capture UI and surfaces unsupported-browser reco
     'This browser cannot create a clip. Try a current desktop browser.',
   );
 });
+
+test('obs plays triframe and silent looping video animations via playCanvasAnimation and cleans up on static scenes', async ({
+  canvas,
+  page,
+}) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(HTMLMediaElement.prototype, 'src', {
+      configurable: true,
+      get() {
+        return this.getAttribute('data-test-src') || '';
+      },
+      set(url: string) {
+        this.setAttribute('data-test-src', url);
+      },
+    });
+    (window as unknown as { __obsVideoPlays: number }).__obsVideoPlays = 0;
+    HTMLMediaElement.prototype.play = async function (): Promise<void> {
+      (window as unknown as { __obsVideoPlays: number }).__obsVideoPlays += 1;
+    };
+    HTMLMediaElement.prototype.pause = function (): void {};
+    HTMLMediaElement.prototype.load = function (): void {};
+  });
+
+  await setupObsRoutes(canvas, page);
+
+  let stateSocket: WebSocketRoute | null = null;
+  let latestPayload: Record<string, unknown> = {
+    latest: '/image.png?v=1',
+    time: 1,
+    effect: 'none',
+    narration: 'Initial scene.',
+  };
+
+  await canvas.serveRoute('**/api/latest?**', async (route: Route) => {
+    await route.fulfill({ json: latestPayload });
+  });
+
+  await page.routeWebSocket('**/ws/canvas-state?**', (ws: WebSocketRoute) => {
+    stateSocket = ws;
+    ws.send('{"type":"state_ready"}');
+  });
+
+  await page.goto(`${CANVAS_ORIGIN}/obs/anim-stage?join_key=OBSKEY`);
+  await expect.poll(() => stateSocket).not.toBeNull();
+
+  // 1. Triframe animation hides static image/background layers and passes join_key.
+  latestPayload = {
+    latest: '/image.png?v=1',
+    time: 2,
+    effect: 'none',
+    narration: 'Lantern loop',
+    animation: {
+      type: 'triframe',
+      frames: ['/image.png?f=1', '/image.png?f=2', '/image.png?f=3'],
+      frame_duration_ms: 100,
+      crossfade_duration_ms: 30,
+    },
+  };
+  stateSocket!.send('{"type":"state_changed","domains":["latest"]}');
+  await expect(page.locator('.scene-description')).toHaveText('Lantern loop');
+  await expect(page.locator('#current-image')).toHaveCSS('opacity', '0');
+
+  // 2. Video animation renders a silent, looping <video> with join_key appended.
+  latestPayload = {
+    latest: '/image.png?v=1',
+    time: 3,
+    effect: 'none',
+    narration: 'Soaring griffin',
+    animation: {
+      type: 'video',
+      id: 'flight_123',
+      video_url: '/video.mp4',
+      video_duration_seconds: 5,
+      loop: true,
+      muted: true,
+    },
+  };
+  stateSocket!.send('{"type":"state_changed","domains":["latest"]}');
+  await expect(page.locator('#image-container video')).toHaveCount(1);
+  expect(
+    await page.locator('#image-container video').evaluate((video: HTMLVideoElement) => ({
+      src: video.getAttribute('data-test-src'),
+      muted: video.muted,
+      defaultMuted: video.defaultMuted,
+      volume: video.volume,
+      loop: video.loop,
+      mutedAttr: video.hasAttribute('muted'),
+    })),
+  ).toEqual({
+    src: '/video.mp4?join_key=OBSKEY',
+    muted: true,
+    defaultMuted: true,
+    volume: 0,
+    loop: true,
+    mutedAttr: true,
+  });
+
+  await page.locator('#image-container video').dispatchEvent('loadeddata');
+  await page.locator('#image-container video').dispatchEvent('ended');
+  await expect
+    .poll(() =>
+      page.evaluate(() => (window as unknown as { __obsVideoPlays: number }).__obsVideoPlays),
+    )
+    .toBe(2);
+
+  // 3. Returning to a static image detaches the <video>.
+  latestPayload = {
+    latest: '/image.png?v=static',
+    time: 4,
+    effect: 'none',
+    narration: 'Still scene.',
+  };
+  stateSocket!.send('{"type":"state_changed","domains":["latest"]}');
+  await expect(page.locator('#image-container video')).toHaveCount(0);
+});

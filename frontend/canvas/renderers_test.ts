@@ -3,7 +3,8 @@ import type { ImageRenderer } from './image-renderer.js';
 import type { DoodleRenderer, DoodleAnnotation as RenderAction } from './doodle-renderer.js';
 
 type FitMode = 'contain' | 'cover';
-type RenderersModule = typeof import('/static/js/canvas-renderers.js');
+type DoodleRendererModule = typeof import('./doodle-renderer.js');
+type ImageRendererModule = typeof import('./image-renderer.js');
 
 declare global {
   interface Window {
@@ -29,7 +30,7 @@ for (const fitMode of ['contain', 'cover'] as const) {
       `],
     });
     await page.evaluate(async (fit) => {
-      const { createDoodleRenderer } = await window.__importModule<RenderersModule>('/static/js/canvas-renderers.js');
+      const { createDoodleRenderer } = await window.__importModule<DoodleRendererModule>('/static/generated/canvas/doodle-renderer.js');
       const bitmap = document.createElement('canvas');
       bitmap.width = 200;
       bitmap.height = 50;
@@ -101,7 +102,7 @@ for (const fitMode of ['contain', 'cover'] as const) {
         `],
       });
       await page.evaluate(async ({ width, height, fitMode }) => {
-        const { createImageRenderer } = await window.__importModule<RenderersModule>('/static/js/canvas-renderers.js');
+        const { createImageRenderer } = await window.__importModule<ImageRendererModule>('/static/generated/canvas/image-renderer.js');
         const image = document.getElementById('current-image') as HTMLImageElement;
         const renderer = createImageRenderer({
           canvas: document.getElementById('canvas-renderer') as HTMLCanvasElement, image, fitMode,

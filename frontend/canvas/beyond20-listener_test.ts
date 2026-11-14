@@ -62,7 +62,6 @@ interface ChatPostPayload {
 }
 
 const CANONICAL_URL = '/static/generated/canvas/beyond20-listener.js';
-const SHIM_URL = '/static/js/beyond20-listener.js';
 
 const MALICIOUS_LONGSWORD_MESSAGE: RollMessageFixture = {
   author: 'Ada',
@@ -600,7 +599,7 @@ test('roll HTML is sanitized in canvas chat-controller renderer', async ({ canva
     }) => {
       const win = window as unknown as Beyond20HarnessWindow;
       win.auditRoll = 0;
-      const mod = await window.__importModule<ChatControllerModule>('/static/js/chat-controller.js');
+      const mod = await window.__importModule<ChatControllerModule>('/static/generated/canvas/chat-controller.js');
       const container = document.getElementById('chat-messages');
       if (!container) throw new Error('Missing #chat-messages');
 
@@ -717,42 +716,4 @@ test('roll HTML is sanitized in popout renderer', async ({ canvas, page }) => {
     totalDamageText: '8 Slashing',
     fallbackBadgeText: '🎯 19',
   });
-});
-
-test('deprecated shim re-exports canonical symbols and works end-to-end', async ({
-  canvas,
-  page,
-}) => {
-  await mountListenerHarness(canvas, page, {
-    moduleUrl: SHIM_URL,
-    contributor: true,
-    collab: false,
-  });
-
-  const sameReferences = await page.evaluate(
-    async ({ canonicalUrl, shimUrl }: { canonicalUrl: string; shimUrl: string }) => {
-      const canonical = await window.__importModule<Beyond20Module>(canonicalUrl);
-      const shim = await window.__importModule<Beyond20Module>(shimUrl);
-      return {
-        formatSame: canonical.formatBeyond20RollSummary === shim.formatBeyond20RollSummary,
-        initSame: canonical.initializeBeyond20Listener === shim.initializeBeyond20Listener,
-      };
-    },
-    { canonicalUrl: CANONICAL_URL, shimUrl: SHIM_URL },
-  );
-  expect(sameReferences).toEqual({ formatSame: true, initSame: true });
-
-  await page.evaluate(() => {
-    document.dispatchEvent(
-      new CustomEvent('Beyond20_RenderedRoll', {
-        detail: [{ character: { name: 'ShimHero' }, title: 'Initiative', attack_rolls: [{ total: 20 }] }],
-      }),
-    );
-  });
-
-  const posted = await page.evaluate(
-    () => (window as unknown as Beyond20HarnessWindow).postedMessages,
-  );
-  expect(posted).toHaveLength(1);
-  expect(posted[0]?.text).toBe('🎲 ShimHero rolled Initiative [20]');
 });

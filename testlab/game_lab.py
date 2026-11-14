@@ -116,6 +116,7 @@ def game_renderer_asset(kind: str, name: str) -> FileResponse:
         ("js", "game-renderer.js"),
         ("js", "game-runtime.js"),
         ("js", "game-panel.js"),
+        ("js", "game-panel-bridge.js"),
         ("js", "testlab-game-lab.js"),
         ("css", "game-renderer.css"),
     ):

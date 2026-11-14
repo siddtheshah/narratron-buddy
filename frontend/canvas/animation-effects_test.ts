@@ -5,28 +5,14 @@ type AnimationEffectsModule = typeof import('./animation-effects.js');
 const PNG_1X1_BASE64 =
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
 
-test('animation-effects shim preserves every exported symbol identically', async ({ canvas, page }) => {
+test('animation-effects exposes layerFlameRippleDraw as alias of layerMirageDraw', async ({ canvas, page }) => {
   await canvas.mount();
-  const matches = await page.evaluate(async () => {
+  const isAlias = await page.evaluate(async () => {
     const canonical = await window.__importModule<AnimationEffectsModule>('/static/generated/canvas/animation-effects.js');
-    const shim = await window.__importModule<AnimationEffectsModule>('/static/js/animation-effects.js');
-    return {
-      layerTransform: canonical.layerTransform === shim.layerTransform,
-      layerCssTransform: canonical.layerCssTransform === shim.layerCssTransform,
-      layerOpacity: canonical.layerOpacity === shim.layerOpacity,
-      layerHaloParams: canonical.layerHaloParams === shim.layerHaloParams,
-      layerPieceFilter: canonical.layerPieceFilter === shim.layerPieceFilter,
-      layerMirageDraw: canonical.layerMirageDraw === shim.layerMirageDraw,
-      layerFlameRippleDraw: canonical.layerFlameRippleDraw === shim.layerFlameRippleDraw,
-      flameRippleAlias: canonical.layerFlameRippleDraw === canonical.layerMirageDraw,
-      layerReflectiveDraw: canonical.layerReflectiveDraw === shim.layerReflectiveDraw,
-      layerEnergyBlastDraw: canonical.layerEnergyBlastDraw === shim.layerEnergyBlastDraw,
-      isMeshDistortionEffect: canonical.isMeshDistortionEffect === shim.isMeshDistortionEffect,
-      calculateMeshGrid: canonical.calculateMeshGrid === shim.calculateMeshGrid,
-    };
+    return canonical.layerFlameRippleDraw === canonical.layerMirageDraw;
   });
 
-  expect(Object.values(matches).every(Boolean)).toBe(true);
+  expect(isAlias).toBe(true);
 });
 
 test('pure transform, CSS transform, opacity, halo, and piece filter helpers compute expected values', async ({ canvas, page }) => {

@@ -26,7 +26,6 @@ interface A2UIHarnessWindow extends Window {
 }
 
 const A2UI_MODULE_URL = '/static/generated/canvas/a2ui-renderer.js';
-const A2UI_SHIM_URL = '/static/js/a2ui-canvas-renderer.js';
 
 type DragEdge = 'top' | 'bottom' | 'left' | 'right' | 'control';
 const DRAG_EDGES: readonly DragEdge[] = ['top', 'bottom', 'left', 'right', 'control'];
@@ -124,22 +123,6 @@ async function setupSurfacePage(
 
   return requests;
 }
-
-test('deprecated shim re-exports the same compiled createA2UICanvasRenderer', async ({
-  canvas,
-  page,
-}) => {
-  await canvas.mount();
-  const sameReference = await page.evaluate(
-    async ({ canonicalUrl, shimUrl }) => {
-      const canonical = await window.__importModule<A2UIRendererModule>(canonicalUrl);
-      const shim = await window.__importModule<A2UIRendererModule>(shimUrl);
-      return canonical.createA2UICanvasRenderer === shim.createA2UICanvasRenderer;
-    },
-    { canonicalUrl: A2UI_MODULE_URL, shimUrl: A2UI_SHIM_URL },
-  );
-  expect(sameReference).toBe(true);
-});
 
 for (const edge of DRAG_EDGES) {
   test(`drag from ${edge} preserves grab offset and saves position`, async ({

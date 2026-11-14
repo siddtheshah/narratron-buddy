@@ -37,7 +37,6 @@ interface CanvasUndoWindow extends Window {
 }
 
 const DOODLE_ACTIONS_URL = '/static/generated/canvas/doodle-actions.js';
-const DOODLE_ACTIONS_SHIM_URL = '/static/js/canvas-doodle-actions.js';
 
 async function openUndoCanvas(
   canvas: CanvasHarness,
@@ -152,46 +151,39 @@ async function getCanvasCenterBox(page: Page): Promise<{ x: number; y: number; w
 }
 
 test.describe('doodle-actions module & undo manager unit behavior', () => {
-  test('deprecated shim re-exports compiled module and attaches classes to window', async ({
+  test('compiled module attaches action classes and helpers to window', async ({
     canvas,
     page,
   }) => {
     await canvas.mount({ html: '<div id="root"></div>' });
 
-    const parity = await page.evaluate(
-      async ({ compiledUrl, shimUrl }: { compiledUrl: string; shimUrl: string }) => {
-        const compiled = await window.__importModule<DoodleActionsModule>(compiledUrl);
-        const shim = await window.__importModule<DoodleActionsModule>(shimUrl);
-        const names = [
-          'DoodleAction',
-          'DrawStrokeDoodleAction',
-          'DeleteSegmentsDoodleAction',
-          'PlaceTextDoodleAction',
-          'EditTextDoodleAction',
-          'MoveTextDoodleAction',
-          'DeleteTextDoodleAction',
-          'PlaceStampDoodleAction',
-          'TransformStampDoodleAction',
-          'DeleteStampDoodleAction',
-          'CompoundDeleteDoodleAction',
-          'ClearCanvasDoodleAction',
-          'createDoodleUndoManager',
-          'restoreSegmentsToServer',
-        ] as const;
+    const parity = await page.evaluate(async (compiledUrl: string) => {
+      const compiled = await window.__importModule<DoodleActionsModule>(compiledUrl);
+      const names = [
+        'DoodleAction',
+        'DrawStrokeDoodleAction',
+        'DeleteSegmentsDoodleAction',
+        'PlaceTextDoodleAction',
+        'EditTextDoodleAction',
+        'MoveTextDoodleAction',
+        'DeleteTextDoodleAction',
+        'PlaceStampDoodleAction',
+        'TransformStampDoodleAction',
+        'DeleteStampDoodleAction',
+        'CompoundDeleteDoodleAction',
+        'ClearCanvasDoodleAction',
+        'createDoodleUndoManager',
+        'restoreSegmentsToServer',
+      ] as const;
 
-        const compiledRecord = compiled as unknown as Record<string, unknown>;
-        const shimRecord = shim as unknown as Record<string, unknown>;
-        const winRecord = window as unknown as Record<string, unknown>;
+      const compiledRecord = compiled as unknown as Record<string, unknown>;
+      const winRecord = window as unknown as Record<string, unknown>;
 
-        return names.every(
-          (name) =>
-            typeof compiledRecord[name] === 'function' &&
-            compiledRecord[name] === shimRecord[name] &&
-            compiledRecord[name] === winRecord[name],
-        );
-      },
-      { compiledUrl: DOODLE_ACTIONS_URL, shimUrl: DOODLE_ACTIONS_SHIM_URL },
-    );
+      return names.every(
+        (name) =>
+          typeof compiledRecord[name] === 'function' && compiledRecord[name] === winRecord[name],
+      );
+    }, DOODLE_ACTIONS_URL);
 
     expect(parity).toBe(true);
   });

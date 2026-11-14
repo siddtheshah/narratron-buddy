@@ -2,53 +2,17 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { expect, REPO_ROOT, test } from '../../testing/ui/canvas_fixtures';
 
+import type { DoodleAnnotation } from './doodle-types.js';
+
 type CursorStateModule = typeof import('/static/generated/canvas/cursor-state.js');
 type NavigationModule = typeof import('/static/generated/canvas/navigation.js');
-
-interface DoodleAction {
-  type: string;
-  id: string;
-  x0?: number;
-  y0?: number;
-  x1?: number;
-  y1?: number;
-  x?: number;
-  y?: number;
-  size?: number;
-  color?: string;
-  url?: string;
-}
-
-interface ImageRendererInstance {
-  resize(): void;
-  applyTransition(url: string, transition: string, effect: string): Promise<void>;
-}
-
-interface DoodleRendererInstance {
-  resize(actions: DoodleAction[]): void;
-  redraw(actions: DoodleAction[]): void;
-  getSelectedSegments(): unknown[];
-}
-
-interface RenderersModule {
-  createImageRenderer(options: {
-    canvas: HTMLCanvasElement;
-    image: HTMLImageElement;
-    fitMode?: string;
-  }): ImageRendererInstance;
-  createDoodleRenderer(options: {
-    canvas: HTMLCanvasElement;
-    stampLayer: HTMLElement;
-    canSelectSegment: () => boolean;
-    canMoveStamp: () => boolean;
-    onMoveStamp: (action: DoodleAction) => void;
-  }): DoodleRendererInstance;
-}
+type ImageRendererModule = typeof import('./image-renderer.js');
+type DoodleRendererModule = typeof import('./doodle-renderer.js');
 
 interface NavigationTestGlobals {
-  scene?: ImageRendererInstance;
-  annotations?: DoodleRendererInstance;
-  actions?: DoodleAction[];
+  scene?: ReturnType<ImageRendererModule['createImageRenderer']>;
+  annotations?: ReturnType<DoodleRendererModule['createDoodleRenderer']>;
+  actions?: DoodleAnnotation[];
   originalActions?: string;
   cursorState?: CursorStateModule['canvasCursorState'];
 }
@@ -107,8 +71,12 @@ test('navigation keeps rendered content aligned, converts stamp coordinates, han
       await window.__importModule<NavigationModule>(navUrl);
       globals.cursorState = canvasCursorState;
 
-      const { createImageRenderer, createDoodleRenderer } =
-        await window.__importModule<RenderersModule>('/static/js/canvas-renderers.js');
+      const { createImageRenderer } = await window.__importModule<ImageRendererModule>(
+        '/static/generated/canvas/image-renderer.js',
+      );
+      const { createDoodleRenderer } = await window.__importModule<DoodleRendererModule>(
+        '/static/generated/canvas/doodle-renderer.js',
+      );
 
       const rendererCanvas = document.getElementById('canvas-renderer') as HTMLCanvasElement;
       const currentImage = document.getElementById('current-image') as HTMLImageElement;
@@ -130,7 +98,7 @@ test('navigation keeps rendered content aligned, converts stamp coordinates, han
       ctx.fillRect(0, 0, 600, 400);
       await scene.applyTransition(source.toDataURL(), 'none', 'none');
 
-      const actions: DoodleAction[] = [
+      const actions: DoodleAnnotation[] = [
         { type: 'draw', id: 'line', x0: 0.2, y0: 0.25, x1: 0.3, y1: 0.25, color: '#ff0000', size: 6 },
         { type: 'stamp', id: 'stamp', x: 0.5, y: 0.5, size: 100, url: source.toDataURL() },
       ];

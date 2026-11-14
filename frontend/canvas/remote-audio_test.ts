@@ -32,7 +32,6 @@ interface RemoteAudioTestWindow extends Window {
 }
 
 const CANONICAL_URL = '/static/generated/canvas/remote-audio.js';
-const SHIM_URL = '/static/js/remote-audio.js';
 
 const AUDIO_HTML = `
   <div class="preview-frame" role="button" tabindex="0" aria-label="Unmute canvas audio" aria-pressed="false" style="width: 120px; height: 80px;">
@@ -126,22 +125,9 @@ async function mountAudioHarness(
     }, moduleUrl);
 }
 
-test('deprecated remote-audio shim re-exports initializeRemoteAudio', async ({ canvas, page }) => {
-    await canvas.mount();
-    const sameExport = await page.evaluate(
-        async ({ canonicalUrl, shimUrl }) => {
-            const canonical = await window.__importModule<RemoteAudioModule>(canonicalUrl);
-            const shim = await window.__importModule<RemoteAudioModule>(shimUrl);
-            return canonical.initializeRemoteAudio === shim.initializeRemoteAudio;
-        },
-        { canonicalUrl: CANONICAL_URL, shimUrl: SHIM_URL },
-    );
-    expect(sameExport).toBe(true);
-});
-
 test('defaults muted and toggles via click, Space, and Enter with feedback flash', async ({ canvas, page }) => {
     await page.clock.install();
-    await mountAudioHarness(canvas, SHIM_URL);
+    await mountAudioHarness(canvas, CANONICAL_URL);
 
     const frame = page.locator('.preview-frame');
     const feedback = page.locator('#preview-audio-feedback');

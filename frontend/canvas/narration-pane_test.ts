@@ -3,9 +3,8 @@ import { expect, test } from '../../testing/ui/canvas_fixtures';
 type NarrationPaneModule = typeof import('/static/generated/canvas/narration-pane.js');
 
 const NARRATION_PANE_MODULE_URL = '/static/generated/canvas/narration-pane.js';
-const NARRATION_PANE_SHIM_URL = '/static/js/narration-pane.js';
 
-test('narration-pane module and deprecated shim share identity and toggle interactive reading state', async ({
+test('narration-pane toggles interactive reading state', async ({
   canvas,
   page,
 }) => {
@@ -15,9 +14,8 @@ test('narration-pane module and deprecated shim share identity and toggle intera
   });
 
   const result = await page.evaluate(
-    async ({ moduleUrl, shimUrl }) => {
+    async ({ moduleUrl }) => {
       const mod = await window.__importModule<NarrationPaneModule>(moduleUrl);
-      const shim = await window.__importModule<NarrationPaneModule>(shimUrl);
 
       const mount = document.getElementById('narration-pane-mount');
       const pane = await mod.createNarrationPane(mount);
@@ -67,7 +65,6 @@ test('narration-pane module and deprecated shim share identity and toggle intera
       const titleAfterReselect = caption.title;
 
       return {
-        sameFactory: mod.createNarrationPane === shim.createNarrationPane,
         mountStillPresent,
         overlayId,
         overlayAriaLive,
@@ -85,11 +82,10 @@ test('narration-pane module and deprecated shim share identity and toggle intera
         titleAfterReselect,
       };
     },
-    { moduleUrl: NARRATION_PANE_MODULE_URL, shimUrl: NARRATION_PANE_SHIM_URL },
+    { moduleUrl: NARRATION_PANE_MODULE_URL },
   );
 
   expect(result).toEqual({
-    sameFactory: true,
     mountStillPresent: false,
     overlayId: 'scene-dialogue-overlay',
     overlayAriaLive: 'polite',

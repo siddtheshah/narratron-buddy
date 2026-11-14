@@ -80,7 +80,6 @@ app.include_router(decision_lab_router)
 STATIC_GENERATED = PROJECT_ROOT / "static" / "generated"
 STATIC_GENERATED.mkdir(parents=True, exist_ok=True)
 app.mount("/static/generated", StaticFiles(directory=STATIC_GENERATED), name="static-generated")
-app.mount("/static", StaticFiles(directory=ROOT / "static"), name="static")
 app.mount("/effects-static", StaticFiles(directory=PROJECT_ROOT / "static"), name="effects-static")
 app.mount("/carousel", StaticFiles(directory=PROJECT_ROOT / "templates" / "carousel"), name="carousel")
 app.mount("/test-images", StaticFiles(directory=ROOT / "images"), name="test-images")

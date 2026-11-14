@@ -28,7 +28,6 @@ interface FriendsHarnessWindow extends Window {
 }
 
 const FRIENDS_MODULE_URL = '/static/generated/canvas/friends.js';
-const FRIENDS_SHIM_URL = '/static/js/friends.js';
 
 function prepareTemplateHtml(templateName: string, authScript: string): string {
   let html = fs.readFileSync(path.join(TEMPLATES_DIR, templateName), 'utf-8');
@@ -277,7 +276,7 @@ test('profile requests, friend tabs, active theater browser, responsive layout, 
   await expect(groups).toHaveCount(0);
 });
 
-test('friends shim parity, unauthenticated/accepted-empty states, and error recovery', async ({
+test('friends unauthenticated/accepted-empty states and error recovery', async ({
   canvas,
   page,
 }) => {
@@ -325,23 +324,10 @@ test('friends shim parity, unauthenticated/accepted-empty states, and error reco
       window.authModalCalls = [];
       window.openAuthModal = (tab) => window.authModalCalls.push(tab);
       window.getAuthState = async () => (${JSON.stringify({ authenticated: false })});
-      import ${JSON.stringify(FRIENDS_SHIM_URL)};
+      import ${JSON.stringify(FRIENDS_MODULE_URL)};
       `,
     ],
   });
-
-  const sameRef = await page.evaluate(
-    async ({ compiledUrl, shimUrl }) => {
-      const compiled = await window.__importModule<FriendsModule>(compiledUrl);
-      const shim = await window.__importModule<FriendsModule>(shimUrl);
-      return (
-        compiled.setupProfileFriends === shim.setupProfileFriends &&
-        compiled.startFriendTheaters === shim.startFriendTheaters
-      );
-    },
-    { compiledUrl: FRIENDS_MODULE_URL, shimUrl: FRIENDS_SHIM_URL },
-  );
-  expect(sameRef).toBe(true);
 
   // Signed-out visitors see Sign in button calling openAuthModal('login').
   await page.getByRole('button', { name: 'Sign in', exact: true }).click();

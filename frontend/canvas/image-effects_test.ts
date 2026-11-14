@@ -13,18 +13,11 @@ declare global {
 const PNG_1X1_BASE64 =
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
 
-test('image-effects shim shares exact exports and frozen registries with canonical module', async ({ canvas, page }) => {
+test('image-effects exports frozen registries with expected effect and default keys', async ({ canvas, page }) => {
   await canvas.mount();
   const result = await page.evaluate(async () => {
     const canonical = await window.__importModule<ImageEffectsModule>('/static/generated/canvas/image-effects.js');
-    const shim = await window.__importModule<ImageEffectsModule>('/static/js/image-effects.js');
-    const versionedShim = await window.__importModule<ImageEffectsModule>('/static/js/image-effects.js?v=effects-20261005-1');
     return {
-      sameEffects: canonical.IMAGE_EFFECTS === shim.IMAGE_EFFECTS && shim.IMAGE_EFFECTS === versionedShim.IMAGE_EFFECTS,
-      sameDefaults:
-        canonical.IMAGE_EFFECT_DEFAULT_INTENSITIES === shim.IMAGE_EFFECT_DEFAULT_INTENSITIES &&
-        shim.IMAGE_EFFECT_DEFAULT_INTENSITIES === versionedShim.IMAGE_EFFECT_DEFAULT_INTENSITIES,
-      sameAttach: canonical.attachImageEffect === shim.attachImageEffect && shim.attachImageEffect === versionedShim.attachImageEffect,
       effectsFrozen: Object.isFrozen(canonical.IMAGE_EFFECTS),
       defaultsFrozen: Object.isFrozen(canonical.IMAGE_EFFECT_DEFAULT_INTENSITIES),
       effectKeys: Object.keys(canonical.IMAGE_EFFECTS),
@@ -32,9 +25,6 @@ test('image-effects shim shares exact exports and frozen registries with canonic
     };
   });
 
-  expect(result.sameEffects).toBe(true);
-  expect(result.sameDefaults).toBe(true);
-  expect(result.sameAttach).toBe(true);
   expect(result.effectsFrozen).toBe(true);
   expect(result.defaultsFrozen).toBe(true);
   expect(result.effectKeys).toEqual(['none', 'creeping', 'dream', 'sparkle', 'gleam3', 'haze', 'trace']);

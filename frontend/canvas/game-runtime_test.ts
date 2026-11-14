@@ -19,23 +19,9 @@ interface RuntimeTestWindow extends Window {
 }
 
 const RUNTIME_MODULE_URL = '/static/generated/canvas/game-runtime.js';
-const RUNTIME_SHIM_URL = '/static/js/game-runtime.js';
 const RENDERER_MODULE_URL = '/static/generated/canvas/game-renderer.js';
 
 const snapshots = loadGameSnapshots();
-
-test('deprecated game-runtime shim re-exports createLocalGame', async ({ canvas, page }) => {
-  await canvas.mount();
-  const sameReference = await page.evaluate(
-    async ({ canonicalUrl, shimUrl }) => {
-      const canonical = await window.__importModule<GameRuntimeModule>(canonicalUrl);
-      const shim = await window.__importModule<GameRuntimeModule>(shimUrl);
-      return canonical.createLocalGame === shim.createLocalGame;
-    },
-    { canonicalUrl: RUNTIME_MODULE_URL, shimUrl: RUNTIME_SHIM_URL },
-  );
-  expect(sameReference).toBe(true);
-});
 
 for (const pkg of ['counter', 'checkers'] as const) {
   test(`browser preview matches CEL state and view (${pkg})`, async ({ canvas, page }) => {

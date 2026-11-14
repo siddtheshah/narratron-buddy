@@ -3,32 +3,24 @@ import { CANVAS_ORIGIN, expect, test } from '../../testing/ui/canvas_fixtures';
 type DeviceNavigationModule = typeof import('/static/generated/canvas/device-navigation.js');
 
 const DEVICE_NAV_MODULE_URL = '/static/generated/canvas/device-navigation.js';
-const DEVICE_NAV_SHIM_URL = '/static/js/device-navigation.js';
 
-test('device-navigation shim parity, mobile class toggling on resize, and theaterUrl()', async ({
+test('device-navigation exposes global helpers, toggles mobile class on resize, and computes theaterUrl()', async ({
   canvas,
   page,
 }) => {
   await canvas.mount({
     viewport: { width: 1200, height: 800 },
-    moduleScripts: [`import ${JSON.stringify(DEVICE_NAV_SHIM_URL)};`],
+    moduleScripts: [`import ${JSON.stringify(DEVICE_NAV_MODULE_URL)};`],
   });
 
-  const sameRef = await page.evaluate(
-    async ({ compiledUrl, shimUrl }) => {
-      const compiled = await window.__importModule<DeviceNavigationModule>(compiledUrl);
-      const shim = await window.__importModule<DeviceNavigationModule>(shimUrl);
-      return (
-        compiled.isMobile === shim.isMobile &&
-        compiled.theaterUrl === shim.theaterUrl &&
-        compiled.updateDeviceNavigation === shim.updateDeviceNavigation &&
-        window.NarratronNavigation?.isMobile === compiled.isMobile &&
-        window.NarratronNavigation?.theaterUrl === compiled.theaterUrl
-      );
-    },
-    { compiledUrl: DEVICE_NAV_MODULE_URL, shimUrl: DEVICE_NAV_SHIM_URL },
-  );
-  expect(sameRef).toBe(true);
+  const globalsAttached = await page.evaluate(async (compiledUrl) => {
+    const compiled = await window.__importModule<DeviceNavigationModule>(compiledUrl);
+    return (
+      window.NarratronNavigation?.isMobile === compiled.isMobile &&
+      window.NarratronNavigation?.theaterUrl === compiled.theaterUrl
+    );
+  }, DEVICE_NAV_MODULE_URL);
+  expect(globalsAttached).toBe(true);
 
   await expect(page.locator('html')).not.toHaveClass(/mobile-device/);
   expect(await page.evaluate(() => window.NarratronNavigation?.isMobile())).toBe(false);

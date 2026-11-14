@@ -24,7 +24,6 @@ interface WheelHarnessWindow extends Window {
 }
 
 const ACTION_WHEEL_MODULE_URL = '/static/generated/canvas/action-wheel.js';
-const ACTION_WHEEL_SHIM_URL = '/static/js/action-wheel.js';
 const ACTION_WHEEL_CSS_URL = '/static/css/canvas-action-wheel.css';
 
 const WHEEL_MARKUP = `
@@ -106,26 +105,6 @@ async function serveMockHistoryImages(
     },
   );
 }
-
-test('deprecated shim re-exports the same compiled actionWheelDirection and initializeActionWheel', async ({
-  canvas,
-  page,
-}) => {
-  await canvas.mount();
-  const same = await page.evaluate(
-    async ({ compiledUrl, shimUrl }: { compiledUrl: string; shimUrl: string }) => {
-      const compiled = await window.__importModule<ActionWheelModule>(compiledUrl);
-      const shim = await window.__importModule<ActionWheelModule>(shimUrl);
-      return (
-        compiled.actionWheelDirection === shim.actionWheelDirection &&
-        compiled.initializeActionWheel === shim.initializeActionWheel &&
-        compiled.actionWheelDirection(0, -60) === 'up'
-      );
-    },
-    { compiledUrl: ACTION_WHEEL_MODULE_URL, shimUrl: ACTION_WHEEL_SHIM_URL },
-  );
-  expect(same).toBe(true);
-});
 
 const NATIVE_MOUSE_BUTTONS: ReadonlyArray<{
   button: 'middle' | 'right' | 'back' | 'forward';

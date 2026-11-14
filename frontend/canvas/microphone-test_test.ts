@@ -2,6 +2,7 @@ import { expect, test, type CanvasHarness } from '../../testing/ui/canvas_fixtur
 import type { Page, WebSocketRoute } from '@playwright/test';
 
 type DeviceAwarePcmModule = typeof import('./device-aware-pcm.js');
+type PcmWorkletProcessorModule = typeof import('./pcm-worklet-processor.js');
 
 interface MockPlaybackBuffer {
   readonly sampleRate: number;
@@ -253,7 +254,7 @@ async function mountPcmHarness(canvas: CanvasHarness, page: Page): Promise<void>
   await canvas.mount();
 }
 
-test('device-aware-pcm module and deprecated shim share identity, support non-continuous VAD, and handle getUserMedia errors', async ({
+test('device-aware-pcm module supports non-continuous VAD and handles getUserMedia errors', async ({
   canvas,
   page,
 }) => {
@@ -262,14 +263,10 @@ test('device-aware-pcm module and deprecated shim share identity, support non-co
     const canonical = await window.__importModule<DeviceAwarePcmModule>(
       '/static/generated/canvas/device-aware-pcm.js',
     );
-    const shim = await window.__importModule<DeviceAwarePcmModule>(
-      '/static/js/device-aware-pcm.js',
-    );
-    const sameFunction = canonical.listenForSpeech === shim.listenForSpeech;
 
     const events: string[] = [];
     const dataLengths: number[] = [];
-    await shim.listenForSpeech({
+    await canonical.listenForSpeech({
       sampleRate: 16000,
       vadThreshold: 0.05,
       vadMinRecordingTime: 180,
@@ -315,10 +312,9 @@ test('device-aware-pcm module and deprecated shim share identity, support non-co
       thrownMessage = err instanceof Error ? err.message : String(err);
     }
 
-    return { sameFunction, afterVadEnd, onErrorMessage, thrownMessage };
+    return { afterVadEnd, onErrorMessage, thrownMessage };
   });
 
-  expect(result.sameFunction).toBe(true);
   expect(result.afterVadEnd).toEqual({
     events: ['start', 'end'],
     dataLengths: [4, 4, 4],
@@ -531,4 +527,81 @@ test('enabling mic summons an inactive agent before opening WebSocket and starti
   });
   expect(stoppedState.closedEncoders).toBe(1);
   expect(stoppedState.stoppedTracks).toBe(2);
+});
+
+test('compiled PCM audio worklets load and resample inside real AudioWorkletGlobalScope', async ({
+  canvas,
+  page,
+}) => {
+  await canvas.mount();
+  const result = await page.evaluate(async () => {
+    const { buildPcmWorkletSource } = await window.__importModule<PcmWorkletProcessorModule>(
+      '/static/generated/canvas/pcm-worklet-processor.js',
+    );
+    const runWorklet = async (
+      sourceCode: string,
+      processorName: string,
+      sampleRate: number,
+      length: number,
+    ): Promise<unknown[]> => {
+      const offline = new OfflineAudioContext(1, length, sampleRate);
+      const blobUrl = URL.createObjectURL(
+        new Blob([sourceCode], { type: 'application/javascript' }),
+      );
+      try {
+        await offline.audioWorklet.addModule(blobUrl);
+      } finally {
+        URL.revokeObjectURL(blobUrl);
+      }
+      const source = offline.createBufferSource();
+      const buffer = offline.createBuffer(1, length, sampleRate);
+      const channel = buffer.getChannelData(0);
+      for (let i = 0; i < length; i++) {
+        channel[i] = 0.5;
+      }
+      source.buffer = buffer;
+      const node = new AudioWorkletNode(offline, processorName);
+      const messages: unknown[] = [];
+      node.port.onmessage = (event: MessageEvent<unknown>) => {
+        messages.push(event.data);
+      };
+      source.connect(node);
+      node.connect(offline.destination);
+      source.start(0);
+      await offline.startRendering();
+      return messages;
+    };
+
+    const deviceMsgs = (await runWorklet(
+      buildPcmWorkletSource('narratron-device-pcm', 16_000, 480, 'pcm-vad'),
+      'narratron-device-pcm',
+      48_000,
+      1920,
+    )) as Array<{ pcm: Uint8Array; float32: Float32Array; rms: number }>;
+
+    const remoteMsgs = (await runWorklet(
+      buildPcmWorkletSource('remote-pcm-processor', 16_000, 480, 'float32'),
+      'remote-pcm-processor',
+      48_000,
+      1920,
+    )) as Float32Array[];
+
+    return {
+      deviceCount: deviceMsgs.length,
+      deviceFloatLen: deviceMsgs[0]?.float32.length ?? 0,
+      devicePcmBytes: deviceMsgs[0]?.pcm.byteLength ?? 0,
+      deviceRms: deviceMsgs[0]?.rms ?? 0,
+      remoteCount: remoteMsgs.length,
+      remoteFloatLen: remoteMsgs[0]?.length ?? 0,
+      remoteSample0: remoteMsgs[0]?.[0] ?? 0,
+    };
+  });
+
+  expect(result.deviceCount).toBe(1);
+  expect(result.deviceFloatLen).toBe(480);
+  expect(result.devicePcmBytes).toBe(960);
+  expect(result.deviceRms).toBeCloseTo(0.5, 2);
+  expect(result.remoteCount).toBe(1);
+  expect(result.remoteFloatLen).toBe(480);
+  expect(result.remoteSample0).toBeCloseTo(0.5, 2);
 });

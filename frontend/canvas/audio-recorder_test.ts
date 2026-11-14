@@ -87,7 +87,6 @@ interface MockSocketHandle extends AgentSocket {
 
 interface AudioRecorderTestHarness {
   readonly mod: AudioRecorderModule;
-  readonly shimMod: AudioRecorderModule;
   readonly socket: MockSocketHandle;
   readonly encoders: readonly MockEncoderHandle[];
   readonly contexts: readonly MockAudioContextHandle[];
@@ -112,16 +111,15 @@ declare global {
 }
 
 const CANONICAL_MODULE_URL = '/static/generated/canvas/audio-recorder.js';
-const SHIM_MODULE_URL = '/static/js/audio-recorder.js';
 
 async function mountAudioHarness(
   canvas: CanvasHarness,
   page: Page,
-  options: { useShim?: boolean; initialTimeMs?: number } = {},
+  options: { initialTimeMs?: number } = {},
 ): Promise<void> {
   await canvas.mount();
   await page.evaluate(
-    async ({ canonicalUrl, shimUrl, useShim, initialTimeMs }) => {
+    async ({ canonicalUrl, initialTimeMs }) => {
       interface WorkletMessagePayload {
         readonly pcm: Uint8Array;
         readonly float32: Float32Array;
@@ -410,8 +408,6 @@ async function mountAudioHarness(
       }
 
       const canonicalMod = await window.__importModule<AudioRecorderModule>(canonicalUrl);
-      const shimMod = await window.__importModule<AudioRecorderModule>(shimUrl);
-      const activeMod = useShim ? shimMod : canonicalMod;
 
       const handler = (opusBuffer: ArrayBuffer): void => {
         if (!window.agentWs || window.agentWs.readyState !== WebSocket.OPEN) return;
@@ -419,8 +415,7 @@ async function mountAudioHarness(
       };
 
       window.__audioHarness = {
-        mod: activeMod,
-        shimMod,
+        mod: canonicalMod,
         socket,
         encoders,
         contexts,
@@ -456,8 +451,6 @@ async function mountAudioHarness(
     },
     {
       canonicalUrl: CANONICAL_MODULE_URL,
-      shimUrl: SHIM_MODULE_URL,
-      useShim: options.useShim ?? false,
       initialTimeMs: options.initialTimeMs ?? 1000,
     },
   );
@@ -827,7 +820,7 @@ test('stopping pending microphone initialization releases the late capture', asy
   expect(result.wire).toEqual([]);
 });
 
-test('deprecated shim exports identical functions and forwards audio over real WebSocket', async ({
+test('forwards audio over real WebSocket and flushes on stop', async ({
   canvas,
   page,
 }) => {
@@ -838,16 +831,9 @@ test('deprecated shim exports identical functions and forwards audio over real W
     });
   });
 
-  await mountAudioHarness(canvas, page, { useShim: true });
+  await mountAudioHarness(canvas, page);
   const result = await page.evaluate(async () => {
     const h = window.__audioHarness;
-    const canonical = await window.__importModule<AudioRecorderModule>(
-      '/static/generated/canvas/audio-recorder.js',
-    );
-    const sameExports =
-      h.shimMod.startAudioRecorderWorklet === canonical.startAudioRecorderWorklet &&
-      h.shimMod.setMicrophoneTransmissionEnabled === canonical.setMicrophoneTransmissionEnabled &&
-      h.shimMod.stopMicrophone === canonical.stopMicrophone;
 
     const realWs = new WebSocket('wss://canvas.test/ws/agent');
     await new Promise<void>((resolve, reject) => {
@@ -858,12 +844,12 @@ test('deprecated shim exports identical functions and forwards audio over real W
     });
     window.agentWs = realWs;
 
-    await h.shimMod.startAudioRecorderWorklet(h.handler);
+    await h.mod.startAudioRecorderWorklet(h.handler);
     h.contexts[0].worklets[0].emitSpeech();
     await h.tick();
     h.encoders[0].emitOutput([42, 99]);
 
-    const stopping = h.shimMod.stopMicrophone();
+    const stopping = h.mod.stopMicrophone();
     await h.tick();
     h.encoders[0].resolveNextFlush();
     await stopping;
@@ -871,12 +857,10 @@ test('deprecated shim exports identical functions and forwards audio over real W
     realWs.close();
 
     return {
-      sameExports,
       vadEventNames: h.vadEvents.map((event) => event.type),
     };
   });
 
-  expect(result.sameExports).toBe(true);
   expect(result.vadEventNames).toEqual([
     'vadstart',
     'narratron:vad-start',

@@ -15,17 +15,16 @@ interface PollingHarness {
 declare global {
   interface Window {
     pollingHarness: PollingHarness;
-    startCanvasStatePolling: PollingModule['startCanvasStatePolling'];
   }
 }
 
 async function mount(
   canvas: CanvasHarness,
   page: Page,
-  options: { hidden?: boolean; focused?: boolean; legacy?: boolean } = {},
+  options: { hidden?: boolean; focused?: boolean } = {},
 ): Promise<void> {
   await canvas.mount();
-  await page.evaluate(async ({ hidden = false, focused = true, legacy = false }) => {
+  await page.evaluate(async ({ hidden = false, focused = true }) => {
     const timers: PollingHarness['timers'] = new Map();
     const calls: number[] = [];
     let now = 0;
@@ -53,11 +52,8 @@ async function mount(
       hidden(value) { hidden = value; },
       focus(value) { focused = value; },
     };
-    const module = await window.__importModule<PollingModule>(legacy
-      ? '/static/js/canvas-state-polling.js'
-      : '/static/generated/canvas/state-polling.js');
-    const start = legacy ? window.startCanvasStatePolling : module.startCanvasStatePolling;
-    start(() => { calls.push(now); });
+    const module = await window.__importModule<PollingModule>('/static/generated/canvas/state-polling.js');
+    module.startCanvasStatePolling(() => { calls.push(now); });
   }, options);
 }
 
@@ -174,16 +170,4 @@ test('returning to an idle tab restarts polling', async ({ canvas, page }) => {
     h.event('visibilitychange');
     return { hiddenTimers, timers: h.timers.size, calls: h.calls };
   })).toEqual({ hiddenTimers: 0, timers: 1, calls: [0, 31 * 60 * 1000] });
-});
-
-test('legacy module shim exposes the canonical function on window', async ({ canvas, page }) => {
-  await mount(canvas, page, { legacy: true });
-  expect(await page.evaluate(async () => {
-    const module = await window.__importModule<PollingModule>('/static/generated/canvas/state-polling.js');
-    window.pollingHarness.advance(1000);
-    return {
-      sameFunction: module.startCanvasStatePolling === window.startCanvasStatePolling,
-      calls: window.pollingHarness.calls,
-    };
-  })).toEqual({ sameFunction: true, calls: [0, 1000] });
 });

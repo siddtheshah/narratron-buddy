@@ -1,4 +1,5 @@
 /** Microphone VAD Lab controller: device selection, RMS VAD capture, and WAV playback. */
+import { buildPcmWorkletSource } from './pcm-worklet-processor.js';
 
 export const SAMPLE_RATE = 16_000;
 
@@ -39,29 +40,12 @@ interface WorkletSpeechMessage {
   readonly rms?: number;
 }
 
-const PROCESSOR_WORKLET_SOURCE = `class Processor extends AudioWorkletProcessor {
-  constructor() { super(); this.buffer = new Float32Array(4096); this.index = 0; }
-  process(inputs) {
-    const input = inputs[0]?.[0];
-    if (!input) return true;
-    for (const sample of input) {
-      this.buffer[this.index++] = sample;
-      if (this.index === this.buffer.length) {
-        let sum = 0;
-        for (const value of this.buffer) sum += value * value;
-        const pcm = new Int16Array(this.buffer.length);
-        for (let i = 0; i < this.buffer.length; i++) {
-          const value = Math.max(-1, Math.min(1, this.buffer[i]));
-          pcm[i] = value < 0 ? value * 0x8000 : value * 0x7fff;
-        }
-        this.port.postMessage({ pcm: new Uint8Array(pcm.buffer), rms: Math.sqrt(sum / this.buffer.length) });
-        this.index = 0;
-      }
-    }
-    return true;
-  }
-}
-registerProcessor('vad-lab-device-processor', Processor);`;
+const PROCESSOR_WORKLET_SOURCE = buildPcmWorkletSource(
+  'vad-lab-device-processor',
+  null,
+  4096,
+  'vad-only',
+);
 
 /** Maps a 0–100 sensitivity slider value to the production canvas RMS VAD threshold. */
 export function thresholdFromSensitivity(value: number | string): number {
@@ -160,8 +144,11 @@ export async function listenForSpeechWithDevice(
     const url = URL.createObjectURL(
       new Blob([PROCESSOR_WORKLET_SOURCE], { type: 'application/javascript' }),
     );
-    await context.audioWorklet.addModule(url);
-    URL.revokeObjectURL(url);
+    try {
+      await context.audioWorklet.addModule(url);
+    } finally {
+      URL.revokeObjectURL(url);
+    }
     if (!listening) {
       cleanup();
       return null;

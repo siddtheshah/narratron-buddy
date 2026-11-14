@@ -151,11 +151,8 @@ def render_page_template(
         title = html.escape(seo_metadata.title)
         html_content = re.sub(r"<title>[^<]*</title>", f"<title>{title}</title>", html_content, count=1)
         html_content = html_content.replace("</head>", f"{render_seo_markup(seo_metadata)}\n</head>", 1)
-    html_content = re.sub(
-        r"/static/js/auth-flow\.js(?:\?[^\"'>\s]*)?",
-        f"/static/js/auth-flow.js?v={object_registry.SERVER_RUN_ID}",
-        html_content,
-    )
+    # Keep the module URL identical to relative imports in credit-purchase and
+    # remote-login so every caller shares the same auth-state cache.
     html_content = re.sub(
         r"/static/css/auth-flow\.css(?:\?[^\"'>\s]*)?",
         f"/static/css/auth-flow.css?v={object_registry.SERVER_RUN_ID}",

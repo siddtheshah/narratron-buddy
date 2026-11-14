@@ -130,7 +130,7 @@ test('deselecting drawing color enables scrollable narration pane', async ({ can
   });
 
   const paneState = await page.evaluate(async (text: string) => {
-    const mod = await window.__importModule<NarrationPaneModule>('/static/js/narration-pane.js');
+    const mod = await window.__importModule<NarrationPaneModule>('/static/generated/canvas/narration-pane.js');
     const hasFactory = typeof mod.createNarrationPane === 'function';
     const slot = document.getElementById('slot')!;
     const ctrl = await mod.createNarrationPane(slot);

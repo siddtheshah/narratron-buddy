@@ -14,7 +14,6 @@ interface CanvasCompatGlobals extends Window {
 }
 
 const CANVAS_MODULE_URL = '/static/generated/canvas/canvas.js';
-const CANVAS_SHIM_URL = '/static/js/canvas.js';
 const PNG_DATA_URL =
   'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
 
@@ -179,21 +178,18 @@ test('canvas-state WebSocket state_changed refreshes latest scene, thought, and 
   expect(currentSrc?.startsWith(PNG_DATA_URL)).toBe(true);
 });
 
-test('deprecated /static/js/canvas.js shim re-exports canonical canvas helpers and exposes globals', async ({
+test('canonical canvas module exports helpers and exposes globals', async ({
   canvas,
   page,
 }) => {
   await canvas.openCanvas({ isOrator: true });
 
   const result = await page.evaluate(
-    async ({ canonicalUrl, shimUrl }) => {
+    async ({ canonicalUrl }) => {
       const canonical = await window.__importModule<CanvasEntryModule>(canonicalUrl);
-      const shim = await window.__importModule<CanvasEntryModule>(shimUrl);
       const win = window as CanvasCompatGlobals;
       return {
-        sameEscapeHtml: canonical.escapeHtml === shim.escapeHtml,
-        sameGetAuthState: canonical.getCanvasAuthState === shim.getCanvasAuthState,
-        escaped: shim.escapeHtml('<script>"ok"</script>'),
+        escaped: canonical.escapeHtml('<script>"ok"</script>'),
         hasGlobals:
           typeof win.openPulloutMenu === 'function' &&
           typeof win.closePulloutMenu === 'function' &&
@@ -208,13 +204,154 @@ test('deprecated /static/js/canvas.js shim re-exports canonical canvas helpers a
           typeof win.onAuthSuccess === 'function',
       };
     },
-    { canonicalUrl: CANVAS_MODULE_URL, shimUrl: CANVAS_SHIM_URL },
+    { canonicalUrl: CANVAS_MODULE_URL },
   );
 
   expect(result).toEqual({
-    sameEscapeHtml: true,
-    sameGetAuthState: true,
     escaped: '&lt;script&gt;&quot;ok&quot;&lt;/script&gt;',
     hasGlobals: true,
   });
+});
+
+test('canvas plays triframe and silent looping video animations from state updates and stops on static images', async ({
+  canvas,
+  page,
+}) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(HTMLMediaElement.prototype, 'src', {
+      configurable: true,
+      get() {
+        return this.getAttribute('data-test-src') || '';
+      },
+      set(url: string) {
+        this.setAttribute('data-test-src', url);
+      },
+    });
+    (window as unknown as { __canvasVideoPlays: number }).__canvasVideoPlays = 0;
+    HTMLMediaElement.prototype.play = async function (): Promise<void> {
+      (window as unknown as { __canvasVideoPlays: number }).__canvasVideoPlays += 1;
+    };
+    HTMLMediaElement.prototype.pause = function (): void {};
+    HTMLMediaElement.prototype.load = function (): void {};
+  });
+
+  let stateSocket: WebSocketRoute | null = null;
+  let latestPayload: Record<string, unknown> = {
+    latest: null,
+    prompt: '',
+    history: [],
+  };
+
+  await canvas.openCanvas({
+    isOrator: true,
+    onWebSocket: (ws) => {
+      if (ws.url().includes('/ws/canvas-state')) {
+        stateSocket = ws;
+      }
+    },
+    apiRoutes: {
+      '/api/latest': async (route) => {
+        await route.fulfill({ json: latestPayload });
+      },
+    },
+  });
+
+  await expect.poll(() => stateSocket).not.toBeNull();
+
+  // 1. Triframe animation hides #current-image and #background-layer and renders to #canvas-renderer.
+  latestPayload = {
+    latest: PNG_DATA_URL,
+    prompt: 'Lantern loop',
+    time: 10,
+    orator_cursor: 0,
+    history: [
+      {
+        url: PNG_DATA_URL,
+        prompt: 'Lantern loop',
+        time: 10,
+        animation: {
+          type: 'triframe',
+          frames: [PNG_DATA_URL, PNG_DATA_URL, PNG_DATA_URL],
+          frame_duration_ms: 100,
+          crossfade_duration_ms: 30,
+        },
+      },
+    ],
+    animation: {
+      type: 'triframe',
+      frames: [PNG_DATA_URL, PNG_DATA_URL, PNG_DATA_URL],
+      frame_duration_ms: 100,
+      crossfade_duration_ms: 30,
+    },
+  };
+  stateSocket!.send(JSON.stringify({ type: 'state_changed', domains: ['latest'] }));
+  await expect(page.locator('#prompt-text')).toHaveText('Lantern loop');
+  await expect(page.locator('#current-image')).toHaveCSS('opacity', '0');
+  await expect(page.locator('#bg-layer')).toHaveCSS('background-image', 'none');
+
+  // 2. Video animation attaches a silent, looping <video> inside #image-container.
+  latestPayload = {
+    latest: PNG_DATA_URL,
+    prompt: 'Soaring griffin',
+    time: 20,
+    orator_cursor: 1,
+    history: [
+      {
+        url: PNG_DATA_URL,
+        prompt: 'Soaring griffin',
+        time: 20,
+        animation: {
+          type: 'video',
+          id: 'flight_123',
+          video_url: '/video.mp4',
+          video_duration_seconds: 5,
+          loop: true,
+          muted: true,
+        },
+      },
+    ],
+    animation: {
+      type: 'video',
+      id: 'flight_123',
+      video_url: '/video.mp4',
+      video_duration_seconds: 5,
+      loop: true,
+      muted: true,
+    },
+  };
+  stateSocket!.send(JSON.stringify({ type: 'state_changed', domains: ['latest'] }));
+  await expect(page.locator('#image-container video')).toHaveCount(1);
+  expect(
+    await page.locator('#image-container video').evaluate((video: HTMLVideoElement) => ({
+      muted: video.muted,
+      defaultMuted: video.defaultMuted,
+      volume: video.volume,
+      loop: video.loop,
+      mutedAttr: video.hasAttribute('muted'),
+    })),
+  ).toEqual({
+    muted: true,
+    defaultMuted: true,
+    volume: 0,
+    loop: true,
+    mutedAttr: true,
+  });
+
+  await page.locator('#image-container video').dispatchEvent('loadeddata');
+  await expect
+    .poll(() =>
+      page.evaluate(() => (window as unknown as { __canvasVideoPlays: number }).__canvasVideoPlays),
+    )
+    .toBe(1);
+
+  // Returning to a static scene removes the <video> element cleanly.
+  latestPayload = {
+    latest: PNG_DATA_URL,
+    prompt: 'Quiet camp',
+    time: 30,
+    orator_cursor: 2,
+    history: [{ url: PNG_DATA_URL, prompt: 'Quiet camp', time: 30 }],
+  };
+  stateSocket!.send(JSON.stringify({ type: 'state_changed', domains: ['latest'] }));
+  await expect(page.locator('#image-container video')).toHaveCount(0);
 });

@@ -23,9 +23,7 @@ interface ChatControllerHarnessWindow extends Window {
 }
 
 const COMPILED_CONTROLLER_URL = '/static/generated/canvas/chat-controller.js';
-const SHIM_CONTROLLER_URL = '/static/js/chat-controller.js';
 const COMPILED_EMOTES_URL = '/static/generated/canvas/chat-emotes.js';
-const SHIM_EMOTES_URL = '/static/js/chat-emotes.js';
 
 const COMPOSER_SHELL_HTML = `
   <div id="chat-container">
@@ -44,48 +42,6 @@ const COMPOSER_SHELL_HTML = `
     </form>
   </div>
 `;
-
-test('deprecated shims re-export exact chat-controller and chat-emotes functions', async ({
-  canvas,
-  page,
-}) => {
-  await canvas.mount();
-  const matches = await page.evaluate(
-    async ({
-      compiledControllerUrl,
-      shimControllerUrl,
-      compiledEmotesUrl,
-      shimEmotesUrl,
-    }: {
-      compiledControllerUrl: string;
-      shimControllerUrl: string;
-      compiledEmotesUrl: string;
-      shimEmotesUrl: string;
-    }) => {
-      const compiledController =
-        await window.__importModule<ChatControllerModule>(compiledControllerUrl);
-      const shimController = await window.__importModule<ChatControllerModule>(shimControllerUrl);
-      const compiledEmotes = await window.__importModule<ChatEmotesModule>(compiledEmotesUrl);
-      const shimEmotes = await window.__importModule<ChatEmotesModule>(shimEmotesUrl);
-
-      return (
-        compiledController.generateFunUsername === shimController.generateFunUsername &&
-        compiledController.getAuthorColor === shimController.getAuthorColor &&
-        compiledController.sanitizeRollHtmlToFragment ===
-          shimController.sanitizeRollHtmlToFragment &&
-        compiledController.initializeChatController === shimController.initializeChatController &&
-        compiledEmotes.initializeChatEmotes === shimEmotes.initializeChatEmotes
-      );
-    },
-    {
-      compiledControllerUrl: COMPILED_CONTROLLER_URL,
-      shimControllerUrl: SHIM_CONTROLLER_URL,
-      compiledEmotesUrl: COMPILED_EMOTES_URL,
-      shimEmotesUrl: SHIM_EMOTES_URL,
-    },
-  );
-  expect(matches).toBe(true);
-});
 
 test('pure helpers: generateFunUsername, getAuthorColor, and sanitizeRollHtmlToFragment', async ({
   canvas,

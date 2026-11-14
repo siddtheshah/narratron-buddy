@@ -93,7 +93,8 @@ state from the previous package just as a changed game declaration does.
 ## Frontend review
 
 The existing flow is a CEL-evaluated `ViewNode` tree, serialized by Python or
-CEL-Go and converted to DOM by `static/js/game-renderer.js`. View actions also
+CEL-Go and converted to DOM by `frontend/canvas/game-renderer.ts` (served as
+`/static/generated/canvas/game-renderer.js`). View actions also
 participate in contributor authorization; a separate HTML action endpoint would
 duplicate this behavior. The panel contract therefore compiles into an internal
 view containing parameter values and named actions. Both runtimes retain their

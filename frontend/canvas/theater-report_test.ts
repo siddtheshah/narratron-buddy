@@ -15,7 +15,6 @@ interface RecordedReportSubmission {
 }
 
 const THEATER_REPORT_MODULE_URL = '/static/generated/canvas/theater-report.js';
-const THEATER_REPORT_SHIM_URL = '/static/js/theater-report.js';
 
 function loadPulloutAndReportMarkup(): string {
   const template = fs.readFileSync(path.join(TEMPLATES_DIR, 'canvas.html'), 'utf-8');
@@ -59,47 +58,6 @@ async function mountReportModalPage(
     ],
   });
 }
-
-test('deprecated shim re-exports the exact setupTheaterReport function and works end-to-end', async ({
-  canvas,
-  page,
-}) => {
-  const submissions: RecordedReportSubmission[] = [];
-  await canvas.serveRoute(
-    (url: URL) => url.pathname === '/api/theaters/stage/reports' || url.pathname === '/api/reports',
-    async (route: Route) => {
-      submissions.push({
-        pathname: new URL(route.request().url()).pathname,
-        body: route.request().postData() ?? '',
-      });
-      await route.fulfill({ status: 201, json: { report_id: 1, status: 'ok' } });
-    },
-  );
-
-  await mountReportModalPage(canvas, { moduleUrl: THEATER_REPORT_SHIM_URL });
-
-  const sameReference = await page.evaluate(
-    async ({ compiledUrl, shimUrl }: { compiledUrl: string; shimUrl: string }) => {
-      const compiled = await window.__importModule<TheaterReportModule>(compiledUrl);
-      const shim = await window.__importModule<TheaterReportModule>(shimUrl);
-      return compiled.setupTheaterReport === shim.setupTheaterReport;
-    },
-    { compiledUrl: THEATER_REPORT_MODULE_URL, shimUrl: THEATER_REPORT_SHIM_URL },
-  );
-  expect(sameReference).toBe(true);
-
-  await page.getByRole('button', { name: 'Report Theater' }).click();
-  await page.getByLabel('Report type', { exact: true }).selectOption('other');
-  await page.getByLabel('What happened?').fill('Submitted through deprecated shim');
-  await page.getByRole('button', { name: 'Send Report' }).click();
-  await expect(page.locator('#report-theater-modal').getByRole('status')).toContainText('Report sent');
-  expect(submissions).toEqual([
-    {
-      pathname: '/api/theaters/stage/reports',
-      body: JSON.stringify({ reason: 'other', details: 'Submitted through deprecated shim' }),
-    },
-  ]);
-});
 
 test('report modal settings, submission, retry, dismissal, and feedback categories', async ({
   canvas,

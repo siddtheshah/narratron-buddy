@@ -1,4 +1,5 @@
 // Passive authored HTML runs in an opaque-origin frame. Only this bridge runs JS.
+import { runGamePanelBridge } from './game-panel-bridge.js';
 import type { GameRecord } from './game-runtime.js';
 
 export const DEFAULT_PANEL_WIDTH = 510;
@@ -110,59 +111,7 @@ export function createPanelFrame(
   ).join('');
   const data = JSON.stringify(JSON.stringify({ parameters, actions })).replaceAll('<', '\\u003c');
   // Never interpolate CEL values into HTML or evaluate authored JavaScript.
-  const bridge = `
-        const {parameters, actions} = JSON.parse(${data});
-        document.documentElement.style.maxWidth = '100%';
-        if (document.body) {
-            document.body.style.width = '100%';
-            document.body.style.maxWidth = '100%';
-            document.body.style.height = 'auto';
-            document.body.style.minHeight = '100vh';
-            document.body.style.boxSizing = 'border-box';
-        }
-        const value = path => {
-            let result = parameters;
-            for (const key of path.split('.')) {
-                if (result === null || typeof result !== 'object' || !Object.hasOwn(result, key)) return null;
-                result = result[key];
-            }
-            return result;
-        };
-        for (const el of document.querySelectorAll('[data-panel-text]')) {
-            const result = value(el.dataset.panelText);
-            el.textContent = result === null ? '' : typeof result === 'object' ? JSON.stringify(result) : String(result);
-        }
-        for (const el of document.querySelectorAll('[data-panel-hidden]')) el.hidden = Boolean(value(el.dataset.panelHidden));
-        for (const el of document.querySelectorAll('[data-panel-action]')) {
-            const id = el.dataset.panelAction;
-            el.disabled = !Object.hasOwn(actions, id) || !actions[id] || Boolean(el.dataset.panelDisabled && value(el.dataset.panelDisabled));
-            el.addEventListener('click', () => {
-                if (!el.disabled) parent.postMessage({type: 'game-panel-action', id}, '*');
-            });
-        }
-        const forwardKey = event => {
-            if (event.isComposing) return;
-            const active = document.activeElement;
-            if (active && (['INPUT', 'TEXTAREA', 'SELECT'].includes(active.tagName) || active.isContentEditable)) return;
-            parent.postMessage({
-                type: 'game-panel-key',
-                eventType: event.type,
-                key: String(event.key || ''),
-                code: String(event.code || ''),
-                location: Number(event.location) || 0,
-                altKey: Boolean(event.altKey),
-                ctrlKey: Boolean(event.ctrlKey),
-                shiftKey: Boolean(event.shiftKey),
-                metaKey: Boolean(event.metaKey),
-                repeat: Boolean(event.repeat),
-            }, '*');
-        };
-        window.addEventListener('keydown', forwardKey, true);
-        window.addEventListener('keyup', forwardKey, true);
-        window.addEventListener('blur', () => {
-            parent.postMessage({type: 'game-panel-blur'}, '*');
-        });
-    `;
+  const bridge = `(${runGamePanelBridge.toString()})(${data});`;
   const policy = `default-src 'none'; img-src data:; script-src 'nonce-${nonce}'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'`;
   frame.srcdoc = `<!doctype html><meta http-equiv="Content-Security-Policy" content="${policy}"><meta charset="utf-8">${html}<script nonce="${nonce}">${bridge}</script>`;
   return frame;

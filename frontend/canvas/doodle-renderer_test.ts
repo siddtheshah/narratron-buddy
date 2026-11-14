@@ -99,11 +99,9 @@ async function addText(page: Page, joint = false): Promise<void> {
 
 test.beforeEach(async ({ canvas, page }) => mount(canvas, page));
 
-test('shim shares the typed renderer and selection APIs operate on real annotations', async ({ page }) => {
+test('selection APIs operate on real annotations', async ({ page }) => {
   await addText(page);
   expect(await page.evaluate(async () => {
-    const module = await window.__importModule<RendererModule>('/static/generated/canvas/doodle-renderer.js');
-    const shim = await window.__importModule<RendererModule>('/static/js/canvas-renderers.js');
     const { renderer: r, actions } = window.selectionHarness;
     r.selectSegment('seg-1a');
     const grouped = r.getSelectedSegments().map(action => action.id);
@@ -124,10 +122,10 @@ test('shim shares the typed renderer and selection APIs operate on real annotati
     r.selectStamp(stamps);
     const selectedStamp = r.getSelectedStamps()[0].id;
     r.cancelInteraction();
-    return { same: module.createDoodleRenderer === shim.createDoodleRenderer, grouped, hit, deselected,
+    return { grouped, hit, deselected,
       rect, byId, byNode, byAction, texts, legacyTexts, cleared, selectedStamp,
       afterCancel: [r.getSelectedSegments().length, r.getSelectedStamps().length, r.getSelectedTexts().length] };
-  })).toEqual({ same: true, grouped: ['seg-1a', 'seg-1b'], hit: 'seg-1a', deselected: 0,
+  })).toEqual({ grouped: ['seg-1a', 'seg-1b'], hit: 'seg-1a', deselected: 0,
     rect: ['seg-1a', 'seg-1b'], byId: true, byNode: true, byAction: true, texts: ['text-1'],
     legacyTexts: ['text-1'], cleared: 0, selectedStamp: 'stamp-1', afterCancel: [0, 0, 0] });
 });

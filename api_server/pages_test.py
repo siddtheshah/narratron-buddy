@@ -308,7 +308,7 @@ def test_narratron_avatar_endpoint():
     assert response.media_type == "image/png"
 
 
-def test_non_canvas_pages_have_normalized_topbar_and_avatar():
+def test_non_canvas_pages_have_normalized_topbar_and_avatar() -> None:
     pages_to_test = [
         ("join_splash", pages.read_join_splash()),
         ("deployer", pages.read_deployer()),
@@ -323,7 +323,9 @@ def test_non_canvas_pages_have_normalized_topbar_and_avatar():
         assert "/static/narratron-avatar.png" in html, f"{page_name} missing avatar icon in topbar"
         assert "Narratron" in html, f"{page_name} missing Narratron branding"
         assert 'id="userAccountBar"' in html, f"{page_name} missing userAccountBar"
-        assert "auth-flow.js" in html, f"{page_name} missing auth-flow.js"
+        assert 'src="/static/generated/canvas/auth-flow.js"' in html, (
+            f"{page_name} must share the canonical auth module URL with module imports"
+        )
         assert "auth-flow.css" in html, f"{page_name} missing auth-flow.css"
         assert "topbar.css" in html, f"{page_name} missing topbar.css"
 

@@ -22,7 +22,7 @@ test('serves real production ES modules and CSS assets on https://canvas.test', 
   });
 
   await page.evaluate(async () => {
-    const mod = await window.__importModule<BookmarksModule>('/static/js/canvas-bookmarks.js');
+    const mod = await window.__importModule<BookmarksModule>('/static/generated/canvas/bookmarks.js');
     mod.initializeCanvasBookmarks({
       theaterId: 'fixture-test',
       isOrator: () => true,
@@ -72,7 +72,7 @@ test('blocks service workers and records unmocked HTTP, WebSocket, and missing s
     if (!('serviceWorker' in navigator)) {
       return true;
     }
-    const registration = await navigator.serviceWorker.register('/static/js/canvas-bookmarks.js');
+    const registration = await navigator.serviceWorker.register('/static/generated/canvas/bookmarks.js');
     return registration === undefined && navigator.serviceWorker.controller === null;
   });
   expect(swBlocked).toBe(true);

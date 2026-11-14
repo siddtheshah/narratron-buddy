@@ -18,7 +18,7 @@ else:
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-_EMIT_SUFFIXES = {".ts", ".tsx", ".js", ".jsx"}
+_EMIT_SUFFIXES = {".ts"}
 _DECLARATION_SUFFIXES = (".d.ts", ".d.mts", ".d.cts")
 _BUILD_CONFIG_FILES = (
     "tsconfig.json",
@@ -36,12 +36,12 @@ def _is_build_input(path: Path) -> bool:
     return (
         path.is_file()
         and path.suffix.lower() in _EMIT_SUFFIXES
-        and not path.name.endswith(("_test.ts", "_test.js"))
+        and not path.name.endswith("_test.ts")
     )
 
 
 def _collect_emitted_sources(frontend_dir: Path) -> list[Path]:
-    """Return all TypeScript/JavaScript source files under frontend/canvas/ that emit JS."""
+    """Return all TypeScript source files under frontend/canvas/ that emit JS."""
     if not frontend_dir.exists():
         return []
     sources: list[Path] = []

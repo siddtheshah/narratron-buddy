@@ -10,7 +10,6 @@ interface AuthHarnessWindow extends Window {
 }
 
 const AUTH_FLOW_MODULE_URL = '/static/generated/canvas/auth-flow.js';
-const AUTH_FLOW_SHIM_URL = '/static/js/auth-flow.js';
 
 const RESET_TABS = [
   {
@@ -241,7 +240,7 @@ test('signup enforces username and password size limits', async ({ canvas, page 
   ]);
 });
 
-test('auth-flow shim parity, login/logout bar updates, auth events, and URL reset token handling', async ({
+test('auth-flow login/logout bar updates, auth events, and URL reset token handling', async ({
   canvas,
   page,
 }) => {
@@ -298,28 +297,10 @@ test('auth-flow shim parity, login/logout bar updates, auth events, and URL rese
           username: event.detail?.user?.username,
         });
       });
-      import ${JSON.stringify(AUTH_FLOW_SHIM_URL)};
+      import ${JSON.stringify(AUTH_FLOW_MODULE_URL)};
       `,
     ],
   });
-
-  const sameRef = await page.evaluate(
-    async ({ compiledUrl, shimUrl }) => {
-      const compiled = await window.__importModule<AuthFlowModule>(compiledUrl);
-      const shim = await window.__importModule<AuthFlowModule>(shimUrl);
-      return (
-        compiled.getAuthState === shim.getAuthState &&
-        compiled.invalidateAuthState === shim.invalidateAuthState &&
-        compiled.openAuthModal === shim.openAuthModal &&
-        compiled.closeAuthModal === shim.closeAuthModal &&
-        compiled.submitLogin === shim.submitLogin &&
-        compiled.submitRegister === shim.submitRegister &&
-        compiled.submitLogout === shim.submitLogout
-      );
-    },
-    { compiledUrl: AUTH_FLOW_MODULE_URL, shimUrl: AUTH_FLOW_SHIM_URL },
-  );
-  expect(sameRef).toBe(true);
 
   await expect(page.locator('#userAccountBar .auth-nav-btn')).toHaveCount(2);
   await page.locator('#userAccountBar .auth-nav-btn', { hasText: 'Log In' }).click();
@@ -376,7 +357,7 @@ test('auth-flow shim parity, login/logout bar updates, auth events, and URL rese
   await expect(page.locator('#modalError')).toHaveText('Reset token expired.');
 });
 
-test('remote-login shim re-exports initRemoteLogin and opens login modal for unauthenticated visitor', async ({
+test('remote-login opens login modal for unauthenticated visitor', async ({
   canvas,
   page,
 }) => {
@@ -390,19 +371,9 @@ test('remote-login shim re-exports initRemoteLogin and opens login modal for una
   await canvas.mount({
     stylesheets: ['/static/css/auth-flow.css'],
     html: '<button id="remote-sign-in" type="button">Sign in</button>',
-    moduleScripts: [`import '/static/js/remote-login.js';`],
+    moduleScripts: [`import '/static/generated/canvas/remote-login.js';`],
   });
 
-  const sameRef = await page.evaluate(async () => {
-    const compiled = await window.__importModule<{ initRemoteLogin: () => void }>(
-      '/static/generated/canvas/remote-login.js',
-    );
-    const shim = await window.__importModule<{ initRemoteLogin: () => void }>(
-      '/static/js/remote-login.js',
-    );
-    return compiled.initRemoteLogin === shim.initRemoteLogin;
-  });
-  expect(sameRef).toBe(true);
   await expect(page.locator('#authModal')).toHaveClass(/active/);
   await expect(page.locator('#formLogin')).toBeVisible();
 });

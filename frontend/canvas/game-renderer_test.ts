@@ -28,7 +28,6 @@ interface RendererTestWindow extends Window {
 }
 
 const RENDERER_MODULE_URL = '/static/generated/canvas/game-renderer.js';
-const RENDERER_SHIM_URL = '/static/js/game-renderer.js';
 const AGENT_CONNECTION_MODULE_URL = '/static/generated/canvas/agent-connection.js';
 
 const snapshots = loadGameSnapshots();
@@ -82,7 +81,7 @@ async function setupAgentGamePage(
     `,
     moduleScripts: [
       `
-      import { createGameRenderer } from '${RENDERER_SHIM_URL}';
+      import { createGameRenderer } from '${RENDERER_MODULE_URL}';
       import { createAgentConnectionController } from '${AGENT_CONNECTION_MODULE_URL}';
       const theaterId = 'test';
       const agentStartStopBtn = document.getElementById('agent-start-stop-btn');
@@ -212,19 +211,6 @@ async function setupMovableGamePage(canvas: CanvasHarness, page: Page): Promise<
   await page.getByRole('button', { name: 'Toggle game' }).click();
   await expect(page.locator('.game-panel')).toBeVisible();
 }
-
-test('deprecated game-renderer shim re-exports createGameRenderer', async ({ canvas, page }) => {
-  await canvas.mount();
-  const sameReference = await page.evaluate(
-    async ({ canonicalUrl, shimUrl }) => {
-      const canonical = await window.__importModule<GameRendererModule>(canonicalUrl);
-      const shim = await window.__importModule<GameRendererModule>(shimUrl);
-      return canonical.createGameRenderer === shim.createGameRenderer;
-    },
-    { canonicalUrl: RENDERER_MODULE_URL, shimUrl: RENDERER_SHIM_URL },
-  );
-  expect(sameReference).toBe(true);
-});
 
 test('opening game summons once and banishing closes panel', async ({ canvas, page }) => {
   const { starts } = await setupAgentGamePage(canvas, page);
@@ -401,7 +387,7 @@ test('checkers renderer moves, mobile geometry, viewer/contributor permissions, 
     `,
     moduleScripts: [
       `
-      import { createGameRenderer } from '${RENDERER_SHIM_URL}';
+      import { createGameRenderer } from '${RENDERER_MODULE_URL}';
       window.editable = true;
       window.contributable = false;
       window.refresh = async () => {

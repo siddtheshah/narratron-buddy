@@ -47,20 +47,17 @@ async function mount(canvas: CanvasHarness, page: Page): Promise<void> {
   });
 }
 
-test('CDN policy accepts same-origin and trusted subdomains and the shim shares exports', async ({ canvas, page }) => {
+test('CDN policy accepts same-origin and trusted subdomains', async ({ canvas, page }) => {
   await canvas.mount();
   expect(await page.evaluate(async () => {
     const module = await window.__importModule<RendererModule>('/static/generated/canvas/image-renderer.js');
-    const legacy = await window.__importModule<RendererModule>('/static/js/canvas-renderers.js');
     return {
-      sameRenderer: module.createImageRenderer === legacy.createImageRenderer,
-      samePolicy: module.isWhitelistedCdn === legacy.isWhitelistedCdn,
       accepted: ['/local.png', 'https://canvas.test/a', 'https://fal.media/a', 'https://v3.fal.media/a', 'https://fal.ai/a']
         .map(module.isWhitelistedCdn),
       rejected: ['', 'http://[', 'https://evilfal.media/a', 'https://fal.media.evil.test/a', 'https://other.test/a']
         .map(module.isWhitelistedCdn),
     };
-  })).toEqual({ sameRenderer: true, samePolicy: true, accepted: [true, true, true, true, true], rejected: [false, false, false, false, false] });
+  })).toEqual({ accepted: [true, true, true, true, true], rejected: [false, false, false, false, false] });
 });
 
 test('sequences hide stale DOM layers, advance frames, stop, and restore single images', async ({ canvas, page }) => {

@@ -3,10 +3,7 @@ import path from 'node:path';
 import type { Route } from '@playwright/test';
 import { expect, TEMPLATES_DIR, test, type CanvasHarness } from '../../testing/ui/canvas_fixtures';
 
-type DocsNavigationModule = typeof import('/static/generated/canvas/docs-navigation.js');
-
 const DOCS_NAV_MODULE_URL = '/static/generated/canvas/docs-navigation.js';
-const DOCS_NAV_SHIM_URL = '/static/js/docs-navigation.js';
 
 function loadDocsSidebarMarkup(): string {
   return fs.readFileSync(path.join(TEMPLATES_DIR, 'docs_sidebar.html'), 'utf-8');
@@ -26,7 +23,7 @@ async function mountDocsSidebar(
   });
 }
 
-test('docs navigation shim re-exports initializeDocsNavigation and searches docs with debounce', async ({
+test('docs navigation searches docs with debounce', async ({
   canvas,
   page,
 }) => {
@@ -66,17 +63,7 @@ test('docs navigation shim re-exports initializeDocsNavigation and searches docs
     },
   );
 
-  await mountDocsSidebar(canvas, DOCS_NAV_SHIM_URL);
-
-  const sameRef = await page.evaluate(
-    async ({ compiledUrl, shimUrl }) => {
-      const compiled = await window.__importModule<DocsNavigationModule>(compiledUrl);
-      const shim = await window.__importModule<DocsNavigationModule>(shimUrl);
-      return compiled.initializeDocsNavigation === shim.initializeDocsNavigation;
-    },
-    { compiledUrl: DOCS_NAV_MODULE_URL, shimUrl: DOCS_NAV_SHIM_URL },
-  );
-  expect(sameRef).toBe(true);
+  await mountDocsSidebar(canvas, DOCS_NAV_MODULE_URL);
 
   const input = page.locator('#docsSearch');
   const results = page.locator('#docsSearchResults');

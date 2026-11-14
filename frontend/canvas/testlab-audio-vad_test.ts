@@ -10,6 +10,7 @@ import {
 } from '../../testing/ui/canvas_fixtures';
 
 type TestlabAudioVadModule = typeof import('./testlab-audio-vad.js');
+type PcmWorkletProcessorModule = typeof import('./pcm-worklet-processor.js');
 
 interface MockDeviceSpec {
   readonly kind: string;
@@ -53,7 +54,6 @@ declare global {
 }
 
 const VAD_HTML_PATH = path.join(REPO_ROOT, 'testlab', 'audio_vad_lab.html');
-const VAD_SHIM_PATH = path.join(REPO_ROOT, 'testlab', 'static', 'audio-vad-lab.js');
 
 function installVadLabMocksScript(): string {
   return `(() => {
@@ -229,26 +229,16 @@ function installVadLabMocksScript(): string {
 
 async function openVadLabPage(canvas: CanvasHarness, page: Page): Promise<void> {
   const html = await fs.promises.readFile(VAD_HTML_PATH, 'utf-8');
-  const shimJs = await fs.promises.readFile(VAD_SHIM_PATH, 'utf-8');
 
   await page.addInitScript({ content: installVadLabMocksScript() });
   await canvas.serveRoute(
     (url: URL) =>
       url.origin === CANVAS_ORIGIN &&
-      (url.pathname === '/vad' ||
-        url.pathname === '/static/audio-vad-lab.js' ||
-        url.pathname === '/favicon.ico'),
+      (url.pathname === '/vad' || url.pathname === '/favicon.ico'),
     async (route: Route) => {
       const pathname = new URL(route.request().url()).pathname;
       if (pathname === '/vad') {
         await route.fulfill({ contentType: 'text/html; charset=utf-8', body: html });
-        return;
-      }
-      if (pathname === '/static/audio-vad-lab.js') {
-        await route.fulfill({
-          contentType: 'text/javascript; charset=utf-8',
-          body: shimJs,
-        });
         return;
       }
       await route.fulfill({ status: 204 });
@@ -258,7 +248,7 @@ async function openVadLabPage(canvas: CanvasHarness, page: Page): Promise<void> 
   await page.goto(`${CANVAS_ORIGIN}/vad`);
 }
 
-test('audio_vad_lab.html uses generated TS bundle, deprecated shim matches exports, and pure helpers encode clamped WAV', async ({
+test('audio_vad_lab.html uses generated TS bundle and pure helpers encode clamped WAV', async ({
   canvas,
   page,
 }) => {
@@ -266,29 +256,12 @@ test('audio_vad_lab.html uses generated TS bundle, deprecated shim matches expor
   expect(html).toContain('<script type="module" src="/static/generated/canvas/testlab-audio-vad.js"></script>');
   expect(html).not.toContain('src="/static/audio-vad-lab.js"');
 
-  const shimJs = await fs.promises.readFile(VAD_SHIM_PATH, 'utf-8');
-  await canvas.serveRoute(`${CANVAS_ORIGIN}/static/audio-vad-lab.js`, async (route: Route) => {
-    await route.fulfill({
-      contentType: 'text/javascript; charset=utf-8',
-      body: shimJs,
-    });
-  });
   await canvas.mount({ html: '<div id="empty"></div>' });
 
   const result = await page.evaluate(async () => {
     const canonical = await window.__importModule<TestlabAudioVadModule>(
       '/static/generated/canvas/testlab-audio-vad.js',
     );
-    const shim = await window.__importModule<TestlabAudioVadModule>(
-      '/static/audio-vad-lab.js',
-    );
-
-    const sameIdentity =
-      canonical.SAMPLE_RATE === shim.SAMPLE_RATE &&
-      canonical.initAudioVadLab === shim.initAudioVadLab &&
-      canonical.listenForSpeechWithDevice === shim.listenForSpeechWithDevice &&
-      canonical.pcmToWav === shim.pcmToWav &&
-      canonical.thresholdFromSensitivity === shim.thresholdFromSensitivity;
 
     const initOnEmptyDom = canonical.initAudioVadLab();
 
@@ -315,7 +288,6 @@ test('audio_vad_lab.html uses generated TS bundle, deprecated shim matches expor
     ];
 
     return {
-      sameIdentity,
       initOnEmptyDom,
       thresholds,
       mimeType: wavBlob.type,
@@ -331,7 +303,6 @@ test('audio_vad_lab.html uses generated TS bundle, deprecated shim matches expor
     };
   });
 
-  expect(result.sameIdentity).toBe(true);
   expect(result.initOnEmptyDom).toBeNull();
   expect(result.thresholds.low).toBeCloseTo(0.1, 6);
   expect(result.thresholds.mid).toBeCloseTo(0.01, 6);
@@ -607,4 +578,49 @@ test('Audio VAD Lab handles zero-speech stop, getUserMedia errors, missing media
     'This browser does not provide microphone capture. Use HTTPS or localhost.',
   );
   await expect(page.locator('#status')).toHaveClass(/error/);
+});
+
+test('compiled VAD worklet loads in real AudioWorkletGlobalScope and emits 4096-sample PCM frames', async ({
+  canvas,
+  page,
+}) => {
+  await canvas.mount();
+  const result = await page.evaluate(async () => {
+    const { buildPcmWorkletSource } = await window.__importModule<PcmWorkletProcessorModule>(
+      '/static/generated/canvas/pcm-worklet-processor.js',
+    );
+    const offline = new OfflineAudioContext(1, 4096, 16_000);
+    const blobUrl = URL.createObjectURL(
+      new Blob([buildPcmWorkletSource('vad-lab-device-processor', null, 4096, 'vad-only')], {
+        type: 'application/javascript',
+      }),
+    );
+    try {
+      await offline.audioWorklet.addModule(blobUrl);
+    } finally {
+      URL.revokeObjectURL(blobUrl);
+    }
+    const source = offline.createBufferSource();
+    const buffer = offline.createBuffer(1, 4096, 16_000);
+    buffer.getChannelData(0).fill(0.25);
+    source.buffer = buffer;
+    const node = new AudioWorkletNode(offline, 'vad-lab-device-processor');
+    const messages: Array<{ pcm: Uint8Array; rms: number }> = [];
+    node.port.onmessage = (event: MessageEvent<{ pcm: Uint8Array; rms: number }>) => {
+      messages.push(event.data);
+    };
+    source.connect(node);
+    node.connect(offline.destination);
+    source.start(0);
+    await offline.startRendering();
+    return {
+      count: messages.length,
+      pcmBytes: messages[0]?.pcm.byteLength ?? 0,
+      rms: messages[0]?.rms ?? 0,
+    };
+  });
+
+  expect(result.count).toBe(1);
+  expect(result.pcmBytes).toBe(8192);
+  expect(result.rms).toBeCloseTo(0.25, 4);
 });

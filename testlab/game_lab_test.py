@@ -23,6 +23,7 @@ def test_manual_session_copies_html_panel_and_serves_bridge(tmp_path: Path) -> N
         assert payload is not None
         assert payload["panel_html"] == '<p data-panel-text="count"></p>'
         assert Path(game_lab.game_renderer_asset("js", "game-panel.js").path).is_file()
+        assert Path(game_lab.game_renderer_asset("js", "game-panel-bridge.js").path).is_file()
     finally:
         session.directory.cleanup()
 

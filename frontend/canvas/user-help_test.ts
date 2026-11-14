@@ -40,7 +40,6 @@ interface ChatHelpHarnessWindow extends Window {
 }
 
 const USER_HELP_MODULE_URL = '/static/generated/canvas/user-help.js';
-const USER_HELP_SHIM_URL = '/static/js/user-help.js';
 const CHAT_CONTROLLER_MODULE_URL = '/static/generated/canvas/chat-controller.js';
 const POPOUT_MODULE_URL = '/static/generated/canvas/popout.js';
 
@@ -385,7 +384,7 @@ test('visitor help is free, upgrades cleanly, displays errors, and stays within 
   ).toBe(true);
 });
 
-test('visitor help shim parity, window API, Escape dismissal, suggestion chips, and sign-in prompt', async ({
+test('visitor help window API, Escape dismissal, suggestion chips, and sign-in prompt', async ({
   canvas,
   page,
 }) => {
@@ -403,17 +402,7 @@ test('visitor help shim parity, window API, Escape dismissal, suggestion chips, 
     });
   });
 
-  await mountVisitorHelp(canvas, USER_HELP_SHIM_URL);
-
-  const sameRef = await page.evaluate(
-    async ({ compiledUrl, shimUrl }) => {
-      const compiled = await window.__importModule<UserHelpModule>(compiledUrl);
-      const shim = await window.__importModule<UserHelpModule>(shimUrl);
-      return compiled.initializeVisitorHelp === shim.initializeVisitorHelp;
-    },
-    { compiledUrl: USER_HELP_MODULE_URL, shimUrl: USER_HELP_SHIM_URL },
-  );
-  expect(sameRef).toBe(true);
+  await mountVisitorHelp(canvas, USER_HELP_MODULE_URL);
 
   const panel = page.locator('#visitor-help-panel');
   await expect(panel).toBeHidden();

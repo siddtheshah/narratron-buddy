@@ -3,18 +3,6 @@ import type { AnimationRenderer } from './media.js';
 
 type MediaModule = typeof import('./media.js');
 
-test('legacy media shim exports the canonical typed functions', async ({ canvas, page }) => {
-  await canvas.mount();
-  expect(await page.evaluate(async () => {
-    const canonical = await window.__importModule<MediaModule>('/static/generated/canvas/media.js');
-    const shim = await window.__importModule<MediaModule>('/static/js/canvas-media.js');
-    return {
-      signature: canonical.getAnimationSignature === shim.getAnimationSignature,
-      playback: canonical.playCanvasAnimation === shim.playCanvasAnimation,
-    };
-  })).toEqual({ signature: true, playback: true });
-});
-
 test('animation signatures track frame order, layer URL/effect, and video fallbacks', async ({ canvas, page }) => {
   await canvas.mount();
   expect(await page.evaluate(async () => {

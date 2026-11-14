@@ -1,16 +1,13 @@
 import { CANVAS_ORIGIN, expect, test } from '../../testing/ui/canvas_fixtures';
 
-type CreditPurchaseModule = typeof import('/static/generated/canvas/credit-purchase.js');
-
 interface CreditPurchaseHarnessWindow extends Window {
   pricingCalls?: number;
   beforePurchaseCalls?: number;
 }
 
 const CREDIT_PURCHASE_MODULE_URL = '/static/generated/canvas/credit-purchase.js';
-const CREDIT_PURCHASE_SHIM_URL = '/static/js/credit-purchase.js';
 
-test('credit-purchase shim parity, guest auth redirect, rates toggle, package selection, and focus trap', async ({
+test('credit-purchase guest auth redirect, rates toggle, package selection, and focus trap', async ({
   canvas,
   page,
 }) => {
@@ -24,24 +21,8 @@ test('credit-purchase shim parity, guest auth redirect, rates toggle, package se
   await canvas.mount({
     stylesheets: ['/static/css/auth-flow.css', '/static/css/credit-purchase.css'],
     html: '<button id="opener" type="button">Buy</button>',
-    moduleScripts: [`import ${JSON.stringify(CREDIT_PURCHASE_SHIM_URL)};`],
+    moduleScripts: [`import ${JSON.stringify(CREDIT_PURCHASE_MODULE_URL)};`],
   });
-
-  const sameRef = await page.evaluate(
-    async ({ compiledUrl, shimUrl }) => {
-      const compiled = await window.__importModule<CreditPurchaseModule>(compiledUrl);
-      const shim = await window.__importModule<CreditPurchaseModule>(shimUrl);
-      return (
-        compiled.openBuyCreditsModal === shim.openBuyCreditsModal &&
-        compiled.closeBuyCreditsModal === shim.closeBuyCreditsModal &&
-        compiled.selectCreditPackage === shim.selectCreditPackage &&
-        compiled.submitBuyCredits === shim.submitBuyCredits &&
-        compiled.toggleCardFields === shim.toggleCardFields
-      );
-    },
-    { compiledUrl: CREDIT_PURCHASE_MODULE_URL, shimUrl: CREDIT_PURCHASE_SHIM_URL },
-  );
-  expect(sameRef).toBe(true);
 
   // When unauthenticated, openBuyCreditsModal opens the login modal instead.
   await page.evaluate(() => {

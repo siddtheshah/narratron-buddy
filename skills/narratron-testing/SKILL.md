@@ -5,7 +5,7 @@ description: Instructions and guidelines for running unit tests, evaluation test
 
 # Narratron Buddy Testing Guide
 
-This skill provides comprehensive instructions for running and maintaining tests in Narratron Buddy, covering Python unit and integration tests, frontend TypeScript Playwright tests, Node CJS test suites, test layout conventions, offline network guards, and automated end-to-end narration evaluation.
+This skill provides comprehensive instructions for running and maintaining tests in Narratron Buddy, covering Python unit and integration tests, frontend TypeScript Playwright tests, test layout conventions, offline network guards, and automated end-to-end narration evaluation.
 
 ## 1. Testing Strategy & Naming Conventions
 
@@ -39,11 +39,8 @@ Tests are organized into two primary categories:
      - `testing/ui/canvas_fixtures.ts` (shared Playwright fixture)
      - `testing/ui/canvas_fixtures_test.ts` (self-tests for `canvas_fixtures.ts`)
 
-3. **Node CJS Tests & Legacy Python UI Tests (`testing/ui/`)**:
-   - **Node CJS Tests (`*_test.cjs`)**: Isolated Node.js test runner suites for standalone frontend modules.
-     - `testing/ui/audio_recorder_test.cjs`
-     - `testing/ui/story_log_inspector_test.cjs`
-   - **Python UI Tests (`*_test.py`)**: Legacy and backend-focused UI integration tests (e.g. backend undo handlers in `canvas_undo_test.py`, corner controls, zoom effects).
+3. **Python UI & Backend Integration Tests (`testing/ui/`)**:
+   - **Python UI Tests (`*_test.py`)**: Backend-focused UI and API integration tests (e.g., backend undo handlers in `canvas_undo_test.py`, FastAPI/baton-credits checks in `remote_test.py`, and manifest/state checks in `triframe_animation_test.py`).
 
 ---
 
@@ -67,7 +64,7 @@ When working in a multi-agent swarm:
 Always use the npm scripts defined in `package.json`:
 
 ```bash
-# Run the complete frontend verification suite (typecheck + build + test:ui + test:cjs)
+# Run the complete frontend verification suite (typecheck + build + test:ui)
 npm test
 
 # Run only Playwright TypeScript UI tests (*_test.ts)
@@ -86,9 +83,6 @@ npm run build
 
 # Watch mode for interactive TypeScript development
 npm run watch
-
-# Run Node CJS test suites (*_test.cjs)
-npm run test:cjs
 ```
 
 #### Python Unit Tests (`uv run pytest`)
@@ -140,9 +134,9 @@ When migrating canvas logic from JavaScript to TypeScript:
    - `static/generated/` is gitignored and compiled automatically during `Dockerfile` builds and local startup via `utils/frontend_build.py`.
    - Relative imports between TypeScript files in `frontend/canvas/` must use the `.js` extension (e.g., `import { canvasCursorState } from './cursor-state.js';`) to align with native browser ES module resolution.
 
-2. **Backward Compatibility & Shims**:
-   - Provide a deprecated re-export shim in `static/js/canvas-<module>.js` that forwards exports to `/static/generated/canvas/<module>.js`.
-   - Ensure all callers import via a single canonical URL so singleton module instances remain shared.
+2. **Canonical Module Imports**:
+   - Import migrated modules directly via their canonical compiled URL (`/static/generated/canvas/<module>.js`).
+   - Ensure all templates, modules, and tests import via the same canonical URL so singleton module instances remain shared (compatibility re-export shims under `static/js/` have been retired).
 
 3. **Writing Playwright Tests with `canvas_fixtures.ts`**:
    - Use the shared fixture in `testing/ui/canvas_fixtures.ts`:
@@ -203,13 +197,12 @@ The `testing/` directory contains UI integration tests, test data, evaluation sc
 ```text
 testing/
 ├── e2e/               # End-to-end browser validation and load harnesses
-├── ui/                # Shared browser fixtures & legacy UI integration tests
+├── ui/                # Shared browser fixtures & backend-focused UI integration tests
 │   ├── canvas_fixtures.ts        # Shared Playwright TS fixture (offline guard, static server, canvas.html loader)
 │   ├── canvas_fixtures_test.ts   # Self-tests for shared Playwright fixtures
-│   ├── audio_recorder_test.cjs   # Node CJS test suite for audio recorder
-│   ├── story_log_inspector_test.cjs  # Node CJS test suite for story log inspector
 │   ├── canvas_undo_test.py       # Python backend tests for undo endpoints
-│   ├── canvas_corner_controls_test.py # Python UI integration tests
+│   ├── remote_test.py            # Backend FastAPI/baton-credits checks
+│   ├── triframe_animation_test.py # Backend animation manifest/state checks
 │   ├── conftest.py               # Pytest fixtures and frontend build triggers
 │   └── base.py                   # Shared unittest Playwright fixture for Python
 ├── testcases/         # Evaluation test scenarios containing expectations.json and audio files

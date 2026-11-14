@@ -14,6 +14,14 @@ import {
 } from './remote-audio.js';
 import { initializeRemoteGame } from './remote-game.js';
 import type { GamePayload } from './game-renderer.js';
+import { buildPcmWorkletSource } from './pcm-worklet-processor.js';
+
+const REMOTE_PCM_WORKLET_SOURCE = buildPcmWorkletSource(
+    'remote-pcm-processor',
+    16_000,
+    480,
+    'float32',
+);
 
 export interface RemoteAgentThought {
     readonly text?: string | null;
@@ -1689,49 +1697,7 @@ export function initializeRemote(): RemoteController {
                 ts: new Date().toISOString(),
             }));
 
-            const processorCode = `class P extends AudioWorkletProcessor {
-                constructor() {
-                    super();
-                    this.b = new Float32Array(480);
-                    this.i = 0;
-                    this.step = sampleRate / 16000;
-                    this.phase = 0;
-                    this.last = 0;
-                }
-                process(inputs) {
-                    const input = inputs[0]?.[0];
-                    if (!input) return true;
-                    if (sampleRate === 16000) {
-                        for (let n = 0; n < input.length; n++) {
-                            this.b[this.i++] = input[n];
-                            if (this.i === this.b.length) {
-                                this.port.postMessage(this.b.slice());
-                                this.i = 0;
-                            }
-                        }
-                        return true;
-                    }
-                    for (let n = 0; n < input.length; n++) {
-                        const current = input[n];
-                        while (this.phase <= n) {
-                            const previous = n ? input[n - 1] : this.last;
-                            const t = this.phase - (n - 1);
-                            this.b[this.i++] = previous + (current - previous) * t;
-                            if (this.i === this.b.length) {
-                                this.port.postMessage(this.b.slice());
-                                this.i = 0;
-                            }
-                            this.phase += this.step;
-                        }
-                        this.last = current;
-                    }
-                    this.phase -= input.length;
-                    return true;
-                }
-            }
-            registerProcessor('remote-pcm-processor', P);`;
-
-            const blob = new Blob([processorCode], { type: 'application/javascript' });
+            const blob = new Blob([REMOTE_PCM_WORKLET_SOURCE], { type: 'application/javascript' });
             const blobUrl = URL.createObjectURL(blob);
             try {
                 await audioContext.audioWorklet.addModule(blobUrl);

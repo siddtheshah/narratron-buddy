@@ -8,8 +8,8 @@ from testlab.server import app
 _BASE_URL = "http://testlab.test"
 
 
-def test_static_generated_mount_serves_canvas_modules_without_shadowing_lab_static() -> None:
-    """Verify /static/generated serves built canvas assets while /static keeps testlab assets."""
+def test_static_generated_mount_serves_canvas_modules_without_shadowing_effects_static() -> None:
+    """Verify /static/generated serves built canvas assets alongside /effects-static."""
     with TestClient(app) as client:
         image_generated = client.get("/static/generated/canvas/image-effects.js")
         assert image_generated.status_code == 200
@@ -19,24 +19,21 @@ def test_static_generated_mount_serves_canvas_modules_without_shadowing_lab_stat
         assert animation_generated.status_code == 200
         assert "layerTransform" in animation_generated.text
 
-        image_shim = client.get("/effects-static/js/image-effects.js")
-        assert image_shim.status_code == 200
-        assert "/static/generated/canvas/image-effects.js" in image_shim.text
+        vad_generated = client.get("/static/generated/canvas/testlab-audio-vad.js")
+        assert vad_generated.status_code == 200
+        assert "initAudioVadLab" in vad_generated.text
 
-        animation_shim = client.get("/effects-static/js/animation-effects.js")
-        assert animation_shim.status_code == 200
-        assert "/static/generated/canvas/animation-effects.js" in animation_shim.text
-
-        lab_static = client.get("/static/audio-vad-lab.js")
-        assert lab_static.status_code == 200
+        splitting_vendor = client.get("/effects-static/js/splitting.min.js")
+        assert splitting_vendor.status_code == 200
 
 
 def test_lab_pages_resolve_migrated_canvas_modules_without_404() -> None:
-    """Verify effects, animation-benchmark, and layered-animation pages load modules cleanly."""
+    """Verify effects, animation-benchmark, layered-animation, and vad pages load modules cleanly."""
     expected_modules = [
         ("/effects", "/static/generated/canvas/image-effects.js"),
         ("/animation-benchmark", "/static/generated/canvas/animation-effects.js"),
         ("/layered-animation", "/static/generated/canvas/animation-effects.js"),
+        ("/vad", "/static/generated/canvas/testlab-audio-vad.js"),
     ]
     with TestClient(app) as client, sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=True)

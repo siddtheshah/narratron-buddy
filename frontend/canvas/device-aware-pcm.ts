@@ -1,3 +1,5 @@
+import { buildPcmWorkletSource } from './pcm-worklet-processor.js';
+
 /** A small record-pcm-compatible VAD capture helper with explicit device selection. */
 export interface SpeechDataPacket {
   readonly pcm: Uint8Array;
@@ -24,8 +26,12 @@ interface WorkletSpeechMessage {
   readonly rms?: number;
 }
 
-const PROCESSOR_WORKLET_SOURCE =
-  "class P extends AudioWorkletProcessor { constructor(){super();this.b=new Float32Array(480);this.i=0;this.phase=0;this.step=sampleRate/16000;this.last=0} emit(){let q=0;for(const x of this.b)q+=x*x;const p=new Int16Array(this.b.length);for(let j=0;j<this.b.length;j++){const x=Math.max(-1,Math.min(1,this.b[j]));p[j]=x<0?x*32768:x*32767}this.port.postMessage({pcm:new Uint8Array(p.buffer),float32:this.b.slice(),rms:Math.sqrt(q/this.b.length)});this.i=0} process(inputs){const a=inputs[0]?.[0];if(!a)return true;if(sampleRate===16000){for(const s of a){this.b[this.i++]=s;if(this.i===this.b.length)this.emit()}return true}for(let n=0;n<a.length;n++){const current=a[n];while(this.phase<=n){const previous=n?a[n-1]:this.last;const t=this.phase-(n-1);this.b[this.i++]=previous+(current-previous)*t;if(this.i===this.b.length)this.emit();this.phase+=this.step}this.last=current}this.phase-=a.length;return true} } registerProcessor('narratron-device-pcm',P);";
+const PROCESSOR_WORKLET_SOURCE = buildPcmWorkletSource(
+  'narratron-device-pcm',
+  16_000,
+  480,
+  'pcm-vad',
+);
 
 /** Captures 16 kHz PCM speech segments gated by RMS VAD from the selected microphone. */
 export async function listenForSpeech(options: ListenForSpeechOptions): Promise<() => void> {
@@ -89,8 +95,11 @@ export async function listenForSpeech(options: ListenForSpeechOptions): Promise<
     const url = URL.createObjectURL(
       new Blob([PROCESSOR_WORKLET_SOURCE], { type: 'application/javascript' }),
     );
-    await context.audioWorklet.addModule(url);
-    URL.revokeObjectURL(url);
+    try {
+      await context.audioWorklet.addModule(url);
+    } finally {
+      URL.revokeObjectURL(url);
+    }
     if (!listening) {
       cleanup();
       return stop;

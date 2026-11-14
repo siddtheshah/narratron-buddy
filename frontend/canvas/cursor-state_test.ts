@@ -8,7 +8,6 @@ import type {
 type CursorStateModule = typeof import('/static/generated/canvas/cursor-state.js');
 
 const CURSOR_MODULE_URL = '/static/generated/canvas/cursor-state.js';
-const LEGACY_SHIM_URL = '/static/js/canvas-cursor-state.js';
 
 test.describe('cursor-state module store', () => {
   test('starts in frozen select state and transitions through all valid cursor modes', async ({
@@ -142,7 +141,7 @@ test.describe('cursor-state module store', () => {
 });
 
 test.describe('cursor-state singleton and ES module interoperability', () => {
-  test('compiled module, deprecated shim, and canvas-navigation share one singleton', async ({
+  test('compiled module and canvas-navigation share one singleton', async ({
     canvas,
     page,
   }) => {
@@ -157,12 +156,10 @@ test.describe('cursor-state singleton and ES module interoperability', () => {
     });
 
     const result = await page.evaluate(
-      async ({ compiledUrl, shimUrl }) => {
+      async ({ compiledUrl }) => {
         const compiled = await window.__importModule<CursorStateModule>(compiledUrl);
-        const legacy = await window.__importModule<CursorStateModule>(shimUrl);
         await window.__importModule('/static/generated/canvas/navigation.js');
 
-        const sameReference = compiled.canvasCursorState === legacy.canvasCursorState;
         const toggle = document.getElementById('canvas-navigation-toggle');
         const container = document.getElementById('image-container');
         if (!toggle || !container) {
@@ -173,14 +170,13 @@ test.describe('cursor-state singleton and ES module interoperability', () => {
         toggle.click();
         const afterToggleClick = {
           compiledState: compiled.canvasCursorState.current,
-          legacyState: legacy.canvasCursorState.current,
           pressed: toggle.getAttribute('aria-pressed'),
           hasEnabledClass: container.classList.contains('canvas-navigation-enabled'),
           title: toggle.title,
         };
 
-        // Selecting a drawing tool through the singleton exits navigation in canvas-navigation.js.
-        legacy.canvasCursorState.select({ type: 'marker', color: '#3b82f6' });
+        // Selecting a drawing tool through the singleton exits navigation in navigation.ts.
+        compiled.canvasCursorState.select({ type: 'marker', color: '#3b82f6' });
         const afterMarkerSelect = {
           compiledState: compiled.canvasCursorState.current,
           pressed: toggle.getAttribute('aria-pressed'),
@@ -188,19 +184,16 @@ test.describe('cursor-state singleton and ES module interoperability', () => {
         };
 
         return {
-          sameReference,
           initialPressed,
           afterToggleClick,
           afterMarkerSelect,
         };
       },
-      { compiledUrl: CURSOR_MODULE_URL, shimUrl: LEGACY_SHIM_URL },
+      { compiledUrl: CURSOR_MODULE_URL },
     );
 
-    expect(result.sameReference).toBe(true);
     expect(result.initialPressed).toBe('false');
     expect(result.afterToggleClick.compiledState).toEqual({ type: 'navigate', color: null });
-    expect(result.afterToggleClick.legacyState).toEqual({ type: 'navigate', color: null });
     expect(result.afterToggleClick.pressed).toBe('true');
     expect(result.afterToggleClick.hasEnabledClass).toBe(true);
     expect(result.afterToggleClick.title).toContain('Switch to selection');

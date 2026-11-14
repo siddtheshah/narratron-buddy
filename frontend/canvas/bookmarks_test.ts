@@ -14,7 +14,6 @@ interface BookmarksHarnessWindow extends Window {
 }
 
 const BOOKMARKS_URL = '/static/generated/canvas/bookmarks.js';
-const BOOKMARKS_SHIM_URL = '/static/js/canvas-bookmarks.js';
 
 const MOUNT_OPTIONS = {
   html: '<div id="canvas-bookmarks" hidden></div>',
@@ -154,24 +153,6 @@ test('bookmarks toggle, hover, navigation, failed jump feedback, persistence, an
     win.bookmarks.refresh();
   });
   await expect(page.locator('#canvas-bookmarks')).toBeHidden();
-});
-
-test('deprecated shim re-exports the same compiled initializeCanvasBookmarks', async ({
-  canvas,
-  page,
-}) => {
-  await canvas.mount(MOUNT_OPTIONS);
-
-  const sameReference = await page.evaluate(
-    async ({ compiledUrl, shimUrl }: { compiledUrl: string; shimUrl: string }) => {
-      const compiled = await window.__importModule<BookmarksModule>(compiledUrl);
-      const shim = await window.__importModule<BookmarksModule>(shimUrl);
-      return compiled.initializeCanvasBookmarks === shim.initializeCanvasBookmarks;
-    },
-    { compiledUrl: BOOKMARKS_URL, shimUrl: BOOKMARKS_SHIM_URL },
-  );
-
-  expect(sameReference).toBe(true);
 });
 
 test('missing root returns a no-op controller and storage events sync bookmarks', async ({
