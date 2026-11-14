@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { expect, STATIC_DIR, TEMPLATES_DIR, test } from '../../testing/ui/canvas_fixtures';
+import { expect, REPO_ROOT, STATIC_DIR, TEMPLATES_DIR, test } from '../../testing/ui/canvas_fixtures';
 
 interface CanvasAuthUser {
   readonly id?: number;
@@ -66,7 +66,10 @@ test('canvas template and controller wire chat identity display, login chip, and
   page,
 }) => {
   const template = fs.readFileSync(path.join(TEMPLATES_DIR, 'canvas.html'), 'utf-8');
-  const canvasScript = fs.readFileSync(path.join(STATIC_DIR, 'js', 'canvas.js'), 'utf-8');
+  const canvasScript = fs.readFileSync(
+    path.join(REPO_ROOT, 'frontend', 'canvas', 'canvas.ts'),
+    'utf-8',
+  );
 
   expect(template).toContain('id="chat-name-display"');
   expect(template).toContain('id="chat-name-input"');

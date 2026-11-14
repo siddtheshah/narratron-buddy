@@ -28,7 +28,7 @@ class TestFullscreenPopout(UITestCase):
         response = self.client.get("/canvas?theater_id=test_theater")
         self.assertEqual(response.status_code, 200)
         html = response.text
-        self.assertIn('src="/static/js/canvas.js"', html)
+        self.assertIn('src="/static/generated/canvas/canvas.js"', html)
         self.assertIn('href="/static/css/canvas.css"', html)
 
         for element in (

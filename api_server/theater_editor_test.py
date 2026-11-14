@@ -1071,10 +1071,13 @@ def test_editor_and_deploy_navigation_are_present(builder: BuilderHarness) -> No
     assert 'Edit in Builder' in deploy_script.text
     canvas = builder.client.get("/canvas").text
     assert 'id="menu-item-theater-builder"' in canvas
-    assert 'src="/static/js/canvas.js"' in canvas
-    script = builder.client.get("/static/js/canvas.js")
+    assert 'src="/static/generated/canvas/canvas.js"' in canvas
+    script = builder.client.get("/static/generated/canvas/canvas.js")
     assert script.status_code == 200
-    assert "if (builderLink && isOwner)" in script.text
+    assert "applyOwnerMenuVisibility" in script.text
+    modals_script = builder.client.get("/static/generated/canvas/theater-modals.js")
+    assert modals_script.status_code == 200
+    assert "if (isOwner && tid)" in modals_script.text
 
 
 def test_import_google_drive_image_success(builder: BuilderHarness) -> None:
