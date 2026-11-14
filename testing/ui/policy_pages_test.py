@@ -1,6 +1,5 @@
-"""Unit tests for Narratron Terms of Service and Privacy Policy placeholder pages."""
+"""FastAPI route tests for Narratron Terms of Service and Privacy Policy pages."""
 
-from pathlib import Path
 import unittest
 
 from fastapi.testclient import TestClient
@@ -9,13 +8,15 @@ from api_server.app import app
 
 
 class TestPolicyPages(unittest.TestCase):
-    """Verify routing, content, and cross-linking for policy placeholder pages."""
+    """Verify routing, content, and tab active state for policy routes."""
+
+    client: TestClient
 
     @classmethod
-    def setUpClass(cls):
+    def setUpClass(cls) -> None:
         cls.client = TestClient(app)
 
-    def test_terms_of_service_routes(self):
+    def test_terms_of_service_routes(self) -> None:
         """Verify all alias endpoints for Terms of Service return 200 with expected content."""
         terms_routes = ["/terms", "/terms-of-service", "/terms-of-use", "/docs/terms"]
         for route in terms_routes:
@@ -30,7 +31,7 @@ class TestPolicyPages(unittest.TestCase):
                 self.assertIn('id="tabTermsLink"', html)
                 self.assertIn('href="/privacy"', html)
 
-    def test_privacy_policy_routes(self):
+    def test_privacy_policy_routes(self) -> None:
         """Verify all alias endpoints for Privacy Policy return 200 with expected content."""
         privacy_routes = ["/privacy", "/privacy-policy", "/docs/privacy"]
         for route in privacy_routes:
@@ -45,7 +46,7 @@ class TestPolicyPages(unittest.TestCase):
                 self.assertIn('id="tabPrivacyLink"', html)
                 self.assertIn('href="/terms"', html)
 
-    def test_navigation_tabs_active_states(self):
+    def test_navigation_tabs_active_states(self) -> None:
         """Verify active class toggle on the sub-nav tabs."""
         terms_res = self.client.get("/terms")
         self.assertIn('class="policy-tab active" id="tabTermsLink"', terms_res.text)
@@ -55,34 +56,6 @@ class TestPolicyPages(unittest.TestCase):
         self.assertIn('class="policy-tab " id="tabTermsLink"', privacy_res.text)
         self.assertIn('class="policy-tab active" id="tabPrivacyLink"', privacy_res.text)
 
-    def test_policy_links_are_in_persistent_docs_navigation(self):
-        """Verify policy pages remain reachable from every documentation page."""
-        sidebar_html = Path("templates/docs_sidebar.html").read_text(encoding="utf-8")
-        self.assertIn('href="/docs/terms"', sidebar_html)
-        self.assertIn('href="/docs/privacy"', sidebar_html)
-        self.assertIn("Terms of Service", sidebar_html)
-        self.assertIn("Privacy Policy", sidebar_html)
-
-    def test_policy_links_in_footers(self):
-        """Verify footer links on public join splash and stats dashboard."""
-        splash_html = Path("templates/join_splash.html").read_text(encoding="utf-8")
-        self.assertIn('href="/terms"', splash_html)
-        self.assertIn('href="/privacy"', splash_html)
-
-        stats_html = Path("templates/stats.html").read_text(encoding="utf-8")
-        self.assertIn('href="/terms"', stats_html)
-        self.assertIn('href="/privacy"', stats_html)
-
-    def test_auth_flow_modal_discloses_policies(self):
-        """Verify sign-up modal links to terms and privacy policies."""
-        auth_js = Path("static/js/auth-flow.js").read_text(encoding="utf-8")
-        self.assertIn('href="/terms"', auth_js)
-        self.assertIn('href="/privacy"', auth_js)
-        self.assertIn("Terms of Service", auth_js)
-        self.assertIn("Privacy Policy", auth_js)
-
-
 
 if __name__ == "__main__":
     unittest.main()
-

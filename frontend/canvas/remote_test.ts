@@ -2002,6 +2002,10 @@ for (const [width, userAgent, shouldRedirect] of [
             path.resolve(TEMPLATES_DIR, '..', 'static', 'js', 'device-navigation.js'),
             'utf-8',
         );
+        const generatedNavigationJs = await fs.promises.readFile(
+            path.resolve(TEMPLATES_DIR, '..', 'static', 'generated', 'canvas', 'device-navigation.js'),
+            'utf-8',
+        );
 
         const context = await browser.newContext({ viewport: { width, height: 844 }, userAgent });
         const page = await context.newPage();
@@ -2010,6 +2014,11 @@ for (const [width, userAgent, shouldRedirect] of [
                 const url = new URL(route.request().url());
                 if (url.pathname === '/static/js/device-navigation.js') {
                     await route.fulfill({ body: navigationJs, contentType: 'text/javascript; charset=utf-8' });
+                } else if (url.pathname === '/static/generated/canvas/device-navigation.js') {
+                    await route.fulfill({
+                        body: generatedNavigationJs,
+                        contentType: 'text/javascript; charset=utf-8',
+                    });
                 } else if (url.pathname === '/canvas') {
                     await route.fulfill({
                         body: `${head}</head><body>Canvas</body>`,
