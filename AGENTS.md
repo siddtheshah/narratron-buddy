@@ -73,6 +73,86 @@ Never use `hasattr` or `getattr` in Python code unless performing operations tha
 
 
 
+## Testing
+
+### Development checks
+
+Install the Chromium browsers required by the Node and Python Playwright
+packages, then run the checks from the repository root:
+
+```powershell
+npx playwright install chromium
+uv run python -m playwright install chromium
+npm test
+uv run pytest -n 4
+uv run ruff check .
+```
+
+`npm test` checks TypeScript types for production code and tests, builds the
+browser modules, and runs the TypeScript Playwright suite in Chromium. Frontend
+tests live beside their sources in `frontend/**/*_test.ts`; shared fixtures
+and their tests live in `testing/ui/`. Python tests cover backend behavior and
+the remaining browser/server integration checks. Both suites isolate unexpected
+network access; live provider evaluations are separate.
+
+For a focused browser test, build first and pass Playwright options through the
+UI script:
+
+```powershell
+npm run build
+npm run test:ui -- frontend/canvas/cursor-state_test.ts --workers=4
+```
+
+`npm run test:ui` uses existing generated assets, so rebuild after changing
+TypeScript or keep `npm run watch` running. Generated files in
+`static/generated/` are ignored by Git; edit `frontend/**/*.ts` and use
+`.js` extensions for relative browser imports. Templates load modules from
+`/static/generated/<consumer>/`. See the [frontend layout](frontend/README.md).
+Docker compiles these assets in its Node build stage.
+
+See the [testing guide](skills/narratron-testing/SKILL.md) for fixtures, offline
+guards, and evaluation commands, and the
+[migration inventory](frontend/canvas/MIGRATION.md) for coverage parity and
+remaining optional improvements.
+
+### Local testing
+
+For local testing, run `uv run main.py --testing_use_local`. This uses local
+resources, preserves the existing `deployer.db` and `theaters/` directory, and
+automatically signs unauthenticated browsers in as the seeded `localtest` user
+(password `narratron`) on the initial page visit for each unique server run. A
+unique server run UUID is tracked in frontend browser storage; subsequent visits
+and other browser tabs retain their logged-out or chosen account session so you
+can test multi-party behavior with different accounts.
+
+To discard local database state and start with a new database, add
+`--with_empty_db`. This does not delete theater files.
+
+
+To load test a disposable local canvas, run:
+
+```powershell
+uv run testing/e2e/load_canvas_viewers.py --viewers 25 --trials 5 --testcase desert_basic
+```
+
+The harness starts and stops its own local server, creates a disposable canvas,
+then creates a separate local account and isolated browser context for every
+viewer. It streams the selected testcase narration to the connected agent,
+measures when the generated image is fully visible to each viewer, and writes
+per-viewer latencies plus trial mean and standard deviation to
+`evaluation_results/`.
+
+To load test a baton handoff to a secondary authenticated viewer while other
+viewers remain connected, run:
+
+```powershell
+uv run testing/e2e/load_canvas_baton_handoff.py --viewers 25 --trials 5
+```
+
+The first viewer receives and accepts the baton; the remaining viewers stay
+connected as spectators. The harness verifies the baton UI updates for every
+viewer and writes request and handoff delivery timings to `evaluation_results/`.
+
 ## Skills & Workflows
 
 Project-specific agent skills and procedural runbooks are located in the [`skills/`](skills/) directory:
