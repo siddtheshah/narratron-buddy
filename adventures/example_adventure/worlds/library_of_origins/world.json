@@ -1,0 +1,488 @@
+{
+  "format": "narratron-world-prototype",
+  "version": 1,
+  "world_id": "library_of_origins",
+  "revision": "1",
+  "status": "asset prototype; spatial runtime integration is not implemented",
+  "coordinates": {
+    "unit": "metre",
+    "up": "+Y",
+    "east": "+X",
+    "north": "-Z",
+    "origin": "floor at center of connecting doorway",
+    "blender_to_gltf": "(x, y, z) -> (x, z, -y)",
+    "game_mm": "multiply every position and size by 1000; round to integer"
+  },
+  "scene": "library.glb",
+  "environment": "environment.glb",
+  "initial_download_bytes": 2049780,
+  "player": {
+    "radius": 0.25,
+    "height": 1.7,
+    "eye_height": 1.6
+  },
+  "spawns": {
+    "entry": {
+      "position": [
+        -4.4,
+        0,
+        2.0
+      ],
+      "yaw_radians": 0
+    },
+    "archive_entry": {
+      "position": [
+        1.25,
+        0,
+        0
+      ],
+      "yaw_radians": 0
+    }
+  },
+  "regions": [
+    {
+      "id": "drafting_room",
+      "min": [
+        -6,
+        0,
+        -3
+      ],
+      "max": [
+        0,
+        3.2,
+        3
+      ]
+    },
+    {
+      "id": "archive",
+      "min": [
+        0,
+        0,
+        -3
+      ],
+      "max": [
+        6,
+        3.2,
+        3
+      ]
+    }
+  ],
+  "entities": [
+    {
+      "id": "desk",
+      "model": "desk.glb",
+      "position": [
+        -3.0,
+        0.0,
+        -0.0
+      ],
+      "rotation_xyzw": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "id": "brass_key",
+      "model": "brass_key.glb",
+      "position": [
+        -2.47,
+        1.08,
+        0.12
+      ],
+      "rotation_xyzw": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "id": "archive_chest",
+      "model": "archive_chest.glb",
+      "position": [
+        3.2,
+        0.0,
+        -1.0
+      ],
+      "rotation_xyzw": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "id": "archive_door",
+      "model": "archive_door.glb",
+      "position": [
+        0.0,
+        0.0,
+        0.9
+      ],
+      "rotation_xyzw": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ]
+    }
+  ],
+  "colliders": [
+    {
+      "id": "collision_back_west",
+      "entity_id": "environment",
+      "center": [
+        -3,
+        1.6,
+        -3.1
+      ],
+      "size": [
+        6.2,
+        3.2,
+        0.2
+      ]
+    },
+    {
+      "id": "collision_back_east",
+      "entity_id": "environment",
+      "center": [
+        3,
+        1.6,
+        -3.1
+      ],
+      "size": [
+        6.2,
+        3.2,
+        0.2
+      ]
+    },
+    {
+      "id": "collision_west_wall",
+      "entity_id": "environment",
+      "center": [
+        -6.1,
+        1.6,
+        0
+      ],
+      "size": [
+        0.2,
+        3.2,
+        6.2
+      ]
+    },
+    {
+      "id": "collision_east_wall",
+      "entity_id": "environment",
+      "center": [
+        6.1,
+        1.6,
+        0
+      ],
+      "size": [
+        0.2,
+        3.2,
+        6.2
+      ]
+    },
+    {
+      "id": "collision_front_west",
+      "entity_id": "environment",
+      "center": [
+        -3,
+        0.23,
+        3.1
+      ],
+      "size": [
+        6.0,
+        0.46,
+        0.2
+      ]
+    },
+    {
+      "id": "collision_front_east",
+      "entity_id": "environment",
+      "center": [
+        3,
+        0.23,
+        3.1
+      ],
+      "size": [
+        6.0,
+        0.46,
+        0.2
+      ]
+    },
+    {
+      "id": "collision_divider_back",
+      "entity_id": "environment",
+      "center": [
+        0,
+        1.6,
+        -2.0
+      ],
+      "size": [
+        0.2,
+        3.2,
+        2
+      ]
+    },
+    {
+      "id": "collision_divider_front",
+      "entity_id": "environment",
+      "center": [
+        0,
+        1.6,
+        2.0
+      ],
+      "size": [
+        0.2,
+        3.2,
+        2
+      ]
+    },
+    {
+      "id": "collision_door_lintel",
+      "entity_id": "environment",
+      "center": [
+        0,
+        2.9,
+        0
+      ],
+      "size": [
+        0.22,
+        0.6,
+        2.0
+      ]
+    },
+    {
+      "id": "collision_floor",
+      "entity_id": "environment",
+      "center": [
+        0,
+        -0.1,
+        0
+      ],
+      "size": [
+        12,
+        0.2,
+        6
+      ]
+    },
+    {
+      "id": "collision_shelf_-4.6",
+      "entity_id": "environment",
+      "center": [
+        -4.6,
+        1.4,
+        -2.57
+      ],
+      "size": [
+        2.4,
+        2.8,
+        0.7
+      ]
+    },
+    {
+      "id": "collision_shelf_-1.65",
+      "entity_id": "environment",
+      "center": [
+        -1.65,
+        1.4,
+        -2.57
+      ],
+      "size": [
+        2.4,
+        2.8,
+        0.7
+      ]
+    },
+    {
+      "id": "collision_shelf_1.6",
+      "entity_id": "environment",
+      "center": [
+        1.6,
+        1.4,
+        -2.57
+      ],
+      "size": [
+        2.4,
+        2.8,
+        0.7
+      ]
+    },
+    {
+      "id": "collision_shelf_4.6",
+      "entity_id": "environment",
+      "center": [
+        4.6,
+        1.4,
+        -2.57
+      ],
+      "size": [
+        2.4,
+        2.8,
+        0.7
+      ]
+    },
+    {
+      "id": "collision_desk",
+      "entity_id": "desk",
+      "center": [
+        0,
+        0.52,
+        0
+      ],
+      "size": [
+        2.25,
+        1.04,
+        1.25
+      ]
+    },
+    {
+      "id": "collision_chest",
+      "entity_id": "archive_chest",
+      "center": [
+        0,
+        0.45,
+        0
+      ],
+      "size": [
+        1.4,
+        0.9,
+        0.86
+      ]
+    },
+    {
+      "id": "collision_closed_door",
+      "entity_id": "archive_door",
+      "center": [
+        0,
+        1.27,
+        -0.9
+      ],
+      "size": [
+        0.18,
+        2.54,
+        1.8
+      ]
+    }
+  ],
+  "collider_space": "entity-local for entities, world for environment; boxes are axis-aligned",
+  "interactions": [
+    {
+      "id": "inspect_desk",
+      "entity_id": "desk",
+      "position": [
+        -3,
+        1,
+        0.65
+      ],
+      "reach": 1.8,
+      "intent": "inspect"
+    },
+    {
+      "id": "collect_key",
+      "entity_id": "brass_key",
+      "position": [
+        -2.47,
+        1.08,
+        0.12
+      ],
+      "reach": 1.8,
+      "intent": "collect"
+    },
+    {
+      "id": "unlock_door",
+      "entity_id": "archive_door",
+      "position": [
+        -0.2,
+        1.15,
+        -0.58
+      ],
+      "reach": 1.8,
+      "intent": "unlock"
+    },
+    {
+      "id": "inspect_chest",
+      "entity_id": "archive_chest",
+      "position": [
+        3.2,
+        0.59,
+        -0.56
+      ],
+      "reach": 1.8,
+      "intent": "inspect"
+    }
+  ],
+  "interaction_space": "world",
+  "triggers": [
+    {
+      "id": "discover_key",
+      "center": [
+        -3,
+        0.9,
+        1.3
+      ],
+      "size": [
+        2.8,
+        1.8,
+        1.3
+      ],
+      "intent": "discover_key"
+    },
+    {
+      "id": "enter_archive",
+      "center": [
+        1.15,
+        0.9,
+        0
+      ],
+      "size": [
+        1,
+        1.8,
+        1.8
+      ],
+      "intent": "enter_archive"
+    }
+  ],
+  "animations": [
+    {
+      "entity_id": "archive_door",
+      "clip": "door_open",
+      "duration_seconds": 2,
+      "closed_time": 0,
+      "open_time": 2,
+      "loop": false,
+      "pivot_node": "door_hinge"
+    }
+  ],
+  "behavior_notes": [
+    "Key collection removes brass_key only after a server-validated transition.",
+    "Unlocking plays door_open and disables collision_closed_door in the same accepted transition.",
+    "The chest is an independent static prop; no chest opening animation or game logic is supplied.",
+    "Front walls are cut away; colliders follow the authored low walls. A host must also enforce the room bounds.",
+    "No geometry or metadata grants inventory, movement permissions, or progression automatically."
+  ]
+}

@@ -15,12 +15,13 @@ objects through the game-to-canvas API. Package reusable assets ahead of play;
 use browser rendering with Three.js and keep authoritative game state on the
 server. Live asset generation and server-rendered video are later options.
 
-- [ ] Create a reproducible Blender scene and export workflow.
+- [x] Create a reproducible Blender scene and export workflow.
   - Locate or install Blender; keep the editable `.blend` source and an optional build script alongside the prototype assets. Run project Python tooling through `uv`.
   - Build two connected rooms using simple geometry and plain materials: a table, collectible key, chest, and separate animated door.
   - Export GLB assets with stable entity IDs, named spawn points, interaction targets, collision shapes, and trigger volumes. Keep objects that move or disappear separate from the environment.
   - Define units, origin, axis directions, and export transforms; verify consistent scale and orientation in the browser.
   - Target an initial scene download under 5 MB; measure the actual export size. No paid generation is required for this prototype.
+  - Completed in `adventures/example_adventure/worlds/library_of_origins/`: editable source, `uv` build launcher, complete and reusable GLBs, spatial manifest, Blender renders, and Three.js preview. Scene approximately 2.05 MB; Chromium verification covers scale/orientation, door animation, and key visibility. See the world README for commands and prototype limitations.
 - [ ] Extend the theater asset catalog and adventure packaging for worlds and reusable entity definitions.
   - Pin world/model revisions and their spatial metadata together; validate references before play and preserve assets through import, export, and save/load.
   - Define model, collider, animation, and interaction metadata separately; importing a model does not automatically give it game behavior.

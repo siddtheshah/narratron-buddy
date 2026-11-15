@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Library of Origins · World preview</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #14242b; color: #f0e5ce; font: 15px/1.5 system-ui, sans-serif; }
+  canvas { display: block; width: 100vw; height: 100dvh; }
+  header { position: absolute; top: 30px; left: 36px; pointer-events: none; }
+  small { color: #b6c8c7; text-transform: uppercase; letter-spacing: .2em; font-size: 10px; }
+  h1 { margin: 5px 0; font: 38px/1.2 Georgia, serif; font-weight: normal; }
+  header p { margin: 10px 0; color: #b6c8c7; }
+  footer { position: absolute; bottom: 24px; left: 24px; right: 24px; display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+  nav { display: flex; gap: 8px; }
+  button { border: 1px solid #8b9e99; border-radius: 6px; padding: 10px 17px; color: #f0e5ce; background: #20363ded; cursor: pointer; font: inherit; }
+  button:hover { background: #405650; }
+  button:disabled { opacity: .5; cursor: default; }
+  #status { background: #14242bdd; padding: 6px 12px; border-radius: 6px; color: #b6c8c7; }
+  @media (max-width: 650px) { header { top: 20px; left: 20px; } h1 { font-size: 28px; } footer { left: 12px; right: 12px; bottom: 12px; gap: 8px; } button { padding: 8px 10px; } }
+</style>
+<script type="importmap">
+{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/"}}
+</script>
+<header>
+  <small>Example adventure · Blender world study 01</small>
+  <h1>The Library of Origins</h1>
+  <p>Drag to orbit · Scroll to zoom · Right-drag to pan</p>
+</header>
+<canvas aria-label="Interactive cutaway of two library rooms"></canvas>
+<footer>
+  <nav aria-label="Preview controls">
+    <button id="door" disabled>Open door</button>
+    <button id="key" disabled>Hide key</button>
+    <button id="reset" disabled>Reset view</button>
+  </nav>
+  <span id="status" role="status">Loading the library…</span>
+</footer>
+<script type="module">
+  import * as THREE from 'three';
+  import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+  import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+  const canvas = document.querySelector('canvas');
+  const status = document.querySelector('#status');
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  renderer.setClearColor(0x14242b);
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.3;
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(38, 1, .1, 100);
+  const controls = new OrbitControls(camera, canvas);
+  controls.enableDamping = true;
+  controls.minDistance = 3;
+  controls.maxDistance = 30;
+  controls.maxPolarAngle = Math.PI * .49;
+  function resetCamera() {
+    camera.position.set(12, 14, 18);
+    controls.target.set(0, .8, 0);
+    controls.update();
+  }
+  resetCamera();
+  scene.add(new THREE.HemisphereLight(0xfff1d8, 0x42535d, 2.4));
+  const sun = new THREE.DirectionalLight(0xffdfb2, 3.0);
+  sun.position.set(-4, 10, 4);
+  scene.add(sun);
+  const fill = new THREE.DirectionalLight(0xc6e5ff, 1.8);
+  fill.position.set(5, 6, -3);
+  scene.add(fill);
+  const clock = new THREE.Clock();
+  let mixer;
+  let action;
+  let model;
+  let key;
+  let isOpen = false;
+  let animating = false;
+  const doorButton = document.querySelector('#door');
+  const keyButton = document.querySelector('#key');
+  const resetButton = document.querySelector('#reset');
+  function updateStatus() {
+    status.textContent = `Asset preview · Door ${isOpen ? 'open' : 'closed'} · Key ${key.visible ? 'visible' : 'hidden'}`;
+  }
+  try {
+    const gltf = await new GLTFLoader().loadAsync('./library.glb');
+    model = gltf.scene;
+    scene.add(model);
+    key = model.getObjectByName('brass_key');
+    if (!key) throw new Error('Missing brass_key entity');
+    const clip = THREE.AnimationClip.findByName(gltf.animations, 'door_open');
+    if (!clip) throw new Error('Missing door_open animation');
+    mixer = new THREE.AnimationMixer(model);
+    action = mixer.clipAction(clip);
+    action.setLoop(THREE.LoopOnce, 1);
+    action.clampWhenFinished = true;
+    mixer.addEventListener('finished', () => { animating = false; doorButton.disabled = false; });
+    doorButton.disabled = keyButton.disabled = resetButton.disabled = false;
+    updateStatus();
+    document.body.dataset.ready = 'true';
+  } catch (error) {
+    status.textContent = `Could not load preview: ${error.message}. Serve this folder over HTTP; internet is needed for Three.js.`;
+    document.body.dataset.error = error.message;
+  }
+  doorButton.onclick = () => {
+    if (animating) return;
+    isOpen = !isOpen;
+    action.reset();
+    action.time = isOpen ? 0 : action.getClip().duration;
+    action.timeScale = isOpen ? 1 : -1;
+    action.play();
+    animating = true;
+    doorButton.disabled = true;
+    doorButton.textContent = isOpen ? 'Close door' : 'Open door';
+    updateStatus();
+  };
+  keyButton.onclick = () => {
+    key.visible = !key.visible;
+    keyButton.textContent = key.visible ? 'Hide key' : 'Show key';
+    updateStatus();
+  };
+  resetButton.onclick = () => {
+    resetCamera();
+    action.stop();
+    isOpen = animating = false;
+    key.visible = true;
+    doorButton.disabled = false;
+    doorButton.textContent = 'Open door';
+    keyButton.textContent = 'Hide key';
+    updateStatus();
+  };
+  function resize() {
+    renderer.setSize(innerWidth, innerHeight, false);
+    camera.aspect = innerWidth / innerHeight;
+    camera.zoom = Math.min(1, camera.aspect / 1.25);
+    camera.updateProjectionMatrix();
+  }
+  addEventListener('resize', resize);
+  resize();
+  renderer.setAnimationLoop(() => {
+    const delta = Math.min(clock.getDelta(), .1);
+    if (mixer) mixer.update(delta);
+    controls.update();
+    renderer.render(scene, camera);
+  });
+</script>
+</html>

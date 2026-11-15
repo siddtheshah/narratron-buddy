@@ -20,6 +20,8 @@ example_adventure/
 │   └── book_of_origins_portal/
 │       ├── video.json
 │       └── video.mp4
+├── worlds/                 # Blender-authored 3D asset prototypes (not wired to the live canvas)
+│   └── library_of_origins/  # Editable scene, GLBs, spatial manifest, build script, previews
 ├── game/                   # CEL checkers rules and a direct HTML panel
 │   ├── game.yaml            # State, transitions, panel parameters and named actions
 │   ├── panel.html           # Passive HTML/CSS board bound to CEL values
@@ -53,6 +55,13 @@ example_adventure/
 ---
 
 ## Testing This Example
+
+### Blender world prototype
+
+See [worlds/library_of_origins/README.md](worlds/library_of_origins/README.md)
+for the two-room library, editable Blender source, reproducible export workflow,
+and interactive Three.js preview. This is the asset-authoring milestone from
+TASKLIST; runtime walking and game interactions remain planned work.
 
 ### Direct HTML checkers panel
 
