@@ -1,6 +1,7 @@
 """Authorization and state contract for the phone remote."""
 
 from collections.abc import Iterator
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -8,10 +9,13 @@ from fastapi.testclient import TestClient
 
 import object_registry
 from api_server import remote
+from components.theater_manager import TheaterManager
+from storage.theater_repository import TheaterRepository
 
 
 @pytest.fixture
-def remote_services() -> Iterator[tuple[TestClient, MagicMock, MagicMock]]:
+def remote_services(tmp_path: Path) -> Iterator[tuple[TestClient, MagicMock, MagicMock]]:
+    (tmp_path / "theater.json").write_text("{}", encoding="utf-8")
     deployment = {"user_id": 1, "active_orator_id": 2}
     state = MagicMock()
     state.visual.pinned = True
@@ -32,6 +36,7 @@ def remote_services() -> Iterator[tuple[TestClient, MagicMock, MagicMock]]:
             patch.object(remote, "get_current_user", return_value={"id": 2}) as current_user, \
             patch.object(object_registry.db, "get_deployment", return_value=deployment), \
             patch.object(object_registry.canvas_states, "get", return_value=state), \
+            patch.object(object_registry.theater_manager, "theater", return_value=MagicMock(directory=MagicMock(return_value=tmp_path))), \
             patch.object(object_registry.theater_manager, "get_theater", return_value=MagicMock(config={})), \
             patch.object(object_registry, "live_agent_manager", manager):
         yield TestClient(remote.app), current_user, manager
@@ -99,6 +104,45 @@ def test_remote_returns_state_for_active_orator(
     }
     manager.get_session.return_value = MagicMock(is_alive=True)
     assert client.get("/api/theaters/stage/remote").json()["agent_running"] is True
+
+
+@pytest.mark.parametrize("partial_workspace", [False, True])
+def test_remote_restores_inactive_adventure_before_loading_state(
+    remote_services: tuple[TestClient, MagicMock, MagicMock],
+    tmp_path: Path,
+    partial_workspace: bool,
+) -> None:
+    client, _, _ = remote_services
+    saved_manager = TheaterManager(tmp_path / "saved")
+    saved_manager.create_theater(
+        "Adventure", "stage", theater_config={"story_planning": {"adventure_mode": True}},
+    )
+    log_text = '{"type":"user_action","action":"Explore the ruins"}\n'
+    saved_manager.theater("stage").append_output_file("story_log.jsonl", log_text)
+    repository = TheaterRepository(tmp_path / "repository")
+    assert repository.export_theater("stage", saved_manager.theater("stage").directory())
+    manager = TheaterManager(tmp_path / "runtime")
+    theater_dir = manager.theater("stage").directory()
+    if partial_workspace:
+        (theater_dir / "output").mkdir(parents=True)
+    state = object_registry.canvas_states.get("stage")
+
+    def load_state(theater_id: str) -> MagicMock:
+        assert theater_id == "stage"
+        assert (theater_dir / "theater.json").is_file()
+        assert (theater_dir / "output" / "story_log.jsonl").read_text(encoding="utf-8") == log_text
+        return state
+
+    with patch.object(object_registry, "theater_manager", manager), \
+            patch.object(object_registry, "theater_repository", repository), \
+            patch.object(object_registry.canvas_states, "get", side_effect=load_state), \
+            patch.object(repository, "reconstruct_theater", wraps=repository.reconstruct_theater) as reconstruct:
+        for _ in range(2):
+            response = client.get("/api/theaters/stage/remote")
+            assert response.status_code == 200
+            assert response.json()["is_adventure_mode"] is True
+            assert response.json()["agent_running"] is False
+        reconstruct.assert_called_once_with("stage", theater_dir)
 
 
 def test_remote_includes_current_game_payload(

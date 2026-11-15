@@ -113,6 +113,11 @@ def get_remote_status(theater_id: str, request: Request, response: Response) -> 
     if not user:
         raise HTTPException(status_code=401, detail="Sign in on this device to use the remote.")
     _require_canvas_access(request, theater_id)
+    # Mobile clients open the remote directly, bypassing the desktop canvas's
+    # restoration step. Restore before creating canvas state or reading metadata.
+    theater_dir = object_registry.theater_manager.theater(theater_id).directory()
+    if not (theater_dir / "theater.json").is_file():
+        object_registry.theater_repository.reconstruct_theater(theater_id, theater_dir)
     deployment = object_registry.db.get_deployment(theater_id)
     state = object_registry.canvas_states.get(theater_id)
     session = object_registry.live_agent_manager.get_session(theater_id)
