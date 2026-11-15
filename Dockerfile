@@ -45,6 +45,7 @@ COPY pyproject.toml uv.lock ./
 # Install dependencies into a persistent virtual environment
 ENV UV_PROJECT_ENVIRONMENT="/opt/venv"
 RUN uv sync --frozen --no-dev --no-install-project \
+    && uv run --no-sync python -c "from google.adk.sessions import DatabaseSessionService; DatabaseSessionService('sqlite+aiosqlite:///:memory:')" \
     && chown -R appuser:appuser /opt/venv
 
 # Place virtualenv executables at the front of PATH

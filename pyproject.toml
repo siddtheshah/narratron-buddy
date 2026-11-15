@@ -23,7 +23,7 @@ dependencies = [
     "python-multipart",
     "pyyaml",
     "scikit-learn>=1.5",
-    "sqlalchemy>=2.0.55",
+    "sqlalchemy[asyncio]>=2.0.55",
     "stripe>=7.0.0",
     "uvicorn",
 ]
