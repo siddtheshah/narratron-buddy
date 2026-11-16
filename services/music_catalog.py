@@ -63,17 +63,14 @@ class MusicCatalog:
 
     def __init__(
         self,
+        database_manager: DatabaseManager,
         directory: Optional[Path] = None,
-        database_manager: Optional[DatabaseManager] = None,
         match_threshold: float = 0.86,
         candidate_count: int = 5,
         reranker_provider: Optional[TextResponseProvider] = None,
         reranker: Optional[Callable[[str, list[dict[str, Any]]], tuple[str, float] | None]] = None,
         decision_provider: Optional[DecisionProvider] = None,
     ) -> None:
-        if database_manager is None:
-            raise ValueError("database_manager is required")
-
         self.directory = Path(directory) if directory is not None else get_music_catalog_root()
         self.database_manager = database_manager
         self.match_threshold = max(0.0, min(1.0, float(match_threshold)))
@@ -93,21 +90,12 @@ class MusicCatalog:
     @classmethod
     def from_config(
         cls,
+        database_manager: DatabaseManager,
         config: Optional[dict] = None,
-        database_manager: Optional[DatabaseManager] = None,
         directory: Optional[Path] = None,
         decision_provider: Optional[DecisionProvider] = None,
     ) -> MusicCatalog:
-        if database_manager is None:
-            try:
-                import object_registry
-                database_manager = getattr(object_registry, "db", None)
-            except Exception:
-                database_manager = None
-        if database_manager is None:
-            raise ValueError("database_manager is required")
-
-        music_config = (config or {}).get("music", {}) if isinstance(config, dict) else {}
+        music_config = (config or {}).get("music", {})
         reranker_provider = None
         try:
             reranker_provider = get_text_response_provider(

@@ -9,6 +9,7 @@ from unittest.mock import ANY, MagicMock, patch
 import object_registry
 from components.theater_manager import Theater, TheaterManager
 from providers.image_provider import ImageProvider
+from services.music_catalog import MusicCatalog
 from services.live_agent import (
     AGENT_INSTRUCTION_TEMPLATE,
     AUDIENCE_SUGGESTIONS_TEMPLATE,
@@ -70,7 +71,7 @@ class TestCreateAgent(unittest.TestCase):
                     content = exchange_definition().model_dump_json() if package == "valid" else "invalid game"
                     (game_dir / "game.yaml").write_text(content, encoding="utf-8")
                 canvas = CanvasStateManager(theater)
-                bundle = create_tool_bundle_for_session(theater, canvas_manager=canvas)
+                bundle = create_tool_bundle_for_session(theater, music_catalog=self.music_catalog, canvas_manager=canvas)
                 names = {tool.name for tool in bundle.tools}
                 expected = enabled and package == "valid" and not adventure
                 self.assertEqual(names & game_names, game_names if expected else set())
@@ -80,9 +81,7 @@ class TestCreateAgent(unittest.TestCase):
                 self.assertEqual("## Game Play" in instruction, expected)
 
     def setUp(self) -> None:
-        catalog_patch = patch("services.live_agent.MusicCatalog.from_config")
-        catalog_patch.start()
-        self.addCleanup(catalog_patch.stop)
+        self.music_catalog = MagicMock(spec=MusicCatalog)
         for target in (
             "services.live_agent.FalQwenLayeredProvider",
             "services.live_agent.get_video_provider",
@@ -300,7 +299,7 @@ class TestCreateAgent(unittest.TestCase):
         }
 
         theater = make_test_theater("test_agent_theater", config)
-        tool_bundle = create_tool_bundle_for_session(theater)
+        tool_bundle = create_tool_bundle_for_session(theater, music_catalog=self.music_catalog)
         create_agent(theater, tool_bundle=tool_bundle)
 
         expected_theater = mock_image_cls.call_args.args[0]
@@ -343,7 +342,7 @@ class TestCreateAgent(unittest.TestCase):
         config = {"animation": {"generation_enabled": True}}
 
         theater = make_test_theater("animated_theater", config)
-        tool_bundle = create_tool_bundle_for_session(theater)
+        tool_bundle = create_tool_bundle_for_session(theater, music_catalog=self.music_catalog)
         create_agent(theater, tool_bundle=tool_bundle)
 
         mock_animation_cls.assert_called_once_with(
@@ -392,7 +391,7 @@ class TestCreateAgent(unittest.TestCase):
                 (folder / "video.mp4").write_bytes(b"video")
                 (folder / "video.json").write_text('{"scene_prompt":"Rain", "video_path":"video.mp4"}', encoding="utf-8")
                 with patch("services.live_agent.FalQwenLayeredProvider") as layered_provider, patch("services.live_agent.get_video_provider") as video_provider:
-                    bundle = create_tool_bundle_for_session(theater)
+                    bundle = create_tool_bundle_for_session(theater, music_catalog=self.music_catalog)
                 generation_enabled = animation_config.get("generation_enabled", False)
                 self.assertEqual(layered_provider.called, generation_enabled)
                 self.assertEqual(video_provider.called, generation_enabled)
@@ -523,13 +522,13 @@ class TestCreateAgent(unittest.TestCase):
         music_inst = mock_music_cls.return_value
         music_inst.use_generated_music = False
         theater = make_test_theater("test_t", {"music": {"use_generated_music": False}})
-        bundle = create_tool_bundle_for_session(theater)
+        bundle = create_tool_bundle_for_session(theater, music_catalog=self.music_catalog)
         tool_funcs = [getattr(t, "func", t) for t in bundle.tools]
         self.assertNotIn(music_inst.create_music, tool_funcs)
 
         music_inst.use_generated_music = True
         theater_enabled = make_test_theater("test_t", {"music": {"use_generated_music": True}})
-        bundle_enabled = create_tool_bundle_for_session(theater_enabled)
+        bundle_enabled = create_tool_bundle_for_session(theater_enabled, music_catalog=self.music_catalog)
         tool_funcs_enabled = [getattr(t, "func", t) for t in bundle_enabled.tools]
         self.assertIn(music_inst.create_music, tool_funcs_enabled)
 
@@ -558,7 +557,7 @@ class TestCreateAgent(unittest.TestCase):
                     "user_help": {"enabled": False},
                 }
                 theater = make_test_theater("reference_provider", config, Path(temp_dir))
-                bundle = create_tool_bundle_for_session(theater)
+                bundle = create_tool_bundle_for_session(theater, music_catalog=self.music_catalog)
                 tool_names = {tool.name for tool in bundle.tools}
                 show_tool = next(tool for tool in bundle.tools if tool.name == "show_image")
                 parameters = show_tool._get_declaration().parameters_json_schema["properties"]
@@ -589,7 +588,7 @@ class TestCreateAgent(unittest.TestCase):
             },
         )
         with patch("providers.registry.get_image_provider", return_value=MagicMock(spec=ImageProvider)):
-            bundle = create_tool_bundle_for_session(theater)
+            bundle = create_tool_bundle_for_session(theater, music_catalog=self.music_catalog)
         tool_names = [tool.name for tool in bundle.tools]
         self.assertNotIn("create_image", tool_names)
         self.assertIn("show_image", tool_names)
@@ -603,9 +602,9 @@ class TestCreateAgent(unittest.TestCase):
             "visuals": {"model": "hybrid-flux-gemini"},
             "music": {"provider": "lyria"},
         }
-        enabled = create_tool_bundle_for_session(make_test_theater("help_enabled", base_config))
+        enabled = create_tool_bundle_for_session(make_test_theater("help_enabled", base_config), music_catalog=self.music_catalog)
         disabled = create_tool_bundle_for_session(
-            make_test_theater("help_disabled", {**base_config, "user_help": {"enabled": False}})
+            make_test_theater("help_disabled", {**base_config, "user_help": {"enabled": False}}), music_catalog=self.music_catalog
         )
 
         enabled_names = [tool.name for tool in enabled.tools]
@@ -622,10 +621,10 @@ class TestCreateAgent(unittest.TestCase):
             "music": {"provider": "lyria"},
         }
         disabled = create_tool_bundle_for_session(
-            make_test_theater("test_t", {**base_config, "observability_tool": {"enabled": False}})
+            make_test_theater("test_t", {**base_config, "observability_tool": {"enabled": False}}), music_catalog=self.music_catalog
         )
         enabled = create_tool_bundle_for_session(
-            make_test_theater("test_t", {**base_config, "observability_tool": {"enabled": True}})
+            make_test_theater("test_t", {**base_config, "observability_tool": {"enabled": True}}), music_catalog=self.music_catalog
         )
 
         disabled_names = [tool.name for tool in disabled.tools]
@@ -644,12 +643,12 @@ class TestCreateAgent(unittest.TestCase):
             "visuals": {"model": "hybrid-flux-gemini"},
             "music": {"provider": "lyria"},
         }
-        absent = create_tool_bundle_for_session(make_test_theater("a2ui_absent", base_config))
+        absent = create_tool_bundle_for_session(make_test_theater("a2ui_absent", base_config), music_catalog=self.music_catalog)
         disabled = create_tool_bundle_for_session(
-            make_test_theater("a2ui_disabled", {**base_config, "interactive_canvas": {"enabled": False}})
+            make_test_theater("a2ui_disabled", {**base_config, "interactive_canvas": {"enabled": False}}), music_catalog=self.music_catalog
         )
         enabled = create_tool_bundle_for_session(
-            make_test_theater("a2ui_enabled", {**base_config, "interactive_canvas": {"enabled": True}})
+            make_test_theater("a2ui_enabled", {**base_config, "interactive_canvas": {"enabled": True}}), music_catalog=self.music_catalog
         )
 
         for bundle in (absent, disabled):
@@ -703,7 +702,7 @@ class TestCreateAgent(unittest.TestCase):
         lore_lib = mock_lore_lib_cls.return_value
         char_mgr = mock_char_mgr_cls.return_value
 
-        bundle = create_tool_bundle_for_session(theater)
+        bundle = create_tool_bundle_for_session(theater, music_catalog=self.music_catalog)
         self.assertIsNotNone(bundle)
 
         mock_canvas_mgr_cls.assert_called_once_with(theater)
@@ -768,7 +767,7 @@ class TestCreateAgent(unittest.TestCase):
             {"name": "Library", "alias": "<Library>", "description": "Scene reference."},
         ]
 
-        bundle = create_tool_bundle_for_session(theater, canvas_manager=provided_canvas)
+        bundle = create_tool_bundle_for_session(theater, music_catalog=self.music_catalog, canvas_manager=provided_canvas)
         self.assertIsNotNone(bundle)
         self.assertEqual([entry["name"] for entry in bundle.preloaded_references], ["Arthur Modella", "Library"])
         self.assertEqual(bundle.preloaded_references[0]["alias"], "<Arthur Modella>")
@@ -920,7 +919,7 @@ class TestCreateAgent(unittest.TestCase):
                 "music": {"provider": "lyria"},
             },
         )
-        non_adv_bundle = create_tool_bundle_for_session(non_adv_theater)
+        non_adv_bundle = create_tool_bundle_for_session(non_adv_theater, music_catalog=self.music_catalog)
         non_adv_names = [tool.name for tool in non_adv_bundle.tools]
         self.assertIn("create_or_update_character", non_adv_names)
         self.assertIn("lookup_character", non_adv_names)
@@ -936,7 +935,7 @@ class TestCreateAgent(unittest.TestCase):
                 "music": {"provider": "lyria"},
             },
         )
-        adv_bundle = create_tool_bundle_for_session(adv_theater)
+        adv_bundle = create_tool_bundle_for_session(adv_theater, music_catalog=self.music_catalog)
         adv_names = [tool.name for tool in adv_bundle.tools]
         self.assertNotIn("create_or_update_character", adv_names)
         self.assertNotIn("lookup_character", adv_names)

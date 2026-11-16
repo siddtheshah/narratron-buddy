@@ -268,8 +268,8 @@ def get_playlists_context(theater: Theater) -> str:
 
 def create_tool_bundle_for_session(
     theater: Theater,
+    music_catalog: MusicCatalog,
     canvas_manager: Optional[CanvasStateManager] = None,
-    music_catalog: Optional[MusicCatalog] = None,
 ) -> ToolBundle:
     """Build tools bound to one theater's canvas state."""
     config = theater.config()
@@ -348,8 +348,6 @@ def create_tool_bundle_for_session(
         )
         tools.append(user_help_tools.user_help_tool)
 
-    if music_catalog is None:
-        music_catalog = MusicCatalog.from_config(config=config)
     music_tools = MusicTools(
         theater,
         canvas_manager,
