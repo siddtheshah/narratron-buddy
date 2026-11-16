@@ -16,7 +16,7 @@ from contextlib import contextmanager
 from threading import RLock
 from hashlib import sha256
 from pathlib import Path
-from typing import Optional, cast
+from typing import Optional, cast, TYPE_CHECKING
 
 from pydantic import JsonValue, TypeAdapter
 
@@ -32,6 +32,9 @@ from components.canvas.canvas_assets import CanvasAssetCatalog
 from components.canvas.canvas_observation import ObservationClock, observe_page
 from components.canvas.game_stamps import stage_stamps
 from game_engine.canvas_contract import CanvasSnapshot, Page, Region
+
+if TYPE_CHECKING:
+    from services.text_beautifier import TextBeautifier
 
 logger = logging.getLogger("components.canvas_state")
 MAX_AGENT_THOUGHT_LENGTH = 360
@@ -55,7 +58,9 @@ class CanvasStateManager:
     on_scenes_updated: Callable[[list[dict[str, JsonValue]]], None] | None = None
     on_animations_updated: Callable[[list[dict[str, JsonValue]]], None] | None = None
 
-    def __init__(self, theater: Theater) -> None:
+    def __init__(self, theater: Theater, *, text_beautifier: TextBeautifier | None = None) -> None:
+        """Assemble canvas state; omit the beautifier to display unstyled story text."""
+        self.text_beautifier = text_beautifier
         self.canvas_lock = RLock()
         self.theater = theater
         self.theater_id = theater.theater_id
@@ -87,6 +92,7 @@ class CanvasStateManager:
             self.persist,
             self.notify_changed,
             publish_audio_fn=self.connections.broadcast,
+            text_beautifier=self.text_beautifier,
             adventure_mode=adventure_mode,
             cycle_length=story_input_cycle_duration(story_planning_config),
             output_cycle_duration=story_output_cycle_duration(story_planning_config),

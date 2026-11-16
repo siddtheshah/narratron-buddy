@@ -1,5 +1,6 @@
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import Mock
 
 import pytest
 
@@ -70,3 +71,17 @@ def test_service_requires_theater_id(tmp_path: Path) -> None:
     with pytest.raises(ValueError) as excinfo:
         service.get("   ")
     assert "theater_id is required" in str(excinfo.value)
+
+
+def test_service_keeps_beautifier_after_canvas_reset_and_reload(tmp_path: Path) -> None:
+    beautifier = Mock()
+    beautifier.beautify_scene.return_value = {"narration_spans": [{"text": "Hello", "effect": "glow"}], "dialogue": []}
+    service = CanvasStateService(FakeTheaterManager(tmp_path), text_beautifier=beautifier)
+    canvas = service.get("live")
+
+    for refresh in (canvas.reset, canvas.reload_package):
+        refresh()
+        canvas.story.set_scene("Hello", [])
+        assert canvas.story.output_cycle.flush()
+        assert canvas.story.narration_spans == [{"text": "Hello", "effect": "glow"}]
+    assert beautifier.beautify_scene.call_count == 2

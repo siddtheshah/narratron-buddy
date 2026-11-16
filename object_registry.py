@@ -190,7 +190,8 @@ db = (
         checkout_timeout=FLAGS.database_pool_checkout_timeout_seconds,
     )
 )
-canvas_states = CanvasStateService(theater_manager)
+text_beautifier = TextBeautifier(config=config)
+canvas_states = CanvasStateService(theater_manager, text_beautifier=text_beautifier)
 music_catalog = MusicCatalog.from_config(
     config=config,
     database_manager=db,
@@ -206,7 +207,6 @@ live_agent_manager = LiveAgentSessionManager(
 suggestion_service = SuggestionService(config=config)
 adventure_service = AdventureService(ensure_adventures_root())
 game_service = GameService(ensure_games_root())
-text_beautifier = TextBeautifier(config=config)
 stamp_storage = StampStorage(ensure_stamps_root())
 
 atexit.register(shutdown_database_connection)

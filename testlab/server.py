@@ -468,7 +468,6 @@ def create_story_planner_session(body: dict[str, Any]):
     theater_manager = TheaterManager()
     canvas_state_service = CanvasStateService(theater_manager)
     canvas_manager = canvas_state_service.get(f"testlab_{run_id}")
-    canvas_manager.story.text_beautifier = False
     theater = theater_manager.theater(f"testlab_{run_id}")
     reference_manager = ReferenceManager(
         theater=theater,

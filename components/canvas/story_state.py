@@ -9,12 +9,15 @@ import logging
 import re
 import threading
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any, Optional, TYPE_CHECKING
 
 from pydantic import BaseModel, JsonValue, TypeAdapter
 
 from components.story.input_gathering_cycle import StoryInputGatheringCycle
 from components.story.output_display_cycle import OutputCheckpoint, StoryOutput, StoryOutputDisplayCycle
+
+if TYPE_CHECKING:
+    from services.text_beautifier import TextBeautifier
 
 from providers import (
     SpeechProvider,
@@ -93,12 +96,15 @@ def normalize_character_models(state: dict[str, Any]) -> dict[str, Any]:
 
 
 class StoryState:
+    """Store scenes, leaving narration and dialogue unstyled without a beautifier."""
+
     def __init__(
         self,
         persist: Callable[[], None] | None = None,
         notify_changed: Callable[..., None] | None = None,
         publish_audio_fn: Callable[[dict[str, Any]], None] | None = None,
         *,
+        text_beautifier: TextBeautifier | None = None,
         adventure_mode: bool = False,
         cycle_length: float = 15.0,
         output_cycle_duration: float = 15.0,
@@ -115,7 +121,7 @@ class StoryState:
         self.narration_spans: list[dict[str, Any]] = []
         self.character_voice_assignments: dict[str, str] = {}
         self.character_voice_tags: dict[str, list[str]] = {}
-        self._text_beautifier: Any = None
+        self.text_beautifier = text_beautifier
         self._speech_provider: SpeechProvider | None = None
         self._narration_speech_provider: SpeechProvider | None = None
         self._scene_speech_enabled = False
@@ -148,25 +154,12 @@ class StoryState:
         if self._notify_changed:
             self._notify_changed("latest")
 
-    @property
-    def text_beautifier(self) -> Any:
-        if self._text_beautifier is not None:
-            return self._text_beautifier
-        try:
-            import object_registry
-            return getattr(object_registry, "text_beautifier", None)
-        except Exception:
-            return None
-    @text_beautifier.setter
-    def text_beautifier(self, value: Any) -> None:
-        self._text_beautifier = value
     def load(
         self,
         data: dict[str, object] | None = None,
         *,
         persist: Callable[[], None] | None = None,
         notify_changed: Callable[..., None] | None = None,
-        text_beautifier: Any = None,
         character_lookup: Callable[[str], Any] | None = None,
         provider: SpeechProvider | None = None,
         **kwargs: Any,
@@ -175,8 +168,6 @@ class StoryState:
             self._persist = persist
         if notify_changed is not None:
             self._notify_changed = notify_changed
-        if text_beautifier is not None:
-            self._text_beautifier = text_beautifier
         if provider is not None:
             self.enable_scene_speech(provider)
 

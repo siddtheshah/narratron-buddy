@@ -17,6 +17,15 @@ def test_story_state_isolated_from_other_theaters() -> None:
     assert second.narration_spans == []
 
 
+def test_scene_without_beautifier_preserves_plain_text() -> None:
+    state = StoryState()
+    dialogue = [{"speaker": "Mara", "text": "Look!"}]
+    state.set_scene("A new scene begins.", dialogue)
+    assert state.narration == "A new scene begins."
+    assert state.narration_spans == []
+    assert state.scene_dialogue == dialogue
+
+
 def test_enable_scene_speech_requires_an_injected_provider() -> None:
     state = StoryState()
 
@@ -36,7 +45,7 @@ def test_speaker_key_normalizes_equivalent_display_names() -> None:
 def test_scene_waits_for_beautification_then_commits_once() -> None:
     persist, notify = Mock(), Mock()
     beautifier = Mock()
-    state = StoryState(persist=persist, notify_changed=notify)
+    state = StoryState(persist=persist, notify_changed=notify, text_beautifier=beautifier)
     state.narration = "Previous scene."
     state.scene_dialogue = [{"speaker": "Old", "text": "Previous dialogue."}]
 
