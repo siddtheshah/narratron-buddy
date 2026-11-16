@@ -465,15 +465,6 @@ async def _generate_canvas_asset(
         await asyncio.to_thread(object_registry.db.release_generation_slot, slot_id)
 
 
-def _session_notepad(session: object) -> object | None:
-    """Return the shared notepad from either live-agent tool holder."""
-    for attribute in ("notepad_tool", "story_planning_tools"):
-        tool = getattr(session, attribute, None)
-        notepad = getattr(tool, "notepad", None)
-        if notepad is not None:
-            return notepad
-    return None
-
 async def _export_canvas_theater_async(theater_id: str) -> bool:
     """Export theater canvas data to repository asynchronously."""
     def _export() -> bool:
@@ -1968,14 +1959,8 @@ async def get_theater_suggestions(theater_id: str, request: Request):
     _safe_path_param(theater_id, "theater_id")
 
     session = object_registry.live_agent_manager.get_session(theater_id)
-    named_elements = []
-    notepad = _session_notepad(session)
-    if notepad and hasattr(notepad, "get_present_elements"):
-        named_elements = notepad.get_present_elements()
-    if not named_elements and object_registry.canvas_states:
-        c_state = object_registry.canvas_states.get(theater_id)
-        if c_state is not None and c_state.notepad is not None:
-            named_elements = c_state.notepad.get_present_elements()
+    notepad = session.notepad if session is not None else object_registry.canvas_states.get(theater_id).notepad
+    named_elements = notepad.get_present_elements()
 
     force_refresh = request.query_params.get("refresh") in ("true", "1")
     res, fingerprint = object_registry.suggestion_service.generate_suggestions(
@@ -1997,18 +1982,9 @@ async def get_theater_sticky_notes(theater_id: str, request: Request) -> dict[st
     _safe_path_param(theater_id, "theater_id")
 
     session = object_registry.live_agent_manager.get_session(theater_id)
-    sticky_notes = []
-    notepad = _session_notepad(session)
-    if notepad is not None:
-        sticky_notes = notepad.get_present_sticky_notes()
-
-    if not sticky_notes and object_registry.canvas_states:
-        c_state = object_registry.canvas_states.get(theater_id)
-        if c_state is not None and c_state.notepad is not None:
-            notepad = c_state.notepad
-            sticky_notes = notepad.get_present_sticky_notes()
-
-    hidden_stickies = notepad.get_hidden_sticky_notes() if notepad is not None else []
+    notepad = session.notepad if session is not None else object_registry.canvas_states.get(theater_id).notepad
+    sticky_notes = notepad.get_present_sticky_notes()
+    hidden_stickies = notepad.get_hidden_sticky_notes()
 
     return {
         "sticky_notes": sticky_notes,

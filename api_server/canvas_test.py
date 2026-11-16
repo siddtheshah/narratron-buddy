@@ -66,7 +66,7 @@ def test_get_sticky_notes_uses_session_or_canvas_state() -> None:
     mock_notepad = MagicMock()
     mock_notepad.get_hidden_sticky_notes.return_value = []
     mock_notepad.get_present_sticky_notes.return_value = [{"topic": "Clue", "info": "Old map"}]
-    mock_session = SimpleNamespace(notepad_tool=SimpleNamespace(notepad=mock_notepad))
+    mock_session = SimpleNamespace(notepad=mock_notepad)
     mock_agent_mgr.get_session.return_value = mock_session
 
     with patch.object(canvas, "_require_canvas_access"), patch.object(object_registry, "live_agent_manager", mock_agent_mgr):
@@ -91,7 +91,7 @@ def test_get_sticky_notes_returns_notepad_visibility() -> None:
         {"topic": "Visible", "info": "Public"},
         {"topic": "Secret", "info": "Hidden detail"},
     ]
-    mock_session = SimpleNamespace(notepad_tool=SimpleNamespace(notepad=mock_notepad))
+    mock_session = SimpleNamespace(notepad=mock_notepad)
     mock_agent_mgr.get_session.return_value = mock_session
 
     with patch.object(canvas, "_require_canvas_access"), \

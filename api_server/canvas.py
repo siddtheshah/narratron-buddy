@@ -337,18 +337,6 @@ def _state(theater_id: str) -> CanvasStateManager:
     return object_registry.canvas_states.get(theater_id.strip())
 
 
-def _session_notepad(session: Any) -> Any:
-    """Return the shared notepad from either live-agent tool holder."""
-    if session is None:
-        return None
-    for attribute in ("notepad_tool", "story_planning_tools"):
-        tool = getattr(session, attribute, None)
-        notepad = getattr(tool, "notepad", None)
-        if notepad is not None:
-            return notepad
-    return None
-
-
 def _unregister_doodle_websocket(state: CanvasStateManager, websocket: WebSocket) -> None:
     connections = state.connections
     if websocket in connections.active_ws_connections:
@@ -1208,11 +1196,9 @@ def get_sticky_notes(request: Request, theater_id: str) -> dict[str, JsonValue]:
     _require_canvas_access(request, theater_id)
 
     session = object_registry.live_agent_manager.get_session(theater_id)
-    notepad = _session_notepad(session)
-    if notepad is None:
-        notepad = _state(theater_id).notepad
-    notes = notepad.get_present_sticky_notes() if notepad is not None else []
-    hidden_stickies = notepad.get_hidden_sticky_notes() if notepad is not None else []
+    notepad = session.notepad if session is not None else _state(theater_id).notepad
+    notes = notepad.get_present_sticky_notes()
+    hidden_stickies = notepad.get_hidden_sticky_notes()
     return {"sticky_notes": notes, "hidden_stickies": hidden_stickies, "count": len(notes)}
 
 

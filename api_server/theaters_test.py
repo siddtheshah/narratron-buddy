@@ -1464,7 +1464,7 @@ async def test_get_theater_suggestions_endpoint():
     mock_notepad.get_present_elements.return_value = [
         {"name": "hero", "content": "Mara, a bold cartographer"}
     ]
-    mock_session = SimpleNamespace(notepad_tool=SimpleNamespace(notepad=mock_notepad))
+    mock_session = SimpleNamespace(notepad=mock_notepad)
     mock_agent_mgr.get_session.return_value = mock_session
 
     mock_suggestion_svc = MagicMock()
@@ -1500,7 +1500,7 @@ async def test_get_theater_sticky_notes_endpoint():
     mock_notepad.get_present_sticky_notes.return_value = [
         {"topic": "Ancient Key", "info": "Rust-covered bronze key found under floorboards."}
     ]
-    mock_session = SimpleNamespace(notepad_tool=SimpleNamespace(notepad=mock_notepad))
+    mock_session = SimpleNamespace(notepad=mock_notepad)
     mock_agent_mgr.get_session.return_value = mock_session
 
     mock_tm = MagicMock()
@@ -1531,7 +1531,7 @@ async def test_get_theater_sticky_notes_with_hidden_stickies() -> None:
         {"topic": "Ancient Key", "info": "Rust-covered bronze key."},
         {"topic": "Secret Letter", "info": "Treasonous correspondence."},
     ]
-    mock_session = SimpleNamespace(notepad_tool=SimpleNamespace(notepad=mock_notepad))
+    mock_session = SimpleNamespace(notepad=mock_notepad)
     mock_agent_mgr.get_session.return_value = mock_session
 
     with patch.object(theaters, "_require_canvas_access_async", new=AsyncMock()), \

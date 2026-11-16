@@ -34,6 +34,7 @@ from components.canvas.canvas_state_service import CanvasStateService
 from components.canvas.canvas_state_manager import CanvasStateManager
 from components.theater_manager import TheaterManager
 from components.reference_manager import ReferenceManager
+from components.notepad import Notepad
 from utils.auth_cache import auth_session_cache
 
 logger = logging.getLogger(__name__)
@@ -60,9 +61,9 @@ class LiveAgentSession:
         theater_id: str,
         runner: Runner,
         tool_bundle: Any,
+        canvas_state_manager: CanvasStateManager,
         database_manager: Optional[Any] = None,
         config: Optional[dict] = None,
-        canvas_state_manager: Optional[Any] = None,
         theater_manager: Optional[TheaterManager] = None,
         music_catalog: Optional[Any] = None,
         provider: LiveAgentProvider | None = None,
@@ -227,6 +228,11 @@ class LiveAgentSession:
         self._chat_turn_id = -1
         self._turn_chat_succeeded = False
         self._turn_other_tool_succeeded = False
+
+    @property
+    def notepad(self) -> Notepad:
+        """Expose the canvas-owned notepad shared by both narration modes."""
+        return self.canvas_state_manager.notepad
 
     @staticmethod
     def _tool_response_succeeded(response: types.FunctionResponse) -> bool:

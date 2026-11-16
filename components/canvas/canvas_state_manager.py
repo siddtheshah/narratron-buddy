@@ -50,7 +50,7 @@ class CanvasStateManager:
     story: Optional[StoryState] = None
     chat: Optional[ChatManager] = None
     game: GameState | None = None
-    notepad: Optional[Notepad] = None
+    notepad: Notepad
     on_characters_updated: Callable[[list[dict[str, JsonValue]]], None] | None = None
     on_scenes_updated: Callable[[list[dict[str, JsonValue]]], None] | None = None
     on_animations_updated: Callable[[list[dict[str, JsonValue]]], None] | None = None
@@ -217,14 +217,13 @@ class CanvasStateManager:
             self.ui.load(state)
             self.story.load(state)
             self.game.load(state.get("game_state"))
-            if self.notepad is not None:
-                notepad_data = state.get("notepad")
-                if isinstance(notepad_data, dict):
-                    self.notepad.import_state(notepad_data)
-                else:
-                    sp_state = self.story.get_story_planning_state()
-                    if sp_state:
-                        self.notepad.import_state(sp_state)
+            notepad_data = state.get("notepad")
+            if isinstance(notepad_data, dict):
+                self.notepad.import_state(notepad_data)
+            else:
+                sp_state = self.story.get_story_planning_state()
+                if sp_state:
+                    self.notepad.import_state(sp_state)
             self.chat.messages = list(state.get("chat_messages", []))
             self.chat.load_suggestions(state.get("suggestions", []))
         except (OSError, ValueError, TypeError) as exc:
@@ -239,8 +238,7 @@ class CanvasStateManager:
             "suggestions": self.chat.export_suggestions(), "chat_messages": self.chat.get_messages(),
             "canvas_api_state": self._invalid_canvas_clock if self.canvas_clock_error else self.canvas_clock.model_dump(mode="json"),
         }
-        if self.notepad is not None:
-            serialized["notepad"] = self.notepad.export_state()
+        serialized["notepad"] = self.notepad.export_state()
         return serialized
 
     @synchronized
@@ -364,7 +362,7 @@ class CanvasStateManager:
     @synchronized
     def get_latest_state(self, *, username: str = "") -> dict[str, JsonValue]:
         visual = self.visual.payload()
-        sticky_notes = self.notepad.get_present_sticky_notes() if self.notepad is not None else []
+        sticky_notes = self.notepad.get_present_sticky_notes()
         return {**visual, "music": self.audio.payload(), "music_pinned": self.audio.pinned,
                 "music_orator_cursor": self.audio.payload().get("orator_cursor"),
                 "doodles_enabled": self.doodles.enabled,

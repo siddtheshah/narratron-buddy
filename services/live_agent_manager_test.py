@@ -12,8 +12,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from components.theater_manager import TheaterManager
+from components.theater_manager import Theater, TheaterManager
 from components.notepad import Notepad
+from components.canvas.canvas_state_manager import CanvasStateManager
 from components.reference_manager import ReferenceManager
 from game_engine.game_runtime import GameAction
 from game_engine.game_state import GameState
@@ -129,6 +130,7 @@ def test_usage_debits_only_owner_across_baton_handoff(
     runner = MagicMock()
     runner.agent.tools = []
     session = LiveAgentSession(
+        canvas_state_manager=canvas_observability_fixture(),
         theater_id="billing_stage", runner=runner, tool_bundle=MagicMock(),
         database_manager=database,
         config={"story_planning": {"adventure_mode": True, "character_voicing": True}},
@@ -183,6 +185,7 @@ def test_periodic_credit_check_uses_owner_while_another_user_holds_baton(
     runner = MagicMock()
     runner.agent.tools = []
     session = LiveAgentSession(
+        canvas_state_manager=canvas_observability_fixture(),
         theater_id="stage", runner=runner, tool_bundle=MagicMock(), database_manager=database,
     )
     session.set_active_controller(99)
@@ -219,6 +222,7 @@ def test_billing_stops_when_owner_exhausts_credits_despite_funded_baton_holder(
     runner = MagicMock()
     runner.agent.tools = []
     session = LiveAgentSession(
+        canvas_state_manager=canvas_observability_fixture(),
         theater_id="billing_stage", runner=runner, tool_bundle=MagicMock(), database_manager=database,
     )
     session.set_active_controller(orator_id)
@@ -256,11 +260,39 @@ def configure_observability_dependencies(session: LiveAgentSession) -> None:
     session.reference_manager.get_player_character.return_value = None
 
 
+@pytest.mark.parametrize("adventure_mode", [False, True])
+def test_session_exposes_canvas_owned_notepad(adventure_mode: bool, tmp_path: Path) -> None:
+    theater = MagicMock(spec=Theater)
+    theater.config.return_value = {
+        "story_planning": {"adventure_mode": adventure_mode, "enforce_structured": False},
+    }
+    theater.directory.return_value = tmp_path
+    theater.read_planning_schema.return_value = {}
+    canvas = MagicMock(spec=CanvasStateManager)
+    canvas.notepad = Notepad(theater, canvas_manager=canvas)
+    runner = MagicMock()
+    runner.agent.tools = []
+    session = LiveAgentSession(
+        theater_id="notepad", runner=runner, tool_bundle=MagicMock(),
+        canvas_state_manager=canvas,
+    )
+
+    assert session.notepad is canvas.notepad
+    session.notepad.update_sticky_note("Location", "Courtyard")
+    assert canvas.notepad.get_present_sticky_notes() == [{
+        "topic": "Location", "info": "Courtyard", "name": "Location", "content": "Courtyard",
+    }]
+
+    canvas.notepad = Notepad(theater, canvas_manager=canvas)
+    assert session.notepad is canvas.notepad
+    assert session.notepad.get_present_sticky_notes() == []
+
+
 class TestLiveAgentSessionManager(unittest.TestCase):
     def test_friend_presence_tracks_summoning_and_termination(self) -> None:
         runner = MagicMock()
         runner.agent.tools = []
-        session = LiveAgentSession(theater_id="presence", runner=runner, tool_bundle=MagicMock())
+        session = LiveAgentSession(canvas_state_manager=canvas_observability_fixture(), theater_id="presence", runner=runner, tool_bundle=MagicMock())
         self.assertFalse(session.is_online)
         session.summon()
         self.assertTrue(session.is_online)
@@ -298,6 +330,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
         provider.tool_results_bypass_input_window = False
         provider.run_live.return_value = events()
         session = LiveAgentSession(
+            canvas_state_manager=canvas_observability_fixture(),
             theater_id="all_calls", runner=runner, tool_bundle=MagicMock(),
             provider=provider, database_manager=database,
         )
@@ -314,6 +347,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
         database.get_deployment.return_value = {"user_id": 7}
         database.record_user_usage.side_effect = [TimeoutError("unknown commit outcome"), {"credits": 1.0}]
         session = LiveAgentSession(
+            canvas_state_manager=canvas_observability_fixture(),
             theater_id="retry_calls", runner=runner, tool_bundle=MagicMock(),
             database_manager=database,
         )
@@ -327,6 +361,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
         runner = MagicMock()
         runner.agent.tools = []
         session = LiveAgentSession(
+            canvas_state_manager=canvas_observability_fixture(),
             theater_id="suggestions", runner=runner, tool_bundle=MagicMock(),
             config={"live_agent": {"viewer_suggestion_interval": 7}},
         )
@@ -431,6 +466,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
         provider.tool_results_bypass_input_window = False
         provider.run_live.return_value = events()
         session = LiveAgentSession(
+            canvas_state_manager=canvas_observability_fixture(),
             theater_id="alternate", runner=runner, tool_bundle=MagicMock(), provider=provider,
         )
         session.broadcast_text = AsyncMock(side_effect=[RuntimeError("browser disconnected"), None])
@@ -468,6 +504,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
         mock_runner.agent = mock_agent
         mock_runner.session_service = MagicMock()
         session = LiveAgentSession(
+            canvas_state_manager=canvas_observability_fixture(),
             theater_id="auto_begin",
             runner=mock_runner,
             tool_bundle=MagicMock(),
@@ -496,7 +533,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
         mock_runner = MagicMock()
         mock_runner.agent = mock_agent
         mock_runner.session_service = MagicMock()
-        session = LiveAgentSession(theater_id="summon_turn", runner=mock_runner, tool_bundle=MagicMock())
+        session = LiveAgentSession(canvas_state_manager=canvas_observability_fixture(), theater_id="summon_turn", runner=mock_runner, tool_bundle=MagicMock())
 
         self.assertTrue(session.summon())
 
@@ -549,6 +586,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
                 mock_runner.agent = mock_agent
                 mock_runner.session_service = MagicMock()
                 session = LiveAgentSession(
+                    canvas_state_manager=canvas_observability_fixture(),
                     theater_id="resummon",
                     runner=mock_runner,
                     tool_bundle=MagicMock(),
@@ -883,6 +921,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
         mock_runner.session_service = mock_session_service
 
         session = LiveAgentSession(
+            canvas_state_manager=canvas_observability_fixture(),
             theater_id="test_sess",
             runner=mock_runner,
             tool_bundle=MagicMock(),
@@ -940,6 +979,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
         mock_runner.session_service = MagicMock()
 
         session = LiveAgentSession(
+            canvas_state_manager=canvas_observability_fixture(),
             theater_id="test_suppress",
             runner=mock_runner,
             tool_bundle=MagicMock(),
@@ -993,7 +1033,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
         mock_runner = MagicMock()
         mock_runner.agent = mock_agent
         mock_runner.session_service = MagicMock()
-        session = LiveAgentSession(theater_id="planner_queue", runner=mock_runner, tool_bundle=MagicMock())
+        session = LiveAgentSession(canvas_state_manager=canvas_observability_fixture(), theater_id="planner_queue", runner=mock_runner, tool_bundle=MagicMock())
         session.live_request_queue = MagicMock()
         session.image_tools = mock_image_tools
         session.interactive_canvas_tools = MagicMock()
@@ -1016,7 +1056,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
     def test_failed_scene_reaction_notifies_without_releasing_canvas_tools(self) -> None:
         runner = MagicMock()
         runner.agent.tools = []
-        session = LiveAgentSession("failed_story", runner, MagicMock())
+        session = LiveAgentSession("failed_story", runner, MagicMock(), canvas_state_manager=canvas_observability_fixture())
         session.image_tools = MagicMock(spec=ImageTools)
         session.interactive_canvas_tools = MagicMock()
         session.story_planning_tools = MagicMock()
@@ -1057,6 +1097,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
         mock_runner.session_service = MagicMock()
 
         session = LiveAgentSession(
+            canvas_state_manager=canvas_observability_fixture(),
             theater_id="asset_only_adventure",
             runner=mock_runner,
             tool_bundle=MagicMock(),
@@ -1078,7 +1119,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
         mock_runner = MagicMock()
         mock_runner.agent = mock_agent
         mock_runner.session_service = MagicMock()
-        session = LiveAgentSession(theater_id="voice_fwd", runner=mock_runner, tool_bundle=MagicMock())
+        session = LiveAgentSession(canvas_state_manager=canvas_observability_fixture(), theater_id="voice_fwd", runner=mock_runner, tool_bundle=MagicMock())
         session.story_planning_tools = mock_story_planning
         session.websockets.add(MagicMock())
 
@@ -1125,7 +1166,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
         mock_runner = MagicMock()
         mock_runner.agent = mock_agent
         mock_runner.session_service = MagicMock()
-        session = LiveAgentSession(theater_id="cooldown_filter", runner=mock_runner, tool_bundle=MagicMock())
+        session = LiveAgentSession(canvas_state_manager=canvas_observability_fixture(), theater_id="cooldown_filter", runner=mock_runner, tool_bundle=MagicMock())
         session.send_content = MagicMock()
 
         # Trigger cooldown expired for process_user_action -> Should NOT send content
@@ -1153,6 +1194,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
                 func=observability_tools.request_canvas_observability,
             )]
             session = LiveAgentSession(
+                canvas_state_manager=canvas_observability_fixture(),
                 theater_id="observability_cooldown", runner=runner, tool_bundle=MagicMock(),
             )
             session.live_request_queue = PriorityLiveRequestQueue(
@@ -1184,6 +1226,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
         mock_runner.session_service = MagicMock()
 
         session = LiveAgentSession(
+            canvas_state_manager=canvas_observability_fixture(),
             theater_id="test_reconnect",
             runner=mock_runner,
             tool_bundle=MagicMock(),
@@ -1205,6 +1248,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
         runner = MagicMock()
         runner.agent.tools = []
         session = LiveAgentSession(
+            canvas_state_manager=canvas_observability_fixture(),
             theater_id="observability", runner=runner, tool_bundle=MagicMock(),
             provider=GeminiLiveAgentProvider(),
             config={"live_agent": {"observability_interval": 0, "collaboration_observability_cooldown": 0}},
@@ -1473,6 +1517,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
         mock_runner.agent = mock_agent
         mock_runner.session_service = MagicMock()
         session = LiveAgentSession(
+            canvas_state_manager=canvas_observability_fixture(),
             theater_id="test_observability_timing",
             runner=mock_runner,
             tool_bundle=MagicMock(),
@@ -1511,6 +1556,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
         mock_runner.agent = mock_agent
         mock_runner.session_service = MagicMock()
         session = LiveAgentSession(
+            canvas_state_manager=canvas_observability_fixture(),
             theater_id="test_collaboration_observability",
             runner=mock_runner,
             tool_bundle=MagicMock(),
@@ -1552,6 +1598,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
         mock_runner.agent = mock_agent
         mock_runner.session_service = MagicMock()
         session = LiveAgentSession(
+            canvas_state_manager=canvas_observability_fixture(),
             theater_id="test_agent_requested_observability",
             runner=mock_runner,
             tool_bundle=MagicMock(),
@@ -1587,6 +1634,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
         mock_runner.agent = MagicMock(tools=[])
         mock_runner.session_service = MagicMock()
         session = LiveAgentSession(
+            canvas_state_manager=canvas_observability_fixture(),
             theater_id="test_forced_observability",
             runner=mock_runner,
             tool_bundle=MagicMock(),
@@ -1619,6 +1667,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
         mock_runner.agent = MagicMock(tools=[])
         mock_runner.session_service = MagicMock()
         session = LiveAgentSession(
+            canvas_state_manager=canvas_observability_fixture(),
             theater_id="test_observability_doodles",
             runner=mock_runner,
             tool_bundle=MagicMock(),
@@ -1647,6 +1696,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
         mock_runner.agent = MagicMock(tools=[])
         mock_runner.session_service = MagicMock()
         session = LiveAgentSession(
+            canvas_state_manager=canvas_observability_fixture(),
             theater_id="test_observability_text_annotation",
             runner=mock_runner,
             tool_bundle=MagicMock(),
@@ -1679,6 +1729,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
             mock_runner.agent = mock_agent
             mock_runner.session_service = MagicMock()
             session = LiveAgentSession(
+                canvas_state_manager=canvas_observability_fixture(),
                 theater_id="test_async_doodle_snapshot",
                 runner=mock_runner,
                 tool_bundle=MagicMock(),
@@ -1715,6 +1766,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
         mock_db.record_user_usage.return_value = {"credits": 1.0}
 
         session = LiveAgentSession(
+            canvas_state_manager=canvas_observability_fixture(),
             theater_id="test_usage",
             runner=mock_runner,
             tool_bundle=MagicMock(),
@@ -1817,6 +1869,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
             mock_db.get_deployment.return_value = {"user_id": 123}
             mock_db.record_user_usage.return_value = {"credits": 1.0}
             session = LiveAgentSession(
+                canvas_state_manager=canvas_observability_fixture(),
                 theater_id="late_image_usage",
                 runner=FailingRunner(image_tools),
                 tool_bundle=MagicMock(),
@@ -1850,6 +1903,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
         mock_db.get_deployment.return_value = {"user_id": 123}
         mock_db.record_user_usage.return_value = {"credits": 5.0}
         session = LiveAgentSession(
+            canvas_state_manager=canvas_observability_fixture(),
             theater_id="test_voiced_usage",
             runner=mock_runner,
             tool_bundle=MagicMock(),
@@ -1872,6 +1926,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
         mock_db.get_deployment.return_value = {"user_id": 123}
         mock_db.record_user_usage.return_value = {"credits": 5.0}
         session = LiveAgentSession(
+            canvas_state_manager=canvas_observability_fixture(),
             theater_id="test_unvoiced_usage",
             runner=mock_runner,
             tool_bundle=MagicMock(),
@@ -1887,6 +1942,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
         # Narration voicing enabled debits character_voiced_turns
         mock_db.reset_mock()
         session_narration = LiveAgentSession(
+            canvas_state_manager=canvas_observability_fixture(),
             theater_id="test_narration_usage",
             runner=mock_runner,
             tool_bundle=MagicMock(),
@@ -1912,6 +1968,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
         mock_runner.session_service = MagicMock()
 
         session = LiveAgentSession(
+            canvas_state_manager=canvas_observability_fixture(),
             theater_id="test_inject",
             runner=mock_runner,
             tool_bundle=tool_bundle,
@@ -1935,6 +1992,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
         mock_runner.agent = MagicMock()
         mock_runner.session_service = MagicMock()
         session = LiveAgentSession(
+            canvas_state_manager=canvas_observability_fixture(),
             theater_id="test_tool_reminder",
             runner=mock_runner,
             tool_bundle=None,
@@ -1963,6 +2021,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
             default_runner.agent = MagicMock()
             default_runner.session_service = MagicMock()
             session_default = LiveAgentSession(
+                canvas_state_manager=canvas_observability_fixture(),
                 theater_id="test_flag_default",
                 runner=default_runner,
                 tool_bundle=MagicMock(),
@@ -1982,6 +2041,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
             enabled_runner.agent = MagicMock()
             enabled_runner.session_service = MagicMock()
             session_enabled = LiveAgentSession(
+                canvas_state_manager=canvas_observability_fixture(),
                 theater_id="test_flag_enabled",
                 runner=enabled_runner,
                 tool_bundle=MagicMock(),
@@ -2147,6 +2207,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
             mock_get_tool.side_effect = side_effect
 
             session = LiveAgentSession(
+                canvas_state_manager=canvas_observability_fixture(),
                 theater_id="test_anim_notif",
                 runner=MagicMock(agent=mock_agent, session_service=MagicMock()),
                 tool_bundle=MagicMock(),
@@ -2189,6 +2250,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
             mock_get_tool.side_effect = side_effect
 
             session = LiveAgentSession(
+                canvas_state_manager=canvas_observability_fixture(),
                 theater_id="test_notepad_char_tools",
                 runner=MagicMock(agent=mock_agent, session_service=MagicMock()),
                 tool_bundle=MagicMock(),
@@ -2220,7 +2282,7 @@ def make_live_game_session(game: GameState) -> LiveAgentSession:
     bundle = ToolBundle([tool.take_game_action])
     provider = GeminiLiveAgentProvider()
     runner = MagicMock(agent=SimpleNamespace(tools=bundle.tools), session_service=MagicMock())
-    session = LiveAgentSession("game", runner, bundle, provider=provider)
+    session = LiveAgentSession("game", runner, bundle, canvas_state_manager=canvas_observability_fixture(), provider=provider)
     session.send_canvas_state = MagicMock()
     session.flush_usage_to_db = MagicMock()
     return session

@@ -193,7 +193,8 @@ def test_required_input_releases_story_result_and_canvas_work_without_new_player
         SimpleNamespace(name="create_image", func=image_tools.create_image),
     ]
     session = LiveAgentSession(
-        "turns", runner, MagicMock(), config={"live_agent": {"live_tool_budget": 1}},
+        "turns", runner, MagicMock(), canvas_state_manager=canvas,
+        config={"live_agent": {"live_tool_budget": 1}},
     )
     raster = BytesIO()
     Image.new("RGB", (8, 8), "blue").save(raster, format="PNG")

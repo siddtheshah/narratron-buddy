@@ -115,7 +115,7 @@ def test_unpin_reaches_live_request_queue(
         provider.tool_results_bypass_input_window = False
         runner = MagicMock()
         runner.agent.tools = []
-        session = LiveAgentSession("stage", runner, MagicMock(), provider=provider)
+        session = LiveAgentSession("stage", runner, MagicMock(), canvas_state_manager=state, provider=provider)
         queue = session.live_request_queue
         if delivery_mode == "partial_exhausted":
             queue.send_user_input(types.Content(parts=[types.Part(text="Earlier narration")]))

@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi.testclient import TestClient
 from api_server.app import app, get_theater_owner_credits
+from components.notepad import Notepad
 
 
 class TestAgentCreditsEnforcement(unittest.TestCase):
@@ -156,6 +157,7 @@ class TestAgentCreditsEnforcement(unittest.TestCase):
             theater_id="t_exhaust",
             runner=mock_runner,
             tool_bundle=MagicMock(),
+            canvas_state_manager=MagicMock(notepad=MagicMock(spec=Notepad)),
         )
         session.unbilled_live_agent_tool_calls = 1
         session.close = MagicMock()
