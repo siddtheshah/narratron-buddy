@@ -15,7 +15,6 @@ from services.audio_codecs import LiveAudioDecoder
 
 if TYPE_CHECKING:
     from services.live_agent_manager import LiveAgentSessionManager
-    from components.canvas.canvas_state_service import CanvasStateService
 
 logger = logging.getLogger(__name__)
 
@@ -82,14 +81,12 @@ async def handle_live_websocket_connection(
     live_agent_manager: LiveAgentSessionManager,
     user_id: Optional[int] = None,
     send_setup_complete_immediately: bool = True,
-    canvas_state_service: Optional[CanvasStateService] = None,
 ) -> None:
     """Handles WebSocket attachment and upstream audio/text/image frames forwarding to LiveAgentSession."""
     await websocket.accept()
 
     agent_session = live_agent_manager.get_or_create_session(
         theater_id=theater_id,
-        canvas_state_service=canvas_state_service,
     )
 
     await agent_session.add_websocket(websocket, user_id=user_id)

@@ -281,7 +281,7 @@ def test_agent_websocket_checks_owner_credits_after_baton_handoff(
         websocket.close.assert_not_awaited()
         handler.assert_awaited_once_with(
             websocket=websocket, theater_id="stage", live_agent_manager=manager,
-            user_id=99, canvas_state_service=object_registry.canvas_states,
+            user_id=99,
         )
 
 

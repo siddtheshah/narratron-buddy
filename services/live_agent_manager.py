@@ -29,6 +29,8 @@ from services.live_stream_service import (
 )
 from services.preloaded_in_memory_artifact_service import PreloadedInMemoryArtifactService
 from services.priority_live_request_queue import PriorityLiveRequestQueue
+from services.music_catalog import MusicCatalog
+from storage.database import DatabaseManager
 from utils.config_loader import get_theater_config
 from components.canvas.canvas_state_service import CanvasStateService
 from components.canvas.canvas_state_manager import CanvasStateManager
@@ -1448,51 +1450,23 @@ class LiveAgentSessionManager:
     def __init__(
         self,
         theater_manager: TheaterManager,
-        database_manager: Any,
+        database_manager: DatabaseManager,
+        music_catalog: MusicCatalog,
+        canvas_state_service: CanvasStateService,
         app_name: str = "narratron-combined",
         config: Optional[dict] = None,
-        music_catalog: Optional[Any] = None,
-        canvas_state_service: Optional[CanvasStateService] = None,
     ) -> None:
         self.app_name = app_name
         self.config = config or {}
         self.theater_manager = theater_manager
         self.database_manager = database_manager
-        self._music_catalog = music_catalog
-        self._canvas_state_service = canvas_state_service
+        self.music_catalog = music_catalog
+        self.canvas_state_service = canvas_state_service
         self._sessions: Dict[str, LiveAgentSession] = {}
         self.shared_session_service = InMemorySessionService()
 
         # Construct run_config internally from configuration
         self.run_config = build_run_config(config=self.config)
-
-    @property
-    def canvas_state_service(self) -> Optional[CanvasStateService]:
-        if self._canvas_state_service is not None:
-            return self._canvas_state_service
-        try:
-            import object_registry
-            return object_registry.canvas_states
-        except (ImportError, AttributeError):
-            return None
-
-    @canvas_state_service.setter
-    def canvas_state_service(self, value: Optional[CanvasStateService]) -> None:
-        self._canvas_state_service = value
-
-    @property
-    def music_catalog(self) -> Optional[Any]:
-        if self._music_catalog is not None:
-            return self._music_catalog
-        try:
-            import object_registry
-            return object_registry.music_catalog
-        except (ImportError, AttributeError):
-            return None
-
-    @music_catalog.setter
-    def music_catalog(self, value: Optional[Any]) -> None:
-        self._music_catalog = value
 
     def get_session(self, theater_id: str) -> Optional[LiveAgentSession]:
         """Retrieve an active agent session by theater_id if present."""
@@ -1501,7 +1475,6 @@ class LiveAgentSessionManager:
     def get_or_create_session(
         self,
         theater_id: str,
-        canvas_state_service: Optional[CanvasStateService] = None,
         use_in_memory_artifacts: bool = False,
     ) -> LiveAgentSession:
         """Fetch an existing active session or instantiate a new LiveAgentSession."""
@@ -1517,12 +1490,7 @@ class LiveAgentSessionManager:
 
         logger.info(f"[LiveAgentSessionManager] Creating new LiveAgentSession for theater_id={theater_id}")
 
-        canvas_service = (
-            canvas_state_service
-            if canvas_state_service is not None
-            else self.canvas_state_service
-        )
-        canvas_mgr = canvas_service.get(theater_id) if canvas_service is not None else None
+        canvas_mgr = self.canvas_state_service.get(theater_id)
 
         theater_config = get_theater_config(theater_id, theater_manager=self.theater_manager)
         story_planning_config = theater_config.get("story_planning", {})
@@ -1547,7 +1515,7 @@ class LiveAgentSessionManager:
             or speech_dict.get("narration_voicing", False)
         )
 
-        if canvas_mgr and (char_voicing or narr_voicing):
+        if char_voicing or narr_voicing:
             char_provider_id = str(
                 speech_dict.get("character_provider")
                 or speech_dict.get("provider")
@@ -1585,8 +1553,6 @@ class LiveAgentSessionManager:
                 narration_voice=str(speech_dict.get("narration_voice") or "").strip() or None,
             )
         theater = self.theater_manager.theater(theater_id)
-        if canvas_mgr is None:
-            canvas_mgr = CanvasStateManager(theater)
         tool_bundle = create_tool_bundle_for_session(
             theater,
             canvas_manager=canvas_mgr,

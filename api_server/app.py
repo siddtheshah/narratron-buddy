@@ -176,7 +176,6 @@ async def start_agent_endpoint(
         )
     agent_session = object_registry.live_agent_manager.get_or_create_session(
         theater_id=theater_id,
-        canvas_state_service=object_registry.canvas_states,
         use_in_memory_artifacts=use_in_memory_artifacts,
     )
     agent_session.summon()
@@ -317,7 +316,6 @@ async def agent_websocket_endpoint(
         theater_id=theater_id,
         live_agent_manager=object_registry.live_agent_manager,
         user_id=current_user["id"],
-        canvas_state_service=object_registry.canvas_states,
     )
     # Perform periodic cleanup of old idle sessions
     object_registry.live_agent_manager.cleanup_idle_sessions(ttl_seconds=300.0)

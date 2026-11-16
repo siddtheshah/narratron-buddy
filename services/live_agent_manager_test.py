@@ -15,6 +15,8 @@ import pytest
 from components.theater_manager import Theater, TheaterManager
 from components.notepad import Notepad
 from components.canvas.canvas_state_manager import CanvasStateManager
+from components.canvas.canvas_state_service import CanvasStateService
+from services.music_catalog import MusicCatalog
 from components.reference_manager import ReferenceManager
 from game_engine.game_runtime import GameAction
 from game_engine.game_state import GameState
@@ -656,6 +658,8 @@ class TestLiveAgentSessionManager(unittest.TestCase):
 
         mock_database_manager = MagicMock()
         manager = LiveAgentSessionManager(
+            music_catalog=MagicMock(spec=MusicCatalog),
+            canvas_state_service=MagicMock(spec=CanvasStateService),
             theater_manager=TheaterManager(), database_manager=mock_database_manager
         )
         session1 = manager.get_or_create_session(theater_id="s1")
@@ -672,7 +676,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
     @patch("services.live_agent_manager.create_tool_bundle_for_session")
     @patch("services.live_agent_manager.LiveAgentSession.start_background_tasks")
     @patch("services.live_agent_manager.create_agent")
-    def test_get_or_create_session_passes_canvas_manager_to_tool_bundle(
+    def test_get_or_create_session_shares_injected_services(
         self,
         mock_create_agent: MagicMock,
         mock_tasks: MagicMock,
@@ -687,14 +691,19 @@ class TestLiveAgentSessionManager(unittest.TestCase):
         canvas_service.get.return_value = canvas_mgr
 
         manager = LiveAgentSessionManager(
+            music_catalog=MagicMock(spec=MusicCatalog),
             theater_manager=TheaterManager(),
             database_manager=MagicMock(),
             canvas_state_service=canvas_service,
         )
-        manager.get_or_create_session(theater_id="test_canvas_prop")
+        session = manager.get_or_create_session(theater_id="test_canvas_prop")
 
         mock_create_bundle.assert_called_once()
         self.assertIs(mock_create_bundle.call_args.kwargs["canvas_manager"], canvas_mgr)
+        self.assertIs(mock_create_bundle.call_args.kwargs["music_catalog"], manager.music_catalog)
+        self.assertIs(session.canvas_state_manager, canvas_mgr)
+        self.assertIs(session.music_catalog, manager.music_catalog)
+        canvas_service.get.assert_called_once_with("test_canvas_prop")
 
     @patch("services.live_agent_manager.create_tool_bundle_for_session")
     @patch("services.live_agent_manager.LiveAgentSession.start_background_tasks")
@@ -730,12 +739,13 @@ class TestLiveAgentSessionManager(unittest.TestCase):
             ) as get_provider,
         ):
             manager = LiveAgentSessionManager(
+                music_catalog=MagicMock(spec=MusicCatalog),
                 theater_manager=TheaterManager(),
                 database_manager=MagicMock(),
+                canvas_state_service=canvas_state_service,
             )
             manager.get_or_create_session(
                 theater_id="gemini-voicing",
-                canvas_state_service=canvas_state_service,
             )
 
         get_provider.assert_called_once_with("gemini-flash-tts", config["speech"])
@@ -783,12 +793,13 @@ class TestLiveAgentSessionManager(unittest.TestCase):
             ) as get_provider,
         ):
             manager = LiveAgentSessionManager(
+                music_catalog=MagicMock(spec=MusicCatalog),
                 theater_manager=TheaterManager(),
                 database_manager=MagicMock(),
+                canvas_state_service=canvas_state_service,
             )
             manager.get_or_create_session(
                 theater_id="chirp-voicing",
-                canvas_state_service=canvas_state_service,
             )
 
         get_provider.assert_called_once_with("google-chirp-3-hd", config["speech"])
@@ -842,12 +853,13 @@ class TestLiveAgentSessionManager(unittest.TestCase):
             patch("services.live_agent_manager.get_speech_provider", side_effect=mock_get_provider),
         ):
             manager = LiveAgentSessionManager(
+                music_catalog=MagicMock(spec=MusicCatalog),
                 theater_manager=TheaterManager(),
                 database_manager=MagicMock(),
+                canvas_state_service=canvas_state_service,
             )
             manager.get_or_create_session(
                 theater_id="separate-providers",
-                canvas_state_service=canvas_state_service,
             )
 
         canvas_manager.story.enable_scene_speech.assert_called_once_with(
@@ -869,6 +881,8 @@ class TestLiveAgentSessionManager(unittest.TestCase):
         mock_create_agent.return_value = mock_agent
 
         manager = LiveAgentSessionManager(
+            music_catalog=MagicMock(spec=MusicCatalog),
+            canvas_state_service=MagicMock(spec=CanvasStateService),
             theater_manager=TheaterManager(), database_manager=MagicMock()
         )
         manager.get_or_create_session(theater_id="s2")
@@ -890,6 +904,8 @@ class TestLiveAgentSessionManager(unittest.TestCase):
         mock_create_agent.return_value = mock_agent
 
         manager = LiveAgentSessionManager(
+            music_catalog=MagicMock(spec=MusicCatalog),
+            canvas_state_service=MagicMock(spec=CanvasStateService),
             theater_manager=TheaterManager(), database_manager=MagicMock()
         )
         session = manager.get_or_create_session(theater_id="s3")
@@ -2160,6 +2176,8 @@ class TestLiveAgentSessionManager(unittest.TestCase):
 
                 from services.live_agent_manager import LiveAgentSessionManager, TheaterManager
                 manager = LiveAgentSessionManager(
+                    music_catalog=MagicMock(spec=MusicCatalog),
+                    canvas_state_service=MagicMock(spec=CanvasStateService),
                     theater_manager=TheaterManager(),
                     database_manager=MagicMock()
                 )

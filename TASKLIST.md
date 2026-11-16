@@ -63,7 +63,7 @@ server. Live asset generation and server-rendered video are later options.
 
 Follow the constructor dependency rules in [AGENTS.md](AGENTS.md#constructor-dependencies-must-be-explicit): require collaborators explicitly, reserve optional arguments for supported absence, and supply configured mocks or fakes in unit tests.
 
-1. [ ] **LiveAgentSessionManager** (`services/live_agent_manager.py`): require the canvas-state service and music catalog; remove lazy registry lookups and redundant dependency overrides. Application startup already supplies both services.
+1. [x] **LiveAgentSessionManager** (`services/live_agent_manager.py`): require the canvas-state service and music catalog; remove lazy registry lookups and redundant dependency overrides. Application startup already supplies both services.
 2. [ ] **MusicCatalog** (`services/music_catalog.py`): require the database in the constructor and `from_config`; remove the registry fallback and the optional argument that immediately raises when omitted. Update callers to pass the database explicitly.
 3. [ ] **StoryState** (`components/canvas/story_state.py`): inject the text beautifier explicitly through canvas construction; remove the registry lookup and suppressed resolution errors. If absence is supported, document its behavior and keep `None` as absence.
 4. [ ] **ReferenceManager** (`components/reference_manager.py`): require shared story state instead of silently constructing a separate `StoryState`; update factories and tests to supply the intended state.

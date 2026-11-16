@@ -215,7 +215,7 @@ async def apply_help_settings(theater_id: str, body: SettingsProposal, request: 
                     "message": "Settings updated in the working copy, but saving failed. Save the theater and start the agent from its controls."}
         try:
             session = object_registry.live_agent_manager.get_or_create_session(
-                theater_id=theater_id, canvas_state_service=object_registry.canvas_states,
+                theater_id=theater_id,
                 use_in_memory_artifacts=object_registry.FLAGS.use_in_memory_artifacts,
             )
             session.summon()
