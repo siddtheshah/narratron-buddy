@@ -39,6 +39,13 @@ If `uv` is not installed on the system, follow the official installation guide f
 - [Astral `uv` Installation Documentation](https://docs.astral.sh/uv/getting-started/installation/)
 
 
+## Constructor Dependencies Must Be Explicit
+
+- **Required Dependencies Are Required Arguments**: If a class needs a service, manager, repository, provider, or other collaborator to operate, require a typed constructor argument without a default. Pass the dependency explicitly from the application composition root or factory.
+- **Optional Means Absence Is Supported**: Use an optional constructor argument only when the class has meaningful, documented behavior without that dependency. Do not use `None` to mean "look up the real dependency later."
+- **No Hidden Dependency Resolution**: Do not replace omitted constructor dependencies with services from `object_registry`, another global singleton, or an implicit service factory. This also applies to properties and methods that lazily resolve constructor dependencies. Resolve application services at the composition root and inject them.
+- **Tests Supply Their Dependencies**: Unit tests must pass properly configured mocks, stubs, or fakes for required collaborators. Do not make production dependencies optional to simplify test construction or preserve incomplete test fixtures.
+
 ## Python Development: No `hasattr` or `getattr` (Unless True Reflection)
 
 Never use `hasattr` or `getattr` in Python code unless performing operations that explicitly require dynamic reflection or introspection on Python objects or methods.
