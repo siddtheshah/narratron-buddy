@@ -1,3 +1,4 @@
+from components.lore_library import LoreLibrary
 from providers import DecisionProvider
 import pytest
 from unittest.mock import MagicMock
@@ -129,7 +130,7 @@ def test_story_tool_creates_snapshot_and_diff(tmp_path: Path, request: pytest.Fi
 
     ref_mgr = ReferenceManager(theater=theater, canvas_manager=canvas_manager, story_state=story)
     tool = StoryTool(
-        theater,
+        theater, lore_library=LoreLibrary(theater),
         canvas_manager=canvas_manager,
         text_response_provider=MagicMock(),
         reference_manager=ref_mgr,

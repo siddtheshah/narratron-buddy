@@ -1,3 +1,4 @@
+from components.lore_library import LoreLibrary
 from providers import DecisionProvider
 import asyncio
 import os
@@ -105,7 +106,7 @@ def test_format_canvas_state_uses_only_recent_reference_tags(reference_manager: 
 
 def test_format_canvas_state_limits_tool_catalog_to_ten_newest_references(tmp_path: Path) -> None:
     theater = TheaterManager(tmp_path).theater("stage")
-    manager = ReferenceManager(theater, MagicMock(spec=TextResponseProvider))
+    manager = ReferenceManager(theater, text_response_provider=MagicMock(spec=TextResponseProvider), story_state=StoryState())
     reference_tool = ReferenceTool(theater, manager)
     paths: list[Path] = []
     for index in range(12):
@@ -148,7 +149,7 @@ def test_recent_canvas_captures_share_reference_limit_without_paths(
     tmp_path: Path, reload_manager: bool,
 ) -> None:
     theater = TheaterManager(tmp_path).theater("stage")
-    manager = ReferenceManager(theater, MagicMock(spec=TextResponseProvider))
+    manager = ReferenceManager(theater, text_response_provider=MagicMock(spec=TextResponseProvider), story_state=StoryState())
     portrait = theater.updated_characters_dir() / "Mara" / "1.png"
     portrait.parent.mkdir(parents=True)
     Image.new("RGB", (8, 8), "blue").save(portrait)
@@ -166,7 +167,7 @@ def test_recent_canvas_captures_share_reference_limit_without_paths(
         os.utime(capture_path, (1000 + index, 1000 + index))
 
     if reload_manager:
-        manager = ReferenceManager(theater, MagicMock(spec=TextResponseProvider))
+        manager = ReferenceManager(theater, text_response_provider=MagicMock(spec=TextResponseProvider), story_state=StoryState())
     tool = ReferenceTool(theater, manager)
     entries = tool.list_references()
     assert len(entries) == 13  # One entry per capture, without lookup aliases.
@@ -187,7 +188,7 @@ def test_recent_canvas_captures_share_reference_limit_without_paths(
 
 def test_format_canvas_state_reads_current_character_catalog_without_story_sync(tmp_path: Path) -> None:
     theater = TheaterManager(tmp_path).theater("stage")
-    manager = ReferenceManager(theater, MagicMock(spec=TextResponseProvider))
+    manager = ReferenceManager(theater, text_response_provider=MagicMock(spec=TextResponseProvider), story_state=StoryState())
     story = StoryState()
     canvas = CanvasFixture(story=story)
     assert "[Available References]" not in format_canvas_state(canvas, manager)
@@ -204,7 +205,7 @@ def test_format_canvas_state_reads_current_character_catalog_without_story_sync(
 
 def test_format_canvas_state_reads_current_scene_visuals(tmp_path: Path) -> None:
     theater = TheaterManager(tmp_path).theater("stage")
-    manager = ReferenceManager(theater, MagicMock(spec=TextResponseProvider))
+    manager = ReferenceManager(theater, text_response_provider=MagicMock(spec=TextResponseProvider), story_state=StoryState())
     canvas = CanvasFixture()
     assert "[Available References]" not in format_canvas_state(canvas, manager)
 
@@ -251,9 +252,11 @@ def test_format_canvas_state_hides_current_image_path_and_filename(image_path: s
 def test_format_canvas_state_includes_sticky_notes(tmp_path: Path, reference_manager: MagicMock) -> None:
     theater = MagicMock(wraps=TheaterManager(tmp_path).theater("stage"))
     theater.config = MagicMock(return_value={})
+    canvas = CanvasFixture()
+    canvas.notepad = Notepad(theater, canvas_manager=canvas)
     elements = StoryTool(
-        theater,
-        canvas_manager=CanvasFixture(),
+        theater, lore_library=LoreLibrary(theater),
+        canvas_manager=canvas,
         text_response_provider=MagicMock(),
         reference_manager=reference_manager,
         decision_provider=MagicMock(spec=DecisionProvider),
@@ -320,9 +323,10 @@ def test_format_canvas_state_omits_active_character_details(tmp_path: Path) -> N
     theater = MagicMock(wraps=TheaterManager(tmp_path).theater("stage_chars"))
     theater.config = MagicMock(return_value={"adventure_mode": True})
     canvas = CanvasFixture()
+    canvas.notepad = Notepad(theater, canvas_manager=canvas)
     ref_mgr = ReferenceManager(theater=theater, canvas_manager=canvas, story_state=canvas.story)
     elements = StoryTool(
-        theater,
+        theater, lore_library=LoreLibrary(theater),
         canvas_manager=canvas,
         text_response_provider=MagicMock(),
         reference_manager=ref_mgr,
@@ -381,9 +385,10 @@ def test_format_canvas_state_omits_character_image_handles_for_npcs(tmp_path: Pa
     canvas = CanvasFixture(story=StoryState())
     theater = MagicMock(wraps=TheaterManager(tmp_path).theater("stage_char_refs"))
     theater.config = MagicMock(return_value={"adventure_mode": True})
+    canvas.notepad = Notepad(theater, canvas_manager=canvas)
     ref_mgr = ReferenceManager(theater=theater, canvas_manager=canvas, story_state=canvas.story)
     elements = StoryTool(
-        theater,
+        theater, lore_library=LoreLibrary(theater),
         canvas_manager=canvas,
         text_response_provider=MagicMock(),
         reference_manager=ref_mgr,
@@ -411,9 +416,10 @@ def test_format_canvas_state_omits_character_image_handles_for_player(tmp_path: 
     canvas = CanvasFixture(story=StoryState())
     theater = MagicMock(wraps=TheaterManager(tmp_path).theater("stage_player_refs"))
     theater.config = MagicMock(return_value={"adventure_mode": True})
+    canvas.notepad = Notepad(theater, canvas_manager=canvas)
     ref_mgr = ReferenceManager(theater=theater, canvas_manager=canvas, story_state=canvas.story)
     elements = StoryTool(
-        theater,
+        theater, lore_library=LoreLibrary(theater),
         canvas_manager=canvas,
         text_response_provider=MagicMock(),
         reference_manager=ref_mgr,

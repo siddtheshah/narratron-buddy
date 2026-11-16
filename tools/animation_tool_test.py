@@ -1,3 +1,4 @@
+from components.canvas.story_state import StoryState
 import io
 import json
 import os
@@ -12,6 +13,7 @@ from PIL import Image
 import pytest
 
 from components.theater_manager import TheaterManager
+from components.canvas.canvas_state_manager import CanvasStateManager
 from components.canvas.canvas_state_service import CanvasStateService
 from providers import DecisionProvider, DecisionResult, ImageGenerationResult, ImageReference, PredicateAnswer
 from providers.video_provider import VideoGenerationResult
@@ -20,9 +22,11 @@ from testing.base import BaseTestCase
 from testing.reference_manager_fixture import make_reference_manager
 from tools.animation_tool import AnimationTools
 from providers.animation_provider import AnimationProvider
+from providers import ImageProvider, TextResponseProvider, VideoProvider
+from providers.fal_qwen_layered_provider import FalQwenLayeredProvider
 from tools.image import ImageTools
 from tools.base_tool import CANVAS_PINNED_MESSAGE
-from components.reference_manager import Character, CharacterLookupResult
+from components.reference_manager import Character, CharacterLookupResult, ReferenceManager
 
 
 def fake_image_bytes() -> bytes:
@@ -110,27 +114,47 @@ class TestAnimationTools(BaseTestCase):
     def tearDown(self):
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
-    def make_image_tools(self, config, theater_id, theater_manager, canvas_state_service=None, **kwargs):
-        canvas_service = canvas_state_service or CanvasStateService(theater_manager)
-        canvas_manager = canvas_service if isinstance(canvas_service, MagicMock) else canvas_service.get(theater_id)
+    def make_image_tools(
+        self, config: dict, theater_id: str, theater_manager: TheaterManager,
+        canvas_state_service: CanvasStateService | None = None, *,
+        canvas_manager: CanvasStateManager | None = None,
+        reference_manager: ReferenceManager | None = None,
+        adventure_mode: bool = False,
+        decision_provider: DecisionProvider | None = None,
+        text_provider: TextResponseProvider | None = None,
+    ) -> ImageTools:
+        if canvas_manager is None:
+            canvas_service = canvas_state_service or CanvasStateService(theater_manager)
+            canvas_manager = canvas_service.get(theater_id)
         theater = theater_manager.theater(theater_id)
         if config:
             theater_manager.get_theater_config = MagicMock(return_value=config)
-        return ImageTools(theater, canvas_manager, **kwargs)
+        references = reference_manager if reference_manager is not None else ReferenceManager(
+            theater, story_state=canvas_manager.story,
+        )
+        return ImageTools(
+            theater, canvas_manager, reference_manager=references, adventure_mode=adventure_mode,
+            decision_provider=decision_provider, text_provider=text_provider,
+        )
 
-    def make_animation_tools(self, image_tools, image_provider, text_provider, layered_provider, animation_config=None, **kwargs):
+    def make_animation_tools(
+        self, image_tools: ImageTools, image_provider: ImageProvider,
+        text_provider: TextResponseProvider, layered_provider: FalQwenLayeredProvider,
+        animation_config: dict | None = None, *,
+        reference_manager: ReferenceManager | None = None,
+        video_provider: VideoProvider | None = None,
+        decision_provider: DecisionProvider | None = None,
+    ) -> AnimationTools:
         theater = image_tools.theater
         theater.manager.get_theater_config = MagicMock(return_value={
             "visuals": dict(image_tools.visuals_config),
             "animation": dict(animation_config or {}),
         })
         return AnimationTools(
-            theater,
-            image_tools.canvas_manager,
-            text_provider,
-            layered_provider,
-            image_provider=image_provider,
-            **kwargs,
+            theater, image_tools.canvas_manager, text_provider, layered_provider,
+            image_provider=image_provider, video_provider=video_provider,
+            decision_provider=decision_provider,
+            reference_manager=reference_manager if reference_manager is not None else image_tools.reference_manager,
         )
 
     @patch("tools.image.image_tool.get_image_provider")
@@ -161,6 +185,7 @@ class TestAnimationTools(BaseTestCase):
             MagicMock(),
             MagicMock(),
             video_provider=MagicMock(),
+            reference_manager=make_reference_manager(theater, story_state=StoryState()),
         )
 
         _ = tools.animation_provider.image_provider
@@ -1181,6 +1206,7 @@ class TestAnimationTools(BaseTestCase):
             MagicMock(),
             image_provider=MagicMock(),
             video_provider=video_provider,
+            reference_manager=ReferenceManager(theater, story_state=canvas_state_service.story),
         )
 
         observed_activity = []
@@ -1393,7 +1419,7 @@ class TestAnimationTools(BaseTestCase):
         )
         text_provider.generate.side_effect = [technique_resp, triframe_resp]
 
-        reference_manager = make_reference_manager(self.manager.theater("reference_resolution"))
+        reference_manager = make_reference_manager(self.manager.theater("reference_resolution"), story_state=StoryState())
         reference_manager.lookup_character.return_value = CharacterLookupResult(
             characters=[Character(name="hero", gender="nonbinary", image_reference="hero")]
         )
@@ -1448,7 +1474,7 @@ class TestAnimationTools(BaseTestCase):
         )
         text_provider.generate.side_effect = [technique_resp1, triframe_resp1, technique_resp2, triframe_resp2]
 
-        reference_manager = make_reference_manager(self.manager.theater("reference_resolution"))
+        reference_manager = make_reference_manager(self.manager.theater("reference_resolution"), story_state=StoryState())
         reference_manager.lookup_character.return_value = CharacterLookupResult(
             characters=[Character(name="hero", gender="nonbinary", image_reference="hero")]
         )
@@ -1506,7 +1532,7 @@ class TestAnimationTools(BaseTestCase):
         )
         text_provider.generate.side_effect = [technique_resp, triframe_resp]
 
-        reference_manager = make_reference_manager(self.manager.theater("reference_resolution"))
+        reference_manager = make_reference_manager(self.manager.theater("reference_resolution"), story_state=StoryState())
         reference_manager.lookup_character.return_value = CharacterLookupResult(
             characters=[Character(name="hero", gender="nonbinary", image_reference="hero")]
         )
@@ -1556,7 +1582,7 @@ class TestAnimationTools(BaseTestCase):
         )
         text_provider.generate.side_effect = [technique_resp, triframe_resp]
 
-        reference_manager = make_reference_manager(self.manager.theater("reference_resolution"))
+        reference_manager = make_reference_manager(self.manager.theater("reference_resolution"), story_state=StoryState())
         reference_manager.lookup_character.return_value = CharacterLookupResult(
             characters=[Character(name="hero", gender="nonbinary", image_reference="hero")]
         )
@@ -1610,7 +1636,7 @@ class TestAnimationTools(BaseTestCase):
         )
         text_provider.generate.side_effect = [technique_resp, triframe_resp]
 
-        reference_manager = make_reference_manager(self.manager.theater("reference_resolution"))
+        reference_manager = make_reference_manager(self.manager.theater("reference_resolution"), story_state=StoryState())
         reference_manager.lookup_character.return_value = CharacterLookupResult(characters=[], player=None)
 
         image_tools = self.make_image_tools(self.config, "tri_frame_cm_no_match", self.manager)
@@ -2010,6 +2036,7 @@ class TestAnimationTools(BaseTestCase):
             MagicMock(),
             image_provider=image_provider,
             video_provider=video_provider,
+            reference_manager=ReferenceManager(theater, story_state=canvas_mock.story),
         )
         animation_tools.create_animation("test prompt", "test_notify", technique="video")
         animation_tools.join_generation()

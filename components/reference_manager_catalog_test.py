@@ -1,5 +1,6 @@
 """Reference discovery stays separate from generated image output discovery."""
 
+from components.canvas.story_state import StoryState
 from pathlib import Path
 
 from PIL import Image, PngImagePlugin
@@ -34,7 +35,7 @@ def test_catalog_uses_latest_reference_versions_and_excludes_outputs(theater: Th
     cover = theater.references_dir() / "title.png"
     for path in (authored, updated, portrait, output, cover):
         save_image(path)
-    manager = ReferenceManager(theater)
+    manager = ReferenceManager(theater, story_state=StoryState())
 
     entries = manager.list_references()
     assert {entry["path"] for entry in entries} == {str(updated), str(portrait)}
@@ -45,7 +46,7 @@ def test_catalog_uses_latest_reference_versions_and_excludes_outputs(theater: Th
 
 
 def test_catalog_refreshes_authored_assets_and_searches_metadata(theater: Theater) -> None:
-    manager = ReferenceManager(theater)
+    manager = ReferenceManager(theater, story_state=StoryState())
     assert manager.list_references() == []
     reference = theater.references_dir() / "art" / "Candlelit Scribe.png"
     save_image(reference, "A monk writing by candlelight")
@@ -59,7 +60,7 @@ def test_catalog_refreshes_authored_assets_and_searches_metadata(theater: Theate
 def test_catalog_refreshes_scene_iteration_without_reinitializing(theater: Theater) -> None:
     first = theater.scenes_dir() / "Harbor" / "1.png"
     save_image(first)
-    manager = ReferenceManager(theater)
+    manager = ReferenceManager(theater, story_state=StoryState())
     assert manager.find_image_names("Harbor")[0]["path"] == str(first)
     latest = theater.updated_scenes_dir() / "Harbor" / "2.png"
     save_image(latest)

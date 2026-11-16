@@ -7,6 +7,7 @@ from PIL import Image
 
 from components.canvas.canvas_state_service import CanvasStateService
 from components.theater_manager import TheaterManager
+from testing.reference_manager_fixture import make_reference_manager
 from testing.ui.base import UITestCase
 
 
@@ -21,9 +22,11 @@ class TestCrossfade(UITestCase):
             "visuals": {"model": "hybrid-flux-gemini", "cycle_length": 0},
             "image_generation": {"cooldown_duration": 0},
         })
+        canvas = CanvasStateService(theater_manager).get(theater_id)
         tool = ImageTools(
             theater,
-            canvas_manager=CanvasStateService(theater_manager).get(theater_id),
+            canvas_manager=canvas,
+            reference_manager=make_reference_manager(theater, story_state=canvas.story),
         )
 
         image = Path(tool.output_dir) / "test_image.jpg"

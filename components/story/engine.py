@@ -12,7 +12,7 @@ from typing import Callable, Optional
 
 from pydantic import BaseModel, Field, JsonValue, TypeAdapter
 
-from components.canvas.story_state import CharacterState, PlayerCharacterState, StoryState
+from components.canvas.story_state import CharacterState, PlayerCharacterState
 from game_engine.game_runtime import GameAction
 from components.story.story_snapshot import (
     ImageRecord,
@@ -26,7 +26,6 @@ from components.theater_manager import Theater
 from providers import DecisionProvider, SpeechProvider, TextResponseProvider
 from components.reference_manager import ReferenceManager
 from components.lore_library import LoreLibrary
-from components.notepad import Notepad
 from components.story.background_planning import BackgroundPlanning
 from components.story.story_game_module import StoryGameModule
 from components.story.story_planning_module import StoryPlanningModule
@@ -89,8 +88,8 @@ class StoryEngine:
         text_response_provider: TextResponseProvider,
         reference_manager: ReferenceManager,
         decision_provider: DecisionProvider,
+        lore_library: LoreLibrary,
         speech_provider: SpeechProvider | None = None,
-        lore_library: Optional[LoreLibrary] = None,
     ) -> None:
         if text_response_provider is None:
             raise ValueError("text_response_provider is required.")
@@ -125,14 +124,11 @@ class StoryEngine:
         )
         if self.history_chunk_size < 1 or (self.history_event_limit and self.history_chunk_size > self.history_event_limit):
             raise ValueError("story_planning.history_chunk_size must be between one and history_event_limit.")
-        self.notepad = canvas_manager.notepad or Notepad(
-            theater, canvas_manager=canvas_manager,
-        )
-        canvas_manager.notepad = self.notepad
+        self.notepad = canvas_manager.notepad
         self._story_log: list[dict[str, JsonValue]] = []
         self._on_scene_reaction: Callable[[dict[str, JsonValue]], None] | None = None
         self._load_story_log()
-        self.lore_library = lore_library if lore_library is not None else LoreLibrary(theater=theater)
+        self.lore_library = lore_library
         self.reference_manager = reference_manager
         if speech_provider is not None and self.reference_manager.speech_provider is None:
             self.reference_manager.speech_provider = speech_provider
@@ -1077,13 +1073,8 @@ class StoryEngine:
         notepad_revision: Optional[int] = None,
     ) -> StoryStateSnapshot:
         """Create a point-in-time snapshot built from StoryState and Notepad together."""
-        story = (
-            self.canvas_manager.story
-            if self.canvas_manager is not None and self.canvas_manager.story is not None
-            else StoryState()
-        )
         return create_story_snapshot(
-            story,
+            self.canvas_manager.story,
             self.notepad,
             stickies=stickies,
             player_character=player_character,

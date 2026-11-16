@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from components.canvas.story_state import StoryState
 import os
 import shutil
 import tempfile
@@ -32,7 +33,7 @@ class TestReferenceManagerResolution(unittest.TestCase):
     def setUp(self) -> None:
         self.temp_dir = tempfile.mkdtemp()
         self.theater = TheaterManager(base_theaters_dir=self.temp_dir).theater("resolution")
-        self.manager = make_reference_manager(self.theater)
+        self.manager = make_reference_manager(self.theater, story_state=StoryState())
 
     def tearDown(self) -> None:
         shutil.rmtree(self.temp_dir, ignore_errors=True)
@@ -502,7 +503,7 @@ class TestReferenceManagerResolution(unittest.TestCase):
         self.assertEqual(self.manager.save_canvas_capture(b"first snapshot", "image/webp"), handle)
         next_handle = self.manager.save_canvas_capture(b"second snapshot", "image/webp")
         self.assertNotEqual(handle, next_handle)
-        restored = make_reference_manager(self.theater)
+        restored = make_reference_manager(self.theater, story_state=StoryState())
         references, error = restored.resolve_provider_references(prompt=f"Redraw <{handle}>")
         self.assertIsNone(error)
         self.assertEqual(references[0].data, b"first snapshot")

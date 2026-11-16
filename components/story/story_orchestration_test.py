@@ -1,5 +1,7 @@
 """Exercise the production turn scheduler and its durable failure boundaries."""
 
+from components.lore_library import LoreLibrary
+from components.notepad import Notepad
 from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Protocol
@@ -74,9 +76,9 @@ class TurnHarness:
 
     def new_tool(self, game: GameState | None = None, *, story: StoryState | None = None) -> StoryTool:
         canvas = MagicMock(spec=CanvasStateManager)
-        canvas.notepad = None
         canvas.story = StoryState() if story is None else story
         canvas.game = game
+        canvas.notepad = Notepad(self.theater, canvas_manager=canvas)
         references = MagicMock(spec=ReferenceManager)
         references.export_characters.return_value = []
         references.get_present_characters.return_value = []
@@ -91,7 +93,7 @@ class TurnHarness:
             "secondary_lore_document": ChoiceAnswer(name="secondary_lore_document", choice="none"),
             "should_take_game_action": PredicateAnswer(name="should_take_game_action", probability=0.90),
         })
-        tool = StoryTool(self.theater, canvas, provider, references, decision_provider=decisions)
+        tool = StoryTool(self.theater, canvas, provider, references, lore_library=LoreLibrary(self.theater), decision_provider=decisions)
         def generate(request: TextResponseRequest) -> TextResponseResult:
             schema_props = (
                 request.response_json_schema.get("properties")

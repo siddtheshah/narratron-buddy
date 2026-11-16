@@ -1,3 +1,4 @@
+from components.canvas.story_state import StoryState
 import asyncio
 from datetime import datetime, timezone
 import json
@@ -1352,7 +1353,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
             }]
             session = self.make_observability_session()
             session.canvas_state_manager = canvas
-            session.reference_manager = ReferenceManager(canvas.theater)
+            session.reference_manager = ReferenceManager(canvas.theater, story_state=StoryState())
             session.live_request_queue = MagicMock()
 
             self.assertTrue(session.send_agent_requested_observability())
@@ -1362,7 +1363,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
             self.assertIn(f"[Available References]: <{capture_handle}>", content.parts[0].text)
             self.assertFalse("/" in capture_handle or "\\" in capture_handle)
             self.assertFalse(capture_handle.endswith(".png"))
-            ref_mgr = ReferenceManager(canvas.theater)
+            ref_mgr = ReferenceManager(canvas.theater, story_state=StoryState())
             resolved_capture_path = ref_mgr.get_canvas_capture_path(capture_handle)
             self.assertIsNotNone(resolved_capture_path)
             self.assertTrue(Path(resolved_capture_path).is_absolute())
@@ -1403,7 +1404,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
             canvas.doodles.snapshot_webp.return_value = b"annotated-png"
             session = self.make_observability_session()
             session.canvas_state_manager = canvas
-            session.reference_manager = ReferenceManager(canvas.theater)
+            session.reference_manager = ReferenceManager(canvas.theater, story_state=StoryState())
             session.live_request_queue = MagicMock()
 
             self.assertTrue(session.send_agent_requested_observability(
@@ -1450,7 +1451,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
 
             session = self.make_observability_session()
             session.canvas_state_manager = canvas
-            session.reference_manager = ReferenceManager(canvas.theater)
+            session.reference_manager = ReferenceManager(canvas.theater, story_state=StoryState())
             session.live_request_queue = MagicMock()
 
             self.assertTrue(session.send_agent_requested_observability())
@@ -1458,7 +1459,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
             self.assertEqual(content.role, "user")
             self.assertIn("[Canvas Capture]: ", content.parts[0].text)
             capture_handle = content.parts[0].text.split("[Canvas Capture]: ", 1)[1].splitlines()[0]
-            ref_mgr = ReferenceManager(canvas.theater)
+            ref_mgr = ReferenceManager(canvas.theater, story_state=StoryState())
             capture_path = ref_mgr.get_canvas_capture_path(capture_handle)
             self.assertIsNotNone(capture_path)
             self.assertTrue(Path(capture_path).is_file())
@@ -1479,12 +1480,12 @@ class TestLiveAgentSessionManager(unittest.TestCase):
             canvas.theater = TheaterManager(directory).theater("capture")
             session = self.make_observability_session()
             session.canvas_state_manager = canvas
-            session.reference_manager = ReferenceManager(canvas.theater)
+            session.reference_manager = ReferenceManager(canvas.theater, story_state=StoryState())
             session.live_request_queue = MagicMock()
             self.assertTrue(session.send_agent_requested_observability())
             content = session.live_request_queue.send_content.call_args.args[0]
             capture_handle = content.parts[0].text.split("[Canvas Capture]: ", 1)[1].splitlines()[0]
-            ref_mgr = ReferenceManager(canvas.theater)
+            ref_mgr = ReferenceManager(canvas.theater, story_state=StoryState())
             capture_path = ref_mgr.get_canvas_capture_path(capture_handle)
             self.assertIsNotNone(capture_path)
             self.assertEqual(Path(capture_path).read_bytes(), b"scene-image")

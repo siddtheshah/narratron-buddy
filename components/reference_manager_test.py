@@ -49,7 +49,7 @@ class TestNormalizeVoiceTags(unittest.TestCase):
 class TestReferenceManager(unittest.TestCase):
     def test_disabled_reference_generation_persists_records_without_images(self) -> None:
         self.theater.config.return_value = {"reference_generation_enabled": False}
-        manager = ReferenceManager(self.theater, image_provider=self.image_provider)
+        manager = ReferenceManager(self.theater, story_state=StoryState(), image_provider=self.image_provider)
         self.assertFalse(manager.reference_generation_enabled)
         character = manager.create_or_update_character(
             "Mira", description="A ranger", personality="Brave", motivation="Help",
@@ -66,7 +66,7 @@ class TestReferenceManager(unittest.TestCase):
         self.assertEqual(manager.available_scene_images(), {})
         self.assertEqual(manager.generate_references_from_context("<Mira> in <Harbor>"), {})
         self.assertEqual(manager.resolve_provider_references(prompt="<Mira> in <Harbor>"), ([], None))
-        restarted = ReferenceManager(self.theater, image_provider=self.image_provider)
+        restarted = ReferenceManager(self.theater, story_state=StoryState(), image_provider=self.image_provider)
         self.assertEqual(restarted.lookup_character("Mira").characters[0].description, "A ranger")
         self.assertEqual(restarted.create_or_update_scene("Harbor"), scene)
         self.image_provider.generate.assert_not_called()
@@ -75,7 +75,7 @@ class TestReferenceManager(unittest.TestCase):
         self.theater.config.return_value = {"reference_generation_enabled": False}
         source = Path(self.reference_directory.name) / "source.png"
         Image.new("RGB", (8, 8), "blue").save(source)
-        manager = ReferenceManager(self.theater, image_provider=self.image_provider)
+        manager = ReferenceManager(self.theater, story_state=StoryState(), image_provider=self.image_provider)
         manager.create_or_update_character(
             "Mira", personality="Brave", motivation="Help", quirk="Hums", gender="female",
             image_reference=str(source),
@@ -291,7 +291,7 @@ class TestReferenceManager(unittest.TestCase):
             self.image_provider.generate.return_value = ImageGenerationResult(
                 image_bytes=payload.getvalue(), mime_type="image/png", provider="fake", model="scene",
             )
-            manager = ReferenceManager(theater, self.provider, image_provider=self.image_provider, scene_image_style="Watercolor")
+            manager = ReferenceManager(theater, text_response_provider=self.provider, story_state=StoryState(), image_provider=self.image_provider, scene_image_style="Watercolor")
             initial = manager.create_or_update_scene("Old Harbor", "A quiet harbor")
             self.assertIsNotNone(initial)
             assert initial is not None
@@ -315,7 +315,7 @@ class TestReferenceManager(unittest.TestCase):
             self.assertEqual(list(authored.parent.iterdir()), [authored])
             # A newly authored iteration must not overwrite a session's identity.
             Image.new("RGB", (8, 8), "green").save(authored.parent / "3.png")
-            restored = ReferenceManager(theater, self.provider)
+            restored = ReferenceManager(theater, text_response_provider=self.provider, story_state=StoryState())
             self.assertEqual(restored.available_scene_images(), {"Old Harbor": str(expected)})
             for query in ("Old Harbor", "old_harbor", str(authored), initial["alias"]):
                 self.assertEqual(restored.get_latest_reference_path_for_scene(query), str(expected))
@@ -333,7 +333,7 @@ class TestReferenceManager(unittest.TestCase):
                 self.image_provider.generate.return_value = ImageGenerationResult(
                     image_bytes=payload.getvalue(), mime_type=mime, provider="fake", model="scene",
                 )
-                manager = ReferenceManager(theater, self.provider, image_provider=self.image_provider)
+                manager = ReferenceManager(theater, text_response_provider=self.provider, story_state=StoryState(), image_provider=self.image_provider)
                 first = manager.create_or_update_scene("Forest", "Tall trees")
                 assert first is not None
                 self.assertEqual(Path(first["path"]).name, f"1{extension}")
@@ -351,7 +351,7 @@ class TestReferenceManager(unittest.TestCase):
             source = theater.references_dir() / "harbor.webp"
             source.parent.mkdir(parents=True)
             Image.new("RGB", (8, 8), "blue").save(source)
-            manager = ReferenceManager(theater, self.provider, image_provider=self.image_provider)
+            manager = ReferenceManager(theater, text_response_provider=self.provider, story_state=StoryState(), image_provider=self.image_provider)
             entry = manager.create_or_update_scene("Harbor", image_reference="references/harbor.webp")
             assert entry is not None
             copied = theater.updated_scenes_dir() / "Harbor" / "1.webp"
@@ -369,13 +369,13 @@ class TestReferenceManager(unittest.TestCase):
             authored = theater.scenes_dir() / "Forest" / "1.png"
             authored.parent.mkdir(parents=True)
             Image.new("RGB", (8, 8), "blue").save(authored)
-            manager = ReferenceManager(theater, self.provider, image_provider=self.image_provider)
+            manager = ReferenceManager(theater, text_response_provider=self.provider, story_state=StoryState(), image_provider=self.image_provider)
             first = manager.create_or_update_scene("Forest", "Tall trees")
             self.assertEqual(manager.create_or_update_scene("Forest", "Burning trees"), first)
             self.assertEqual(manager.create_or_update_scene("Forest", "Burning trees"), first)
             self.assertEqual(self.image_provider.generate.call_count, 2)
             self.assertIsNone(manager.create_or_update_scene("Missing", "A new location"))
-            without_provider = ReferenceManager(theater, self.provider)
+            without_provider = ReferenceManager(theater, text_response_provider=self.provider, story_state=StoryState())
             self.assertIsNone(without_provider.create_or_update_scene("Missing"))
             self.assertEqual(without_provider.create_or_update_scene("Forest"), first)
 
@@ -389,7 +389,7 @@ class TestReferenceManager(unittest.TestCase):
             session.parent.mkdir(parents=True)
             Image.new("RGB", (8, 8), "green").save(session)
             with patch.object(ReferenceManager, "create_or_update_scene", autospec=True, side_effect=ReferenceManager.create_or_update_scene) as register:
-                manager = ReferenceManager(theater, image_provider=self.image_provider)
+                manager = ReferenceManager(theater, story_state=StoryState(), image_provider=self.image_provider)
             images = manager.available_scene_images()
             self.assertEqual(set(images), {"Ancient Library", "Moonlit Forest"})
             self.assertEqual(register.call_count, 2)
@@ -414,7 +414,7 @@ class TestReferenceManager(unittest.TestCase):
             profile = authored / "scene.yaml"
             profile.write_text("description: A harbor at dawn\n", encoding="utf-8")
             original_profile = profile.read_bytes()
-            manager = ReferenceManager(theater, image_provider=self.image_provider)
+            manager = ReferenceManager(theater, story_state=StoryState(), image_provider=self.image_provider)
             self.assertEqual(manager.get_scene_visual_path("Old Harbor"), str(portrait))
             self.assertEqual(manager._scene_descriptions["old_harbor"], "A harbor at dawn")
             self.assertFalse(theater.updated_scenes_dir().exists())
@@ -432,7 +432,7 @@ class TestReferenceManager(unittest.TestCase):
             self.assertFalse((session / "1.png").exists())
             self.assertEqual(self.image_provider.generate.call_args.args[0].references[0].data, original_image)
             self.assertEqual(yaml.safe_load((session / "scene.yaml").read_text(encoding="utf-8")), {"description": "A harbor at sunset"})
-            restored = ReferenceManager(theater, image_provider=self.image_provider)
+            restored = ReferenceManager(theater, story_state=StoryState(), image_provider=self.image_provider)
             self.assertEqual(restored._scene_descriptions["old_harbor"], "A harbor at sunset")
             self.assertEqual(restored.get_scene_visual_path("Old Harbor"), updated["path"])
             self.image_provider.generate.assert_called_once()
@@ -445,7 +445,7 @@ class TestReferenceManager(unittest.TestCase):
             profile = theater.scenes_dir() / "Old Harbor" / "scene.yaml"
             profile.parent.mkdir(parents=True)
             profile.write_text("description: A harbor at dawn\n", encoding="utf-8")
-            manager = ReferenceManager(theater)
+            manager = ReferenceManager(theater, story_state=StoryState())
             self.assertEqual(manager._scene_descriptions["old_harbor"], "A harbor at dawn")
             self.assertFalse(theater.updated_scenes_dir().exists())
 
@@ -454,7 +454,7 @@ class TestReferenceManager(unittest.TestCase):
             theater = Theater(TheaterManager(directory), "stage")
             theater.scenes_dir().mkdir(parents=True)
             Image.new("RGB", (8, 8), "blue").save(theater.scenes_dir() / "Forest.png")
-            manager = ReferenceManager(theater, self.provider)
+            manager = ReferenceManager(theater, text_response_provider=self.provider, story_state=StoryState())
             self.assertEqual(manager.available_scene_images(), {})
             self.assertFalse(theater.updated_scenes_dir().exists())
             for name in ("", " ", ".", ".."):
@@ -465,7 +465,7 @@ class TestReferenceManager(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "theater is required"):
             ReferenceManager(
                 theater=None,  # type: ignore[arg-type]
-                text_response_provider=self.provider,
+                text_response_provider=self.provider, story_state=StoryState(),
             )
 
     def _create_character(self, name: str, description: str = "") -> str:
@@ -481,11 +481,11 @@ class TestReferenceManager(unittest.TestCase):
     def test_loads_and_normalizes_initial_characters(self) -> None:
         manager = ReferenceManager(
             self.theater,
-            self.provider,
-            self.canvas_manager,
-            self.story_state,
-            self.image_provider,
-            self.speech_provider,
+            text_response_provider=self.provider,
+            canvas_manager=self.canvas_manager,
+            story_state=self.story_state,
+            image_provider=self.image_provider,
+            speech_provider=self.speech_provider,
         )
         characters = manager._parse_initial_characters({
             "Kaelen": {
@@ -516,11 +516,11 @@ class TestReferenceManager(unittest.TestCase):
     def test_limits_present_characters_without_discarding_history(self) -> None:
         manager = ReferenceManager(
             self.theater,
-            self.provider,
-            self.canvas_manager,
-            self.story_state,
-            self.image_provider,
-            self.speech_provider,
+            text_response_provider=self.provider,
+            canvas_manager=self.canvas_manager,
+            story_state=self.story_state,
+            image_provider=self.image_provider,
+            speech_provider=self.speech_provider,
         )
         manager.max_active_characters = 2
         for name in ("One", "Two", "Three"):
@@ -623,7 +623,7 @@ class TestReferenceManager(unittest.TestCase):
             "gender": ("female", "male", "nonbinary"),
             "persona": ("Narrator",),
         }
-        manager = ReferenceManager(self.theater, self.provider, self.canvas_manager, self.story_state, self.image_provider, speech_provider)
+        manager = ReferenceManager(self.theater, text_response_provider=self.provider, canvas_manager=self.canvas_manager, story_state=self.story_state, image_provider=self.image_provider, speech_provider=speech_provider)
         self.provider.generate.return_value = SimpleNamespace(
             text='{"personality":"Patient","motivation":"Find truth","gender":"female","voice_tags":["gender=female","accent=British","persona=Narrator"]}'
         )
@@ -773,7 +773,7 @@ class TestReferenceManager(unittest.TestCase):
             theater.references_dir.return_value = Path(ref_dir)
             manager = ReferenceManager(
                 theater,
-                self.provider, self.canvas_manager, self.story_state, self.image_provider, speech_provider,
+                text_response_provider=self.provider, canvas_manager=self.canvas_manager, story_state=self.story_state, image_provider=self.image_provider, speech_provider=speech_provider,
             )
 
             manager.create_or_update_character(
@@ -808,7 +808,7 @@ class TestReferenceManager(unittest.TestCase):
             theater.references_dir.return_value = Path(directory)
             manager = ReferenceManager(
                 theater,
-                self.provider, self.canvas_manager, self.story_state, provider, self.speech_provider,
+                text_response_provider=self.provider, canvas_manager=self.canvas_manager, story_state=self.story_state, image_provider=provider, speech_provider=self.speech_provider,
             )
             manager.create_or_update_character("Mira", personality="Alert", motivation="Help", quirk="Hums", gender="female")
             character = manager.export_characters()[0]
@@ -836,7 +836,7 @@ class TestReferenceManager(unittest.TestCase):
             theater.references_dir.return_value = Path(directory)
             manager = ReferenceManager(
                 theater,
-                self.provider, self.canvas_manager, self.story_state, provider, self.speech_provider,
+                text_response_provider=self.provider, canvas_manager=self.canvas_manager, story_state=self.story_state, image_provider=provider, speech_provider=self.speech_provider,
             )
 
             # 1. Initial creation generates iteration 1
@@ -927,7 +927,7 @@ class TestReferenceManager(unittest.TestCase):
             theater.references_dir.return_value = Path(ref_dir)
             manager = ReferenceManager(
                 theater,
-                self.provider, self.canvas_manager, self.story_state, self.image_provider, self.speech_provider,
+                text_response_provider=self.provider, canvas_manager=self.canvas_manager, story_state=self.story_state, image_provider=self.image_provider, speech_provider=self.speech_provider,
             )
 
             self.assertIsNone(manager.get_player_character())
@@ -969,7 +969,7 @@ class TestReferenceManager(unittest.TestCase):
             theater.references_dir.return_value = Path(directory)
             manager = ReferenceManager(
                 theater,
-                self.provider, self.canvas_manager, self.story_state, provider, self.speech_provider,
+                text_response_provider=self.provider, canvas_manager=self.canvas_manager, story_state=self.story_state, image_provider=provider, speech_provider=self.speech_provider,
             )
             player = manager.update_player_character(
                 name="Valen",
@@ -1000,7 +1000,7 @@ class TestReferenceManager(unittest.TestCase):
             theater.references_dir.return_value = Path(directory)
             manager = ReferenceManager(
                 theater,
-                self.provider, self.canvas_manager, self.story_state, provider, self.speech_provider,
+                text_response_provider=self.provider, canvas_manager=self.canvas_manager, story_state=self.story_state, image_provider=provider, speech_provider=self.speech_provider,
             )
 
             # 1. Initial creation generates iteration 1
@@ -1048,7 +1048,7 @@ class TestReferenceManager(unittest.TestCase):
 
     def test_player_character_export_and_import(self) -> None:
         manager = ReferenceManager(
-            self.theater, self.provider, self.canvas_manager, self.story_state, self.image_provider, self.speech_provider,
+            self.theater, text_response_provider=self.provider, canvas_manager=self.canvas_manager, story_state=self.story_state, image_provider=self.image_provider, speech_provider=self.speech_provider,
         )
         manager.update_player_character(
             name="Cora",
@@ -1061,7 +1061,7 @@ class TestReferenceManager(unittest.TestCase):
         self.assertEqual(exported["image_description"], "Alchemist with goggles")
 
         manager2 = ReferenceManager(
-            self.theater, self.provider, self.canvas_manager, self.story_state, self.image_provider, self.speech_provider,
+            self.theater, text_response_provider=self.provider, canvas_manager=self.canvas_manager, story_state=self.story_state, image_provider=self.image_provider, speech_provider=self.speech_provider,
         )
         manager2.import_player_character(exported)
         player2 = manager2.get_player_character()
@@ -1241,7 +1241,7 @@ class TestReferenceManager(unittest.TestCase):
 
     def test_get_character_references(self) -> None:
         manager = ReferenceManager(
-            self.theater, self.provider, self.canvas_manager, self.story_state, self.image_provider, self.speech_provider
+            self.theater, text_response_provider=self.provider, canvas_manager=self.canvas_manager, story_state=self.story_state, image_provider=self.image_provider, speech_provider=self.speech_provider
         )
         self.assertEqual(manager.get_character_references(), [])
 
@@ -1277,7 +1277,7 @@ class TestReferenceManager(unittest.TestCase):
             theater.references_dir.return_value = Path(ref_dir)
             manager = ReferenceManager(
                 theater,
-                self.provider, self.canvas_manager, self.story_state, provider, self.speech_provider,
+                text_response_provider=self.provider, canvas_manager=self.canvas_manager, story_state=self.story_state, image_provider=provider, speech_provider=self.speech_provider,
             )
 
             char = manager.create_or_update_character(
@@ -1310,7 +1310,7 @@ class TestReferenceManager(unittest.TestCase):
             theater.references_dir.return_value = Path(ref_dir)
             manager = ReferenceManager(
                 theater,
-                self.provider, self.canvas_manager, self.story_state, provider, self.speech_provider,
+                text_response_provider=self.provider, canvas_manager=self.canvas_manager, story_state=self.story_state, image_provider=provider, speech_provider=self.speech_provider,
             )
 
             char = manager.create_or_update_character(
@@ -1341,7 +1341,7 @@ class TestReferenceManager(unittest.TestCase):
             theater.references_dir.return_value = Path(ref_dir)
             manager = ReferenceManager(
                 theater,
-                self.provider, self.canvas_manager, self.story_state, provider, self.speech_provider,
+                text_response_provider=self.provider, canvas_manager=self.canvas_manager, story_state=self.story_state, image_provider=provider, speech_provider=self.speech_provider,
             )
 
             player = manager.update_player_character(
@@ -1377,7 +1377,7 @@ class TestReferenceManager(unittest.TestCase):
             state = StoryState(adventure_mode=True)
             with patch.object(Theater, "config", return_value={"story_planning": {"adventure_mode": True}}):
                 manager = ReferenceManager(
-                    theater, self.provider, story_state=state,
+                    theater, text_response_provider=self.provider, story_state=state,
                     image_provider=self.image_provider, speech_provider=self.speech_provider,
                 )
             self.assertEqual(manager.count(), 0)
@@ -1426,7 +1426,7 @@ class TestReferenceManager(unittest.TestCase):
                 text='{"personality":"Patient","motivation":"Find truth","gender":"male","voice_tags":["male"]}'
             )
             with patch.object(ReferenceManager, "create_or_update_character", autospec=True, side_effect=ReferenceManager.create_or_update_character) as register:
-                manager = ReferenceManager(theater, self.provider, story_state=self.story_state)
+                manager = ReferenceManager(theater, text_response_provider=self.provider, story_state=self.story_state)
             self.assertEqual(register.call_count, 2)
             self.assertEqual(manager.count(), 2)
             self.assertEqual([character.name for character in manager.lookup_character().characters], ["Arthur Modella", "Grim Vallos"])
@@ -1456,7 +1456,7 @@ class TestReferenceManager(unittest.TestCase):
                 "description: A silver-haired wizard\npersonality: Patient\nmotivation: Find truth\nquirk: Hums\ngender: male\nvoice_tags: [male]\n", encoding="utf-8",
             )
             original = profile.read_bytes()
-            manager = ReferenceManager(theater, text_response_provider=self.provider, image_provider=self.image_provider)
+            manager = ReferenceManager(theater, story_state=StoryState(), text_response_provider=self.provider, image_provider=self.image_provider)
             character = manager.lookup_character("Arthur Modella").characters[0]
             self.assertEqual(character.description, "A silver-haired wizard")
             self.assertEqual(character.personality, "Patient")
@@ -1470,7 +1470,7 @@ class TestReferenceManager(unittest.TestCase):
             manager.create_or_update_character("Arthur Modella", personality="Bold")
             saved = theater.updated_characters_dir() / "Arthur_Modella" / "character.yaml"
             self.assertEqual(yaml.safe_load(saved.read_text(encoding="utf-8"))["personality"], "Bold")
-            restored = ReferenceManager(theater, text_response_provider=self.provider)
+            restored = ReferenceManager(theater, story_state=StoryState(), text_response_provider=self.provider)
             self.assertEqual(restored.lookup_character("Arthur Modella").characters[0].personality, "Bold")
             self.provider.generate.assert_not_called()
             self.assertEqual(profile.read_bytes(), original)
@@ -1481,7 +1481,7 @@ class TestReferenceManager(unittest.TestCase):
             authored = theater.characters_dir() / "Arthur Modella"
             authored.mkdir(parents=True)
             (authored / "character.yaml").write_text("personality: Patient\ngender: male\n", encoding="utf-8")
-            manager = ReferenceManager(theater)
+            manager = ReferenceManager(theater, story_state=StoryState())
             self.assertEqual(manager.count(), 1)
             self.assertEqual(manager.lookup_character().characters[0].personality, "Patient")
             self.assertFalse(theater.updated_characters_dir().exists())
@@ -1494,7 +1494,7 @@ class TestReferenceManager(unittest.TestCase):
             Image.new("RGB", (8, 8), "blue").save(authored / "1.png")
             (authored / "character.yaml").write_text("gender: [invalid]\n", encoding="utf-8")
             with self.assertLogs("components.reference_manager", level="WARNING"):
-                manager = ReferenceManager(theater)
+                manager = ReferenceManager(theater, story_state=StoryState())
             self.assertEqual(manager.count(), 1)
             self.assertIsNotNone(manager.lookup_character().characters[0].image_reference_path)
 
@@ -1509,7 +1509,7 @@ class TestReferenceManager(unittest.TestCase):
             authored_nb.mkdir(parents=True)
             (authored_nb / "character.yaml").write_text("gender: Non-binary\n", encoding="utf-8")
 
-            manager = ReferenceManager(theater)
+            manager = ReferenceManager(theater, story_state=StoryState())
             elena = manager.lookup_character("Elena Vance").characters[0]
             self.assertEqual(elena.gender, "female")
             self.assertEqual(manager.get_character_voice_tags("Elena Vance"), ["female", "accent=british"])
@@ -1525,7 +1525,7 @@ class TestReferenceManager(unittest.TestCase):
             authored.mkdir(parents=True)
             (authored / "character.yaml").write_text("voice_tags: [gender=male, accent=French]\n", encoding="utf-8")
 
-            manager = ReferenceManager(theater)
+            manager = ReferenceManager(theater, story_state=StoryState())
             soran = manager.lookup_character("Soran").characters[0]
             self.assertEqual(soran.gender, "male")
             self.assertIn("gender=male", soran.voice_tags)
@@ -1539,7 +1539,7 @@ class TestReferenceManager(unittest.TestCase):
             authored.mkdir(parents=True)
             (authored / "character.yaml").write_text("gender: nonbinary\nvoice_tags: [whisper]\n", encoding="utf-8")
 
-            manager = ReferenceManager(theater)
+            manager = ReferenceManager(theater, story_state=StoryState())
             # In adventure mode, library characters are not pre-registered.
             # Simulate a decision or responder tool introducing the character with an inferred gender guess.
             caretaker = manager.create_or_update_character("The Caretaker", gender="male")
@@ -1555,7 +1555,7 @@ class TestReferenceManager(unittest.TestCase):
                 folder = theater.characters_dir() / f"Character {index}"
                 folder.mkdir(parents=True)
                 Image.new("RGB", (8, 8), "blue").save(folder / "1.png")
-            manager = ReferenceManager(theater)
+            manager = ReferenceManager(theater, story_state=StoryState())
             self.assertEqual(manager.count(), 7)
             self.assertEqual(len(manager.lookup_character().characters), 7)
             self.assertEqual(len(manager.get_present_characters()), manager.max_active_characters)
@@ -1574,7 +1574,7 @@ class TestReferenceManager(unittest.TestCase):
             provider.generate.return_value = ImageGenerationResult(
                 image_bytes=payload.getvalue(), mime_type="image/png", provider="fake", model="portrait",
             )
-            manager = ReferenceManager(theater, self.provider, image_provider=provider)
+            manager = ReferenceManager(theater, text_response_provider=self.provider, story_state=StoryState(), image_provider=provider)
             manager.create_or_update_character("Arthur Modella", description="A wizard", gender="male", personality="Wise", motivation="Learn", quirk="Hums")
             provider.generate.assert_not_called()
             manager.create_or_update_character("Arthur Modella", description="A wizard with orange hair")
@@ -1585,7 +1585,7 @@ class TestReferenceManager(unittest.TestCase):
             self.assertEqual(authored.read_bytes(), original)
             self.assertEqual(list(authored.parent.iterdir()), [authored])
 
-            restored = ReferenceManager(theater, self.provider)
+            restored = ReferenceManager(theater, text_response_provider=self.provider, story_state=StoryState())
             self.assertEqual(restored.get_character_visual_path("Arthur Modella"), str(updated))
             references, error = restored.resolve_provider_references(None, "<Arthur Modella> smiles.")
             self.assertIsNone(error)
@@ -1597,7 +1597,7 @@ class TestReferenceManager(unittest.TestCase):
             theater.characters_dir().mkdir(parents=True)
             portrait = theater.characters_dir() / "Arthur Modella.png"
             Image.new("RGB", (8, 8), "blue").save(portrait)
-            manager = ReferenceManager(theater, self.provider)
+            manager = ReferenceManager(theater, text_response_provider=self.provider, story_state=StoryState())
 
             self.assertEqual(manager.available_character_images(), {})
             self.assertIsNone(manager.get_character_visual_path("Arthur Modella"))
@@ -1616,7 +1616,7 @@ class TestReferenceManager(unittest.TestCase):
             for name in ("Ann", "Anna"):
                 (theater.characters_dir() / name).mkdir()
                 Image.new("RGB", (8, 8), "blue").save(theater.characters_dir() / name / "1.png")
-            manager = ReferenceManager(theater, self.provider)
+            manager = ReferenceManager(theater, text_response_provider=self.provider, story_state=StoryState())
             references, error = manager.resolve_provider_references(None, "<Anna> waves to Ann.")
             self.assertIsNone(error)
             self.assertEqual([ref.label for ref in references], ["Anna"])
@@ -1628,7 +1628,7 @@ class TestReferenceManager(unittest.TestCase):
     def test_reference_manager_is_character_reference(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             theater = Theater(TheaterManager(directory), "stage")
-            manager = ReferenceManager(theater, self.provider)
+            manager = ReferenceManager(theater, text_response_provider=self.provider, story_state=StoryState())
             self.assertFalse(manager.is_character_reference(""))
             self.assertFalse(manager.is_character_reference("   "))
             self.assertFalse(manager.is_character_reference("landscape_scene.png"))
@@ -1655,7 +1655,7 @@ class TestReferenceManager(unittest.TestCase):
                 text=classification_json, provider="fake", model="test"
             )
 
-            manager = ReferenceManager(theater, text_provider, image_provider=image_provider)
+            manager = ReferenceManager(theater, text_response_provider=text_provider, story_state=StoryState(), image_provider=image_provider)
             prompt = "In <Castle Courtyard>, <Sir Galahad> raises his banner."
             generated = manager.generate_references_from_context(prompt)
 
@@ -1676,7 +1676,7 @@ class TestReferenceManager(unittest.TestCase):
             image_provider.generate.return_value = ImageGenerationResult(
                 image_bytes=payload.getvalue(), mime_type="image/png", provider="fake", model="gen",
             )
-            manager = ReferenceManager(theater, None, image_provider=image_provider)
+            manager = ReferenceManager(theater, text_response_provider=None, story_state=StoryState(), image_provider=image_provider)
             prompt = "<Morgana> looks across <Dark Forest>."
             generated = manager.generate_references_from_context(prompt)
 
@@ -1703,7 +1703,7 @@ class TestReferenceManager(unittest.TestCase):
                 )
 
             image_provider.generate.side_effect = fake_generate
-            manager = ReferenceManager(theater, None, image_provider=image_provider)
+            manager = ReferenceManager(theater, text_response_provider=None, story_state=StoryState(), image_provider=image_provider)
             prompt = "<Galahad> and <Lancelot> travel through <Whispering Woods>."
             generated = manager.generate_references_from_context(prompt)
 
@@ -1722,7 +1722,7 @@ class TestReferenceManager(unittest.TestCase):
 
             image_provider = MagicMock(spec=ImageProvider)
             text_provider = MagicMock(spec=TextResponseProvider)
-            manager = ReferenceManager(theater, text_provider, image_provider=image_provider)
+            manager = ReferenceManager(theater, text_response_provider=text_provider, story_state=StoryState(), image_provider=image_provider)
             text_provider.generate.reset_mock()
             image_provider.generate.reset_mock()
 
@@ -1734,7 +1734,7 @@ class TestReferenceManager(unittest.TestCase):
     def test_generate_references_from_context_invalid_input_raises_value_error(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             theater = Theater(TheaterManager(directory), "stage")
-            manager = ReferenceManager(theater, None)
+            manager = ReferenceManager(theater, text_response_provider=None, story_state=StoryState())
             with self.assertRaises(ValueError):
                 manager.generate_references_from_context(123)  # type: ignore[arg-type]
 
@@ -1767,7 +1767,7 @@ class TestReferenceManager(unittest.TestCase):
                 },
             )
             manager = ReferenceManager(
-                theater,
+                theater, story_state=StoryState(),
                 decision_provider=mock_decision_provider,
                 image_provider=image_provider,
             )
@@ -1817,7 +1817,7 @@ class TestReferenceManager(unittest.TestCase):
                 provider="mock",
                 model="test",
             )
-            manager = ReferenceManager(theater, text_response_provider=text_provider, decision_provider=None)
+            manager = ReferenceManager(theater, story_state=StoryState(), text_response_provider=text_provider, decision_provider=None)
             self.assertIsNone(manager.decision_provider)
 
             manager.generate_references_from_context("<LadyVespera> enters the hall.")

@@ -1,3 +1,4 @@
+from components.canvas.story_state import StoryState
 import io
 import os
 import shutil
@@ -10,6 +11,7 @@ from unittest.mock import MagicMock, patch
 
 from PIL import Image
 
+from components.canvas.canvas_state_manager import CanvasStateManager
 from components.canvas.canvas_state_service import CanvasStateService
 from components.canvas.visual_state import VisualState
 from components.theater_manager import TheaterManager
@@ -62,7 +64,7 @@ class TestImageTools(BaseTestCase):
         for kind in ("character", "scene"):
             with self.subTest(kind=kind):
                 theater = self.manager.theater(f"pending_{kind}")
-                manager = ReferenceManager(theater)
+                manager = ReferenceManager(theater, story_state=StoryState())
                 tools = self.make_image_tools(
                     self.config, theater_id=theater.theater_id, theater_manager=self.manager,
                     reference_manager=manager,
@@ -118,7 +120,7 @@ class TestImageTools(BaseTestCase):
     @patch("tools.image.image_tool.get_image_provider")
     def test_pending_reference_timeout_does_not_start_duplicate_generation(self, mock_provider: MagicMock) -> None:
         theater = self.manager.theater("pending_timeout")
-        manager = make_reference_manager(theater)
+        manager = make_reference_manager(theater, story_state=StoryState())
         tools = self.make_image_tools(
             self.config, theater_id=theater.theater_id, theater_manager=self.manager,
             reference_manager=manager,
@@ -150,7 +152,7 @@ class TestImageTools(BaseTestCase):
         first = scene_dir / "1.png"
         latest = scene_dir / "2.png"
         Image.new("RGB", (10, 10), "blue").save(first)
-        reference_manager = make_reference_manager(theater)
+        reference_manager = make_reference_manager(theater, story_state=StoryState())
         reference_manager.available_scene_images = MagicMock(return_value={"Stormy Battlefield": str(first)})
         tools = self.make_image_tools(
             self.config, theater_id=theater.theater_id, theater_manager=self.manager,
@@ -183,16 +185,27 @@ class TestImageTools(BaseTestCase):
     def tearDown(self):
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
-    def make_image_tools(self, config, theater_id, theater_manager, canvas_state_service=None, **kwargs):
-        canvas_service = canvas_state_service or CanvasStateService(theater_manager)
-        canvas_manager = canvas_service if isinstance(canvas_service, MagicMock) else canvas_service.get(theater_id)
+    def make_image_tools(
+        self, config: dict, theater_id: str, theater_manager: TheaterManager,
+        canvas_state_service: CanvasStateService | None = None, *,
+        canvas_manager: CanvasStateManager | None = None,
+        reference_manager: ReferenceManager | None = None,
+        adventure_mode: bool = False,
+        decision_provider: DecisionProvider | None = None,
+        text_provider: TextResponseProvider | None = None,
+    ) -> ImageTools:
+        if canvas_manager is None:
+            canvas_service = canvas_state_service or CanvasStateService(theater_manager)
+            canvas_manager = canvas_service.get(theater_id)
         theater = theater_manager.theater(theater_id)
         if config:
             theater_manager.get_theater_config = MagicMock(return_value=config)
+        references = reference_manager if reference_manager is not None else ReferenceManager(
+            theater, story_state=canvas_manager.story,
+        )
         return ImageTools(
-            theater,
-            canvas_manager=canvas_manager,
-            **kwargs,
+            theater, canvas_manager, reference_manager=references, adventure_mode=adventure_mode,
+            decision_provider=decision_provider, text_provider=text_provider,
         )
 
     def _provider_result(self):
@@ -340,7 +353,7 @@ class TestImageTools(BaseTestCase):
         theater = self.manager.theater("tagged_characters")
         (theater.characters_dir() / "Arthur Modella").mkdir(parents=True)
         Image.new("RGB", (8, 8), "green").save(theater.characters_dir() / "Arthur Modella" / "1.png")
-        reference_manager = ReferenceManager(theater, MagicMock(spec=TextResponseProvider))
+        reference_manager = ReferenceManager(theater, text_response_provider=MagicMock(spec=TextResponseProvider), story_state=StoryState())
         provider = mock_get_provider.return_value
         provider.generate.return_value = self._provider_result()
         tools = self.make_image_tools(
@@ -754,7 +767,7 @@ class TestImageTools(BaseTestCase):
             self.config,
             theater_id="webp_test",
             theater_manager=self.manager,
-            canvas_state_service=mock_canvas_service,
+            canvas_manager=mock_canvas_service,
         )
 
         tools.create_image("a glowing forest", image_name="forest_01", display=True)
@@ -805,7 +818,7 @@ class TestImageTools(BaseTestCase):
             self.config,
             theater_id="show_webp_test",
             theater_manager=self.manager,
-            canvas_state_service=mock_canvas_service,
+            canvas_manager=mock_canvas_service,
         )
 
         img_ref = os.path.join(tools.reference_dir, "ref_card.jpg")
@@ -1144,7 +1157,7 @@ class TestImageTools(BaseTestCase):
     def test_create_image_auto_adds_reference_manager_references(self, mock_get_provider) -> None:
         provider = mock_get_provider.return_value
         provider.generate.return_value = self._provider_result()
-        reference_manager = make_reference_manager(self.manager.theater("reference_resolution"))
+        reference_manager = make_reference_manager(self.manager.theater("reference_resolution"), story_state=StoryState())
         reference_manager.lookup_character.return_value = CharacterLookupResult(
             characters=[Character(name="hero", gender="nonbinary", image_reference="hero")]
         )
@@ -1172,7 +1185,7 @@ class TestImageTools(BaseTestCase):
     def test_create_image_deduplicates_reference_manager_references(self, mock_get_provider) -> None:
         provider = mock_get_provider.return_value
         provider.generate.return_value = self._provider_result()
-        reference_manager = make_reference_manager(self.manager.theater("reference_resolution"))
+        reference_manager = make_reference_manager(self.manager.theater("reference_resolution"), story_state=StoryState())
         reference_manager.lookup_character.return_value = CharacterLookupResult(
             characters=[Character(name="hero", gender="nonbinary", image_reference="hero")]
         )
@@ -1199,7 +1212,7 @@ class TestImageTools(BaseTestCase):
     def test_create_image_no_character_match_in_prompt_does_not_pull_references(self, mock_get_provider) -> None:
         provider = mock_get_provider.return_value
         provider.generate.return_value = self._provider_result()
-        reference_manager = make_reference_manager(self.manager.theater("reference_resolution"))
+        reference_manager = make_reference_manager(self.manager.theater("reference_resolution"), story_state=StoryState())
         reference_manager.lookup_character.return_value = CharacterLookupResult(characters=[], player=None)
 
         tools = self.make_image_tools(
@@ -1221,7 +1234,7 @@ class TestImageTools(BaseTestCase):
         provider = mock_get_provider.return_value
         provider.generate.return_value = self._provider_result()
         theater = self.manager.theater("cm_capture_ref")
-        reference_manager = ReferenceManager(theater)
+        reference_manager = ReferenceManager(theater, story_state=StoryState())
         captures_dir = theater.canvas_captures_dir()
         captures_dir.mkdir(parents=True, exist_ok=True)
         capture_file = captures_dir / "canvas_deadbeef.png"
@@ -1248,7 +1261,7 @@ class TestImageTools(BaseTestCase):
         provider = mock_get_provider.return_value
         provider.generate.return_value = self._provider_result()
         theater = self.manager.theater("cm_char_and_capture")
-        reference_manager = ReferenceManager(theater)
+        reference_manager = ReferenceManager(theater, story_state=StoryState())
         hero_dir = theater.characters_dir() / "hero"
         hero_dir.mkdir(parents=True, exist_ok=True)
         Image.new("RGB", (10, 10), color="green").save(hero_dir / "1.png")
@@ -1284,7 +1297,7 @@ class TestImageTools(BaseTestCase):
             self.config,
             theater_id="avatar_reject_test",
             theater_manager=self.manager,
-            canvas_state_service=mock_canvas_service,
+            canvas_manager=mock_canvas_service,
         )
         avatar_ref = os.path.join(tools.reference_dir, "narratron_avatar.jpg")
         Image.new("RGB", (20, 20), color="blue").save(avatar_ref)
@@ -1304,7 +1317,7 @@ class TestImageTools(BaseTestCase):
             self.config,
             theater_id="avatar_variations_test",
             theater_manager=self.manager,
-            canvas_state_service=mock_canvas_service,
+            canvas_manager=mock_canvas_service,
         )
         avatar_ref = os.path.join(tools.reference_dir, "narratron_avatar.jpg")
         Image.new("RGB", (20, 20), color="blue").save(avatar_ref)
@@ -1332,7 +1345,7 @@ class TestImageTools(BaseTestCase):
             self.config,
             theater_id="avatar_adv_test",
             theater_manager=self.manager,
-            canvas_state_service=mock_canvas_service,
+            canvas_manager=mock_canvas_service,
             adventure_mode=True,
         )
         avatar_ref = os.path.join(tools.reference_dir, "narratron_avatar.jpg")

@@ -44,16 +44,15 @@ class AnimationTools(BaseTools):
         layered_provider: FalQwenLayeredProvider | None = None,
         image_provider: Optional[ImageProvider] = None,
         video_provider: Optional[VideoProvider] = None,
-        reference_manager: Optional[ReferenceManager] = None,
         decision_provider: Optional[DecisionProvider] = None,
+        *,
+        reference_manager: ReferenceManager,
     ) -> None:
         super().__init__(
             theater=theater,
             canvas_manager=canvas_manager,
         )
-        self.reference_manager: Optional[ReferenceManager] = (
-            reference_manager if reference_manager is not None else (ReferenceManager(theater=theater) if theater is not None else None)
-        )
+        self.reference_manager = reference_manager
         resolved_decision_provider = decision_provider
         if resolved_decision_provider is None and self.reference_manager is not None:
             resolved_decision_provider = self.reference_manager.decision_provider

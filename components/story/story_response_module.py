@@ -334,8 +334,6 @@ class StoryResponseModule:
         self.recording_journal = recording_journal
         self._decision_provider = decision_provider
         self.reference_manager = reference_manager
-        if self.reference_manager.story_state is None and self.canvas_manager is not None:
-            self.reference_manager.story_state = self.canvas_manager.story
 
         # Lore budgets and activity belong to the immediate-response turn.
         self._read_lore_calls_this_turn = 0

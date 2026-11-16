@@ -616,12 +616,13 @@ class ReferenceManager:
         theater: Theater,
         text_response_provider: Optional[TextResponseProvider] = None,
         canvas_manager: Optional[CanvasStateManager] = None,
-        story_state: Optional[StoryState] = None,
         image_provider: Optional[ImageProvider] = None,
         speech_provider: Optional[SpeechProvider] = None,
         character_image_style: str = "",
         scene_image_style: str = "",
         decision_provider: Optional[DecisionProvider] = None,
+        *,
+        story_state: StoryState,
     ) -> None:
         if theater is None:
             raise ValueError("theater is required.")
@@ -633,7 +634,7 @@ class ReferenceManager:
             self.notepad: Optional[Notepad] = canvas_manager.notepad
         else:
             self.notepad: Optional[Notepad] = None
-        self._story_state = story_state if story_state is not None else StoryState()
+        self._story_state = story_state
         self.image_provider: Optional[ImageProvider] = image_provider
         self.speech_provider: Optional[SpeechProvider] = speech_provider
         self.character_image_style = str(character_image_style or "").strip()
@@ -1269,7 +1270,7 @@ class ReferenceManager:
         return self._decision_provider
 
     def _sync_story_state(self) -> None:
-        if self._initializing_references or self._story_state is None:
+        if self._initializing_references:
             return
 
         pc = self.get_player_character()

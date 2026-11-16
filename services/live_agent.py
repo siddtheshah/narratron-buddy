@@ -1,17 +1,14 @@
 import logging
 import os
 from pathlib import Path
-from typing import Optional
 
 from google.adk.agents import Agent
 from google.adk.agents.run_config import RunConfig
 from jinja2 import StrictUndefined, Template
 
 from components.canvas.canvas_state_manager import CanvasStateManager
-from components.canvas.story_state import StoryState
 from components.reference_manager import ReferenceManager
 from components.lore_library import LoreLibrary
-from components.notepad import Notepad
 from components.theater_manager import Theater
 from tools.chat_tool import ChatTools
 from tools.image import ImageTools
@@ -269,7 +266,7 @@ def get_playlists_context(theater: Theater) -> str:
 def create_tool_bundle_for_session(
     theater: Theater,
     music_catalog: MusicCatalog,
-    canvas_manager: Optional[CanvasStateManager] = None,
+    canvas_manager: CanvasStateManager,
 ) -> ToolBundle:
     """Build tools bound to one theater's canvas state."""
     config = theater.config()
@@ -279,15 +276,7 @@ def create_tool_bundle_for_session(
     image_generation_enabled = bool(image_config.get("enabled", True))
 
     # Create intermediate components from components/ first
-    if canvas_manager is None:
-        canvas_manager = CanvasStateManager(theater)
     lore_library = LoreLibrary(theater=theater)
-    if canvas_manager.notepad is None:
-        canvas_manager.notepad = Notepad(
-            theater,
-            canvas_manager=canvas_manager,
-            enforce_structured=bool(story_planning_config.get("enforce_structured", True)) if adventure_mode else False,
-        )
 
     story_planning_text_provider = get_text_response_provider(
         str(story_planning_config.get("text_provider", "gemini-3")),
@@ -309,10 +298,8 @@ def create_tool_bundle_for_session(
             )
         except (ImageProviderError, ValueError) as exc:
             logger.warning("[create_tool_bundle_for_session] Reference image provider unavailable: %s", exc)
-    speech_provider = None
-    if canvas_manager.story is not None:
-        speech_provider = canvas_manager.story.speech_provider
-    story_state = canvas_manager.story if canvas_manager.story is not None else StoryState()
+    story_state = canvas_manager.story
+    speech_provider = story_state.speech_provider
     story_state.adventure_mode = adventure_mode
     reference_manager = ReferenceManager(
         theater=theater,

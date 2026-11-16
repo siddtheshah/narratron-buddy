@@ -1,7 +1,6 @@
 """Live-agent adapter for the canvas-owned story cycle."""
 
 from collections.abc import Callable
-from typing import Optional
 
 from pydantic import JsonValue
 
@@ -25,8 +24,8 @@ class StoryTool(BaseTools):
         text_response_provider: TextResponseProvider,
         reference_manager: ReferenceManager,
         decision_provider: DecisionProvider,
+        lore_library: LoreLibrary,
         speech_provider: SpeechProvider | None = None,
-        lore_library: Optional[LoreLibrary] = None,
     ) -> None:
         super().__init__(theater, canvas_manager)
         if decision_provider is None:

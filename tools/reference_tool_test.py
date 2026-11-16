@@ -222,7 +222,7 @@ def test_reference_discovery_searches_metadata_and_latest_versions(tmp_path: Pat
     for path in (authored, old_scene, latest_scene, portrait, output):
         path.parent.mkdir(parents=True, exist_ok=True)
         Image.new("RGB", (8, 8), "blue").save(path, pnginfo=metadata if path == authored else None)
-    manager = ReferenceManager(theater)
+    manager = ReferenceManager(theater, story_state=StoryState())
     canvas = MagicMock(spec=CanvasStateManager)
     tool = ReferenceTool(theater, manager, canvas_manager=canvas)
 
@@ -240,7 +240,7 @@ def test_reference_discovery_searches_metadata_and_latest_versions(tmp_path: Pat
 def test_reference_tool_creates_character_and_notifies_canvas(tmp_path: Path) -> None:
     theater = TheaterManager(base_theaters_dir=str(tmp_path)).theater("char-notify")
     theater.directory().mkdir(parents=True)
-    manager = ReferenceManager(theater)
+    manager = ReferenceManager(theater, story_state=StoryState())
     canvas = MagicMock(spec=CanvasStateManager)
     tool = ReferenceTool(theater, manager, canvas_manager=canvas)
     tool.create_or_update_character("Rowan", description="A swift scout", gender="nonbinary")
@@ -257,7 +257,7 @@ def test_reference_tool_creates_scene_and_notifies_canvas(tmp_path: Path) -> Non
     img_provider.generate.return_value = ImageGenerationResult(
         image_bytes=png_bytes(), mime_type="image/png", provider="test", model="test"
     )
-    manager = ReferenceManager(theater, image_provider=img_provider)
+    manager = ReferenceManager(theater, story_state=StoryState(), image_provider=img_provider)
     canvas = MagicMock(spec=CanvasStateManager)
     tool = ReferenceTool(theater, manager, canvas_manager=canvas)
     tool.create_or_update_scene("Overlook", description="High mountain pass")

@@ -1,5 +1,6 @@
 """Standalone development server for the browser-based Narratron test labs."""
 
+from components.lore_library import LoreLibrary
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 import json
@@ -484,7 +485,7 @@ def create_story_planner_session(body: dict[str, Any]):
         from providers.text_response_decision_provider import TextResponseDecisionProvider
         decision_provider = TextResponseDecisionProvider(text_provider)
     tools = StoryTool(
-        theater,
+        theater, lore_library=LoreLibrary(theater),
         canvas_manager=canvas_manager,
         text_response_provider=text_provider,
         reference_manager=reference_manager,

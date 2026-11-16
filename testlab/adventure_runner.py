@@ -17,6 +17,7 @@ Usage:
 
 from __future__ import annotations
 
+from components.lore_library import LoreLibrary
 import argparse
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
@@ -512,7 +513,7 @@ class AdventureSession:
         )
         self.story_tool = (
             StoryTool(
-                theater,
+                theater, lore_library=LoreLibrary(theater),
                 canvas_manager=canvas_manager,
                 text_response_provider=story_planning_text_provider,
                 reference_manager=reference_manager,

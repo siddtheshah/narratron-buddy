@@ -39,8 +39,8 @@ class ImageTools(BaseTools):
         self,
         theater: Theater,
         canvas_manager: CanvasStateManager,
+        reference_manager: ReferenceManager,
         adventure_mode: bool = False,
-        reference_manager: Optional[ReferenceManager] = None,
         decision_provider: Optional[DecisionProvider] = None,
         text_provider: Optional[TextResponseProvider] = None,
     ) -> None:
@@ -48,9 +48,7 @@ class ImageTools(BaseTools):
             theater=theater,
             canvas_manager=canvas_manager,
         )
-        self.reference_manager: ReferenceManager = (
-            reference_manager if reference_manager is not None else ReferenceManager(theater=theater)
-        )
+        self.reference_manager = reference_manager
         self._decision_provider: Optional[DecisionProvider] = decision_provider
         self._text_provider: Optional[TextResponseProvider] = text_provider
 

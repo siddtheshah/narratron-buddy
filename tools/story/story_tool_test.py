@@ -1,5 +1,6 @@
 """Boundary tests for the story subsystem composition root."""
 
+from components.lore_library import LoreLibrary
 import unittest
 import tempfile
 import threading
@@ -9,6 +10,7 @@ from unittest.mock import MagicMock, patch
 from pydantic import JsonValue
 
 from components.canvas.story_state import StoryState
+from components.notepad import Notepad
 from components.canvas_state import CanvasStateManager
 from components.reference_manager import ReferenceManager
 from components.theater_manager import Theater, TheaterManager
@@ -53,7 +55,6 @@ class TestStoryToolStateIntegration(unittest.TestCase):
         )
         self.story_state.text_beautifier = self.text_beautifier
         self.canvas = MagicMock(spec=CanvasStateManager)
-        self.canvas.notepad = None
         self.canvas.game = None
         self.canvas.story = self.story_state
         self.canvas.tool_response = MagicMock()
@@ -73,6 +74,7 @@ class TestStoryToolStateIntegration(unittest.TestCase):
             "HUD": {"owner": "recorder", "initial": "HP: 100 | MP: 50"},
             "Quest": {"owner": "planner", "initial": "Investigate the tower"},
         }
+        self.canvas.notepad = Notepad(self.theater, canvas_manager=self.canvas)
         self.provider = MagicMock(spec=TextResponseProvider)
         self.image_provider = MagicMock(spec=ImageProvider)
         self.speech_provider = MagicMock(spec=SpeechProvider)
@@ -91,7 +93,7 @@ class TestStoryToolStateIntegration(unittest.TestCase):
             canvas_manager=self.canvas,
             text_response_provider=self.provider,
             reference_manager=self.reference_manager,
-            decision_provider=self.decision_provider,
+            decision_provider=self.decision_provider, lore_library=LoreLibrary(self.theater),
         )
 
     def tearDown(self) -> None:
@@ -153,7 +155,7 @@ class TestStoryToolStateIntegration(unittest.TestCase):
             canvas_manager=self.canvas,
             text_response_provider=self.provider,
             reference_manager=reloaded_reference_manager,
-            decision_provider=self.decision_provider,
+            decision_provider=self.decision_provider, lore_library=LoreLibrary(self.theater),
         )
         self.addCleanup(reloaded_tool.close)
         reloaded_tool.reload_from_session_state()
@@ -390,7 +392,7 @@ class TestStoryToolStateIntegration(unittest.TestCase):
                 canvas_manager=self.canvas,
                 text_response_provider=self.provider,
                 reference_manager=self.reference_manager,
-                decision_provider=None,  # type: ignore[arg-type]
+                decision_provider=None, lore_library=LoreLibrary(self.theater),  # type: ignore[arg-type]
             )
         self.assertIn("decision_provider is required", str(ctx.exception))
 
@@ -402,7 +404,7 @@ class TestStoryToolStateIntegration(unittest.TestCase):
                 canvas_manager=self.canvas,
                 text_response_provider=self.provider,
                 reference_manager=self.reference_manager,
-                decision_provider=None,  # type: ignore[arg-type]
+                decision_provider=None, lore_library=LoreLibrary(self.theater),  # type: ignore[arg-type]
             )
         self.assertIn("decision_provider is required", str(ctx.exception))
 

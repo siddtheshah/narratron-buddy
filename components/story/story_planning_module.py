@@ -30,7 +30,6 @@ from pydantic import JsonValue, TypeAdapter
 from components.canvas.story_state import (
     CharacterState,
     PlayerCharacterState,
-    StoryState,
 )
 from components.story.story_snapshot import (
     StoryStateDiff,
@@ -825,7 +824,7 @@ class StoryPlanningModule:
         all_known_images = previous_known | {
             str(img.get("name") or "") for img in reference_images if img.get("name")
         }
-        story_state = self.canvas_manager.story if self.canvas_manager is not None and self.canvas_manager.story is not None else StoryState()
+        story_state = self.canvas_manager.story
         self._last_state_snapshot = create_snapshot(
             story_state=story_state,
             notepad=self.notepad,
