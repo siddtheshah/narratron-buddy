@@ -1,7 +1,8 @@
 import asyncio
 from collections.abc import AsyncIterator
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from google.adk.sessions import InMemorySessionService
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from google.adk.events import Event
@@ -11,7 +12,7 @@ from services.user_help_service import HelpUnavailableError, UserHelpService, en
 
 def make_service(tmp_path: Path) -> UserHelpService:
     with patch("services.user_help_service.Runner"):
-        return UserHelpService(model="test-model", help_roots=(tmp_path / "templates", tmp_path / "docs"))
+        return UserHelpService(model="test-model", session_service=MagicMock(spec=InMemorySessionService), help_roots=(tmp_path / "templates", tmp_path / "docs"))
 
 
 def test_service_returns_a_cited_answer_without_a_theater(tmp_path: Path) -> None:
@@ -34,7 +35,7 @@ def test_feature_proposals_are_opt_in_and_reset_between_answers(tmp_path: Path) 
     service = make_service(tmp_path)
     assert service.propose_feature_change("image_generation.enabled", False) == "Settings proposals are unavailable here."
     with patch("services.user_help_service.Runner"):
-        service = UserHelpService(model="test-model", help_roots=(tmp_path,), allow_settings_proposals=True)
+        service = UserHelpService(model="test-model", session_service=MagicMock(spec=InMemorySessionService), help_roots=(tmp_path,), allow_settings_proposals=True)
     assert service.propose_feature_change in service._agent.tools
     assert "Unsupported" in service.propose_feature_change("live_agent.special_instructions", True)
     service.propose_feature_change("image_generation.enabled", False)

@@ -13,7 +13,7 @@ from pricing.pricing_controller import PricingController
 def test_prepared_answer_needs_no_docs_lookup(question: str) -> None:
     index = DocsSearchIndex()
     with patch.object(index, "search") as search:
-        answer = UserHelpCatalog(index).answer(question)
+        answer = UserHelpCatalog(index, pricing=PricingController()).answer(question)
     assert "interactive AI narration theater" in answer
     assert "[About Narratron](/docs/about)" in answer
     search.assert_not_called()
@@ -25,7 +25,7 @@ def test_complex_question_gets_ranked_documentation_links() -> None:
         DocsSearchPage("Beyond20", "/docs/beyond20", '<main><h2 id="setup">Extension setup</h2><p>Forward dice rolls from D&amp;D Beyond using the Beyond20 extension.</p></main>'),
         DocsSearchPage("Adventure writing", "/docs/writing-adventures", '<main><h2>Lore</h2><p>Author world lore and adventure scenes.</p></main>'),
     ])
-    answer = UserHelpCatalog(index).answer("How do I forward dice rolls from the Beyond20 extension?")
+    answer = UserHelpCatalog(index, pricing=PricingController()).answer("How do I forward dice rolls from the Beyond20 extension?")
     assert "closest matches" in answer
     assert "/docs/beyond20#setup" in answer
 
@@ -33,7 +33,7 @@ def test_complex_question_gets_ranked_documentation_links() -> None:
 def test_extended_question_is_not_mistaken_for_a_simple_faq() -> None:
     index = DocsSearchIndex()
     with patch.object(index, "search", return_value=[]) as search:
-        answer = UserHelpCatalog(index).answer("What is Narratron and how do I fix missing token images?")
+        answer = UserHelpCatalog(index, pricing=PricingController()).answer("What is Narratron and how do I fix missing token images?")
     search.assert_called_once()
     assert "couldn't find a close" in answer
     assert "[Narratron Documentation](/docs)" in answer
@@ -48,7 +48,7 @@ def test_extended_question_is_not_mistaken_for_a_simple_faq() -> None:
 def test_creation_and_signup_answers_are_prepared(question: str, expected: str) -> None:
     index = DocsSearchIndex()
     with patch.object(index, "search") as search:
-        answer = UserHelpCatalog(index).answer(question)
+        answer = UserHelpCatalog(index, pricing=PricingController()).answer(question)
     assert expected in answer
     search.assert_not_called()
 

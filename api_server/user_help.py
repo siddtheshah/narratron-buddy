@@ -7,6 +7,7 @@ from uuid import uuid4
 from urllib.parse import urlsplit
 
 from fastapi import HTTPException, Request, Response
+from google.adk.sessions import InMemorySessionService
 from pydantic import BaseModel, Field, computed_field
 from typing import Literal
 
@@ -15,6 +16,7 @@ import object_registry
 from api_server.shared import app, get_current_user_async, _require_canvas_access_async
 from services.generation_billing import billing_locks
 from services.user_help_catalog import UserHelpCatalog
+from services.docs_search import docs_search_index
 from services.user_help_limits import HelpRateLimitError, UserHelpLimits
 from services.user_help_service import DEFAULT_USER_HELP_MODEL, HelpUnavailableError, UserHelpService
 from utils.auth_cache import auth_session_cache
@@ -30,7 +32,7 @@ basic_limits.hourly_principal_limit = 120
 basic_limits.hourly_address_limit = 300
 basic_limits.hourly_total_limit = 3000
 basic_limits.max_concurrent = 16
-help_catalog = UserHelpCatalog(pricing=object_registry.pricing_controller)
+help_catalog = UserHelpCatalog(index=docs_search_index, pricing=object_registry.pricing_controller)
 
 
 def require_settings_confirmation(request: Request) -> None:
@@ -82,6 +84,7 @@ def help_cost() -> float:
 
 async def research(question: str, changes: list[FeatureChange] | None = None) -> str:
     service = UserHelpService(model=os.environ.get("USER_HELP_MODEL", DEFAULT_USER_HELP_MODEL),
+                              session_service=InMemorySessionService(),
                               allow_settings_proposals=changes is not None)
     try:
         answer = await service.answer(question)

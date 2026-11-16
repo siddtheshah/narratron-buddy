@@ -4,6 +4,7 @@ from pathlib import Path
 
 from google.adk.agents import Agent
 from google.adk.agents.run_config import RunConfig
+from google.adk.sessions import InMemorySessionService
 from jinja2 import StrictUndefined, Template
 
 from components.canvas.canvas_state_manager import CanvasStateManager
@@ -330,6 +331,7 @@ def create_tool_bundle_for_session(
         user_help_tools = UserHelpTool(
             theater,
             canvas_manager=canvas_manager,
+            session_service=InMemorySessionService(),
             model=str(user_help_config.get("model") or DEFAULT_USER_HELP_MODEL),
             max_output_tokens=int(user_help_config.get("max_output_tokens", 1_200)),
         )

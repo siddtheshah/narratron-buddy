@@ -1,5 +1,6 @@
 import asyncio
 from pathlib import Path
+from google.adk.sessions import InMemorySessionService
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from tools.user_help_tool import UserHelpTool
@@ -19,6 +20,7 @@ def make_tool(tmp_path: Path) -> UserHelpTool:
             theater=theater,
             canvas_manager=MagicMock(),
             model="test-model",
+            session_service=MagicMock(spec=InMemorySessionService),
             help_roots=(tmp_path / "templates", tmp_path / "docs"),
         )
 

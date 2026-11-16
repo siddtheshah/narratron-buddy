@@ -3,7 +3,7 @@
 import re
 
 from pricing.pricing_controller import PricingController
-from services.docs_search import DocsSearchIndex, docs_search_index
+from services.docs_search import DocsSearchIndex
 
 
 def normalize_question(question: str) -> str:
@@ -54,7 +54,7 @@ _PRICE_QUESTIONS = frozenset(normalize_question(question) for question in (
 
 
 class UserHelpCatalog:
-    def __init__(self, index: DocsSearchIndex = docs_search_index, pricing: PricingController | None = None) -> None:
+    def __init__(self, index: DocsSearchIndex, pricing: PricingController) -> None:
         self.index = index
         self.pricing = pricing
 
@@ -83,8 +83,7 @@ class UserHelpCatalog:
                 "or browse [Narratron Documentation](/docs).")
 
     def _pricing_answer(self) -> str:
-        pricing = self.pricing or PricingController.from_env()
-        rates = pricing.get_rates()
+        rates = self.pricing.get_rates()
         return (
             "Narratron uses prepaid credits for paid features; the total depends on what you use. "
             "Basic help and documentation lookup are free. Current usage rates include:\n\n"

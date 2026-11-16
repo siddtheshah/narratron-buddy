@@ -25,8 +25,8 @@ class UserHelpTool(BaseTools):
         theater: Theater,
         canvas_manager: CanvasStateManager,
         model: str,
+        session_service: InMemorySessionService,
         help_roots: tuple[Path, ...] | None = None,
-        session_service: InMemorySessionService | None = None,
         max_output_tokens: int = 1_200,
     ) -> None:
         super().__init__(theater=theater, canvas_manager=canvas_manager)

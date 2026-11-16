@@ -107,14 +107,14 @@ class UserHelpService:
     def __init__(
         self,
         model: str,
+        session_service: InMemorySessionService,
         help_roots: tuple[Path, ...] | None = None,
-        session_service: InMemorySessionService | None = None,
         max_output_tokens: int = 1_200,
         allow_settings_proposals: bool = False,
     ) -> None:
         self.model = model
         self.help_roots = help_roots or self._default_help_roots()
-        self.session_service = session_service or InMemorySessionService()
+        self.session_service = session_service
         self.max_output_tokens = max_output_tokens
         self.allow_settings_proposals = allow_settings_proposals
         self.settings_changes: list[FeatureChange] = []

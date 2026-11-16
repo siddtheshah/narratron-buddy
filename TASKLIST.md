@@ -68,10 +68,12 @@ Follow the constructor dependency rules in [AGENTS.md](AGENTS.md#constructor-dep
 3. [x] **StoryState** (`components/canvas/story_state.py`): inject the text beautifier explicitly through canvas construction; remove the registry lookup and suppressed resolution errors. If absence is supported, document its behavior and keep `None` as absence.
 4. [x] **ReferenceManager** (`components/reference_manager.py`): require shared story state instead of silently constructing a separate `StoryState`; update factories and tests to supply the intended state.
 5. [x] **StoryEngine and tool assembly** (`components/story/engine.py`, `services/live_agent.py`): remove redundant notepad creation now that canvas state guarantees a notepad. Make canvas-state and lore-library ownership explicit and pass required collaborators from the composition root.
-6. [ ] **UserHelpService** (`services/user_help_service.py`): require the session service; move default construction into the calling factory and supply mocks in unit tests.
+6. [x] **UserHelpService** (`services/user_help_service.py`): require the session service; move default construction into the calling factory and supply mocks in unit tests.
 7. [ ] **Storage-limit calculation** (`storage/storage_limits.py`): require the database in `calculate_user_theaters_storage_bytes` instead of resolving an omitted argument through the registry. This is the same dependency issue outside a constructor.
 
 8. [x] **ImageTools and AnimationTools** (`tools/image/image_tool.py`, `tools/animation_tool.py`): require the shared reference manager instead of constructing private managers inside tool constructors.
+
+9. [x] **UserHelpCatalog** (`services/user_help_catalog.py`): require the documentation index and pricing controller; remove captured singleton defaults and lazy pricing construction.
 
 For each cleanup, update call sites and test fixtures, preserve genuinely optional behavior, and run the relevant regression tests.
 
