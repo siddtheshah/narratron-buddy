@@ -58,6 +58,23 @@ server. Live asset generation and server-rendered video are later options.
 
 
 ## Refactors
+
+### Explicit dependencies (highest priority first)
+
+Follow the constructor dependency rules in [AGENTS.md](AGENTS.md#constructor-dependencies-must-be-explicit): require collaborators explicitly, reserve optional arguments for supported absence, and supply configured mocks or fakes in unit tests.
+
+1. [ ] **LiveAgentSessionManager** (`services/live_agent_manager.py`): require the canvas-state service and music catalog; remove lazy registry lookups and redundant dependency overrides. Application startup already supplies both services.
+2. [ ] **MusicCatalog** (`services/music_catalog.py`): require the database in the constructor and `from_config`; remove the registry fallback and the optional argument that immediately raises when omitted. Update callers to pass the database explicitly.
+3. [ ] **StoryState** (`components/canvas/story_state.py`): inject the text beautifier explicitly through canvas construction; remove the registry lookup and suppressed resolution errors. If absence is supported, document its behavior and keep `None` as absence.
+4. [ ] **ReferenceManager** (`components/reference_manager.py`): require shared story state instead of silently constructing a separate `StoryState`; update factories and tests to supply the intended state.
+5. [ ] **StoryEngine and tool assembly** (`components/story/engine.py`, `services/live_agent.py`): remove redundant notepad creation now that canvas state guarantees a notepad. Make canvas-state and lore-library ownership explicit and pass required collaborators from the composition root.
+6. [ ] **UserHelpService** (`services/user_help_service.py`): require the session service; move default construction into the calling factory and supply mocks in unit tests.
+7. [ ] **Storage-limit calculation** (`storage/storage_limits.py`): require the database in `calculate_user_theaters_storage_bytes` instead of resolving an omitted argument through the registry. This is the same dependency issue outside a constructor.
+
+For each cleanup, update call sites and test fixtures, preserve genuinely optional behavior, and run the relevant regression tests.
+
+### Other refactors
+
 - [ ] Eliminate traces of 'named element' terminology.
 - [ ] Reduce direct image file os path checking. Make better interfaces to access image content within a theater.
 
