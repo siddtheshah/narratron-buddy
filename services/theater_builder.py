@@ -140,6 +140,8 @@ def upload_path(filename: str, folder: bool, bucket: bool = False) -> str:
         return relative
     if parts[0] in {"characters", "scenes"}:
         raise IneligibleAssetError("Use references/characters/<Name>/ or references/scenes/<Name>/.")
+    if len(parts) > 1:
+        raise IneligibleAssetError(f"Unsupported theater asset: {relative}")
     name = parts[-1]
     suffix = PurePosixPath(name).suffix.lower()
     if name.upper() in {"RESPONDER.MD", "PLANNER.MD", "RECORDER.MD", "GAME.MD"}:

@@ -13,7 +13,7 @@ from storage.database import DatabaseManager
 
 from services.theater_builder import (
     BuilderProposal, DraftInfo, FileMove, FileWrite, GenerationRequest, TheaterBuilderStore,
-    safe_asset_path, upload_path,
+    IneligibleAssetError, safe_asset_path, upload_path,
 )
 
 
@@ -115,6 +115,16 @@ def test_folder_normalization_does_not_hide_traversal() -> None:
 def test_upload_rejects_outdated_layouts_instead_of_rewriting_paths(tmp_path: Path, filename: str) -> None:
     with pytest.raises(ValueError):
         safe_asset_path(tmp_path, upload_path(filename, False))
+
+
+@pytest.mark.parametrize(("filename", "folder"), [
+    ("example_adventure/worlds/library_of_origins/preview.png", True),
+    ("example_adventure/worlds/library_of_origins/README.md", True),
+    ("docs/notes.md", False),
+])
+def test_upload_rejects_unrecognized_subfolders_instead_of_flattening(filename: str, folder: bool) -> None:
+    with pytest.raises(IneligibleAssetError):
+        upload_path(filename, folder)
 
 
 @pytest.mark.parametrize("name,folder,expected", [
