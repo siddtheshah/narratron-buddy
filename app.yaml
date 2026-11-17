@@ -9,7 +9,7 @@ visuals:
     # Set reference_model to "" to reuse model and model_options above.
     reference_model: "openai-gpt-image-flare"
     reference_model_options:
-        model: "gpt-image-2.5-sunburst"
+        model: "gpt-image-2.6-sunburst"
         quality: "medium"
 
 

@@ -75,11 +75,11 @@ test.describe('Testlab Image Provider Bench TS module', () => {
                 {
                   id: 'openai-gpt-image-flare',
                   name: 'OpenAI GPT Image Flare',
-                  model: 'gpt-image-2.5-flare',
+                  model: 'gpt-image-2.6-flare',
                   status: 'available',
                   notes: 'High-detail fantasy illustrations',
                   estimated_cost_usd_1mp: 0.055,
-                  model_options: ['gpt-image-2.5-flare', 'gpt-image-2.5-sunburst'],
+                  model_options: ['gpt-image-2.6-flare', 'gpt-image-2.6-sunburst'],
                   quality_options: ['medium', 'high'],
                 },
               ],
@@ -156,7 +156,7 @@ test.describe('Testlab Image Provider Bench TS module', () => {
                       repetition: 1,
                       status: 'completed',
                       latency_ms: 2100,
-                      model: 'gpt-image-2.5-flare',
+                      model: 'gpt-image-2.6-flare',
                       image_url: '/benchmark-images/sample-2.png',
                       estimated_output_cost_usd: 0.055,
                       usage: {

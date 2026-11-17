@@ -15,7 +15,7 @@ def reference_config() -> Iterator[MagicMock]:
     with patch("utils.config_loader.get_app_config", return_value={
         "visuals": {
             "reference_model": "openai-gpt-image-flare",
-            "reference_model_options": {"model": "gpt-image-2.5-sunburst", "quality": "medium"},
+            "reference_model_options": {"model": "gpt-image-2.6-sunburst", "quality": "medium"},
         },
     }) as config:
         yield config
@@ -29,7 +29,7 @@ def test_stamp_uses_sunburst_transparency_and_cutout_instructions(tmp_path: Path
     provider = MagicMock()
     with patch("services.theater_image_generation.get_image_provider", return_value=provider) as resolve:
         generate_theater_image(tmp_path, kind="stamp", prompt="Goblin scout", references=[])
-    resolve.assert_called_once_with("openai-gpt-image-flare", {"model": "gpt-image-2.5-sunburst", "quality": "medium"})
+    resolve.assert_called_once_with("openai-gpt-image-flare", {"model": "gpt-image-2.6-sunburst", "quality": "medium"})
     request = provider.generate.call_args.args[0]
     assert request.background == "transparent"
     assert request.aspect_ratio == "1:1"
@@ -49,7 +49,7 @@ def test_personal_stamp_ignores_configured_styles(reference_config: MagicMock) -
     ):
         generate_theater_image(None, kind="stamp", prompt="Goblin scout", references=[])
     theater_defaults.assert_not_called()
-    resolve.assert_called_once_with("openai-gpt-image-flare", {"model": "gpt-image-2.5-sunburst", "quality": "medium"})
+    resolve.assert_called_once_with("openai-gpt-image-flare", {"model": "gpt-image-2.6-sunburst", "quality": "medium"})
     request = provider.generate.call_args.args[0]
     assert request.prompt.startswith("Goblin scout\nCreate a single movable canvas stamp")
     assert "Style:" not in request.prompt
@@ -64,7 +64,7 @@ def test_reference_uses_sunburst_scene_prompt_and_selected_references(tmp_path: 
     provider = MagicMock()
     with patch("services.theater_image_generation.get_image_provider", return_value=provider) as resolve:
         generate_theater_image(tmp_path, kind="reference", prompt="A misty harbor", references=references)
-    resolve.assert_called_once_with("openai-gpt-image-flare", {"model": "gpt-image-2.5-sunburst", "quality": "medium"})
+    resolve.assert_called_once_with("openai-gpt-image-flare", {"model": "gpt-image-2.6-sunburst", "quality": "medium"})
     request = provider.generate.call_args.args[0]
     assert request.background == "opaque"
     assert request.aspect_ratio == "16:9"
@@ -78,7 +78,7 @@ def test_character_uses_sunburst_square_portrait_instructions(tmp_path: Path) ->
     provider = MagicMock()
     with patch("services.theater_image_generation.get_image_provider", return_value=provider) as resolve:
         generate_theater_image(tmp_path, kind="character", prompt="Arthur Modella, harbor captain", references=references)
-    resolve.assert_called_once_with("openai-gpt-image-flare", {"model": "gpt-image-2.5-sunburst", "quality": "medium"})
+    resolve.assert_called_once_with("openai-gpt-image-flare", {"model": "gpt-image-2.6-sunburst", "quality": "medium"})
     request = provider.generate.call_args.args[0]
     assert request.background == "opaque"
     assert request.aspect_ratio == "1:1"
@@ -93,7 +93,7 @@ def test_blank_reference_model_reuses_live_provider_options(tmp_path: Path, refe
     reference_config.return_value = {"visuals": {"reference_model": ""}}
     (tmp_path / "theater.yaml").write_text(
         "visuals:\n  model: gemini\n  model_options:\n    model: live-image-model\n"
-        "  reference_model_options:\n    model: gpt-image-2.5-sunburst\n", encoding="utf-8",
+        "  reference_model_options:\n    model: gpt-image-2.6-sunburst\n", encoding="utf-8",
     )
     with patch("services.theater_image_generation.get_image_provider") as resolve:
         generate_theater_image(tmp_path, kind="scene", prompt="Harbor", references=[])

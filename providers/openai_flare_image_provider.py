@@ -1,4 +1,4 @@
-"""High-quality GPT Image 2.5 Flare generation for theater package assets."""
+"""High-quality GPT Image 2.6 Flare generation for theater package assets."""
 
 from __future__ import annotations
 
@@ -17,22 +17,27 @@ from providers.image_provider import (
 
 class OpenAIFlareImageProvider(ImageProvider):
     id = "openai-gpt-image-flare"
-    display_name = "GPT Image 2.5 Flare"
+    display_name = "GPT Image 2.6 Flare"
 
     def __init__(
         self,
-        model: Literal["gpt-image-2.5-flare", "gpt-image-2.5-sunburst"] | str = "gpt-image-2.5-flare",
+        model: Literal["gpt-image-2.6-flare", "gpt-image-2.6-sunburst"] | str = "gpt-image-2.6-flare",
         quality: Literal["low", "medium", "high", "xhigh", "max", "auto"] = "high",
         client: OpenAI | None = None,
     ) -> None:
-        if model not in ("gpt-image-2.5-flare", "gpt-image-2.5-sunburst"):
-            raise ImageProviderError(f"Unsupported GPT Image 2.5 model: {model}")
+        # Upgrade model IDs stored in existing theater configurations.
+        model = {
+            "gpt-image-2.5-flare": "gpt-image-2.6-flare",
+            "gpt-image-2.5-sunburst": "gpt-image-2.6-sunburst",
+        }.get(model, model)
+        if model not in ("gpt-image-2.6-flare", "gpt-image-2.6-sunburst"):
+            raise ImageProviderError(f"Unsupported GPT Image 2.6 model: {model}")
         self.model = model
         self.quality = quality
-        if model == "gpt-image-2.5-sunburst":
-            self.display_name = "GPT Image 2.5 Sunburst"
+        if model == "gpt-image-2.6-sunburst":
+            self.display_name = "GPT Image 2.6 Sunburst"
         else:
-            self.display_name = "GPT Image 2.5 Flare"
+            self.display_name = "GPT Image 2.6 Flare"
         if client is None:
             api_key = os.getenv("OPENAI_API_KEY") or os.getenv("OPEN_API_KEY")
             if not api_key:

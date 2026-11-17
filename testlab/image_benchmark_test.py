@@ -45,8 +45,8 @@ def test_testlab_server_image_benchmark_routes():
     assert any(p["id"] == "hybrid-flux-gemini" for p in data["providers"])
 
     flare_spec = next(p for p in data["providers"] if p["id"] == "openai-gpt-image-flare")
-    assert "gpt-image-2.5-sunburst" in flare_spec["model_options"]
-    assert "gpt-image-2.5-flare" in flare_spec["model_options"]
+    assert "gpt-image-2.6-sunburst" in flare_spec["model_options"]
+    assert "gpt-image-2.6-flare" in flare_spec["model_options"]
 
     gpt_spec = next(p for p in data["providers"] if p["id"] == "openai-gpt-image")
     assert gpt_spec["model"] == "gpt-image-2"

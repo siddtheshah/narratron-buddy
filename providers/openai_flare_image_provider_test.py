@@ -33,7 +33,7 @@ def test_flare_returns_webp_from_high_quality_transparent_square_png() -> None:
         ImageGenerationRequest(prompt="Goblin", aspect_ratio="1:1", background="transparent")
     )
     client.images.generate.assert_called_once_with(
-        model="gpt-image-2.5-flare", prompt="Goblin", size="1024x1024",
+        model="gpt-image-2.6-flare", prompt="Goblin", size="1024x1024",
         quality="high", n=1, output_format="png", background="transparent",
     )
     client.images.edit.assert_not_called()
@@ -53,7 +53,7 @@ def test_flare_references_use_edit_endpoint_and_keep_background_choice() -> None
     )
     client.images.generate.assert_not_called()
     params = client.images.edit.call_args.kwargs
-    assert params["model"] == "gpt-image-2.5-flare"
+    assert params["model"] == "gpt-image-2.6-flare"
     assert params["size"] == "1536x864"
     assert params["background"] == "opaque"
     assert params["image"][0][0] == "hero.png"
@@ -81,7 +81,7 @@ def test_flare_catalog_and_resolution_are_separate_from_live_provider() -> None:
         "providers.openai_flare_image_provider.OpenAI", return_value=image_client(),
     ) as factory:
         provider = get_image_provider("openai-gpt-image-flare")
-        assert provider.model == "gpt-image-2.5-flare"
+        assert provider.model == "gpt-image-2.6-flare"
         factory.assert_called_once_with(api_key="test-key", timeout=300.0, max_retries=0)
         spec = next(item for item in list_image_provider_specs() if item["id"] == provider.id)
         assert spec["status"] == "available"
@@ -100,17 +100,18 @@ def test_flare_custom_dimensions_validate_before_api_call() -> None:
     client.images.generate.assert_not_called()
 
 
-def test_flare_supports_sunburst_model_selection() -> None:
+@pytest.mark.parametrize("configured_model", ["gpt-image-2.6-sunburst", "gpt-image-2.5-sunburst"])
+def test_flare_supports_sunburst_model_selection(configured_model: str) -> None:
     client = image_client()
-    provider = OpenAIFlareImageProvider(model="gpt-image-2.5-sunburst", client=client)
-    assert provider.display_name == "GPT Image 2.5 Sunburst"
+    provider = OpenAIFlareImageProvider(model=configured_model, client=client)
+    assert provider.display_name == "GPT Image 2.6 Sunburst"
     result = provider.generate(ImageGenerationRequest(prompt="Intricate observatory"))
-    assert result.model == "gpt-image-2.5-sunburst"
-    assert client.images.generate.call_args.kwargs["model"] == "gpt-image-2.5-sunburst"
+    assert result.model == "gpt-image-2.6-sunburst"
+    assert client.images.generate.call_args.kwargs["model"] == "gpt-image-2.6-sunburst"
 
 
 def test_flare_rejects_unsupported_model() -> None:
-    with pytest.raises(ImageProviderError, match="Unsupported GPT Image 2.5 model"):
+    with pytest.raises(ImageProviderError, match="Unsupported GPT Image 2.6 model"):
         OpenAIFlareImageProvider(model="gpt-image-unknown", client=image_client())
 
 
@@ -118,11 +119,11 @@ def test_registry_resolves_sunburst_model_option() -> None:
     with patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"}), patch(
         "providers.openai_flare_image_provider.OpenAI", return_value=image_client(),
     ):
-        provider = get_image_provider("openai-gpt-image-flare", {"model": "gpt-image-2.5-sunburst"})
-        assert provider.model == "gpt-image-2.5-sunburst"
-        assert provider.display_name == "GPT Image 2.5 Sunburst"
+        provider = get_image_provider("openai-gpt-image-flare", {"model": "gpt-image-2.6-sunburst"})
+        assert provider.model == "gpt-image-2.6-sunburst"
+        assert provider.display_name == "GPT Image 2.6 Sunburst"
 
         spec = next(item for item in list_image_provider_specs() if item["id"] == "openai-gpt-image-flare")
-        assert "gpt-image-2.5-flare" in spec["model_options"]
-        assert "gpt-image-2.5-sunburst" in spec["model_options"]
+        assert "gpt-image-2.6-flare" in spec["model_options"]
+        assert "gpt-image-2.6-sunburst" in spec["model_options"]
         assert "xhigh" in spec["quality_options"]

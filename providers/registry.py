@@ -68,9 +68,9 @@ def get_animation_provider(
 _IMAGE_SPECS = (
     {
         "id": "openai-gpt-image-flare",
-        "name": "GPT Image 2.5 (Flare / Sunburst)",
-        "model": "gpt-image-2.5-flare",
-        "model_options": ["gpt-image-2.5-flare", "gpt-image-2.5-sunburst"],
+        "name": "GPT Image 2.6 (Flare / Sunburst)",
+        "model": "gpt-image-2.6-flare",
+        "model_options": ["gpt-image-2.6-flare", "gpt-image-2.6-sunburst"],
         "quality_options": ["low", "medium", "high", "xhigh", "max", "auto"],
         "estimated_cost_usd_1mp": None,
         "reference_limit": None,
@@ -262,7 +262,7 @@ def get_image_provider(provider_id: str, options: dict[str, Any] | None = None) 
         quality = options.get("quality") or "high"
         if quality not in ("low", "medium", "high", "xhigh", "max", "auto"):
             raise ImageProviderError(f"Unsupported Flare quality: {quality}")
-        model = str(options.get("model") or "gpt-image-2.5-flare")
+        model = str(options.get("model") or "gpt-image-2.6-flare")
         return OpenAIFlareImageProvider(model=model, quality=quality)
     if provider_id == "gemini":
         return GeminiImageProvider(model=str(options.get("model") or "gemini-3.1-flash-lite-image"))
