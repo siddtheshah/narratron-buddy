@@ -14,6 +14,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from pricing.pricing_controller import PricingController
 from storage.database import CloudPostgresDatabaseManager
 
 
@@ -56,7 +57,7 @@ def import_database(source: Path) -> None:
 
     source_conn = sqlite3.connect(source)
     source_conn.row_factory = sqlite3.Row
-    target = CloudPostgresDatabaseManager()
+    target = CloudPostgresDatabaseManager(pricing_controller=PricingController.from_env())
     try:
         # Schema creation is an explicit migration action. The app runtime has
         # no CREATE permission and only verifies this schema exists.

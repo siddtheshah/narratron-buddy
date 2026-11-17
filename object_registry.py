@@ -1,10 +1,10 @@
 """Application-wide objects and runtime flags.
 
-Import this module when a component needs one of Narratron's shared services,
-and access services through module attributes (for example, ``object_registry.db``).
-Callers resolve the currently registered service, including test replacements.
-Keeping construction here ensures the HTTP routes, agent runtime, and test
-configuration all operate on the same instances.
+Application entry points and HTTP routes access shared services through module
+attributes (for example, ``object_registry.db``). Classes receive collaborators
+explicitly from this composition root or a calling factory. Keeping construction
+here ensures the HTTP routes, agent runtime, and test configuration operate on
+the same instances.
 """
 
 import atexit
@@ -24,12 +24,14 @@ from fastapi import FastAPI
 from components.canvas.canvas_state_service import CanvasStateService
 from components.theater_manager import TheaterManager
 from pricing.pricing_controller import PricingController
+from providers.registry import get_text_response_provider
 from services.adventure_service import AdventureService, CACHE_CHECK_INTERVAL_SECONDS, ensure_adventures_root
 from services.game_service import GameService, ensure_games_root
 from services.live_agent_manager import LiveAgentSessionManager
 from services.music_catalog import MusicCatalog
 from services.suggestion_service import SuggestionService
 from services.text_beautifier import TextBeautifier
+from services.user_stamp_resolver import UserStampResolver
 from storage.database import CloudPostgresDatabaseManager, LocalDatabaseManager
 from storage.stamp_storage import StampStorage, ensure_stamps_root
 from storage.theater_repository import TheaterRepository
@@ -190,8 +192,16 @@ db = (
         checkout_timeout=FLAGS.database_pool_checkout_timeout_seconds,
     )
 )
-text_beautifier = TextBeautifier(config=config)
-canvas_states = CanvasStateService(theater_manager, text_beautifier=text_beautifier)
+text_beautifier = TextBeautifier(
+    text_provider=get_text_response_provider(
+        "gemini-2-5", options={"model": config.get("text_beautifier_model", "gemini-3.5-flash-lite")},
+    ),
+)
+stamp_storage = StampStorage(ensure_stamps_root())
+user_stamp_resolver = UserStampResolver(db, stamp_storage)
+canvas_states = CanvasStateService(
+    theater_manager, text_beautifier=text_beautifier, user_stamp_resolver=user_stamp_resolver.resolve,
+)
 music_catalog = MusicCatalog.from_config(
     config=config,
     database_manager=db,
@@ -207,6 +217,5 @@ live_agent_manager = LiveAgentSessionManager(
 suggestion_service = SuggestionService(config=config)
 adventure_service = AdventureService(ensure_adventures_root())
 game_service = GameService(ensure_games_root())
-stamp_storage = StampStorage(ensure_stamps_root())
 
 atexit.register(shutdown_database_connection)

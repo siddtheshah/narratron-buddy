@@ -78,7 +78,6 @@ def offline_lab_text_providers() -> Generator[MagicMock, None, None]:
     with (
         patch("testlab.adventure_runner.get_text_response_provider", return_value=provider),
         patch("testlab.server.get_text_response_provider", return_value=provider),
-        patch("services.text_beautifier.get_text_response_provider", return_value=provider),
     ):
         yield provider
 

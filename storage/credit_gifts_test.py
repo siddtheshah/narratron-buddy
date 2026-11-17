@@ -6,12 +6,13 @@ from typing import Literal
 
 import pytest
 
+from pricing.pricing_controller import PricingController
 from storage.database import LocalDatabaseManager
 
 
 @pytest.fixture
 def database(tmp_path: Path) -> Iterator[LocalDatabaseManager]:
-    database = LocalDatabaseManager(str(tmp_path / "gifts.db"))
+    database = LocalDatabaseManager(str(tmp_path / "gifts.db"), pricing_controller=PricingController())
     database.register_user("Alice", "alice@example.com", "secret123")
     database.register_user("Bobby", "bob@example.com", "secret123")
     yield database

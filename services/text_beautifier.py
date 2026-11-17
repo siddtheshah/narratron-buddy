@@ -1,6 +1,6 @@
 """TextBeautifier service for applying visual and emotive text effects to adventure mode scenes.
 
-Underneath, uses a TextResponseProvider (default: gemini-3.5-flash-lite)
+Underneath, uses the supplied TextResponseProvider
 or a DecisionProvider (when supplied)
 to identify spans of high emotion, intensity, magic, or suspense, and apply
 kinetic effects (vibrating, glitching, flame, pulse, glow, wave, drip)
@@ -24,9 +24,9 @@ from providers.decision_provider import (
     MAX_CHOICE_OPTIONS,
 )
 from providers.text_response_provider import (
+    TextResponseProvider,
     TextResponseRequest,
 )
-from providers.registry import get_text_response_provider
 
 logger = logging.getLogger(__name__)
 
@@ -300,19 +300,13 @@ class TextBeautifier:
 
     def __init__(
         self,
-        config: Optional[dict] = None,
-        model: Optional[str] = None,
+        text_provider: TextResponseProvider,
         decision_provider: Optional[DecisionProvider] = None,
     ) -> None:
-        if config is not None and not isinstance(config, dict):
-            raise TypeError(f"config must be a dict or None, got {type(config).__name__}")
-
-        self.config: Dict[str, Any] = config or {}
-        self.model = model or self.config.get("text_beautifier_model", "gemini-3.5-flash-lite")
+        """Use text generation by default, or constrained decisions when supplied."""
+        self.model = text_provider.model
         self._decision_provider = decision_provider
-        self.text_provider = get_text_response_provider(
-            "gemini-2-5", options={"model": self.model}
-        )
+        self.text_provider = text_provider
 
     @property
     def decision_provider(self) -> Optional[DecisionProvider]:

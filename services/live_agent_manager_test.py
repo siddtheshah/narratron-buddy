@@ -37,6 +37,7 @@ from tools.tool_bundle import ToolBundle
 from testing.game_fixtures import exchange_definition, make_game
 from services.priority_live_request_queue import PriorityLiveRequestQueue
 from components.canvas.tool_response_state import ToolResponseState
+from pricing.pricing_controller import PricingController
 from storage.database import LocalDatabaseManager
 
 
@@ -106,7 +107,7 @@ def test_failed_chat_does_not_highlight_existing_thought() -> None:
 
 @pytest.fixture
 def billing_theater(tmp_path: Path) -> Iterator[tuple[LocalDatabaseManager, int, int]]:
-    database = LocalDatabaseManager(str(tmp_path / "billing.db"))
+    database = LocalDatabaseManager(str(tmp_path / "billing.db"), pricing_controller=PricingController())
     try:
         owner = database.register_user("billing_owner", "owner@example.com", "password")
         orator = database.register_user("billing_orator", "orator@example.com", "password")

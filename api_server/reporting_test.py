@@ -8,13 +8,14 @@ from fastapi.testclient import TestClient
 from starlette.requests import Request
 
 import api_server.reporting as reporting
+from pricing.pricing_controller import PricingController
 from storage.database import LocalDatabaseManager
 from storage.theater_repository import TheaterRepository
 
 
 @pytest.mark.asyncio
 async def test_reports_link_shared_evidence_and_support_moderation(tmp_path: Path) -> None:
-    database = LocalDatabaseManager(str(tmp_path / 'database.db'))
+    database = LocalDatabaseManager(str(tmp_path / 'database.db'), pricing_controller=PricingController())
     try:
         owner = database.register_user('report_owner', 'owner@example.com', 'password')
         reporter = database.register_user('report_viewer', 'viewer@example.com', 'password')
@@ -95,7 +96,7 @@ async def test_report_access_validation_and_failed_capture(tmp_path: Path) -> No
 
 
 def test_feedback_routes_persist_and_triage_without_flagging_theaters(tmp_path: Path) -> None:
-    database = LocalDatabaseManager(str(tmp_path / 'feedback.db'))
+    database = LocalDatabaseManager(str(tmp_path / 'feedback.db'), pricing_controller=PricingController())
     try:
         user = database.register_user('feedback_author', 'feedback@example.com', 'password')
         access = AsyncMock()

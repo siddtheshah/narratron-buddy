@@ -267,8 +267,8 @@ class _ReusableConnection:
 class _DatabaseManagerBase:
     """Shared Narratron queries; concrete backends own connection details."""
 
-    def __init__(self, pricing_controller: Optional[PricingController] = None):
-        self.pricing_controller = pricing_controller or PricingController.from_env()
+    def __init__(self, pricing_controller: PricingController) -> None:
+        self.pricing_controller = pricing_controller
 
     @staticmethod
     def _get_live_connection_timeout(value: Optional[float]) -> float:
@@ -2388,8 +2388,9 @@ class LocalDatabaseManager(_DatabaseManagerBase):
     def __init__(
         self,
         db_path: Optional[str] = None,
-        pricing_controller: Optional[PricingController] = None,
-    ):
+        *,
+        pricing_controller: PricingController,
+    ) -> None:
         super().__init__(pricing_controller=pricing_controller)
         self.is_live = False
         self.db_path = db_path
@@ -2487,11 +2488,12 @@ class CloudPostgresDatabaseManager(_DatabaseManagerBase):
         connection_name: Optional[str] = None,
         database: Optional[str] = None,
         iam_user: Optional[str] = None,
-        pricing_controller: Optional[PricingController] = None,
         connection_timeout: Optional[float] = None,
         pool_size: Optional[int] = None,
         checkout_timeout: Optional[float] = None,
-    ):
+        *,
+        pricing_controller: PricingController,
+    ) -> None:
         super().__init__(pricing_controller=pricing_controller)
         self.is_live = True
         self.cloud_sql_instance = connection_name or os.environ.get("CLOUD_SQL_CONNECTION_NAME")

@@ -11,6 +11,7 @@ from components.theater_manager import TheaterManager
 from services.theater_builder import DraftInfo, TheaterBuilderStore
 from storage.theater_repository import TheaterRepository
 
+from pricing.pricing_controller import PricingController
 from storage.database import LocalDatabaseManager
 from storage.storage_limits import (
     MAX_FILE_UPLOAD_BYTES,
@@ -25,7 +26,7 @@ class TestStorageLimits(unittest.TestCase):
     def setUp(self) -> None:
         self.temp_dir = tempfile.TemporaryDirectory()
         self.theaters_root = Path(self.temp_dir.name)
-        self.db = LocalDatabaseManager(db_path=":memory:")
+        self.db = LocalDatabaseManager(db_path=":memory:", pricing_controller=PricingController())
         user = self.db.register_user("storagetester", "storagetester@example.com", "pass123")
         self.user_id = int(user["id"])
 
@@ -135,7 +136,7 @@ class TestStorageLimits(unittest.TestCase):
             self.assertEqual(self.usage(), 5)
 
     def test_index_survives_database_reopen_and_schema_migration_is_idempotent(self) -> None:
-        database = LocalDatabaseManager(db_path=str(self.theaters_root / "index.db"))
+        database = LocalDatabaseManager(db_path=str(self.theaters_root / "index.db"), pricing_controller=PricingController())
         try:
             user = database.register_user("persistent", "persistent@example.com", "pass123")
             uid = int(user["id"])

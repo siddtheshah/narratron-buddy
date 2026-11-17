@@ -127,11 +127,15 @@ class DoodleState:
         stamp_resolver: Optional[Callable[[DoodleAction], bytes | None]] = None,
         page_provider: Callable[[], DoodlePage | None] | None = None,
         lock: RLock | None = None,
+        *,
+        user_stamp_resolver: Callable[[DoodleAction], bytes | None] | None = None,
     ) -> None:
+        """Support local and inline stamps; personal storage requires a resolver."""
         self._persist = persist
         self.canvas_lock = lock if lock is not None else RLock()
         self.theater = theater
         self.stamp_resolver = stamp_resolver
+        self.user_stamp_resolver = user_stamp_resolver
         self._page_provider = page_provider
         self._empty_page: DoodlePage = {}
 
@@ -461,63 +465,8 @@ class DoodleState:
                 if found is not None:
                     return found
 
-        numeric_stamp_id: int | None = None
-        raw_stamp_id = action.get("stamp_id")
-        if raw_stamp_id is not None:
-            try:
-                numeric_stamp_id = int(str(raw_stamp_id))
-            except (ValueError, TypeError):
-                pass
-        if numeric_stamp_id is None and "/api/stamps/" in url:
-            try:
-                numeric_stamp_id = int(url.split("/api/stamps/", 1)[1].split("?")[0].split("/")[0])
-            except (ValueError, TypeError):
-                pass
-
-        user_id_int: int | None = None
-        raw_user = action.get("user_id")
-        if raw_user is not None:
-            try:
-                user_id_int = int(str(raw_user))
-            except (ValueError, TypeError):
-                pass
-
-        if numeric_stamp_id is not None:
-            try:
-                import object_registry
-                if object_registry.db:
-                    stamp_record = object_registry.db.get_stamp_by_id(numeric_stamp_id)
-                    if stamp_record is not None:
-                        rec_user_id = int(str(stamp_record.get("user_id", 0)))
-                        rec_filename = str(stamp_record.get("filename", ""))
-                        if object_registry.stamp_storage:
-                            data = object_registry.stamp_storage.read_stamp(rec_user_id, rec_filename)
-                            if data:
-                                return data
-            except Exception:
-                pass
-
-        try:
-            from storage.stamp_storage import get_stamps_root
-            stamps_root = get_stamps_root().resolve()
-            if stamps_root.is_dir():
-                candidate_dirs: list[Path] = []
-                if user_id_int is not None:
-                    candidate_dirs.append(stamps_root / str(user_id_int))
-                candidate_dirs.append(stamps_root)
-                stamp_name = str(action.get("name") or "").lower()
-                for cdir in candidate_dirs:
-                    if not cdir.is_dir():
-                        continue
-                    for entry in cdir.glob("*"):
-                        if entry.is_file() and entry.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp", ".gif"}:
-                            if stamp_name and stamp_name in entry.stem.lower():
-                                return entry.read_bytes()
-                            if numeric_stamp_id is not None and str(numeric_stamp_id) in entry.stem:
-                                return entry.read_bytes()
-        except Exception:
-            pass
-
+        if self.user_stamp_resolver is not None:
+            return self.user_stamp_resolver(action)
         return None
 
     def snapshot_webp(

@@ -6,8 +6,10 @@ then mutate the relevant component directly, e.g. ``get(id).ui.upsert_surface``.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 
+from components.canvas.doodle_state import DoodleAction
 from components.canvas.canvas_state_manager import CanvasStateManager
 from components.theater_manager import TheaterManager
 
@@ -16,10 +18,14 @@ if TYPE_CHECKING:
 
 
 class CanvasStateService:
-    def __init__(self, theater_manager: TheaterManager, *, text_beautifier: TextBeautifier | None = None) -> None:
-        """Share the supplied beautifier across canvases, or leave text unstyled."""
+    def __init__(
+        self, theater_manager: TheaterManager, *, text_beautifier: TextBeautifier | None = None,
+        user_stamp_resolver: Callable[[DoodleAction], bytes | None] | None = None,
+    ) -> None:
+        """Share supplied services; absence supports unstyled text and local/inline stamps."""
         self.theater_manager = theater_manager
         self.text_beautifier = text_beautifier
+        self.user_stamp_resolver = user_stamp_resolver
         self.states: dict[str, CanvasStateManager] = {}
 
     def get(self, theater_id: str) -> CanvasStateManager:
@@ -29,6 +35,7 @@ class CanvasStateService:
         if resolved_id not in self.states:
             self.states[resolved_id] = CanvasStateManager(
                 self.theater_manager.theater(resolved_id), text_beautifier=self.text_beautifier,
+                user_stamp_resolver=self.user_stamp_resolver,
             )
         return self.states[resolved_id]
 

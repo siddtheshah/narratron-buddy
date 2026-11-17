@@ -11,6 +11,7 @@ from queue import Queue
 from unittest.mock import MagicMock, patch
 
 from testing.base import BaseTestCase
+from pricing.pricing_controller import PricingController
 from storage.database import (
     CloudPostgresDatabaseManager,
     LocalDatabaseManager,
@@ -171,7 +172,7 @@ class TestLiveConnectionPool(unittest.TestCase):
     """Verify the live pool isolates requests and always returns leases."""
 
     def setUp(self):
-        self.db = CloudPostgresDatabaseManager("test-instance", "test-db", "test-user")
+        self.db = CloudPostgresDatabaseManager("test-instance", "test-db", "test-user", pricing_controller=PricingController())
         self.db._live_pool = Queue(maxsize=2)
         self.db._live_pool_closed = False
         self.db._live_checkout_timeout = 0.01
@@ -266,7 +267,7 @@ class TestDatabaseManagerConnectionAndMigration(BaseTestCase):
         super().setUp()
         self.temp_dir = tempfile.TemporaryDirectory()
         self.db_file = Path(self.temp_dir.name) / "test_db.db"
-        self.db = LocalDatabaseManager(str(self.db_file))
+        self.db = LocalDatabaseManager(str(self.db_file), pricing_controller=PricingController())
 
     def tearDown(self):
         self.db.close()
@@ -276,14 +277,20 @@ class TestDatabaseManagerConnectionAndMigration(BaseTestCase):
             pass
         super().tearDown()
 
-    def test_concrete_database_manager_constructors(self):
-        local_db = LocalDatabaseManager("local.db")
+    def test_concrete_database_manager_constructors(self) -> None:
+        pricing = PricingController(voice_credit_rate=3.0)
+        local_db = LocalDatabaseManager("local.db", pricing_controller=pricing)
         self.assertFalse(local_db.is_live)
         self.assertEqual(local_db.db_path, "local.db")
+        self.assertIs(local_db.pricing_controller, pricing)
 
-        live_db = CloudPostgresDatabaseManager("test-instance", "test-db", "test-user")
+        live_db = CloudPostgresDatabaseManager("test-instance", "test-db", "test-user", pricing_controller=pricing)
         self.assertTrue(live_db.is_live)
         self.assertEqual(live_db.cloud_sql_database, "test-db")
+        self.assertIs(live_db.pricing_controller, pricing)
+        pricing.voice_credit_rate = 4.0
+        self.assertEqual(local_db.get_pricing_rates()["voice_credit_rate"], 4.0)
+        self.assertEqual(live_db.get_pricing_rates()["voice_credit_rate"], 4.0)
 
     def test_connection_caching_and_switching(self):
         conn1 = self.db._get_connection()
@@ -303,7 +310,7 @@ class TestDatabaseManagerConnectionAndMigration(BaseTestCase):
         self.db.register_user("persistent-user", "persistent@example.test", "password")
         self.db.close()
 
-        reopened = LocalDatabaseManager(str(self.db_file))
+        reopened = LocalDatabaseManager(str(self.db_file), pricing_controller=PricingController())
         self.addCleanup(reopened.close)
         self.assertIsNotNone(reopened.authenticate_user("persistent-user", "password"))
 
@@ -327,7 +334,7 @@ class TestUserManagementAndAuth(BaseTestCase):
         super().setUp()
         self.temp_dir = tempfile.TemporaryDirectory()
         self.db_file = Path(self.temp_dir.name) / "test_user_auth.db"
-        self.db = LocalDatabaseManager(str(self.db_file))
+        self.db = LocalDatabaseManager(str(self.db_file), pricing_controller=PricingController())
 
     def tearDown(self):
         self.db.close()
@@ -525,7 +532,7 @@ class TestAuthSessionsAndActivity(BaseTestCase):
         super().setUp()
         self.temp_dir = tempfile.TemporaryDirectory()
         self.db_file = Path(self.temp_dir.name) / "test_sessions.db"
-        self.db = LocalDatabaseManager(str(self.db_file))
+        self.db = LocalDatabaseManager(str(self.db_file), pricing_controller=PricingController())
         self.user = self.db.register_user("sessuser", "sess@test.com", "Pass12345")
 
     def tearDown(self):
@@ -580,7 +587,7 @@ class TestPasswordResetFlowEdgeCases(BaseTestCase):
         super().setUp()
         self.temp_dir = tempfile.TemporaryDirectory()
         self.db_file = Path(self.temp_dir.name) / "test_reset.db"
-        self.db = LocalDatabaseManager(str(self.db_file))
+        self.db = LocalDatabaseManager(str(self.db_file), pricing_controller=PricingController())
         self.user = self.db.register_user("resetuser", "reset@test.com", "OldPassword123")
 
     def tearDown(self):
@@ -625,7 +632,7 @@ class TestDeploymentCreditsAndPersistence(BaseTestCase):
         super().setUp()
         self.temp_dir = tempfile.TemporaryDirectory()
         self.db_file = Path(self.temp_dir.name) / "test_dep.db"
-        self.db = LocalDatabaseManager(str(self.db_file))
+        self.db = LocalDatabaseManager(str(self.db_file), pricing_controller=PricingController())
         self.user = self.db.register_user("depuser", "dep@test.com", "Pass12345")
 
     def tearDown(self):
@@ -872,7 +879,7 @@ class TestBatonManagement(BaseTestCase):
         super().setUp()
         self.temp_dir = tempfile.TemporaryDirectory()
         self.db_file = Path(self.temp_dir.name) / "test_baton.db"
-        self.db = LocalDatabaseManager(str(self.db_file))
+        self.db = LocalDatabaseManager(str(self.db_file), pricing_controller=PricingController())
         self.owner = self.db.register_user("owner_user", "owner@test.com", "Pass12345")
         self.orator1 = self.db.register_user("orator_one", "orator1@test.com", "Pass12345")
         self.orator2 = self.db.register_user("orator_two", "orator2@test.com", "Pass12345")
@@ -1004,7 +1011,7 @@ class TestTheaterExportAndReconstruction(BaseTestCase):
         super().setUp()
         self.temp_dir = tempfile.TemporaryDirectory()
         self.db_file = Path(self.temp_dir.name) / "test_export.db"
-        self.db = LocalDatabaseManager(str(self.db_file))
+        self.db = LocalDatabaseManager(str(self.db_file), pricing_controller=PricingController())
         self.user = self.db.register_user("expuser", "exp@test.com", "Pass12345")
 
     def tearDown(self):
@@ -1037,7 +1044,7 @@ class TestCreditGiftExpiry(BaseTestCase):
         super().setUp()
         self.temp_dir = tempfile.TemporaryDirectory()
         self.db_file = Path(self.temp_dir.name) / "test_credit_gifts.db"
-        self.db = LocalDatabaseManager(str(self.db_file))
+        self.db = LocalDatabaseManager(str(self.db_file), pricing_controller=PricingController())
         self.sender = self.db.register_user("gift_sender", "gift-sender@test.com", "Pass12345")
         self.recipient = self.db.register_user("gift_recipient", "gift-recipient@test.com", "Pass12345")
         self.db.add_user_credits(self.sender["id"], 20.0, 1.0)
@@ -1081,7 +1088,7 @@ class TestAsyncDatabaseMethods(BaseTestCase):
         super().setUp()
         self.temp_dir = tempfile.TemporaryDirectory()
         self.db_file = Path(self.temp_dir.name) / "test_async.db"
-        self.db = LocalDatabaseManager(str(self.db_file))
+        self.db = LocalDatabaseManager(str(self.db_file), pricing_controller=PricingController())
 
     def tearDown(self):
         self.db.close()
@@ -1154,7 +1161,7 @@ class TestPostgresSchemaAndTables(BaseTestCase):
         super().setUp()
         self.temp_dir = tempfile.TemporaryDirectory()
         self.db_file = Path(self.temp_dir.name) / "test_postgres_schema.db"
-        self.db = LocalDatabaseManager(str(self.db_file))
+        self.db = LocalDatabaseManager(str(self.db_file), pricing_controller=PricingController())
 
     def tearDown(self):
         self.db.close()

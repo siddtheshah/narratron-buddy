@@ -31,6 +31,7 @@ def initialize_test_registry() -> None:
             os.environ.pop(name)
     os.environ["CLOUDSDK_CONFIG"] = str(root / "gcloud")
     provider = MagicMock(spec=TextResponseProvider)
+    provider.model = "test-text-model"
     provider.generate.side_effect = AssertionError(
         "Configure a text provider mock before generating text in a test."
     )
@@ -42,7 +43,7 @@ def initialize_test_registry() -> None:
         patch("services.game_service.get_games_root", return_value=root / "games"),
         patch("services.music_catalog.get_music_catalog_root", return_value=root / "music_catalog"),
         patch("services.music_catalog.get_text_response_provider", return_value=provider),
-        patch("services.text_beautifier.get_text_response_provider", return_value=provider),
+        patch("providers.registry.get_text_response_provider", return_value=provider),
         patch("storage.stamp_storage.StampStorage._init_gcs_client", return_value=None),
     ):
         import object_registry

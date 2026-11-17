@@ -13,6 +13,7 @@ import object_registry
 from api_server import friends
 from components.theater_manager import TheaterMetadata
 from components.canvas.connection_state import ConnectionState
+from pricing.pricing_controller import PricingController
 from storage.database import LocalDatabaseManager
 
 
@@ -26,7 +27,7 @@ def canvases() -> Iterator[MagicMock]:
 
 @pytest.fixture
 def database(tmp_path: Path) -> Iterator[LocalDatabaseManager]:
-    database = LocalDatabaseManager(str(tmp_path / "friends.db"))
+    database = LocalDatabaseManager(str(tmp_path / "friends.db"), pricing_controller=PricingController())
     database.register_user("Alice", "alice@example.com", "secret123")
     database.register_user("Bobby", "bob@example.com", "secret123")
     database.register_user("Carol", "carol@example.com", "secret123")

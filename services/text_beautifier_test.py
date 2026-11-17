@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 from providers.decision_provider import (
     ChoiceAnswer,
@@ -51,27 +51,13 @@ class TestTextBeautifier(unittest.TestCase):
         self.mock_provider.id = "gemini-mock"
         self.mock_provider.display_name = "Gemini Mock"
 
-        self.get_provider_patcher = patch(
-            "services.text_beautifier.get_text_response_provider",
-            return_value=self.mock_provider,
-        )
-        self.mock_get_provider = self.get_provider_patcher.start()
-
-    def tearDown(self) -> None:
-        self.get_provider_patcher.stop()
-
-    def test_initialization_validation(self) -> None:
-        # Invalid config type raises TypeError
-        with self.assertRaises(TypeError):
-            TextBeautifier("not-a-dict")  # type: ignore
-
-        # Valid default construction
-        beautifier = TextBeautifier()
+    def test_initialization_uses_supplied_provider(self) -> None:
+        beautifier = TextBeautifier(text_provider=self.mock_provider)
+        self.assertIs(beautifier.text_provider, self.mock_provider)
         self.assertEqual(beautifier.model, "gemini-3.5-flash-lite")
-        self.mock_get_provider.assert_called_with("gemini-2-5", options={"model": "gemini-3.5-flash-lite"})
 
     def test_argument_validation(self) -> None:
-        beautifier = TextBeautifier()
+        beautifier = TextBeautifier(text_provider=self.mock_provider)
         # Invalid type for beautify_text
         with self.assertRaises(TypeError):
             beautifier.beautify_text(123)  # type: ignore
@@ -87,7 +73,7 @@ class TestTextBeautifier(unittest.TestCase):
             beautifier.beautify_scene("valid", ["not-a-dict"])  # type: ignore
 
     def test_empty_text_returns_empty_spans(self) -> None:
-        beautifier = TextBeautifier()
+        beautifier = TextBeautifier(text_provider=self.mock_provider)
         self.assertEqual(beautifier.beautify_text(""), [])
         self.assertEqual(beautifier.beautify_text("   "), [])
 
@@ -104,7 +90,7 @@ class TestTextBeautifier(unittest.TestCase):
             ),
         )
 
-        beautifier = TextBeautifier()
+        beautifier = TextBeautifier(text_provider=self.mock_provider)
         spans = beautifier.beautify_text("The ancient chamber begins to SHUDDER AND CRUMBLE!")
 
         self.assertEqual(len(spans), 2)
@@ -135,7 +121,7 @@ class TestTextBeautifier(unittest.TestCase):
             ),
         )
 
-        beautifier = TextBeautifier()
+        beautifier = TextBeautifier(text_provider=self.mock_provider)
         spans = beautifier.beautify_text("Text")
         self.assertEqual(len(spans), 1)
         self.assertEqual(spans[0]["effect"], "none")
@@ -144,7 +130,7 @@ class TestTextBeautifier(unittest.TestCase):
     def test_beautify_text_fallback_on_provider_error(self) -> None:
         self.mock_provider.generate.side_effect = TextResponseProviderError("Provider unavailable")
 
-        beautifier = TextBeautifier()
+        beautifier = TextBeautifier(text_provider=self.mock_provider)
         spans = beautifier.beautify_text("Watch out!")
         self.assertEqual(len(spans), 1)
         self.assertEqual(spans[0]["text"], "Watch out!")
@@ -152,7 +138,7 @@ class TestTextBeautifier(unittest.TestCase):
         self.assertEqual(spans[0]["font"], "default")
 
     def test_beautify_scene_empty_returns_clean(self) -> None:
-        beautifier = TextBeautifier()
+        beautifier = TextBeautifier(text_provider=self.mock_provider)
         res = beautifier.beautify_scene("", [])
         self.assertEqual(res["narration"], "")
         self.assertEqual(res["narration_spans"], [])
@@ -181,7 +167,7 @@ class TestTextBeautifier(unittest.TestCase):
             ),
         )
 
-        beautifier = TextBeautifier()
+        beautifier = TextBeautifier(text_provider=self.mock_provider)
         result = beautifier.beautify_scene(
             narration="The torch flickers. A scream echoes!",
             dialogue=[{"speaker": "Grim", "text": "Did you hear that?", "kind": "speech"}],
@@ -201,7 +187,7 @@ class TestTextBeautifier(unittest.TestCase):
     def test_beautify_scene_fallback_on_error(self) -> None:
         self.mock_provider.generate.side_effect = Exception("Internal error")
 
-        beautifier = TextBeautifier()
+        beautifier = TextBeautifier(text_provider=self.mock_provider)
         result = beautifier.beautify_scene(
             narration="The storm rages.",
             dialogue=[{"speaker": "Captain", "text": "Hold on!", "kind": "speech"}],
@@ -229,7 +215,7 @@ class TestTextBeautifier(unittest.TestCase):
             ),
         )
 
-        beautifier = TextBeautifier()
+        beautifier = TextBeautifier(text_provider=self.mock_provider)
         with self.assertLogs("services.text_beautifier", level="INFO") as log_context:
             beautifier.beautify_text("The ancient gate EXPLODES IN FIRE!")
 
@@ -250,7 +236,7 @@ class TestTextBeautifier(unittest.TestCase):
             ),
         )
 
-        beautifier = TextBeautifier()
+        beautifier = TextBeautifier(text_provider=self.mock_provider)
         with self.assertLogs("services.text_beautifier", level="INFO") as log_context:
             beautifier.beautify_scene("Quiet night.", [])
 
@@ -300,7 +286,7 @@ class TestTextBeautifier(unittest.TestCase):
         self.assertIn("lacquer", ALLOWED_FONTS)
 
     def test_scintillate_effect_sanitized_to_none(self) -> None:
-        beautifier = TextBeautifier()
+        beautifier = TextBeautifier(text_provider=self.mock_provider)
         normalized = beautifier._sanitize_span(
             TextSpanEffect(text="Celestial light", effect="scintillate", font="cinematic")
         )
@@ -308,7 +294,7 @@ class TestTextBeautifier(unittest.TestCase):
         self.assertEqual(normalized["font"], "cinematic")
 
     def test_creepster_alias_maps_to_lacquer(self) -> None:
-        beautifier = TextBeautifier()
+        beautifier = TextBeautifier(text_provider=self.mock_provider)
         normalized = beautifier._sanitize_span(
             TextSpanEffect(text="Beware!", effect="drip", font="creepster", color="#dc2626")
         )
@@ -317,7 +303,7 @@ class TestTextBeautifier(unittest.TestCase):
         self.assertEqual(normalized["color"], "#dc2626")
 
     def test_drip_effect_and_lacquer_font_span(self) -> None:
-        beautifier = TextBeautifier()
+        beautifier = TextBeautifier(text_provider=self.mock_provider)
         normalized = beautifier._sanitize_span(
             {"text": "Blood on the wall", "effect": "drip", "font": "lacquer", "color": "#991b1b"}
         )
@@ -328,10 +314,10 @@ class TestTextBeautifier(unittest.TestCase):
 
     def test_decision_provider_init_and_property(self) -> None:
         mock_decision_provider = MagicMock(spec=DecisionProvider)
-        beautifier = TextBeautifier(decision_provider=mock_decision_provider)
+        beautifier = TextBeautifier(text_provider=self.mock_provider, decision_provider=mock_decision_provider)
         self.assertIs(beautifier.decision_provider, mock_decision_provider)
 
-        default_beautifier = TextBeautifier()
+        default_beautifier = TextBeautifier(text_provider=self.mock_provider)
         self.assertIsNone(default_beautifier.decision_provider)
 
     def test_beautify_text_routes_to_decision_provider(self) -> None:
@@ -346,7 +332,7 @@ class TestTextBeautifier(unittest.TestCase):
             },
         )
 
-        beautifier = TextBeautifier(decision_provider=mock_decision_provider)
+        beautifier = TextBeautifier(text_provider=self.mock_provider, decision_provider=mock_decision_provider)
         input_text = (
             "The cavern floor fractures with a DEAFENING CRACK as an ancient dragon erupts from the molten chasm!"
         )
@@ -404,7 +390,7 @@ class TestTextBeautifier(unittest.TestCase):
             },
         )
 
-        beautifier = TextBeautifier(decision_provider=mock_decision_provider)
+        beautifier = TextBeautifier(text_provider=self.mock_provider, decision_provider=mock_decision_provider)
         input_text = "Morning light rests on the table."
         spans = beautifier.beautify_text(input_text)
 
@@ -416,7 +402,7 @@ class TestTextBeautifier(unittest.TestCase):
 
     def test_decision_provider_empty_text_returns_empty_list(self) -> None:
         mock_decision_provider = MagicMock(spec=DecisionProvider)
-        beautifier = TextBeautifier(decision_provider=mock_decision_provider)
+        beautifier = TextBeautifier(text_provider=self.mock_provider, decision_provider=mock_decision_provider)
 
         self.assertEqual(beautifier.beautify_text(""), [])
         self.assertEqual(beautifier.beautify_text("   "), [])
@@ -434,7 +420,7 @@ class TestTextBeautifier(unittest.TestCase):
             ),
         )
 
-        beautifier = TextBeautifier(decision_provider=None)
+        beautifier = TextBeautifier(text_provider=self.mock_provider, decision_provider=None)
         self.assertIsNone(beautifier.decision_provider)
 
         spans = beautifier.beautify_text("Falling back to gemini")
@@ -467,7 +453,7 @@ class TestTextBeautifier(unittest.TestCase):
             ),
         ]
 
-        beautifier = TextBeautifier(decision_provider=mock_decision_provider)
+        beautifier = TextBeautifier(text_provider=self.mock_provider, decision_provider=mock_decision_provider)
         res = beautifier.beautify_scene(
             narration="The altar hums.",
             dialogue=[{"speaker": "Aria", "text": "Stay back.", "kind": "speech"}],
@@ -489,7 +475,7 @@ class TestTextBeautifier(unittest.TestCase):
 
     def test_decision_provider_rejects_spans_exceeding_decision_provider_limit(self) -> None:
         mock_decision_provider = MagicMock(spec=DecisionProvider)
-        beautifier = TextBeautifier(decision_provider=mock_decision_provider)
+        beautifier = TextBeautifier(text_provider=self.mock_provider, decision_provider=mock_decision_provider)
 
         # Generate text with 300 distinct clause/punctuation segments so candidates exceed MAX_CHOICE_OPTIONS (255)
         excessive_text = ", ".join(f"clause {i}" for i in range(300))

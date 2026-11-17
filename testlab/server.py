@@ -365,7 +365,9 @@ def beautify_text_endpoint(body: dict[str, Any]):
         raise HTTPException(status_code=400, detail="Either narration or dialogue must be provided.")
     req_model = str(body.get("model") or "").strip()
     if req_model:
-        beautifier = TextBeautifier(model=req_model)
+        beautifier = TextBeautifier(
+            text_provider=get_text_response_provider("gemini-2-5", options={"model": req_model}),
+        )
     else:
         import object_registry
         beautifier = object_registry.text_beautifier

@@ -14,6 +14,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from pricing.pricing_controller import PricingController
 from storage.database import CloudPostgresDatabaseManager
 
 
@@ -56,7 +57,7 @@ def apply_schema_migrations(connection) -> None:
 
 
 if __name__ == "__main__":
-    database = CloudPostgresDatabaseManager()
+    database = CloudPostgresDatabaseManager(pricing_controller=PricingController.from_env())
     connection = database._open_live_connection()
     try:
         apply_schema_migrations(connection)

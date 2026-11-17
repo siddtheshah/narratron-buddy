@@ -471,6 +471,34 @@ def test_snapshot_webp_uses_custom_stamp_resolver() -> None:
         assert center_pixel == (0, 0, 255)
 
 
+def test_user_stamp_resolver_renders_personal_stamp_and_preserves_local_priority(tmp_path: Path) -> None:
+    base_path = tmp_path / "base.png"
+    local_stamp = tmp_path / "local.png"
+    Image.new("RGB", (200, 200), "black").save(base_path)
+    Image.new("RGBA", (40, 40), "red").save(local_stamp)
+    buffer = io.BytesIO()
+    Image.new("RGBA", (40, 40), "blue").save(buffer, format="PNG")
+    resolver = MagicMock(return_value=buffer.getvalue())
+    state = DoodleState(lambda: None, user_stamp_resolver=resolver)
+    action = {"type": "stamp", "stamp_id": 42, "url": "/api/stamps/42", "x": 0.5, "y": 0.5, "size": 80}
+    state.save_stamp(action)
+
+    rendered = state.snapshot_webp(str(base_path))
+    assert rendered is not None
+    with Image.open(io.BytesIO(rendered)) as image:
+        assert image.convert("RGB").getpixel((100, 100)) == (0, 0, 255)
+    resolver.assert_called_once_with(state.doodles[0])
+    resolver.reset_mock()
+
+    assert state.resolve_stamp_image({**action, "url": str(local_stamp)}, image_path=str(base_path)) == local_stamp.read_bytes()
+    resolver.assert_not_called()
+
+
+def test_personal_stamp_without_resolver_is_unavailable() -> None:
+    state = DoodleState(lambda: None)
+    assert state.resolve_stamp_image({"type": "stamp", "stamp_id": 42, "url": "/api/stamps/42"}) is None
+
+
 def test_resolve_stamp_image_rejects_file_uri_traversal_and_ancestor_walk(tmp_path: Path) -> None:
     secret_file = tmp_path / "secret.png"
     secret_file.write_bytes(b"SECRET")

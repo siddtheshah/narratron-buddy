@@ -22,7 +22,7 @@ from pydantic import JsonValue, TypeAdapter
 
 from components.canvas import AudioState, ChatManager, ConnectionState, DoodleState, StoryState, ToolResponseState, UIState, VisualState
 from components.theater_manager import Theater
-from components.canvas.doodle_state import DoodlePage
+from components.canvas.doodle_state import DoodleAction, DoodlePage
 from game_engine.game_state import GameState
 from components.notepad import Notepad
 from components.story.input_gathering_cycle import story_input_cycle_duration
@@ -58,9 +58,13 @@ class CanvasStateManager:
     on_scenes_updated: Callable[[list[dict[str, JsonValue]]], None] | None = None
     on_animations_updated: Callable[[list[dict[str, JsonValue]]], None] | None = None
 
-    def __init__(self, theater: Theater, *, text_beautifier: TextBeautifier | None = None) -> None:
-        """Assemble canvas state; omit the beautifier to display unstyled story text."""
+    def __init__(
+        self, theater: Theater, *, text_beautifier: TextBeautifier | None = None,
+        user_stamp_resolver: Callable[[DoodleAction], bytes | None] | None = None,
+    ) -> None:
+        """Omitted services leave text unstyled and restrict stamps to local/inline images."""
         self.text_beautifier = text_beautifier
+        self.user_stamp_resolver = user_stamp_resolver
         self.canvas_lock = RLock()
         self.theater = theater
         self.theater_id = theater.theater_id
@@ -83,7 +87,10 @@ class CanvasStateManager:
             lock=self.canvas_lock,
         )
         self.audio = AudioState(self.notify_changed)
-        self.doodles = DoodleState(self.persist, theater=self.theater, page_provider=self._doodle_page, lock=self.canvas_lock)
+        self.doodles = DoodleState(
+            self.persist, theater=self.theater, page_provider=self._doodle_page, lock=self.canvas_lock,
+            user_stamp_resolver=self.user_stamp_resolver,
+        )
         self.ui = UIState(self.persist, self.notify_changed)
         self.tool_response = ToolResponseState(self.notify_changed)
         story_planning_config = theater.config().get("story_planning", {})
@@ -135,7 +142,10 @@ class CanvasStateManager:
         for item in self.visual.shown_images_history:
             if item.get("page_id") == page_id:
                 page = cast(DoodlePage, item)
-                return DoodleState(self.persist, theater=self.theater, page_provider=lambda: page, lock=self.canvas_lock)
+                return DoodleState(
+                    self.persist, theater=self.theater, page_provider=lambda: page, lock=self.canvas_lock,
+                    user_stamp_resolver=self.user_stamp_resolver,
+                )
         return None
 
     def _on_visual_changed(self, changed: bool = True) -> None:

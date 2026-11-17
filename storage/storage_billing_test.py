@@ -202,7 +202,7 @@ class TestZeroCreditsApiIntegration(unittest.TestCase):
     def setUp(self) -> None:
         self.test_dir = tempfile.mkdtemp()
         self.db_path = Path(self.test_dir) / "test_zero_credits.db"
-        self.db = LocalDatabaseManager(str(self.db_path))
+        self.db = LocalDatabaseManager(str(self.db_path), pricing_controller=PricingController())
 
     def tearDown(self) -> None:
         self.db.close()

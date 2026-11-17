@@ -30,6 +30,9 @@ class FakeTheater:
     def references_dir(self) -> Path:
         return self.root / "references"
 
+    def stamps_dir(self) -> Path:
+        return self.root / "stamps"
+
     def config(self) -> dict[str, object]:
         return {}
 
@@ -85,3 +88,20 @@ def test_service_keeps_beautifier_after_canvas_reset_and_reload(tmp_path: Path) 
         assert canvas.story.output_cycle.flush()
         assert canvas.story.narration_spans == [{"text": "Hello", "effect": "glow"}]
     assert beautifier.beautify_scene.call_count == 2
+
+
+def test_service_preserves_user_stamp_resolver_for_cached_and_history_pages(tmp_path: Path) -> None:
+    resolver = Mock(return_value=b"STAMP")
+    service = CanvasStateService(FakeTheaterManager(tmp_path), user_stamp_resolver=resolver)
+    canvas = service.get("live")
+    action = {"type": "stamp", "stamp_id": 42, "url": "/api/stamps/42"}
+
+    for refresh in (canvas.reset, canvas.reload_package):
+        refresh()
+        assert service.get("live").doodles.resolve_stamp_image(action) == b"STAMP"
+
+    canvas.visual.shown_images_history.append({"page_id": "previous", "doodles": []})
+    previous = canvas.doodles_for_page("previous")
+    assert previous is not None
+    assert previous.resolve_stamp_image(action) == b"STAMP"
+    assert resolver.call_count == 3
