@@ -11,6 +11,10 @@
   "devDependencies": {
     "@playwright/test": "^1.63.0",
     "@types/node": "^22.19.15",
+    "@types/three": "0.180.0",
     "typescript": "^7.0.2"
+  },
+  "dependencies": {
+    "three": "0.180.0"
   }
 }

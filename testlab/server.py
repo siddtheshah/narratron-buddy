@@ -94,6 +94,10 @@ app.mount("/static/generated", StaticFiles(directory=STATIC_GENERATED), name="st
 app.mount("/effects-static", StaticFiles(directory=PROJECT_ROOT / "static"), name="effects-static")
 app.mount("/carousel", StaticFiles(directory=PROJECT_ROOT / "templates" / "carousel"), name="carousel")
 app.mount("/test-images", StaticFiles(directory=ROOT / "images"), name="test-images")
+app.mount("/avatar-assets", StaticFiles(directory=ROOT / "avatar_packages"), name="avatar-assets")
+THREE_ROOT = PROJECT_ROOT / "node_modules" / "three"
+app.mount("/avatar-lib/three", StaticFiles(directory=THREE_ROOT / "build", check_dir=False), name="avatar-three")
+app.mount("/avatar-lib/addons", StaticFiles(directory=THREE_ROOT / "examples" / "jsm", check_dir=False), name="avatar-three-addons")
 BENCHMARK_OUTPUT = ROOT / "benchmark_output"
 BENCHMARK_OUTPUT.mkdir(exist_ok=True)
 app.mount("/benchmark-images", StaticFiles(directory=BENCHMARK_OUTPUT), name="benchmark-images")
@@ -133,6 +137,11 @@ CANVAS_IMAGE_ROOTS = (ROOT / "images", PROJECT_ROOT / "theaters")
 @app.get("/", include_in_schema=False)
 def index():
     return FileResponse(ROOT / "index.html", media_type="text/html")
+
+
+@app.get("/avatar-lab", include_in_schema=False)
+def avatar_lab() -> FileResponse:
+    return FileResponse(ROOT / "avatar_lab.html", media_type="text/html")
 
 
 @app.websocket("/ws")

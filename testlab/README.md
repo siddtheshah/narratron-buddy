@@ -19,6 +19,13 @@ and all TypeScript Playwright tests. Python route/API tests remain in
 
 Open `http://127.0.0.1:8015/` for the Test Lab index. It links to microphone/VAD testing, image effects, image/music/text provider benchmarks, and the asynchronous story-planner bridge.
 
+Open `/avatar-lab` to preview the cube over a sample canvas and play each clip.
+Hover over the cube to play Notice, or click, tap, or activate it with the
+keyboard to play Poke. Both reactions are also available in the action list.
+The model and action manifest live in `testlab/avatar_packages/cube/`. Run
+`node testlab/build_cube_avatar.mjs` after editing the geometry or keyframes.
+The lab serves Three.js and the cube assets locally.
+
 The Music Provider Bench can run a regular generator or the **TEST ONLY: Generate base + audio adapter** fixture. Select Lyria as the base and Stable Audio 3 Small Music Base A2A (FAL) as the adapter, then use the source-preservation control (lower noise preserves more of the Lyria track). This fixture intentionally generates a new base for an A/B evaluation; production variants should instead pass a previously generated or stored track to `MusicAdapter`. Set `FAL_API_KEY` or `FAL_API_KEY` alongside the Lyria/Gemini key before launching it.
 
 The Speech Provider Bench compares Gemini 3.8 Flash TTS, ByteDance **Seed Speech v2** on FAL, and Chirp 3 HD using fixed narrative dialogue lines. The Gemini presets demonstrate 3.8's structured sustained delivery directions and transcript-level vocal tags such as `<short pause>`. Gemini uses `GEMINI_API_KEY`; Seed Speech uses `FAL_API_KEY`. (Seedance is ByteDance's video family; Seed Speech is its FAL TTS endpoint.)

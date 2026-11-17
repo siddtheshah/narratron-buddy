@@ -1,0 +1,18 @@
+{
+  "id": "cube",
+  "title": "Cube",
+  "model": "model.glb",
+  "poster": "preview.webp",
+  "idle": "idle",
+  "reactions": { "hover": "notice", "activate": "poke" },
+  "actions": [
+    { "id": "idle", "label": "Idle", "clip": "Hover", "description": "Hover gently and blink.", "loop": true },
+    { "id": "greet", "label": "Greet", "clip": "Bow", "description": "Float up and bow." },
+    { "id": "think", "label": "Think", "clip": "Ponder", "description": "Tilt to the side and narrow its eyes." },
+    { "id": "speak", "label": "Speak", "clip": "Chatter", "description": "Bob and move its mouth." },
+    { "id": "celebrate", "label": "Celebrate", "clip": "SpinHop", "description": "Hop up and spin once." },
+    { "id": "surprise", "label": "Surprise", "clip": "Startle", "description": "Jump back with wide eyes." },
+    { "id": "notice", "label": "Notice", "clip": "PerkUp", "description": "Perk up when the pointer comes near." },
+    { "id": "poke", "label": "Poke", "clip": "PokeBounce", "description": "Squash, then spring back after a poke." }
+  ]
+}
