@@ -1,5 +1,6 @@
 """Addressable package files, excluding runtime state and editor bookkeeping."""
 
+from collections.abc import Sequence
 from pathlib import Path, PurePosixPath
 import re
 
@@ -8,9 +9,20 @@ from game_engine.game_source import GAME_FILES
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
 AUDIO_EXTENSIONS = {".mp3", ".wav", ".ogg", ".flac", ".m4a", ".aac"}
-TEXT_EXTENSIONS = {".txt", ".md", ".yaml", ".yml", ".json", ".svg", ".html"}
+SHADER_EXTENSIONS = {".glsl", ".vert", ".frag"}
+TEXT_EXTENSIONS = {".txt", ".md", ".yaml", ".yml", ".json", ".svg", ".html"} | SHADER_EXTENSIONS
 ROOT_FILES = {"theater.yaml", "planning.yaml", "metadata.json", "README.md", "LICENSE"}
 AVATAR_FILES = {"avatar.json", "model.glb", "preview.webp"}
+
+
+def is_avatar_asset(parts: Sequence[str]) -> bool:
+    """Return whether normalized relative path segments address an allowed avatar asset."""
+    if not parts or parts[0] != "avatars":
+        return False
+    suffix = PurePosixPath(parts[-1]).suffix.lower()
+    if len(parts) == 3:
+        return parts[-1] in AVATAR_FILES or suffix in SHADER_EXTENSIONS
+    return len(parts) == 4 and parts[2] == "shaders" and suffix in SHADER_EXTENSIONS
 
 
 class IneligibleAssetError(ValueError):
@@ -42,9 +54,9 @@ def safe_asset_path(root: Path, relative: str) -> Path:
     allowed |= len(parts) == 3 and parts[0] == "animations" and (
         suffix in IMAGE_EXTENSIONS or parts[-1] in {"video.mp4", "video.json", "layered.json", "triframe.json", "animation.json"}
     )
-    allowed |= len(parts) == 3 and parts[0] == "avatars" and parts[-1] in AVATAR_FILES
+    allowed |= is_avatar_asset(parts)
     if not allowed:
-        raise IneligibleAssetError("Use theater.yaml, planning.yaml, metadata.json, README.md, lore/*.txt or *.md, references/images, references/characters/<Name>/images or character.yaml, references/scenes/<Name>/images or scene.yaml, stamps/images, playlists/<Name>/audio or description.txt, animations/<Name>/images, video.mp4 or animation manifests, avatars/<Name>/avatar.json, model.glb or preview.webp, or game/game.yaml (game.yml/game.json) with game/*.svg and companion game/*.json.")
+        raise IneligibleAssetError("Use theater.yaml, planning.yaml, metadata.json, README.md, lore/*.txt or *.md, references/images, references/characters/<Name>/images or character.yaml, references/scenes/<Name>/images or scene.yaml, stamps/images, playlists/<Name>/audio or description.txt, animations/<Name>/images, video.mp4 or animation manifests, avatars/<Name>/avatar.json, model.glb, preview.webp or shaders (.glsl/.vert/.frag), or game/game.yaml (game.yml/game.json) with game/*.svg and companion game/*.json.")
     target = root.joinpath(*parts).resolve()
     if root.resolve() not in target.parents:
         raise ValueError("Asset path escapes the theater checkout.")

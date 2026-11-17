@@ -19,7 +19,7 @@ from absl import flags
 from game_engine.game_source import GAME_FILES
 from components.playlist_audio import playlist_audio_type
 from components.reference_images import reference_image_type
-from components.theater_package import AVATAR_FILES, safe_asset_path
+from components.theater_package import is_avatar_asset, safe_asset_path
 
 logger = logging.getLogger(__name__)
 
@@ -570,9 +570,10 @@ def extract_asset_package(
                     reference_files.append(("/".join(parts[parts.index("game"):]), content))
                 elif filename.lower() in ("planning.yaml", "planning.yml"):
                     reference_files.append(("planning.yaml", content))
-                elif parts[-3:-2] == ["avatars"]:
-                    if filename in AVATAR_FILES:
-                        relative = "/".join(parts[-3:])
+                elif "avatars" in parts:
+                    avatar_parts = parts[parts.index("avatars"):]
+                    if is_avatar_asset(avatar_parts):
+                        relative = "/".join(avatar_parts)
                         safe_asset_path(Path("."), relative)
                         reference_files.append((relative, content))
                 elif "animations" in parts:

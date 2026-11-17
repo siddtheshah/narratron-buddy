@@ -70,6 +70,29 @@ def test_animation_folder_upload_save_restore_and_delete(tmp_path: Path) -> None
     assert not (repo.theater_path(info.theater_id) / "animations/rain/video.mp4").exists()
 
 
+def test_avatar_shaders_allowed_and_preserved_without_arbitrary_scripts(tmp_path: Path) -> None:
+    store = TheaterBuilderStore(tmp_path / "checkouts", database_manager=make_quota_database())
+    info = store.create(7, "World", "live_agent: {}\n", populate_default=False)
+    root = store.directory(info.theater_id)
+    files = {
+        upload_path("world/avatars/cube/avatar.json", True): b'{"title":"Cube","model":"model.glb","idle":"idle","actions":[]}',
+        upload_path("world/avatars/cube/dust.vert", True): b"void main() {}",
+        upload_path("world/avatars/cube/shaders/dust.frag", True): b"void main() {}",
+    }
+    store.write_files(info, files)
+    assert {item.path for item in store.files(info.theater_id)} >= set(files)
+    repo = TheaterRepository(tmp_path / "saved")
+    assert repo.export_theater(info.theater_id, root)
+    restored = tmp_path / "restored"
+    assert repo.reconstruct_theater(info.theater_id, restored)
+    for name, content in files.items():
+        assert (restored / name).read_bytes() == content
+    with pytest.raises(IneligibleAssetError):
+        safe_asset_path(tmp_path, "avatars/cube/shaders/evil.js")
+    with pytest.raises(IneligibleAssetError):
+        safe_asset_path(tmp_path, "avatars/cube/shaders/nested/dust.frag")
+
+
 @pytest.mark.parametrize(("name", "folder", "expected"), [
     ("hero.png", False, "references/hero.png"),
     ("stamp_orc.png", False, "stamps/stamp_orc.png"),

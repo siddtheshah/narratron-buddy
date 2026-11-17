@@ -17,6 +17,21 @@
   "hoverGlow": {
     "material": "InnerLight",
     "intensity": 4,
-    "light": { "name": "SparkLight", "intensity": 7.875, "dustRadius": 0.36 }
-  }
+    "light": { "name": "SparkLight", "intensity": 7.875 }
+  },
+  "shaders": [
+    {
+      "attachTo": "SparkLight",
+      "geometry": { "type": "sphere", "widthSegments": 32, "heightSegments": 24 },
+      "scale": 0.36,
+      "vertex": "shaders/dust.vert",
+      "fragment": "shaders/dust.frag",
+      "transparent": true,
+      "depthWrite": false,
+      "uniforms": {
+        "sparkColor": { "source": "lightColor" },
+        "sparkStrength": { "rest": 0.62, "hover": 1.74 }
+      }
+    }
+  ]
 }

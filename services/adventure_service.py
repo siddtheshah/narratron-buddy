@@ -23,7 +23,7 @@ from pydantic import JsonValue, TypeAdapter
 from absl import flags
 from game_engine.game_source import GAME_FILES
 from components.theater_manager import asset_destination
-from components.theater_package import AVATAR_FILES
+from components.theater_package import is_avatar_asset
 from services.catalog_sentinel import (
     CatalogCacheKey,
     gcs_sentinel_cache_key,
@@ -348,9 +348,7 @@ class AdventureService:
                 reference_files.append((rel, content))
             elif rel in ("planning.yaml", "planning.yml") or filename.lower() in ("planning.yaml", "planning.yml"):
                 reference_files.append(("planning.yaml", content))
-            elif parts[0] == "animations" or (
-                parts[0] == "avatars" and len(parts) == 3 and filename in AVATAR_FILES
-            ):
+            elif parts[0] == "animations" or is_avatar_asset(parts):
                 reference_files.append((rel, content))
             elif "references" in parts or "reference_library" in parts or "stamps" in parts or parts[0] == "characters":
                 if filename.lower().endswith((".png", ".jpg", ".jpeg", ".webp", ".gif")):

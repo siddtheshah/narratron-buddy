@@ -1,6 +1,6 @@
-import { AnimationMixer, MathUtils, Mesh, MeshStandardMaterial, PointLight } from 'three';
+import { AnimationMixer, Color, MathUtils, Mesh, MeshStandardMaterial, PointLight } from 'three';
 import { createAvatarScene } from '../shared/avatar-scene.js';
-import { addAvatarDust } from './avatar-dust.js';
+import { loadAvatarShaders, type AvatarShaderController, type AvatarShaderSpec } from './avatar-shaders.js';
 
 interface AvatarManifest {
   readonly title: string;
@@ -18,8 +18,9 @@ interface AvatarManifest {
   readonly hoverGlow?: {
     readonly material: string;
     readonly intensity: number;
-    readonly light?: { readonly name: string; readonly intensity: number; readonly dustRadius?: number };
+    readonly light?: { readonly name: string; readonly intensity: number };
   };
+  readonly shaders?: readonly AvatarShaderSpec[];
 }
 
 interface AvatarColorAction {
@@ -32,6 +33,10 @@ interface AvatarPlayback {
   readonly idle: string;
   readonly colors: readonly AvatarColorAction[];
   selectColor(actionId: string): boolean;
+}
+
+function isMinimalModeActive(): boolean {
+  return document.documentElement.classList.contains('minimal-mode');
 }
 
 export async function mountAvatar(mount: HTMLElement, packagePath: string): Promise<AvatarPlayback | null> {
@@ -87,9 +92,6 @@ export async function mountAvatar(mount: HTMLElement, packagePath: string): Prom
   const lightGlow = lightNode instanceof PointLight && lightSetting && Number.isFinite(lightSetting.intensity)
     ? { light: lightNode, rest: lightNode.intensity, peak: Math.max(0, lightSetting.intensity) }
     : null;
-  const dustRadius = lightSetting?.dustRadius;
-  const updateDust = lightGlow && typeof dustRadius === 'number' && Number.isFinite(dustRadius) && dustRadius > 0
-    ? addAvatarDust(lightGlow.light, dustRadius) : null;
   const materials = new Map<MeshStandardMaterial, number>();
   if (glow && Number.isFinite(glow.intensity)) {
     model.traverse((node) => {
@@ -99,51 +101,87 @@ export async function mountAvatar(mount: HTMLElement, packagePath: string): Prom
     });
   }
 
-  const colors = lightGlow ? manifest.actions.flatMap(({ id, label, lightColor }) => (
+  const shaderSpecs = Array.isArray(manifest.shaders) ? manifest.shaders : [];
+  const supportsColor = Boolean(lightGlow) || shaderSpecs.length > 0;
+  const colors = supportsColor ? manifest.actions.flatMap(({ id, label, lightColor }) => (
     typeof lightColor === 'string' && /^#[\da-f]{6}$/i.test(lightColor)
       ? [{ id, label: label ?? id, color: lightColor }]
       : []
   )) : [];
-  const targetColor = lightGlow?.light.color.clone();
+  const activeColor = lightGlow ? lightGlow.light.color : new Color(0xffffff);
+  const targetColor = supportsColor ? activeColor.clone() : undefined;
   const idleColor = colors.find((action) => action.id === manifest.idle);
-  if (idleColor && lightGlow && targetColor) {
+  if (idleColor && targetColor) {
     targetColor.set(idleColor.color);
-    lightGlow.light.color.copy(targetColor);
+    activeColor.copy(targetColor);
+  }
+
+  let shaderController: AvatarShaderController | null = null;
+  let shaderLoadStarted = false;
+  let ready = true;
+  let brightness = 0;
+  let elapsedShaderTime = 0;
+
+  async function ensureShaders(): Promise<void> {
+    if (shaderLoadStarted || shaderSpecs.length === 0) return;
+    shaderLoadStarted = true;
+    try {
+      const controller = await loadAvatarShaders(model, packageUrl, shaderSpecs, activeColor);
+      if (!ready) {
+        controller.dispose();
+        return;
+      }
+      shaderController = controller;
+      const enabled = !isMinimalModeActive();
+      controller.setEnabled(enabled);
+      if (enabled) {
+        controller.update(elapsedShaderTime, brightness, canvas.width, canvas.height);
+      }
+    } catch (error) {
+      shaderLoadStarted = false;
+      console.warn('Could not load avatar shaders', error);
+    }
+  }
+
+  if (!isMinimalModeActive() && shaderSpecs.length > 0) {
+    await ensureShaders();
   }
 
   mount.append(canvas);
   mount.hidden = false;
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
   let lastTime = 0;
-  let brightness = 0;
   let hovered = false;
   let focused = false;
-  let ready = true;
 
   function update(time: number): void {
     const delta = Math.min((time - (lastTime || time)) / 1000, 0.1);
     lastTime = time;
-    if (!reducedMotion.matches) mixer.update(delta);
+    if (!reducedMotion.matches) {
+      mixer.update(delta);
+      elapsedShaderTime += delta;
+    }
+    const target = Number(hovered || focused);
+    brightness = reducedMotion.matches ? target : MathUtils.damp(brightness, target, 10, delta);
     if (glow) {
-      const target = Number(hovered || focused);
-      brightness = reducedMotion.matches ? target : MathUtils.damp(brightness, target, 10, delta);
       for (const [material, restingIntensity] of materials) {
         material.emissiveIntensity = MathUtils.lerp(restingIntensity, glow.intensity, brightness);
       }
       if (lightGlow) {
         lightGlow.light.intensity = MathUtils.lerp(lightGlow.rest, lightGlow.peak, brightness);
-        if (targetColor && colors.length > 0) {
-          const color = lightGlow.light.color;
-          color.lerp(targetColor, reducedMotion.matches ? 1 : MathUtils.damp(0, 1, 8, delta));
-          for (const material of materials.keys()) material.emissive.copy(color);
-        }
       }
-      updateDust?.(brightness);
+    }
+    if (targetColor && colors.length > 0) {
+      activeColor.lerp(targetColor, reducedMotion.matches ? 1 : MathUtils.damp(0, 1, 8, delta));
+      for (const material of materials.keys()) material.emissive.copy(activeColor);
+    }
+    if (shaderController && !isMinimalModeActive()) {
+      shaderController.update(elapsedShaderTime, brightness, canvas.width, canvas.height);
     }
     render();
   }
 
-  if (materials.size > 0 || lightGlow) {
+  if (materials.size > 0 || lightGlow || shaderSpecs.length > 0) {
     mount.tabIndex = 0;
     mount.addEventListener('pointerenter', (event) => { hovered = event.pointerType !== 'touch'; });
     mount.addEventListener('pointerleave', () => { hovered = false; });
@@ -155,14 +193,34 @@ export async function mountAvatar(mount: HTMLElement, packagePath: string): Prom
     const size = mount.clientWidth;
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setSize(size, size, false);
+    if (shaderController && !isMinimalModeActive()) {
+      shaderController.update(elapsedShaderTime, brightness, canvas.width, canvas.height);
+    }
     render();
   }
 
   const observer = new ResizeObserver(resize);
   observer.observe(mount);
+  const minimalObserver = new MutationObserver(() => {
+    const minimal = isMinimalModeActive();
+    if (!minimal && !shaderController && !shaderLoadStarted && shaderSpecs.length > 0) {
+      void ensureShaders().then(() => { if (ready) render(); });
+      return;
+    }
+    shaderController?.setEnabled(!minimal);
+    if (!minimal && shaderController) {
+      shaderController.update(elapsedShaderTime, brightness, canvas.width, canvas.height);
+    }
+    render();
+  });
+  minimalObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+
   canvas.addEventListener('webglcontextlost', () => {
     ready = false;
     observer.disconnect();
+    minimalObserver.disconnect();
+    shaderController?.dispose();
+    shaderController = null;
     renderer.setAnimationLoop(null);
     showPoster();
   }, { once: true });

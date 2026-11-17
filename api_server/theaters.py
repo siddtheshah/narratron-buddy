@@ -47,7 +47,7 @@ from services.theater_assets import (
     extract_and_resolve_references,
     next_reference_iteration,
 )
-from components.theater_package import safe_asset_path
+from components.theater_package import SHADER_EXTENSIONS, is_avatar_asset, safe_asset_path
 from services.generation_billing import (
     billing_locks as _billing_locks,
     MAX_CONCURRENT_GENERATION_JOBS,
@@ -982,7 +982,7 @@ async def serve_theater_animation(
     return response
 
 
-@app.get("/theaters/{theater_id}/avatars/{avatar_id}/{filename}")
+@app.get("/theaters/{theater_id}/avatars/{avatar_id}/{filename:path}")
 async def serve_theater_avatar(
     request: Request, theater_id: str, avatar_id: str, filename: str,
 ) -> FileResponse:
@@ -995,9 +995,14 @@ async def serve_theater_avatar(
         raise HTTPException(status_code=404, detail="Avatar asset not found") from error
     if not target.is_file():
         raise HTTPException(status_code=404, detail="Avatar asset not found")
+    media_type = (
+        "model/gltf-binary" if filename == "model.glb"
+        else "text/plain; charset=utf-8" if Path(filename).suffix.lower() in SHADER_EXTENSIONS
+        else None
+    )
     return FileResponse(
         target,
-        media_type="model/gltf-binary" if filename == "model.glb" else None,
+        media_type=media_type,
         headers={"Cache-Control": "private, no-cache", "X-Content-Type-Options": "nosniff"},
     )
 
@@ -1579,6 +1584,10 @@ async def create_and_deploy_theater(request: Request):
                         reference_files.append(("/".join(parts[parts.index("game"):]), content))
                     elif "animations" in parts:
                         reference_files.append(("/".join(parts[parts.index("animations"):]), content))
+                    elif "avatars" in parts:
+                        avatar_parts = parts[parts.index("avatars"):]
+                        if is_avatar_asset(avatar_parts):
+                            reference_files.append(("/".join(avatar_parts), content))
                     elif "references" in parts or (
                         clean_name.lower().endswith((".png", ".jpg", ".jpeg", ".webp", ".gif"))
                         and "playlists" not in parts
