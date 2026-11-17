@@ -1,7 +1,9 @@
 # Narratron Test Lab
 
-Install dependencies and build the TypeScript browser modules from the repository
-root before starting the standalone Test Lab:
+## Run locally
+
+From the repository root, install dependencies, build the browser modules, and
+start the standalone Test Lab.
 
 ```powershell
 uv sync --locked
@@ -10,23 +12,13 @@ npm run build
 uv run python -m uvicorn testlab.server:app --host 127.0.0.1 --port 8015
 ```
 
-The lab serves compiled modules from `/static/generated/testlab/`. Run
-`npm run watch` in another terminal while editing `frontend/testlab/testlab-*.ts`;
-the standalone server does not rebuild assets automatically. Browser regression
-tests live alongside those modules; run `npm test` for type checking, the build,
-and all TypeScript Playwright tests. Python route/API tests remain in
-`testlab/*_test.py`.
+Open the [Test Lab index](http://127.0.0.1:8015/). While editing frontend modules,
+run `npm run watch` to rebuild them as you work. Run `npm test` for type checking,
+the build, and Playwright tests. Python route tests are in `testlab/*_test.py`.
 
-Open `http://127.0.0.1:8015/` for the Test Lab index. It links to microphone/VAD testing, image effects, image/music/text provider benchmarks, and the asynchronous story-planner bridge.
+## Provider benchmarks
 
-Open `/avatar-lab` to preview the cube over a sample canvas and play each clip.
-Hover over the cube to play Notice, or click, tap, or activate it with the
-keyboard to play Poke. Both reactions are also available in the action list.
-The model and action manifest live in `testlab/avatar_packages/cube/`. Run
-`node testlab/build_cube_avatar.mjs` after editing the geometry or keyframes.
-The lab serves Three.js and the cube assets locally.
-
-The Music Provider Bench can run a regular generator or the **TEST ONLY: Generate base + audio adapter** fixture. Select Lyria as the base and Stable Audio 3 Small Music Base A2A (FAL) as the adapter, then use the source-preservation control (lower noise preserves more of the Lyria track). This fixture intentionally generates a new base for an A/B evaluation; production variants should instead pass a previously generated or stored track to `MusicAdapter`. Set `FAL_API_KEY` or `FAL_API_KEY` alongside the Lyria/Gemini key before launching it.
+The Music Provider Bench can run a regular generator or the **TEST ONLY: Generate base + audio adapter** fixture. Select Lyria as the base and Stable Audio 3 Small Music Base A2A (FAL) as the adapter, then use the source-preservation control (lower noise preserves more of the Lyria track). This fixture generates a new base for A/B evaluation. Production variants pass a previously generated or stored track to `MusicAdapter`. Set `FAL_API_KEY` alongside the Lyria/Gemini key before launching it.
 
 The Speech Provider Bench compares Gemini 3.8 Flash TTS, ByteDance **Seed Speech v2** on FAL, and Chirp 3 HD using fixed narrative dialogue lines. The Gemini presets demonstrate 3.8's structured sustained delivery directions and transcript-level vocal tags such as `<short pause>`. Gemini uses `GEMINI_API_KEY`; Seed Speech uses `FAL_API_KEY`. (Seedance is ByteDance's video family; Seed Speech is its FAL TTS endpoint.)
 
@@ -38,7 +30,9 @@ To inspect the live Gemini Extended Voice Library and its available filter value
 uv run python scripts/list_gemini_voice_tags.py
 ```
 
-To bypass the browser and exercise one real Vertex-backed planner turn, run:
+## Smoke tests
+
+To exercise one Vertex-backed planner turn from the command line, run:
 
 ```powershell
 uv run python testlab/story_planner_smoke.py

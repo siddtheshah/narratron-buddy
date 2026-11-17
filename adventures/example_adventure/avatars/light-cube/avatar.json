@@ -5,7 +5,18 @@
   "poster": "preview.webp",
   "idle": "idle",
   "actions": [
-    { "id": "idle", "label": "Idle", "clip": "SlowTurn", "loop": true }
+    { "id": "idle", "label": "Gold", "clip": "SlowTurn", "loop": true, "lightColor": "#ffc477" },
+    { "id": "ember", "label": "Ember", "lightColor": "#ff5940" },
+    { "id": "emerald", "label": "Emerald", "lightColor": "#46f391" },
+    { "id": "cyan", "label": "Cyan", "lightColor": "#41dfff" },
+    { "id": "violet", "label": "Violet", "lightColor": "#b47aff" },
+    { "id": "frost", "label": "Frost", "lightColor": "#d2eaff" }
   ],
-  "hoverGlow": { "material": "InnerLight", "intensity": 4 }
+  "renderScale": 0.8,
+  "fillLight": 0.24,
+  "hoverGlow": {
+    "material": "InnerLight",
+    "intensity": 4,
+    "light": { "name": "SparkLight", "intensity": 7.875, "dustRadius": 0.36 }
+  }
 }

@@ -8,6 +8,7 @@ export async function createAvatarScene(
   canvas: HTMLCanvasElement,
   context: WebGL2RenderingContext,
   modelUrl: URL,
+  fillLight = 1,
 ) {
   const response = await fetch(modelUrl);
   if (!response.ok) throw new Error(`Avatar model returned ${response.status}`);
@@ -17,10 +18,10 @@ export async function createAvatarScene(
   });
   const { scene: model, animations } = await new GLTFLoader(manager).parseAsync(await response.arrayBuffer(), '');
   const scene = new Scene();
-  scene.add(model, new HemisphereLight(0xe8ffff, 0x7e6470, 2.1));
-  const key = new DirectionalLight(0xffdec0, 2.4);
+  scene.add(model, new HemisphereLight(0xe8ffff, 0x7e6470, 2.1 * fillLight));
+  const key = new DirectionalLight(0xffdec0, 2.4 * fillLight);
   key.position.set(-3, 5, 5);
-  const rim = new DirectionalLight(0x76f5ff, 1.4);
+  const rim = new DirectionalLight(0x76f5ff, 1.4 * fillLight);
   rim.position.set(4, 2, -3);
   scene.add(key, rim);
 

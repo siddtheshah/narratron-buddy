@@ -17,6 +17,8 @@ interface AvatarManifest {
 }
 
 const packageUrl = new URL('/avatar-assets/cube/', window.location.href);
+const avatarChoice = document.querySelector<HTMLSelectElement>('#avatar-choice')!;
+const showLightCube = new URLSearchParams(location.search).get('avatar') === 'light-cube';
 const stage = document.querySelector<HTMLDivElement>('#stage')!;
 const backdrop = document.querySelector<HTMLSelectElement>('#backdrop')!;
 const viewport = document.querySelector<HTMLDivElement>('#avatar')!;
@@ -26,6 +28,11 @@ const interactionHint = document.querySelector<HTMLParagraphElement>('#avatar-in
 const status = document.querySelector<HTMLParagraphElement>('#playback-status')!;
 const actionList = document.querySelector<HTMLDivElement>('#action-list')!;
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
+
+avatarChoice.value = showLightCube ? 'light-cube' : 'cube';
+avatarChoice.addEventListener('change', () => {
+  location.search = avatarChoice.value === 'light-cube' ? '?avatar=light-cube' : '';
+});
 
 backdrop.addEventListener('change', () => {
   stage.dataset.backdrop = backdrop.value;
@@ -177,7 +184,46 @@ async function startLab(): Promise<void> {
   play(idle.definition.id, true);
 }
 
-startLab().catch((error: unknown) => {
+async function startLightCube(): Promise<void> {
+  document.getElementById('actions-heading')!.textContent = 'Light colors';
+  viewport.replaceChildren();
+  viewport.hidden = true;
+  const { mountAvatar } = await import('../canvas/avatar.js');
+  const player = await mountAvatar(viewport, '/avatar-assets/light-cube/');
+  if (!player) {
+    status.textContent = '3D playback is unavailable. Showing the cube preview.';
+    return;
+  }
+  const buttons = new Map<string, HTMLButtonElement>();
+  function selectColor(id: string, label: string): void {
+    if (!player?.selectColor(id)) return;
+    for (const [colorId, button] of buttons) {
+      button.setAttribute('aria-pressed', String(id === colorId));
+    }
+    status.textContent = `${label} glow`;
+  }
+  for (const { id, label, color } of player.colors) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'action';
+    button.style.setProperty('--action-light', color);
+    const name = document.createElement('span');
+    name.className = 'action-name';
+    name.textContent = label;
+    const swatch = document.createElement('span');
+    swatch.className = 'action-color';
+    button.append(name, swatch);
+    button.addEventListener('click', () => selectColor(id, label));
+    actionList.append(button);
+    buttons.set(id, button);
+    button.setAttribute('aria-pressed', 'false');
+  }
+  selectColor(player.idle, player.colors.find(({ id }) => id === player.idle)?.label ?? 'Idle');
+  interactionHint.textContent = 'Hover over the cube to brighten the selected color.';
+  interactionHint.hidden = false;
+}
+
+(showLightCube ? startLightCube() : startLab()).catch((error: unknown) => {
   status.textContent = 'Could not load the cube preview.';
   console.error('Avatar lab failed to start', error);
 });
