@@ -674,20 +674,18 @@ class TestCreateAgent(unittest.TestCase):
     @patch("services.live_agent.ImageTools")
     @patch("services.live_agent.ReferenceManager")
     @patch("services.live_agent.LoreLibrary")
-    @patch("services.live_agent.MusicCatalog.from_config")
     @patch("services.live_agent.get_video_provider")
     @patch("services.live_agent.get_text_response_provider")
     def test_create_tool_bundle_creates_intermediate_components_first_and_reuses_them(
         self,
-        mock_get_text_provider,
-        mock_get_video_provider,
-        mock_music_catalog_from_config,
-        mock_lore_lib_cls,
-        mock_char_mgr_cls,
-        mock_image_tools_cls,
-        mock_story_tool_cls,
-        mock_animation_tools_cls,
-    ):
+        mock_get_text_provider: MagicMock,
+        mock_get_video_provider: MagicMock,
+        mock_lore_lib_cls: MagicMock,
+        mock_char_mgr_cls: MagicMock,
+        mock_image_tools_cls: MagicMock,
+        mock_story_tool_cls: MagicMock,
+        mock_animation_tools_cls: MagicMock,
+    ) -> None:
         from services.live_agent import create_tool_bundle_for_session
 
         theater = make_test_theater(
@@ -737,14 +735,12 @@ class TestCreateAgent(unittest.TestCase):
     @patch("services.live_agent.ImageTools")
     @patch("services.live_agent.ReferenceManager")
     @patch("services.live_agent.LoreLibrary")
-    @patch("services.live_agent.MusicCatalog.from_config")
     @patch("services.live_agent.get_video_provider")
     @patch("services.live_agent.get_text_response_provider")
     def test_create_tool_bundle_uses_provided_canvas_manager(
         self,
         mock_get_text_provider: MagicMock,
         mock_get_video_provider: MagicMock,
-        mock_music_catalog_from_config: MagicMock,
         mock_lore_lib_cls: MagicMock,
         mock_char_mgr_cls: MagicMock,
         mock_image_tools_cls: MagicMock,

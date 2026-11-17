@@ -72,10 +72,11 @@ Follow the constructor dependency rules in [AGENTS.md](AGENTS.md#constructor-dep
 7. [x] **Storage-limit calculation** (`storage/storage_limits.py`): require the database in `calculate_user_theaters_storage_bytes` instead of resolving an omitted argument through the registry. This is the same dependency issue outside a constructor.
 8. [x] **ImageTools and AnimationTools** (`tools/image/image_tool.py`, `tools/animation_tool.py`): require the shared reference manager instead of constructing private managers inside tool constructors.
 9. [x] **UserHelpCatalog** (`services/user_help_catalog.py`): require the documentation index and pricing controller; remove captured singleton defaults and lazy pricing construction.
-
 10. [x] **TheaterBuilderStore and checkout factories** (`services/theater_builder.py`, `services/theater_checkout.py`): inject the database used by storage-quota checks; pass it through editor, save, and help-settings entry points.
 
 For each cleanup, update call sites and test fixtures, preserve genuinely optional behavior, and run the relevant regression tests.
+
+Validation for this cleanup: `uv run ruff check .`, TypeScript checks, and the browser build pass; all 632 browser tests pass with four workers. The core Python suite reports 3,294 passed and 123 subtests passed, with one existing failure in `api_server/theater_editor_test.py::test_example_adventure_folder_survives_editor_upload_and_download`, also reproduced at the starting commit `dad30f7`. The initial browser run had one image-benchmark note-update failure that passed on a focused retry and in the complete four-worker run.
 
 ### Other refactors
 
