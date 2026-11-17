@@ -7,6 +7,11 @@ For complete documentation on package specifications, testing with the Testlab A
 
 ---
 
+The **Cube of Light** floats above the lower-right canvas controls. It turns
+once every 20 seconds and brightens from the inside on hover or keyboard focus.
+Run `node scripts/build_light_cube.mjs` from the repository root to rebuild its
+model after editing the geometry or motion.
+
 ## Directory Structure Breakdown
 
 ```text
@@ -16,6 +21,7 @@ example_adventure/
 ├── planning.yaml           # Deep planner schemas, sticky definitions, and initial notes
 ├── README.md               # This reference file
 ├── LICENSE                 # Adventure license terms
+├── avatars/light-cube/     # Canvas companion with a GLB, manifest, and still preview
 ├── animations/             # Standalone animations and video loops
 │   └── book_of_origins_portal/
 │       ├── video.json

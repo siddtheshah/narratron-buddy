@@ -1,0 +1,11 @@
+{
+  "id": "light-cube",
+  "title": "Cube of Light",
+  "model": "model.glb",
+  "poster": "preview.webp",
+  "idle": "idle",
+  "actions": [
+    { "id": "idle", "label": "Idle", "clip": "SlowTurn", "loop": true }
+  ],
+  "hoverGlow": { "material": "InnerLight", "intensity": 4 }
+}

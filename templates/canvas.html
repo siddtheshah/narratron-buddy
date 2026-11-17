@@ -5,6 +5,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Narratron Canvas</title>
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "/static/generated/vendor/three/build/three.module.min.js",
+                "three/addons/": "/static/generated/vendor/three/examples/jsm/"
+            }
+        }
+    </script>
     <script type="module" src="/static/generated/shared/device-navigation.js"></script>
     <link rel="icon" type="image/png" href="/favicon.png">
     <link
@@ -215,6 +223,7 @@
                 </div>
             </div>
 
+            <div id="canvas-avatar" hidden></div>
             <div class="canvas-corner-controls canvas-corner-top-left">
                 <div id="prompt-toggle-btn" title="View Prompt">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"

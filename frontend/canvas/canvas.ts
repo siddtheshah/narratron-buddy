@@ -141,6 +141,7 @@ interface TheaterDetailsResponse {
     readonly is_contributor?: boolean;
     readonly is_adventure_mode?: boolean;
     readonly config?: {
+      readonly avatar?: { readonly enabled?: boolean; readonly package?: string };
       readonly story_planning?: {
         readonly adventure_mode?: boolean;
       };
@@ -1760,6 +1761,14 @@ fetch(`/api/theaters/${encodeURIComponent(activeTheaterId)}`)
       window.cachedTheaterReferences = data.references;
     }
     if (data && data.metadata) {
+      const avatar = data.metadata.config?.avatar;
+      const avatarMount = document.getElementById('canvas-avatar');
+      if (avatarMount && avatar?.enabled === true && avatar.package && /^[a-z0-9][a-z0-9_-]*$/i.test(avatar.package)) {
+        const avatarUrl = `/theaters/${encodeURIComponent(activeTheaterId)}/avatars/${encodeURIComponent(avatar.package)}/`;
+        void import('./avatar.js')
+          .then(({ mountAvatar }) => mountAvatar(avatarMount, avatarUrl))
+          .catch((error: unknown) => console.warn('Could not load theater avatar', error));
+      }
       const isOwner = Boolean(data.metadata.is_owner);
       isTheaterStampOwner = isOwner;
       updateStampGenerationPermission();

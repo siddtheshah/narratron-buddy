@@ -3,7 +3,7 @@
 import type {} from '../shared/auth-flow.js';
 import type {} from '../shared/credit-purchase.js';
 
-export type TheaterFileKind = 'text' | 'image' | 'audio' | 'video';
+export type TheaterFileKind = 'text' | 'image' | 'audio' | 'video' | 'model';
 
 export type GenerationKind =
   | 'reference'
@@ -687,6 +687,13 @@ export function initializeTheaterEditor(): TheaterEditorController | null {
       } catch (error: unknown) {
         status(getErrorMessage(error, 'Could not load this file.'), true);
       }
+    } else if (file.kind === 'model') {
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = file.path.split('/').pop() ?? '';
+      link.textContent = 'Download 3D model';
+      mediaPreview.replaceChildren(link);
+      mediaPreview.hidden = false;
     } else {
       let media: HTMLImageElement | HTMLVideoElement | HTMLAudioElement;
       if (file.kind === 'image') {

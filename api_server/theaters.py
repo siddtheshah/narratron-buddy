@@ -982,6 +982,26 @@ async def serve_theater_animation(
     return response
 
 
+@app.get("/theaters/{theater_id}/avatars/{avatar_id}/{filename}")
+async def serve_theater_avatar(
+    request: Request, theater_id: str, avatar_id: str, filename: str,
+) -> FileResponse:
+    await _require_canvas_access_async(request, theater_id)
+    _safe_path_param(theater_id, "theater_id")
+    theater = object_registry.theater_manager.theater(theater_id)
+    try:
+        target = safe_asset_path(theater.directory(), f"avatars/{avatar_id}/{filename}")
+    except ValueError as error:
+        raise HTTPException(status_code=404, detail="Avatar asset not found") from error
+    if not target.is_file():
+        raise HTTPException(status_code=404, detail="Avatar asset not found")
+    return FileResponse(
+        target,
+        media_type="model/gltf-binary" if filename == "model.glb" else None,
+        headers={"Cache-Control": "private, no-cache", "X-Content-Type-Options": "nosniff"},
+    )
+
+
 @app.get("/theaters/{theater_id}/output/{filename:path}")
 async def serve_theater_output(
     request: Request,

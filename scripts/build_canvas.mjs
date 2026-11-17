@@ -67,6 +67,18 @@ if (!hasInputs && !isWatch) {
 }
 
 const tscArgs = ['-p', 'tsconfig.build.json'];
+const threeRoot = path.join(rootDir, 'node_modules', 'three');
+for (const file of [
+  'LICENSE',
+  'build/three.module.min.js',
+  'build/three.core.min.js',
+  'examples/jsm/loaders/GLTFLoader.js',
+  'examples/jsm/utils/BufferGeometryUtils.js',
+]) {
+  const destination = path.join(outputDir, 'vendor', 'three', file);
+  fs.mkdirSync(path.dirname(destination), { recursive: true });
+  fs.copyFileSync(path.join(threeRoot, file), destination);
+}
 if (isWatch) {
   tscArgs.push('--watch', '--preserveWatchOutput');
 }

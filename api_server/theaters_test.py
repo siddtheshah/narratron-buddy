@@ -755,6 +755,21 @@ class TestTheaterAPI(BaseTestCase):
             # theater_default.yaml has image_generation: cooldown_duration: 9, but example-adventure has 10
             self.assertEqual(config["image_generation"]["cooldown_duration"], 10)
 
+            details = self.client.get(f"/api/theaters/{theater_id}")
+            self.assertEqual(
+                details.json()["metadata"]["config"]["avatar"],
+                {"enabled": True, "package": "light-cube"},
+            )
+            avatar_url = f"/theaters/{theater_id}/avatars/light-cube"
+            manifest = self.client.get(f"{avatar_url}/avatar.json")
+            self.assertEqual(manifest.json()["actions"][0]["clip"], "SlowTurn")
+            model = self.client.get(f"{avatar_url}/model.glb")
+            self.assertEqual(model.headers["content-type"], "model/gltf-binary")
+            self.assertEqual(model.content[:4], b"glTF")
+            self.assertEqual(self.client.get(f"{avatar_url}/preview.webp").headers["content-type"], "image/webp")
+            self.assertEqual(self.client.get(f"{avatar_url}/theater.yaml").status_code, 404)
+            self.assertIn(TestClient(app).get(f"{avatar_url}/model.glb").status_code, (401, 403, 404))
+
             # Simulate deploying from /deploy page where hidden form toggles send "false"
             response_deploy = self.client.post(
                 "/api/theaters/create-and-deploy",

@@ -44,7 +44,7 @@ class DraftInfo(BaseModel):
 class BuilderFile(BaseModel):
     path: str
     size: int
-    kind: Literal["text", "image", "audio", "video"]
+    kind: Literal["text", "image", "audio", "video", "model"]
 
 
 class FileWrite(BaseModel):
@@ -136,7 +136,7 @@ def upload_path(filename: str, folder: bool, bucket: bool = False) -> str:
         return relative
     if relative in GAME_FILENAMES or relative == "panel.html":
         return f"game/{relative}"
-    if relative in ROOT_FILES or parts[0] in {"references", "stamps", "playlists", "animations", "lore", "game", "uploads"}:
+    if relative in ROOT_FILES or parts[0] in {"references", "stamps", "playlists", "animations", "avatars", "lore", "game", "uploads"}:
         return relative
     if parts[0] in {"characters", "scenes"}:
         raise IneligibleAssetError("Use references/characters/<Name>/ or references/scenes/<Name>/.")
@@ -260,7 +260,17 @@ class TheaterBuilderStore:
             except ValueError:
                 continue
             suffix = item.suffix.lower()
-            kind: Literal["text", "image", "audio", "video"] = "image" if suffix in IMAGE_EXTENSIONS or suffix == ".svg" else "audio" if suffix in AUDIO_EXTENSIONS else "video" if suffix == ".mp4" else "text"
+            kind: Literal["text", "image", "audio", "video", "model"]
+            if suffix == ".glb":
+                kind = "model"
+            elif suffix in IMAGE_EXTENSIONS or suffix == ".svg":
+                kind = "image"
+            elif suffix in AUDIO_EXTENSIONS:
+                kind = "audio"
+            elif suffix == ".mp4":
+                kind = "video"
+            else:
+                kind = "text"
             result.append(BuilderFile(path=relative, size=item.stat().st_size, kind=kind))
         return result
 
@@ -444,4 +454,6 @@ class TheaterBuilderStore:
 
 
 def asset_mime(path: Path) -> str:
+    if path.suffix.lower() == ".glb":
+        return "model/gltf-binary"
     return mimetypes.guess_type(path.name)[0] or "application/octet-stream"

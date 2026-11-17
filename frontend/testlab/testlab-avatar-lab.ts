@@ -83,25 +83,13 @@ async function startLab(): Promise<void> {
     return;
   }
 
-  const [THREE, { GLTFLoader }] = await Promise.all([
+  const [THREE, { createAvatarScene }] = await Promise.all([
     import('three'),
-    import('three/addons/loaders/GLTFLoader.js'),
+    import('../shared/avatar-scene.js'),
   ]);
-  const { scene: model, animations } = await new GLTFLoader().loadAsync(new URL(manifest.model, packageUrl).href);
-  const scene = new THREE.Scene();
-  scene.add(model, new THREE.HemisphereLight(0xe8ffff, 0x7e6470, 2.1));
-  const keyLight = new THREE.DirectionalLight(0xffdec0, 2.4);
-  keyLight.position.set(-3, 5, 5);
-  const rimLight = new THREE.DirectionalLight(0x76f5ff, 1.4);
-  rimLight.position.set(4, 2, -3);
-  scene.add(keyLight, rimLight);
-
-  const camera = new THREE.OrthographicCamera(-1.16, 1.16, 1.16, -1.16, 0.1, 30);
-  camera.position.set(2.4, 1.9, 5.6);
-  camera.lookAt(0, 0.28, 0);
-  const renderer = new THREE.WebGLRenderer({ canvas, context, alpha: true, antialias: true });
-  renderer.setClearColor(0, 0);
-  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  const { model, animations, renderer, render } = await createAvatarScene(
+    canvas, context, new URL(manifest.model, packageUrl),
+  );
   viewport.append(canvas);
 
   const mixer = new THREE.AnimationMixer(model);
@@ -135,7 +123,7 @@ async function startLab(): Promise<void> {
     status.textContent = paused ? 'Idle paused for reduced motion. Select an action to play it.'
       : action.definition.loop ? `Looping ${action.definition.label}`
         : `Playing ${action.definition.label}`;
-    renderer.render(scene, camera);
+    render();
     previousTime = performance.now();
     if (active) frame = requestAnimationFrame(renderFrame);
   }
@@ -144,7 +132,7 @@ async function startLab(): Promise<void> {
     const delta = Math.max(0, Math.min((time - previousTime) / 1000, 0.1));
     previousTime = time;
     mixer.update(delta);
-    renderer.render(scene, camera);
+    render();
     frame = requestAnimationFrame(renderFrame);
   }
 
@@ -158,7 +146,7 @@ async function startLab(): Promise<void> {
     const size = viewport.clientWidth;
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setSize(size, size, false);
-    renderer.render(scene, camera);
+    render();
   }
 
   const observer = new ResizeObserver(resize);

@@ -9,6 +9,10 @@ live_agent:
 # Default visual displayed on load (must match a file in references/)
 starting_image: "library_of_origins_cover.webp"
 
+avatar:
+    enabled: true
+    package: light-cube
+
 # Visuals & generative prompt styling
 visuals:
     cycle_length: 6

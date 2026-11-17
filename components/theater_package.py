@@ -10,6 +10,7 @@ IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
 AUDIO_EXTENSIONS = {".mp3", ".wav", ".ogg", ".flac", ".m4a", ".aac"}
 TEXT_EXTENSIONS = {".txt", ".md", ".yaml", ".yml", ".json", ".svg", ".html"}
 ROOT_FILES = {"theater.yaml", "planning.yaml", "metadata.json", "README.md", "LICENSE"}
+AVATAR_FILES = {"avatar.json", "model.glb", "preview.webp"}
 
 
 class IneligibleAssetError(ValueError):
@@ -41,8 +42,9 @@ def safe_asset_path(root: Path, relative: str) -> Path:
     allowed |= len(parts) == 3 and parts[0] == "animations" and (
         suffix in IMAGE_EXTENSIONS or parts[-1] in {"video.mp4", "video.json", "layered.json", "triframe.json", "animation.json"}
     )
+    allowed |= len(parts) == 3 and parts[0] == "avatars" and parts[-1] in AVATAR_FILES
     if not allowed:
-        raise IneligibleAssetError("Use theater.yaml, planning.yaml, metadata.json, README.md, lore/*.txt or *.md, references/images, references/characters/<Name>/images or character.yaml, references/scenes/<Name>/images or scene.yaml, stamps/images, playlists/<Name>/audio or description.txt, animations/<Name>/images, video.mp4 or animation manifests, or game/game.yaml (game.yml/game.json) with game/*.svg and companion game/*.json.")
+        raise IneligibleAssetError("Use theater.yaml, planning.yaml, metadata.json, README.md, lore/*.txt or *.md, references/images, references/characters/<Name>/images or character.yaml, references/scenes/<Name>/images or scene.yaml, stamps/images, playlists/<Name>/audio or description.txt, animations/<Name>/images, video.mp4 or animation manifests, avatars/<Name>/avatar.json, model.glb or preview.webp, or game/game.yaml (game.yml/game.json) with game/*.svg and companion game/*.json.")
     target = root.joinpath(*parts).resolve()
     if root.resolve() not in target.parents:
         raise ValueError("Asset path escapes the theater checkout.")

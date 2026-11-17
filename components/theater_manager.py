@@ -19,7 +19,7 @@ from absl import flags
 from game_engine.game_source import GAME_FILES
 from components.playlist_audio import playlist_audio_type
 from components.reference_images import reference_image_type
-from components.theater_package import safe_asset_path
+from components.theater_package import AVATAR_FILES, safe_asset_path
 
 logger = logging.getLogger(__name__)
 
@@ -570,6 +570,11 @@ def extract_asset_package(
                     reference_files.append(("/".join(parts[parts.index("game"):]), content))
                 elif filename.lower() in ("planning.yaml", "planning.yml"):
                     reference_files.append(("planning.yaml", content))
+                elif parts[-3:-2] == ["avatars"]:
+                    if filename in AVATAR_FILES:
+                        relative = "/".join(parts[-3:])
+                        safe_asset_path(Path("."), relative)
+                        reference_files.append((relative, content))
                 elif "animations" in parts:
                     relative = "/".join(parts[parts.index("animations"):])
                     safe_asset_path(Path("."), relative)
@@ -776,6 +781,9 @@ class TheaterManager:
             if len(content) > MAX_FILE_BYTES:
                 raise ValueError(f"File '{filename}' exceeds maximum allowed size of 10MB.")
             parts = validate_asset_path(filename)
+            if parts[0] == "avatars":
+                safe_asset_path(theater_dir, "/".join(parts))
+                continue
             if "animations" in parts:
                 safe_asset_path(theater_dir, "/".join(parts[parts.index("animations"):]))
                 continue
@@ -875,6 +883,11 @@ class TheaterManager:
         mounted_references = []
         for relative_filename, content in reference_files or []:
             parts = validate_asset_path(relative_filename)
+            if parts[0] == "avatars":
+                target = safe_asset_path(theater_dir, "/".join(parts))
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(content)
+                continue
             if "animations" in parts:
                 target = safe_asset_path(theater_dir, "/".join(parts[parts.index("animations"):]))
                 target.parent.mkdir(parents=True, exist_ok=True)
