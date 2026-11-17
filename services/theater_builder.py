@@ -26,6 +26,7 @@ from components.theater_package import (
 from storage.storage_limits import (
     check_user_theaters_storage_allowance,
 )
+from storage.database import DatabaseManager
 
 MAX_FILE_BYTES = 10 * 1024 * 1024
 MAX_DRAFT_BYTES = 100 * 1024 * 1024
@@ -157,8 +158,12 @@ def upload_path(filename: str, folder: bool, bucket: bool = False) -> str:
 
 
 class TheaterBuilderStore:
-    def __init__(self, checkout_root: Path, storage_changed: Callable[[str], None] | None = None) -> None:
+    def __init__(
+        self, checkout_root: Path, database_manager: DatabaseManager,
+        storage_changed: Callable[[str], None] | None = None,
+    ) -> None:
         self.root = checkout_root
+        self.database_manager = database_manager
         self.storage_changed = storage_changed
 
     def directory(self, theater_id: str) -> Path:
@@ -316,7 +321,7 @@ class TheaterBuilderStore:
         existing_draft_size = sum(item.size for item in self.files(info.theater_id))
         net_increase = sum(current.values()) - existing_draft_size
         if net_increase > 0:
-            check_user_theaters_storage_allowance(info.owner_id, net_increase)
+            check_user_theaters_storage_allowance(info.owner_id, net_increase, db=self.database_manager)
         try:
             for path in removal_paths:
                 del_target = safe_asset_path(root, path)

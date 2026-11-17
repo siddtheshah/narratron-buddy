@@ -124,23 +124,26 @@ class ImportDraftResponse(DraftResponse):
 
 
 def store() -> TheaterBuilderStore:
-    return TheaterBuilderStore(Path(object_registry.theater_manager.base_dir), object_registry.theater_manager.notify_storage_changed)
+    return TheaterBuilderStore(
+        Path(object_registry.theater_manager.base_dir), object_registry.db,
+        object_registry.theater_manager.notify_storage_changed,
+    )
 
 
 def write_checkout(info: DraftInfo, files: dict[str, bytes], moves: list[FileMove] | None = None, deletions: list[str] | None = None) -> None:
     """Apply edits to the working theater and refresh cached runtime configuration."""
     object_registry.live_agent_manager.stop_session(info.theater_id)
     store().write_files(info, files, moves, deletions)
-    refresh_checkout_metadata(info, object_registry.theater_manager)
+    refresh_checkout_metadata(info, object_registry.theater_manager, object_registry.db)
     object_registry.canvas_states.reload_package(info.theater_id)
     theater_access_cache.invalidate_theater(info.theater_id)
 
 
 def initialize_theater(info: DraftInfo) -> None:
-    refresh_checkout_metadata(info, object_registry.theater_manager)
+    refresh_checkout_metadata(info, object_registry.theater_manager, object_registry.db)
     metadata = object_registry.theater_manager.get_theater(info.theater_id)
     try:
-        if not save_theater_checkout(info.theater_id, object_registry.theater_manager, object_registry.theater_repository):
+        if not save_theater_checkout(info.theater_id, object_registry.theater_manager, object_registry.theater_repository, object_registry.db):
             raise HTTPException(status_code=503, detail="Could not save the new theater. Please try again.")
         if not object_registry.db.record_deployment(info.theater_id, info.owner_id, metadata.join_key, cost=0.0, name=info.name):
             raise HTTPException(status_code=503, detail="Could not register the new theater. Please try again.")
@@ -321,7 +324,7 @@ async def save_draft(theater_id: str, body: SaveDraftRequest, request: Request) 
                 await asyncio.to_thread(write_checkout, info, encode_text_writes(body.writes))
             if body.persist:
                 object_registry.canvas_states.persist(theater_id)
-                if not await asyncio.to_thread(save_theater_checkout, theater_id, object_registry.theater_manager, object_registry.theater_repository):
+                if not await asyncio.to_thread(save_theater_checkout, theater_id, object_registry.theater_manager, object_registry.theater_repository, object_registry.db):
                     raise HTTPException(status_code=503, detail="Could not save the theater. Your edits are still in the working copy.")
                 info.saved_revision = info.revision
                 await asyncio.to_thread(object_registry.db.update_theater_name, theater_id, info.name, user_id=info.owner_id)
@@ -704,11 +707,11 @@ def publish_draft(info: DraftInfo) -> str:
         if (image is None or not image.is_file()) and not matching_alias:
             raise ValueError("starting_image must point to an existing reference image.")
     object_registry.live_agent_manager.stop_session(info.theater_id)
-    refresh_checkout_metadata(info, object_registry.theater_manager)
+    refresh_checkout_metadata(info, object_registry.theater_manager, object_registry.db)
     object_registry.theater_manager.deploy_theater(info.theater_id)
     object_registry.canvas_states.reload_package(info.theater_id)
     object_registry.canvas_states.get(info.theater_id).persist()
-    if not save_theater_checkout(info.theater_id, object_registry.theater_manager, object_registry.theater_repository):
+    if not save_theater_checkout(info.theater_id, object_registry.theater_manager, object_registry.theater_repository, object_registry.db):
         raise HTTPException(status_code=503, detail="Could not save the theater. Your edits are still in the working copy.")
     object_registry.db.update_theater_name(info.theater_id, info.name, user_id=info.owner_id)
     theater_access_cache.invalidate_theater(info.theater_id)

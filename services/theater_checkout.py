@@ -10,14 +10,15 @@ import yaml
 from components.theater_manager import TheaterManager, TheaterMetadata
 from services.theater_builder import DraftInfo, TheaterBuilderStore, validate_text
 from storage.theater_repository import TheaterRepository
+from storage.database import DatabaseManager
 
 
 checkout_locks: dict[str, asyncio.Lock] = {}
 
 
-def refresh_checkout_metadata(info: DraftInfo, manager: TheaterManager) -> None:
+def refresh_checkout_metadata(info: DraftInfo, manager: TheaterManager, database_manager: DatabaseManager) -> None:
     """Keep runtime metadata consistent with edits in the shared directory."""
-    builder = TheaterBuilderStore(manager.base_dir, manager.notify_storage_changed)
+    builder = TheaterBuilderStore(manager.base_dir, database_manager, manager.notify_storage_changed)
     root = builder.directory(info.theater_id)
     text = (root / "theater.yaml").read_text(encoding="utf-8")
     validate_text("theater.yaml", text)
@@ -38,12 +39,14 @@ def refresh_checkout_metadata(info: DraftInfo, manager: TheaterManager) -> None:
     manager._save_metadata(metadata)
 
 
-def save_theater_checkout(theater_id: str, manager: TheaterManager, repository: TheaterRepository) -> bool:
+def save_theater_checkout(
+    theater_id: str, manager: TheaterManager, repository: TheaterRepository, database_manager: DatabaseManager,
+) -> bool:
     """Save the same working copy from either screen, including package removals."""
-    builder = TheaterBuilderStore(manager.base_dir, manager.notify_storage_changed)
+    builder = TheaterBuilderStore(manager.base_dir, database_manager, manager.notify_storage_changed)
     info = builder.load(theater_id)
     if info is not None:
-        refresh_checkout_metadata(info, manager)
+        refresh_checkout_metadata(info, manager, database_manager)
     if not repository.export_theater(theater_id, manager.theater(theater_id).directory()):
         return False
     if info is not None:

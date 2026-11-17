@@ -204,7 +204,7 @@ class TestStorageLimits(unittest.TestCase):
         repository = TheaterRepository(self.theaters_root / "saved", storage_changed=self.db.invalidate_theater_storage)
         manager.create_theater("Stage", "stage", theater_config={"live_agent": {}})
         self.db.record_deployment("stage", self.user_id, "KEY", cost=0.0)
-        builder = TheaterBuilderStore(manager.base_dir, manager.notify_storage_changed)
+        builder = TheaterBuilderStore(manager.base_dir, self.db, manager.notify_storage_changed)
         info = DraftInfo(theater_id="stage", owner_id=self.user_id, name="Stage")
         self.usage()
         with patch("storage.storage_limits.get_directory_size_bytes", side_effect=AssertionError("Unexpected scan")):
@@ -227,7 +227,7 @@ class TestStorageLimits(unittest.TestCase):
         manager.create_theater("Stage", "stage", theater_config={"live_agent": {}})
         self.db.record_deployment("stage", self.user_id, "KEY", cost=0.0)
         self.usage()
-        builder = TheaterBuilderStore(manager.base_dir, manager.notify_storage_changed)
+        builder = TheaterBuilderStore(manager.base_dir, self.db, manager.notify_storage_changed)
         info = DraftInfo(theater_id="stage", owner_id=self.user_id, name="Stage")
         with patch.object(Path, "write_bytes", side_effect=OSError("Disk full")):
             with self.assertRaisesRegex(OSError, "Disk full"):

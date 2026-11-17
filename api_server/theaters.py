@@ -470,7 +470,7 @@ async def _export_canvas_theater_async(theater_id: str) -> bool:
     def _export() -> bool:
         theater_dir = object_registry.theater_manager.theater(theater_id).directory()
         object_registry.canvas_states.get(theater_id).save_local_theater_data(theater_dir=theater_dir)
-        saved = save_theater_checkout(theater_id, object_registry.theater_manager, object_registry.theater_repository)
+        saved = save_theater_checkout(theater_id, object_registry.theater_manager, object_registry.theater_repository, object_registry.db)
         if saved:
             metadata = object_registry.theater_manager.get_theater(theater_id)
             if metadata is not None:
@@ -1642,7 +1642,7 @@ async def create_and_deploy_theater(request: Request):
     if adventure_metadata:
         total_new_bytes += len(json.dumps(adventure_metadata))
     try:
-        check_user_theaters_storage_allowance(user["id"], total_new_bytes)
+        check_user_theaters_storage_allowance(user["id"], total_new_bytes, db=object_registry.db)
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
 

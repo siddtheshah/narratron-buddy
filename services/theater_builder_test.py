@@ -9,6 +9,7 @@ from PIL import Image
 import json
 
 from storage.theater_repository import TheaterRepository
+from storage.database import DatabaseManager
 
 from services.theater_builder import (
     BuilderProposal, DraftInfo, FileMove, FileWrite, GenerationRequest, TheaterBuilderStore,
@@ -16,8 +17,14 @@ from services.theater_builder import (
 )
 
 
+def make_quota_database() -> MagicMock:
+    database = MagicMock(spec=DatabaseManager)
+    database.get_user_theater_storage.return_value = []
+    return database
+
+
 def attach_checkout(source: Path) -> tuple[TheaterBuilderStore, DraftInfo]:
-    store = TheaterBuilderStore(source.parent)
+    store = TheaterBuilderStore(source.parent, database_manager=make_quota_database())
     info = DraftInfo(theater_id=source.name, owner_id=7, name="World")
     store.save_info(info)
     store.import_session_references(info)
@@ -41,7 +48,7 @@ def test_animation_assets_do_not_expose_other_runtime_files(tmp_path: Path, path
 
 
 def test_animation_folder_upload_save_restore_and_delete(tmp_path: Path) -> None:
-    store = TheaterBuilderStore(tmp_path / "checkouts")
+    store = TheaterBuilderStore(tmp_path / "checkouts", database_manager=make_quota_database())
     info = store.create(7, "World", "live_agent: {}\n", populate_default=False)
     root = store.directory(info.theater_id)
     assert (root / "animations").is_dir()
@@ -131,7 +138,7 @@ def test_uploads_folder_rejects_ineligible_extensions(tmp_path: Path) -> None:
 
 
 def test_default_draft_matches_example_theater_and_preserves_assets_on_publish(tmp_path: Path) -> None:
-    store = TheaterBuilderStore(tmp_path / "repository")
+    store = TheaterBuilderStore(tmp_path / "repository", database_manager=make_quota_database())
     info = store.create(7, "World", "live_agent: {}\n")
     target = tmp_path / "runtime"
     target.mkdir()
@@ -145,7 +152,7 @@ def test_default_draft_matches_example_theater_and_preserves_assets_on_publish(t
 
 
 def test_game_format_replacement_is_atomic_and_multiple_declarations_are_rejected(tmp_path: Path) -> None:
-    store = TheaterBuilderStore(tmp_path)
+    store = TheaterBuilderStore(tmp_path, database_manager=make_quota_database())
     info = store.create(7, "Game", "live_agent: {}\n", populate_default=False)
     game = Path("adventures/example_adventure/game/game.yaml").read_bytes()
     store.write_files(info, {"game/game.yaml": game, "game/entity_schema.json": b'{"type": "object"}'})
@@ -163,7 +170,7 @@ def test_game_format_replacement_is_atomic_and_multiple_declarations_are_rejecte
 
 
 def test_assistant_keeps_role_guides_and_planning_context_ahead_of_bulk_lore(tmp_path: Path) -> None:
-    store = TheaterBuilderStore(tmp_path)
+    store = TheaterBuilderStore(tmp_path, database_manager=make_quota_database())
     info = store.create(7, "World", "live_agent: {}\n")
     adventure_files: dict[str, bytes] = {
         "planning.yaml": b"Player: {owner: recorder}\n",
@@ -189,7 +196,7 @@ def test_assistant_keeps_role_guides_and_planning_context_ahead_of_bulk_lore(tmp
 
 
 def test_invalid_batch_does_not_partially_write_or_move_files(tmp_path: Path) -> None:
-    store = TheaterBuilderStore(tmp_path)
+    store = TheaterBuilderStore(tmp_path, database_manager=make_quota_database())
     info = store.create(7, "World", "live_agent: {}\n", populate_default=False)
     store.write_files(info, {"references/hero.png": b"image"})
     revision = info.revision
@@ -201,7 +208,7 @@ def test_invalid_batch_does_not_partially_write_or_move_files(tmp_path: Path) ->
 
 
 def test_draft_publish_removes_moved_assets_but_preserves_runtime_output(tmp_path: Path) -> None:
-    store = TheaterBuilderStore(tmp_path / "repository")
+    store = TheaterBuilderStore(tmp_path / "repository", database_manager=make_quota_database())
     info = store.create(7, "World", "live_agent: {}\n", populate_default=False)
     store.write_files(info, {"references/hero.png": b"image"})
     target = tmp_path / "runtime"
@@ -229,7 +236,7 @@ def test_existing_package_keeps_planning_and_nested_assets_in_draft(tmp_path: Pa
 
 
 def test_assistant_returns_validated_proposals_without_mutating_draft(tmp_path: Path) -> None:
-    store = TheaterBuilderStore(tmp_path)
+    store = TheaterBuilderStore(tmp_path, database_manager=make_quota_database())
     info = store.create(7, "World", "live_agent: {}\n", populate_default=False)
     client = MagicMock()
     proposal = BuilderProposal(
@@ -250,7 +257,7 @@ def test_assistant_returns_validated_proposals_without_mutating_draft(tmp_path: 
 
 
 def test_assistant_rejects_unsafe_generated_file_paths(tmp_path: Path) -> None:
-    store = TheaterBuilderStore(tmp_path)
+    store = TheaterBuilderStore(tmp_path, database_manager=make_quota_database())
     info = store.create(7, "World", "live_agent: {}\n", populate_default=False)
     client = MagicMock()
     client.models.generate_content.return_value.text = '{"message":"Change","writes":[{"path":"../secrets.txt","content":"bad"}]}'
@@ -259,7 +266,7 @@ def test_assistant_rejects_unsafe_generated_file_paths(tmp_path: Path) -> None:
 
 
 def test_assistant_receives_image_previews_for_unnamed_uploads(tmp_path: Path) -> None:
-    store = TheaterBuilderStore(tmp_path)
+    store = TheaterBuilderStore(tmp_path, database_manager=make_quota_database())
     info = store.create(7, "World", "live_agent: {}\n", populate_default=False)
     buffer = BytesIO()
     Image.new("RGB", (800, 600), color="blue").save(buffer, format="PNG")
@@ -283,7 +290,7 @@ def test_assistant_receives_image_previews_for_unnamed_uploads(tmp_path: Path) -
 
 
 def test_store_deletes_files_and_cleans_empty_directories(tmp_path: Path) -> None:
-    store = TheaterBuilderStore(tmp_path)
+    store = TheaterBuilderStore(tmp_path, database_manager=make_quota_database())
     info = store.create(7, "World", "live_agent: {}\n", populate_default=False)
     store.write_files(info, {
         "lore/chapter1/scene.txt": b"Scene content",
@@ -299,14 +306,14 @@ def test_store_deletes_files_and_cleans_empty_directories(tmp_path: Path) -> Non
 
 
 def test_store_rejects_deleting_theater_yaml(tmp_path: Path) -> None:
-    store = TheaterBuilderStore(tmp_path)
+    store = TheaterBuilderStore(tmp_path, database_manager=make_quota_database())
     info = store.create(7, "World", "live_agent: {}\n", populate_default=False)
     with pytest.raises(ValueError, match="Cannot delete theater.yaml."):
         store.delete_files(info, ["theater.yaml"])
 
 
 def test_store_rejects_deleting_nonexistent_or_duplicate_files(tmp_path: Path) -> None:
-    store = TheaterBuilderStore(tmp_path)
+    store = TheaterBuilderStore(tmp_path, database_manager=make_quota_database())
     info = store.create(7, "World", "live_agent: {}\n", populate_default=False)
     with pytest.raises(ValueError, match="File to delete does not exist"):
         store.delete_files(info, ["lore/missing.txt"])
@@ -316,7 +323,7 @@ def test_store_rejects_deleting_nonexistent_or_duplicate_files(tmp_path: Path) -
 
 
 def test_store_rejects_deletion_conflicts_with_writes_and_moves(tmp_path: Path) -> None:
-    store = TheaterBuilderStore(tmp_path)
+    store = TheaterBuilderStore(tmp_path, database_manager=make_quota_database())
     info = store.create(7, "World", "live_agent: {}\n", populate_default=False)
     store.write_files(info, {
         "lore/scene.txt": b"scene",
@@ -329,7 +336,7 @@ def test_store_rejects_deletion_conflicts_with_writes_and_moves(tmp_path: Path) 
 
 
 def test_assistant_proposes_deletions_and_validates_them(tmp_path: Path) -> None:
-    store = TheaterBuilderStore(tmp_path)
+    store = TheaterBuilderStore(tmp_path, database_manager=make_quota_database())
     info = store.create(7, "World", "live_agent: {}\n", populate_default=False)
     store.write_files(info, {"lore/obsolete.txt": b"old lore"})
     client = MagicMock()
@@ -361,7 +368,7 @@ def test_character_paths_allowed_in_safe_asset_path(tmp_path: Path) -> None:
 
 
 def test_assistant_proposes_character_portraits_and_system_instruction(tmp_path: Path) -> None:
-    store = TheaterBuilderStore(tmp_path)
+    store = TheaterBuilderStore(tmp_path, database_manager=make_quota_database())
     info = store.create(7, "World", "live_agent: {}\n", populate_default=False)
     client = MagicMock()
     proposal = BuilderProposal(
@@ -416,7 +423,7 @@ def test_loading_theater_into_editor_preserves_characters_folder_and_assets(tmp_
 
 
 def test_editor_sees_new_characters_in_shared_checkout(tmp_path: Path) -> None:
-    store = TheaterBuilderStore(tmp_path / "storage")
+    store = TheaterBuilderStore(tmp_path / "storage", database_manager=make_quota_database())
     info = store.create(7, "Draft", "live_agent: {}\n", theater_id="theater_reopen", populate_default=False)
     # Draft created without characters
     source = store.directory(info.theater_id)
@@ -466,7 +473,7 @@ def test_loading_theater_into_editor_preserves_scenes_folder_and_assets(tmp_path
 
 
 def test_editor_sees_new_scenes_in_shared_checkout(tmp_path: Path) -> None:
-    store = TheaterBuilderStore(tmp_path / "storage")
+    store = TheaterBuilderStore(tmp_path / "storage", database_manager=make_quota_database())
     info = store.create(7, "Draft", "live_agent: {}\n", theater_id="theater_reopen_scene", populate_default=False)
     source = store.directory(info.theater_id)
     source.mkdir(exist_ok=True)

@@ -213,7 +213,7 @@ async def apply_help_settings(theater_id: str, body: SettingsProposal, request: 
                 raise HTTPException(403, "Only the theater owner can apply settings.")
             await asyncio.to_thread(write_checkout, info, {"theater.yaml": updated})
         object_registry.canvas_states.persist(theater_id)
-        if not await asyncio.to_thread(save_theater_checkout, theater_id, object_registry.theater_manager, object_registry.theater_repository):
+        if not await asyncio.to_thread(save_theater_checkout, theater_id, object_registry.theater_manager, object_registry.theater_repository, object_registry.db):
             return {"applied": True, "agent_running": False,
                     "message": "Settings updated in the working copy, but saving failed. Save the theater and start the agent from its controls."}
         try:

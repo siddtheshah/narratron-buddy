@@ -97,7 +97,7 @@ def test_canvas_help_settings_save_restart_and_reject_stale_proposals(builder: B
         assert stale.status_code == 409
         assert manager.stop_session.call_count == 1
     assert "enabled: false" in path.read_text(encoding="utf-8")
-    info = TheaterBuilderStore(builder.manager.base_dir).load(identifier)
+    info = TheaterBuilderStore(builder.manager.base_dir, builder.database).load(identifier)
     assert info.saved_revision == info.revision
     assert (builder.repository.theater_path(identifier) / "theater.yaml").read_bytes() == path.read_bytes()
 
@@ -177,6 +177,7 @@ def builder(tmp_path: Path) -> Iterator[BuilderHarness]:
         deployments[theater_id] = {"user_id": user_id, "join_key": join_key, "name": name}
         return True
 
+    database.get_user_theater_storage.return_value = []
     database.record_deployment.side_effect = record_deployment
     database.get_user_by_id.return_value = {"id": 7, "credits": 30.0}
     database.record_user_usage.return_value = {"credits": 26.0}
@@ -339,7 +340,7 @@ def test_new_folder_import_accepts_partial_packages_and_discards_ineligible_file
     assert data["imported_files"] == 1
     assert data["discarded_files"] == ["world/helper.py", "world/references/characters/Loose.webp"]
     assert {item["path"] for item in data["files"]} == {"theater.yaml", expected_path}
-    root = TheaterBuilderStore(builder.manager.base_dir).directory(data["draft"]["theater_id"])
+    root = TheaterBuilderStore(builder.manager.base_dir, builder.database).directory(data["draft"]["theater_id"])
     assert (root / expected_path).read_bytes() == content
     if expected_path != "theater.yaml":
         assert (root / "theater.yaml").read_bytes() == b"live_agent: {}\n"

@@ -26,17 +26,11 @@ def get_directory_size_bytes(directory: Path) -> int:
 
 def calculate_user_theaters_storage_bytes(
     user_id: int,
-    db: _DatabaseManagerBase | None = None,
+    db: _DatabaseManagerBase,
     theaters_root: Path | None = None,
     checkouts_root: Path | None = None,
 ) -> int:
     """Count each owned theater once, reserving space for unsaved checkout growth."""
-    if db is None:
-        import object_registry
-        resolved_db = object_registry.db
-    else:
-        resolved_db = db
-
     if theaters_root is None:
         from storage.theater_repository import get_theaters_root
         root = get_theaters_root()
@@ -50,12 +44,12 @@ def calculate_user_theaters_storage_bytes(
     # another filesystem walk, even after restarting the application.
     for _ in range(3):
         total = 0
-        for record in resolved_db.get_user_theater_storage(user_id):
+        for record in db.get_user_theater_storage(user_id):
             size = record["storage_bytes"]
             if size is None:
                 tid = record["theater_id"]
                 size = max(get_directory_size_bytes(root / tid), get_directory_size_bytes(checkouts_root / tid))
-                if not resolved_db.cache_theater_storage(tid, size, record["storage_revision"]):
+                if not db.cache_theater_storage(tid, size, record["storage_revision"]):
                     break
             total += size
         else:
@@ -66,7 +60,7 @@ def calculate_user_theaters_storage_bytes(
 def check_user_theaters_storage_allowance(
     user_id: int,
     additional_bytes: int,
-    db: _DatabaseManagerBase | None = None,
+    db: _DatabaseManagerBase,
     theaters_root: Path | None = None,
 ) -> None:
     """Raise ValueError if additional_bytes would push user's theater storage over MAX_USER_THEATER_STORAGE_BYTES."""
