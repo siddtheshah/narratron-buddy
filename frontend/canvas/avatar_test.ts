@@ -13,6 +13,8 @@ test('the adventure avatar turns, brightens on hover, and dims when the pointer 
     viewport: { width: 1440, height: 900 },
     apiRoutes: {
       '/api/theaters/stage': { metadata: { config: { avatar: { enabled: true, package: 'light-cube' } }, is_active_orator: true } },
+      '/api/theaters/stage/agent/status': { agent_running: true },
+      '/api/latest': { agent_running: true },
       [`${avatarRoute}/avatar.json`]: (route) => route.fulfill({ path: path.join(avatarPath, 'avatar.json') }),
       [`${avatarRoute}/model.glb`]: (route) => route.fulfill({ path: path.join(avatarPath, 'model.glb') }),
       [`${avatarRoute}/shaders/dust.vert`]: (route) => route.fulfill({ path: path.join(avatarPath, 'shaders', 'dust.vert') }),
@@ -46,6 +48,8 @@ test('minimal mode skips avatar shaders on load and disables them when toggled o
     localStorage: { 'narratron.canvas.performance.minimalMode': 'true' },
     apiRoutes: {
       '/api/theaters/stage': { metadata: { config: { avatar: { enabled: true, package: 'light-cube' } }, is_active_orator: true } },
+      '/api/theaters/stage/agent/status': { agent_running: true },
+      '/api/latest': { agent_running: true },
       [`${avatarRoute}/avatar.json`]: (route) => route.fulfill({ path: path.join(avatarPath, 'avatar.json') }),
       [`${avatarRoute}/model.glb`]: (route) => route.fulfill({ path: path.join(avatarPath, 'model.glb') }),
       [`${avatarRoute}/shaders/dust.vert`]: (route) => {
@@ -84,6 +88,8 @@ test('light-cube playback supports selectColor and playAction backwards-compatib
     viewport: { width: 1440, height: 900 },
     apiRoutes: {
       '/api/theaters/stage': { metadata: { config: { avatar: { enabled: true, package: 'light-cube' } }, is_active_orator: true } },
+      '/api/theaters/stage/agent/status': { agent_running: true },
+      '/api/latest': { agent_running: true },
       [`${avatarRoute}/avatar.json`]: (route) => route.fulfill({ path: path.join(avatarPath, 'avatar.json') }),
       [`${avatarRoute}/model.glb`]: (route) => route.fulfill({ path: path.join(avatarPath, 'model.glb') }),
       [`${avatarRoute}/shaders/dust.vert`]: (route) => route.fulfill({ path: path.join(avatarPath, 'shaders', 'dust.vert') }),
@@ -138,6 +144,8 @@ test('avatar action playback switches clips, returns one-shots to idle, and trig
     viewport: { width: 1440, height: 900 },
     apiRoutes: {
       '/api/theaters/stage': { metadata: { config: { avatar: { enabled: true, package: 'multi-action' } }, is_active_orator: true } },
+      '/api/theaters/stage/agent/status': { agent_running: true },
+      '/api/latest': { agent_running: true },
       [`${stageAvatarRoute}/avatar.json`]: manifest,
       [`${stageAvatarRoute}/model.glb`]: (route) => route.fulfill({ path: cubeModelPath }),
       [`${stageAvatarRoute}/shaders/badge.vert`]: (route) => route.fulfill({
@@ -218,6 +226,8 @@ test('prefers-reduced-motion keeps idle steady and snaps action state without co
     viewport: { width: 1440, height: 900 },
     apiRoutes: {
       '/api/theaters/stage': { metadata: { config: { avatar: { enabled: true, package: 'reduced-motion' } }, is_active_orator: true } },
+      '/api/theaters/stage/agent/status': { agent_running: true },
+      '/api/latest': { agent_running: true },
       [`${stageAvatarRoute}/avatar.json`]: manifest,
       [`${stageAvatarRoute}/model.glb`]: (route) => route.fulfill({ path: cubeModelPath }),
       [`${stageAvatarRoute}/shaders/swatch.vert`]: (route) => route.fulfill({
@@ -284,9 +294,11 @@ test('canvas_state avatar payload drives playback, deduplicates polls, and repla
     viewport: { width: 1440, height: 900 },
     apiRoutes: {
       '/api/theaters/stage': { metadata: { config: { avatar: { enabled: true, package: 'state-driven' } }, is_active_orator: true } },
+      '/api/theaters/stage/agent/status': { agent_running: true },
       '/api/latest': async (route) => {
         await route.fulfill({
           json: {
+            agent_running: true,
             agent_thought: { text: 'Sketching the scene...', highlighted: false },
             avatar: avatarPayload,
           },
@@ -333,4 +345,80 @@ test('canvas_state avatar payload drives playback, deduplicates polls, and repla
   avatarPayload = { enabled: true, package: 'state-driven', action: 'greeting', sequence: 3, time: 300 };
   stateSocket!.send(JSON.stringify({ type: 'state_changed', domains: ['latest'] }));
   await expect.poll(() => page.evaluate(() => window.__avatarPlayback?.currentAction)).toBe('greeting');
+});
+
+test('canvas avatar stays hidden until agent is summoned and hides when banished', async ({ canvas, page }) => {
+  const cubeModelPath = path.join(REPO_ROOT, 'testlab', 'avatar_packages', 'cube', 'model.glb');
+  const stageAvatarRoute = '/theaters/stage/avatars/summon-gated';
+  const manifest = {
+    id: 'summon-gated',
+    title: 'Summon Gated Avatar',
+    model: 'model.glb',
+    idle: 'idle',
+    reactions: { activate: 'greeting' },
+    actions: [
+      { id: 'idle', label: 'Idle', clip: 'Hover', loop: true, lightColor: '#33ccee' },
+      { id: 'greeting', label: 'Greeting', clip: 'PokeBounce', loop: false, lightColor: '#ffaa44' },
+    ],
+  };
+
+  let agentRunning = false;
+  let stateSocket: WebSocketRoute | null = null;
+  let manifestRequests = 0;
+
+  await canvas.openCanvas({
+    viewport: { width: 1440, height: 900 },
+    isOrator: false,
+    apiRoutes: {
+      '/api/theaters/stage': { metadata: { config: { avatar: { enabled: true, package: 'summon-gated' } }, is_active_orator: false } },
+      '/api/latest': async (route) => {
+        await route.fulfill({
+          json: {
+            agent_running: agentRunning,
+            avatar: {
+              enabled: true,
+              package: 'summon-gated',
+              action: agentRunning ? 'greeting' : null,
+              sequence: agentRunning ? 1 : 0,
+              time: 100,
+            },
+          },
+        });
+      },
+      [`${stageAvatarRoute}/avatar.json`]: async (route) => {
+        manifestRequests += 1;
+        await route.fulfill({ json: manifest });
+      },
+      [`${stageAvatarRoute}/model.glb`]: (route) => route.fulfill({ path: cubeModelPath }),
+    },
+    onWebSocket: (ws) => {
+      if (new URL(ws.url()).pathname === '/ws/canvas-state') {
+        stateSocket = ws;
+        ws.send(JSON.stringify({ type: 'state_ready' }));
+      }
+    },
+  });
+
+  await expect.poll(() => stateSocket !== null).toBe(true);
+  const avatarMount = page.locator('#canvas-avatar');
+  await expect(avatarMount).toBeHidden();
+  expect(manifestRequests).toBe(0);
+
+  // Summoning makes the avatar mount and appear for viewers via /api/latest.
+  agentRunning = true;
+  stateSocket!.send(JSON.stringify({ type: 'state_changed', domains: ['latest'] }));
+  await expect(avatarMount.locator('canvas')).toBeVisible();
+  expect(manifestRequests).toBe(1);
+  await expect.poll(() => page.evaluate(() => window.__avatarPlayback?.currentAction)).toBe('greeting');
+
+  // Banishing hides the avatar again.
+  agentRunning = false;
+  stateSocket!.send(JSON.stringify({ type: 'state_changed', domains: ['latest'] }));
+  await expect(avatarMount).toBeHidden();
+
+  // Resummoning brings the existing avatar back without re-fetching its manifest.
+  agentRunning = true;
+  stateSocket!.send(JSON.stringify({ type: 'state_changed', domains: ['latest'] }));
+  await expect(avatarMount.locator('canvas')).toBeVisible();
+  expect(manifestRequests).toBe(1);
 });

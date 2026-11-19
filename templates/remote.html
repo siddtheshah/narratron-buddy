@@ -11,6 +11,14 @@
     <link rel="icon" type="image/png" href="/favicon.png">
     <link rel="stylesheet" href="/static/css/chat.css">
     <link rel="stylesheet" href="/static/css/remote.css">
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "/static/generated/vendor/three/build/three.module.min.js",
+                "three/addons/": "/static/generated/vendor/three/examples/jsm/"
+            }
+        }
+    </script>
     <script src="/static/generated/remote/remote.js" type="module"></script>
 </head>
 <body>
@@ -144,6 +152,9 @@
         <section id="preview-thought-panel" class="preview-thought" role="tabpanel" aria-labelledby="preview-thought-tab" hidden>
             <div id="agent-thought-card" class="agent-thought-card" aria-live="polite">
                 <div id="agent-thought-text" class="agent-thought-text">Waiting for Narratron to think…</div>
+            </div>
+            <div id="remote-avatar-stage" class="remote-avatar-stage" hidden>
+                <div id="remote-avatar" class="remote-avatar" hidden></div>
             </div>
         </section>
         <section id="preview-story-panel" role="tabpanel" aria-labelledby="preview-story-tab" hidden>

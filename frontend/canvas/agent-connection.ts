@@ -63,6 +63,7 @@ export interface CreateAgentConnectionOptions {
   readonly updateAgentActivity?: (toolActivity?: ToolActivitySnapshot | null) => void;
   readonly setPcmBroadcasting: (isBroadcasting: boolean) => void;
   readonly stopSceneSpeech: () => void;
+  readonly onAgentRunningChange?: (running: boolean) => void;
   readonly navigateTo?: (url: string) => void;
   readonly alertUser?: (message: string) => void;
 }
@@ -156,6 +157,7 @@ export function createAgentConnectionController(
     updateAgentActivity,
     setPcmBroadcasting,
     stopSceneSpeech,
+    onAgentRunningChange,
     navigateTo = (url: string): void => {
       window.location.href = url;
     },
@@ -228,6 +230,7 @@ export function createAgentConnectionController(
   function setAgentStartedUI(started: boolean): void {
     agentStarted = started;
     window.isAgentStarted = started;
+    onAgentRunningChange?.(started);
     if (!started) closeGameRenderer();
     if (!agentStartStopBtn) return;
     if (started) {

@@ -309,6 +309,24 @@ class TestLiveAgentSessionManager(unittest.TestCase):
         session.status = "stopped"
         self.assertFalse(session.is_online)
 
+    def test_summon_and_close_notify_latest_state(self) -> None:
+        runner = MagicMock()
+        runner.agent.tools = []
+        canvas_mgr = canvas_observability_fixture()
+        session = LiveAgentSession(
+            canvas_state_manager=canvas_mgr,
+            theater_id="avatar_presence",
+            runner=runner,
+            tool_bundle=MagicMock(),
+        )
+        canvas_mgr.notify_changed.reset_mock()
+        session.summon()
+        canvas_mgr.notify_changed.assert_any_call("latest")
+
+        canvas_mgr.notify_changed.reset_mock()
+        session.close()
+        canvas_mgr.notify_changed.assert_any_call("latest")
+
     def test_downstream_bills_all_calls_even_when_tool_fails(self) -> None:
         async def events() -> AsyncGenerator[Event, None]:
             yield Event(author="agent", content=types.Content(parts=[

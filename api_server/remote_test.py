@@ -30,6 +30,13 @@ def remote_services(tmp_path: Path) -> Iterator[tuple[TestClient, MagicMock, Mag
     state.tool_response.current_agent_thought = ""
     state.tool_response.current_agent_thought_time = 0.0
     state.tool_response.agent_thought_highlighted = False
+    state.avatar.payload.return_value = {
+        "enabled": False,
+        "package": "",
+        "action": None,
+        "sequence": 0,
+        "time": 0.0,
+    }
     manager = MagicMock()
     manager.get_session.return_value = None
     with patch.object(remote, "_require_canvas_access", return_value=deployment), \
@@ -98,6 +105,13 @@ def test_remote_returns_state_for_active_orator(
         "music": {"music_id": "rain", "tracks": ["/audio/rain.mp3"], "paused": False},
         "committed_scene_speech_generation": 3,
         "agent_thought": {"text": "", "time": 0.0, "highlighted": False},
+        "avatar": {
+            "enabled": False,
+            "package": "",
+            "action": None,
+            "sequence": 0,
+            "time": 0.0,
+        },
         "is_contributor": True,
         "is_owner": False,
         "is_orator": True,
@@ -304,6 +318,29 @@ def test_remote_returns_agent_thought(
         "text": "Pondering the cosmos...",
         "time": 12345.67,
         "highlighted": True,
+    }
+
+
+def test_remote_returns_avatar_state(
+    remote_services: tuple[TestClient, MagicMock, MagicMock],
+) -> None:
+    client, _, _ = remote_services
+    state = object_registry.canvas_states.get("stage")
+    state.avatar.payload.return_value = {
+        "enabled": True,
+        "package": "narratron",
+        "action": "surprised",
+        "sequence": 4,
+        "time": 9876.5,
+    }
+    response = client.get("/api/theaters/stage/remote")
+    assert response.status_code == 200
+    assert response.json()["avatar"] == {
+        "enabled": True,
+        "package": "narratron",
+        "action": "surprised",
+        "sequence": 4,
+        "time": 9876.5,
     }
 
 

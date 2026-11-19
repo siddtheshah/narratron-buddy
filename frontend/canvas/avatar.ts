@@ -61,6 +61,10 @@ export interface AvatarColorAction {
   readonly color: string;
 }
 
+export interface MountAvatarOptions {
+  readonly isVisible?: () => boolean;
+}
+
 export interface AvatarPlayback {
   readonly idle: string;
   readonly currentAction: string;
@@ -70,6 +74,7 @@ export interface AvatarPlayback {
   playAction(actionId: string): boolean;
   selectColor(actionId: string): boolean;
   onActionChange(listener: (actionId: string) => void): () => void;
+  dispose(): void;
 }
 
 interface RegisteredAction {
@@ -90,12 +95,17 @@ function isMinimalModeActive(): boolean {
   return document.documentElement.classList.contains('minimal-mode');
 }
 
-export async function mountAvatar(mount: HTMLElement, packagePath: string): Promise<AvatarPlayback | null> {
+export async function mountAvatar(
+  mount: HTMLElement,
+  packagePath: string,
+  options?: MountAvatarOptions,
+): Promise<AvatarPlayback | null> {
   const packageUrl = new URL(packagePath, window.location.href);
   const response = await fetch(new URL('avatar.json', packageUrl));
   if (!response.ok) throw new Error(`Avatar manifest returned ${response.status}`);
   const manifest: AvatarManifest = await response.json();
   if (manifest.model !== 'model.glb') throw new Error('Expected an avatar model.glb.');
+  const shouldShow = (): boolean => (options?.isVisible ? options.isVisible() : true);
   mount.setAttribute('role', 'img');
   mount.setAttribute('aria-label', manifest.title);
   if (typeof manifest.renderScale === 'number' && Number.isFinite(manifest.renderScale)) {
@@ -112,7 +122,9 @@ export async function mountAvatar(mount: HTMLElement, packagePath: string): Prom
     const poster = document.createElement('img');
     poster.alt = '';
     poster.src = new URL(manifest.poster, packageUrl).href;
-    poster.addEventListener('load', () => { mount.hidden = false; }, { once: true });
+    poster.addEventListener('load', () => {
+      if (shouldShow()) mount.hidden = false;
+    }, { once: true });
     mount.append(poster);
   }
 
@@ -223,11 +235,17 @@ export async function mountAvatar(mount: HTMLElement, packagePath: string): Prom
   }
 
   mount.append(canvas);
-  mount.hidden = false;
+  mount.hidden = !shouldShow();
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
+  const abortController = new AbortController();
+  const listenerOptions = { signal: abortController.signal };
   let lastTime = 0;
   let hovered = false;
   let focused = false;
+
+  function isMountVisible(): boolean {
+    return !mount.hidden && mount.clientWidth > 0 && mount.clientHeight > 0;
+  }
 
   function activateAction(actionId: string, triggerPulse: boolean): boolean {
     if (!ready) return false;
@@ -282,11 +300,15 @@ export async function mountAvatar(mount: HTMLElement, packagePath: string): Prom
     for (const listener of actionListeners) {
       listener(currentActionId);
     }
-    if (reducedMotion.matches) {
-      if (shaderController && !isMinimalModeActive()) {
-        shaderController.update(elapsedShaderTime, brightness, canvas.width, canvas.height, 0);
+    if (reducedMotion.matches && isMountVisible()) {
+      if (canvas.width === 0 || canvas.height === 0) {
+        resize();
+      } else {
+        if (shaderController && !isMinimalModeActive()) {
+          shaderController.update(elapsedShaderTime, brightness, canvas.width, canvas.height, 0);
+        }
+        render();
       }
-      render();
     }
     return true;
   }
@@ -302,6 +324,10 @@ export async function mountAvatar(mount: HTMLElement, packagePath: string): Prom
   });
 
   function update(time: number): void {
+    if (!isMountVisible()) {
+      lastTime = time;
+      return;
+    }
     const delta = Math.min((time - (lastTime || time)) / 1000, 0.1);
     lastTime = time;
     if (!reducedMotion.matches) {
@@ -345,10 +371,10 @@ export async function mountAvatar(mount: HTMLElement, packagePath: string): Prom
       if (hovered && hoverReaction && hasHoverReaction && currentActionId === manifest.idle && !reducedMotion.matches) {
         activateAction(hoverReaction, true);
       }
-    });
-    mount.addEventListener('pointerleave', () => { hovered = false; });
-    mount.addEventListener('focus', () => { focused = true; });
-    mount.addEventListener('blur', () => { focused = false; });
+    }, listenerOptions);
+    mount.addEventListener('pointerleave', () => { hovered = false; }, listenerOptions);
+    mount.addEventListener('focus', () => { focused = true; }, listenerOptions);
+    mount.addEventListener('blur', () => { focused = false; }, listenerOptions);
   }
 
   if (hasActivateReaction && activateReaction) {
@@ -356,21 +382,22 @@ export async function mountAvatar(mount: HTMLElement, packagePath: string): Prom
       event.stopPropagation();
     };
     mount.style.cursor = 'pointer';
-    mount.addEventListener('pointerdown', stopPointer);
-    mount.addEventListener('mousedown', stopPointer);
+    mount.addEventListener('pointerdown', stopPointer, listenerOptions);
+    mount.addEventListener('mousedown', stopPointer, listenerOptions);
     mount.addEventListener('click', () => {
       activateAction(activateReaction, true);
-    });
+    }, listenerOptions);
     mount.addEventListener('keydown', (event) => {
       if (event.key === 'Enter' || event.key === ' ') {
         event.preventDefault();
         activateAction(activateReaction, true);
       }
-    });
+    }, listenerOptions);
   }
 
   function resize(): void {
-    const size = mount.clientWidth;
+    const size = Math.min(mount.clientWidth, mount.clientHeight || mount.clientWidth);
+    if (size <= 0) return;
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setSize(size, size, false);
     if (shaderController && !isMinimalModeActive()) {
@@ -384,19 +411,20 @@ export async function mountAvatar(mount: HTMLElement, packagePath: string): Prom
   const minimalObserver = new MutationObserver(() => {
     const minimal = isMinimalModeActive();
     if (!minimal && !shaderController && !shaderLoadStarted && shaderSpecs.length > 0) {
-      void ensureShaders().then(() => { if (ready) render(); });
+      void ensureShaders().then(() => { if (ready && isMountVisible()) render(); });
       return;
     }
     shaderController?.setEnabled(!minimal);
     if (!minimal && shaderController) {
       shaderController.update(elapsedShaderTime, brightness, canvas.width, canvas.height, actionPulse);
     }
-    render();
+    if (isMountVisible()) render();
   });
   minimalObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
 
-  canvas.addEventListener('webglcontextlost', () => {
+  function teardown(disposeRenderer: boolean): void {
     ready = false;
+    abortController.abort();
     observer.disconnect();
     minimalObserver.disconnect();
     actionListeners.clear();
@@ -404,8 +432,15 @@ export async function mountAvatar(mount: HTMLElement, packagePath: string): Prom
     shaderController?.dispose();
     shaderController = null;
     renderer.setAnimationLoop(null);
+    if (disposeRenderer) {
+      renderer.dispose();
+    }
+  }
+
+  canvas.addEventListener('webglcontextlost', () => {
+    teardown(false);
     showPoster();
-  }, { once: true });
+  }, { once: true, signal: abortController.signal });
   resize();
   renderer.setAnimationLoop(update);
   return {
@@ -423,7 +458,7 @@ export async function mountAvatar(mount: HTMLElement, packagePath: string): Prom
       const action = colors.find(({ id }) => id === actionId);
       if (!ready || !action || !targetColor) return false;
       targetColor.set(action.color);
-      if (reducedMotion.matches) {
+      if (reducedMotion.matches && isMountVisible()) {
         activeColor.copy(targetColor);
         for (const material of materials.keys()) material.emissive.copy(activeColor);
         if (shaderController && !isMinimalModeActive()) {
@@ -436,6 +471,15 @@ export async function mountAvatar(mount: HTMLElement, packagePath: string): Prom
     onActionChange(listener) {
       actionListeners.add(listener);
       return () => { actionListeners.delete(listener); };
+    },
+    dispose() {
+      if (ready) {
+        teardown(true);
+      }
+      mount.replaceChildren();
+      mount.style.cursor = '';
+      mount.tabIndex = -1;
+      mount.hidden = true;
     },
   };
 }

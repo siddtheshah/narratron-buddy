@@ -775,7 +775,9 @@ def get_latest_image(
     if not theater_dir.exists():
         object_registry.theater_repository.reconstruct_theater(theater_id, theater_dir)
     username = _request_username(request)
-    return _state(theater_id).get_latest_state(username=username) if username else _state(theater_id).get_latest_state()
+    latest = _state(theater_id).get_latest_state(username=username) if username else _state(theater_id).get_latest_state()
+    session = object_registry.live_agent_manager.get_session(theater_id)
+    return {**latest, "agent_running": bool(session and session.is_alive)}
 
 @app.get("/api/doodles")
 def get_page_doodles(request: Request, theater_id: str, page_id: str,

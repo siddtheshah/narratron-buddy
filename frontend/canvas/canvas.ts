@@ -159,6 +159,7 @@ interface AvatarStatePayload {
 }
 
 interface CanvasLatestPayload extends LatestHistoryPayload {
+  readonly agent_running?: boolean;
   readonly tool_activity?: ToolActivitySnapshot | null;
   readonly agent_thought?: AgentThoughtPayload | null;
   readonly avatar?: AvatarStatePayload | null;
@@ -813,11 +814,70 @@ const updatePagingControlsUI = (): void => {
 
 let lastAgentThought: string | null = null;
 let avatarPlayback: AvatarPlayback | null = null;
+let avatarPackageUrl: string | null = null;
+let avatarMountStarted = false;
+let avatarPosterVisible = false;
+let agentSummoned = false;
 let lastAvatarActionSequence = 0;
 let pendingAvatarAction: { readonly action: string; readonly sequence: number } | null = null;
 
+function setAvatarPackage(packageName: string | null | undefined): void {
+  if (!packageName || !/^[a-z0-9][a-z0-9_-]*$/i.test(packageName)) return;
+  const nextUrl = `/theaters/${encodeURIComponent(activeTheaterId)}/avatars/${encodeURIComponent(packageName)}/`;
+  if (avatarPackageUrl === nextUrl) return;
+  avatarPackageUrl = nextUrl;
+  syncCanvasAvatarVisibility();
+}
+
+function syncCanvasAvatarVisibility(): void {
+  const avatarMount = document.getElementById('canvas-avatar');
+  if (!avatarMount) return;
+  if (!agentSummoned || !avatarPackageUrl) {
+    avatarMount.hidden = true;
+    return;
+  }
+  if (avatarPlayback || avatarPosterVisible) {
+    avatarMount.hidden = false;
+    if (avatarPlayback && pendingAvatarAction) {
+      const queued = pendingAvatarAction;
+      pendingAvatarAction = null;
+      avatarPlayback.playAction(queued.action);
+    }
+    return;
+  }
+  if (avatarMountStarted) return;
+  avatarMountStarted = true;
+  const packageUrl = avatarPackageUrl;
+  void import('./avatar.js')
+    .then(({ mountAvatar }) => mountAvatar(avatarMount, packageUrl, { isVisible: () => agentSummoned }))
+    .then((playback) => {
+      avatarPlayback = playback;
+      window.__avatarPlayback = playback;
+      avatarPosterVisible = playback === null && avatarMount.querySelector('img') !== null;
+      avatarMount.hidden = !agentSummoned || (!playback && !avatarPosterVisible);
+      if (playback && agentSummoned && pendingAvatarAction) {
+        const queued = pendingAvatarAction;
+        pendingAvatarAction = null;
+        playback.playAction(queued.action);
+      }
+    })
+    .catch((error: unknown) => {
+      avatarMountStarted = false;
+      console.warn('Could not load theater avatar', error);
+    });
+}
+
+function setAgentSummoned(summoned: boolean): void {
+  if (agentSummoned === summoned) return;
+  agentSummoned = summoned;
+  syncCanvasAvatarVisibility();
+}
+
 function updateAvatarAction(avatarState: AvatarStatePayload | null | undefined): void {
   if (!avatarState || avatarState.enabled === false) return;
+  if (avatarState.enabled === true && avatarState.package) {
+    setAvatarPackage(avatarState.package);
+  }
   const sequence = typeof avatarState.sequence === 'number' && Number.isFinite(avatarState.sequence)
     ? avatarState.sequence
     : 0;
@@ -829,7 +889,7 @@ function updateAvatarAction(avatarState: AvatarStatePayload | null | undefined):
   const action = typeof avatarState.action === 'string' ? avatarState.action.trim() : '';
   if (!action || sequence === lastAvatarActionSequence) return;
   lastAvatarActionSequence = sequence;
-  if (avatarPlayback) {
+  if (avatarPlayback && agentSummoned) {
     avatarPlayback.playAction(action);
   } else {
     pendingAvatarAction = { action, sequence };
@@ -885,6 +945,9 @@ async function fetchLatestImage(): Promise<void> {
 
     updateAgentActivity(data.tool_activity ?? {});
     updateAgentThought(data.agent_thought);
+    if (typeof data.agent_running === 'boolean') {
+      setAgentSummoned(data.agent_running);
+    }
     updateAvatarAction(data.avatar);
     canvasPinned = Boolean(data.pinned);
     musicPinned = Boolean(data.music_pinned);
@@ -1434,6 +1497,7 @@ agentConnection = createAgentConnectionController({
   updateAgentActivity: (toolActivity) => updateAgentActivity(toolActivity ?? {}),
   setPcmBroadcasting,
   stopSceneSpeech,
+  onAgentRunningChange: setAgentSummoned,
 });
 
 // Expose helper functions on window for automated evaluation.
@@ -1797,21 +1861,8 @@ fetch(`/api/theaters/${encodeURIComponent(activeTheaterId)}`)
     }
     if (data && data.metadata) {
       const avatar = data.metadata.config?.avatar;
-      const avatarMount = document.getElementById('canvas-avatar');
-      if (avatarMount && avatar?.enabled === true && avatar.package && /^[a-z0-9][a-z0-9_-]*$/i.test(avatar.package)) {
-        const avatarUrl = `/theaters/${encodeURIComponent(activeTheaterId)}/avatars/${encodeURIComponent(avatar.package)}/`;
-        void import('./avatar.js')
-          .then(({ mountAvatar }) => mountAvatar(avatarMount, avatarUrl))
-          .then((playback) => {
-            avatarPlayback = playback;
-            window.__avatarPlayback = playback;
-            if (playback && pendingAvatarAction) {
-              const queued = pendingAvatarAction;
-              pendingAvatarAction = null;
-              playback.playAction(queued.action);
-            }
-          })
-          .catch((error: unknown) => console.warn('Could not load theater avatar', error));
+      if (avatar?.enabled === true && avatar.package) {
+        setAvatarPackage(avatar.package);
       }
       const isOwner = Boolean(data.metadata.is_owner);
       isTheaterStampOwner = isOwner;

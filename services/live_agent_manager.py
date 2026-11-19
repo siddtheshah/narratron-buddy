@@ -357,6 +357,8 @@ class LiveAgentSession:
         self._summoned = True
         self.status = "active"
         self.last_active_at = time.time()
+        if self.canvas_state_manager is not None:
+            self.canvas_state_manager.notify_changed("latest")
         self._auto_begin_adventure(self._get_last_auto_begin_at())
         return self.send_user_content(types.Content(parts=[types.Part(text=(
             "You have just been summoned. Say hello by sending a chat message."
@@ -1058,6 +1060,8 @@ class LiveAgentSession:
             logger.info(f"[LiveAgentSession] User reconnected for session {self.theater_id}; re-enabling state information.")
             self.send_canvas_state()
             self._record_theater_connection()
+            if self.canvas_state_manager is not None:
+                self.canvas_state_manager.notify_changed("latest")
 
     def _record_theater_connection(self) -> Tuple[Optional[str], Optional[str]]:
         """Record this connection and return the previous lifecycle timestamps."""
@@ -1418,6 +1422,8 @@ class LiveAgentSession:
         if self.websocket_connected:
             self._record_theater_disconnection()
         self.status = "stopped"
+        if self.canvas_state_manager is not None:
+            self.canvas_state_manager.notify_changed("latest")
         self.save_named_elements_to_session_state()
         self.flush_usage_to_db()
         if self.downstream_task and not self.downstream_task.done():

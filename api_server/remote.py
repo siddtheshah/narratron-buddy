@@ -39,6 +39,14 @@ class RemoteAgentThought(BaseModel):
     highlighted: bool = False
 
 
+class RemoteAvatarStatus(BaseModel):
+    enabled: bool = False
+    package: str = ""
+    action: str | None = None
+    sequence: int = 0
+    time: float = 0.0
+
+
 class RemoteStatus(BaseModel):
     theater_id: str
     agent_running: bool
@@ -51,6 +59,7 @@ class RemoteStatus(BaseModel):
     music: RemoteMusicStatus
     committed_scene_speech_generation: int
     agent_thought: RemoteAgentThought = RemoteAgentThought()
+    avatar: RemoteAvatarStatus = RemoteAvatarStatus()
     is_contributor: bool = False
     is_owner: bool = False
     is_orator: bool = False
@@ -151,6 +160,7 @@ def get_remote_status(theater_id: str, request: Request, response: Response) -> 
             time=state.tool_response.current_agent_thought_time,
             highlighted=state.tool_response.agent_thought_highlighted,
         ),
+        avatar=RemoteAvatarStatus.model_validate(state.avatar.payload()),
         is_contributor=is_contributor(deployment, current_user=user),
         is_owner=is_owner,
         is_orator=is_orator,

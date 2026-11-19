@@ -13,6 +13,7 @@ import {
     type RemoteSpeechItem,
 } from './remote-audio.js';
 import { initializeRemoteGame } from './remote-game.js';
+import type { AvatarPlayback } from '../canvas/avatar.js';
 import type { GamePayload } from '../game/game-renderer.js';
 import { buildPcmWorkletSource } from '../audio/pcm-worklet-processor.js';
 
@@ -29,6 +30,14 @@ export interface RemoteAgentThought {
     readonly highlighted?: boolean;
 }
 
+export interface RemoteAvatarState {
+    readonly enabled?: boolean;
+    readonly package?: string | null;
+    readonly action?: string | null;
+    readonly sequence?: number | null;
+    readonly time?: number | null;
+}
+
 export interface RemoteStatusState {
     readonly theater_id?: string | null;
     readonly join_key?: string | null;
@@ -42,6 +51,7 @@ export interface RemoteStatusState {
     readonly is_contributor?: boolean;
     readonly is_adventure_mode?: boolean;
     readonly agent_thought?: RemoteAgentThought | null;
+    readonly avatar?: RemoteAvatarState | null;
     readonly music?: RemoteMusicState | null;
     readonly committed_scene_speech_generation?: number | null;
     readonly game_state?: GamePayload | null;
@@ -135,6 +145,7 @@ interface RemoteAudioWindow extends Window {
     webkitAudioContext?: typeof AudioContext;
     AudioEncoder?: typeof globalThis.AudioEncoder;
     AudioData?: typeof globalThis.AudioData;
+    __avatarPlayback?: AvatarPlayback | null;
 }
 
 function getErrorMessage(error: unknown, fallback = 'Request failed.'): string {
@@ -212,8 +223,173 @@ export function initializeRemote(): RemoteController {
     const composer = requireElement<HTMLElement>(document.getElementById('remote-composer'), 'remote-composer');
     const agentThoughtCard = document.getElementById('agent-thought-card');
     const agentThoughtText = document.getElementById('agent-thought-text');
+    const remoteAvatarStage = document.getElementById('remote-avatar-stage');
+    const remoteAvatarMount = document.getElementById('remote-avatar');
     let selectedPreviewIndex = 0;
     let lastAgentThought: string | null = null;
+    let avatarPackage: string | null = null;
+    let avatarLoadingPackage: string | null = null;
+    let avatarMountToken = 0;
+    let avatarPlayback: AvatarPlayback | null = null;
+    let avatarPosterVisible = false;
+    let latestAvatarAction: string | null = null;
+    let latestAvatarSequence = 0;
+    let lastPlayedAvatarSequence = 0;
+    let wasAgentSubtabAvatarVisible = false;
+
+    function isValidAvatarPackage(pkg: string | null | undefined): pkg is string {
+        return typeof pkg === 'string' && /^[a-z0-9][a-z0-9_-]*$/i.test(pkg);
+    }
+
+    function isAgentSubtabOpen(): boolean {
+        return !previewView.hidden && previewTabs[selectedPreviewIndex]?.id === 'preview-thought-tab';
+    }
+
+    function isRemoteAvatarVisibleFor(pkg: string): boolean {
+        return Boolean(
+            state?.agent_running &&
+            state?.avatar?.enabled === true &&
+            state?.avatar?.package === pkg &&
+            isAgentSubtabOpen(),
+        );
+    }
+
+    function disposeRemoteAvatar(): void {
+        avatarMountToken += 1;
+        avatarPlayback?.dispose();
+        avatarPlayback = null;
+        (window as RemoteAudioWindow).__avatarPlayback = null;
+        avatarPackage = null;
+        avatarLoadingPackage = null;
+        avatarPosterVisible = false;
+        if (remoteAvatarMount) {
+            remoteAvatarMount.replaceChildren();
+            remoteAvatarMount.hidden = true;
+        }
+        if (remoteAvatarStage) {
+            remoteAvatarStage.hidden = true;
+        }
+    }
+
+    function syncRemoteAvatar(): void {
+        const avatarState = state?.avatar;
+        const agentRunning = Boolean(state?.agent_running);
+        const enabledPackage =
+            avatarState?.enabled === true && isValidAvatarPackage(avatarState.package)
+                ? avatarState.package
+                : null;
+
+        if (enabledPackage) {
+            const sequence =
+                typeof avatarState?.sequence === 'number' && Number.isFinite(avatarState.sequence)
+                    ? avatarState.sequence
+                    : 0;
+            const action = typeof avatarState?.action === 'string' ? avatarState.action.trim() : '';
+            if (sequence > 0 && action) {
+                latestAvatarAction = action;
+                latestAvatarSequence = sequence;
+            } else if (sequence <= 0) {
+                latestAvatarAction = null;
+                latestAvatarSequence = 0;
+                lastPlayedAvatarSequence = 0;
+            }
+        } else {
+            latestAvatarAction = null;
+            latestAvatarSequence = 0;
+            lastPlayedAvatarSequence = 0;
+        }
+
+        if (avatarPackage !== null && avatarPackage !== enabledPackage) {
+            disposeRemoteAvatar();
+        } else if (avatarLoadingPackage !== null && avatarLoadingPackage !== enabledPackage) {
+            avatarMountToken += 1;
+            avatarLoadingPackage = null;
+        }
+
+        const shouldBeVisible = Boolean(agentRunning && enabledPackage && isAgentSubtabOpen());
+        const justBecameVisible = shouldBeVisible && !wasAgentSubtabAvatarVisible;
+        wasAgentSubtabAvatarVisible = shouldBeVisible;
+
+        if (!shouldBeVisible || !remoteAvatarStage || !remoteAvatarMount || !enabledPackage) {
+            if (remoteAvatarStage) remoteAvatarStage.hidden = true;
+            if (remoteAvatarMount) remoteAvatarMount.hidden = true;
+            return;
+        }
+
+        if (avatarPlayback && avatarPackage === enabledPackage) {
+            remoteAvatarStage.hidden = false;
+            remoteAvatarMount.hidden = false;
+            if (justBecameVisible) {
+                if (latestAvatarAction && latestAvatarSequence > 0) {
+                    lastPlayedAvatarSequence = latestAvatarSequence;
+                    avatarPlayback.playAction(latestAvatarAction);
+                } else if (avatarPlayback.currentAction !== avatarPlayback.idle) {
+                    avatarPlayback.playAction(avatarPlayback.idle);
+                }
+            } else if (
+                latestAvatarAction &&
+                latestAvatarSequence > 0 &&
+                latestAvatarSequence !== lastPlayedAvatarSequence
+            ) {
+                lastPlayedAvatarSequence = latestAvatarSequence;
+                avatarPlayback.playAction(latestAvatarAction);
+            }
+            return;
+        }
+
+        if (avatarPosterVisible && avatarPackage === enabledPackage) {
+            remoteAvatarStage.hidden = false;
+            remoteAvatarMount.hidden = false;
+            return;
+        }
+
+        if (avatarLoadingPackage === enabledPackage || !theaterId) {
+            return;
+        }
+
+        remoteAvatarStage.hidden = false;
+        avatarLoadingPackage = enabledPackage;
+        const token = ++avatarMountToken;
+        const avatarUrl = `/theaters/${encodeURIComponent(theaterId)}/avatars/${encodeURIComponent(enabledPackage)}/`;
+        void import('../canvas/avatar.js')
+            .then(({ mountAvatar }) =>
+                mountAvatar(remoteAvatarMount, avatarUrl, {
+                    isVisible: () => isRemoteAvatarVisibleFor(enabledPackage),
+                }),
+            )
+            .then((playback) => {
+                if (token !== avatarMountToken) {
+                    playback?.dispose();
+                    return;
+                }
+                avatarLoadingPackage = null;
+                avatarPackage = enabledPackage;
+                avatarPlayback = playback;
+                (window as RemoteAudioWindow).__avatarPlayback = playback;
+                avatarPosterVisible = playback === null && remoteAvatarMount.querySelector('img') !== null;
+                const currentlyVisible = isRemoteAvatarVisibleFor(enabledPackage);
+                if (!currentlyVisible || (!playback && !avatarPosterVisible)) {
+                    remoteAvatarStage.hidden = true;
+                    remoteAvatarMount.hidden = true;
+                    return;
+                }
+                remoteAvatarStage.hidden = false;
+                if (playback) {
+                    remoteAvatarMount.hidden = false;
+                    if (latestAvatarAction && latestAvatarSequence > 0) {
+                        lastPlayedAvatarSequence = latestAvatarSequence;
+                        playback.playAction(latestAvatarAction);
+                    }
+                }
+            })
+            .catch((error: unknown) => {
+                if (token !== avatarMountToken) return;
+                avatarLoadingPackage = null;
+                remoteAvatarStage.hidden = true;
+                remoteAvatarMount.hidden = true;
+                console.warn('Could not load theater avatar', error);
+            });
+    }
 
     function isAudioActive(): boolean {
         return (!previewView.hidden || previewAudio.isUnmuted()) && !document.hidden;
@@ -255,6 +431,7 @@ export function initializeRemote(): RemoteController {
         const slot = document.getElementById(readingStory ? 'story-composer-slot' : 'inputs-composer-slot');
         if (slot && composer.parentElement !== slot) slot.appendChild(composer);
         composer.hidden = readingStory && !isOratorUser();
+        syncRemoteAvatar();
     }
 
     previewTabs.forEach((tab, index) => {
@@ -622,7 +799,7 @@ export function initializeRemote(): RemoteController {
     let swipeStart: SwipeStart | null = null;
     viewContainer.addEventListener('touchstart', (event: TouchEvent) => {
         const nested = event.target instanceof Element
-            ? event.target.closest('.asset-carousel, .asset-card, input, textarea, button, #chat-messages, #remote-story-log, #remote-game-viewport')
+            ? event.target.closest('.asset-carousel, .asset-card, input, textarea, button, #chat-messages, #remote-story-log, #remote-game-viewport, #remote-avatar')
             : null;
         swipeStart = event.touches.length === 1 && !nested
             ? { x: event.touches[0].clientX, y: event.touches[0].clientY }
@@ -844,6 +1021,7 @@ export function initializeRemote(): RemoteController {
     function updatePreview(): void {
         previewAudio.update(state, isAudioActive());
         updateAgentThought(state?.agent_thought);
+        syncRemoteAvatar();
         if (previewView.hidden && state) return;
         const nextUrl = state?.preview_url || null;
         if (nextUrl !== previewUrl) {
@@ -1918,6 +2096,7 @@ export function initializeRemote(): RemoteController {
             window.removeEventListener('pagehide', handlePageHide);
             document.removeEventListener('keydown', handleDocumentKeyDown);
             document.removeEventListener('visibilitychange', handleVisibilityChange);
+            disposeRemoteAvatar();
             handlePageHide();
             if (agentWs) {
                 try { agentWs.close(); } catch { /* Ignore close errors. */ }

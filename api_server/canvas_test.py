@@ -512,14 +512,27 @@ def test_get_latest_image_passes_join_key_to_require_canvas_access():
     manager = MagicMock()
     manager.theater.return_value = theater
     req = request()
+    agent_manager = MagicMock()
+    agent_manager.get_session.return_value = None
     with patch.object(canvas, "_require_canvas_access") as mock_require, \
          patch.object(object_registry, "theater_manager", manager), \
+         patch.object(object_registry, "live_agent_manager", agent_manager), \
          patch.object(canvas, "_state") as mock_state:
         mock_state.return_value.get_latest_state.return_value = {"latest": "img.png"}
         result = canvas.get_latest_image(req, theater_id="stage", join_key="KEY-123")
 
     mock_require.assert_called_once_with(req, "stage", join_key="KEY-123")
-    assert result == {"latest": "img.png"}
+    assert result == {"latest": "img.png", "agent_running": False}
+
+    agent_manager.get_session.return_value = MagicMock(is_alive=True)
+    with patch.object(canvas, "_require_canvas_access"), \
+         patch.object(object_registry, "theater_manager", manager), \
+         patch.object(object_registry, "live_agent_manager", agent_manager), \
+         patch.object(canvas, "_state") as mock_state:
+        mock_state.return_value.get_latest_state.return_value = {"latest": "img.png"}
+        live_result = canvas.get_latest_image(req, theater_id="stage", join_key="KEY-123")
+
+    assert live_result == {"latest": "img.png", "agent_running": True}
 
 
 def test_websocket_endpoints_pass_join_key_to_require_canvas_access_async():
