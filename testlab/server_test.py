@@ -1,5 +1,6 @@
 """Tests for Test Lab static mounts and ES module loading."""
 
+from collections.abc import Callable
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
@@ -8,6 +9,27 @@ from playwright.sync_api import Request, Response, Route, sync_playwright
 from testlab.server import app
 
 _BASE_URL = "http://testlab.test"
+
+
+def _make_testlab_route_handler(client: TestClient) -> Callable[[Route], None]:
+    def handle_route(route: Route) -> None:
+        url = route.request.url
+        if not url.startswith(_BASE_URL):
+            route.abort()
+            return
+        path = url[len(_BASE_URL):]
+        result = client.request(
+            route.request.method,
+            path,
+            content=route.request.post_data,
+        )
+        route.fulfill(
+            status=result.status_code,
+            headers=dict(result.headers),
+            body=result.content,
+        )
+
+    return handle_route
 
 
 def test_static_generated_mount_serves_canvas_modules_without_shadowing_effects_static() -> None:
@@ -45,24 +67,6 @@ def test_lab_pages_resolve_migrated_canvas_modules_without_404() -> None:
                 responses: list[tuple[str, int]] = []
                 page_errors: list[str] = []
 
-                def handle_route(route: Route) -> None:
-                    url = route.request.url
-                    if not url.startswith(_BASE_URL):
-                        route.abort()
-                        return
-                    path = url[len(_BASE_URL):]
-                    result = client.request(
-                        route.request.method,
-                        path,
-                        content=route.request.post_data,
-                    )
-                    headers = dict(result.headers)
-                    route.fulfill(
-                        status=result.status_code,
-                        headers=headers,
-                        body=result.content,
-                    )
-
                 def on_response(response: Response) -> None:
                     responses.append((response.url, response.status))
 
@@ -73,7 +77,7 @@ def test_lab_pages_resolve_migrated_canvas_modules_without_404() -> None:
                     if request.url.startswith(_BASE_URL):
                         page_errors.append(f"Request failed: {request.url}")
 
-                page.route(f"{_BASE_URL}/**", handle_route)
+                page.route(f"{_BASE_URL}/**", _make_testlab_route_handler(client))
                 page.on("response", on_response)
                 page.on("pageerror", on_page_error)
                 page.on("requestfailed", on_request_failed)
@@ -105,3 +109,39 @@ def test_startup_builds_canvas_assets() -> None:
             build.assert_called_once_with()
             response = client.get("/static/generated/game/game-renderer.js")
             assert response.status_code == 200
+
+
+def test_avatar_lab_serves_and_triggers_narratron_actions() -> None:
+    """Verify /avatar-lab?avatar=narratron loads Narratron assets and triggers action buttons."""
+    with TestClient(app) as client, sync_playwright() as playwright:
+        manifest_resp = client.get("/avatar-assets/narratron/avatar.json")
+        assert manifest_resp.status_code == 200
+        browser = playwright.chromium.launch(
+            headless=True,
+            args=["--use-angle=swiftshader", "--enable-unsafe-swiftshader"],
+        )
+        try:
+            page = browser.new_page()
+            page_errors: list[str] = []
+
+            page.route(f"{_BASE_URL}/**", _make_testlab_route_handler(client))
+            page.on("pageerror", lambda err: page_errors.append(str(err)))
+            page.goto(f"{_BASE_URL}/avatar-lab?avatar=narratron", wait_until="networkidle")
+
+            canvas = page.locator("#avatar canvas")
+            canvas.wait_for(state="visible", timeout=10000)
+            assert page.locator("#avatar-choice").input_value() == "narratron"
+
+            labels = page.locator("#action-list .action .action-name").all_text_contents()
+            assert labels == ["Idle", "Greeting", "Amused", "Surprised", "Confused", "At Work"]
+
+            page.locator("#action-list .action", has_text="At Work").click()
+            assert page.locator("#playback-status").text_content() == "Looping At Work"
+            assert page.locator("#action-list .action", has_text="At Work").get_attribute("aria-pressed") == "true"
+
+            page.locator("#action-list .action", has_text="Greeting").click()
+            assert page.locator("#playback-status").text_content() == "Playing Greeting"
+            assert page_errors == []
+            page.close()
+        finally:
+            browser.close()

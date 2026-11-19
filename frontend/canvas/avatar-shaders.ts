@@ -21,7 +21,7 @@ export type AvatarShaderUniformSpec =
   | number
   | string
   | readonly number[]
-  | { readonly source: 'time' | 'brightness' | 'lightColor' | 'resolution' }
+  | { readonly source: 'time' | 'brightness' | 'lightColor' | 'resolution' | 'actionPulse' }
   | { readonly rest: number; readonly hover: number };
 
 export interface AvatarShaderGeometrySpec {
@@ -51,7 +51,7 @@ export interface AvatarShaderSpec {
 
 export interface AvatarShaderController {
   setEnabled(enabled: boolean): void;
-  update(elapsedTime: number, brightness: number, width: number, height: number): void;
+  update(elapsedTime: number, brightness: number, width: number, height: number, actionPulse?: number): void;
   dispose(): void;
 }
 
@@ -133,7 +133,7 @@ function isRangeUniform(spec: AvatarShaderUniformSpec): spec is { readonly rest:
 
 function isSourceUniform(
   spec: AvatarShaderUniformSpec,
-): spec is { readonly source: 'time' | 'brightness' | 'lightColor' | 'resolution' } {
+): spec is { readonly source: 'time' | 'brightness' | 'lightColor' | 'resolution' | 'actionPulse' } {
   return typeof spec === 'object' && spec !== null && !Array.isArray(spec) && 'source' in spec;
 }
 
@@ -167,6 +167,7 @@ export async function loadAvatarShaders(
 
   const resolution = new Vector2(1, 1);
   const timeUniforms: Array<IUniform<number>> = [];
+  const actionPulseUniforms: Array<IUniform<number>> = [];
   const brightnessBindings: BrightnessBinding[] = [];
   const attachedMeshes: Mesh[] = [];
   const geometries: BufferGeometry[] = [];
@@ -176,12 +177,15 @@ export async function loadAvatarShaders(
   for (const { spec, vertexShader, fragmentShader } of compiledSources) {
     const timeUniform: IUniform<number> = { value: 0 };
     const brightnessUniform: IUniform<number> = { value: 0 };
+    const actionPulseUniform: IUniform<number> = { value: 0 };
     timeUniforms.push(timeUniform);
+    actionPulseUniforms.push(actionPulseUniform);
     brightnessBindings.push({ uniform: brightnessUniform, rest: 0, hover: 1 });
 
     const uniforms: Record<string, IUniform> = {
       uTime: timeUniform,
       uBrightness: brightnessUniform,
+      uActionPulse: actionPulseUniform,
       uColor: { value: activeColor },
       uResolution: { value: resolution },
     };
@@ -201,6 +205,10 @@ export async function loadAvatarShaders(
             uniforms[name] = { value: activeColor };
           } else if (valueSpec.source === 'resolution') {
             uniforms[name] = { value: resolution };
+          } else if (valueSpec.source === 'actionPulse') {
+            const uniform: IUniform<number> = { value: 0 };
+            uniforms[name] = uniform;
+            actionPulseUniforms.push(uniform);
           }
           continue;
         }
@@ -281,11 +289,14 @@ export async function loadAvatarShaders(
         entry.mesh.material = enabled ? entry.shader : entry.original;
       }
     },
-    update(elapsedTime: number, brightness: number, width: number, height: number): void {
+    update(elapsedTime: number, brightness: number, width: number, height: number, actionPulse = 0): void {
       if (!enabled) return;
       resolution.set(Math.max(1, width), Math.max(1, height));
       for (const uniform of timeUniforms) {
         uniform.value = elapsedTime;
+      }
+      for (const uniform of actionPulseUniforms) {
+        uniform.value = actionPulse;
       }
       for (const binding of brightnessBindings) {
         binding.uniform.value = MathUtils.lerp(binding.rest, binding.hover, brightness);

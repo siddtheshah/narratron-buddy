@@ -1,18 +1,41 @@
-import { AnimationMixer, Color, MathUtils, Mesh, MeshStandardMaterial, PointLight } from 'three';
+import {
+  AnimationMixer,
+  Color,
+  LoopOnce,
+  LoopRepeat,
+  MathUtils,
+  Mesh,
+  MeshStandardMaterial,
+  PointLight,
+} from 'three';
+import type { AnimationAction } from 'three';
 import { createAvatarScene } from '../shared/avatar-scene.js';
 import { loadAvatarShaders, type AvatarShaderController, type AvatarShaderSpec } from './avatar-shaders.js';
+
+const ACTION_CROSSFADE_SECONDS = 0.25;
+const ACTION_PULSE_DURATION_SECONDS = 1.2;
+
+interface AvatarActionManifest {
+  readonly id: string;
+  readonly label?: string;
+  readonly clip?: string;
+  readonly description?: string;
+  readonly loop?: boolean;
+  readonly lightColor?: string;
+}
+
+interface AvatarReactions {
+  readonly hover?: string;
+  readonly activate?: string;
+}
 
 interface AvatarManifest {
   readonly title: string;
   readonly model: 'model.glb';
   readonly poster?: 'preview.webp';
   readonly idle: string;
-  readonly actions: readonly {
-    readonly id: string;
-    readonly label?: string;
-    readonly clip?: string;
-    readonly lightColor?: string;
-  }[];
+  readonly reactions?: AvatarReactions;
+  readonly actions: readonly AvatarActionManifest[];
   readonly renderScale?: number;
   readonly fillLight?: number;
   readonly hoverGlow?: {
@@ -23,16 +46,44 @@ interface AvatarManifest {
   readonly shaders?: readonly AvatarShaderSpec[];
 }
 
-interface AvatarColorAction {
+export interface AvatarActionInfo {
+  readonly id: string;
+  readonly label: string;
+  readonly description?: string;
+  readonly loop: boolean;
+  readonly duration: number | null;
+  readonly lightColor?: string;
+}
+
+export interface AvatarColorAction {
   readonly id: string;
   readonly label: string;
   readonly color: string;
 }
 
-interface AvatarPlayback {
+export interface AvatarPlayback {
   readonly idle: string;
+  readonly currentAction: string;
+  readonly actions: readonly AvatarActionInfo[];
   readonly colors: readonly AvatarColorAction[];
+  readonly reactions?: AvatarReactions;
+  playAction(actionId: string): boolean;
   selectColor(actionId: string): boolean;
+  onActionChange(listener: (actionId: string) => void): () => void;
+}
+
+interface RegisteredAction {
+  readonly info: AvatarActionInfo;
+  readonly clipAction: AnimationAction | null;
+}
+
+function isHexColor(value: string | undefined): value is string {
+  return typeof value === 'string' && /^#[\da-f]{6}$/i.test(value);
+}
+
+function configureClipAction(clipAction: AnimationAction, loop: boolean): void {
+  clipAction.setLoop(loop ? LoopRepeat : LoopOnce, loop ? Infinity : 1);
+  clipAction.clampWhenFinished = !loop;
 }
 
 function isMinimalModeActive(): boolean {
@@ -81,10 +132,33 @@ export async function mountAvatar(mount: HTMLElement, packagePath: string): Prom
     return null;
   }
   const { model, animations, renderer, render } = view;
-  const idle = manifest.actions.find((action) => action.id === manifest.idle);
-  const clip = animations.find((animation) => animation.name === idle?.clip);
   const mixer = new AnimationMixer(model);
-  if (clip) mixer.clipAction(clip).play();
+  const actionMap = new Map<string, RegisteredAction>();
+  const actionInfos: AvatarActionInfo[] = [];
+
+  for (const entry of manifest.actions) {
+    const clip = entry.clip ? animations.find((animation) => animation.name === entry.clip) : undefined;
+    const clipAction = clip ? mixer.clipAction(clip) : null;
+    const loop = entry.loop === true;
+    const info: AvatarActionInfo = {
+      id: entry.id,
+      label: entry.label ?? entry.id,
+      description: entry.description,
+      loop,
+      duration: clip ? clip.duration : null,
+      lightColor: isHexColor(entry.lightColor) ? entry.lightColor : undefined,
+    };
+    actionMap.set(entry.id, { info, clipAction });
+    actionInfos.push(info);
+  }
+
+  const idleAction = actionMap.get(manifest.idle) ?? null;
+  let activeClipAction: AnimationAction | null = idleAction?.clipAction ?? null;
+  if (idleAction && activeClipAction) {
+    configureClipAction(activeClipAction, idleAction.info.loop);
+    activeClipAction.reset().setEffectiveTimeScale(1).setEffectiveWeight(1).play();
+    mixer.update(0);
+  }
 
   const glow = manifest.hoverGlow;
   const lightSetting = glow?.light;
@@ -103,10 +177,8 @@ export async function mountAvatar(mount: HTMLElement, packagePath: string): Prom
 
   const shaderSpecs = Array.isArray(manifest.shaders) ? manifest.shaders : [];
   const supportsColor = Boolean(lightGlow) || shaderSpecs.length > 0;
-  const colors = supportsColor ? manifest.actions.flatMap(({ id, label, lightColor }) => (
-    typeof lightColor === 'string' && /^#[\da-f]{6}$/i.test(lightColor)
-      ? [{ id, label: label ?? id, color: lightColor }]
-      : []
+  const colors = supportsColor ? actionInfos.flatMap(({ id, label, lightColor }) => (
+    lightColor ? [{ id, label, color: lightColor }] : []
   )) : [];
   const activeColor = lightGlow ? lightGlow.light.color : new Color(0xffffff);
   const targetColor = supportsColor ? activeColor.clone() : undefined;
@@ -121,6 +193,9 @@ export async function mountAvatar(mount: HTMLElement, packagePath: string): Prom
   let ready = true;
   let brightness = 0;
   let elapsedShaderTime = 0;
+  let actionPulse = 0;
+  let currentActionId = manifest.idle;
+  const actionListeners = new Set<(actionId: string) => void>();
 
   async function ensureShaders(): Promise<void> {
     if (shaderLoadStarted || shaderSpecs.length === 0) return;
@@ -135,7 +210,7 @@ export async function mountAvatar(mount: HTMLElement, packagePath: string): Prom
       const enabled = !isMinimalModeActive();
       controller.setEnabled(enabled);
       if (enabled) {
-        controller.update(elapsedShaderTime, brightness, canvas.width, canvas.height);
+        controller.update(elapsedShaderTime, brightness, canvas.width, canvas.height, actionPulse);
       }
     } catch (error) {
       shaderLoadStarted = false;
@@ -154,12 +229,89 @@ export async function mountAvatar(mount: HTMLElement, packagePath: string): Prom
   let hovered = false;
   let focused = false;
 
+  function activateAction(actionId: string, triggerPulse: boolean): boolean {
+    if (!ready) return false;
+    const next = actionMap.get(actionId);
+    if (!next) return false;
+    currentActionId = next.info.id;
+
+    if (targetColor) {
+      if (next.info.lightColor) {
+        targetColor.set(next.info.lightColor);
+      } else if (next.info.id === manifest.idle && idleColor) {
+        targetColor.set(idleColor.color);
+      }
+      if (reducedMotion.matches && colors.length > 0) {
+        activeColor.copy(targetColor);
+        for (const material of materials.keys()) material.emissive.copy(activeColor);
+      }
+    }
+
+    if (triggerPulse && !reducedMotion.matches) {
+      actionPulse = 1;
+    }
+
+    if (next.clipAction) {
+      configureClipAction(next.clipAction, next.info.loop);
+      const fadeSeconds = reducedMotion.matches ? 0 : ACTION_CROSSFADE_SECONDS;
+      if (activeClipAction === next.clipAction) {
+        if (!next.info.loop || !next.clipAction.isRunning()) {
+          next.clipAction.reset().setEffectiveTimeScale(1).setEffectiveWeight(1).play();
+          mixer.update(0);
+        }
+      } else {
+        for (const entry of actionMap.values()) {
+          if (
+            entry.clipAction
+            && entry.clipAction !== next.clipAction
+            && (fadeSeconds <= 0 || entry.clipAction !== activeClipAction)
+          ) {
+            entry.clipAction.stop();
+          }
+        }
+        next.clipAction.reset().setEffectiveTimeScale(1).setEffectiveWeight(1).play();
+        if (fadeSeconds > 0 && activeClipAction) {
+          activeClipAction.crossFadeTo(next.clipAction, fadeSeconds, false);
+        } else {
+          mixer.update(0);
+        }
+        activeClipAction = next.clipAction;
+      }
+    }
+
+    for (const listener of actionListeners) {
+      listener(currentActionId);
+    }
+    if (reducedMotion.matches) {
+      if (shaderController && !isMinimalModeActive()) {
+        shaderController.update(elapsedShaderTime, brightness, canvas.width, canvas.height, 0);
+      }
+      render();
+    }
+    return true;
+  }
+
+  mixer.addEventListener('finished', (event) => {
+    const finishedAction = (event as { action?: AnimationAction }).action;
+    queueMicrotask(() => {
+      if (!ready || !idleAction) return;
+      if (finishedAction === activeClipAction && currentActionId !== manifest.idle) {
+        activateAction(idleAction.info.id, false);
+      }
+    });
+  });
+
   function update(time: number): void {
     const delta = Math.min((time - (lastTime || time)) / 1000, 0.1);
     lastTime = time;
     if (!reducedMotion.matches) {
       mixer.update(delta);
       elapsedShaderTime += delta;
+      if (actionPulse > 0) {
+        actionPulse = Math.max(0, actionPulse - delta / ACTION_PULSE_DURATION_SECONDS);
+      }
+    } else {
+      actionPulse = 0;
     }
     const target = Number(hovered || focused);
     brightness = reducedMotion.matches ? target : MathUtils.damp(brightness, target, 10, delta);
@@ -176,17 +328,45 @@ export async function mountAvatar(mount: HTMLElement, packagePath: string): Prom
       for (const material of materials.keys()) material.emissive.copy(activeColor);
     }
     if (shaderController && !isMinimalModeActive()) {
-      shaderController.update(elapsedShaderTime, brightness, canvas.width, canvas.height);
+      shaderController.update(elapsedShaderTime, brightness, canvas.width, canvas.height, actionPulse);
     }
     render();
   }
 
-  if (materials.size > 0 || lightGlow || shaderSpecs.length > 0) {
+  const hoverReaction = manifest.reactions?.hover;
+  const activateReaction = manifest.reactions?.activate;
+  const hasHoverReaction = Boolean(hoverReaction && actionMap.has(hoverReaction));
+  const hasActivateReaction = Boolean(activateReaction && actionMap.has(activateReaction));
+
+  if (materials.size > 0 || lightGlow || shaderSpecs.length > 0 || hasHoverReaction || hasActivateReaction) {
     mount.tabIndex = 0;
-    mount.addEventListener('pointerenter', (event) => { hovered = event.pointerType !== 'touch'; });
+    mount.addEventListener('pointerenter', (event) => {
+      hovered = event.pointerType !== 'touch';
+      if (hovered && hoverReaction && hasHoverReaction && currentActionId === manifest.idle && !reducedMotion.matches) {
+        activateAction(hoverReaction, true);
+      }
+    });
     mount.addEventListener('pointerleave', () => { hovered = false; });
     mount.addEventListener('focus', () => { focused = true; });
     mount.addEventListener('blur', () => { focused = false; });
+  }
+
+  if (hasActivateReaction && activateReaction) {
+    const stopPointer = (event: Event): void => {
+      event.stopPropagation();
+    };
+    mount.style.cursor = 'pointer';
+    mount.addEventListener('pointerdown', stopPointer);
+    mount.addEventListener('mousedown', stopPointer);
+    mount.addEventListener('click', () => {
+      activateAction(activateReaction, true);
+    });
+    mount.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        activateAction(activateReaction, true);
+      }
+    });
   }
 
   function resize(): void {
@@ -194,7 +374,7 @@ export async function mountAvatar(mount: HTMLElement, packagePath: string): Prom
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setSize(size, size, false);
     if (shaderController && !isMinimalModeActive()) {
-      shaderController.update(elapsedShaderTime, brightness, canvas.width, canvas.height);
+      shaderController.update(elapsedShaderTime, brightness, canvas.width, canvas.height, actionPulse);
     }
     render();
   }
@@ -209,7 +389,7 @@ export async function mountAvatar(mount: HTMLElement, packagePath: string): Prom
     }
     shaderController?.setEnabled(!minimal);
     if (!minimal && shaderController) {
-      shaderController.update(elapsedShaderTime, brightness, canvas.width, canvas.height);
+      shaderController.update(elapsedShaderTime, brightness, canvas.width, canvas.height, actionPulse);
     }
     render();
   });
@@ -219,6 +399,8 @@ export async function mountAvatar(mount: HTMLElement, packagePath: string): Prom
     ready = false;
     observer.disconnect();
     minimalObserver.disconnect();
+    actionListeners.clear();
+    mixer.stopAllAction();
     shaderController?.dispose();
     shaderController = null;
     renderer.setAnimationLoop(null);
@@ -228,12 +410,32 @@ export async function mountAvatar(mount: HTMLElement, packagePath: string): Prom
   renderer.setAnimationLoop(update);
   return {
     idle: manifest.idle,
+    get currentAction() {
+      return currentActionId;
+    },
+    actions: actionInfos,
     colors,
+    reactions: manifest.reactions,
+    playAction(actionId: string) {
+      return activateAction(actionId, actionId !== manifest.idle);
+    },
     selectColor(actionId) {
       const action = colors.find(({ id }) => id === actionId);
       if (!ready || !action || !targetColor) return false;
       targetColor.set(action.color);
+      if (reducedMotion.matches) {
+        activeColor.copy(targetColor);
+        for (const material of materials.keys()) material.emissive.copy(activeColor);
+        if (shaderController && !isMinimalModeActive()) {
+          shaderController.update(elapsedShaderTime, brightness, canvas.width, canvas.height, 0);
+        }
+        render();
+      }
       return true;
+    },
+    onActionChange(listener) {
+      actionListeners.add(listener);
+      return () => { actionListeners.delete(listener); };
     },
   };
 }

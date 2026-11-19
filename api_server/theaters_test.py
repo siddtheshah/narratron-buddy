@@ -2042,6 +2042,58 @@ def test_create_and_deploy_theater_rejects_when_user_storage_cap_exceeded(tmp_pa
     assert "500MB exceeded" in response.json()["detail"]
 
 
+def test_quick_deploy_copies_example_theater_avatars_and_serves_them(tmp_path: Path) -> None:
+    from components.theater_manager import TheaterManager
+
+    fake_root = tmp_path / "repo"
+    example_dir = fake_root / "example_theater"
+    (example_dir / "playlists" / "default").mkdir(parents=True)
+    (example_dir / "playlists" / "default" / "new story.mp3").write_bytes(mp3_bytes())
+    (example_dir / "references").mkdir(parents=True)
+    (example_dir / "references" / "narratron_avatar.webp").write_bytes(png_bytes())
+    avatar_dir = example_dir / "avatars" / "narratron"
+    (avatar_dir / "shaders").mkdir(parents=True)
+    (avatar_dir / "avatar.json").write_bytes(b'{"id":"narratron","model":"model.glb"}')
+    (avatar_dir / "model.glb").write_bytes(b"glTF\x02\x00\x00\x00")
+    (avatar_dir / "preview.webp").write_bytes(b"RIFF\x00\x00\x00\x00WEBP")
+    (avatar_dir / "shaders" / "aura.frag").write_bytes(b"void main() {}")
+
+    manager = TheaterManager(tmp_path / "theaters")
+    with patch.object(object_registry, "theater_manager", manager), \
+         patch.object(theaters, "PROJECT_ROOT", fake_root), \
+         patch("components.theater_manager.PROJECT_ROOT", fake_root), \
+         patch.object(theaters, "get_current_user_async", AsyncMock(return_value={"id": 1})), \
+         patch.object(theaters, "check_user_theaters_storage_allowance") as mock_quota, \
+         patch.object(theaters, "_require_canvas_access_async", AsyncMock()), \
+         patch.object(object_registry.db, "record_deployment"), \
+         patch.object(theaters, "_export_canvas_theater_async", AsyncMock()), \
+         TestClient(app) as client:
+        response = client.post(
+            "/api/theaters/create-and-deploy",
+            data={"name": "Blank Avatar Theater", "creation_mode": "blank"},
+        )
+        assert response.status_code == 200
+        expected_bytes = (
+            len(mp3_bytes())
+            + len(b'{"id":"narratron","model":"model.glb"}')
+            + len(b"glTF\x02\x00\x00\x00")
+            + len(b"RIFF\x00\x00\x00\x00WEBP")
+            + len(b"void main() {}")
+        )
+        assert mock_quota.call_args.args[1] == expected_bytes
+        theater_id = response.json()["theater_id"]
+        avatar_url = f"/theaters/{theater_id}/avatars/narratron"
+        assert client.get(f"{avatar_url}/avatar.json").json() == {"id": "narratron", "model": "model.glb"}
+        model = client.get(f"{avatar_url}/model.glb")
+        assert model.status_code == 200
+        assert model.headers["content-type"] == "model/gltf-binary"
+        assert model.content[:4] == b"glTF"
+        assert client.get(f"{avatar_url}/preview.webp").headers["content-type"] == "image/webp"
+        frag = client.get(f"{avatar_url}/shaders/aura.frag")
+        assert frag.status_code == 200
+        assert "void main()" in frag.text
+
+
 
 
 

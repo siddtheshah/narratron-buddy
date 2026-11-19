@@ -16,9 +16,13 @@ interface AvatarManifest {
   readonly actions: readonly AvatarAction[];
 }
 
+type AvatarSelection = 'cube' | 'light-cube' | 'narratron';
+
 const packageUrl = new URL('/avatar-assets/cube/', window.location.href);
 const avatarChoice = document.querySelector<HTMLSelectElement>('#avatar-choice')!;
-const showLightCube = new URLSearchParams(location.search).get('avatar') === 'light-cube';
+const requestedAvatar = new URLSearchParams(location.search).get('avatar');
+const selectedAvatar: AvatarSelection =
+  requestedAvatar === 'light-cube' || requestedAvatar === 'narratron' ? requestedAvatar : 'cube';
 const stage = document.querySelector<HTMLDivElement>('#stage')!;
 const backdrop = document.querySelector<HTMLSelectElement>('#backdrop')!;
 const viewport = document.querySelector<HTMLDivElement>('#avatar')!;
@@ -29,9 +33,9 @@ const status = document.querySelector<HTMLParagraphElement>('#playback-status')!
 const actionList = document.querySelector<HTMLDivElement>('#action-list')!;
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
 
-avatarChoice.value = showLightCube ? 'light-cube' : 'cube';
+avatarChoice.value = selectedAvatar;
 avatarChoice.addEventListener('change', () => {
-  location.search = avatarChoice.value === 'light-cube' ? '?avatar=light-cube' : '';
+  location.search = avatarChoice.value === 'cube' ? '' : `?avatar=${encodeURIComponent(avatarChoice.value)}`;
 });
 
 backdrop.addEventListener('change', () => {
@@ -223,7 +227,91 @@ async function startLightCube(): Promise<void> {
   interactionHint.hidden = false;
 }
 
-(showLightCube ? startLightCube() : startLab()).catch((error: unknown) => {
-  status.textContent = 'Could not load the cube preview.';
+async function startNarratron(): Promise<void> {
+  document.getElementById('actions-heading')!.textContent = 'Narratron actions';
+  status.textContent = 'Loading Narratron…';
+  viewport.replaceChildren();
+  viewport.hidden = true;
+  const { mountAvatar } = await import('../canvas/avatar.js');
+  const player = await mountAvatar(viewport, '/avatar-assets/narratron/');
+  if (!player) {
+    status.textContent = '3D playback is unavailable. Showing the Narratron preview.';
+    return;
+  }
+  const buttons = new Map<string, HTMLButtonElement>();
+  function syncActiveAction(activeId: string): void {
+    const activeInfo = player?.actions.find(({ id }) => id === activeId);
+    for (const [id, button] of buttons) {
+      button.setAttribute('aria-pressed', String(id === activeId));
+    }
+    if (reducedMotion.matches && activeId === player?.idle) {
+      status.textContent = 'Idle paused for reduced motion. Select an action to preview it.';
+    } else if (activeInfo) {
+      status.textContent = activeInfo.loop ? `Looping ${activeInfo.label}` : `Playing ${activeInfo.label}`;
+    }
+  }
+  for (const action of player.actions) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'action';
+    button.setAttribute('aria-pressed', 'false');
+    button.setAttribute('aria-label', action.label);
+    if (action.lightColor) {
+      button.style.setProperty('--action-light', action.lightColor);
+    }
+
+    const text = document.createElement('span');
+    const name = document.createElement('span');
+    name.className = 'action-name';
+    name.textContent = action.label;
+    text.append(name);
+    if (action.description) {
+      const description = document.createElement('span');
+      description.className = 'action-description';
+      description.textContent = action.description;
+      text.append(description);
+    }
+
+    const duration = document.createElement('span');
+    duration.className = 'action-duration';
+    duration.textContent = action.loop
+      ? 'Loop'
+      : action.duration !== null
+        ? `${action.duration.toFixed(1)} s`
+        : 'Once';
+    button.append(text, duration);
+    button.addEventListener('click', () => {
+      player.playAction(action.id);
+    });
+    actionList.append(button);
+    buttons.set(action.id, button);
+  }
+  player.onActionChange(syncActiveAction);
+  syncActiveAction(player.currentAction);
+  reducedMotion.addEventListener('change', () => syncActiveAction(player.currentAction));
+
+  const activateAction = player.reactions?.activate;
+  if (activateAction) {
+    avatarButton.setAttribute('aria-label', 'Greet Narratron');
+    avatarButton.hidden = false;
+    avatarButton.addEventListener('click', (event) => {
+      event.stopPropagation();
+      player.playAction(activateAction);
+    });
+    viewport.append(avatarButton);
+  }
+  interactionHint.textContent = 'Hover over Narratron to brighten its aura. Click or tap to greet it.';
+  interactionHint.hidden = false;
+}
+
+const startup =
+  selectedAvatar === 'light-cube'
+    ? startLightCube()
+    : selectedAvatar === 'narratron'
+      ? startNarratron()
+      : startLab();
+
+startup.catch((error: unknown) => {
+  status.textContent = 'Could not load the avatar preview.';
   console.error('Avatar lab failed to start', error);
 });

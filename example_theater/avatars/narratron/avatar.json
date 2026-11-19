@@ -1,0 +1,93 @@
+{
+  "id": "narratron",
+  "title": "Narratron",
+  "model": "model.glb",
+  "poster": "preview.webp",
+  "idle": "idle",
+  "reactions": { "activate": "greeting" },
+  "actions": [
+    {
+      "id": "idle",
+      "label": "Idle",
+      "clip": "Idle",
+      "loop": true,
+      "lightColor": "#7ce8ff",
+      "description": "Serene cosmic float, gentle breath, and orbiting pages."
+    },
+    {
+      "id": "greeting",
+      "label": "Greeting",
+      "clip": "Greeting",
+      "loop": false,
+      "lightColor": "#ffd27d",
+      "description": "Welcoming bow, open wave, and quill flourish."
+    },
+    {
+      "id": "amused",
+      "label": "Amused",
+      "clip": "Amused",
+      "loop": false,
+      "lightColor": "#e29cff",
+      "description": "Playful chuckle bounce and lively orbiting pages."
+    },
+    {
+      "id": "surprised",
+      "label": "Surprised",
+      "clip": "Surprised",
+      "loop": false,
+      "lightColor": "#d6f6ff",
+      "description": "Startled lift, wide eyes, and radiant flare."
+    },
+    {
+      "id": "confused",
+      "label": "Confused",
+      "clip": "Confused",
+      "loop": false,
+      "lightColor": "#9aa8ff",
+      "description": "Curious head-tilt and pondering quill tap."
+    },
+    {
+      "id": "at-work",
+      "label": "At Work",
+      "clip": "AtWork",
+      "loop": true,
+      "lightColor": "#45d9ff",
+      "description": "Focused lean over the scroll with brisk writing."
+    }
+  ],
+  "renderScale": 1.15,
+  "fillLight": 0.6,
+  "hoverGlow": {
+    "material": "CosmicCore",
+    "intensity": 3.4,
+    "light": { "name": "SparkLight", "intensity": 6.2 }
+  },
+  "shaders": [
+    {
+      "attachTo": "NebulaAnchor",
+      "geometry": { "type": "sphere", "widthSegments": 32, "heightSegments": 24 },
+      "scale": 0.92,
+      "vertex": "shaders/dust.vert",
+      "fragment": "shaders/dust.frag",
+      "transparent": true,
+      "depthWrite": false,
+      "uniforms": {
+        "sparkColor": { "source": "lightColor" },
+        "sparkStrength": { "rest": 0.72, "hover": 1.55 }
+      }
+    },
+    {
+      "attachTo": "SparkLight",
+      "geometry": { "type": "sphere", "widthSegments": 28, "heightSegments": 20 },
+      "scale": 0.16,
+      "vertex": "shaders/dust.vert",
+      "fragment": "shaders/spark.frag",
+      "transparent": true,
+      "depthWrite": false,
+      "uniforms": {
+        "sparkColor": { "source": "lightColor" },
+        "sparkStrength": { "rest": 0.55, "hover": 1.45 }
+      }
+    }
+  ]
+}

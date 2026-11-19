@@ -61,6 +61,7 @@ from components.theater_manager import (
     TheaterScene,
     TheaterCharacter,
     extract_asset_package,
+    example_theater_avatar_paths,
     validate_asset_path,
     validate_theater_id,
 )
@@ -1535,6 +1536,8 @@ async def create_and_deploy_theater(request: Request):
             quick_deploy_track = PROJECT_ROOT / "playlists" / "default" / "new story.mp3"
         if quick_deploy_track.is_file():
             playlists_data["default"] = [("new_story.mp3", quick_deploy_track.read_bytes())]
+        for relative_path, avatar_source in example_theater_avatar_paths(PROJECT_ROOT / "example_theater"):
+            reference_files.append((relative_path, avatar_source.read_bytes()))
 
     for key, value in form.multi_items():
         if type(value) is not str:

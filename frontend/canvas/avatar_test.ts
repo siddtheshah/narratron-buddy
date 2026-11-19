@@ -2,6 +2,7 @@ import path from 'node:path';
 import { expect, REPO_ROOT, test } from '../../testing/ui/canvas_fixtures';
 
 test.use({ launchOptions: { args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] } });
+test.describe.configure({ mode: 'serial' });
 
 const avatarPath = path.join(REPO_ROOT, 'adventures', 'example_adventure', 'avatars', 'light-cube');
 const avatarRoute = '/theaters/stage/avatars/light-cube';
@@ -74,4 +75,176 @@ test('minimal mode skips avatar shaders on load and disables them when toggled o
   await minimalInput.check();
   await page.click('#pullout-close-btn');
   await expect.poll(async () => (await model.screenshot()).equals(withoutShaders)).toBe(true);
+});
+
+test('light-cube playback supports selectColor and playAction backwards-compatibly', async ({ canvas, page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await canvas.openCanvas({
+    viewport: { width: 1440, height: 900 },
+    apiRoutes: {
+      '/api/theaters/stage': { metadata: { config: { avatar: { enabled: true, package: 'light-cube' } }, is_active_orator: true } },
+      [`${avatarRoute}/avatar.json`]: (route) => route.fulfill({ path: path.join(avatarPath, 'avatar.json') }),
+      [`${avatarRoute}/model.glb`]: (route) => route.fulfill({ path: path.join(avatarPath, 'model.glb') }),
+      [`${avatarRoute}/shaders/dust.vert`]: (route) => route.fulfill({ path: path.join(avatarPath, 'shaders', 'dust.vert') }),
+      [`${avatarRoute}/shaders/dust.frag`]: (route) => route.fulfill({ path: path.join(avatarPath, 'shaders', 'dust.frag') }),
+    },
+  });
+
+  const model = page.getByRole('img', { name: 'Cube of Light' }).locator('canvas');
+  await expect(model).toBeVisible();
+  await expect.poll(() => page.evaluate(() => Boolean(window.__avatarPlayback))).toBe(true);
+
+  const goldFrame = await model.screenshot();
+  const selectedCyan = await page.evaluate(() => window.__avatarPlayback?.selectColor('cyan') ?? false);
+  expect(selectedCyan).toBe(true);
+  await expect.poll(async () => (await model.screenshot()).equals(goldFrame)).toBe(false);
+
+  const cyanFrame = await model.screenshot();
+  const playedEmber = await page.evaluate(() => window.__avatarPlayback?.playAction('ember') ?? false);
+  expect(playedEmber).toBe(true);
+  await expect.poll(async () => (await model.screenshot()).equals(cyanFrame)).toBe(false);
+});
+
+test('avatar action playback switches clips, returns one-shots to idle, and triggers activation reaction', async ({ canvas, page }) => {
+  const cubeModelPath = path.join(REPO_ROOT, 'testlab', 'avatar_packages', 'cube', 'model.glb');
+  const stageAvatarRoute = '/theaters/stage/avatars/multi-action';
+  const manifest = {
+    id: 'multi-action',
+    title: 'Multi Action Avatar',
+    model: 'model.glb',
+    idle: 'idle',
+    reactions: { activate: 'greeting' },
+    actions: [
+      { id: 'idle', label: 'Idle', clip: 'Hover', loop: true, lightColor: '#33ccee' },
+      { id: 'greeting', label: 'Greeting', clip: 'PokeBounce', loop: false, lightColor: '#ffaa44' },
+      { id: 'at-work', label: 'At Work', clip: 'Chatter', loop: true, lightColor: '#44ff88' },
+    ],
+    shaders: [
+      {
+        geometry: { type: 'plane', width: 0.5, height: 0.5 },
+        position: [0, -0.75, 0],
+        vertex: 'shaders/badge.vert',
+        fragment: 'shaders/badge.frag',
+        transparent: false,
+        uniforms: {
+          pulseStrength: { source: 'actionPulse' },
+        },
+      },
+    ],
+  };
+
+  await canvas.openCanvas({
+    viewport: { width: 1440, height: 900 },
+    apiRoutes: {
+      '/api/theaters/stage': { metadata: { config: { avatar: { enabled: true, package: 'multi-action' } }, is_active_orator: true } },
+      [`${stageAvatarRoute}/avatar.json`]: manifest,
+      [`${stageAvatarRoute}/model.glb`]: (route) => route.fulfill({ path: cubeModelPath }),
+      [`${stageAvatarRoute}/shaders/badge.vert`]: (route) => route.fulfill({
+        status: 200,
+        contentType: 'text/plain',
+        body: 'void main() { gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+      }),
+      [`${stageAvatarRoute}/shaders/badge.frag`]: (route) => route.fulfill({
+        status: 200,
+        contentType: 'text/plain',
+        body: 'uniform vec3 uColor; uniform float pulseStrength; void main() { gl_FragColor = vec4(clamp(uColor + vec3(pulseStrength * 0.4), 0.0, 1.0), 1.0); }',
+      }),
+    },
+  });
+
+  const mount = page.getByRole('img', { name: 'Multi Action Avatar' });
+  await expect(mount.locator('canvas')).toBeVisible();
+  await expect.poll(() => page.evaluate(() => Boolean(window.__avatarPlayback))).toBe(true);
+
+  const initialInfo = await page.evaluate(() => {
+    const playback = window.__avatarPlayback!;
+    const events: string[] = [];
+    (window as unknown as { __avatarEvents?: string[] }).__avatarEvents = events;
+    playback.onActionChange((id) => events.push(id));
+    return {
+      idle: playback.idle,
+      current: playback.currentAction,
+      actionIds: playback.actions.map((action) => action.id),
+      unknownOk: playback.playAction('nonexistent'),
+    };
+  });
+  expect(initialInfo).toEqual({
+    idle: 'idle',
+    current: 'idle',
+    actionIds: ['idle', 'greeting', 'at-work'],
+    unknownOk: false,
+  });
+
+  // Looping action stays active rather than returning to idle.
+  const startedWork = await page.evaluate(() => window.__avatarPlayback?.playAction('at-work') ?? false);
+  expect(startedWork).toBe(true);
+  await page.waitForTimeout(1300);
+  expect(await page.evaluate(() => window.__avatarPlayback?.currentAction)).toBe('at-work');
+
+  // Clicking the mount triggers reactions.activate ('greeting'), which is a one-shot (~0.95s) that returns to idle.
+  await mount.click();
+  await expect.poll(() => page.evaluate(() => window.__avatarPlayback?.currentAction)).toBe('greeting');
+  await expect.poll(() => page.evaluate(() => window.__avatarPlayback?.currentAction), { timeout: 5000 }).toBe('idle');
+
+  const events = await page.evaluate(() => (window as unknown as { __avatarEvents?: string[] }).__avatarEvents ?? []);
+  expect(events).toEqual(['at-work', 'greeting', 'idle']);
+});
+
+test('prefers-reduced-motion keeps idle steady and snaps action state without continuous motion', async ({ canvas, page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const cubeModelPath = path.join(REPO_ROOT, 'testlab', 'avatar_packages', 'cube', 'model.glb');
+  const stageAvatarRoute = '/theaters/stage/avatars/reduced-motion';
+  const manifest = {
+    id: 'reduced-motion',
+    title: 'Reduced Motion Avatar',
+    model: 'model.glb',
+    idle: 'idle',
+    actions: [
+      { id: 'idle', label: 'Idle', clip: 'Hover', loop: true, lightColor: '#2266ff' },
+      { id: 'greeting', label: 'Greeting', clip: 'Bow', loop: false, lightColor: '#ff3344' },
+    ],
+    shaders: [
+      {
+        geometry: { type: 'plane', width: 0.7, height: 0.7 },
+        position: [0, -0.7, 0],
+        vertex: 'shaders/swatch.vert',
+        fragment: 'shaders/swatch.frag',
+      },
+    ],
+  };
+
+  await canvas.openCanvas({
+    viewport: { width: 1440, height: 900 },
+    apiRoutes: {
+      '/api/theaters/stage': { metadata: { config: { avatar: { enabled: true, package: 'reduced-motion' } }, is_active_orator: true } },
+      [`${stageAvatarRoute}/avatar.json`]: manifest,
+      [`${stageAvatarRoute}/model.glb`]: (route) => route.fulfill({ path: cubeModelPath }),
+      [`${stageAvatarRoute}/shaders/swatch.vert`]: (route) => route.fulfill({
+        status: 200,
+        contentType: 'text/plain',
+        body: 'void main() { gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+      }),
+      [`${stageAvatarRoute}/shaders/swatch.frag`]: (route) => route.fulfill({
+        status: 200,
+        contentType: 'text/plain',
+        body: 'uniform vec3 uColor; void main() { gl_FragColor = vec4(uColor, 1.0); }',
+      }),
+    },
+  });
+
+  const model = page.getByRole('img', { name: 'Reduced Motion Avatar' }).locator('canvas');
+  await expect(model).toBeVisible();
+  await expect.poll(() => page.evaluate(() => Boolean(window.__avatarPlayback))).toBe(true);
+
+  const idleFrame = await model.screenshot();
+  await page.waitForTimeout(350);
+  expect((await model.screenshot()).equals(idleFrame)).toBe(true);
+
+  await page.evaluate(() => window.__avatarPlayback?.playAction('greeting'));
+  expect(await page.evaluate(() => window.__avatarPlayback?.currentAction)).toBe('greeting');
+  await expect.poll(async () => (await model.screenshot()).equals(idleFrame)).toBe(false);
+
+  const greetingFrame = await model.screenshot();
+  await page.waitForTimeout(350);
+  expect((await model.screenshot()).equals(greetingFrame)).toBe(true);
 });

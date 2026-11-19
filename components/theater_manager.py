@@ -22,6 +22,7 @@ from components.reference_images import reference_image_type
 from components.theater_package import is_avatar_asset, safe_asset_path
 
 logger = logging.getLogger(__name__)
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 MAX_ZIP_BYTES = 10 * 1024 * 1024
 MAX_FILE_BYTES = 10 * 1024 * 1024
@@ -611,6 +612,29 @@ def extract_asset_package(
     return reference_files, playlists_data, lore_files, theater_config_yaml
 
 
+def example_theater_avatar_paths(example_theater_dir: Path | None = None) -> list[tuple[str, Path]]:
+    """Return validated (relative_posix_path, source_path) pairs for example_theater/avatars."""
+    root = example_theater_dir if example_theater_dir is not None else PROJECT_ROOT / "example_theater"
+    avatars_dir = root / "avatars"
+    if not avatars_dir.is_dir():
+        return []
+    resolved_avatars_dir = avatars_dir.resolve()
+    assets: list[tuple[str, Path]] = []
+    for source_path in sorted(avatars_dir.rglob("*")):
+        if not source_path.is_file():
+            continue
+        resolved_source = source_path.resolve()
+        if resolved_avatars_dir not in resolved_source.parents:
+            continue
+        relative_parts = ("avatars", *source_path.relative_to(avatars_dir).parts)
+        if not is_avatar_asset(relative_parts):
+            continue
+        relative_path = "/".join(relative_parts)
+        validate_asset_path(relative_path)
+        assets.append((relative_path, source_path))
+    return assets
+
+
 class TheaterManager:
     """Own theater workspace creation, lifecycle metadata, and asset lookup."""
 
@@ -936,9 +960,9 @@ class TheaterManager:
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(content)
             mounted_references.append(relative_path.as_posix())
-        default_references = Path(__file__).parent.parent / "example_theater" / "references"
+        default_references = PROJECT_ROOT / "example_theater" / "references"
         if not default_references.exists():
-            default_references = Path(__file__).parent.parent / "reference_library"
+            default_references = PROJECT_ROOT / "reference_library"
         if default_references.exists():
             for reference in default_references.iterdir():
                 if reference.is_file() and reference.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp"}:
@@ -946,6 +970,11 @@ class TheaterManager:
                     if not target.exists():
                         shutil.copy2(reference, target)
                         mounted_references.append(reference.name)
+        for relative_path, avatar_source in example_theater_avatar_paths():
+            target = safe_asset_path(theater_dir, relative_path)
+            if not target.exists():
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(avatar_source, target)
 
         mounted_playlists: Dict[str, List[str]] = {}
         for playlist_name, files in (playlists_data or {}).items():

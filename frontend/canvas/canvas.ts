@@ -1,5 +1,6 @@
 import { createA2UICanvasRenderer, type A2UISurface } from './a2ui-renderer.js';
 import { initializeActionWheel, type ActionWheelController } from './action-wheel.js';
+import type { AvatarPlayback } from './avatar.js';
 import { createAgentActivityController, type ToolActivitySnapshot } from './agent-activity.js';
 import {
   createAgentConnectionController,
@@ -191,6 +192,7 @@ declare global {
     setCanvasTextHidden?: CornerPanelsController['setCanvasTextHidden'];
     __resolveWebpQualityUrl?: (rawUrl: string) => string;
     __historyResourceManager?: HistoryResourceManager;
+    __avatarPlayback?: AvatarPlayback | null;
     doodleUndoManager?: DoodleUndoManager;
     undoLastDoodleAction?: () => boolean;
     undoDoodleAction?: () => boolean;
@@ -1767,6 +1769,7 @@ fetch(`/api/theaters/${encodeURIComponent(activeTheaterId)}`)
         const avatarUrl = `/theaters/${encodeURIComponent(activeTheaterId)}/avatars/${encodeURIComponent(avatar.package)}/`;
         void import('./avatar.js')
           .then(({ mountAvatar }) => mountAvatar(avatarMount, avatarUrl))
+          .then((playback) => { window.__avatarPlayback = playback; })
           .catch((error: unknown) => console.warn('Could not load theater avatar', error));
       }
       const isOwner = Boolean(data.metadata.is_owner);

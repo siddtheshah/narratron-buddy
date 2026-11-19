@@ -1,6 +1,6 @@
 import {
   ACESFilmicToneMapping, DirectionalLight, HemisphereLight, LoadingManager,
-  OrthographicCamera, Scene, WebGLRenderer,
+  Material, Mesh, OrthographicCamera, Scene, WebGLRenderer,
 } from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
@@ -17,6 +17,11 @@ export async function createAvatarScene(
     throw new Error('Avatar models must embed their resources.');
   });
   const { scene: model, animations } = await new GLTFLoader(manager).parseAsync(await response.arrayBuffer(), '');
+  model.traverse((node) => {
+    if (node instanceof Mesh && node.material instanceof Material && node.material.name === 'NarratronAstral') {
+      node.material.depthWrite = true;
+    }
+  });
   const scene = new Scene();
   scene.add(model, new HemisphereLight(0xe8ffff, 0x7e6470, 2.1 * fillLight));
   const key = new DirectionalLight(0xffdec0, 2.4 * fillLight);

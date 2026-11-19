@@ -12,6 +12,10 @@ live_agent:
 # The image must be present in the theater's references directory.
 starting_image: "narratron_avatar.webp"
 
+avatar:
+    enabled: true
+    package: narratron
+
 observability_tool:
     enabled: false
     cooldown_duration: 30
