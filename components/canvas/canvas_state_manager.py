@@ -20,7 +20,7 @@ from typing import Optional, cast, TYPE_CHECKING
 
 from pydantic import JsonValue, TypeAdapter
 
-from components.canvas import AudioState, ChatManager, ConnectionState, DoodleState, StoryState, ToolResponseState, UIState, VisualState
+from components.canvas import AudioState, AvatarState, ChatManager, ConnectionState, DoodleState, StoryState, ToolResponseState, UIState, VisualState
 from components.theater_manager import Theater
 from components.canvas.doodle_state import DoodleAction, DoodlePage
 from game_engine.game_state import GameState
@@ -50,6 +50,7 @@ class CanvasStateManager:
     doodles: Optional[DoodleState] = None
     ui: Optional[UIState] = None
     tool_response: Optional[ToolResponseState] = None
+    avatar: Optional[AvatarState] = None
     story: Optional[StoryState] = None
     chat: Optional[ChatManager] = None
     game: GameState | None = None
@@ -93,6 +94,7 @@ class CanvasStateManager:
         )
         self.ui = UIState(self.persist, self.notify_changed)
         self.tool_response = ToolResponseState(self.notify_changed)
+        self.avatar = AvatarState(self.theater, self.notify_changed, lock=self.canvas_lock)
         story_planning_config = theater.config().get("story_planning", {})
         adventure_mode = bool(story_planning_config.get("adventure_mode", False))
         self.story = StoryState(
@@ -386,6 +388,7 @@ class CanvasStateManager:
                 "viewer_collab_enabled": self.ui.viewer_collab_enabled,
                 "tool_activity": self.tool_response.activity_payload(),
                 "agent_thought": self.tool_response.agent_thought_payload(),
+                "avatar": self.avatar.payload(),
                 **self.story.payload(), "sticky_notes": sticky_notes,
                 "interactive_surfaces": list(self.ui.interactive_surfaces.values()),
                 "game_state": self.game.payload(username=username) if username else self.game.payload()}

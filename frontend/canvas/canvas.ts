@@ -150,9 +150,18 @@ interface TheaterDetailsResponse {
   };
 }
 
+interface AvatarStatePayload {
+  readonly enabled?: boolean;
+  readonly package?: string;
+  readonly action?: string | null;
+  readonly sequence?: number;
+  readonly time?: number;
+}
+
 interface CanvasLatestPayload extends LatestHistoryPayload {
   readonly tool_activity?: ToolActivitySnapshot | null;
   readonly agent_thought?: AgentThoughtPayload | null;
+  readonly avatar?: AvatarStatePayload | null;
   readonly pinned?: boolean;
   readonly music_pinned?: boolean;
   readonly scene_dialogue?: readonly SceneDialogueLine[] | null;
@@ -803,6 +812,29 @@ const updatePagingControlsUI = (): void => {
 };
 
 let lastAgentThought: string | null = null;
+let avatarPlayback: AvatarPlayback | null = null;
+let lastAvatarActionSequence = 0;
+let pendingAvatarAction: { readonly action: string; readonly sequence: number } | null = null;
+
+function updateAvatarAction(avatarState: AvatarStatePayload | null | undefined): void {
+  if (!avatarState || avatarState.enabled === false) return;
+  const sequence = typeof avatarState.sequence === 'number' && Number.isFinite(avatarState.sequence)
+    ? avatarState.sequence
+    : 0;
+  if (sequence <= 0) {
+    lastAvatarActionSequence = 0;
+    pendingAvatarAction = null;
+    return;
+  }
+  const action = typeof avatarState.action === 'string' ? avatarState.action.trim() : '';
+  if (!action || sequence === lastAvatarActionSequence) return;
+  lastAvatarActionSequence = sequence;
+  if (avatarPlayback) {
+    avatarPlayback.playAction(action);
+  } else {
+    pendingAvatarAction = { action, sequence };
+  }
+}
 
 function updateAgentThought(thought: AgentThoughtPayload | null | undefined): void {
   const text = thought && thought.text ? thought.text.trim() : '';
@@ -853,6 +885,7 @@ async function fetchLatestImage(): Promise<void> {
 
     updateAgentActivity(data.tool_activity ?? {});
     updateAgentThought(data.agent_thought);
+    updateAvatarAction(data.avatar);
     canvasPinned = Boolean(data.pinned);
     musicPinned = Boolean(data.music_pinned);
     actionWheel?.updateState(canvasPinned, musicPinned);
@@ -1769,7 +1802,15 @@ fetch(`/api/theaters/${encodeURIComponent(activeTheaterId)}`)
         const avatarUrl = `/theaters/${encodeURIComponent(activeTheaterId)}/avatars/${encodeURIComponent(avatar.package)}/`;
         void import('./avatar.js')
           .then(({ mountAvatar }) => mountAvatar(avatarMount, avatarUrl))
-          .then((playback) => { window.__avatarPlayback = playback; })
+          .then((playback) => {
+            avatarPlayback = playback;
+            window.__avatarPlayback = playback;
+            if (playback && pendingAvatarAction) {
+              const queued = pendingAvatarAction;
+              pendingAvatarAction = null;
+              playback.playAction(queued.action);
+            }
+          })
           .catch((error: unknown) => console.warn('Could not load theater avatar', error));
       }
       const isOwner = Boolean(data.metadata.is_owner);

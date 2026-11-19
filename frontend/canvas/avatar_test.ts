@@ -1,4 +1,5 @@
 import path from 'node:path';
+import type { WebSocketRoute } from '@playwright/test';
 import { expect, REPO_ROOT, test } from '../../testing/ui/canvas_fixtures';
 
 test.use({ launchOptions: { args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] } });
@@ -247,4 +248,89 @@ test('prefers-reduced-motion keeps idle steady and snaps action state without co
   const greetingFrame = await model.screenshot();
   await page.waitForTimeout(350);
   expect((await model.screenshot()).equals(greetingFrame)).toBe(true);
+});
+
+test('canvas_state avatar payload drives playback, deduplicates polls, and replays incremented sequences', async ({ canvas, page }) => {
+  const cubeModelPath = path.join(REPO_ROOT, 'testlab', 'avatar_packages', 'cube', 'model.glb');
+  const stageAvatarRoute = '/theaters/stage/avatars/state-driven';
+  const manifest = {
+    id: 'state-driven',
+    title: 'State Driven Avatar',
+    model: 'model.glb',
+    idle: 'idle',
+    actions: [
+      { id: 'idle', label: 'Idle', clip: 'Hover', loop: true, lightColor: '#33ccee' },
+      { id: 'greeting', label: 'Greeting', clip: 'PokeBounce', loop: false, lightColor: '#ffaa44' },
+      { id: 'at-work', label: 'At Work', clip: 'Chatter', loop: true, lightColor: '#44ff88' },
+    ],
+  };
+
+  let avatarPayload: {
+    enabled: boolean;
+    package: string;
+    action: string | null;
+    sequence: number;
+    time: number;
+  } = {
+    enabled: true,
+    package: 'state-driven',
+    action: 'at-work',
+    sequence: 1,
+    time: 100,
+  };
+  let stateSocket: WebSocketRoute | null = null;
+
+  await canvas.openCanvas({
+    viewport: { width: 1440, height: 900 },
+    apiRoutes: {
+      '/api/theaters/stage': { metadata: { config: { avatar: { enabled: true, package: 'state-driven' } }, is_active_orator: true } },
+      '/api/latest': async (route) => {
+        await route.fulfill({
+          json: {
+            agent_thought: { text: 'Sketching the scene...', highlighted: false },
+            avatar: avatarPayload,
+          },
+        });
+      },
+      [`${stageAvatarRoute}/avatar.json`]: manifest,
+      [`${stageAvatarRoute}/model.glb`]: (route) => route.fulfill({ path: cubeModelPath }),
+    },
+    onWebSocket: (ws) => {
+      if (new URL(ws.url()).pathname === '/ws/canvas-state') {
+        stateSocket = ws;
+        ws.send(JSON.stringify({ type: 'state_ready' }));
+      }
+    },
+  });
+
+  await expect.poll(() => stateSocket !== null).toBe(true);
+  await expect(page.getByRole('img', { name: 'State Driven Avatar' }).locator('canvas')).toBeVisible();
+  await expect.poll(() => page.evaluate(() => window.__avatarPlayback?.currentAction)).toBe('at-work');
+
+  await page.evaluate(() => {
+    const events: string[] = [];
+    (window as unknown as { __stateAvatarEvents?: string[] }).__stateAvatarEvents = events;
+    window.__avatarPlayback?.onActionChange((id) => events.push(id));
+  });
+
+  // Re-fetching /api/latest with the same sequence does not replay the action.
+  stateSocket!.send(JSON.stringify({ type: 'state_changed', domains: ['latest'] }));
+  await page.waitForTimeout(250);
+  expect(await page.evaluate(() => (window as unknown as { __stateAvatarEvents?: string[] }).__stateAvatarEvents ?? [])).toEqual([]);
+
+  // Incrementing sequence plays the newly selected one-shot action, which returns to idle when finished.
+  avatarPayload = { enabled: true, package: 'state-driven', action: 'greeting', sequence: 2, time: 200 };
+  stateSocket!.send(JSON.stringify({ type: 'state_changed', domains: ['latest'] }));
+  await expect.poll(() => page.evaluate(() => window.__avatarPlayback?.currentAction)).toBe('greeting');
+  await expect.poll(() => page.evaluate(() => window.__avatarPlayback?.currentAction), { timeout: 5000 }).toBe('idle');
+
+  // Sending another poll with sequence 2 still does not replay greeting.
+  stateSocket!.send(JSON.stringify({ type: 'state_changed', domains: ['latest'] }));
+  await page.waitForTimeout(250);
+  expect(await page.evaluate(() => window.__avatarPlayback?.currentAction)).toBe('idle');
+
+  // Incrementing sequence to 3 replays greeting even though the action ID matches the previous one.
+  avatarPayload = { enabled: true, package: 'state-driven', action: 'greeting', sequence: 3, time: 300 };
+  stateSocket!.send(JSON.stringify({ type: 'state_changed', domains: ['latest'] }));
+  await expect.poll(() => page.evaluate(() => window.__avatarPlayback?.currentAction)).toBe('greeting');
 });

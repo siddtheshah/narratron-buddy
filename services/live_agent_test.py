@@ -312,7 +312,11 @@ class TestCreateAgent(unittest.TestCase):
             reference_manager=ANY,
         )
         mock_animation_cls.assert_called_once()
-        mock_chat_cls.assert_called_once_with(expected_theater, expected_canvas)
+        mock_chat_cls.assert_called_once_with(
+            expected_theater,
+            expected_canvas,
+            decision_provider=ANY,
+        )
         mock_story_planning_cls.assert_called_once_with(
             expected_theater,
             canvas_manager=expected_canvas,
@@ -948,6 +952,27 @@ class TestCreateAgent(unittest.TestCase):
         with patch("services.live_agent.Agent"):
             agent = create_agent(theater, bundle)
             self.assertIsNotNone(agent)
+
+
+    @patch("services.live_agent.get_playlists_context", return_value="No playlists.")
+    @patch("services.live_agent.Agent")
+    def test_avatar_config_does_not_alter_agent_instructions(
+        self, mock_agent_cls: MagicMock, _mock_playlists: MagicMock
+    ) -> None:
+        mock_bundle = MagicMock()
+        mock_bundle.preloaded_references = []
+        mock_bundle.tools = []
+        disabled_theater = make_test_theater("avatar_off", {"avatar": {"enabled": False}})
+        enabled_theater = make_test_theater("avatar_on", {"avatar": {"enabled": True, "package": "narratron"}})
+
+        create_agent(disabled_theater, mock_bundle)
+        disabled_instruction = mock_agent_cls.call_args.kwargs["instruction"]
+
+        create_agent(enabled_theater, mock_bundle)
+        enabled_instruction = mock_agent_cls.call_args.kwargs["instruction"]
+
+        self.assertEqual(disabled_instruction, enabled_instruction)
+        self.assertNotIn("avatar", enabled_instruction.lower())
 
 
 class TestBuildRunConfig(unittest.TestCase):

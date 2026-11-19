@@ -1,6 +1,7 @@
 """Focused state containers used by :mod:`components.canvas_state`."""
 
 from .audio_state import AudioState
+from .avatar_state import AvatarActionSpec, AvatarState
 from .chat_manager import ChatManager
 from .connection_state import ConnectionState
 from .doodle_state import DoodleState
@@ -11,6 +12,6 @@ from .ui_state import UIState
 from .visual_state import VisualState
 
 __all__ = [
-    "AudioState", "ChatManager", "ConnectionState", "DoodleState", "StoryState",
-    "ToolResponseState", "UIState", "VisualState", "GameState",
+    "AudioState", "AvatarActionSpec", "AvatarState", "ChatManager", "ConnectionState",
+    "DoodleState", "StoryState", "ToolResponseState", "UIState", "VisualState", "GameState",
 ]

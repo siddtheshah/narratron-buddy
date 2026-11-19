@@ -33,10 +33,13 @@ from providers import (
     ImageProviderError,
     get_image_provider,
     get_text_response_provider,
+    DecisionProvider,
+    get_decision_provider,
     get_video_provider,
 )
 # Preserve the model import used by existing Live smoke clients.
 from providers.gemini_live_agent_provider import DeveloperLiveGemini as DeveloperLiveGemini
+from providers.text_response_decision_provider import TextResponseDecisionProvider
 from utils.config_loader import get_app_config
 
 logger = logging.getLogger(__name__)
@@ -322,7 +325,24 @@ def create_tool_bundle_for_session(
     )
     tools.append(image_tools.show_image)
 
-    chat_tools = ChatTools(theater, canvas_manager)
+    def _build_decision_provider(provider_id: str) -> DecisionProvider:
+        try:
+            return get_decision_provider(provider_id)
+        except Exception as exc:
+            logger.warning("[LiveAgent] Could not initialize decision provider %s: %s", provider_id, exc)
+            return TextResponseDecisionProvider(story_planning_text_provider)
+
+    story_decision_provider_id = str(story_planning_config.get("decision_provider") or "openai-decisions")
+    decision_provider = _build_decision_provider(story_decision_provider_id)
+    avatar_config = config.get("avatar")
+    avatar_config_map = avatar_config if type(avatar_config) is dict else {}
+    avatar_decision_provider_id = str(avatar_config_map.get("decision_provider") or "").strip()
+    chat_decision_provider = (
+        _build_decision_provider(avatar_decision_provider_id)
+        if avatar_decision_provider_id and avatar_decision_provider_id != story_decision_provider_id
+        else decision_provider
+    )
+    chat_tools = ChatTools(theater, canvas_manager, decision_provider=chat_decision_provider)
     tools.append(chat_tools.send_chat_message)
 
     user_help_config = config.get("user_help", {})
@@ -359,14 +379,6 @@ def create_tool_bundle_for_session(
     tools.extend([reference_tools.list_references, reference_tools.search_references])
 
     if adventure_mode:
-        decision_provider_id = str(story_planning_config.get("decision_provider") or "openai-decisions")
-        try:
-            from providers.registry import get_decision_provider
-            decision_provider = get_decision_provider(decision_provider_id)
-        except Exception as exc:
-            logger.warning("[LiveAgent] Could not initialize decision provider %s: %s", decision_provider_id, exc)
-            from providers.text_response_decision_provider import TextResponseDecisionProvider
-            decision_provider = TextResponseDecisionProvider(story_planning_text_provider)
         story_planning_tools = StoryTool(
             theater,
             canvas_manager=canvas_manager,
