@@ -41,6 +41,7 @@ def initialize_test_registry() -> None:
         patch("storage.stamp_storage.get_stamps_root", return_value=root / "stamps"),
         patch("services.adventure_service.get_adventures_root", return_value=root / "adventures"),
         patch("services.game_service.get_games_root", return_value=root / "games"),
+        patch("services.avatar_service.get_avatars_root", return_value=root / "avatars"),
         patch("services.music_catalog.get_music_catalog_root", return_value=root / "music_catalog"),
         patch("services.music_catalog.get_text_response_provider", return_value=provider),
         patch("providers.registry.get_text_response_provider", return_value=provider),

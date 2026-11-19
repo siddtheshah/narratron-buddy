@@ -121,6 +121,20 @@ export interface GameLibraryEntry {
   readonly cover_image?: string;
 }
 
+export interface AvatarLibraryEntry {
+  readonly id: string;
+  readonly title?: string;
+  readonly description?: string;
+  readonly genre?: string;
+  readonly author?: string;
+  readonly tags?: readonly string[];
+  readonly manifest_file?: string;
+  readonly has_model?: boolean;
+  readonly action_count: number;
+  readonly shader_count: number;
+  readonly cover_image?: string;
+}
+
 export interface TheaterAuthUser {
   readonly id: number | string;
   readonly username?: string;
@@ -456,6 +470,8 @@ export function initializeTheaterEditor(): TheaterEditorController | null {
   let pendingUpload: PendingUpload | null = null;
   let availableGames: readonly GameLibraryEntry[] = [];
   let selectedGameId: string | null = null;
+  let availableAvatars: readonly AvatarLibraryEntry[] = [];
+  let selectedAvatarId: string | null = null;
 
   function status(messageText: string, error = false): void {
     const statusEl = requireEl('builder-status');
@@ -1730,6 +1746,193 @@ export function initializeTheaterEditor(): TheaterEditorController | null {
     }
   }
 
+  function renderAvatarLibraryList(): void {
+    const listEl = getEl('avatar-library-list');
+    if (!listEl) return;
+    listEl.replaceChildren();
+    const searchEl = getEl('avatar-library-search');
+    const query = (searchEl instanceof HTMLInputElement ? searchEl.value : '').trim().toLowerCase();
+    const filtered = availableAvatars.filter((avatar) => {
+      if (!query) return true;
+      const haystack = [
+        avatar.title,
+        avatar.id,
+        avatar.description,
+        avatar.genre,
+        avatar.author,
+        ...(Array.isArray(avatar.tags) ? avatar.tags : []),
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+      return haystack.includes(query);
+    });
+    const submitBtn = getEl('avatar-library-submit');
+    if (!filtered.length) {
+      const empty = document.createElement('div');
+      empty.className = 'avatar-library-empty';
+      empty.textContent = availableAvatars.length
+        ? 'No avatars match your search.'
+        : 'No pre-defined avatars found in the repository.';
+      listEl.append(empty);
+      if (submitBtn instanceof HTMLButtonElement) submitBtn.disabled = true;
+      return;
+    }
+    if (!selectedAvatarId || !filtered.some((a) => a.id === selectedAvatarId)) {
+      selectedAvatarId = filtered[0].id;
+    }
+    if (submitBtn instanceof HTMLButtonElement) submitBtn.disabled = false;
+
+    for (const avatar of filtered) {
+      const card = document.createElement('div');
+      card.className = 'avatar-library-card' + (avatar.id === selectedAvatarId ? ' selected' : '');
+      card.setAttribute('role', 'option');
+      card.setAttribute('tabindex', '0');
+      card.setAttribute('aria-selected', avatar.id === selectedAvatarId ? 'true' : 'false');
+      card.dataset.avatarId = avatar.id;
+
+      if (avatar.cover_image) {
+        const img = document.createElement('img');
+        img.className = 'avatar-card-cover';
+        img.src = `/api/avatars/${encodeURIComponent(avatar.id)}/cover`;
+        img.alt = avatar.title || avatar.id;
+        card.append(img);
+      } else {
+        const icon = document.createElement('div');
+        icon.className = 'avatar-card-cover';
+        icon.textContent = '✨';
+        card.append(icon);
+      }
+
+      const body = document.createElement('div');
+      body.className = 'avatar-card-body';
+
+      const header = document.createElement('div');
+      header.className = 'avatar-card-header';
+      const title = document.createElement('span');
+      title.className = 'avatar-card-title';
+      title.textContent = avatar.title || avatar.id;
+      header.append(title);
+      if (avatar.genre) {
+        const genre = document.createElement('span');
+        genre.className = 'avatar-card-genre';
+        genre.textContent = avatar.genre;
+        header.append(genre);
+      }
+      body.append(header);
+
+      if (avatar.description) {
+        const desc = document.createElement('p');
+        desc.className = 'avatar-card-desc';
+        desc.textContent = avatar.description;
+        body.append(desc);
+      }
+
+      const badges = document.createElement('div');
+      badges.className = 'avatar-card-badges';
+      if (avatar.has_model) {
+        const modelBadge = document.createElement('span');
+        modelBadge.className = 'avatar-card-badge';
+        modelBadge.textContent = '3D Model';
+        badges.append(modelBadge);
+      }
+      if (avatar.action_count > 0) {
+        const actionBadge = document.createElement('span');
+        actionBadge.className = 'avatar-card-badge';
+        actionBadge.textContent = `${avatar.action_count} Action${avatar.action_count > 1 ? 's' : ''}`;
+        badges.append(actionBadge);
+      }
+      if (avatar.shader_count > 0) {
+        const shaderBadge = document.createElement('span');
+        shaderBadge.className = 'avatar-card-badge';
+        shaderBadge.textContent = `${avatar.shader_count} Shader${avatar.shader_count > 1 ? 's' : ''}`;
+        badges.append(shaderBadge);
+      }
+      body.append(badges);
+      card.append(body);
+
+      const selectCard = (): void => {
+        selectedAvatarId = avatar.id;
+        renderAvatarLibraryList();
+      };
+      card.addEventListener('click', selectCard);
+      card.addEventListener('keydown', (event: KeyboardEvent) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          selectCard();
+        }
+      });
+      listEl.append(card);
+    }
+  }
+
+  async function openAvatarLibraryDialog(): Promise<void> {
+    if (!state || busy || activeGenerations > 0) return;
+    const dialog = getEl('avatar-library-dialog');
+    if (!(dialog instanceof HTMLDialogElement)) return;
+    const searchEl = getEl('avatar-library-search');
+    if (searchEl instanceof HTMLInputElement) searchEl.value = '';
+    const enableAvatarEl = getEl('avatar-enable-config');
+    if (enableAvatarEl instanceof HTMLInputElement) enableAvatarEl.checked = true;
+
+    const listEl = getEl('avatar-library-list');
+    if (listEl) {
+      const loading = document.createElement('div');
+      loading.className = 'avatar-library-empty';
+      loading.textContent = 'Loading avatars from repository…';
+      listEl.replaceChildren(loading);
+    }
+    const submitBtn = getEl('avatar-library-submit');
+    if (submitBtn instanceof HTMLButtonElement) submitBtn.disabled = true;
+
+    dialog.showModal();
+    try {
+      const avatars = await api<AvatarLibraryEntry[]>('/api/avatars');
+      availableAvatars = Array.isArray(avatars) ? avatars : [];
+      selectedAvatarId = availableAvatars[0]?.id ?? null;
+      renderAvatarLibraryList();
+      if (searchEl instanceof HTMLInputElement) searchEl.focus();
+    } catch (error: unknown) {
+      if (listEl) {
+        const errNode = document.createElement('div');
+        errNode.className = 'avatar-library-empty';
+        errNode.textContent = getErrorMessage(error, 'Could not load avatars.');
+        listEl.replaceChildren(errNode);
+      }
+    }
+  }
+
+  async function submitAttachAvatar(): Promise<void> {
+    if (!state || !selectedAvatarId) return;
+    const avatarId = selectedAvatarId;
+    const chosen = availableAvatars.find((a) => a.id === avatarId);
+    const enableAvatarEl = getEl('avatar-enable-config');
+    const enableAvatar = enableAvatarEl instanceof HTMLInputElement ? enableAvatarEl.checked : true;
+    const dialog = getEl('avatar-library-dialog');
+    if (dialog instanceof HTMLDialogElement) dialog.close();
+    let targetFile: TheaterDraftFile | undefined;
+    await run(async () => {
+      if (!state) return;
+      await save();
+      const next = await post<TheaterEditorState>('/avatar', {
+        revision: state.draft.revision,
+        avatar_id: avatarId,
+        enable_avatar: enableAvatar,
+      });
+      expandedFolders.set('avatars', true);
+      expandedFolders.set(`avatars/${avatarId}`, true);
+      render(next);
+      const manifestPath = `avatars/${avatarId}/avatar.json`;
+      targetFile =
+        state.files.find((f) => f.path === manifestPath) ??
+        state.files.find((f) => f.path.startsWith(`avatars/${avatarId}/`));
+      status(`Attached "${chosen?.title || avatarId}" to your working theater.`);
+    }, `Attaching ${chosen?.title || avatarId}…`);
+    if (targetFile) {
+      await selectFile(targetFile);
+    }
+  }
+
   function getAvailableReferences(): ReferenceEntry[] {
     if (!state || !Array.isArray(state.files)) return [];
     const imageFiles = state.files.filter(
@@ -2290,6 +2493,34 @@ export function initializeTheaterEditor(): TheaterEditorController | null {
   if (gameDialog instanceof HTMLDialogElement) {
     gameDialog.addEventListener('click', (event: MouseEvent) => {
       if (event.target === gameDialog) gameDialog.close();
+    });
+  }
+
+  const attachAvatarBtn = getEl('attach-avatar');
+  if (attachAvatarBtn) {
+    attachAvatarBtn.addEventListener('click', () => {
+      void openAvatarLibraryDialog();
+    });
+  }
+  const avatarCancelBtn = getEl('avatar-library-cancel');
+  const avatarDialog = getEl('avatar-library-dialog');
+  if (avatarCancelBtn && avatarDialog instanceof HTMLDialogElement) {
+    avatarCancelBtn.addEventListener('click', () => avatarDialog.close());
+  }
+  const avatarSearchInput = getEl('avatar-library-search');
+  if (avatarSearchInput) {
+    avatarSearchInput.addEventListener('input', renderAvatarLibraryList);
+  }
+  const avatarForm = getEl('avatar-library-form');
+  if (avatarForm instanceof HTMLFormElement) {
+    avatarForm.addEventListener('submit', (event: SubmitEvent) => {
+      event.preventDefault();
+      void submitAttachAvatar();
+    });
+  }
+  if (avatarDialog instanceof HTMLDialogElement) {
+    avatarDialog.addEventListener('click', (event: MouseEvent) => {
+      if (event.target === avatarDialog) avatarDialog.close();
     });
   }
 

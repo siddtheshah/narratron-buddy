@@ -22,6 +22,15 @@ class ContentWorkspace:
     transport_calls: list[tuple[str, ...]]
     kind: str
     declaration: str
+    updated_payload: str
+    original_payload: str
+    cloud_only_payload: str
+
+
+def declaration_payload(kind: str, label: str) -> str:
+    if kind == "avatars":
+        return json.dumps({"id": "local-game", "title": label}) + "\n"
+    return f"name: {label}\n"
 
 
 def write_file(path: Path, data: str) -> None:
@@ -37,7 +46,7 @@ def snapshot(root: Path) -> dict[str, bytes]:
     }
 
 
-@pytest.fixture(params=("games", "adventures"))
+@pytest.fixture(params=("games", "adventures", "avatars"))
 def kind(request: pytest.FixtureRequest) -> str:
     return str(request.param)
 
@@ -51,18 +60,21 @@ def workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, kind: str) -> Con
         monkeypatch.delenv(name, raising=False)
     project = tmp_path / "application"
     source = project / kind
-    declaration = "game.yaml" if kind == "games" else "theater.yaml"
+    declaration = {"games": "game.yaml", "adventures": "theater.yaml", "avatars": "avatar.json"}[kind]
+    updated_payload = declaration_payload(kind, "Updated")
+    original_payload = declaration_payload(kind, "Original")
+    cloud_only_payload = declaration_payload(kind, "Keep this package")
     root = tmp_path / "backups"
     repository = root / kind
     remote = tmp_path / "remote.git"
     repository.mkdir(parents=True)
     remote.mkdir()
-    write_file(source / f"local-game/{declaration}", "name: Updated\n")
+    write_file(source / f"local-game/{declaration}", updated_payload)
     write_file(source / "README.md", "Local collection documentation\n")
     write_file(source / "local-game/token.png", "binary payload\u0000\r\n")
-    write_file(repository / f"local-game/{declaration}", "name: Original\n")
+    write_file(repository / f"local-game/{declaration}", original_payload)
     write_file(repository / "local-game/obsolete.txt", "Remove this file\n")
-    write_file(repository / f"cloud-only/{declaration}", "Keep this package\n")
+    write_file(repository / f"cloud-only/{declaration}", cloud_only_payload)
     write_file(repository / "local-game/metadata.json", '{"id":"local-game","title":"local-game","created_at":"2026-01-01"}')
     write_file(repository / "cloud-only/metadata.json", '{"id":"cloud-only","title":"Cloud Only"}')
     write_file(repository / ".gitignore", ".env\n__pycache__/\n")
@@ -89,16 +101,19 @@ def workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, kind: str) -> Con
         return real_git(path, *arguments)
 
     monkeypatch.setattr(content, "run_git", local_transport)
-    return ContentWorkspace(project, root, repository, remote, transport_calls, kind, declaration)
+    return ContentWorkspace(
+        project, root, repository, remote, transport_calls, kind, declaration,
+        updated_payload, original_payload, cloud_only_payload,
+    )
 
 
 def test_upload_versions_deletions_retains_cloud_packages_and_can_restore(workspace: ContentWorkspace) -> None:
     source_before = snapshot(workspace.project)
     content.upload_collection(workspace.project, workspace.root, workspace.kind, "Update rules", False)
     repository = workspace.repository
-    assert (repository / f"local-game/{workspace.declaration}").read_text() == "name: Updated\n"
+    assert (repository / f"local-game/{workspace.declaration}").read_text() == workspace.updated_payload
     assert not (repository / "local-game/obsolete.txt").exists()
-    assert (repository / f"cloud-only/{workspace.declaration}").read_text() == "Keep this package\n"
+    assert (repository / f"cloud-only/{workspace.declaration}").read_text() == workspace.cloud_only_payload
     assert (repository / "README.md").read_text() == "Local collection documentation\n"
     assert (repository / "local-game/token.png").read_bytes() == (workspace.project / workspace.kind / "local-game/token.png").read_bytes()
     assert snapshot(workspace.project) == source_before
@@ -108,7 +123,7 @@ def test_upload_versions_deletions_retains_cloud_packages_and_can_restore(worksp
     assert not content.run_git(repository, "status", "--porcelain")
     content.run_git(repository, "restore", "--source=baseline", "--", "local-game/")
     assert (repository / "local-game/obsolete.txt").read_text() == "Remove this file\n"
-    assert (repository / f"local-game/{workspace.declaration}").read_text() == "name: Original\n"
+    assert (repository / f"local-game/{workspace.declaration}").read_text() == workspace.original_payload
     assert not (repository / "local-game/token.png").exists()
 
 
@@ -311,14 +326,14 @@ def commit_and_push(workspace: ContentWorkspace) -> None:
 def test_publish_reads_uploaded_commit_and_ignores_dirty_files(workspace: ContentWorkspace, bucket: MemoryBucket) -> None:
     commit = upload(workspace)
     path = workspace.repository / f"local-game/{workspace.declaration}"
-    path.write_text("name: Uncommitted\n", encoding="utf-8")
+    path.write_text(declaration_payload(workspace.kind, "Uncommitted"), encoding="utf-8")
     write_file(workspace.repository / "local-game/private.txt", "Untracked\n")
     source_before = snapshot(workspace.project)
     repository_before = snapshot(workspace.repository)
     result = content.publish_collection(workspace.project, workspace.root, workspace.kind, bucket=bucket)
     key = f"{workspace.kind}/local-game/{workspace.declaration}"
     assert result.commit == commit
-    assert bucket.objects[key].data == b"name: Updated\n"
+    assert bucket.objects[key].data == workspace.updated_payload.encode("utf-8")
     assert bucket.objects[f"{workspace.kind}/local-game/token.png"].data == b"binary payload\0\r\n"
     assert not any(name.endswith("private.txt") for name in bucket.objects)
     assert snapshot(workspace.project) == source_before
@@ -328,11 +343,11 @@ def test_publish_reads_uploaded_commit_and_ignores_dirty_files(workspace: Conten
 
 def test_publish_can_roll_back_to_an_uploaded_commit(workspace: ContentWorkspace, bucket: MemoryBucket) -> None:
     previous = upload(workspace)
-    write_file(workspace.project / workspace.kind / f"local-game/{workspace.declaration}", "name: New version\n")
+    write_file(workspace.project / workspace.kind / f"local-game/{workspace.declaration}", declaration_payload(workspace.kind, "New version"))
     upload(workspace)
     result = content.publish_collection(workspace.project, workspace.root, workspace.kind, revision=previous, bucket=bucket)
     assert result.commit == previous
-    assert bucket.objects[f"{workspace.kind}/local-game/{workspace.declaration}"].data == b"name: Updated\n"
+    assert bucket.objects[f"{workspace.kind}/local-game/{workspace.declaration}"].data == workspace.updated_payload.encode("utf-8")
 
 
 def test_publish_refuses_unpushed_commits(workspace: ContentWorkspace, bucket: MemoryBucket) -> None:
@@ -376,7 +391,7 @@ def test_publish_package_filter_limits_pruning(workspace: ContentWorkspace, buck
 def test_publish_never_serves_examples(workspace: ContentWorkspace, bucket: MemoryBucket) -> None:
     example = content.COLLECTIONS[workspace.kind].example
     source = workspace.project / workspace.kind / example
-    write_file(source / workspace.declaration, "name: Example\n")
+    write_file(source / workspace.declaration, declaration_payload(workspace.kind, "Example"))
     upload(workspace)
     assert content.run_git(workspace.repository, "ls-files", "--", example)
     content.publish_collection(workspace.project, workspace.root, workspace.kind, bucket=bucket)
@@ -408,9 +423,11 @@ def test_publish_validates_every_package_before_live_access(workspace: ContentWo
     upload(workspace)
     package = workspace.repository / "local-game"
     if invalid == "duplicate-yaml":
-        write_file(package / workspace.declaration, "key: 1\nkey: 2\n")
+        bad_duplicate = '{"key": 1, "key": 2}\n' if workspace.kind == "avatars" else "key: 1\nkey: 2\n"
+        write_file(package / workspace.declaration, bad_duplicate)
     elif invalid == "invalid-yaml":
-        write_file(package / workspace.declaration, "key: [unclosed\n")
+        bad_syntax = '{"key": [unclosed}\n' if workspace.kind == "avatars" else "key: [unclosed\n"
+        write_file(package / workspace.declaration, bad_syntax)
     elif invalid == "unsafe-id":
         write_file(package / "metadata.json", '{"id":"../escape"}')
     elif invalid == "duplicate-id":
@@ -424,7 +441,8 @@ def test_publish_validates_every_package_before_live_access(workspace: ContentWo
 
 
 def test_upload_rejects_invalid_yaml_without_copying_or_pushing(workspace: ContentWorkspace) -> None:
-    write_file(workspace.project / workspace.kind / f"local-game/{workspace.declaration}", "duplicate: 1\nduplicate: 2\n")
+    bad_duplicate = '{"duplicate": 1, "duplicate": 2}\n' if workspace.kind == "avatars" else "duplicate: 1\nduplicate: 2\n"
+    write_file(workspace.project / workspace.kind / f"local-game/{workspace.declaration}", bad_duplicate)
     before = snapshot(workspace.repository)
     with pytest.raises(ValueError, match="duplicate key"):
         upload(workspace)
@@ -454,14 +472,15 @@ def test_download_restores_committed_content_and_deletions(workspace: ContentWor
     target = workspace.project / workspace.kind
     source_before = snapshot(target)
     # A different author updates the remote while our local files are unchanged.
-    write_file(workspace.repository / f"local-game/{workspace.declaration}", "name: Remote edit\n")
+    remote_edit = declaration_payload(workspace.kind, "Remote edit")
+    write_file(workspace.repository / f"local-game/{workspace.declaration}", remote_edit)
     (workspace.repository / "local-game/token.png").unlink()
     commit_and_push(workspace)
     content.run_git(workspace.repository, "reset", "--hard", "HEAD~1")
     content.download_collection(workspace.project, workspace.root, workspace.kind)
-    assert (target / f"local-game/{workspace.declaration}").read_text() == "name: Remote edit\n"
+    assert (target / f"local-game/{workspace.declaration}").read_text() == remote_edit
     assert not (target / "local-game/token.png").exists()
-    assert (target / f"cloud-only/{workspace.declaration}").read_text() == "Keep this package\n"
+    assert (target / f"cloud-only/{workspace.declaration}").read_text() == workspace.cloud_only_payload
     assert snapshot(target) != source_before
     assert not content.run_git(workspace.repository, "status", "--porcelain")
 
@@ -469,22 +488,22 @@ def test_download_restores_committed_content_and_deletions(workspace: ContentWor
 def test_download_requires_explicit_overwrite_for_local_edits(workspace: ContentWorkspace) -> None:
     upload(workspace)
     path = workspace.project / workspace.kind / f"local-game/{workspace.declaration}"
-    path.write_text("name: Unsaved local edit\n", encoding="utf-8")
+    path.write_text(declaration_payload(workspace.kind, "Unsaved local edit"), encoding="utf-8")
     before = snapshot(workspace.project)
     with pytest.raises(ValueError, match="Local edits"):
         content.download_collection(workspace.project, workspace.root, workspace.kind)
     assert snapshot(workspace.project) == before
     content.download_collection(workspace.project, workspace.root, workspace.kind, overwrite_local=True)
-    assert path.read_text() == "name: Updated\n"
+    assert path.read_text() == workspace.updated_payload
 
 
 def test_download_can_restore_an_older_revision_without_rewinding_main(workspace: ContentWorkspace) -> None:
     previous = upload(workspace)
     path = workspace.project / workspace.kind / f"local-game/{workspace.declaration}"
-    path.write_text("name: New version\n", encoding="utf-8")
+    path.write_text(declaration_payload(workspace.kind, "New version"), encoding="utf-8")
     latest = upload(workspace)
     content.download_collection(workspace.project, workspace.root, workspace.kind, revision=previous, overwrite_local=True)
-    assert path.read_text() == "name: Updated\n"
+    assert path.read_text() == workspace.updated_payload
     assert content.run_git(workspace.repository, "rev-parse", "HEAD") == latest
 
 
@@ -586,7 +605,7 @@ def test_missing_checkout_is_cloned_using_the_shared_transport(workspace: Conten
     assert content.ensure_checkout(workspace.project, missing, workspace.kind, content.BUCKET, False)
     clone = missing / workspace.kind
     assert content.run_git(clone, "branch", "--show-current") == "main"
-    assert (clone / f"local-game/{workspace.declaration}").read_text() == "name: Original\n"
+    assert (clone / f"local-game/{workspace.declaration}").read_text() == workspace.original_payload
 
 
 def test_publish_writes_and_updates_catalog_sentinel(workspace: ContentWorkspace, bucket: MemoryBucket) -> None:
@@ -612,9 +631,22 @@ def test_publish_writes_and_updates_catalog_sentinel(workspace: ContentWorkspace
     # A failed publish must not write or bump the sentinel.
     bucket.events.clear()
     bucket.fail_upload = f"{workspace.kind}/local-game/{workspace.declaration}"
-    write_file(workspace.project / workspace.kind / f"local-game/{workspace.declaration}", "name: Broken\n")
+    write_file(workspace.project / workspace.kind / f"local-game/{workspace.declaration}", declaration_payload(workspace.kind, "Broken"))
     upload(workspace)
     with pytest.raises(OSError, match="Simulated upload failure"):
         content.publish_collection(workspace.project, workspace.root, workspace.kind, bucket=bucket)
     assert bucket.objects[sentinel_name].generation == 1
+
+
+def test_avatar_package_metadata_uses_manifest_title_and_poster(tmp_path: Path) -> None:
+    package = tmp_path / "light-cube"
+    write_file(package / "avatar.json", json.dumps({"id": "light-cube", "title": "Cube of Light", "poster": "preview.webp"}))
+    write_file(package / "preview.webp", "webp-bytes")
+    write_file(package / "other.png", "png-bytes")
+    metadata = content.package_metadata(package, "avatars")
+    assert metadata["id"] == "light-cube"
+    assert metadata["title"] == "Cube of Light"
+    assert metadata["cover_image"] == "preview.webp"
+    assert metadata["genre"] == "3D Avatar"
+
 

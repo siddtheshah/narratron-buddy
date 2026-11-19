@@ -11,7 +11,7 @@ import {
 
 interface DraftFileFixture {
   path: string;
-  kind: 'text' | 'image' | 'audio';
+  kind: 'text' | 'image' | 'audio' | 'model';
 }
 
 interface DraftStateFixture {
@@ -76,6 +76,12 @@ interface AttachGameRequestPayload {
   enable_game_tool: boolean;
 }
 
+interface AttachAvatarRequestPayload {
+  revision: number;
+  avatar_id: string;
+  enable_avatar: boolean;
+}
+
 declare global {
   interface Window {
     copiedAuthoringPrompt?: string;
@@ -105,6 +111,7 @@ interface EditorRouteState {
   lastMoveRequest: MoveRequestPayload | null;
   lastGenerationRequest: GenerationRequestPayload | null;
   lastAttachGameRequest: AttachGameRequestPayload | null;
+  lastAttachAvatarRequest: AttachAvatarRequestPayload | null;
   lastUploadEndpoint: string | null;
   lastUploadedFilenames: string[] | null;
   createdDefaultDraft: boolean | undefined;
@@ -289,6 +296,7 @@ async function setupEditorHarness(
     lastMoveRequest: null,
     lastGenerationRequest: null,
     lastAttachGameRequest: null,
+    lastAttachAvatarRequest: null,
     lastUploadEndpoint: null,
     lastUploadedFilenames: null,
     createdDefaultDraft: undefined,
@@ -603,6 +611,54 @@ async function setupEditorHarness(
           state.draft.files.push({ path: 'game/game.yaml', kind: 'text' });
           state.savedFiles['game/game.yaml'] = 'version: 2\n# Wacky Chess\n';
         }
+        state.draft.draft.revision += 1;
+        await route.fulfill({ json: structuredCloneDraft(state.draft) });
+      } else if (pathname.startsWith('/api/avatars/') && pathname.endsWith('/cover')) {
+        await route.fulfill({
+          contentType: 'image/svg+xml; charset=utf-8',
+          body: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10" fill="#38bdf8"/></svg>',
+        });
+      } else if (pathname === '/api/avatars') {
+        await route.fulfill({
+          json: [
+            {
+              id: 'light-cube',
+              title: 'Cube of Light',
+              description: 'Luminous crystalline cube with mood colors.',
+              genre: '3D Avatar',
+              tags: ['Avatar', 'Cube'],
+              manifest_file: 'avatar.json',
+              has_model: true,
+              action_count: 6,
+              shader_count: 2,
+              cover_image: 'preview.webp',
+            },
+            {
+              id: 'narratron',
+              title: 'Narratron',
+              description: 'Cosmic storyteller companion with orbiting pages.',
+              genre: '3D Avatar',
+              tags: ['Avatar', 'Storyteller'],
+              manifest_file: 'avatar.json',
+              has_model: true,
+              action_count: 6,
+              shader_count: 3,
+              cover_image: 'preview.webp',
+            },
+          ],
+        });
+      } else if (pathname.endsWith('/avatar')) {
+        const body = JSON.parse(route.request().postData() ?? '{}') as AttachAvatarRequestPayload;
+        state.lastAttachAvatarRequest = body;
+        const prefix = `avatars/${body.avatar_id}/`;
+        state.draft.files = state.draft.files.filter((file) => !file.path.startsWith(prefix));
+        state.draft.files.push(
+          { path: `${prefix}avatar.json`, kind: 'text' },
+          { path: `${prefix}model.glb`, kind: 'model' },
+          { path: `${prefix}preview.webp`, kind: 'image' },
+          { path: `${prefix}shaders/dust.vert`, kind: 'text' },
+        );
+        state.savedFiles[`${prefix}avatar.json`] = `{"id":"${body.avatar_id}","title":"Cube of Light"}\n`;
         state.draft.draft.revision += 1;
         await route.fulfill({ json: structuredCloneDraft(state.draft) });
       } else if (pathname.endsWith('/reset')) {
@@ -2060,6 +2116,45 @@ test('attach predefined game from library ui', async ({ canvas, page }) => {
   await expect(page.locator('.file-button[title="game/crest.svg"]')).toBeVisible();
   await expect(page.locator('#selected-path')).toHaveText('game/game.yaml');
   await expect(page.locator('#file-editor')).toHaveValue('version: 2\n# Checkers\n');
+});
+
+test('attach predefined avatar from library ui', async ({ canvas, page }) => {
+  const state = await setupEditorHarness(canvas, page);
+  await page.locator('#attach-avatar').click();
+  const dialog = page.locator('#avatar-library-dialog');
+  await expect(dialog).toBeVisible();
+  await expect(dialog.locator('.avatar-library-card')).toHaveCount(2);
+
+  await page.locator('#avatar-library-search').fill('Cube');
+  await expect(dialog.locator('.avatar-library-card')).toHaveCount(1);
+  const card = dialog.locator('.avatar-library-card[data-avatar-id="light-cube"]');
+  await expect(card).toBeVisible();
+  await expect(card.locator('.avatar-card-title')).toHaveText('Cube of Light');
+  await expect(card.locator('.avatar-card-badge')).toHaveText([
+    '3D Model',
+    '6 Actions',
+    '2 Shaders',
+  ]);
+
+  await expect(page.locator('#avatar-enable-config')).toBeChecked();
+  await page.locator('#avatar-library-submit').click();
+
+  await expect(dialog).not.toBeVisible();
+  await expect(page.locator('#builder-status')).toHaveText(
+    'Attached "Cube of Light" to your working theater.',
+  );
+  expect(state.lastAttachAvatarRequest).toEqual({
+    revision: 0,
+    avatar_id: 'light-cube',
+    enable_avatar: true,
+  });
+  await expect(page.locator('.file-button[title="avatars/light-cube/avatar.json"]')).toBeVisible();
+  await expect(page.locator('.file-button[title="avatars/light-cube/model.glb"]')).toBeVisible();
+  await expect(page.locator('.file-button[title="avatars/light-cube/preview.webp"]')).toBeVisible();
+  await expect(page.locator('#selected-path')).toHaveText('avatars/light-cube/avatar.json');
+  await expect(page.locator('#file-editor')).toHaveValue(
+    '{"id":"light-cube","title":"Cube of Light"}\n',
+  );
 });
 
 test('file drop uploads loose files into uploads folder and supports moving them', async ({

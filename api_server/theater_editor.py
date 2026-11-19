@@ -100,6 +100,12 @@ class AttachGameRequest(BaseModel):
     enable_game_tool: bool = False
 
 
+class AttachAvatarRequest(BaseModel):
+    revision: int
+    avatar_id: str = Field(min_length=1, max_length=120)
+    enable_avatar: bool = True
+
+
 class GenerateDraftRequest(GenerationRequest):
     revision: int
 
@@ -528,6 +534,40 @@ async def attach_game_to_draft(theater_id: str, body: AttachGameRequest, request
                 theater_config["game_tool"] = tool_config
                 game_files["theater.yaml"] = yaml.safe_dump(theater_config, sort_keys=False).encode("utf-8")
             await asyncio.to_thread(write_checkout, info, game_files, deletions=stale_game_files)
+        return await asyncio.to_thread(response, info)
+
+
+@app.post("/api/theater-editor/{theater_id}/avatar")
+async def attach_avatar_to_draft(theater_id: str, body: AttachAvatarRequest, request: Request) -> DraftResponse:
+    async with _draft_locks.setdefault(theater_id, asyncio.Lock()):
+        info = await require_draft(request, theater_id)
+        check_revision(info, body.revision)
+        _safe_path_param(body.avatar_id, "avatar_id")
+        avatar = await asyncio.to_thread(object_registry.avatar_service.get_avatar, body.avatar_id)
+        if avatar is None:
+            raise HTTPException(status_code=404, detail="Avatar not found.")
+        with invalid_input():
+            avatar_files = await asyncio.to_thread(object_registry.avatar_service.load_avatar_assets, body.avatar_id)
+            if not avatar_files:
+                raise HTTPException(status_code=404, detail="Avatar package contains no attachable files.")
+            package_id = str(avatar.get("id") or body.avatar_id)
+            package_prefix = f"avatars/{package_id}/"
+            existing = await asyncio.to_thread(store().files, theater_id)
+            stale_avatar_files = [
+                item.path for item in existing
+                if item.path.startswith(package_prefix) and item.path not in avatar_files
+            ]
+            if body.enable_avatar:
+                root = store().directory(theater_id)
+                raw_yaml = safe_asset_path(root, "theater.yaml").read_text(encoding="utf-8")
+                theater_config = TypeAdapter(dict[str, JsonValue]).validate_python(yaml.safe_load(raw_yaml) or {})
+                existing_avatar = theater_config.get("avatar")
+                avatar_config = TypeAdapter(dict[str, JsonValue]).validate_python(existing_avatar) if type(existing_avatar) is dict else {}
+                avatar_config["enabled"] = True
+                avatar_config["package"] = package_id
+                theater_config["avatar"] = avatar_config
+                avatar_files["theater.yaml"] = yaml.safe_dump(theater_config, sort_keys=False).encode("utf-8")
+            await asyncio.to_thread(write_checkout, info, avatar_files, deletions=stale_avatar_files)
         return await asyncio.to_thread(response, info)
 
 

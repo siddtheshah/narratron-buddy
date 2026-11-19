@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
-"""Version, download, and publish games and adventures
-===================================================
+"""Version, download, and publish games, adventures, and avatars
+==============================================================
 
-One workflow serves both content collections:
+One workflow serves all content collections:
 
   uv run python scripts/content.py upload --message "Update content"
   uv run python scripts/content.py download --content games
   uv run python scripts/content.py publish --content adventures --dry-run
+  uv run python scripts/content.py upload --content avatars --message "Add avatar"
 
 UPLOAD snapshots local packages, commits changes, and pushes to Git in GCS.
 It never publishes to the app. DOWNLOAD pulls the Git repository and restores
@@ -14,9 +15,10 @@ committed packages to the local collection. PUBLISH exports an uploaded Git
 commit and copies its files to the GCS prefixes served by Narratron. Dirty
 checkout files and untracked files are never included in a publication.
 
-Use --content games, --content adventures, or the default all. --package selects
-one folder name or metadata ID and requires one collection. This command replaces
-the former per-collection upload/download scripts and the backup script.
+Use --content games, --content adventures, --content avatars, or the default
+all. --package selects one folder name or metadata ID and requires one
+collection. This command replaces the former per-collection upload/download
+scripts and the backup script.
 
 Repositories and served content
 -------------------------------
@@ -24,16 +26,19 @@ Git history is stored separately in:
 
   gcs://narratron-buddy-app-storage/git/games
   gcs://narratron-buddy-app-storage/git/adventures
+  gcs://narratron-buddy-app-storage/git/avatars
 
-The app reads the published gs://narratron-buddy-app-storage/games/ and
-gs://narratron-buddy-app-storage/adventures/ prefixes. --bucket selects a bucket;
+The app reads the published gs://narratron-buddy-app-storage/games/,
+gs://narratron-buddy-app-storage/adventures/, and
+gs://narratron-buddy-app-storage/avatars/ prefixes. --bucket selects a bucket;
 --prefix overrides the served prefix for a single collection during publishing.
 Publishing cannot target git/. Ordinary Git versions text and media without LFS.
 
-Local repositories live beside the application, in ../narratron-content/games
-and ../narratron-content/adventures. --repository-root overrides that directory.
-Local editing folders default to the application's games/ and adventures/.
---source-dir (upload) and --target-dir (download) override a single collection.
+Local repositories live beside the application, in ../narratron-content/games,
+../narratron-content/adventures, and ../narratron-content/avatars.
+--repository-root overrides that directory. Local editing folders default to
+the application's games/, adventures/, and avatars/. --source-dir (upload) and
+--target-dir (download) override a single collection.
 
 Upload preserves packages missing locally, since a local collection may be
 incomplete, and records deletions inside present packages. It normalizes package
@@ -74,6 +79,7 @@ is needed. To clone manually from beside the application checkout:
   mkdir narratron-content
   git clone --config core.autocrlf=false gcs://narratron-buddy-app-storage/git/games narratron-content/games
   git clone --config core.autocrlf=false gcs://narratron-buddy-app-storage/git/adventures narratron-content/adventures
+  git clone --config core.autocrlf=false gcs://narratron-buddy-app-storage/git/avatars narratron-content/avatars
 
 Inspect and recover
 -------------------
@@ -150,6 +156,8 @@ COLLECTIONS = {
                         ("game/game.yaml", "game/game.yml", "game/game.json", "game.yaml", "game.yml", "game.json"), "example-game"),
     "adventures": Collection("adventures", "Adventure", ("Adventure", "Story"), "1-4",
                              ("theater.yaml", "theater.yml"), "example-adventure"),
+    "avatars": Collection("avatars", "3D Avatar", ("Avatar", "3D"), "1+",
+                          ("avatar.json",), "example-avatar"),
 }
 METADATA = TypeAdapter(dict[str, JsonValue])
 STRING = TypeAdapter(str)
@@ -190,13 +198,28 @@ class UniqueKeyLoader(yaml.SafeLoader):
         return mapping
 
 
+def _unique_json_pairs(pairs: list[tuple[str, JsonValue]]) -> dict[str, JsonValue]:
+    mapping: dict[str, JsonValue] = {}
+    for key, value in pairs:
+        if key in mapping:
+            raise ValueError(f"duplicate key '{key}'")
+        mapping[key] = value
+    return mapping
+
+
 def validate_yaml(package: Path) -> None:
     for path in content_files(package):
-        if path.suffix.lower() in (".yaml", ".yml"):
+        suffix = path.suffix.lower()
+        if suffix in (".yaml", ".yml"):
             try:
                 list(yaml.load_all(path.read_text(encoding="utf-8"), Loader=UniqueKeyLoader))
             except (yaml.YAMLError, UnicodeError) as error:
                 raise ValueError(f"Invalid YAML in {package.name}/{path.relative_to(package)}: {error}") from error
+        elif suffix == ".json":
+            try:
+                json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=_unique_json_pairs)
+            except (ValueError, UnicodeError) as error:
+                raise ValueError(f"Invalid JSON in {package.name}/{path.relative_to(package)}: {error}") from error
 
 
 def package_metadata(package: Path, kind: str, previous: Path | None = None) -> dict[str, JsonValue]:
@@ -205,22 +228,46 @@ def package_metadata(package: Path, kind: str, previous: Path | None = None) -> 
     metadata = METADATA.validate_json(path.read_bytes()) if path.exists() else {}
     old_path = previous / "metadata.json" if previous is not None else None
     old = METADATA.validate_json(old_path.read_bytes()) if old_path is not None and old_path.exists() else {}
+    avatar_manifest: dict[str, JsonValue] = {}
+    if kind == "avatars":
+        avatar_manifest_path = package / "avatar.json"
+        if avatar_manifest_path.is_file():
+            avatar_manifest = METADATA.validate_json(avatar_manifest_path.read_bytes())
+    default_title = (
+        STRING.validate_python(avatar_manifest["title"], strict=True)
+        if kind == "avatars" and avatar_manifest.get("title")
+        else package.name
+    )
     metadata = {
-        "id": slugify(package.name), "title": package.name,
+        "id": slugify(package.name), "title": default_title,
         "description": f"Pre-defined {kind} package for {package.name}.",
         "author": "Narratron Creator", "genre": spec.genre, "tags": list(spec.tags),
         "difficulty": "Medium", "recommended_players": spec.players,
         **metadata,
     }
     metadata["id"] = safe_name(STRING.validate_python(metadata.get("id") or slugify(package.name), strict=True))
-    metadata["title"] = STRING.validate_python(metadata.get("title") or package.name, strict=True)
+    metadata["title"] = STRING.validate_python(metadata.get("title") or default_title, strict=True)
     metadata["created_at"] = STRING.validate_python(
         metadata.get("created_at") or old.get("created_at") or datetime.now(timezone.utc).isoformat(), strict=True,
     )
     if not metadata.get("cover_image"):
         images = [path for path in content_files(package) if path.suffix.lower() in (".svg", ".png", ".jpg", ".jpeg", ".webp")]
         crest = package / "game/crest.svg"
-        cover = crest if kind == "games" and crest.is_file() else next(iter(images), None)
+        preview = package / "preview.webp"
+        poster_value = avatar_manifest.get("poster") if kind == "avatars" else None
+        poster = (
+            package / STRING.validate_python(poster_value, strict=True)
+            if poster_value
+            else None
+        )
+        if kind == "games" and crest.is_file():
+            cover: Path | None = crest
+        elif kind == "avatars" and poster is not None and poster.is_file() and poster.resolve().is_relative_to(package.resolve()):
+            cover = poster
+        elif kind == "avatars" and preview.is_file():
+            cover = preview
+        else:
+            cover = next(iter(images), None)
         metadata["cover_image"] = cover.relative_to(package).as_posix() if cover is not None else ""
     return metadata
 
@@ -697,7 +744,7 @@ def create_parser() -> argparse.ArgumentParser:
     commands = parser.add_subparsers(dest="operation", required=True)
     for operation in ("upload", "download", "publish"):
         command = commands.add_parser(operation, description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-        command.add_argument("--content", choices=("all", "adventures", "games"), default="all")
+        command.add_argument("--content", choices=("all", "adventures", "games", "avatars"), default="all")
         command.add_argument("--package", help="One package folder or metadata ID")
         command.add_argument("--bucket", default=os.getenv("GCS_BUCKET", BUCKET))
         command.add_argument("--repository-root", type=Path, default=PROJECT_ROOT.parent / "narratron-content")
@@ -727,7 +774,7 @@ def main() -> int:
         or (args.operation == "publish" and args.prefix)
     ):
         parser.error("--package, --source-dir, --target-dir, and --prefix require one --content collection")
-    kinds = ("adventures", "games") if args.content == "all" else (args.content,)
+    kinds = ("adventures", "games", "avatars") if args.content == "all" else (args.content,)
     try:
         for kind in kinds:
             if not ensure_checkout(PROJECT_ROOT, args.repository_root, kind, args.bucket, args.dry_run):

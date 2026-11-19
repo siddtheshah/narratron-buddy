@@ -361,17 +361,23 @@ def test_server_shutdown_closes_database_connection():
 def test_lifespan_preloads_adventure_cards_before_serving() -> None:
     service = MagicMock(spec=object_registry.AdventureService)
     database = MagicMock()
+    game_service = MagicMock(spec=object_registry.GameService)
+    avatar_service = MagicMock(spec=object_registry.AvatarService)
 
     async def run_lifespan() -> None:
         async with object_registry.lifespan(object_registry.app):
             build_assets.assert_called_once_with()
             service.list_adventures.assert_called_once_with(force_refresh=True)
+            game_service.list_games.assert_called_once_with(force_refresh=True)
+            avatar_service.list_avatars.assert_called_once_with(force_refresh=True)
             database.close.assert_not_called()
 
     with (
         patch.object(object_registry, "ensure_canvas_assets_built") as build_assets,
         patch.object(object_registry, "adventure_service", service),
         patch.object(object_registry, "db", database),
+        patch.object(object_registry, "game_service", game_service),
+        patch.object(object_registry, "avatar_service", avatar_service),
         patch("api_server.pages.rebuild_docs_search_index"),
     ):
         asyncio.run(run_lifespan())
@@ -397,6 +403,8 @@ def test_adventure_monitor_retries_after_storage_failure() -> None:
     with (
         patch.object(object_registry, "adventure_service", service),
         patch.object(object_registry, "CACHE_CHECK_INTERVAL_SECONDS", 0.001),
+        patch.object(object_registry, "game_service", MagicMock(spec=object_registry.GameService)),
+        patch.object(object_registry, "avatar_service", MagicMock(spec=object_registry.AvatarService)),
     ):
         asyncio.run(run_monitor())
     assert service.refresh_if_changed.call_count == 2

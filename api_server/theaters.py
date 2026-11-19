@@ -1217,6 +1217,33 @@ def get_game_cover_endpoint(game_id: str) -> Response:
     return Response(content=content, media_type=ctype)
 
 
+@app.get("/api/avatars")
+def list_avatars_endpoint(refresh: bool = False) -> list[dict[str, JsonValue]]:
+    """List pre-defined avatars stored in GCS/shared storage sorted newest first."""
+    return object_registry.avatar_service.list_avatars(force_refresh=refresh)
+
+
+@app.get("/api/avatars/{avatar_id}")
+def get_avatar_endpoint(avatar_id: str) -> dict[str, JsonValue]:
+    """Get metadata for a specific pre-defined avatar."""
+    _safe_path_param(avatar_id, "avatar_id")
+    avatar = object_registry.avatar_service.get_avatar(avatar_id)
+    if not avatar:
+        raise HTTPException(status_code=404, detail="Avatar not found")
+    return avatar
+
+
+@app.get("/api/avatars/{avatar_id}/cover")
+def get_avatar_cover_endpoint(avatar_id: str) -> Response:
+    """Stream or return the cover image of a pre-defined avatar."""
+    _safe_path_param(avatar_id, "avatar_id")
+    res = object_registry.avatar_service.get_avatar_cover(avatar_id)
+    if not res:
+        raise HTTPException(status_code=404, detail="Cover image not found")
+    content, ctype = res
+    return Response(content=content, media_type=ctype)
+
+
 @app.get("/api/theaters/default-config")
 async def get_default_theater_config():
     """Return the complete creation-editor baseline from theater_default.yaml."""

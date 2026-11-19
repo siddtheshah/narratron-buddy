@@ -31,7 +31,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 RUN groupadd --system --gid 10001 appuser \
     && useradd --system --uid 10001 --gid appuser --create-home appuser \
-    && mkdir -p /mnt/storage/adventures /mnt/storage/games /mnt/storage/stamps /mnt/storage/theaters /mnt/storage/music_catalog /tmp/ephemeral \
+    && mkdir -p /mnt/storage/adventures /mnt/storage/games /mnt/storage/avatars /mnt/storage/stamps /mnt/storage/theaters /mnt/storage/music_catalog /tmp/ephemeral \
     && chown -R appuser:appuser /mnt/storage /tmp/ephemeral
 
 WORKDIR /app

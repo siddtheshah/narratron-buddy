@@ -29,6 +29,7 @@ from pricing.pricing_controller import PricingController
 from testing.reference_images import png_bytes
 from providers.image_provider import ImageGenerationResult
 from providers.music_provider import MusicGenerationResult
+from services.avatar_service import AvatarService
 from services.game_service import GameService
 from services.google_asset_importer import GoogleImportResult
 from services.theater_builder import BuilderProposal, ChatMessage, DraftInfo, GenerationRequest, TheaterBuilderStore
@@ -187,7 +188,41 @@ def builder(tmp_path: Path) -> Iterator[BuilderHarness]:
         identifier = request.headers.get("x-test-user")
         return {"id": int(identifier)} if identifier else None
 
-    with patch.object(object_registry, "db", database), patch.object(object_registry, "theater_manager", manager), patch.object(object_registry, "theater_repository", repository), patch.object(object_registry, "pricing_controller", pricing), patch.object(object_registry, "canvas_states", CanvasStateService(manager)), patch.object(object_registry, "live_agent_manager", MagicMock()), patch.object(object_registry, "game_service", GameService(Path("games"))), patch("api_server.theater_editor.get_current_user_async", new=AsyncMock(side_effect=authenticate)), TestClient(app, headers={"x-test-user": "7", "X-Narratron-Settings-Confirm": "1"}) as client:
+    avatars_dir = tmp_path / "avatars_catalog"
+    light_cube_dir = avatars_dir / "light-cube"
+    (light_cube_dir / "shaders").mkdir(parents=True)
+    (light_cube_dir / "metadata.json").write_text(
+        json.dumps({
+            "id": "light-cube",
+            "title": "Cube of Light",
+            "description": "Floating luminous cube avatar.",
+            "genre": "3D Avatar",
+            "tags": ["Avatar", "3D"],
+            "cover_image": "preview.webp",
+            "created_at": "2026-11-18T00:00:00Z",
+        }),
+        encoding="utf-8",
+    )
+    (light_cube_dir / "avatar.json").write_text(
+        json.dumps({
+            "id": "light-cube",
+            "title": "Cube of Light",
+            "model": "model.glb",
+            "poster": "preview.webp",
+            "idle": "idle",
+            "actions": [
+                {"id": "idle", "label": "Gold", "clip": "SlowTurn", "loop": True},
+                {"id": "ember", "label": "Ember"},
+            ],
+        }),
+        encoding="utf-8",
+    )
+    (light_cube_dir / "model.glb").write_bytes(b"glTF-cube")
+    (light_cube_dir / "preview.webp").write_bytes(b"RIFF\x00\x00\x00\x00WEBP")
+    (light_cube_dir / "shaders" / "dust.vert").write_text("void main() {}", encoding="utf-8")
+    (light_cube_dir / "shaders" / "dust.frag").write_text("void main() {}", encoding="utf-8")
+
+    with patch.object(object_registry, "db", database), patch.object(object_registry, "theater_manager", manager), patch.object(object_registry, "theater_repository", repository), patch.object(object_registry, "pricing_controller", pricing), patch.object(object_registry, "canvas_states", CanvasStateService(manager)), patch.object(object_registry, "live_agent_manager", MagicMock()), patch.object(object_registry, "game_service", GameService(Path("games"))), patch.object(object_registry, "avatar_service", AvatarService(avatars_dir)), patch("api_server.theater_editor.get_current_user_async", new=AsyncMock(side_effect=authenticate)), TestClient(app, headers={"x-test-user": "7", "X-Narratron-Settings-Confirm": "1"}) as client:
         yield BuilderHarness(client, manager, repository, database)
 
 
@@ -210,6 +245,7 @@ def test_drafts_require_login_and_owner_for_every_action(builder: BuilderHarness
     assert builder.client.get(f"{base}/download").status_code == 403
     assert builder.client.post(f"{base}/reset", json={"revision": 1}).status_code == 403
     assert builder.client.post(f"{base}/game", json={"revision": 1, "game_id": "example-game"}).status_code == 403
+    assert builder.client.post(f"{base}/avatar", json={"revision": 1, "avatar_id": "light-cube"}).status_code == 403
     builder.database.record_user_usage.assert_not_called()
 
 
@@ -1688,5 +1724,75 @@ def test_games_catalog_and_attach_game_to_draft(builder: BuilderHarness) -> None
     assert state.game.error == ""
     assert state.game.program is not None
     assert state.game.state["board"] == [0] * 9
+
+
+def test_avatars_catalog_and_attach_avatar_to_draft(builder: BuilderHarness) -> None:
+    avatars_res = builder.client.get("/api/avatars")
+    assert avatars_res.status_code == 200, avatars_res.text
+    avatar_ids = {item["id"] for item in avatars_res.json()}
+    assert "light-cube" in avatar_ids
+
+    avatar_detail = builder.client.get("/api/avatars/light-cube")
+    assert avatar_detail.status_code == 200
+    assert avatar_detail.json()["title"] == "Cube of Light"
+    assert avatar_detail.json()["has_model"] is True
+    assert avatar_detail.json()["action_count"] == 2
+    assert avatar_detail.json()["shader_count"] == 2
+
+    cover_res = builder.client.get("/api/avatars/light-cube/cover")
+    assert cover_res.status_code == 200
+    assert "webp" in cover_res.headers["content-type"]
+
+    data = builder.create()
+    identifier = data["draft"]["theater_id"]
+    base = f"/api/theater-editor/{identifier}"
+
+    # Seed a stale shader under avatars/light-cube/ and an unrelated avatar under avatars/other/
+    seeded = builder.client.post(f"{base}/save", json={
+        "revision": data["draft"]["revision"],
+        "name": data["draft"]["name"],
+        "writes": [
+            {"path": "avatars/light-cube/shaders/old.frag", "content": "void main() {}"},
+            {"path": "avatars/other/avatar.json", "content": '{"id": "other", "title": "Other"}'},
+        ],
+    })
+    assert seeded.status_code == 200, seeded.text
+    rev = seeded.json()["draft"]["revision"]
+
+    # Revision mismatch and unknown avatar ID checks
+    assert builder.client.post(f"{base}/avatar", json={"revision": rev - 1, "avatar_id": "light-cube"}).status_code == 409
+    assert builder.client.post(f"{base}/avatar", json={"revision": rev, "avatar_id": "nonexistent-avatar"}).status_code == 404
+
+    attached = builder.client.post(f"{base}/avatar", json={
+        "revision": rev,
+        "avatar_id": "light-cube",
+        "enable_avatar": True,
+    })
+    assert attached.status_code == 200, attached.text
+    paths = {item["path"] for item in attached.json()["files"]}
+    assert {
+        "avatars/light-cube/avatar.json",
+        "avatars/light-cube/model.glb",
+        "avatars/light-cube/preview.webp",
+        "avatars/light-cube/shaders/dust.vert",
+        "avatars/light-cube/shaders/dust.frag",
+        "avatars/other/avatar.json",
+    } <= paths
+    assert "avatars/light-cube/shaders/old.frag" not in paths
+
+    # Verify theater.yaml enabled the attached avatar package
+    config_text = builder.client.get(f"{base}/file?path=theater.yaml").text
+    assert "avatar:" in config_text
+    assert "enabled: true" in config_text
+    assert "package: light-cube" in config_text
+
+    # Verify canvas state loaded the newly attached avatar cleanly
+    state = object_registry.canvas_states.get(identifier)
+    assert state.avatar is not None
+    assert state.avatar.enabled is True
+    assert state.avatar.package == "light-cube"
+    assert state.avatar.title == "Cube of Light"
+    assert {action.id for action in state.avatar.actions} == {"idle", "ember"}
+
 
 

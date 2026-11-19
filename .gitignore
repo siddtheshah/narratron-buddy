@@ -25,6 +25,8 @@ games/*
 !games/example_game/
 !games/example_game/**
 games/example_game/**/__pycache__/
+avatars/*
+!avatars/README.md
 demos/
 music_catalog/
 evaluation_results/
