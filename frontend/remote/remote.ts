@@ -344,6 +344,7 @@ export function initializeRemote(): RemoteController {
         }
 
         if (avatarLoadingPackage === enabledPackage || !theaterId) {
+            remoteAvatarStage.hidden = false;
             return;
         }
 

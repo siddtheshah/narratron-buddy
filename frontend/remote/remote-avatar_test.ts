@@ -130,6 +130,14 @@ async function mountMobileWithAvatar(
     };
 }
 
+test('remote.html places the Three.js importmap before any module script', async () => {
+    const templateHtml = await fs.promises.readFile(path.join(TEMPLATES_DIR, 'remote.html'), 'utf-8');
+    const importMapIndex = templateHtml.indexOf('<script type="importmap">');
+    const firstModuleIndex = templateHtml.search(/<script\b[^>]*\btype=["']module["']/i);
+    expect(importMapIndex).toBeGreaterThan(-1);
+    expect(firstModuleIndex).toBeGreaterThan(importMapIndex);
+});
+
 test('watch agent subtab displays avatar, plays latest animation on open, and reacts on tap', async ({
     canvas,
     page,
