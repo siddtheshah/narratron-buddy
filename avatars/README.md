@@ -39,5 +39,6 @@ Run `uv run python scripts/content.py --help` for setup and recovery instruction
 
 ## Testing & Attaching Avatars
 
+- **Full Authoring Guide**: See [`site_docs/avatar_packages.md`](../site_docs/avatar_packages.md) for the complete `avatar.json` schema, 3D model camera/lighting contract, custom GLSL shader uniforms, and live-agent action selection details.
 - **Interactive Avatar Lab**: Open `/avatar-lab` to preview avatar models, actions, and shaders.
 - **Attach in Theater Editor**: Open `/theater-editor`, click **＋ Avatar**, select your avatar from the library, and click **Attach Avatar**.

@@ -69,6 +69,7 @@ def test_docs_theater_yaml_page_reads_the_reference_template() -> None:
     for section_id in [
         "live_agent",
         "starting-image",
+        "avatar",
         "observability-tool",
         "image-generation",
         "animation",
@@ -123,6 +124,25 @@ def test_game_packages_guide_has_a_public_page_and_search_results() -> None:
     assert any(result["href"].startswith("/docs/game-packages") for result in results["results"])
 
 
+def test_avatar_packages_guide_has_a_public_page_and_search_results() -> None:
+    client = TestClient(pages.app)
+    response = client.get("/docs/avatar-packages")
+    assert response.status_code == 200
+    assert "Theater avatar packages" in response.text
+    assert "3D animated companion" in response.text
+    assert "<pre><code" not in response.text
+    assert 'href="https://github.com/siddtheshah/narratron-buddy/blob/main/site_docs/avatar_packages.md"' in response.text
+    assert "uv run" not in response.text
+    assert '<title>Avatar Packages | Narratron Docs</title>' in response.text
+    assert 'href="/docs/avatar-packages" class="is-active"' in response.text
+    assert 'href="/docs" class="deploy-nav-btn active"' in response.text
+    assert client.get("/docs/avatars").status_code == 200
+    assert "https://narratron.app/docs/avatar-packages" in pages.read_sitemap().body.decode()
+    pages.rebuild_docs_search_index()
+    results = pages.search_docs(q="3D animated companion", limit=8)
+    assert any(result["href"].startswith("/docs/avatar-packages") for result in results["results"])
+
+
 def test_virtual_tabletop_guide_images_load_and_references_render_as_lists() -> None:
     response = pages.read_docs_virtual_tabletop()
     assert '<pre><code' not in response
@@ -149,6 +169,7 @@ def test_docs_index_links_to_each_documentation_page():
     assert 'href="/docs/theater-yaml"' in response
     assert 'href="/docs/writing-adventures"' in response
     assert 'href="/docs/game-packages"' in response
+    assert 'href="/docs/avatar-packages"' in response
     assert 'href="/docs/beyond20"' in response
     assert 'href="/docs/virtual-tabletop"' in response
 
@@ -161,6 +182,7 @@ def test_docs_pages_render_persistent_navigation_and_search():
         pages.read_docs_theater_yaml(),
         pages.read_docs_writing_adventures(),
         pages.read_docs_game_packages(),
+        pages.read_docs_avatar_packages(),
         pages.read_docs_beyond20(),
         pages.read_docs_virtual_tabletop(),
         pages.read_terms(),

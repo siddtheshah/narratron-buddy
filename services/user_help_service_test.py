@@ -172,3 +172,17 @@ def test_feedback_guide_is_discoverable_readable_and_citable(tmp_path: Path) -> 
     for question in ("How do I report a malicious theater?", "How do I file a bug?", "Where can I suggest an improvement?"):
         assert "[Feedback and Reporting](/docs/feedback-and-reporting)" in ensure_doc_citation("Open the left-hand menu.", question)
 
+
+def test_avatar_packages_guide_is_discoverable_readable_and_citable(tmp_path: Path) -> None:
+    tool = make_service(tmp_path)
+    tool.help_roots = tool._default_help_roots()
+    listed = tool.list_help_files()
+    assert "site_docs/avatar_packages.md (doc URL: /docs/avatar-packages)" in listed
+    assert "site_docs/avatar_packages_overview.md (doc URL: /docs/avatar-packages)" in listed
+    assert "avatar_packages.md" in tool.search_help_files("hoverGlow")
+    assert "Theater avatar packages" in tool.read_help_file("/docs/avatar-packages")
+    assert "/docs/avatar-packages" in tool._create_agent().instruction
+    assert normalize_doc_links("[Avatars](site_docs/avatar_packages.md)") == "[Avatars](/docs/avatar-packages)"
+    for question in ("How do I build a theater avatar?", "How do avatar GLSL shaders work?"):
+        assert "[Avatar Packages](/docs/avatar-packages)" in ensure_doc_citation("Use the Theater Editor.", question)
+

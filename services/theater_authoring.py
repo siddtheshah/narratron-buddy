@@ -7,7 +7,7 @@ import zipfile
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 PLUGIN_FILES = ("plugin.json", "AGENTS.md", "README.md", "skills/create-theater/SKILL.md")
-REFERENCE_FILES = ("writing_adventures.md", "game_packages.md", "game_html_panels.md", "game_canvas_interface.md")
+REFERENCE_FILES = ("writing_adventures.md", "game_packages.md", "game_html_panels.md", "game_canvas_interface.md", "avatar_packages.md")
 
 
 def authoring_kit() -> bytes:

@@ -90,7 +90,11 @@ def render_shared_topbar(active_page: str = "", show_pricing: bool = False) -> s
         return template.render(active_page=active_page, show_pricing=show_pricing)
     except Exception:
         out = raw
-        docs_active = active_page in {"docs", "docs-about", "docs-ideas", "docs-theater-yaml", "docs-writing-adventures", "docs-game-packages", "docs-adventures", "docs-beyond20", "docs-virtual-tabletop", "docs-terms", "docs-privacy"}
+        docs_active = active_page in {"docs", "docs-about", "docs-ideas", "docs-theater-yaml", "docs-writing-adventures", "docs-game-packages", "docs-avatar-packages", "docs-adventures", "docs-beyond20", "docs-virtual-tabletop", "docs-terms", "docs-privacy"}
+        out = out.replace(
+            "{% if active_page in ['docs', 'docs-about', 'docs-ideas', 'docs-theater-yaml', 'docs-writing-adventures', 'docs-game-packages', 'docs-avatar-packages', 'docs-adventures', 'docs-beyond20', 'docs-virtual-tabletop', 'docs-terms', 'docs-privacy'] %}active{% endif %}",
+            "active" if docs_active else "",
+        )
         out = out.replace(
             "{% if active_page in ['docs', 'docs-about', 'docs-ideas', 'docs-theater-yaml', 'docs-writing-adventures', 'docs-game-packages', 'docs-adventures', 'docs-beyond20', 'docs-virtual-tabletop', 'docs-terms', 'docs-privacy'] %}active{% endif %}",
             "active" if docs_active else "",
@@ -217,6 +221,7 @@ def read_sitemap() -> Response:
         "/docs/theater-yaml",
         "/docs/writing-adventures",
         "/docs/game-packages",
+        "/docs/avatar-packages",
         "/docs/beyond20",
         "/docs/virtual-tabletop",
         "/docs/feedback-and-reporting",
@@ -409,6 +414,24 @@ def read_docs_game_packages() -> str:
     )
 
 
+@app.get("/docs/avatar-packages", response_class=HTMLResponse)
+@app.get("/docs/avatars", response_class=HTMLResponse)
+def read_docs_avatar_packages() -> str:
+    """Serve the lightweight avatar package overview."""
+    doc_path = PROJECT_ROOT / "site_docs" / "avatar_packages_overview.md"
+    content = render_about_markdown(doc_path.read_text(encoding="utf-8"))
+    return render_page_template(
+        "about.html",
+        active_page="docs-avatar-packages",
+        extra_replacements={"<!-- ABOUT_CONTENT -->": content},
+        seo_metadata=SeoMetadata(
+            title="Avatar Packages | Narratron Docs",
+            description="Learn what Narratron 3D avatar packages are, how they react to narration and viewers, and how to add or build your own.",
+            path="/docs/avatar-packages",
+        ),
+    )
+
+
 @app.get("/docs/beyond20", response_class=HTMLResponse)
 def read_docs_beyond20():
     """Serve setup guidance for the Beyond20 canvas integration."""
@@ -532,6 +555,7 @@ def rebuild_docs_search_index() -> int:
         DocsSearchPage("theater.yaml reference", "/docs/theater-yaml", read_docs_theater_yaml()),
         DocsSearchPage("Writing adventures", "/docs/writing-adventures", read_docs_writing_adventures()),
         DocsSearchPage("Game packages", "/docs/game-packages", read_docs_game_packages()),
+        DocsSearchPage("Avatar packages", "/docs/avatar-packages", read_docs_avatar_packages()),
         DocsSearchPage("Beyond20 dice rolls", "/docs/beyond20", read_docs_beyond20()),
         DocsSearchPage("Virtual tabletop guide", "/docs/virtual-tabletop", read_docs_virtual_tabletop()),
         DocsSearchPage("Feedback and Reporting", "/docs/feedback-and-reporting", read_docs_feedback_and_reporting()),
