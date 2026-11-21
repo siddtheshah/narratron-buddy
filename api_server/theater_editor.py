@@ -226,6 +226,7 @@ async def create_draft(body: CreateDraftRequest, request: Request) -> DraftRespo
     default_config = get_theater_default_config()
     if not body.populate_default:
         default_config.pop("starting_image", None)
+        default_config.pop("avatar", None)
     with invalid_input():
         info = await asyncio.to_thread(store().create, owner_id, body.name, yaml.safe_dump(default_config, sort_keys=False), populate_default=body.populate_default)
         await asyncio.to_thread(initialize_theater, info)

@@ -118,6 +118,7 @@ def get_theater_config(
     yaml_path = theater_dir / "theater.yaml"
 
     config = get_theater_default_config()
+    config.pop("avatar", None)
     app_config = get_app_config()
 
     if yaml_path.exists():

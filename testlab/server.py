@@ -104,6 +104,11 @@ app.mount(
     StaticFiles(directory=PROJECT_ROOT / "example_theater" / "avatars" / "narratron", check_dir=False),
     name="example-narratron-assets",
 )
+app.mount(
+    "/avatar-assets/umbral-sigil",
+    StaticFiles(directory=PROJECT_ROOT / "adventures" / "umbral-dungeon" / "avatars" / "umbral-sigil", check_dir=False),
+    name="umbral-sigil-assets",
+)
 app.mount("/avatar-assets", StaticFiles(directory=ROOT / "avatar_packages"), name="avatar-assets")
 THREE_ROOT = PROJECT_ROOT / "node_modules" / "three"
 app.mount("/avatar-lib/three", StaticFiles(directory=THREE_ROOT / "build", check_dir=False), name="avatar-three")

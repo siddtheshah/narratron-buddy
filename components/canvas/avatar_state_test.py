@@ -50,6 +50,30 @@ def test_avatar_state_disabled_by_default_ignores_set_action(tmp_path: Path) -> 
     }
 
 
+def test_avatar_state_omitted_avatar_config_ignores_existing_narratron_manifest(tmp_path: Path) -> None:
+    theater = _write_avatar_theater(
+        tmp_path,
+        "adventure_without_avatar_config",
+        avatar_config="story_planning:\n  adventure_mode: true\n",
+        package="narratron",
+        manifest={
+            "id": "narratron",
+            "title": "Narratron",
+            "idle": "idle",
+            "actions": [
+                {"id": "idle", "label": "Idle", "loop": True},
+            ],
+        },
+    )
+    notified: list[str] = []
+    state = AvatarState(theater, notified.append)
+
+    assert state.enabled is False
+    assert state.package == ""
+    assert state.actions == ()
+    assert notified == []
+
+
 def test_avatar_state_disabled_in_config_ignores_manifest(tmp_path: Path) -> None:
     theater = _write_avatar_theater(
         tmp_path,

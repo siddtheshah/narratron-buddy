@@ -92,8 +92,32 @@ class TestConfigLoader(BaseTestCase):
             self.assertEqual(loaded.get("image_generation", {}).get("cooldown_duration"), 42)
             # Default keys are also preserved via deep merge
             self.assertIn("music", loaded)
+            # Avatar is opt-in per theater and must not be inherited from example_theater
+            self.assertNotIn("avatar", loaded)
         finally:
             shutil.rmtree(temp_dir, ignore_errors=True)
+
+    def test_get_theater_config_does_not_inherit_default_avatar_unless_configured(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            tm = TheaterManager(base_theaters_dir=Path(directory))
+            save_theater_config(
+                "adventure_no_avatar",
+                {"story_planning": {"adventure_mode": True}},
+                theater_manager=tm,
+            )
+            no_avatar_cfg = get_theater_config("adventure_no_avatar", theater_manager=tm)
+            self.assertNotIn("avatar", no_avatar_cfg)
+
+            save_theater_config(
+                "adventure_with_avatar",
+                {"story_planning": {"adventure_mode": True}, "avatar": {"enabled": True, "package": "light-cube"}},
+                theater_manager=tm,
+            )
+            with_avatar_cfg = get_theater_config("adventure_with_avatar", theater_manager=tm)
+            self.assertEqual(with_avatar_cfg["avatar"], {"enabled": True, "package": "light-cube"})
+
+            default_created_cfg = get_theater_config("fresh_no_yaml", theater_manager=tm)
+            self.assertNotIn("avatar", default_created_cfg)
 
     def test_live_agent_cannot_be_overridden_by_theater_config(self):
         temp_dir = Path(tempfile.mkdtemp())

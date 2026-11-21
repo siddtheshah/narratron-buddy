@@ -2094,6 +2094,136 @@ def test_quick_deploy_copies_example_theater_avatars_and_serves_them(tmp_path: P
         assert "void main()" in frag.text
 
 
+def test_adventures_without_avatar_do_not_attach_default_narratron_avatar(tmp_path: Path) -> None:
+    from components.canvas.avatar_state import AvatarState
+    from components.theater_manager import TheaterManager
+
+    fake_root = tmp_path / "repo"
+    example_dir = fake_root / "example_theater"
+    (example_dir / "references").mkdir(parents=True)
+    (example_dir / "references" / "narratron_avatar.webp").write_bytes(png_bytes())
+    avatar_dir = example_dir / "avatars" / "narratron"
+    (avatar_dir / "shaders").mkdir(parents=True)
+    (avatar_dir / "avatar.json").write_bytes(b'{"id":"narratron","model":"model.glb"}')
+    (avatar_dir / "model.glb").write_bytes(b"glTF\x02\x00\x00\x00")
+    (avatar_dir / "preview.webp").write_bytes(b"RIFF\x00\x00\x00\x00WEBP")
+
+    mock_adv_service = MagicMock()
+    mock_adv_service.load_adventure_assets.return_value = (
+        [],
+        {},
+        [("lore/world.md", b"# Dark Castle")],
+        {"live_agent": {"special_instructions": "Stay immersive."}},
+    )
+    mock_adv_service.get_adventure.return_value = {"id": "dark-castle", "title": "Dark Castle"}
+
+    manager = TheaterManager(tmp_path / "theaters")
+    with patch.object(object_registry, "theater_manager", manager), \
+         patch.object(object_registry, "adventure_service", mock_adv_service), \
+         patch.object(theaters, "PROJECT_ROOT", fake_root), \
+         patch("components.theater_manager.PROJECT_ROOT", fake_root), \
+         patch.object(theaters, "get_current_user_async", AsyncMock(return_value={"id": 1})), \
+         patch.object(theaters, "check_user_theaters_storage_allowance") as mock_quota, \
+         patch.object(theaters, "_require_canvas_access_async", AsyncMock()), \
+         patch.object(object_registry.db, "record_deployment"), \
+         patch.object(theaters, "_export_canvas_theater_async", AsyncMock()), \
+         TestClient(app) as client:
+        # 1. Preset adventure without an avatar
+        preset_res = client.post(
+            "/api/theaters/create-and-deploy",
+            data={
+                "name": "Dark Castle",
+                "creation_mode": "adventure",
+                "preset_adventure_id": "dark-castle",
+                "enable_adventure_mode": "true",
+            },
+        )
+        assert preset_res.status_code == 200
+        preset_id = preset_res.json()["theater_id"]
+        preset_theater = manager.theater(preset_id)
+        assert not (preset_theater.directory() / "avatars").exists()
+        assert "avatar" not in preset_theater.config()
+        assert AvatarState(preset_theater, lambda *_: None).enabled is False
+        assert client.get(f"/theaters/{preset_id}/avatars/narratron/avatar.json").status_code == 404
+        # Storage quota should NOT include default narratron avatar bytes
+        assert mock_quota.call_args.args[1] < len(b"glTF\x02\x00\x00\x00") + 200
+
+        # 2. Custom adventure without a preset
+        custom_adv_res = client.post(
+            "/api/theaters/create-and-deploy",
+            data={
+                "name": "Custom Adventure",
+                "creation_mode": "adventure",
+                "enable_adventure_mode": "true",
+            },
+        )
+        assert custom_adv_res.status_code == 200
+        custom_adv_theater = manager.theater(custom_adv_res.json()["theater_id"])
+        assert not (custom_adv_theater.directory() / "avatars").exists()
+        assert "avatar" not in custom_adv_theater.config()
+        assert AvatarState(custom_adv_theater, lambda *_: None).enabled is False
+
+        # 3. Blank creation mode with Adventure Mode enabled
+        blank_adv_res = client.post(
+            "/api/theaters/create-and-deploy",
+            data={
+                "name": "Blank Adventure Mode",
+                "creation_mode": "blank",
+                "enable_adventure_mode": "true",
+            },
+        )
+        assert blank_adv_res.status_code == 200
+        blank_adv_theater = manager.theater(blank_adv_res.json()["theater_id"])
+        assert not (blank_adv_theater.directory() / "avatars").exists()
+        assert "avatar" not in blank_adv_theater.config()
+        assert AvatarState(blank_adv_theater, lambda *_: None).enabled is False
+
+        # 4. Folder upload without avatar
+        folder_res = client.post(
+            "/api/theaters/create-and-deploy",
+            data={
+                "name": "Folder Adventure",
+                "creation_mode": "folder",
+                "folder_theater_config_yaml": "story_planning:\n  adventure_mode: true\n",
+            },
+        )
+        assert folder_res.status_code == 200
+        folder_theater = manager.theater(folder_res.json()["theater_id"])
+        assert not (folder_theater.directory() / "avatars").exists()
+        assert "avatar" not in folder_theater.config()
+        assert AvatarState(folder_theater, lambda *_: None).enabled is False
+
+
+def test_adventure_with_custom_avatar_does_not_copy_default_narratron_avatar(tmp_path: Path) -> None:
+    from services.adventure_service import AdventureService
+    from components.theater_manager import TheaterManager
+
+    manager = TheaterManager(tmp_path / "theaters")
+    adv_service = AdventureService(Path(__file__).parent.parent / "adventures")
+    with patch.object(object_registry, "theater_manager", manager), \
+         patch.object(object_registry, "adventure_service", adv_service), \
+         patch.object(theaters, "get_current_user_async", AsyncMock(return_value={"id": 1})), \
+         patch.object(theaters, "check_user_theaters_storage_allowance"), \
+         patch.object(theaters, "_require_canvas_access_async", AsyncMock()), \
+         patch.object(object_registry.db, "record_deployment"), \
+         patch.object(theaters, "_export_canvas_theater_async", AsyncMock()), \
+         TestClient(app) as client:
+        response = client.post(
+            "/api/theaters/create-and-deploy",
+            data={
+                "name": "The Clockwork Archive",
+                "creation_mode": "adventure",
+                "preset_adventure_id": "example-adventure",
+                "enable_adventure_mode": "true",
+            },
+        )
+        assert response.status_code == 200
+        theater_id = response.json()["theater_id"]
+        theater_dir = manager.theater(theater_id).directory()
+        assert (theater_dir / "avatars" / "light-cube" / "avatar.json").is_file()
+        assert not (theater_dir / "avatars" / "narratron").exists()
+
+
 
 
 

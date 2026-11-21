@@ -423,6 +423,7 @@ def load_adventure_config(adventure_id_or_path: str) -> Tuple[Dict[str, Any], Pa
     import yaml
 
     config = get_theater_default_config()
+    config.pop("avatar", None)
     yaml_path = adv_path / "theater.yaml"
     if yaml_path.is_file():
         try:

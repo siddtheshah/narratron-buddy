@@ -61,6 +61,7 @@ from components.theater_manager import (
     TheaterScene,
     TheaterCharacter,
     extract_asset_package,
+    enabled_avatar_package,
     example_theater_avatar_paths,
     validate_asset_path,
     validate_theater_id,
@@ -1450,6 +1451,8 @@ def configure_with_assets(
     story_planning_config["adventure_mode"] = enable_adventure_mode
     if story_planning_style:
         story_planning_config["style"] = story_planning_style
+    if enable_adventure_mode:
+        config.pop("avatar", None)
 
     return config
 
@@ -1563,8 +1566,6 @@ async def create_and_deploy_theater(request: Request):
             quick_deploy_track = PROJECT_ROOT / "playlists" / "default" / "new story.mp3"
         if quick_deploy_track.is_file():
             playlists_data["default"] = [("new_story.mp3", quick_deploy_track.read_bytes())]
-        for relative_path, avatar_source in example_theater_avatar_paths(PROJECT_ROOT / "example_theater"):
-            reference_files.append((relative_path, avatar_source.read_bytes()))
 
     for key, value in form.multi_items():
         if type(value) is not str:
@@ -1694,6 +1695,20 @@ async def create_and_deploy_theater(request: Request):
             enable_adventure_mode=enable_adventure_mode,
             story_planning_style=story_planning_style,
         )
+
+    avatar_package = enabled_avatar_package(theater_config)
+    if avatar_package:
+        existing_avatar_paths = {
+            name.replace("\\", "/")
+            for name, _ in reference_files
+            if name.replace("\\", "/").startswith("avatars/")
+        }
+        for relative_path, avatar_source in example_theater_avatar_paths(
+            PROJECT_ROOT / "example_theater",
+            package=avatar_package,
+        ):
+            if relative_path not in existing_avatar_paths:
+                reference_files.append((relative_path, avatar_source.read_bytes()))
 
     total_new_bytes = sum(len(c) for _, c in reference_files)
     total_new_bytes += sum(len(c) for tracks in playlists_data.values() for _, c in tracks)

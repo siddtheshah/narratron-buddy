@@ -1795,4 +1795,14 @@ def test_avatars_catalog_and_attach_avatar_to_draft(builder: BuilderHarness) -> 
     assert {action.id for action in state.avatar.actions} == {"idle", "ember"}
 
 
+def test_empty_draft_without_default_assets_does_not_enable_narratron_avatar(builder: BuilderHarness) -> None:
+    created = builder.create(default=False)
+    identifier = created["draft"]["theater_id"]
+    config_text = builder.client.get(f"/api/theater-editor/{identifier}/file?path=theater.yaml").text
+    assert "avatar:" not in config_text
+    state = object_registry.canvas_states.get(identifier)
+    assert state.avatar is not None
+    assert state.avatar.enabled is False
+
+
 

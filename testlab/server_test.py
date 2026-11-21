@@ -145,3 +145,52 @@ def test_avatar_lab_serves_and_triggers_narratron_actions() -> None:
             page.close()
         finally:
             browser.close()
+
+
+def test_avatar_lab_serves_and_triggers_umbral_sigil_actions() -> None:
+    """Verify /avatar-lab?avatar=umbral-sigil loads Umbral Sigil assets and triggers actions."""
+    with TestClient(app) as client, sync_playwright() as playwright:
+        manifest_resp = client.get("/avatar-assets/umbral-sigil/avatar.json")
+        assert manifest_resp.status_code == 200
+        browser = playwright.chromium.launch(
+            headless=True,
+            args=["--use-angle=swiftshader", "--enable-unsafe-swiftshader"],
+        )
+        try:
+            page = browser.new_page()
+            page_errors: list[str] = []
+
+            page.route(f"{_BASE_URL}/**", _make_testlab_route_handler(client))
+            page.on("pageerror", lambda err: page_errors.append(str(err)))
+            page.goto(f"{_BASE_URL}/avatar-lab?avatar=umbral-sigil", wait_until="networkidle")
+
+            canvas = page.locator("#avatar canvas")
+            canvas.wait_for(state="visible", timeout=10000)
+            assert page.locator("#avatar-choice").input_value() == "umbral-sigil"
+
+            labels = page.locator("#action-list .action .action-name").all_text_contents()
+            assert labels == [
+                "Dormant Watch",
+                "Creeping Omen",
+                "Iron Bristle",
+                "Sudden Frenzy",
+                "Abyssal Coil",
+                "Bale Flare",
+                "Spiteful Snap",
+            ]
+
+            page.locator("#action-list .action", has_text="Abyssal Coil").click()
+            assert page.locator("#playback-status").text_content() == "Looping Abyssal Coil"
+            assert (
+                page.locator("#action-list .action", has_text="Abyssal Coil").get_attribute(
+                    "aria-pressed"
+                )
+                == "true"
+            )
+
+            page.locator("#action-list .action", has_text="Sudden Frenzy").click()
+            assert page.locator("#playback-status").text_content() == "Playing Sudden Frenzy"
+            assert page_errors == []
+            page.close()
+        finally:
+            browser.close()

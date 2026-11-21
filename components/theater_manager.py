@@ -1,5 +1,6 @@
 """Filesystem-backed theater lifecycle and asset management."""
 
+from collections.abc import Mapping
 from copy import deepcopy
 from datetime import datetime, timezone
 import io
@@ -13,7 +14,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, TypedDict
 from urllib.parse import quote, unquote
 import zipfile
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, JsonValue
 
 from absl import flags
 from game_engine.game_source import GAME_FILES
@@ -612,7 +613,20 @@ def extract_asset_package(
     return reference_files, playlists_data, lore_files, theater_config_yaml
 
 
-def example_theater_avatar_paths(example_theater_dir: Path | None = None) -> list[tuple[str, Path]]:
+def enabled_avatar_package(config: Mapping[str, JsonValue]) -> str:
+    """Return the configured avatar package ID when avatar support is enabled."""
+    raw_avatar = config.get("avatar")
+    if type(raw_avatar) is not dict or raw_avatar.get("enabled") is not True:
+        return ""
+    package = raw_avatar.get("package")
+    return package.strip() if type(package) is str else ""
+
+
+def example_theater_avatar_paths(
+    example_theater_dir: Path | None = None,
+    *,
+    package: str | None = None,
+) -> list[tuple[str, Path]]:
     """Return validated (relative_posix_path, source_path) pairs for example_theater/avatars."""
     root = example_theater_dir if example_theater_dir is not None else PROJECT_ROOT / "example_theater"
     avatars_dir = root / "avatars"
@@ -628,6 +642,8 @@ def example_theater_avatar_paths(example_theater_dir: Path | None = None) -> lis
             continue
         relative_parts = ("avatars", *source_path.relative_to(avatars_dir).parts)
         if not is_avatar_asset(relative_parts):
+            continue
+        if package is not None and relative_parts[1] != package:
             continue
         relative_path = "/".join(relative_parts)
         validate_asset_path(relative_path)
@@ -970,11 +986,6 @@ class TheaterManager:
                     if not target.exists():
                         shutil.copy2(reference, target)
                         mounted_references.append(reference.name)
-        for relative_path, avatar_source in example_theater_avatar_paths():
-            target = safe_asset_path(theater_dir, relative_path)
-            if not target.exists():
-                target.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(avatar_source, target)
 
         mounted_playlists: Dict[str, List[str]] = {}
         for playlist_name, files in (playlists_data or {}).items():
@@ -999,6 +1010,13 @@ class TheaterManager:
             config = deepcopy(theater_config)
         else:
             config = get_theater_default_config()
+        avatar_package = enabled_avatar_package(config)
+        if avatar_package:
+            for relative_path, avatar_source in example_theater_avatar_paths(package=avatar_package):
+                target = safe_asset_path(theater_dir, relative_path)
+                if not target.exists():
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(avatar_source, target)
         save_theater_config(theater_id, config, theater_manager=self)
         metadata = TheaterMetadata(theater_id=theater_id, name=name, mounted_references=mounted_references, mounted_playlists=mounted_playlists, config=config)
         self._save_metadata(metadata)

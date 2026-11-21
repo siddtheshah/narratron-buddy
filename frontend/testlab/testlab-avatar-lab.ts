@@ -16,13 +16,15 @@ interface AvatarManifest {
   readonly actions: readonly AvatarAction[];
 }
 
-type AvatarSelection = 'cube' | 'light-cube' | 'narratron';
+type AvatarSelection = 'cube' | 'light-cube' | 'narratron' | 'umbral-sigil';
 
 const packageUrl = new URL('/avatar-assets/cube/', window.location.href);
 const avatarChoice = document.querySelector<HTMLSelectElement>('#avatar-choice')!;
 const requestedAvatar = new URLSearchParams(location.search).get('avatar');
 const selectedAvatar: AvatarSelection =
-  requestedAvatar === 'light-cube' || requestedAvatar === 'narratron' ? requestedAvatar : 'cube';
+  requestedAvatar === 'light-cube' || requestedAvatar === 'narratron' || requestedAvatar === 'umbral-sigil'
+    ? requestedAvatar
+    : 'cube';
 const stage = document.querySelector<HTMLDivElement>('#stage')!;
 const backdrop = document.querySelector<HTMLSelectElement>('#backdrop')!;
 const viewport = document.querySelector<HTMLDivElement>('#avatar')!;
@@ -227,15 +229,24 @@ async function startLightCube(): Promise<void> {
   interactionHint.hidden = false;
 }
 
-async function startNarratron(): Promise<void> {
-  document.getElementById('actions-heading')!.textContent = 'Narratron actions';
-  status.textContent = 'Loading Narratron…';
+interface PackagedAvatarLabConfig {
+  readonly heading: string;
+  readonly loadingStatus: string;
+  readonly unavailableStatus: string;
+  readonly assetPath: string;
+  readonly activateAriaLabel: string;
+  readonly hint: string;
+}
+
+async function startPackagedAvatar(config: PackagedAvatarLabConfig): Promise<void> {
+  document.getElementById('actions-heading')!.textContent = config.heading;
+  status.textContent = config.loadingStatus;
   viewport.replaceChildren();
   viewport.hidden = true;
   const { mountAvatar } = await import('../canvas/avatar.js');
-  const player = await mountAvatar(viewport, '/avatar-assets/narratron/');
+  const player = await mountAvatar(viewport, config.assetPath);
   if (!player) {
-    status.textContent = '3D playback is unavailable. Showing the Narratron preview.';
+    status.textContent = config.unavailableStatus;
     return;
   }
   const buttons = new Map<string, HTMLButtonElement>();
@@ -292,7 +303,7 @@ async function startNarratron(): Promise<void> {
 
   const activateAction = player.reactions?.activate;
   if (activateAction) {
-    avatarButton.setAttribute('aria-label', 'Greet Narratron');
+    avatarButton.setAttribute('aria-label', config.activateAriaLabel);
     avatarButton.hidden = false;
     avatarButton.addEventListener('click', (event) => {
       event.stopPropagation();
@@ -300,7 +311,7 @@ async function startNarratron(): Promise<void> {
     });
     viewport.append(avatarButton);
   }
-  interactionHint.textContent = 'Hover over Narratron to brighten its aura. Click or tap to greet it.';
+  interactionHint.textContent = config.hint;
   interactionHint.hidden = false;
 }
 
@@ -308,8 +319,24 @@ const startup =
   selectedAvatar === 'light-cube'
     ? startLightCube()
     : selectedAvatar === 'narratron'
-      ? startNarratron()
-      : startLab();
+      ? startPackagedAvatar({
+          heading: 'Narratron actions',
+          loadingStatus: 'Loading Narratron…',
+          unavailableStatus: '3D playback is unavailable. Showing the Narratron preview.',
+          assetPath: '/avatar-assets/narratron/',
+          activateAriaLabel: 'Greet Narratron',
+          hint: 'Hover over Narratron to brighten its aura. Click or tap to greet it.',
+        })
+      : selectedAvatar === 'umbral-sigil'
+        ? startPackagedAvatar({
+            heading: 'Umbral Sigil actions',
+            loadingStatus: 'Loading Umbral Sigil…',
+            unavailableStatus: '3D playback is unavailable. Showing the Umbral Sigil preview.',
+            assetPath: '/avatar-assets/umbral-sigil/',
+            activateAriaLabel: 'Provoke the Umbral Sigil',
+            hint: 'Hover over the Umbral Sigil to flare its baleful core. Click or tap to provoke a spiky snap.',
+          })
+        : startLab();
 
 startup.catch((error: unknown) => {
   status.textContent = 'Could not load the avatar preview.';
