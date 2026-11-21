@@ -180,13 +180,26 @@ async def require_user(request: Request) -> int:
     return int(user["id"])
 
 
-async def require_draft(request: Request, theater_id: str) -> DraftInfo:
-    owner_id = await require_user(request)
+async def require_owned_deployment(theater_id: str, owner_id: int) -> dict[str, JsonValue]:
     deployment = await asyncio.to_thread(object_registry.db.get_deployment, theater_id)
     if not deployment:
         raise HTTPException(status_code=404, detail="Theater not found.")
     if deployment["user_id"] != owner_id:
         raise HTTPException(status_code=403, detail="Only the theater owner can edit this theater.")
+    return deployment
+
+
+def ensure_editor_checkout(theater_id: str) -> None:
+    with invalid_input():
+        root = store().directory(theater_id)
+        if not (root / "theater.yaml").is_file():
+            if not object_registry.theater_repository.reconstruct_theater(theater_id, root):
+                raise HTTPException(status_code=404, detail="Theater package not found.")
+
+
+async def require_draft(request: Request, theater_id: str) -> DraftInfo:
+    owner_id = await require_user(request)
+    deployment = await require_owned_deployment(theater_id, owner_id)
     if (deployment.get("active_orator_id") or owner_id) != owner_id:
         raise HTTPException(status_code=409, detail="The baton was passed to another user. Reopen the theater editor to take it back before editing.")
     with invalid_input():
@@ -204,10 +217,17 @@ def check_revision(info: DraftInfo, revision: int) -> None:
 
 
 @app.get("/theater-editor", response_class=HTMLResponse)
-def theater_editor_page() -> str:
-    # The shell shows the shared login dialog; all draft data and actions require auth.
-    return render_page_template("theater_editor.html", active_page="deploy",
-        seo_metadata=SeoMetadata(title="Narratron Theater Builder", description="", path="/theater-editor", indexable=False))
+async def theater_editor_page(request: Request, theater_id: str = "") -> str:
+    if theater_id and (user := await get_current_user_async(request)):
+        owner_id = int(user["id"])
+        await require_owned_deployment(theater_id, owner_id)
+        async with _draft_locks.setdefault(theater_id, asyncio.Lock()):
+            await asyncio.to_thread(ensure_editor_checkout, theater_id)
+    # Signed-out visitors use the shared login dialog before opening a draft.
+    return await asyncio.to_thread(
+        render_page_template, "theater_editor.html", active_page="deploy",
+        seo_metadata=SeoMetadata(title="Narratron Theater Builder", description="", path="/theater-editor", indexable=False),
+    )
 
 
 @app.get("/theater-authoring-kit")
@@ -279,16 +299,9 @@ async def import_draft(request: Request, files: list[UploadFile] = File(...), na
 async def open_draft(theater_id: str, request: Request) -> DraftResponse:
     owner_id = await require_user(request)
     async with _draft_locks.setdefault(theater_id, asyncio.Lock()):
-        deployment = await asyncio.to_thread(object_registry.db.get_deployment, theater_id)
-        if not deployment:
-            raise HTTPException(status_code=404, detail="Theater not found.")
-        if deployment["user_id"] != owner_id:
-            raise HTTPException(status_code=403, detail="Only the theater owner can edit this theater.")
+        deployment = await require_owned_deployment(theater_id, owner_id)
+        await asyncio.to_thread(ensure_editor_checkout, theater_id)
         with invalid_input():
-            root = store().directory(theater_id)
-            if not (root / "theater.yaml").is_file():
-                if not await asyncio.to_thread(object_registry.theater_repository.reconstruct_theater, theater_id, root):
-                    raise HTTPException(status_code=404, detail="Theater package not found.")
             info = await asyncio.to_thread(store().load, theater_id)
         if info is None:
             metadata = await asyncio.to_thread(object_registry.theater_manager.get_theater, theater_id)

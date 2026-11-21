@@ -56,31 +56,6 @@ server. Live asset generation and server-rendered video are later options.
 - [ ] Test Deepseek V4.1-flash as an alternative to gemini.
    - Can use LiteLLM as a wrapper to get compatibility with ADK agents in story modules.
 
-
-## Refactors
-
-### Explicit dependencies (highest priority first)
-
-Follow the constructor dependency rules in [AGENTS.md](AGENTS.md#constructor-dependencies-must-be-explicit): require collaborators explicitly, reserve optional arguments for supported absence, and supply configured mocks or fakes in unit tests.
-
-1. [x] **LiveAgentSessionManager** (`services/live_agent_manager.py`): require the canvas-state service and music catalog; remove lazy registry lookups and redundant dependency overrides. Application startup already supplies both services.
-2. [x] **MusicCatalog** (`services/music_catalog.py`): require the database in the constructor and `from_config`; remove the registry fallback and the optional argument that immediately raises when omitted. Update callers to pass the database explicitly.
-3. [x] **StoryState** (`components/canvas/story_state.py`): inject the text beautifier explicitly through canvas construction; remove the registry lookup and suppressed resolution errors. If absence is supported, document its behavior and keep `None` as absence.
-4. [x] **ReferenceManager** (`components/reference_manager.py`): require shared story state instead of silently constructing a separate `StoryState`; update factories and tests to supply the intended state.
-5. [x] **StoryEngine and tool assembly** (`components/story/engine.py`, `services/live_agent.py`): remove redundant notepad creation now that canvas state guarantees a notepad. Make canvas-state and lore-library ownership explicit and pass required collaborators from the composition root.
-6. [x] **UserHelpService** (`services/user_help_service.py`): require the session service; move default construction into the calling factory and supply mocks in unit tests.
-7. [x] **Storage-limit calculation** (`storage/storage_limits.py`): require the database in `calculate_user_theaters_storage_bytes` instead of resolving an omitted argument through the registry. This is the same dependency issue outside a constructor.
-8. [x] **ImageTools and AnimationTools** (`tools/image/image_tool.py`, `tools/animation_tool.py`): require the shared reference manager instead of constructing private managers inside tool constructors.
-9. [x] **UserHelpCatalog** (`services/user_help_catalog.py`): require the documentation index and pricing controller; remove captured singleton defaults and lazy pricing construction.
-10. [x] **TheaterBuilderStore and checkout factories** (`services/theater_builder.py`, `services/theater_checkout.py`): inject the database used by storage-quota checks; pass it through editor, save, and help-settings entry points.
-11. [x] **Database managers** (`storage/database.py`): require the pricing controller in local and Cloud SQL constructors; resolve environment pricing at application and migration entry points, and supply pricing explicitly in tests.
-12. [x] **TextBeautifier** (`services/text_beautifier.py`): require the text provider; move model selection and provider construction into the application and Test Lab entry points. Remove obsolete factory patches from test fixtures.
-13. [x] **DoodleState personal stamps** (`components/canvas/doodle_state.py`, `services/user_stamp_resolver.py`): replace the registry lookup and default stamp-directory lookup with a resolver that requires the database and stamp storage. Inject it through canvas construction and preserve local/inline-only behavior when it is absent.
-
-For each cleanup, update call sites and test fixtures, preserve genuinely optional behavior, and run the relevant regression tests.
-
-Validation for the latest cleanup: `uv run ruff check .` and `git diff --check` pass. `npm test -- -- --workers=4` passes TypeScript checks, the browser build, and all 632 Chromium tests. The full core Python run (`uv run pytest -n 4 --tb=short -q`) reports 3,310 passed and 123 subtests passed.
-
 ### Other refactors
 
 - [ ] Eliminate traces of 'named element' terminology.

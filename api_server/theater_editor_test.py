@@ -910,7 +910,10 @@ def test_default_draft_deploys_and_redeployment_keeps_identity(builder: BuilderH
 def test_existing_theater_requires_owner_before_reconstruction(builder: BuilderHarness) -> None:
     builder.database.get_deployment.return_value = {"user_id": 8, "theater_id": "theater_owned"}
     with patch.object(builder.repository, "reconstruct_theater") as reconstruct:
+        assert builder.client.get("/theater-editor?theater_id=theater_owned").status_code == 403
         assert builder.client.get("/api/theater-editor/theater_owned").status_code == 403
+        builder.client.headers.pop("x-test-user")
+        assert builder.client.get("/theater-editor?theater_id=theater_owned").status_code == 200
     reconstruct.assert_not_called()
 
 
@@ -942,7 +945,10 @@ def test_editing_existing_theater_updates_shared_checkout_before_saving(builder:
     assert builder.manager.get_theater(identifier).join_key == metadata.join_key
 
 
-def test_new_editor_theater_is_saved_and_can_be_restored_after_checkout_loss(builder: BuilderHarness) -> None:
+@pytest.mark.parametrize("visit_editor_page", [True, False])
+def test_new_editor_theater_is_saved_and_can_be_restored_after_checkout_loss(
+    builder: BuilderHarness, visit_editor_page: bool,
+) -> None:
     data = builder.create()
     identifier = data["draft"]["theater_id"]
     root = builder.manager.theater(identifier).directory()
@@ -959,6 +965,12 @@ def test_new_editor_theater_is_saved_and_can_be_restored_after_checkout_loss(bui
     assert changed.status_code == 200, changed.text
     assert not (canonical / "lore/unsaved.txt").exists()
     builder.manager.destroy_theater(identifier)
+    assert not root.exists()
+    if visit_editor_page:
+        page = builder.client.get("/theater-editor", params={"theater_id": identifier})
+        assert page.status_code == 200, page.text
+        assert (root / "theater.yaml").read_bytes() == (canonical / "theater.yaml").read_bytes()
+        assert (root / "theater.json").is_file()
     reopened = builder.client.get(base)
     assert reopened.status_code == 200, reopened.text
     assert not (root / "lore/unsaved.txt").exists()
