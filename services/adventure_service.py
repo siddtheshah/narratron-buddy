@@ -351,7 +351,12 @@ class AdventureService:
             elif parts[0] == "animations" or is_avatar_asset(parts):
                 reference_files.append((rel, content))
             elif "references" in parts or "reference_library" in parts or "stamps" in parts or parts[0] == "characters":
-                if filename.lower().endswith((".png", ".jpg", ".jpeg", ".webp", ".gif")):
+                is_character_profile = (
+                    len(parts) == 4
+                    and parts[:2] == ["references", "characters"]
+                    and filename == "character.yaml"
+                )
+                if is_character_profile or filename.lower().endswith((".png", ".jpg", ".jpeg", ".webp", ".gif")):
                     reference_files.append((rel, content))
             elif "playlists" in parts:
                 idx = parts.index("playlists")

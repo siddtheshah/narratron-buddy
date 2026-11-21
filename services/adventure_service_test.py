@@ -250,11 +250,16 @@ class TestAdventureService(unittest.TestCase):
         lore_dir = self.adv1_dir / "lore"
         (lore_dir / "RESPONDER.md").write_text("Resolve scenes.", encoding="utf-8")
         (lore_dir / "PLANNER.md").write_text("Plan consequences.", encoding="utf-8")
+        profile_path = "references/characters/Dr. John Watson/character.yaml"
+        profile = self.adv1_dir / profile_path
+        profile.parent.mkdir(parents=True)
+        profile.write_bytes(b"description: A doctor in a wool overcoat.")
         service = AdventureService(base_dir=self.local_dir)
         refs, playlists, lore, config = service.load_adventure_assets("alpha-adventure")
 
-        self.assertEqual(len(refs), 1)
-        self.assertEqual(refs[0][0].replace("\\", "/"), "references/cover.png")
+        assets = dict(refs)
+        self.assertEqual(set(assets), {"references/cover.png", profile_path})
+        self.assertEqual(assets[profile_path], b"description: A doctor in a wool overcoat.")
         self.assertIn("battle", playlists)
         self.assertEqual(len(playlists["battle"]), 1)
         self.assertEqual(playlists["battle"][0][0], "theme.mp3")
