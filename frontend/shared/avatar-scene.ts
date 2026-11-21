@@ -10,7 +10,7 @@ export async function createAvatarScene(
   modelUrl: URL,
   fillLight = 1,
 ) {
-  const response = await fetch(modelUrl);
+  const response = await fetch(modelUrl, { cache: 'no-cache' });
   if (!response.ok) throw new Error(`Avatar model returned ${response.status}`);
   const manager = new LoadingManager().setURLModifier((url) => {
     if (url.startsWith('blob:') || url.startsWith('data:')) return url;

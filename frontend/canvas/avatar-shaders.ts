@@ -148,7 +148,7 @@ export async function loadAvatarShaders(
     const url = resolveShaderUrl(packageUrl, relativePath);
     let pending = sources.get(url.href);
     if (!pending) {
-      pending = fetch(url).then((response) => {
+      pending = fetch(url, { cache: 'no-cache' }).then((response) => {
         if (!response.ok) throw new Error(`Shader ${relativePath} returned ${response.status}`);
         return response.text();
       });

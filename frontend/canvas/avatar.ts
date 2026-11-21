@@ -101,7 +101,7 @@ export async function mountAvatar(
   options?: MountAvatarOptions,
 ): Promise<AvatarPlayback | null> {
   const packageUrl = new URL(packagePath, window.location.href);
-  const response = await fetch(new URL('avatar.json', packageUrl));
+  const response = await fetch(new URL('avatar.json', packageUrl), { cache: 'no-cache' });
   if (!response.ok) throw new Error(`Avatar manifest returned ${response.status}`);
   const manifest: AvatarManifest = await response.json();
   if (manifest.model !== 'model.glb') throw new Error('Expected an avatar model.glb.');

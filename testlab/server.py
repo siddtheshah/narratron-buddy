@@ -19,8 +19,9 @@ from game_engine.game_state import StaleGameAction
 
 from PIL import Image
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.types import Scope
 from dotenv import load_dotenv
 from utils.config_loader import get_app_config
 from utils.frontend_build import ensure_canvas_assets_built
@@ -94,22 +95,29 @@ app.mount("/static/generated", StaticFiles(directory=STATIC_GENERATED), name="st
 app.mount("/effects-static", StaticFiles(directory=PROJECT_ROOT / "static"), name="effects-static")
 app.mount("/carousel", StaticFiles(directory=PROJECT_ROOT / "templates" / "carousel"), name="carousel")
 app.mount("/test-images", StaticFiles(directory=ROOT / "images"), name="test-images")
+class _NoCacheStaticFiles(StaticFiles):
+    async def get_response(self, path: str, scope: Scope) -> Response:
+        response = await super().get_response(path, scope)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
 app.mount(
     "/avatar-assets/light-cube",
-    StaticFiles(directory=PROJECT_ROOT / "adventures" / "example_adventure" / "avatars" / "light-cube", check_dir=False),
+    _NoCacheStaticFiles(directory=PROJECT_ROOT / "adventures" / "example_adventure" / "avatars" / "light-cube", check_dir=False),
     name="example-light-cube-assets",
 )
 app.mount(
     "/avatar-assets/narratron",
-    StaticFiles(directory=PROJECT_ROOT / "example_theater" / "avatars" / "narratron", check_dir=False),
+    _NoCacheStaticFiles(directory=PROJECT_ROOT / "example_theater" / "avatars" / "narratron", check_dir=False),
     name="example-narratron-assets",
 )
 app.mount(
     "/avatar-assets/umbral-sigil",
-    StaticFiles(directory=PROJECT_ROOT / "adventures" / "umbral-dungeon" / "avatars" / "umbral-sigil", check_dir=False),
+    _NoCacheStaticFiles(directory=PROJECT_ROOT / "adventures" / "umbral-dungeon" / "avatars" / "umbral-sigil", check_dir=False),
     name="umbral-sigil-assets",
 )
-app.mount("/avatar-assets", StaticFiles(directory=ROOT / "avatar_packages"), name="avatar-assets")
+app.mount("/avatar-assets", _NoCacheStaticFiles(directory=ROOT / "avatar_packages"), name="avatar-assets")
 THREE_ROOT = PROJECT_ROOT / "node_modules" / "three"
 app.mount("/avatar-lib/three", StaticFiles(directory=THREE_ROOT / "build", check_dir=False), name="avatar-three")
 app.mount("/avatar-lib/addons", StaticFiles(directory=THREE_ROOT / "examples" / "jsm", check_dir=False), name="avatar-three-addons")

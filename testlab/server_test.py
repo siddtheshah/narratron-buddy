@@ -152,6 +152,10 @@ def test_avatar_lab_serves_and_triggers_umbral_sigil_actions() -> None:
     with TestClient(app) as client, sync_playwright() as playwright:
         manifest_resp = client.get("/avatar-assets/umbral-sigil/avatar.json")
         assert manifest_resp.status_code == 200
+        assert manifest_resp.headers.get("cache-control") == "no-cache"
+        model_resp = client.get("/avatar-assets/umbral-sigil/model.glb")
+        assert model_resp.status_code == 200
+        assert model_resp.headers.get("cache-control") == "no-cache"
         browser = playwright.chromium.launch(
             headless=True,
             args=["--use-angle=swiftshader", "--enable-unsafe-swiftshader"],
@@ -171,18 +175,18 @@ def test_avatar_lab_serves_and_triggers_umbral_sigil_actions() -> None:
             labels = page.locator("#action-list .action .action-name").all_text_contents()
             assert labels == [
                 "Dormant Watch",
-                "Creeping Omen",
+                "Narrowing Gaze",
                 "Iron Bristle",
                 "Sudden Frenzy",
-                "Abyssal Coil",
-                "Bale Flare",
+                "Shattered Ward",
+                "Iron Crown",
                 "Spiteful Snap",
             ]
 
-            page.locator("#action-list .action", has_text="Abyssal Coil").click()
-            assert page.locator("#playback-status").text_content() == "Looping Abyssal Coil"
+            page.locator("#action-list .action", has_text="Shattered Ward").click()
+            assert page.locator("#playback-status").text_content() == "Looping Shattered Ward"
             assert (
-                page.locator("#action-list .action", has_text="Abyssal Coil").get_attribute(
+                page.locator("#action-list .action", has_text="Shattered Ward").get_attribute(
                     "aria-pressed"
                 )
                 == "true"
