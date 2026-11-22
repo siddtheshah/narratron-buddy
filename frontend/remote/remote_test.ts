@@ -533,6 +533,7 @@ test('preview tracks scenes, retries failed images, and displays agent thoughts'
     await waitForRemoteReady(page);
     await page.getByRole('tab', { name: 'Watch', exact: true }).click();
     await expect(page.locator('#preview-image')).toHaveAttribute('src', '/scenes/second.svg');
+    await expect(page.locator('#preview-image')).toBeVisible();
     expect(imageRequests).toContain('/scenes/second.svg');
 
     // Revoking access disconnects and clears preview image.

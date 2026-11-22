@@ -262,7 +262,12 @@ export function createHotkeyControlsController(
     if (!oratorCommandOverlay) return;
     oratorCommandOverlay.classList.remove('active');
     oratorCommandOverlay.setAttribute('aria-hidden', 'true');
-    if (oratorCommandInput) oratorCommandInput.value = '';
+    if (oratorCommandInput) {
+      oratorCommandInput.value = '';
+      if (document.activeElement === oratorCommandInput) {
+        oratorCommandInput.blur();
+      }
+    }
     if (oratorCommandStatus) oratorCommandStatus.textContent = '';
   }
 
@@ -277,7 +282,9 @@ export function createHotkeyControlsController(
     oratorCommandOverlay.setAttribute('aria-hidden', 'false');
     if (oratorCommandStatus) oratorCommandStatus.textContent = '';
     if (oratorCommandInput) {
-      requestAnimationFrame(() => oratorCommandInput.focus());
+      requestAnimationFrame(() => {
+        if (isOratorCommandOpen()) oratorCommandInput.focus();
+      });
     }
   }
 

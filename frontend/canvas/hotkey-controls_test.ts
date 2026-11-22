@@ -572,6 +572,58 @@ test('mic shortcut supports toggle, push-to-talk keydown/keyup, button-key Enter
   await expect(page.locator('#orator-command-overlay')).not.toHaveClass(/active/);
 });
 
+test('closing orator command blurs input synchronously so immediate mic hotkey works', async ({
+  canvas,
+  page,
+}) => {
+  await mountHotkeyHarness(canvas, page);
+
+  const result = await page.evaluate(() => {
+    const win = window as unknown as HotkeyHarnessWindow;
+    const ctrl = win.hotkeyControls!;
+    const input = document.getElementById('orator-command-input') as HTMLInputElement;
+
+    ctrl.openOratorCommand();
+    input.focus();
+    const focusedWhileOpen = document.activeElement === input;
+
+    // Close and immediately dispatch mic hotkey synchronously in the same turn.
+    ctrl.closeOratorCommand();
+    const activeAfterClose = document.activeElement?.id ?? null;
+    window.dispatchEvent(
+      new KeyboardEvent('keydown', {
+        code: 'BracketLeft',
+        key: '[',
+        ctrlKey: true,
+        shiftKey: true,
+        bubbles: true,
+      }),
+    );
+
+    return {
+      focusedWhileOpen,
+      activeAfterClose,
+      connectClickCount: win.connectClickCount,
+    };
+  });
+
+  expect(result).toEqual({
+    focusedWhileOpen: true,
+    activeAfterClose: '',
+    connectClickCount: 1,
+  });
+
+  // Also ensure a pending openOratorCommand rAF does not focus after closing.
+  const activeAfterRaf = await page.evaluate(async () => {
+    const ctrl = (window as unknown as HotkeyHarnessWindow).hotkeyControls!;
+    ctrl.openOratorCommand();
+    ctrl.closeOratorCommand();
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    return document.activeElement?.id ?? '';
+  });
+  expect(activeAfterRaf).toBe('');
+});
+
 test('canvas reserves plain Space while rebinding the action wheel', async ({ canvas, page }) => {
   await canvas.openCanvas({ isOrator: true });
   await page.evaluate(() => document.getElementById('action-wheel-rebind')?.click());
