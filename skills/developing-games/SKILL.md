@@ -1,9 +1,19 @@
 ---
 name: developing-games
-description: Create, edit, inspect, and playtest Narratron turn-based game packages, including CEL rules, game panels, Narratron opponents, and adventure or theater integration.
+description: Design mechanics, state, and actions for Narratron turn-based games, then implement and playtest CEL game packages, panels, and Narratron opponents.
 ---
 
 # Develop Narratron games
+
+## Design the mechanics, state, and actions
+
+For a new game or a change to the rules, sketch the affected mechanics before editing the declaration. For a panel-only change, read the existing state and action contracts to see what the controls can do.
+
+1. **Define the core loop.** Use the contributor's premise and existing rules to identify the players, their meaningful choices, how a round starts and ends, and what counts as a win, draw, or loss. Decide when control passes or when both sides must agree. Walk through a normal turn and an edge case with concrete values. Play must be able to pause at a stable state between actions.
+2. **Represent a position as a snapshot.** Write an example initial state and the snapshot after one move. Record only what the next move needs, such as the board, active actor, resources, pending terms, or terminal result. Define each field's type, bounds, and initial value in `state_schema` and `initial`. Put fixed rules and lookup tables in `constants` and compute values such as legal targets in `derived` when they follow from the saved state. Decide which information the player and Narratron each need to see.
+3. **Map each choice to a transition.** For each action, write down who can invoke it, its inputs, the conditions that make it legal, the resulting fields, and whether it hands off control or triggers Narratron. Include setup, reset, or cancellation where the rules call for them. Work through at least one rejected action and one terminal state before building the panel. Use these cases as the first checks in the runtime.
+
+In the bundled Tic-Tac-Toe, the rules track a nine-cell board, the current turn, and the outcome. From an empty board with `turn: 1`, the player's `move` with `index: 4` changes the board to `[0, 0, 0, 0, 1, 0, 0, 0, 0]` and the turn to `-1` for O. The action requires the player's turn, an empty square, and an unfinished game. Trying square 4 again leaves the state unchanged. A move that completes a line records the winner and ends play.
 
 ## Choose a package and reference
 
@@ -13,7 +23,7 @@ description: Create, edit, inspect, and playtest Narratron turn-based game packa
 
 ## Build a playable turn
 
-Write the initial state, schema, and transitions for one complete turn before adding polish. Put turn ownership, legal moves, and any required acceptance in CEL guards and invariants. Each transition returns the complete next state. Keep model instructions and `model_state` useful for choosing among available Narratron actions. Quote CEL expressions in view props, including literal strings such as `text: '"Play"'`.
+Implement and check one complete turn before adding polish. Enforce turn ownership, move legality, and any required acceptance in CEL guards, with invariants for conditions that must hold in every committed state. Each transition returns the complete next state. Keep model instructions and `model_state` useful for choosing among available Narratron actions. Quote CEL expressions in view props, including literal strings such as `text: '"Play"'`.
 
 Use non-triggering actions for selection and exploration. With `local_preview: true`, test the draft and its Undo, Discard, or Submit path where present. Check that other viewers see only committed state. Keep reset and game-over behavior in the game declaration.
 

@@ -1,15 +1,26 @@
 ---
 name: developing-avatars
-description: Create, edit, inspect, and preview Narratron 3D theater avatar packages, including GLB models, animation actions, posters, reactions, and GLSL shaders.
+description: Develop and preview Narratron 3D theater avatars from a 2D reference via an image-to-3D API, from supplied GLBs, or through procedural modeling.
 ---
 
 # Develop Narratron avatars
+
+## Start with a 2D reference
+
+1. Use the image the contributor supplies. If they describe the avatar without supplying an image, generate a reference from the description using the available image-generation tool. Aim for one clearly isolated subject with a readable silhouette, the entire model in frame, and a plain or transparent background. For a character that needs rigging, choose a neutral pose with visible, separated limbs. Show the reference so the contributor can inspect the design, and keep the source image with the authoring files.
+2. Pass the reference to an image-to-3D API that exports a textured GLB. Use the contributor's configured provider when available. For example, fal's Trellis 2 accepts the reference as `image_url`. Submit one generation, wait for the same request to finish, and download `model_glb.url` to a local working file. The API docs describe supported inputs, authentication, and job status. [fal Trellis 2 API](https://fal.ai/models/fal-ai/trellis-2/api)
+3. Inspect the returned mesh from the front, sides, and back before adding motion. Check the silhouette and textures against the reference, then fix framing, orientation, pivot, or mesh artifacts as needed. Inspect the available clips. If the model lacks the requested animation, add transform clips for rigid motion or rig it for articulated gestures before exporting. Use the source image if it matches the finished model, or render a new `preview.webp` from the finished model.
+
+If the contributor supplies a usable GLB, start at mesh inspection. If a 3D API is unavailable, share the reference and identify what is needed to resume conversion.
+
+## Model a procedural avatar
+
+Choose this path for avatars whose geometry and motion are intentionally defined in code, such as a floating cube, animated sigil, or shader-driven form. Define the silhouette, meshes, materials, and motion in a generator and export a GLB. Adapt the [Three.js cube builder](../../testlab/build_cube_avatar.mjs) to write into the target package. The bundled script writes to the reference cube's own `model.glb`. Keep the generator with the authoring sources so contributors can reproduce the model.
 
 ## Choose a package and reference
 
 - Work in `avatars/<slug>/` for a reusable catalog package, or `<theater-or-adventure>/avatars/<slug>/` for an embedded avatar. Include `avatar.json`, a self-contained `model.glb`, and a `preview.webp` poster when possible. Add `metadata.json` for a reusable catalog entry. Keep the folder, manifest, and catalog IDs aligned.
 - Use the [avatar package contract](../../site_docs/avatar_packages.md) for manifest fields, the orthographic camera and lighting, shader bindings, and allowed files. Start with the [reaction cube](../../testlab/avatar_packages/cube/avatar.json) for a small interactive model, the [Cube of Light](../../adventures/example_adventure/avatars/light-cube/avatar.json) for mood colors and a shader, or [Narratron](../../example_theater/avatars/narratron/avatar.json) for multiple clips and effects.
-- For procedural modeling, [the cube builder](../../testlab/build_cube_avatar.mjs) is a small Three.js GLBExporter reference. Adapt it to write into the target package. The bundled builder writes to the reference cube's own `model.glb`. Keep authoring sources with the appropriate project files and ship the exported assets allowed by the theater package.
 
 ## Build and inspect
 
@@ -60,5 +71,5 @@ If the avatar stays on the poster, inspect the browser console and network panel
   npm run test:ui -- frontend/canvas/avatar_test.ts frontend/remote/remote-avatar_test.ts
   ```
 
-- Open the actual avatar in a browser before handing it over. Capture a screenshot at canvas size and, for an animation change, a short recording or clear replay steps. Share the package and any generator path, the exact preview URL or attach steps, and the actions and fallbacks verified. Say whether you saw live 3D playback or the poster.
+- Open the actual avatar in a browser before handing it over. Capture a screenshot at canvas size and, for an animation change, a short recording or clear replay steps. Share the package, the reference image or generator path, the exact preview URL or attach steps, and the actions and fallbacks verified. Say whether you saw live 3D playback or the poster.
 - Keep local authoring and preview independent of [catalog publishing](../../avatars/README.md#versioning-and-publishing-avatars). New packages under `avatars/` are ignored by this app repo by default. Check `git status --ignored --short -- avatars/<slug>` if the task includes handing over a Git change.
