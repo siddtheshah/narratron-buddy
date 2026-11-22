@@ -166,4 +166,6 @@ Project-specific agent skills and procedural runbooks are located in the [`skill
 
 - [`skills/narratron-testing/SKILL.md`](skills/narratron-testing/SKILL.md): Testing guidelines, naming conventions, mock patterns, and automated end-to-end narration evaluation.
 - [`skills/writing-adventures/SKILL.md`](skills/writing-adventures/SKILL.md): Authoring guide, lore structuring patterns, theater.yaml configuration, testing runbooks, and validation checklist for interactive adventures.
+- [`skills/developing-games/SKILL.md`](skills/developing-games/SKILL.md): Read when creating, editing, or playtesting a Narratron game package, including games embedded in adventures.
+- [`skills/developing-avatars/SKILL.md`](skills/developing-avatars/SKILL.md): Read when creating, editing, or previewing a Narratron 3D avatar package.
 
