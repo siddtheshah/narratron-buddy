@@ -2051,9 +2051,9 @@ def test_quick_deploy_copies_example_theater_avatars_and_serves_them(tmp_path: P
     (example_dir / "playlists" / "default" / "new story.mp3").write_bytes(mp3_bytes())
     (example_dir / "references").mkdir(parents=True)
     (example_dir / "references" / "narratron_avatar.webp").write_bytes(png_bytes())
-    avatar_dir = example_dir / "avatars" / "narratron"
+    avatar_dir = example_dir / "avatars" / "example_avatar"
     (avatar_dir / "shaders").mkdir(parents=True)
-    (avatar_dir / "avatar.json").write_bytes(b'{"id":"narratron","model":"model.glb"}')
+    (avatar_dir / "avatar.json").write_bytes(b'{"id":"example_avatar","model":"model.glb"}')
     (avatar_dir / "model.glb").write_bytes(b"glTF\x02\x00\x00\x00")
     (avatar_dir / "preview.webp").write_bytes(b"RIFF\x00\x00\x00\x00WEBP")
     (avatar_dir / "shaders" / "aura.frag").write_bytes(b"void main() {}")
@@ -2075,15 +2075,15 @@ def test_quick_deploy_copies_example_theater_avatars_and_serves_them(tmp_path: P
         assert response.status_code == 200
         expected_bytes = (
             len(mp3_bytes())
-            + len(b'{"id":"narratron","model":"model.glb"}')
+            + len(b'{"id":"example_avatar","model":"model.glb"}')
             + len(b"glTF\x02\x00\x00\x00")
             + len(b"RIFF\x00\x00\x00\x00WEBP")
             + len(b"void main() {}")
         )
         assert mock_quota.call_args.args[1] == expected_bytes
         theater_id = response.json()["theater_id"]
-        avatar_url = f"/theaters/{theater_id}/avatars/narratron"
-        assert client.get(f"{avatar_url}/avatar.json").json() == {"id": "narratron", "model": "model.glb"}
+        avatar_url = f"/theaters/{theater_id}/avatars/example_avatar"
+        assert client.get(f"{avatar_url}/avatar.json").json() == {"id": "example_avatar", "model": "model.glb"}
         model = client.get(f"{avatar_url}/model.glb")
         assert model.status_code == 200
         assert model.headers["content-type"] == "model/gltf-binary"
@@ -2102,9 +2102,9 @@ def test_adventures_without_avatar_do_not_attach_default_narratron_avatar(tmp_pa
     example_dir = fake_root / "example_theater"
     (example_dir / "references").mkdir(parents=True)
     (example_dir / "references" / "narratron_avatar.webp").write_bytes(png_bytes())
-    avatar_dir = example_dir / "avatars" / "narratron"
+    avatar_dir = example_dir / "avatars" / "example_avatar"
     (avatar_dir / "shaders").mkdir(parents=True)
-    (avatar_dir / "avatar.json").write_bytes(b'{"id":"narratron","model":"model.glb"}')
+    (avatar_dir / "avatar.json").write_bytes(b'{"id":"example_avatar","model":"model.glb"}')
     (avatar_dir / "model.glb").write_bytes(b"glTF\x02\x00\x00\x00")
     (avatar_dir / "preview.webp").write_bytes(b"RIFF\x00\x00\x00\x00WEBP")
 
@@ -2144,8 +2144,8 @@ def test_adventures_without_avatar_do_not_attach_default_narratron_avatar(tmp_pa
         assert not (preset_theater.directory() / "avatars").exists()
         assert "avatar" not in preset_theater.config()
         assert AvatarState(preset_theater, lambda *_: None).enabled is False
-        assert client.get(f"/theaters/{preset_id}/avatars/narratron/avatar.json").status_code == 404
-        # Storage quota should NOT include default narratron avatar bytes
+        assert client.get(f"/theaters/{preset_id}/avatars/example_avatar/avatar.json").status_code == 404
+        # Storage quota should NOT include default example avatar bytes
         assert mock_quota.call_args.args[1] < len(b"glTF\x02\x00\x00\x00") + 200
 
         # 2. Custom adventure without a preset
@@ -2221,6 +2221,7 @@ def test_adventure_with_custom_avatar_does_not_copy_default_narratron_avatar(tmp
         theater_id = response.json()["theater_id"]
         theater_dir = manager.theater(theater_id).directory()
         assert (theater_dir / "avatars" / "light-cube" / "avatar.json").is_file()
+        assert not (theater_dir / "avatars" / "example_avatar").exists()
         assert not (theater_dir / "avatars" / "narratron").exists()
 
 

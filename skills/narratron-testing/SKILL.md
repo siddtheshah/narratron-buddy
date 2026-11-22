@@ -46,22 +46,32 @@ Tests are organized into three categories:
 
 ### Running Tests
 
+#### CPU & Worker Limits
+
+**Never use all available CPU cores when running tests.** Leave CPU headroom so the host machine and concurrent tools or agents stay responsive:
+
+- **Stay at or below half of available CPU cores** (default cap: `4` workers).
+- **Never run uncapped parallelism**: Do not override `pytest` with uncapped `-n auto` or `-n logical`, and do not pass a Playwright `--workers` count equal to the machine's total CPU count.
+- **Defaults are bounded**: `pytest.ini` caps default `pytest-xdist` workers with `--maxprocesses=4`, and `playwright.config.ts` caps default Playwright workers at `Math.max(1, Math.min(4, Math.floor(os.cpus().length / 2)))`. On machines with fewer than 8 cores, pass an explicit lower `-n` count (for example `-n 2`) so `pytest` also stays at or below half of available cores.
+- **Prefer serial execution for small targeted runs**: Use `uv run pytest -n 0 <path>` and `--workers=1` for single-file or small targeted runs to avoid worker startup overhead and unnecessary CPU spikes.
+- **Scale down under concurrency**: When multiple agents or heavy workloads are running in parallel, use lower caps (such as `-n 0` or `-n 2` for `pytest`, and `--workers=1` or `--workers=2` for Playwright).
+
 #### Swarm Worker vs. Coordinator Test Scope
 
 When working in a multi-agent swarm:
 
 - **Swarm workers** must **not** run the full test suite (`npm test`, unfiltered `npm run test:ui` / `npx playwright test`, or unfiltered `uv run pytest`) on their own. Running full suites across multiple parallel workers causes heavy CPU/memory contention and slows down execution.
-- **Swarm workers** should run **only targeted checks** for the modules and files they own or touched, for example:
+- **Swarm workers** should run **only targeted checks** with low/serial worker counts for the modules and files they own or touched, for example:
   - `npm run typecheck`
   - `npm run build`
-  - `npx playwright test frontend/canvas/<specific>_test.ts`
-  - `uv run pytest <specific_test_file.py>`
+  - `npx playwright test frontend/canvas/<specific>_test.ts --workers=1`
+  - `uv run pytest -n 0 <specific_test_file.py>` (or `-n 2` for a larger directory)
   - `uv run ruff check <touched_py_files>`
-- **The coordinator** (or a post-merge integration check) is responsible for running the full test suite (`npm test` and full `uv run pytest`) when appropriate, such as after integrating wave branches.
+- **The coordinator** (or a post-merge integration check) is responsible for running the full test suite with bounded workers (`npm test` and `uv run pytest -n 4`) when appropriate, such as after integrating wave branches.
 
 #### Frontend TypeScript & UI Test Suites (`npm`)
 
-Always use the npm scripts defined in `package.json`:
+Always use the npm scripts defined in `package.json`. `playwright.config.ts` caps default workers at half of available CPU cores (maximum 4) so default runs do not saturate the CPU:
 
 ```bash
 # Install locked dependencies and Chromium (once per checkout/environment)
@@ -70,20 +80,21 @@ npx playwright install chromium
 uv sync --locked
 uv run python -m playwright install chromium
 
-# Run the complete frontend verification suite (typecheck + build + test:ui)
+# Run the complete frontend verification suite (typecheck + build + test:ui, bounded workers)
 npm test
 
 # Build first when running UI tests separately; Playwright does not build assets
 npm run build
-# Run only Playwright TypeScript UI tests (*_test.ts)
+# Run only Playwright TypeScript UI tests (*_test.ts, bounded workers by default)
 npm run test:ui
-# Forward filters and worker limits to Playwright through this script:
-npm run test:ui -- frontend/canvas/cursor-state_test.ts --workers=4
+# Forward filters and explicit worker limits to Playwright through this script:
+npm run test:ui -- frontend/canvas/cursor-state_test.ts --workers=1
+npm run test:ui -- --workers=4
 # Or run with playwright flags directly:
 npx playwright test
-npx playwright test frontend/canvas/cursor-state_test.ts
+npx playwright test frontend/canvas/cursor-state_test.ts --workers=1
 npx playwright test --workers=4
-npx playwright test -g "cursor-state"
+npx playwright test -g "cursor-state" --workers=1
 
 # Run TypeScript type-checking across project & tests (tsc --noEmit)
 npm run typecheck
@@ -97,25 +108,22 @@ npm run watch
 
 #### Python Unit Tests (`uv run pytest`)
 
-Always invoke pytest via `uv run pytest`. The test runner is configured with `pytest-xdist` (`addopts = -n auto` in `pytest.ini`) to execute tests in parallel across available CPU workers by default:
+Always invoke pytest via `uv run pytest`. The test runner is configured with `pytest-xdist` (`addopts = -n auto --maxprocesses=4` in `pytest.ini`) so parallel runs stay bounded instead of consuming all available CPU cores. Avoid uncapped `-n auto` or `-n logical`, and prefer `-n 0` for single-file or small targeted runs:
 
 ```bash
-# Run the full test suite in parallel (auto-detects CPU count)
-uv run pytest
-
-# Run a specific directory or file
-uv run pytest services/
-uv run pytest tools/image/image_tool_test.py
-uv run pytest testing/ui/canvas_undo_test.py
-
-# Run serially without worker processes (useful for step debugging or pdb)
-uv run pytest -n 0
-
-# Limit the number of parallel workers
+# Run the full test suite with bounded parallel workers (at most half of CPU cores; max 4)
 uv run pytest -n 4
+
+# Run a specific directory or file (prefer -n 0 for single files to avoid worker startup overhead)
+uv run pytest -n 2 services/
+uv run pytest -n 0 tools/image/image_tool_test.py
+uv run pytest -n 0 testing/ui/canvas_undo_test.py
+
+# Run serially without worker processes (useful for targeted runs, step debugging, or pdb)
+uv run pytest -n 0
 ```
 
-Parallel execution via `pytest-xdist` significantly reduces full test suite run times (from minutes to under a minute on multi-core systems).
+Bounded parallel execution via `pytest-xdist` keeps full test suite run times short without starving the host CPU.
 
 Pytest uses `--import-mode=importlib` so independent adventure packages can reuse test filenames such as `game_test.py` without module-name collisions.
 
@@ -123,14 +131,14 @@ Default discovery (`uv run pytest` with no path) excludes `adventures/` and `the
 
 ```bash
 # Run the tests for the adventure you are working on
-uv run pytest adventures/<adventure-slug>
+uv run pytest -n 0 adventures/<adventure-slug>
 
-# Run every adventure's tests
-uv run pytest adventures
+# Run every adventure's tests (bounded workers)
+uv run pytest -n 4 adventures
 ```
 
-- **Changing core platform code**: run `uv run pytest`. Do not add adventure tests to that run.
-- **Writing or editing an adventure**: run **only** that adventure's tests with `uv run pytest adventures/<adventure-slug>`. Do not run the full core suite for adventure-only changes.
+- **Changing core platform code**: run `uv run pytest -n 4` (or fewer workers on machines with fewer than 8 cores). Do not add adventure tests to that run.
+- **Writing or editing an adventure**: run **only** that adventure's tests with `uv run pytest -n 0 adventures/<adventure-slug>`. Do not run the full core suite for adventure-only changes.
 
 ---
 

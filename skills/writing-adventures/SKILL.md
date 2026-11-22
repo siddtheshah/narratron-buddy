@@ -75,7 +75,7 @@ When creating a new adventure, follow this sequence:
    - Place scene imagery in `references/scenes/<Scene Name>/1.webp` with `scene.yaml` (each scene requires its own subfolder; loose images directly under `references/scenes/` are unsupported).
    - Place cover/location references in `references/`, optional tactical tokens in `stamps/`, and loopable tracks in `playlists/<Mood>/`.
    - **Asset Lifecycle**: At session initialization, the manager reads authored portraits, scene imagery, and trait files directly from `references/` without copying or duplicating them into output. During play, visual evolutions and appearance changes create new numbered iterations under `output/artifacts/updated_references/characters/` and `output/artifacts/updated_references/scenes/`. The live agent uses `<Character Name>` tags in visual prompts to bind the latest portrait. Authors can manually copy session updates back into authored folders if permanent evolution is desired.
-7. **Test Locally**: Run unit tests (`uv run pytest adventures/<adventure-slug>`), smoke tests (`--smoke`), and interactive/autoplay sessions using `testlab/adventure_runner.py`.
+7. **Test Locally**: Run unit tests (`uv run pytest -n 0 adventures/<adventure-slug>`), smoke tests (`--smoke`), and interactive/autoplay sessions using `testlab/adventure_runner.py`.
 8. **Final Verification**: Upload the folder to [narratron.app/deploy](https://narratron.app/deploy) for live verification.
 
 ---
@@ -458,7 +458,7 @@ Always test adventures locally before packaging or distributing.
 Default test discovery (`uv run pytest`) excludes `adventures/`. When writing or editing an adventure with unit tests, run **only** that adventure's unit tests:
 
 ```bash
-uv run pytest adventures/<adventure-folder-name>
+uv run pytest -n 0 adventures/<adventure-folder-name>
 ```
 
 - Do not run the full core test suite (`uv run pytest`) or tests from other adventures when developing an adventure.
@@ -579,7 +579,7 @@ Before packaging your adventure for players or deploying to a live session:
   - [ ] Scene folders in `references/scenes/<Name>/` include numbered visuals (`1.webp`) and `scene.yaml`.
   - [ ] `playlists/` contain valid audio files organized by mood subdirectories, with optional `description.txt`.
 - [ ] **Testing**:
-  - [ ] Adventure unit tests pass (if present): `uv run pytest adventures/<slug>`.
+  - [ ] Adventure unit tests pass (if present): `uv run pytest -n 0 adventures/<slug>`.
   - [ ] CLI smoke test passes: `uv run python testlab/adventure_runner.py --adventure <slug> --smoke`.
   - [ ] Interactive multi-turn CLI test succeeds without unhandled errors.
   - [ ] Autonomous multi-turn playtest passes: `uv run python testlab/adventure_runner.py --adventure <slug> --autoplay --turns 10`.

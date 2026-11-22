@@ -20,7 +20,7 @@ Always use `uv` when running Python commands, executing scripts, running tests, 
 
 - **Running Tests & Tools**: Always invoke test runners, linters, and other CLI tools through `uv run`:
   ```bash
-  uv run pytest
+  uv run pytest -n 4
   uv run ruff check .
   ```
 
@@ -102,12 +102,27 @@ and their tests live in `testing/ui/`. Python tests cover backend behavior and
 the remaining browser/server integration checks. Both suites isolate unexpected
 network access; live provider evaluations are separate.
 
+**Avoid using all available CPU cores when running tests.** Leave CPU headroom
+for the host machine and any concurrent agents or tools:
+
+- Never run `pytest` with uncapped `-n auto` or `-n logical`, and do not pass a
+  Playwright `--workers` count equal to the machine's total CPU count.
+- Keep parallel workers at or below half of the available CPU cores (default
+  cap: `4` workers). `pytest.ini` caps default `pytest-xdist` workers via
+  `--maxprocesses=4`, and `playwright.config.ts` caps default workers at
+  `min(4, floor(cpus / 2))`. On machines with fewer than 8 cores or when
+  multiple agents run concurrently, lower worker counts explicitly (for example
+  `-n 2` / `--workers=2`, or serial).
+- For single-file or small targeted runs, prefer serial execution
+  (`uv run pytest -n 0 <path>` and `--workers=1`) to avoid worker startup
+  overhead and unnecessary CPU spikes.
+
 For a focused browser test, build first and pass Playwright options through the
 UI script:
 
 ```powershell
 npm run build
-npm run test:ui -- frontend/canvas/cursor-state_test.ts --workers=4
+npm run test:ui -- frontend/canvas/cursor-state_test.ts --workers=1
 ```
 
 `npm run test:ui` uses existing generated assets, so rebuild after changing

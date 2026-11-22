@@ -580,9 +580,9 @@ def test_create_theater_copies_example_theater_avatars_without_overwriting_uploa
     example_dir = repo_root / "example_theater"
     (example_dir / "references").mkdir(parents=True)
     (example_dir / "references" / "narratron_avatar.webp").write_bytes(png_bytes())
-    avatar_dir = example_dir / "avatars" / "narratron"
+    avatar_dir = example_dir / "avatars" / "example_avatar"
     (avatar_dir / "shaders").mkdir(parents=True)
-    (avatar_dir / "avatar.json").write_bytes(b'{"id":"narratron","model":"model.glb"}')
+    (avatar_dir / "avatar.json").write_bytes(b'{"id":"example_avatar","model":"model.glb"}')
     (avatar_dir / "model.glb").write_bytes(b"glTF\x02\x00\x00\x00")
     (avatar_dir / "preview.webp").write_bytes(b"RIFF\x00\x00\x00\x00WEBP")
     (avatar_dir / "shaders" / "aura.vert").write_bytes(b"void main() {}")
@@ -594,22 +594,22 @@ def test_create_theater_copies_example_theater_avatars_without_overwriting_uploa
         metadata = manager.create_theater("Blank Stage", "blank-stage")
         theater_dir = manager.theater("blank-stage").directory()
         assert metadata.mounted_references == ["narratron_avatar.webp"]
-        assert (theater_dir / "avatars/narratron/avatar.json").read_bytes() == b'{"id":"narratron","model":"model.glb"}'
-        assert (theater_dir / "avatars/narratron/model.glb").read_bytes() == b"glTF\x02\x00\x00\x00"
-        assert (theater_dir / "avatars/narratron/preview.webp").read_bytes() == b"RIFF\x00\x00\x00\x00WEBP"
-        assert (theater_dir / "avatars/narratron/shaders/aura.vert").read_bytes() == b"void main() {}"
-        assert (theater_dir / "avatars/narratron/shaders/aura.frag").read_bytes() == b"void main() {}"
-        assert not (theater_dir / "avatars/narratron/shaders/evil.js").exists()
+        assert (theater_dir / "avatars/example_avatar/avatar.json").read_bytes() == b'{"id":"example_avatar","model":"model.glb"}'
+        assert (theater_dir / "avatars/example_avatar/model.glb").read_bytes() == b"glTF\x02\x00\x00\x00"
+        assert (theater_dir / "avatars/example_avatar/preview.webp").read_bytes() == b"RIFF\x00\x00\x00\x00WEBP"
+        assert (theater_dir / "avatars/example_avatar/shaders/aura.vert").read_bytes() == b"void main() {}"
+        assert (theater_dir / "avatars/example_avatar/shaders/aura.frag").read_bytes() == b"void main() {}"
+        assert not (theater_dir / "avatars/example_avatar/shaders/evil.js").exists()
 
         manager.create_theater(
             "Custom Stage",
             "custom-stage",
-            reference_files=[("avatars/narratron/avatar.json", b'{"id":"custom"}')],
-            theater_config={"live_agent": {}, "avatar": {"enabled": True, "package": "narratron"}},
+            reference_files=[("avatars/example_avatar/avatar.json", b'{"id":"custom"}')],
+            theater_config={"live_agent": {}, "avatar": {"enabled": True, "package": "example_avatar"}},
         )
         custom_dir = manager.theater("custom-stage").directory()
-        assert (custom_dir / "avatars/narratron/avatar.json").read_bytes() == b'{"id":"custom"}'
-        assert (custom_dir / "avatars/narratron/model.glb").read_bytes() == b"glTF\x02\x00\x00\x00"
+        assert (custom_dir / "avatars/example_avatar/avatar.json").read_bytes() == b'{"id":"custom"}'
+        assert (custom_dir / "avatars/example_avatar/model.glb").read_bytes() == b"glTF\x02\x00\x00\x00"
 
         manager.create_theater("Adventure Without Avatar", "adventure-no-avatar", theater_config={"live_agent": {}})
         assert not (manager.theater("adventure-no-avatar").directory() / "avatars").exists()
@@ -619,7 +619,7 @@ def test_create_theater_copies_example_theater_avatars_without_overwriting_uploa
             "adventure-custom-avatar",
             theater_config={"avatar": {"enabled": True, "package": "light-cube"}},
         )
-        assert not (manager.theater("adventure-custom-avatar").directory() / "avatars" / "narratron").exists()
+        assert not (manager.theater("adventure-custom-avatar").directory() / "avatars" / "example_avatar").exists()
 
 
 
