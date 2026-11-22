@@ -63,7 +63,7 @@ class CanonicalReferenceUpdate(BaseModel):
     personality: str = ""
     motivation: str = ""
     quirk: str = ""
-    gender: Literal["male", "female", "nonbinary"] = "nonbinary"
+    gender: Literal["male", "female", "nonbinary"] | None = None
     voice_tags: list[str] = Field(default_factory=list)
 
 

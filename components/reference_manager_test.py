@@ -1239,6 +1239,53 @@ class TestReferenceManager(unittest.TestCase):
         # Missing quirk generated
         self.assertEqual(profile.quirk, "Always counts coins twice")
 
+    def test_create_or_update_character_preserves_explicit_gender_when_story_state_only_has_voice_id(self) -> None:
+        self.speech_provider.get_supported_voice_tags.return_value = {
+            "gender": ("female", "male", "nonbinary"),
+            "pitch": ("low", "medium", "high"),
+        }
+        story_state = StoryState()
+        story_state.assign_character_voice("Vault Keeper", "voice-aria")
+        self.manager.story_state = story_state
+
+        profile = self.manager.create_or_update_character(
+            name="Vault Keeper",
+            description="Cloaked custodian",
+            personality="Measured",
+            motivation="Protect the vault",
+            quirk="Taps silver rings",
+            gender="nonbinary",
+            voice_tags=["nonbinary", "accent=british"],
+        )
+
+        self.assertIsNotNone(profile)
+        self.assertEqual(profile.gender, "nonbinary")
+        self.assertEqual(profile.voice_tags, ["nonbinary", "accent=british"])
+        self.assertEqual(profile.voice_id, "voice-aria")
+
+    def test_create_or_update_character_accepts_responder_voice_tags_when_recorder_omits_them(self) -> None:
+        self.speech_provider.get_supported_voice_tags.return_value = {
+            "gender": ("female", "male", "nonbinary"),
+            "pitch": ("low", "medium", "high"),
+        }
+        story_state = StoryState()
+        story_state.update_character_voice_tags({"Captain Soren": ["male", "accent=scottish"]})
+        story_state.assign_character_voice("Captain Soren", "voice-bram")
+        self.manager.story_state = story_state
+
+        profile = self.manager.create_or_update_character(
+            name="Captain Soren",
+            description="Harbor captain",
+            personality="Gruff",
+            motivation="Guard the pier",
+            quirk="Taps compass glass",
+        )
+
+        self.assertIsNotNone(profile)
+        self.assertEqual(profile.gender, "male")
+        self.assertEqual(profile.voice_tags, ["male", "accent=scottish"])
+        self.assertEqual(profile.voice_id, "voice-bram")
+
     def test_get_character_references(self) -> None:
         manager = ReferenceManager(
             self.theater, text_response_provider=self.provider, canvas_manager=self.canvas_manager, story_state=self.story_state, image_provider=self.image_provider, speech_provider=self.speech_provider

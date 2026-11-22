@@ -64,6 +64,17 @@ class TestStoryResponseModuleDependencies(unittest.TestCase):
 
         self.assertEqual(dialogue.voice_instruction, "A hushed warning, growing urgent.")
 
+    def test_dialogue_supports_character_voice_tags(self) -> None:
+        dialogue = ResponseDialogue(
+            speaker="Mara",
+            text="The gate is opening.",
+            voice_tags=["female", "accent=british"],
+        )
+
+        self.assertEqual(dialogue.voice_tags, ["female", "accent=british"])
+        cleaned = StoryResponseModule._clean_dialogue([dialogue.model_dump(mode="json")])
+        self.assertEqual(cleaned[0]["voice_tags"], ["female", "accent=british"])
+
     def test_uses_injected_dependencies(self) -> None:
         module = StoryResponseModule(
             self.theater, self.canvas, self.lore_library, self.reference_manager, self.provider,
@@ -129,6 +140,11 @@ class TestStoryResponseModuleBehavior(unittest.TestCase):
 
         self.canvas = MagicMock(spec=CanvasStateManager)
         self.story_state = MagicMock(spec=StoryState)
+        self.story_state.get_story_planning_state.return_value = {}
+        self.story_state._character.return_value = None
+        self.story_state.get_character_voice_tags.return_value = []
+        self.story_state.get_character_voice.return_value = None
+        self.story_state.get_character_description.return_value = ""
         self.canvas.story = self.story_state
         self.canvas.tool_response = MagicMock()
         self.provider = MagicMock(spec=TextResponseProvider)

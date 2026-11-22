@@ -135,7 +135,7 @@ Respond ONLY with valid JSON conforming to the scene reaction schema.
 
 # Scene Reaction Output Requirements
 - **Narration**: Write narration only about the world and the consequences of the submitted action. Keep responses focused: narration should normally be 20-50 words that also describe the visual resolution and immediate outcome of the character's action rather than just scenery alone. Return one complete scene delta that leaves the player's next action, speech, thoughts, and choices entirely open.
-- **Dialogue**: `dialogue` is optional and must contain NPC speech only (at most three short lines). Dialogue may be spoken only by NPCs; never emit dialogue for a speaker called Player, User, Orator, You, or for the player-controlled character. For each spoken line, include a concise `voice_instruction` that describes its sustained delivery (emotion, pace, volume, accent, or prosody). Do not put stage directions in `text`; use inline vocal tags such as `<sigh>` or `<short pause>` there only when an audible, momentary event belongs in the transcript.
+- **Dialogue**: `dialogue` is optional and must contain NPC speech only (at most three short lines). Dialogue may be spoken only by NPCs; never emit dialogue for a speaker called Player, User, Orator, You, or for the player-controlled character. For each spoken line, include a concise `voice_instruction` that describes its sustained delivery (emotion, pace, volume, accent, or prosody). When an NPC speaks—especially a newly introduced character without an existing profile—include `voice_tags` with an explicit gender tag (`'male'`, `'female'`, or `'nonbinary'`) and any optional accent or pitch tags (such as `'accent=british'` or `'pitch=low'`) so voice synthesis and the recorder's canonical profile stay consistent. Do not put stage directions in `text`; use inline vocal tags such as `<sigh>` or `<short pause>` there only when an audible, momentary event belongs in the transcript.
 - **Manifested Characters**: List names of NPCs that entered or became prominent in this turn.
 - **Planning Signals (Direct Communication to Deep Planner)**: These signals are internal communication directed solely to the deep planner (never shown to the player). You MUST use this channel to ensure high recall of sticky note updates: explicitly review your active sticky notes and call out any topics that need an update based on this turn's resolution (e.g. `[STICKY UPDATE: <Exact Topic Name>] <what changed or new value>` for stat changes, inventory items gained/lost, location shifts, quest progress, combat status, enemy stats, or lasting effects), followed by factual story fallout and thread consequences for background planning. Do not invent future player events; describe what was established this turn.
 
@@ -205,6 +205,13 @@ class ResponseDialogue(BaseModel):
     voice_instruction: Optional[str] = Field(
         default=None,
         description="Concise sustained delivery direction for TTS, such as 'quietly, with controlled grief'.",
+    )
+    voice_tags: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Optional character voice tags for TTS voice selection and canonical character recording, "
+            "such as ['female'], ['male', 'accent=british'], or ['nonbinary', 'pitch=low']."
+        ),
     )
 
 
@@ -1070,28 +1077,33 @@ class StoryResponseModule:
         return reaction.model_dump(mode="json")
 
     @staticmethod
-    def _clean_dialogue(dialogue: Any) -> List[Dict[str, str]]:
-        if not isinstance(dialogue, list):
+    def _clean_dialogue(dialogue: JsonValue) -> list[dict[str, JsonValue]]:
+        if type(dialogue) is not list:
             return []
-        cleaned: List[Dict[str, str]] = []
+        cleaned: list[dict[str, JsonValue]] = []
         for item in dialogue[:3]:
-            if not isinstance(item, dict):
+            if type(item) is not dict:
                 continue
             text = str(item.get("text") or "").strip()
             if not text:
                 continue
             kind = str(item.get("kind") or "speech").strip().lower()
             voice_instruction = str(item.get("voice_instruction") or "").strip()
-            cleaned.append({
+            voice_tags = normalize_voice_tags(item.get("voice_tags"))
+            entry: dict[str, JsonValue] = {
                 "speaker": str(item.get("speaker") or "Narrator").strip()[:80],
                 "text": text[:500],
                 "kind": kind if kind in {"speech", "thought"} else "speech",
-                **({"voice_instruction": voice_instruction[:240]} if voice_instruction else {}),
-            })
+            }
+            if voice_instruction:
+                entry["voice_instruction"] = voice_instruction[:240]
+            if voice_tags:
+                entry["voice_tags"] = voice_tags
+            cleaned.append(entry)
         return cleaned
 
     def _publish_scene(
-        self, narration: str, dialogue: list[dict[str, str]], *, sequence: int | None = None,
+        self, narration: str, dialogue: list[dict[str, JsonValue]], *, sequence: int | None = None,
     ) -> None:
         if self.canvas_manager is not None and self.canvas_manager.story is not None:
             if sequence is None:
@@ -1296,6 +1308,17 @@ class StoryResponseModule:
         self.save_to_session_state()
         narration = str(result.get("narration") or "")
         dialogue = self._clean_dialogue(result.get("dialogue"))
+        story = self.canvas_manager.story
+        responder_tags: dict[str, list[str]] = {}
+        for line in dialogue:
+            raw_tags = line.get("voice_tags")
+            speaker = str(line.get("speaker") or "").strip()
+            if speaker and type(raw_tags) is list and raw_tags and not story.get_character_voice_tags(speaker):
+                cleaned_tags = [str(tag).strip() for tag in raw_tags if str(tag).strip()]
+                if cleaned_tags and speaker not in responder_tags:
+                    responder_tags[speaker] = cleaned_tags
+        if responder_tags:
+            story.update_character_voice_tags(responder_tags)
         if sequence is None:
             self._publish_scene(narration, dialogue)
         else:

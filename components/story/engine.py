@@ -601,7 +601,8 @@ class StoryEngine:
         )
         results: dict[str, dict[str, JsonValue]] = {}
         blocked = False
-        for cycle_key, turns in groups.items():
+        group_items = list(groups.items())
+        for index, (cycle_key, turns) in enumerate(group_items):
             if blocked:
                 logger.warning(
                     "[StoryEngine] Cycle group %s BLOCKED by earlier incomplete cycle (turns=%s)",
@@ -623,7 +624,8 @@ class StoryEngine:
                     [t.turn_id for t in turns],
                 )
                 result = self._run_batch(turns)
-                if len(groups) > 1:
+                has_more_groups = index + 1 < len(group_items)
+                if has_more_groups:
                     logger.debug(
                         "[StoryEngine] Waiting for recorder before evaluating next group after %s",
                         cycle_key,
@@ -635,16 +637,29 @@ class StoryEngine:
                     for turn in refreshed
                     if turn is None or not turn.foreground_ready or (turn.response is not None and not turn.delivered)
                 ]
-                blocked = bool(incomplete)
-                if blocked:
-                    logger.warning(
-                        "[StoryEngine] Cycle group %s left incomplete state -> BLOCKING subsequent cycles: %s (result=%s)",
+                with self._recorder_lock:
+                    recorder_pending = self._recorder_future is not None and not self._recorder_future.done()
+                foreground_delivered = (
+                    "error" not in result
+                    and any(turn is not None and turn.response is not None and turn.delivered for turn in refreshed)
+                )
+                if not has_more_groups and recorder_pending and foreground_delivered:
+                    blocked = False
+                    logger.debug(
+                        "[StoryEngine] Cycle group %s delivered foreground; recorder running in background",
                         cycle_key,
-                        incomplete,
-                        result,
                     )
                 else:
-                    logger.debug("[StoryEngine] Cycle group %s completed cleanly", cycle_key)
+                    blocked = bool(incomplete)
+                    if blocked:
+                        logger.warning(
+                            "[StoryEngine] Cycle group %s left incomplete state -> BLOCKING subsequent cycles: %s (result=%s)",
+                            cycle_key,
+                            incomplete,
+                            result,
+                        )
+                    else:
+                        logger.debug("[StoryEngine] Cycle group %s completed cleanly", cycle_key)
             for turn in turns:
                 results[turn.turn_id] = result
         logger.info(

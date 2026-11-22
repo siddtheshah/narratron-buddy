@@ -291,6 +291,19 @@ class StoryState:
         narration_spans: list[dict[str, JsonValue]] = []
         beautifier = self.text_beautifier
 
+        # Apply responder-provided voice tags for speakers without established tags
+        # before TTS voice selection runs.
+        pending_voice_tags: dict[str, list[str]] = {}
+        for line in scene_dialogue:
+            raw_tags = line.get("voice_tags")
+            speaker = str(line.get("speaker") or "").strip()
+            if speaker and type(raw_tags) is list and raw_tags and not self.get_character_voice_tags(speaker):
+                cleaned = [str(t).strip() for t in raw_tags if str(t).strip()]
+                if cleaned and speaker not in pending_voice_tags:
+                    pending_voice_tags[speaker] = cleaned
+        if pending_voice_tags:
+            self.update_character_voice_tags(pending_voice_tags)
+
         logger.info("[StoryState] New scene: %s", scene_narration)
         logger.info("[StoryState] New dialogue: %s", scene_dialogue)
 

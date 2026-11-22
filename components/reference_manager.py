@@ -12,6 +12,7 @@ import uuid
 from collections.abc import Generator
 from concurrent.futures import Future, ThreadPoolExecutor
 from contextlib import contextmanager
+from dataclasses import dataclass, field
 from threading import Lock, Thread
 from time import monotonic
 from io import BytesIO
@@ -568,6 +569,18 @@ def normalize_voice_tags(
                 if normalized not in seen:
                     seen.add(normalized)
                     result.append(normalized)
+            elif key.strip().lower() == "gender" and value.strip():
+                mapped_g = alias_map.get(value.strip().lower().replace("-", ""))
+                if mapped_g and mapped_g in SUPPORTED_VOICE_TAGS:
+                    normalized = f"gender={mapped_g}"
+                    if normalized not in seen:
+                        seen.add(normalized)
+                        result.append(normalized)
+            elif key.strip().lower() == "pitch" and value.strip().lower() in SUPPORTED_PITCH_TAGS:
+                normalized = f"pitch={value.strip().lower()}"
+                if normalized not in seen:
+                    seen.add(normalized)
+                    result.append(normalized)
             continue
         mapped = alias_map.get(candidate.lower().replace("-", ""))
         if mapped and mapped in SUPPORTED_VOICE_TAGS and mapped not in seen:
@@ -598,6 +611,25 @@ def _voice_tag_gender(tags: list[str]) -> str:
         if tag.startswith("gender=") and tag.removeprefix("gender=") in SUPPORTED_VOICE_TAGS:
             return tag.removeprefix("gender=")
     return ""
+
+
+@dataclass(frozen=True)
+class _SerializedCharacterHint:
+    """Persisted character record or transient StoryState voice/tag hints."""
+
+    name: str
+    alias: str = ""
+    gender: str = ""
+    description: str = ""
+    personality: str = ""
+    motivation: str = ""
+    quirk: str = ""
+    voice_tags: list[str] = field(default_factory=list)
+    voice_id: str | None = None
+    image_reference: str | None = None
+    image_reference_path: str | None = None
+    image_reference_source: str | None = None
+    from_character_record: bool = False
 
 
 class ImagePathResolver(Protocol):
@@ -1329,7 +1361,7 @@ class ReferenceManager:
                 or (slug and (self._slug_key(alias) == slug or self._slug_key(character.name) == slug))
             ), None)
 
-    def _serialized_character(self, name_or_alias: str) -> Character | None:
+    def _serialized_character(self, name_or_alias: str) -> _SerializedCharacterHint | None:
         key = self._character_key(name_or_alias)
         slug = self._slug_key(name_or_alias)
         story_state = self.story_state
@@ -1346,7 +1378,21 @@ class ReferenceManager:
                     or (character.alias and self._character_key(character.alias) == key)
                     or (slug and (self._slug_key(character.name) == slug or (character.alias and self._slug_key(character.alias) == slug)))
                 ):
-                    return character
+                    return _SerializedCharacterHint(
+                        name=character.name,
+                        alias=character.alias,
+                        gender=character.gender,
+                        description=character.description,
+                        personality=character.personality,
+                        motivation=character.motivation,
+                        quirk=character.quirk,
+                        voice_tags=list(character.voice_tags),
+                        voice_id=character.voice_id,
+                        image_reference=character.image_reference,
+                        image_reference_path=character.image_reference_path,
+                        image_reference_source=character.image_reference_source,
+                        from_character_record=True,
+                    )
             except Exception:
                 continue
 
@@ -1354,7 +1400,22 @@ class ReferenceManager:
         raw_char = story_state._character(name_or_alias)
         if raw_char is not None:
             try:
-                return Character.model_validate(raw_char)
+                character = Character.model_validate(raw_char)
+                return _SerializedCharacterHint(
+                    name=character.name,
+                    alias=character.alias,
+                    gender=character.gender,
+                    description=character.description,
+                    personality=character.personality,
+                    motivation=character.motivation,
+                    quirk=character.quirk,
+                    voice_tags=list(character.voice_tags),
+                    voice_id=character.voice_id,
+                    image_reference=character.image_reference,
+                    image_reference_path=character.image_reference_path,
+                    image_reference_source=character.image_reference_source,
+                    from_character_record=True,
+                )
             except Exception:
                 pass
 
@@ -1369,16 +1430,14 @@ class ReferenceManager:
         description = desc_res.strip() if desc_res and desc_res.strip().lower() != key else ""
 
         if voice_tags or voice_id or description:
-            try:
-                return Character.model_validate({
-                    "name": name_or_alias,
-                    "gender": tag_gender or "female",
-                    "description": description,
-                    "voice_tags": voice_tags,
-                    "voice_id": voice_id,
-                })
-            except Exception:
-                pass
+            return _SerializedCharacterHint(
+                name=name_or_alias,
+                gender=tag_gender,
+                description=description,
+                voice_tags=voice_tags,
+                voice_id=voice_id,
+                from_character_record=False,
+            )
 
         return None
 
@@ -2205,17 +2264,27 @@ class ReferenceManager:
                 clean_name = serialized.name or clean_name
                 alias = serialized.alias or self._alias_for_name(clean_name)
 
-                # Prioritize explicit character.yaml gender, then serialized story state, then caller gender
+                caller_gender = ""
+                if gender:
+                    norm_g = normalize_voice_tags(gender)
+                    if norm_g:
+                        caller_gender = norm_g[0]
+                caller_tags = normalize_voice_tags(voice_tags, supported_tags)
+                serialized_tags = normalize_voice_tags(serialized.voice_tags, supported_tags)
+
+                # Prioritize explicit character.yaml gender, then a persisted character record,
+                # then explicit caller/recorder input, then transient StoryState voice hints.
                 if yaml_traits is not None and yaml_traits.gender:
                     clean_gender = yaml_traits.gender
+                elif serialized.from_character_record:
+                    clean_gender = serialized.gender or caller_gender
                 else:
-                    clean_gender = serialized.gender
-                    if not clean_gender and gender:
-                        norm_g = normalize_voice_tags(gender)
-                        if norm_g:
-                            clean_gender = norm_g[0]
+                    clean_gender = caller_gender or serialized.gender
 
-                clean_tags = normalize_voice_tags(serialized.voice_tags or voice_tags, supported_tags)
+                if serialized.from_character_record:
+                    clean_tags = serialized_tags or caller_tags
+                else:
+                    clean_tags = caller_tags or serialized_tags
                 tag_gender = _voice_tag_gender(clean_tags)
                 if not clean_gender and tag_gender:
                     clean_gender = tag_gender

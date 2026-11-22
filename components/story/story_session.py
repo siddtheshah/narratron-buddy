@@ -111,6 +111,11 @@ def build_role_request(
     return None
 
 
+def _invocation_branch(invocation_id: str) -> str:
+    """Map an invocation ID to a single-segment ADK branch name."""
+    return invocation_id.replace(".", "_")
+
+
 class StoryRoleRouter(BaseAgent):
     """Dispatch supplied by the orchestrator, never a model transfer decision."""
 
@@ -118,7 +123,8 @@ class StoryRoleRouter(BaseAgent):
         role = ctx.invocation_id.split(":", 1)[0]
         author = ROLE_AUTHORS[role]
         agent = next(agent for agent in self.sub_agents if agent.name == author)
-        async for event in agent.run_async(ctx):
+        branch_ctx = ctx.model_copy(update={"branch": _invocation_branch(ctx.invocation_id)})
+        async for event in agent.run_async(branch_ctx):
             yield event
 
 
@@ -145,6 +151,8 @@ class StorySessionService(DatabaseSessionService):
                     event.invocation_id,
                 )
                 raise ValueError("Story session disappeared during an invocation.")
+            if event.branch is None and event.invocation_id:
+                event.branch = _invocation_branch(event.invocation_id)
             # ADK can construct a model event before its before-model callbacks.
             # Preserve append order when a callback inserts new planner input.
             event.timestamp = max(time.time(), latest.events[-1].timestamp + 0.000001 if latest.events else 0.0)
@@ -197,6 +205,7 @@ class StorySession:
                 )
                 await self.session_service.append_event(callback_context.session, Event(
                     author="user", invocation_id=callback_context.invocation_id,
+                    branch=_invocation_branch(callback_context.invocation_id),
                     content=types.Content(role="user", parts=[types.Part(text=prompt)]),
                 ))
         result = build_role_request(callback_context, llm_request)

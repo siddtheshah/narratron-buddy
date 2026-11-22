@@ -695,7 +695,9 @@ def integration_harness(tmp_path: Path) -> Iterator[StoryEngineIntegrationHarnes
 
 def test_full_communicated_action_pipeline_exercises_all_backends_and_tools(
     integration_harness: StoryEngineIntegrationHarness,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
+    caplog.set_level("WARNING")
     theater = integration_harness.prepare_theater(game_definition=exchange_definition())
 
     def decide(request: DecisionRequest) -> DecisionResult:
@@ -730,6 +732,7 @@ def test_full_communicated_action_pipeline_exercises_all_backends_and_tools(
                     "speaker": "Vault Keeper",
                     "text": "Inspect the green relic before we seal terms.",
                     "voice_instruction": "calm and resonant",
+                    "voice_tags": ["nonbinary", "accent=british"],
                 }
             ],
             "manifested_characters": ["Vault Keeper"],
@@ -822,16 +825,16 @@ def test_full_communicated_action_pipeline_exercises_all_backends_and_tools(
             reference_updates=(
                 CanonicalReferenceUpdate(
                     kind="character",
-                    name="Archivist Ren",
+                    name="Vault Keeper",
                     description="Cloaked custodian of obsidian relics.",
                     personality="Measured and exacting",
                     motivation="Preserve vault balance",
                     quirk="Taps silver rings on stone",
                     gender="nonbinary",
-                    voice_tags=["nonbinary"],
+                    voice_tags=["nonbinary", "accent=british"],
                 ),
             ),
-            reason="Recorded chamber entry, status, and Archivist Ren profile.",
+            reason="Recorded chamber entry, status, and Vault Keeper profile.",
             call_id="rec-4",
         )
 
@@ -880,6 +883,8 @@ def test_full_communicated_action_pipeline_exercises_all_backends_and_tools(
     assert len(bundle.audio_broadcasts) == 1
     assert bundle.audio_broadcasts[0]["speaker"] == "Vault Keeper"
     assert bundle.audio_broadcasts[0]["speech_generation"] == bundle.canvas.story.committed_scene_speech_generation
+    assert len(integration_harness.speech_provider.requests) == 1
+    assert integration_harness.speech_provider.requests[0].voice_tags == ("nonbinary", "accent=british")
 
     # Game runtime state & receipts
     assert bundle.canvas.game is not None
@@ -895,10 +900,16 @@ def test_full_communicated_action_pipeline_exercises_all_backends_and_tools(
     assert "95" in notes["Status"] and "watchful" in notes["Status"]
     assert notes["Ambush"] == "Keeper prepares a counter-demand if player stalls."
 
-    # ReferenceManager created canonical NPC & synced voice tags
+    # ReferenceManager created canonical NPC & synced responder/recorder voice tags
     characters = bundle.reference_manager.export_characters()
-    assert [c.name for c in characters] == ["Archivist Ren"]
-    assert bundle.canvas.story.get_character_voice_tags("Archivist Ren") == ["nonbinary"]
+    assert [c.name for c in characters] == ["Vault Keeper"]
+    assert characters[0].gender == "nonbinary"
+    assert characters[0].voice_tags == ["nonbinary", "accent=british"]
+    assert bundle.canvas.story.get_character_voice_tags("Vault Keeper") == ["nonbinary", "accent=british"]
+
+    # Healthy turn with concurrent ADK tools produces zero false blocking/orphan warnings
+    assert "BLOCKING subsequent cycles" not in caplog.text
+    assert "Dropping function responses with no matching function call" not in caplog.text
 
     # History contains responder/game/recorder lore reads, player action, narratron game action, story output
     # but NOT planner's deep_read_lore.
@@ -2331,3 +2342,110 @@ def test_engine_close_drains_in_flight_work_and_rejects_subsequent_ingress(
         )
     finally:
         responder_release.set()
+
+
+def test_responder_voice_tags_inherited_by_recorder_and_explicit_recorder_gender_not_clobbered(
+    integration_harness: StoryEngineIntegrationHarness,
+) -> None:
+    theater = integration_harness.prepare_theater()
+
+    resp_turn = 0
+
+    def responder(request: TextResponseRequest) -> TextResponseResult:
+        nonlocal resp_turn
+        resp_turn += 1
+        if resp_turn == 1:
+            payload = {
+                "narration": "Captain Soren leans over the harbor rail.",
+                "dialogue": [
+                    {
+                        "speaker": "Captain Soren",
+                        "text": "The tide turns before dawn.",
+                        "voice_tags": ["male", "accent=scottish"],
+                    }
+                ],
+                "manifested_characters": ["Captain Soren"],
+            }
+        else:
+            payload = {
+                "narration": "Oracle Vex emerges from the fog.",
+                "dialogue": [
+                    {
+                        "speaker": "Oracle Vex",
+                        "text": "Three seals remain unbroken.",
+                    }
+                ],
+                "manifested_characters": ["Oracle Vex"],
+            }
+        return TextResponseResult(text=json.dumps(payload), provider="fake-text", model=RESPONDER_MODEL)
+
+    rec_turn = 0
+
+    def recorder_llm(
+        contents: list[types.Content],
+        config: types.GenerateContentConfig | None,
+    ) -> types.GenerateContentResponse:
+        nonlocal rec_turn
+        rec_turn += 1
+        if rec_turn == 1:
+            # Recorder omits gender & voice_tags -> accepts responder's dialogue voice_tags!
+            assert "accent=scottish" in flatten_genai_contents(contents)
+            return recorder_set_model_response(
+                reference_updates=(
+                    CanonicalReferenceUpdate(
+                        kind="character",
+                        name="Captain Soren",
+                        description="Weathered harbor captain.",
+                        personality="Gruff and loyal",
+                        motivation="Keep the harbor safe",
+                        quirk="Taps compass glass",
+                    ),
+                ),
+                reason="Recorded Captain Soren accepting responder voice tags.",
+                call_id="rec-vt-1",
+            )
+        # Responder omitted voice_tags so TTS only assigned voice_id; recorder explicitly sets nonbinary + low pitch!
+        return recorder_set_model_response(
+            reference_updates=(
+                CanonicalReferenceUpdate(
+                    kind="character",
+                    name="Oracle Vex",
+                    description="Veiled seer of the obsidian vault.",
+                    personality="Cryptic and serene",
+                    motivation="Guard the three seals",
+                    quirk="Speaks in measured pauses",
+                    gender="nonbinary",
+                    voice_tags=["nonbinary", "pitch=low"],
+                ),
+            ),
+            reason="Recorded Oracle Vex with explicit nonbinary voice tags.",
+            call_id="rec-vt-2",
+        )
+
+    integration_harness.text_provider.responder_handler = responder
+    integration_harness.genai_client.recorder_handler = recorder_llm
+    bundle = integration_harness.start_engine(theater, with_speech=True)
+
+    # Turn 1: Responder supplies voice_tags -> TTS uses them immediately AND recorder inherits them
+    res1 = bundle.engine.resolve_action("Hail the captain on the pier", drain=True)
+    assert "error" not in res1
+
+    # Turn 2: Responder omits voice_tags -> TTS assigns voice_id -> recorder sets explicit nonbinary tags cleanly
+    res2 = bundle.engine.resolve_action("Approach the figure in the mist", drain=True)
+    assert "error" not in res2
+
+    if bundle.canvas.story._speech_executor is not None:
+        bundle.canvas.story._speech_executor.shutdown(wait=True)
+        bundle.canvas.story._speech_executor = None
+
+    # TTS for Turn 1 received responder's voice tags immediately
+    assert integration_harness.speech_provider.requests[0].voice_tags == ("male", "accent=scottish")
+
+    chars = {c.name: c for c in bundle.reference_manager.export_characters()}
+    assert chars["Captain Soren"].gender == "male"
+    assert chars["Captain Soren"].voice_tags == ["male", "accent=scottish"]
+    assert bundle.canvas.story.get_character_voice_tags("Captain Soren") == ["male", "accent=scottish"]
+
+    assert chars["Oracle Vex"].gender == "nonbinary"
+    assert chars["Oracle Vex"].voice_tags == ["nonbinary", "pitch=low"]
+    assert bundle.canvas.story.get_character_voice_tags("Oracle Vex") == ["nonbinary", "pitch=low"]

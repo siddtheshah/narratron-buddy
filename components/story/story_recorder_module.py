@@ -48,7 +48,7 @@ Follow your pinned RECORDER.md for adventure-specific recording rules. The respo
 Use `read_lore` and `search_lore` to verify mechanics, item properties, locations, and state-tracking rules, with up to {{ max_read_lore_calls }} reads and {{ max_search_lore_calls }} searches per run. Prefer established lore over invention.
 
 # Completion
-Stage all factual updates for the committed event and every associated game receipt before completing this one logical stage. Return JSON matching GameControlDecision with narration_request=null and an explicit reason. Use reference_updates only to reconcile established canonical player, character, or scene changes; conditional future character or scene developments belong in planner notes. The application publishes staged factual updates together.
+Stage all factual updates for the committed event and every associated game receipt before completing this one logical stage. Return JSON matching GameControlDecision with narration_request=null and an explicit reason. Use reference_updates only to reconcile established canonical player, character, or scene changes; conditional future character or scene developments belong in planner notes. When creating or updating a character via reference_updates, preserve and accept any character `voice_tags` (and implied gender) provided on responder dialogue lines unless established lore or canonical state specifies otherwise. The application publishes staged factual updates together.
 {% if style -%}
 
 # Story-Planning Style
@@ -265,16 +265,46 @@ class StoryRecorderModule:
             logger.debug("[StoryRecorderModule] Reusing saved recorder decision for event %s", event.event_id)
         return decision.factual_updates
 
-    def _apply_reference_updates(self, event_id: str) -> None:
-        decision = self.journal.recorder_decision(event_id)
+    @staticmethod
+    def _dialogue_voice_tags(
+        event: RecordingEvent,
+        story_response: dict[str, JsonValue] | None = None,
+    ) -> dict[str, list[str]]:
+        tags_by_speaker: dict[str, list[str]] = {}
+        sources: list[dict[str, JsonValue]] = [event.payload]
+        if story_response is not None:
+            sources.append(story_response)
+        for source in sources:
+            raw_dialogue = source.get("dialogue")
+            if type(raw_dialogue) is not list:
+                continue
+            for item in raw_dialogue:
+                if type(item) is not dict:
+                    continue
+                speaker = str(item.get("speaker") or "").strip().lower()
+                raw_tags = item.get("voice_tags")
+                if not speaker or type(raw_tags) is not list:
+                    continue
+                cleaned = [str(tag).strip() for tag in raw_tags if str(tag).strip()]
+                if cleaned and speaker not in tags_by_speaker:
+                    tags_by_speaker[speaker] = cleaned
+        return tags_by_speaker
+
+    def _apply_reference_updates(
+        self,
+        event: RecordingEvent,
+        story_response: dict[str, JsonValue] | None = None,
+    ) -> None:
+        decision = self.journal.recorder_decision(event.event_id)
         if decision is None or self.reference_manager is None:
             return
         if decision.reference_updates:
             logger.debug(
                 "[StoryRecorderModule] Applying %d reference update(s) for event %s",
                 len(decision.reference_updates),
-                event_id,
+                event.event_id,
             )
+        dialogue_tags = self._dialogue_voice_tags(event, story_response)
         for update in decision.reference_updates:
             logger.debug("[StoryRecorderModule] Applying reference update: kind=%s, name=%s", update.kind, update.name)
             if update.kind == "player":
@@ -282,6 +312,11 @@ class StoryRecorderModule:
             elif update.kind == "scene":
                 self.reference_manager.create_or_update_scene(name=update.name, description=update.description)
             else:
+                voice_tags = (
+                    list(update.voice_tags)
+                    if update.voice_tags
+                    else dialogue_tags.get(update.name.strip().lower(), [])
+                )
                 self.reference_manager.create_or_update_character(
                     name=update.name,
                     description=update.description,
@@ -289,7 +324,7 @@ class StoryRecorderModule:
                     motivation=update.motivation,
                     quirk=update.quirk,
                     gender=update.gender,
-                    voice_tags=update.voice_tags,
+                    voice_tags=voice_tags,
                 )
 
     def _complete_game_recording(self, event: RecordingEvent) -> tuple[CommittedGameReceipt, ...]:
@@ -442,7 +477,7 @@ class StoryRecorderModule:
                 if saved is not None and saved.revision > self.notepad.revision:
                     self.notepad.restore_recorded_snapshot(saved)
                 self._complete_game_recording(event)
-                self._apply_reference_updates(event.event_id)
+                self._apply_reference_updates(event, story_response)
                 return recorded
             pending = self.journal.pending()
             if not pending or pending[0].event_id != event.event_id:
@@ -483,7 +518,7 @@ class StoryRecorderModule:
                 event.event_id,
             )
             self._complete_game_recording(event)
-            self._apply_reference_updates(event.event_id)
+            self._apply_reference_updates(event, story_response)
             return revision
 
     def retry_pending(self) -> None:
