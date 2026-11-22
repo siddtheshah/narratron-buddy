@@ -1,0 +1,14 @@
+{
+  "id": "example_avatar",
+  "title": "Example Avatar",
+  "model": "model.glb",
+  "poster": "preview.webp",
+  "idle": "smile",
+  "reactions": { "activate": "laugh" },
+  "actions": [
+    { "id": "smile", "label": "Smile", "clip": "Smile", "loop": true, "description": "A gentle smile while listening or greeting someone." },
+    { "id": "laugh", "label": "Laugh", "clip": "Laugh", "description": "A wide grin and squeezed-shut eyes in response to a joke or a joyful moment." },
+    { "id": "surprise", "label": "Surprise", "clip": "Surprise", "description": "Wide eyes and a round open mouth when something unexpected happens." },
+    { "id": "think", "label": "Think", "clip": "Think", "description": "A head tilt and narrowed eye while considering an idea or a question." }
+  ]
+}

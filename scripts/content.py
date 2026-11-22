@@ -43,9 +43,9 @@ the application's games/, adventures/, and avatars/. --source-dir (upload) and
 Upload preserves packages missing locally, since a local collection may be
 incomplete, and records deletions inside present packages. It normalizes package
 metadata in the Git checkout before committing, without changing local sources.
-Git metadata, caches, virtual environments, .env files, and temporary files are
-excluded. Commit or restore pending edits in the Git checkout before upload or
-download. Missing Git checkouts are cloned automatically.
+Git metadata, caches, virtual environments, .env files, temporary files, and
+the example avatar package are excluded. Commit or restore pending edits in the
+Git checkout before upload or download. Missing Git checkouts are cloned automatically.
 
 Download refuses to overwrite local edits that differ from the previous Git
 checkout. Use --overwrite-local to deliberately restore a revision over them.
@@ -166,6 +166,13 @@ STRING = TypeAdapter(str)
 def slugify(value: str) -> str:
     cleaned = "".join(c if c.isalnum() or c in "-_" else "-" for c in value.lower())
     return "-".join(part for part in cleaned.split("-") if part)
+
+
+def is_example_package(kind: str, name: str) -> bool:
+    slug = slugify(name)
+    if kind == "avatars":
+        slug = slug.replace("_", "-")
+    return slug == COLLECTIONS[kind].example
 
 
 def safe_name(value: str) -> str:
@@ -407,13 +414,21 @@ def upload_collection(
     prepared: list[tuple[Path, dict[str, JsonValue]]] = []
     identities: set[str] = set()
     for package in packages:
+        if kind == "avatars" and is_example_package(kind, package.name):
+            print(f"{kind}: skipping local example {package.name}")
+            continue
         validate_yaml(package)
         metadata = package_metadata(package, kind, repository / package.name)
         identity = STRING.validate_python(metadata["id"], strict=True)
+        if kind == "avatars" and is_example_package(kind, identity):
+            print(f"{kind}: skipping local example {package.name}")
+            continue
         if identity in identities:
             raise ValueError(f"Duplicate package ID: {identity}")
         identities.add(identity)
         prepared.append((package, metadata))
+    if not prepared:
+        return
     if not dry_run:
         run_git(repository, "pull", "--ff-only", "origin", "main")
         reject_links(repository)
@@ -612,7 +627,7 @@ def publication_files(tree: Path, kind: str, prefix: str, package_filter: str | 
         path = package / "metadata.json"
         metadata = METADATA.validate_json(path.read_bytes()) if path.exists() else {}
         identity = safe_name(STRING.validate_python(metadata.get("id") or slugify(package.name), strict=True))
-        if spec.example in (slugify(package.name), slugify(identity)):
+        if is_example_package(kind, package.name) or is_example_package(kind, identity):
             continue
         if identity in identities:
             raise ValueError(f"Duplicate package ID: {identity}")
@@ -661,7 +676,7 @@ def publish_tree(
         identity = safe_name(parts[0])
         if package_filter is not None and identity not in slugs:
             continue
-        if slugify(identity) == COLLECTIONS[kind].example:
+        if is_example_package(kind, identity):
             continue
         if blob.generation is None:
             raise ValueError(f"Missing generation for {blob.name}; cannot safely publish.")

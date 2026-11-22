@@ -16,13 +16,14 @@ interface AvatarManifest {
   readonly actions: readonly AvatarAction[];
 }
 
-type AvatarSelection = 'cube' | 'light-cube' | 'narratron' | 'umbral-sigil';
+type AvatarSelection = 'cube' | 'light-cube' | 'narratron' | 'example_avatar' | 'umbral-sigil';
 
 const packageUrl = new URL('/avatar-assets/cube/', window.location.href);
 const avatarChoice = document.querySelector<HTMLSelectElement>('#avatar-choice')!;
 const requestedAvatar = new URLSearchParams(location.search).get('avatar');
 const selectedAvatar: AvatarSelection =
-  requestedAvatar === 'light-cube' || requestedAvatar === 'narratron' || requestedAvatar === 'umbral-sigil'
+  requestedAvatar === 'light-cube' || requestedAvatar === 'narratron'
+    || requestedAvatar === 'example_avatar' || requestedAvatar === 'umbral-sigil'
     ? requestedAvatar
     : 'cube';
 const stage = document.querySelector<HTMLDivElement>('#stage')!;
@@ -315,28 +316,36 @@ async function startPackagedAvatar(config: PackagedAvatarLabConfig): Promise<voi
   interactionHint.hidden = false;
 }
 
-const startup =
-  selectedAvatar === 'light-cube'
-    ? startLightCube()
-    : selectedAvatar === 'narratron'
-      ? startPackagedAvatar({
-          heading: 'Narratron actions',
-          loadingStatus: 'Loading Narratron…',
-          unavailableStatus: '3D playback is unavailable. Showing the Narratron preview.',
-          assetPath: '/avatar-assets/narratron/',
-          activateAriaLabel: 'Greet Narratron',
-          hint: 'Hover over Narratron to brighten its aura. Click or tap to greet it.',
-        })
-      : selectedAvatar === 'umbral-sigil'
-        ? startPackagedAvatar({
-            heading: 'Umbral Sigil actions',
-            loadingStatus: 'Loading Umbral Sigil…',
-            unavailableStatus: '3D playback is unavailable. Showing the Umbral Sigil preview.',
-            assetPath: '/avatar-assets/umbral-sigil/',
-            activateAriaLabel: 'Provoke the Umbral Sigil',
-            hint: 'Hover over the Umbral Sigil to flare its baleful core. Click or tap to provoke a spiky snap.',
-          })
-        : startLab();
+const packagedAvatars: Record<Exclude<AvatarSelection, 'cube' | 'light-cube'>, PackagedAvatarLabConfig> = {
+  example_avatar: {
+    heading: 'Smiley expressions',
+    loadingStatus: 'Loading Example Avatar…',
+    unavailableStatus: '3D playback is unavailable. Showing the static smile.',
+    assetPath: '/avatar-assets/example_avatar/',
+    activateAriaLabel: 'Make the example avatar laugh',
+    hint: 'Click or tap the face to make it laugh.',
+  },
+  narratron: {
+    heading: 'Narratron actions',
+    loadingStatus: 'Loading Narratron…',
+    unavailableStatus: '3D playback is unavailable. Showing the Narratron preview.',
+    assetPath: '/avatar-assets/narratron/',
+    activateAriaLabel: 'Greet Narratron',
+    hint: 'Hover over Narratron to brighten its aura. Click or tap to greet it.',
+  },
+  'umbral-sigil': {
+    heading: 'Umbral Sigil actions',
+    loadingStatus: 'Loading Umbral Sigil…',
+    unavailableStatus: '3D playback is unavailable. Showing the Umbral Sigil preview.',
+    assetPath: '/avatar-assets/umbral-sigil/',
+    activateAriaLabel: 'Provoke the Umbral Sigil',
+    hint: 'Hover over the Umbral Sigil to flare its baleful core. Click or tap to provoke a spiky snap.',
+  },
+};
+
+const startup = selectedAvatar === 'cube' ? startLab()
+  : selectedAvatar === 'light-cube' ? startLightCube()
+  : startPackagedAvatar(packagedAvatars[selectedAvatar]);
 
 startup.catch((error: unknown) => {
   status.textContent = 'Could not load the avatar preview.';

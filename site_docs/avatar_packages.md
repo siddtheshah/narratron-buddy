@@ -5,6 +5,11 @@ playable actions, hover glow, pointer reactions, and optional custom GLSL
 shaders. Narratron loads avatar packages generically without avatar-specific
 renderer code. Bundled references include:
 
+- `example_theater/avatars/example_avatar`: the default example theater's
+  smiley face, with a looping smile and laugh, surprise, and thinking reactions.
+  Preview it in Avatar Lab with `?avatar=example_avatar` or rebuild its model
+  with `node scripts/build_smiley_avatar.mjs`. The avatar content uploader skips
+  this package.
 - `example_theater/avatars/narratron`: rigged storyteller with six animation
   clips, hover glow, and two volumetric GLSL shaders (`dust.frag` and
   `spark.frag`).

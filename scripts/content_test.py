@@ -393,9 +393,35 @@ def test_publish_never_serves_examples(workspace: ContentWorkspace, bucket: Memo
     source = workspace.project / workspace.kind / example
     write_file(source / workspace.declaration, declaration_payload(workspace.kind, "Example"))
     upload(workspace)
-    assert content.run_git(workspace.repository, "ls-files", "--", example)
+    if workspace.kind == "avatars":
+        example = "example_avatar"
+        legacy = workspace.repository / example
+        write_file(legacy / workspace.declaration, declaration_payload(workspace.kind, "Example"))
+        write_file(legacy / "metadata.json", '{"id":"example_avatar","title":"Example Avatar"}')
+        commit_and_push(workspace)
+    else:
+        assert content.run_git(workspace.repository, "ls-files", "--", example)
     content.publish_collection(workspace.project, workspace.root, workspace.kind, bucket=bucket)
     assert not any(example in name for name in bucket.objects)
+
+
+@pytest.mark.parametrize("kind", ["avatars"], indirect=True)
+def test_upload_skips_example_avatar_in_collection_and_as_explicit_source(workspace: ContentWorkspace) -> None:
+    source = workspace.project / "avatars" / "example_avatar"
+    write_file(source / "avatar.json", '{"id":"example_avatar","title":"Example Avatar"}')
+    write_file(source.with_name("example-avatar") / "avatar.json", '{"id":"example-avatar","title":"Example Avatar"}')
+    write_file(source.with_name("renamed") / "metadata.json", '{"id":"example_avatar","title":"Example Avatar"}')
+    commit = upload(workspace)
+    assert not content.run_git(workspace.repository, "ls-files", "--", "example_avatar", "example-avatar", "renamed")
+    workspace.transport_calls.clear()
+
+    content.upload_collection(
+        workspace.project, workspace.root, "avatars", "Snapshot", False,
+        source_dir=source, package_filter="example_avatar",
+    )
+
+    assert content.run_git(workspace.repository, "rev-parse", "HEAD") == commit
+    assert workspace.transport_calls == []
 
 
 def test_publish_without_checksums_reuploads_even_when_sizes_match(workspace: ContentWorkspace, bucket: MemoryBucket) -> None:

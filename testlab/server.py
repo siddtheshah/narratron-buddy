@@ -113,6 +113,11 @@ app.mount(
     name="example-narratron-assets",
 )
 app.mount(
+    "/avatar-assets/example_avatar",
+    _NoCacheStaticFiles(directory=PROJECT_ROOT / "example_theater" / "avatars" / "example_avatar", check_dir=False),
+    name="example-avatar-assets",
+)
+app.mount(
     "/avatar-assets/umbral-sigil",
     _NoCacheStaticFiles(directory=PROJECT_ROOT / "adventures" / "umbral-dungeon" / "avatars" / "umbral-sigil", check_dir=False),
     name="umbral-sigil-assets",

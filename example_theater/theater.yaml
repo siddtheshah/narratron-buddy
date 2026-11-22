@@ -14,7 +14,7 @@ starting_image: "narratron_avatar.webp"
 
 avatar:
     enabled: true
-    package: narratron
+    package: example_avatar
 
 observability_tool:
     enabled: false
