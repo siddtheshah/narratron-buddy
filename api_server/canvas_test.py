@@ -273,6 +273,27 @@ async def test_text_annotation_rejects_non_orator_when_collaboration_is_disabled
 
 
 @pytest.mark.asyncio
+async def test_remove_text_resyncs_non_orator_when_collaboration_is_disabled() -> None:
+    sender = MagicMock()
+    sender.state.theater_id = "stage"
+    sender.send_json = AsyncMock()
+    state = _text_annotation_state(sender, collab_enabled=False)
+    state.doodles.snapshot.return_value = {
+        "type": "doodle_snapshot", "page_id": "", "enabled": True,
+        "batches": [], "annotations": [{"type": "text", "id": "keep-me", "text": "Stay"}], "stamps": [],
+    }
+    deployment = {"theater_id": "stage", "user_id": 3, "active_orator_id": 3}
+    message = {"type": "remove_text", "id": "keep-me", "client_message_id": "rm-text-1"}
+
+    with patch.object(object_registry.db, "get_deployment", return_value=deployment):
+        await canvas._apply_doodle_message(state, message, sender)
+
+    state.doodles.remove_text.assert_not_called()
+    sender.send_json.assert_any_await(state.doodles.snapshot.return_value)
+    sender.send_json.assert_any_await({"type": "doodle_ack", "client_message_id": "rm-text-1"})
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("collab_enabled,user_id", [(True, 9), (False, 3)])
 async def test_text_annotation_accepts_collaborating_viewer_or_active_orator(collab_enabled: bool, user_id: int) -> None:
     sender = MagicMock()

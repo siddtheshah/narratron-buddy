@@ -454,8 +454,7 @@ export function createDoodleSession(
     if (displayedDoodlePageId === pageId) return;
     flushDrawBatch();
     isDrawing = false;
-    activeTextEditor?.remove();
-    activeTextEditor = null;
+    closeActiveTextEditor();
     displayedDoodlePageId = pageId;
     doodleActions = [];
     doodleUndoStack = [];
@@ -650,8 +649,7 @@ export function createDoodleSession(
     isDrawing = false;
     currentStrokeId = null;
     flushDrawBatch();
-    activeTextEditor?.remove();
-    activeTextEditor = null;
+    closeActiveTextEditor();
     if (state.type === 'marker') {
       lastSelectedTool = { type: 'marker', color: state.color };
     } else if (textAnnotationMode) {
@@ -677,16 +675,18 @@ export function createDoodleSession(
   }
 
   function updateTextAnnotationAvailability(): void {
-    if (!textAnnotationToggle) return;
     const available = canAddTextAnnotation();
-    textAnnotationToggle.disabled = !available;
-    textAnnotationToggle.title = available
-      ? 'Add text annotation'
-      : 'Text annotations require collaboration mode for viewers';
-    if (!available && textAnnotationMode) {
-      activeTextEditor?.remove();
-      activeTextEditor = null;
-      setTextAnnotationMode(false, false);
+    if (textAnnotationToggle) {
+      textAnnotationToggle.disabled = !available;
+      textAnnotationToggle.title = available
+        ? 'Add text annotation'
+        : 'Text annotations require collaboration mode for viewers';
+    }
+    if (!available) {
+      closeActiveTextEditor();
+      if (textAnnotationMode) {
+        setTextAnnotationMode(false, false);
+      }
     }
   }
 
@@ -948,6 +948,19 @@ export function createDoodleSession(
     }
   }
 
+  let textAnnotations: ReturnType<typeof createTextAnnotations> | null = null;
+
+  function closeActiveTextEditor(): void {
+    if (textAnnotations) {
+      textAnnotations.close();
+      return;
+    }
+    if (activeTextEditor?.isConnected) {
+      activeTextEditor.remove();
+    }
+    activeTextEditor = null;
+  }
+
   function applyTextAnnotation(action: SessionDoodleAction): void {
     const index = doodleActions.findIndex(
       (existing) => existing.type === 'text' && existing.id === action.id,
@@ -957,7 +970,7 @@ export function createDoodleSession(
     redrawAllDoodles();
   }
 
-  const textAnnotations = createTextAnnotations({
+  textAnnotations = createTextAnnotations({
     canvas,
     container: imgContainer,
     canEdit: canAddTextAnnotation,
@@ -991,7 +1004,7 @@ export function createDoodleSession(
     const nextText = toTextAnnotation(action);
     const prevText = toTextAnnotation(previous);
     if (nextText && prevText) {
-      textAnnotations.move(nextText, prevText, commit);
+      textAnnotations?.move(nextText, prevText, commit);
     }
   }
 
@@ -1004,10 +1017,11 @@ export function createDoodleSession(
       placement && typeof placement.x === 'number' && typeof placement.y === 'number'
         ? { x: placement.x, y: placement.y }
         : null;
-    textAnnotations.open(existingText, point);
+    textAnnotations?.open(existingText, point);
   }
 
   function removeTextAnnotation(action: DoodleAnnotation | readonly DoodleAnnotation[] | null): void {
+    if (!canAddTextAnnotation()) return;
     const list = Array.isArray(action) ? action : action ? [action] : [];
     const removedItems: TextAnnotationItem[] = [];
     for (const item of list) {

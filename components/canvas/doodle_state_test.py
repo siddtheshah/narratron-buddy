@@ -129,6 +129,10 @@ def test_legacy_text_gets_stable_identity_for_editing() -> None:
     assert state.has_visible_annotations() is False
     state.doodles.append({"type": "draw", "x0": 0, "y0": 0, "x1": 1, "y1": 1})
     assert state.has_visible_annotations() is True
+    state.enabled = False
+    assert state.has_visible_annotations() is False
+    state.enabled = True
+    assert state.has_visible_annotations() is True
 
 
 def test_doodle_state_load_and_serialize() -> None:

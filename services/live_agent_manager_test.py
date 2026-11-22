@@ -1287,7 +1287,10 @@ class TestLiveAgentSessionManager(unittest.TestCase):
             canvas_state_manager=canvas_observability_fixture(),
             theater_id="observability", runner=runner, tool_bundle=MagicMock(),
             provider=GeminiLiveAgentProvider(),
-            config={"live_agent": {"observability_interval": 0, "collaboration_observability_cooldown": 0}},
+            config={
+                "live_agent": {"observability_interval": 0, "collaboration_observability_cooldown": 0},
+                "observability_tool": {"enabled": True},
+            },
         )
         session.websockets.add(MagicMock())
         session.canvas_state_manager = canvas_observability_fixture()
@@ -1674,6 +1677,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
             theater_id="test_forced_observability",
             runner=mock_runner,
             tool_bundle=MagicMock(),
+            config={"observability_tool": {"enabled": True}},
         )
         session.live_request_queue = MagicMock()
         with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as image_file:
@@ -1707,6 +1711,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
             theater_id="test_observability_doodles",
             runner=mock_runner,
             tool_bundle=MagicMock(),
+            config={"observability_tool": {"enabled": True}},
         )
         session.live_request_queue = MagicMock()
         session.websockets.add(MagicMock())
@@ -1736,6 +1741,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
             theater_id="test_observability_text_annotation",
             runner=mock_runner,
             tool_bundle=MagicMock(),
+            config={"observability_tool": {"enabled": True}},
         )
         session.live_request_queue = MagicMock()
         session.websockets.add(MagicMock())
@@ -1769,7 +1775,7 @@ class TestLiveAgentSessionManager(unittest.TestCase):
                 theater_id="test_async_doodle_snapshot",
                 runner=mock_runner,
                 tool_bundle=MagicMock(),
-                config={},
+                config={"observability_tool": {"enabled": True}},
             )
             session.live_request_queue = MagicMock()
             session.websockets.add(MagicMock())
@@ -1790,6 +1796,109 @@ class TestLiveAgentSessionManager(unittest.TestCase):
             self.assertEqual(session.live_request_queue.send_content.call_count, 2)
 
         asyncio.run(run_test())
+
+    def test_no_canvas_captures_when_observability_tool_disabled_even_with_collaboration_on(self) -> None:
+        from PIL import Image
+        from components.canvas.doodle_state import DoodleState
+        from components.reference_manager import ReferenceManager
+
+        async def run_test() -> None:
+            with tempfile.TemporaryDirectory() as directory:
+                image_path = Path(directory) / "scene.png"
+                Image.new("RGB", (80, 80), "black").save(image_path)
+                theater = TheaterManager(directory).theater("no_captures")
+                canvas = canvas_observability_fixture(str(image_path), collaboration_enabled=True)
+                canvas.theater = theater
+                canvas.doodles = DoodleState(MagicMock(), theater=theater)
+                canvas.doodles.doodles = [
+                    {"type": "draw", "x0": 0.1, "y0": 0.5, "x1": 0.9, "y1": 0.5, "color": "#ff0000", "size": 5},
+                    {"type": "text", "id": "t1", "x": 0.2, "y": 0.2, "text": "Look here", "color": "#ffffff", "size": 24},
+                ]
+                for config in (
+                    {"observability_tool": {"enabled": False}, "live_agent": {"enable_regular_observability": True, "observability_interval": 0, "collaboration_observability_cooldown": 0}},
+                    {"live_agent": {"enable_regular_observability": True, "observability_interval": 0, "collaboration_observability_cooldown": 0}},
+                ):
+                    runner = MagicMock()
+                    runner.agent = MagicMock(tools=[])
+                    runner.session_service = MagicMock()
+                    session = LiveAgentSession(
+                        canvas_state_manager=canvas,
+                        theater_id="no_captures",
+                        runner=runner,
+                        tool_bundle=MagicMock(),
+                        config=config,
+                    )
+                    session.reference_manager = ReferenceManager(theater, story_state=StoryState())
+                    session.live_request_queue = MagicMock()
+                    session.websockets.add(MagicMock())
+                    session.observability_available_at = 0.0
+                    session._event_loop = asyncio.get_running_loop()
+
+                    self.assertFalse(session.observability_tool_enabled)
+                    self.assertFalse(session.send_agent_requested_observability(force=True))
+                    self.assertTrue(session.send_canvas_state())
+                    self.assertFalse(session.send_collaboration_toggle_observability())
+                    await session._send_doodle_snapshot()
+                    await asyncio.sleep(0.05)
+
+                    inline_part = types.Part(inline_data=types.Blob(mime_type="image/png", data=b"raw-image"))
+                    self.assertIsNone(session._save_canvas_capture(inline_part))
+                    self.assertFalse(theater.canvas_captures_dir().exists())
+                    self.assertEqual(session.reference_manager.available_canvas_captures(), {})
+                    # Only the text-only regular observability update should have been sent, never an image.
+                    for call in session.live_request_queue.send_content.call_args_list:
+                        content = call.args[0]
+                        self.assertFalse(any(part.inline_data is not None for part in content.parts))
+
+        asyncio.run(run_test())
+
+    def test_doodle_snapshot_discards_render_when_collaboration_disabled_mid_render(self) -> None:
+        async def run_test() -> None:
+            runner = MagicMock()
+            runner.agent = MagicMock(tools=[])
+            runner.session_service = MagicMock()
+            canvas = canvas_observability_fixture(collaboration_enabled=True, doodles=[{"type": "draw"}])
+
+            def disable_collab_during_render(_image_path: str | None) -> bytes:
+                canvas.ui.viewer_collab_enabled = False
+                return b"stale-doodle-webp"
+
+            canvas.doodles.snapshot_webp.side_effect = disable_collab_during_render
+            session = LiveAgentSession(
+                canvas_state_manager=canvas,
+                theater_id="race_collab",
+                runner=runner,
+                tool_bundle=MagicMock(),
+                config={"observability_tool": {"enabled": True}},
+            )
+            session.live_request_queue = MagicMock()
+            session.websockets.add(MagicMock())
+
+            await session._send_doodle_snapshot()
+            session.live_request_queue.send_content.assert_not_called()
+
+        asyncio.run(run_test())
+
+    def test_collaboration_toggle_observability_suppresses_when_session_stopped(self) -> None:
+        runner = MagicMock()
+        runner.agent = MagicMock(tools=[])
+        runner.session_service = MagicMock()
+        canvas = canvas_observability_fixture(collaboration_enabled=True, doodles=[{"type": "draw"}])
+        session = LiveAgentSession(
+            canvas_state_manager=canvas,
+            theater_id="stopped_collab",
+            runner=runner,
+            tool_bundle=MagicMock(),
+            config={"observability_tool": {"enabled": True}},
+        )
+        session.live_request_queue = MagicMock()
+        session.websockets.add(MagicMock())
+        session.status = "stopped"
+        session._schedule_doodle_snapshot = MagicMock()
+
+        self.assertFalse(session.send_collaboration_toggle_observability())
+        session.live_request_queue.send_content.assert_not_called()
+        session._schedule_doodle_snapshot.assert_not_called()
 
     def test_usage_tracking_and_db_flushing(self) -> None:
         mock_agent = MagicMock()

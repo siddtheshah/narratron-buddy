@@ -587,6 +587,7 @@ async def _apply_doodle_message(state: CanvasStateManager, data: dict[str, JsonV
         deployment = object_registry.db.get_deployment(theater_id) if theater_id else None
         is_orator = bool(deployment and can_control_agent_websocket(deployment, current_user=current_user))
         if theater_id and not is_orator and not state.ui.viewer_collab_enabled:
+            await sender.send_json(doodles.snapshot())
             await acknowledge()
             return
         action_id = str(data.get("id", ""))
@@ -984,7 +985,7 @@ def post_orator_action(
             names = {"update_interactive_canvas"}
         if (payload.action == "update_ui" or adventure_mode) and suite is None:
             raise HTTPException(status_code=409, detail="The requested update tools are unavailable.")
-        if state.ui.viewer_collab_enabled:
+        if state.ui.viewer_collab_enabled and session.observability_tool_enabled:
             if not session.send_agent_requested_observability(
                 force=True, include_capture_reference=payload.action != "update_story"
             ):
@@ -1009,24 +1010,27 @@ def post_orator_action(
             raise HTTPException(status_code=409, detail="The requested media tools are unavailable.")
         names = {"create_image"} if is_image else {"create_music", "play_music"}
         if is_image:
-            state.visual.request_immediate_image()
-        suite.request_orator_bypass(names)
-        if is_image:
             instruction = (
                 "Generate and display a fresh image for the current "
-                "narrated scene now using create_image with display=True."
+                "narrated scene now using create_image with display=True. "
+                "Do not re-show an image that is already on screen (never use show_image to redisplay the current image)."
             )
-            if state.ui.viewer_collab_enabled:
+            if state.ui.viewer_collab_enabled and session.observability_tool_enabled:
                 logger.info("[Orator Action] Triggering forced canvas observability capture.")
-                session.send_agent_requested_observability(force=True)
+                if not session.send_agent_requested_observability(force=True):
+                    raise HTTPException(status_code=409, detail="Narratron could not receive the canvas capture.")
                 instruction += (
-                    "You must visually understand the image use the audience drawings and stamps to build a modified scene."
+                    " Visually inspect the attached canvas capture and use the audience drawings, "
+                    "stamps, and text annotations to build a modified scene."
                 )
         else:
             instruction = (
                 "Start different music for the current narrated scene now. Use play_music for an available playlist, "
                 "or create_music if generated music is enabled."
             )
+        if is_image:
+            state.visual.request_immediate_image()
+        suite.request_orator_bypass(names)
         logger.info(f"[Orator Action] {instruction}")
         if not session.send_notification(types.Content(role="system", parts=[types.Part(text=(
             f"[Orator Action] {instruction} This is an explicit orator request; "

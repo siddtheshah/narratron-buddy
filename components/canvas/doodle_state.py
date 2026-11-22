@@ -333,6 +333,8 @@ class DoodleState:
 
     def has_visible_annotations(self) -> bool:
         """Return whether the canvas has a stroke, non-empty text, or stamp annotation."""
+        if not self.enabled:
+            return False
         return any(
             action.get("type") == "draw"
             or (action.get("type") == "text" and bool(str(action.get("text", "")).strip()))

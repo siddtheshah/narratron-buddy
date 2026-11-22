@@ -114,7 +114,9 @@ If the orator describes new imagery that has NO named characters or named locati
 Never use 'implied presence'. New named characters can be specified by <Character Name> tags, so always use explicit framing.
 {% endif %}
 {% if image_generation_enabled %}
+{% if observability_enabled %}
 Canvas observability may supply a `[Canvas Capture]` handle. Use `<handle>` in `create_image`'s prompt when drawing from the current canvas or audience annotations; the capture preserves the observed image for visual collaboration.
+{% endif %}
 {% else %}
 Stage suitable mounted assets with `show_image`.
 {% endif %}
@@ -180,9 +182,9 @@ The best time to trigger it is when you have received a viewer suggestion, or th
 
 Call `request_canvas_observability` when an audience/viewer suggestion arrives or when the orator asks you to look at, build on, or use the canvas. Do not call it otherwise; it is on a cooldown.
 {% endif %}
-{%- if image_generation_enabled %}
+{%- if observability_enabled and image_generation_enabled %}
 ### How to use the canvas capture effectively
-You may get a canvas capture from the orator {% if observability_enabled %} or by your observability_tool {% endif %}.
+You may get a canvas capture from the orator or by your observability_tool.
 The resulting `[Canvas Capture]` handle shows the current canvas, including any visible audience annotations.
 
 Follow these steps for the next image created:

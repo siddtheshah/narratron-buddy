@@ -1,5 +1,6 @@
 import asyncio
 from collections.abc import Iterator
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -25,6 +26,7 @@ def action_services() -> Iterator[tuple[MagicMock, MagicMock]]:
     session = MagicMock(is_alive=True)
     session.config = {}
     session.observability_tools = None
+    session.observability_tool_enabled = False
     session.send_user_content.return_value = True
     session.send_notification.return_value = True
     manager = MagicMock()
@@ -205,23 +207,32 @@ def test_invalid_action_action_is_rejected() -> None:
 
 @pytest.mark.parametrize("action,intent", [("update_story", "notepad and reference manager"), ("update_ui", "interactive canvas UI")])
 @pytest.mark.parametrize("collaboration", [True, False])
+@pytest.mark.parametrize("observability_enabled", [True, False])
 def test_secondary_action_sends_intent_and_collaboration_capture(
-    action_services: tuple[MagicMock, MagicMock], action: str, intent: str, collaboration: bool
+    action_services: tuple[MagicMock, MagicMock],
+    action: str,
+    intent: str,
+    collaboration: bool,
+    observability_enabled: bool,
 ) -> None:
     state, session = action_services
     state.ui.viewer_collab_enabled = collaboration
+    session.observability_tool_enabled = observability_enabled
     session.send_agent_requested_observability.return_value = True
     result = canvas.post_orator_action("stage", canvas.OratorAction(action=action), Request({"type": "http"}))
     assert result["status"] == "accepted"
-    if collaboration:
+    notification_text = session.send_notification.call_args[0][0].parts[0].text
+    if collaboration and observability_enabled:
         session.send_agent_requested_observability.assert_called_once_with(
             force=True, include_capture_reference=action != "update_story"
         )
         assert session.method_calls[0][0] == "send_agent_requested_observability"
+        assert "accompanying canvas capture" in notification_text
     else:
         session.send_agent_requested_observability.assert_not_called()
+        assert "accompanying canvas capture" not in notification_text
     session.send_notification.assert_called_once()
-    assert intent in session.send_notification.call_args[0][0].parts[0].text
+    assert intent in notification_text
     state.visual.set_pinned.assert_not_called()
     state.audio.set_pinned.assert_not_called()
     session.image_tools.request_orator_bypass.assert_not_called()
@@ -253,6 +264,7 @@ def test_secondary_action_reports_delivery_failure(
 ) -> None:
     state, session = action_services
     state.ui.viewer_collab_enabled = True
+    session.observability_tool_enabled = True
     session.is_alive = failure != "disconnected"
     session.send_agent_requested_observability.return_value = failure != "capture"
     session.send_notification.return_value = failure != "notification"
@@ -348,17 +360,18 @@ def test_orator_action_endpoint_response_validation_with_integer_cursor(
     assert data["music_orator_cursor"] == 3
 
 
-def test_new_image_triggers_observability_when_collab_enabled(
+def test_new_image_triggers_observability_when_collab_and_tool_enabled(
     action_services: tuple[MagicMock, MagicMock]
 ) -> None:
     state, session = action_services
     state.ui.viewer_collab_enabled = True
-    session.observability_tools = None
+    session.observability_tools = MagicMock()
+    session.observability_tool_enabled = True
+    session.send_agent_requested_observability.return_value = True
 
-    with patch.object(object_registry.theater_manager, "get_theater_config", return_value={}):
-        canvas.post_orator_action(
-            "stage", canvas.OratorAction(action="new_image"), Request({"type": "http"})
-        )
+    canvas.post_orator_action(
+        "stage", canvas.OratorAction(action="new_image"), Request({"type": "http"})
+    )
 
     session.send_agent_requested_observability.assert_called_once_with(force=True)
     session.send_notification.assert_called_once()
@@ -366,23 +379,42 @@ def test_new_image_triggers_observability_when_collab_enabled(
     notification_text = notification_content.parts[0].text
     assert "The observability tool is available" not in notification_text
     assert "create_image with display=True" in notification_text
+    assert "Do not re-show an image that is already on screen" in notification_text
+    assert "attached canvas capture" in notification_text
+    assert "display=True.You" not in notification_text
 
 
-def test_new_image_does_not_trigger_observability_when_collab_disabled_even_if_tool_enabled_in_config(
+def test_new_image_capture_failure_rejects_without_arming_bypass(
+    action_services: tuple[MagicMock, MagicMock]
+) -> None:
+    state, session = action_services
+    state.ui.viewer_collab_enabled = True
+    session.observability_tool_enabled = True
+    session.send_agent_requested_observability.return_value = False
+
+    with pytest.raises(HTTPException) as error:
+        canvas.post_orator_action(
+            "stage", canvas.OratorAction(action="new_image"), Request({"type": "http"})
+        )
+
+    assert error.value.status_code == 409
+    session.image_tools.request_orator_bypass.assert_not_called()
+    state.visual.request_immediate_image.assert_not_called()
+    session.send_notification.assert_not_called()
+    state.persist.assert_not_called()
+
+
+def test_new_image_does_not_trigger_observability_when_collab_disabled_even_if_tool_enabled(
     action_services: tuple[MagicMock, MagicMock]
 ) -> None:
     state, session = action_services
     state.ui.viewer_collab_enabled = False
     session.observability_tools = MagicMock()
+    session.observability_tool_enabled = True
 
-    with patch.object(
-        object_registry.theater_manager,
-        "get_theater_config",
-        return_value={"observability_tool": {"enabled": True}},
-    ):
-        canvas.post_orator_action(
-            "stage", canvas.OratorAction(action="new_image"), Request({"type": "http"})
-        )
+    canvas.post_orator_action(
+        "stage", canvas.OratorAction(action="new_image"), Request({"type": "http"})
+    )
 
     session.send_agent_requested_observability.assert_not_called()
     session.send_notification.assert_called_once()
@@ -390,26 +422,92 @@ def test_new_image_does_not_trigger_observability_when_collab_disabled_even_if_t
     notification_text = notification_content.parts[0].text
     assert "The observability tool is available" not in notification_text
     assert "create_image with display=True" in notification_text
+    assert "Do not re-show an image that is already on screen" in notification_text
+    assert "attached canvas capture" not in notification_text
 
 
-def test_new_image_triggers_observability_even_if_tool_disabled_in_config(
+def test_new_image_does_not_trigger_observability_when_tool_disabled_even_if_collab_enabled(
     action_services: tuple[MagicMock, MagicMock]
 ) -> None:
     state, session = action_services
     state.ui.viewer_collab_enabled = True
     session.observability_tools = None
+    session.observability_tool_enabled = False
 
-    with patch.object(
-        object_registry.theater_manager,
-        "get_theater_config",
-        return_value={"observability_tool": {"enabled": False}},
-    ):
-        canvas.post_orator_action(
-            "stage", canvas.OratorAction(action="new_image"), Request({"type": "http"})
-        )
+    canvas.post_orator_action(
+        "stage", canvas.OratorAction(action="new_image"), Request({"type": "http"})
+    )
 
-    session.send_agent_requested_observability.assert_called_once_with(force=True)
+    session.send_agent_requested_observability.assert_not_called()
     session.send_notification.assert_called_once()
     notification_text = session.send_notification.call_args[0][0].parts[0].text
     assert "The observability tool is available" not in notification_text
     assert "create_image with display=True" in notification_text
+    assert "Do not re-show an image that is already on screen" in notification_text
+    assert "attached canvas capture" not in notification_text
+
+
+def test_orator_actions_and_collab_toggle_create_no_canvas_captures_when_observability_disabled(
+    tmp_path: Path,
+) -> None:
+    from PIL import Image
+    from components.canvas.doodle_state import DoodleState
+    from components.canvas.story_state import StoryState
+    from components.reference_manager import ReferenceManager
+    from components.theater_manager import TheaterManager
+
+    theater = TheaterManager(str(tmp_path)).theater("stage")
+    image_path = tmp_path / "scene.png"
+    Image.new("RGB", (64, 64), "navy").save(image_path)
+
+    state = MagicMock()
+    state.theater = theater
+    state.visual.pinned = False
+    state.visual.orator_cursor = 0
+    state.visual.shown_image_path = str(image_path)
+    state.visual.shown_image_prompt = "Moonlit harbor"
+    state.audio.pinned = False
+    state.audio.orator_cursor = 0
+    state.audio.current_playlist = "ambient"
+    state.story.adventure_mode = False
+    state.notepad.get_present_elements.return_value = []
+    state.ui.viewer_collab_enabled = True
+    state.doodles = DoodleState(MagicMock(), theater=theater)
+    state.doodles.doodles = [
+        {"type": "draw", "x0": 0.1, "y0": 0.1, "x1": 0.9, "y1": 0.9, "color": "#ff0000", "size": 4}
+    ]
+
+    runner = MagicMock()
+    runner.agent.tools = []
+    provider = MagicMock(spec=LiveAgentProvider)
+    provider.background_content_is_partial = False
+    provider.tool_results_bypass_input_window = False
+    session = LiveAgentSession(
+        "stage",
+        runner,
+        MagicMock(),
+        canvas_state_manager=state,
+        config={"observability_tool": {"enabled": False}, "live_agent": {"enable_regular_observability": True}},
+        provider=provider,
+    )
+    session.reference_manager = ReferenceManager(theater, story_state=StoryState())
+    session.image_tools = MagicMock()
+    session.interactive_canvas_tools = MagicMock()
+    session.websockets.add(MagicMock())
+
+    manager = MagicMock()
+    manager.get_session.return_value = session
+    with patch.object(canvas, "_require_canvas_access"), patch.object(object_registry, "db"), \
+            patch.object(canvas, "get_current_user", return_value={"id": 1}), \
+            patch.object(canvas, "can_control_agent_websocket", return_value=True), \
+            patch.object(canvas, "_state", return_value=state), \
+            patch.object(object_registry, "live_agent_manager", manager):
+        canvas.set_viewer_collab_mode("stage", canvas.ViewerCollabRequest(enabled=True), Request({"type": "http"}))
+        for action in ("new_image", "update_story", "update_ui"):
+            result = canvas.post_orator_action(
+                "stage", canvas.OratorAction(action=action), Request({"type": "http"})
+            )
+            assert result["status"] == "accepted"
+
+    assert not theater.canvas_captures_dir().exists()
+    assert session.reference_manager.available_canvas_captures() == {}

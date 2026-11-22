@@ -330,3 +330,68 @@ test('doodle session palette, text menu Escape/outside close, right-click cursor
   await page.locator('#doodle-canvas').click({ button: 'right', force: true });
   await expect(page.locator('#image-container')).toHaveAttribute('data-cursor-mode', 'navigate');
 });
+
+test('disabling collaboration closes an active select-mode text editor and blocks text deletion for viewers', async ({
+  canvas,
+  page,
+}) => {
+  const sentMessages: Record<string, unknown>[] = [];
+  await page.routeWebSocket('**/ws/doodle**', (ws) => {
+    ws.onMessage((raw) => {
+      sentMessages.push(JSON.parse(String(raw)) as Record<string, unknown>);
+    });
+    ws.send(
+      JSON.stringify({
+        type: 'doodle_snapshot',
+        page_id: 'page-1',
+        enabled: true,
+        stamps: [],
+        batches: [],
+        annotations: [
+          {
+            type: 'text',
+            id: 'txt-collab-1',
+            x: 0.3,
+            y: 0.3,
+            text: 'Editable while collab is on',
+            color: '#ffffff',
+            size: 28,
+            font: 'Outfit',
+          },
+        ],
+      }),
+    );
+  });
+
+  await canvas.mount({ html: DOODLE_HTML });
+  await initDoodleSession(page, { isOrator: false, isCollab: true });
+  await page.evaluate(() => {
+    const win = window as unknown as DoodleHarnessWindow;
+    win.doodleSession.displayPageDoodles({ page_id: 'page-1', doodles_enabled: true });
+  });
+
+  const label = page.locator('.canvas-text-annotation[data-annotation-id="txt-collab-1"]');
+  await expect(label).toBeVisible();
+  await label.click();
+  await label.dblclick();
+  await expect(page.locator('textarea.canvas-text-editor')).toBeVisible();
+
+  // Turn collaboration off while the viewer has a select-mode text editor open
+  await page.evaluate(() => {
+    const win = window as unknown as DoodleHarnessWindow;
+    win.isCollabFlag = false;
+    win.doodleSession.updateTextAnnotationAvailability();
+  });
+
+  await expect(page.locator('textarea.canvas-text-editor')).toHaveCount(0);
+  await expect(page.locator('#text-annotation-toggle')).toBeDisabled();
+
+  // Pressing Backspace/Delete while collab is off must not delete the text annotation
+  await page.keyboard.press('Backspace');
+  await page.keyboard.press('Delete');
+  expect(sentMessages.some((m) => m.type === 'remove_text')).toBe(false);
+  const remainingCount = await page.evaluate(
+    () => (window as unknown as DoodleHarnessWindow).doodleSession.getDoodleActions().length,
+  );
+  expect(remainingCount).toBe(1);
+});

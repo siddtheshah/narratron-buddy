@@ -427,6 +427,8 @@ class TestCreateAgent(unittest.TestCase):
         instruction = mock_agent_cls.call_args.kwargs["instruction"]
         self.assertNotIn("## Canvas Observability", instruction)
         self.assertNotIn("request_canvas_observability", instruction)
+        self.assertNotIn("[Canvas Capture]", instruction)
+        self.assertNotIn("How to use the canvas capture effectively", instruction)
 
     @patch("services.live_agent.create_tool_bundle_for_session")
     @patch("services.live_agent.Agent")

@@ -316,6 +316,14 @@ class LiveAgentSession:
     def websocket_connected(self) -> bool:
         return len(self.websockets) > 0
 
+    @property
+    def observability_tool_enabled(self) -> bool:
+        """Return whether canvas observability tool captures are enabled for this session."""
+        observability_config = self.config.get("observability_tool")
+        if type(observability_config) is dict and "enabled" in observability_config:
+            return bool(observability_config["enabled"])
+        return self.observability_tools is not None
+
     def send_content(self, content: types.Content, *, partial: bool | None = None) -> bool:
         """Send a system or canvas notification to an active Live session."""
         if not self.is_alive:
@@ -527,6 +535,8 @@ class LiveAgentSession:
         snapshots do not cause either unchanged component to be sent again.
         Only remember updates accepted by the live session.
         """
+        if not self.is_alive:
+            return False
         image = next((part for part in content.parts or [] if part.inline_data is not None), None)
         text_changed = state_text is not None and state_text != self._last_observability_text
         image_changed = image is not None and image != self._last_observability_image
@@ -535,7 +545,11 @@ class LiveAgentSession:
         if image is not None:
             content = content.model_copy(deep=True)
             content.role = "user"
-            capture_handle = self._save_canvas_capture(image) if include_capture_reference else None
+            capture_handle = (
+                self._save_canvas_capture(image)
+                if include_capture_reference and self.observability_tool_enabled
+                else None
+            )
             if capture_handle is not None:
                 reference_text = (
                     f"\n[Canvas Capture]: {capture_handle}\n"
@@ -564,7 +578,7 @@ class LiveAgentSession:
 
     def _save_canvas_capture(self, image: types.Part) -> str | None:
         """Persist observed bytes as an immutable capture and register handle with ReferenceManager."""
-        if image.inline_data is None:
+        if not self.observability_tool_enabled or image.inline_data is None:
             return None
         ref_mgr = self.reference_manager
         if ref_mgr is None and self.image_tools is not None:
@@ -662,9 +676,9 @@ class LiveAgentSession:
         A successful update also refreshes ``last_canvas_state_sent``, naturally
         deferring the next periodic canvas observability update.
         """
-        if not self.websocket_connected:
+        if not self.is_alive or not self.websocket_connected:
             logger.debug(
-                "[LiveAgentSession] User disconnected; suppressing collaboration toggle update for session %s.",
+                "[LiveAgentSession] User disconnected or session stopped; suppressing collaboration toggle update for session %s.",
                 self.theater_id,
             )
             return False
@@ -694,11 +708,14 @@ class LiveAgentSession:
                     exc_info=True,
                 )
                 return False
+            scheduled_snapshot = self._can_schedule_doodle_snapshot()
             if sent:
                 self.last_canvas_state_sent = now
+            if sent or scheduled_snapshot:
                 self.last_collaboration_observability_sent = now
 
-        self._schedule_doodle_snapshot()
+        if scheduled_snapshot:
+            self._schedule_doodle_snapshot()
         if not sent:
             return False
         logger.info("[LiveAgentSession] Collaboration toggle canvas state update: %s", msg.replace("\n", " | "))
@@ -718,7 +735,7 @@ class LiveAgentSession:
         Disable include_capture_reference for updates that only need to inspect
         the snapshot, without saving an image-tool reference or advertising it.
         """
-        if not self.is_alive:
+        if not self.is_alive or not self.observability_tool_enabled:
             return False
         if not force and not self.websocket_connected:
             logger.debug(
@@ -813,14 +830,20 @@ class LiveAgentSession:
             )
             return None
 
-    def _schedule_doodle_snapshot(self) -> None:
-        """Schedule one composite doodle render without blocking the event loop."""
-        if not (
-            self.websocket_connected
+    def _can_schedule_doodle_snapshot(self) -> bool:
+        """Return whether a doodle snapshot capture is allowed and has visible annotations."""
+        return bool(
+            self.is_alive
+            and self.websocket_connected
+            and self.observability_tool_enabled
             and self.canvas_state_manager
             and self.canvas_state_manager.ui.viewer_collab_enabled
             and self.canvas_state_manager.doodles.has_visible_annotations()
-        ):
+        )
+
+    def _schedule_doodle_snapshot(self) -> None:
+        """Schedule one composite doodle render without blocking the event loop."""
+        if not self._can_schedule_doodle_snapshot():
             return
 
         def start_render() -> None:
@@ -839,12 +862,14 @@ class LiveAgentSession:
 
     async def _send_doodle_snapshot(self) -> None:
         """Render the composite WebP in a worker, then enqueue it for the agent."""
+        if not self._can_schedule_doodle_snapshot():
+            return
         try:
             snapshot = await asyncio.to_thread(
                 self.canvas_state_manager.doodles.snapshot_webp,
                 self.canvas_state_manager.visual.shown_image_path,
             )
-            if snapshot and self.websocket_connected:
+            if snapshot and self._can_schedule_doodle_snapshot():
                 content = types.Content(
                     role="user",
                     parts=[

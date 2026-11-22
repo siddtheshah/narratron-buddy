@@ -32,9 +32,26 @@ export interface TextAnnotationsOptions {
 export interface TextAnnotationsController {
   open(existing: TextAnnotation | null, placement?: Point | null): void;
   move(action: TextAnnotation, previous: TextAnnotation, commit: boolean): void;
+  close(): void;
 }
 
 export function createTextAnnotations(options: TextAnnotationsOptions): TextAnnotationsController {
+  let cancelActiveEditor: (() => void) | null = null;
+
+  function close(): void {
+    const cancel = cancelActiveEditor;
+    cancelActiveEditor = null;
+    if (cancel) {
+      cancel();
+      return;
+    }
+    const existingEditor = options.getActiveEditor();
+    if (existingEditor?.isConnected) {
+      existingEditor.remove();
+    }
+    options.setActiveEditor(null);
+  }
+
   function move(action: TextAnnotation, previous: TextAnnotation, commit: boolean): void {
     if (commit) {
       action = { ...action };
@@ -51,7 +68,7 @@ export function createTextAnnotations(options: TextAnnotationsOptions): TextAnno
   function open(existing: TextAnnotation | null, placement: Point | null = existing): void {
     if (!options.canEdit() || options.isPagedBack() || !placement) return;
     options.stopSpeech();
-    options.getActiveEditor()?.remove();
+    close();
 
     const coords = placement;
     const editor = document.createElement('textarea');
@@ -95,9 +112,12 @@ export function createTextAnnotations(options: TextAnnotationsOptions): TextAnno
           ? new EditTextDoodleAction(existing, action)
           : new PlaceTextDoodleAction(action));
       }
-      editor.remove();
+      if (editor.isConnected) editor.remove();
       if (options.getActiveEditor() === editor) options.setActiveEditor(null);
+      if (cancelActiveEditor === cancelThisEditor) cancelActiveEditor = null;
     };
+    const cancelThisEditor = (): void => finish(false);
+    cancelActiveEditor = cancelThisEditor;
     editor.addEventListener('keydown', (event) => {
       if (event.key === 'Enter' && !event.shiftKey) {
         event.preventDefault();
@@ -113,5 +133,5 @@ export function createTextAnnotations(options: TextAnnotationsOptions): TextAnno
     editor.select();
   }
 
-  return { open, move };
+  return { open, move, close };
 }

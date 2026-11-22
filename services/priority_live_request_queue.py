@@ -256,7 +256,11 @@ class PriorityLiveRequestQueue(LiveRequestQueue):
 
                 if self._current_user_input_queue.empty():
                     self._notify_event.clear()
-                    if not self._current_non_audio_queue.empty() or not self._current_user_input_queue.empty():
+                    if (
+                        not self._priority_content_queue.empty()
+                        or not self._current_non_audio_queue.empty()
+                        or not self._current_user_input_queue.empty()
+                    ):
                         continue
                     await self._notify_event.wait()
                     continue
@@ -268,6 +272,8 @@ class PriorityLiveRequestQueue(LiveRequestQueue):
                 continue
 
             self._notify_event.clear()
+            if not self._priority_content_queue.empty() and self._current_user_input_queue.empty():
+                continue
             if (
                 self._post_user_input_window_active
                 and not self._current_non_audio_queue.empty()
