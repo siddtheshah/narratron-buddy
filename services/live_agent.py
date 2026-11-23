@@ -290,6 +290,7 @@ def create_tool_bundle_for_session(
     )
     visuals_config = config.get("visuals", {})
     visuals_config = visuals_config if type(visuals_config) is dict else {}
+    reference_image_style = str(visuals_config.get("style") or "").strip()
     reference_image_provider = None
     reference_image_model = str(visuals_config.get("reference_model") or "").strip()
     if reference_image_model:
@@ -314,7 +315,8 @@ def create_tool_bundle_for_session(
         story_state=story_state,
         image_provider=reference_image_provider,
         speech_provider=speech_provider,
-        character_image_style=str(visuals_config.get("style") or "").strip(),
+        character_image_style=reference_image_style,
+        scene_image_style=reference_image_style,
     )
 
     # Initialize tools reusing intermediate components across them

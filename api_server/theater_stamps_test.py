@@ -211,14 +211,16 @@ def test_generation_beyond_concurrency_cap_rejected_with_429(stamps: StampHarnes
     stamps.database.record_user_usage.assert_not_called()
 
 
-@pytest.mark.parametrize(("scene_type", "instructions"), [
-    ("cinematic", "Cinematic environment establishing shot"),
-    ("tactical_map", "Strict top-down orthographic view"),
-    ("regional_map", "Coherent geography with connected rivers"),
+@pytest.mark.parametrize(("scene_type", "instructions", "style"), [
+    ("cinematic", "Cinematic environment establishing shot", "Fantasy with tight portraits"),
+    ("tactical_map", "Strict top-down orthographic view", "Fantasy with isometric perspective"),
+    ("regional_map", "Coherent geography with connected rivers", "Fantasy with eye-level landscapes"),
 ])
 def test_scene_preset_saves_persistent_scene_and_charges_image_rate(
-    stamps: StampHarness, scene_type: str, instructions: str,
+    stamps: StampHarness, scene_type: str, instructions: str, style: str,
 ) -> None:
+    root = stamps.manager.theater("stage").directory()
+    (root / "theater.yaml").write_text(yaml.safe_dump({"visuals": {"style": style}}), encoding="utf-8")
     result = stamps.client.post("/api/theaters/stage/scenes/generate", json={
         "name": "../Forest", "prompt": "A forest clearing", "scene_type": scene_type,
     })
@@ -230,9 +232,12 @@ def test_scene_preset_saves_persistent_scene_and_charges_image_rate(
     assert path.read_bytes() == stamps.provider.generate.return_value.image_bytes
     assert (stamps.repository.theater_path("stage") / "references" / "scenes" / path.name).read_bytes() == path.read_bytes()
     request = stamps.provider.generate.call_args.args[0]
-    assert request.prompt.startswith("A forest clearing\n")
-    assert instructions in request.prompt
-    assert "Style: Fantasy" not in request.prompt
+    assert request.prompt.startswith(
+        f"A forest clearing\nStyle: {style}\n"
+        "Follow the scene preset requirements below. Apply the theater's visual style "
+        "only where it is compatible with those requirements.\n"
+    )
+    assert instructions in request.prompt.splitlines()[-1]
     assert request.aspect_ratio == "16:9"
     assert request.background == "opaque"
     if scene_type == "tactical_map":

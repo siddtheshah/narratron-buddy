@@ -80,12 +80,6 @@ class GenerateTheaterStampRequest(BaseModel):
     prompt: str = Field(min_length=1, max_length=4000)
     references: list[str] = Field(default_factory=list, max_length=4)
 
-    def generation_prompt(self) -> str:
-        return self.prompt.strip()
-
-    def use_visual_style(self) -> bool:
-        return True
-
 
 SCENE_PRESETS: dict[str, str] = {
     "cinematic": "Cinematic environment establishing shot, rich atmosphere and dramatic lighting, cinematic composition, environmental storytelling, no extreme close-up characters, no text, no split-screen.",
@@ -96,14 +90,6 @@ SCENE_PRESETS: dict[str, str] = {
 
 class GenerateTheaterSceneRequest(GenerateTheaterStampRequest):
     scene_type: Literal["none", "cinematic", "tactical_map", "regional_map"] = "none"
-
-    def generation_prompt(self) -> str:
-        if self.scene_type == "none":
-            return self.prompt.strip()
-        return f"{self.prompt.strip()}\n{SCENE_PRESETS[self.scene_type]}"
-
-    def use_visual_style(self) -> bool:
-        return self.scene_type == "none"
 
 
 class GenerateTheaterAnimationRequest(GenerateTheaterStampRequest):
@@ -199,7 +185,9 @@ async def generate_theater_stamp(
 async def generate_theater_scene(
     request: Request, theater_id: str, body: GenerateTheaterSceneRequest,
 ) -> dict[str, JsonValue]:
-    return await _generate_canvas_asset(request, theater_id, body, "scene")
+    return await _generate_canvas_asset(
+        request, theater_id, body, "scene", preset_instructions=SCENE_PRESETS.get(body.scene_type),
+    )
 
 
 def _extract_existing_reference_description(
@@ -261,6 +249,7 @@ async def _generate_canvas_asset(
     request: Request, theater_id: str, body: GenerateTheaterStampRequest,
     kind: Literal["stamp", "scene", "character", "music", "animation"],
     *, animation_type: Literal["video", "layered", "triframe"] = "video",
+    preset_instructions: str | None = None,
 ) -> dict[str, JsonValue]:
     _safe_path_param(theater_id, "theater_id")
     user = await get_current_user_async(request)
@@ -273,7 +262,6 @@ async def _generate_canvas_asset(
     name, prompt = body.name.strip(), body.prompt.strip()
     if not name or not prompt:
         raise HTTPException(status_code=422, detail=f"Enter a {kind} name and prompt.")
-    prompt = body.generation_prompt()
     owner_id = int(user["id"])
     slot_id = await asyncio.to_thread(
         object_registry.db.acquire_generation_slot,
@@ -352,7 +340,7 @@ async def _generate_canvas_asset(
             else:
                 image = await asyncio.to_thread(
                     generate_theater_image, root, kind="reference" if kind == "scene" else kind,
-                    prompt=prompt, references=image_references, use_visual_style=body.use_visual_style(),
+                    prompt=prompt, references=image_references, preset_instructions=preset_instructions,
                 )
                 if not image.image_bytes or image.mime_type != "image/webp":
                     raise ValueError(f"{kind.title()} generation must return a WebP image.")
@@ -396,7 +384,8 @@ async def _generate_canvas_asset(
                             suffix = loose_source.suffix.lower()
                             files[f"{scene_folder}/1{suffix}"] = loose_source.read_bytes()
                             next_iter = 2
-                        scene_meta: dict[str, JsonValue] = {"description": prompt}
+                        description = f"{prompt}\n{preset_instructions}" if preset_instructions else prompt
+                        scene_meta: dict[str, JsonValue] = {"description": description}
                         existing_yaml = root / "references" / "scenes" / scene_folder / "scene.yaml"
                         if not existing_yaml.is_file():
                             existing_yaml = root / "output" / "artifacts" / "updated_references" / "scenes" / scene_folder / "scene.yaml"
@@ -405,7 +394,7 @@ async def _generate_canvas_asset(
                             if type(loaded_yaml) is dict:
                                 for k, v in loaded_yaml.items():
                                     scene_meta[str(k)] = v
-                                scene_meta["description"] = prompt
+                                scene_meta["description"] = description
                         files[f"{scene_folder}/{next_iter}.webp"] = image.image_bytes
                         files[f"{scene_folder}/scene.yaml"] = yaml.safe_dump(
                             scene_meta, sort_keys=False, allow_unicode=True

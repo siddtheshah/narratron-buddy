@@ -558,8 +558,10 @@ class TestCreateAgent(unittest.TestCase):
             with self.subTest(reference_settings=reference_settings), TemporaryDirectory() as temp_dir:
                 mock_image_provider.reset_mock()
                 config = {
-                    "visuals": {"model": "gemini", "model_options": {"model": "live-image-model"},
-                                **reference_settings},
+                    "visuals": {
+                        "model": "gemini", "model_options": {"model": "live-image-model"},
+                        "style": "Watercolor", **reference_settings,
+                    },
                     "music": {"use_generated_music": False},
                     "user_help": {"enabled": False},
                 }
@@ -578,6 +580,8 @@ class TestCreateAgent(unittest.TestCase):
                 mock_image_provider.assert_called_once_with(expected_provider, expected_options)
                 image_tools = next(tool.func.__self__ for tool in bundle.tools if tool.name == "create_image")
                 self.assertIs(image_tools.reference_manager.image_provider, provider)
+                self.assertEqual(image_tools.reference_manager.character_image_style, "Watercolor")
+                self.assertEqual(image_tools.reference_manager.scene_image_style, "Watercolor")
                 self.assertEqual(image_tools.image_model, "gemini")
                 self.assertEqual(image_tools.image_provider_options, {"model": "live-image-model"})
 
