@@ -6,7 +6,7 @@ import {
   REPO_ROOT,
   expect,
   test,
-} from '../../../testing/ui/canvas_fixtures';
+} from '../../../frontend/testing/canvas_fixtures';
 
 const STORY_PLANNER_HTML_PATH = path.join(REPO_ROOT, 'testlab', 'frontend', 'templates', 'story_planner_lab.html');
 

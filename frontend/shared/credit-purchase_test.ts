@@ -1,4 +1,4 @@
-import { CANVAS_ORIGIN, expect, test } from '../../testing/ui/canvas_fixtures';
+import { CANVAS_ORIGIN, expect, test } from '../testing/canvas_fixtures';
 
 interface CreditPurchaseHarnessWindow extends Window {
   pricingCalls?: number;

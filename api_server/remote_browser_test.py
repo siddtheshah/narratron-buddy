@@ -14,7 +14,7 @@ import object_registry
 
 
 @pytest.fixture
-def remote_page() -> Iterator[Page]:
+def remote_page(ensure_browser_assets: None, offline_browser_contexts: list[str]) -> Iterator[Page]:
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=True)
         page = browser.new_page(viewport={"width": 390, "height": 844}, is_mobile=True, has_touch=True)

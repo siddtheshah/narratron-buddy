@@ -1,6 +1,6 @@
 import path from 'node:path';
 import type { WebSocketRoute } from '@playwright/test';
-import { expect, REPO_ROOT, test } from '../../testing/ui/canvas_fixtures';
+import { expect, REPO_ROOT, test } from '../testing/canvas_fixtures';
 
 test.use({ launchOptions: { args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] } });
 test.describe.configure({ mode: 'serial' });

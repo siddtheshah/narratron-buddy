@@ -6,7 +6,7 @@ from testing.e2e.load_canvas_drawing import parse_args, summarize_trials
 
 class TestLoadCanvasDrawing(unittest.TestCase):
 
-    def test_parse_args_defaults(self):
+    def test_parse_args_defaults(self) -> None:
         args = parse_args([])
         self.assertEqual(args.viewers, 10)
         self.assertEqual(args.trials, 1)
@@ -17,7 +17,7 @@ class TestLoadCanvasDrawing(unittest.TestCase):
         self.assertEqual(args.launch_interval_seconds, 0.0)
         self.assertTrue(args.headless)
 
-    def test_parse_args_custom(self):
+    def test_parse_args_custom(self) -> None:
         args = parse_args([
             "--viewers", "50",
             "--trials", "3",
@@ -37,7 +37,7 @@ class TestLoadCanvasDrawing(unittest.TestCase):
         self.assertEqual(args.launch_interval_seconds, 0.25)
         self.assertFalse(args.headless)
 
-    def test_parse_args_validation(self):
+    def test_parse_args_validation(self) -> None:
         invalid_cases = [
             ["--viewers", "0"],
             ["--trials", "0"],
@@ -53,7 +53,7 @@ class TestLoadCanvasDrawing(unittest.TestCase):
                 with self.assertRaises(SystemExit):
                     parse_args(case)
 
-    def test_summarize_trials_success(self):
+    def test_summarize_trials_success(self) -> None:
         trial1 = {
             "trial": 1,
             "strokes": [
@@ -102,7 +102,7 @@ class TestLoadCanvasDrawing(unittest.TestCase):
         # Ack: 10, 8 -> mean = 9.0
         self.assertEqual(summary["mean_server_ack_latency_ms"], 9.0)
 
-    def test_summarize_trials_with_failures(self):
+    def test_summarize_trials_with_failures(self) -> None:
         trials = [
             {"trial": 1, "error": "Connection lost"},
             {

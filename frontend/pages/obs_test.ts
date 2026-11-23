@@ -8,7 +8,7 @@ import {
   expect,
   test,
   type CanvasHarness,
-} from '../../testing/ui/canvas_fixtures';
+} from '../testing/canvas_fixtures';
 
 type ObsModule = typeof import('/static/generated/pages/obs.js');
 

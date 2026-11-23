@@ -10,6 +10,9 @@ import pytest_socket
 from absl.testing import flagsaver
 from testing.network import install_local_socketpair
 
+
+pytest_plugins = ("testing.browser",)
+
 # pytest-socket normally starts guarding at test setup. Guard application imports
 # too, so collection cannot accidentally contact live services.
 pytest_socket.disable_socket(allow_unix_socket=True)

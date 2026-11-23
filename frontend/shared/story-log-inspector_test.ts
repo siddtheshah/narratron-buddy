@@ -1,5 +1,5 @@
 import type { Page, Route } from '@playwright/test';
-import { expect, test, type CanvasHarness } from '../../testing/ui/canvas_fixtures';
+import { expect, test, type CanvasHarness } from '../testing/canvas_fixtures';
 
 type StoryLogModule = typeof import('/static/generated/shared/story-log-inspector.js');
 type StoryLogInspectorController = import('/static/generated/shared/story-log-inspector.js').StoryLogInspectorController;

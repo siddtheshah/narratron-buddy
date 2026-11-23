@@ -97,9 +97,10 @@ uv run ruff check .
 
 `npm test` checks TypeScript types for production code and tests, builds the
 browser modules, and runs the TypeScript Playwright suite in Chromium. Frontend
-tests live beside their sources in `frontend/**/*_test.ts`; shared fixtures
-and their tests live in `testing/ui/`. Python tests cover backend behavior and
-the remaining browser/server integration checks. Both suites isolate unexpected
+tests live beside their sources in `frontend/**/*_test.ts` and
+`testlab/frontend/**/*_test.ts`. Shared Playwright fixtures and their tests live
+in `frontend/testing/`. Python backend and browser/server integration tests
+live beside the modules they exercise. Both suites isolate unexpected
 network access; live provider evaluations are separate.
 
 **Avoid using all available CPU cores when running tests.** Leave CPU headroom

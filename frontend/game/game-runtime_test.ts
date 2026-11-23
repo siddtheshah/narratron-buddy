@@ -1,5 +1,5 @@
-import { expect, test } from '../../testing/ui/canvas_fixtures';
-import { loadGameSnapshots } from '../../testing/ui/game_fixtures';
+import { expect, test } from '../testing/canvas_fixtures';
+import { loadGameSnapshots } from '../testing/game_fixtures';
 import type { GamePayload, GameRenderer } from './game-renderer.js';
 import type {
   GameClientProgram,

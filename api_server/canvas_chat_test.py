@@ -1,12 +1,13 @@
 from unittest.mock import MagicMock, patch
+
 from fastapi.testclient import TestClient
 
-from testing.ui.base import UITestCase
 from api_server.app import app
+from testing.base import CanvasTestCase
 
 
-class TestChatPrefixes(UITestCase):
-    def setUp(self):
+class TestChatPrefixes(CanvasTestCase):
+    def setUp(self) -> None:
         super().setUp()
         access_patcher = patch("api_server.canvas._require_canvas_access")
         access_patcher.start()
@@ -15,7 +16,7 @@ class TestChatPrefixes(UITestCase):
         self.client = TestClient(app)
         self.theater_id = "test_prefix_theater"
 
-    def test_chat_message_authors_and_retrieval(self):
+    def test_chat_message_authors_and_retrieval(self) -> None:
         user_response = self.client.post(
             f"/api/chat?theater_id={self.theater_id}",
             json={"author": "Cosmic Voyager 42", "text": "Exploring the canvas!"},
@@ -96,7 +97,7 @@ class TestChatPrefixes(UITestCase):
         )
         self.assertEqual(self.client.get(f"/api/chat?theater_id={self.theater_id}").json(), [])
 
-    def test_suggest_without_text_is_rejected(self):
+    def test_suggest_without_text_is_rejected(self) -> None:
         response = self.client.post(
             f"/api/chat?theater_id={self.theater_id}",
             json={"author": "alice", "text": "/suggest   "},
@@ -104,7 +105,7 @@ class TestChatPrefixes(UITestCase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(self.client.get(f"/api/suggestions?theater_id={self.theater_id}").json(), [])
 
-    def test_similar_command_is_plain_chat(self):
+    def test_similar_command_is_plain_chat(self) -> None:
         response = self.client.post(
             f"/api/chat?theater_id={self.theater_id}",
             json={"author": "alice", "text": "/suggestion is not a command"},
@@ -113,7 +114,7 @@ class TestChatPrefixes(UITestCase):
         self.assertEqual(response.json()["type"], "chat")
         self.assertEqual(self.client.get(f"/api/suggestions?theater_id={self.theater_id}").json(), [])
 
-    def test_chat_message_with_roll_data(self):
+    def test_chat_message_with_roll_data(self) -> None:
         roll_info = {
             "title": "Longsword Attack",
             "character": "Ada",
@@ -139,7 +140,7 @@ class TestChatPrefixes(UITestCase):
         self.assertEqual(messages[0]["author"], "Ada")
         self.assertEqual(messages[0]["roll_data"], roll_info)
 
-    def test_roll_data_rejected_for_user_without_contributors_permission(self):
+    def test_roll_data_rejected_for_user_without_contributors_permission(self) -> None:
         deployment = {
             "theater_id": self.theater_id,
             "user_id": 1,
@@ -159,7 +160,7 @@ class TestChatPrefixes(UITestCase):
             self.assertEqual(res.status_code, 403)
             self.assertIn("contributors", res.json()["detail"])
 
-    def test_roll_data_accepted_for_contributors(self):
+    def test_roll_data_accepted_for_contributors(self) -> None:
         deployment = {
             "theater_id": self.theater_id,
             "user_id": 1,
@@ -178,7 +179,7 @@ class TestChatPrefixes(UITestCase):
             )
             self.assertEqual(res.status_code, 200)
 
-    def test_roll_data_forwarded_to_agent_only_when_collab_mode_enabled(self):
+    def test_roll_data_forwarded_to_agent_only_when_collab_mode_enabled(self) -> None:
         state = self.canvas_states.get(self.theater_id)
         mock_session = MagicMock()
         mock_session.is_alive = True
@@ -296,5 +297,3 @@ class TestChatPrefixes(UITestCase):
             },
         )
         self.assertEqual(oversized_html_res.status_code, 422)
-
-

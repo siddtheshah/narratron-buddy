@@ -9,7 +9,7 @@ import {
     expect,
     test,
     type CanvasHarness,
-} from '../../testing/ui/canvas_fixtures';
+} from '../testing/canvas_fixtures';
 import type { GamePayload } from '../game/game-renderer.js';
 import type {
     BatonState,

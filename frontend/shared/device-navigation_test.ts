@@ -1,4 +1,4 @@
-import { CANVAS_ORIGIN, expect, test } from '../../testing/ui/canvas_fixtures';
+import { CANVAS_ORIGIN, expect, test } from '../testing/canvas_fixtures';
 
 type DeviceNavigationModule = typeof import('/static/generated/shared/device-navigation.js');
 

@@ -1,5 +1,5 @@
 import type { Locator, Page, WebSocketRoute } from '@playwright/test';
-import { expect, test, type CanvasHarness } from '../../testing/ui/canvas_fixtures';
+import { expect, test, type CanvasHarness } from '../testing/canvas_fixtures';
 import type { DoodleAnnotation, DoodleRenderer } from './doodle-renderer.js';
 import type { CanvasCursorStore } from './cursor-state.js';
 import type {

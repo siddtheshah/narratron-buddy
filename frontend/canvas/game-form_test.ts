@@ -1,9 +1,9 @@
-import { expect, test } from '../../testing/ui/canvas_fixtures';
+import { expect, test } from '../testing/canvas_fixtures';
 import {
   loadGameSnapshots,
   parseSubmittedAction,
   type SubmittedGameAction,
-} from '../../testing/ui/game_fixtures';
+} from '../testing/game_fixtures';
 import type { GamePayload, GameRenderer } from '../game/game-renderer.js';
 
 type GameRendererModule = typeof import('../game/game-renderer.js');

@@ -21,7 +21,6 @@
   },
   "include": [
     "playwright.config.ts",
-    "testing/ui/**/*.ts",
     "frontend/**/*.ts",
     "testlab/frontend/**/*.ts"
   ],

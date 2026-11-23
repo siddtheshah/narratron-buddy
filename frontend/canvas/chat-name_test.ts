@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { expect, REPO_ROOT, STATIC_DIR, TEMPLATES_DIR, test } from '../../testing/ui/canvas_fixtures';
+import { expect, REPO_ROOT, STATIC_DIR, TEMPLATES_DIR, test } from '../testing/canvas_fixtures';
 
 interface CanvasAuthUser {
   readonly id?: number;

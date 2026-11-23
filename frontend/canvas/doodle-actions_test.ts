@@ -1,5 +1,5 @@
 import type { Page, WebSocketRoute } from '@playwright/test';
-import { expect, test, type CanvasHarness } from '../../testing/ui/canvas_fixtures';
+import { expect, test, type CanvasHarness } from '../testing/canvas_fixtures';
 
 type DoodleActionsModule = typeof import('/static/generated/canvas/doodle-actions.js');
 type DoodleCanvasItem = import('/static/generated/canvas/doodle-actions.js').DoodleCanvasItem;

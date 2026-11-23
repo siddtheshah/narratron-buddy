@@ -6,7 +6,7 @@ import {
   REPO_ROOT,
   expect,
   test,
-} from '../../../testing/ui/canvas_fixtures';
+} from '../../../frontend/testing/canvas_fixtures';
 
 const MUSIC_BENCHMARK_HTML_PATH = path.join(REPO_ROOT, 'testlab', 'frontend', 'templates', 'music_benchmark.html');
 

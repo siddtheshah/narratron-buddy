@@ -1,5 +1,5 @@
 import type { Route } from '@playwright/test';
-import { CANVAS_ORIGIN, expect, test } from '../../testing/ui/canvas_fixtures';
+import { CANVAS_ORIGIN, expect, test } from '../testing/canvas_fixtures';
 
 interface MinimalModeWindow extends Window {
   __resolveWebpQualityUrl: (rawUrl: string) => string;

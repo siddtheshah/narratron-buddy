@@ -7,7 +7,7 @@ import {
   expect,
   test,
   type CanvasHarness,
-} from '../../testing/ui/canvas_fixtures';
+} from '../testing/canvas_fixtures';
 
 type SceneModule = typeof import('/static/generated/canvas/scene.js');
 

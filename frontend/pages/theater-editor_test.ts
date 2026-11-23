@@ -7,7 +7,7 @@ import {
   STATIC_DIR,
   TEMPLATES_DIR,
   test,
-} from '../../testing/ui/canvas_fixtures';
+} from '../testing/canvas_fixtures';
 
 interface DraftFileFixture {
   path: string;

@@ -1,4 +1,4 @@
-import { expect, test, type CanvasHarness } from '../../testing/ui/canvas_fixtures';
+import { expect, test, type CanvasHarness } from '../testing/canvas_fixtures';
 import type { Page } from '@playwright/test';
 import type { ImageRenderer } from './image-renderer.js';
 

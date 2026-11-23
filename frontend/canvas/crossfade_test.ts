@@ -1,4 +1,4 @@
-import { expect, test } from '../../testing/ui/canvas_fixtures';
+import { expect, test } from '../testing/canvas_fixtures';
 
 // Minimal valid 1x1 solid PNGs so <img> decode & canvas drawImage succeed cleanly offline.
 const RED_PNG = Buffer.from(

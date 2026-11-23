@@ -1,4 +1,4 @@
-import { expect, test } from '../../testing/ui/canvas_fixtures';
+import { expect, test } from '../testing/canvas_fixtures';
 import type { ImageRenderer } from './image-renderer.js';
 import type { DoodleRenderer, DoodleAnnotation as RenderAction } from './doodle-renderer.js';
 

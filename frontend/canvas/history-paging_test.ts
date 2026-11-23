@@ -1,4 +1,4 @@
-import { expect, test } from '../../testing/ui/canvas_fixtures';
+import { expect, test } from '../testing/canvas_fixtures';
 
 type HistoryPagingModule = typeof import('/static/generated/canvas/history-paging.js');
 type HistoryPagingController =

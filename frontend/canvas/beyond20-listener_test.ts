@@ -7,7 +7,7 @@ import {
   TEMPLATES_DIR,
   test,
   type CanvasHarness,
-} from '../../testing/ui/canvas_fixtures';
+} from '../testing/canvas_fixtures';
 
 type Beyond20Module = typeof import('/static/generated/canvas/beyond20-listener.js');
 type Beyond20ChatController = import('/static/generated/canvas/beyond20-listener.js').Beyond20ChatController;

@@ -2508,5 +2508,42 @@ def test_exploratory_actions_do_not_wake_live(tmp_path: Path) -> None:
     session.close()
 
 
+@patch("services.live_agent_manager.logger")
+@patch("services.live_agent_manager.LiveAgentSession._get_database")
+def test_flush_usage_stops_session_on_credit_exhaustion(
+    mock_get_database: MagicMock, _mock_logger: MagicMock,
+) -> None:
+    mock_runner = MagicMock()
+    mock_session_service = MagicMock()
+    mock_agent = MagicMock()
+    mock_db = MagicMock()
+    mock_runner.agent = mock_agent
+    mock_runner.session_service = mock_session_service
+    mock_get_database.return_value = mock_db
+    mock_db.get_deployment.return_value = {"user_id": 10}
+
+    session = LiveAgentSession(
+        theater_id="t_exhaust",
+        runner=mock_runner,
+        tool_bundle=MagicMock(),
+        canvas_state_manager=MagicMock(notepad=MagicMock(spec=Notepad)),
+    )
+    session.unbilled_live_agent_tool_calls = 1
+    session.close = MagicMock()
+
+    # Database record_user_usage returns credits <= 0
+    mock_db.record_user_usage.return_value = {"id": 10, "credits": 0.0}
+
+    session.flush_usage_to_db()
+
+    kwargs = mock_db.record_user_usage.call_args.kwargs
+    assert kwargs["user_id"] == 10
+    assert kwargs["voice_minutes"] == 0.0
+    assert kwargs["live_agent_tool_calls"] == 1
+    assert kwargs["images_created"] == 0
+    assert kwargs["idempotency_key"].startswith("live-usage:t_exhaust:")
+    # Verify close was invoked due to 0 remaining credits
+    session.close.assert_called_once()
+
 if __name__ == "__main__":
     unittest.main()

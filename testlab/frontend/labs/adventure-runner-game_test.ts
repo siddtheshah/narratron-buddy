@@ -7,7 +7,7 @@ import {
   STATIC_DIR,
   expect,
   test,
-} from '../../../testing/ui/canvas_fixtures';
+} from '../../../frontend/testing/canvas_fixtures';
 
 interface CounterSnapshot {
   readonly runtime_counter: {

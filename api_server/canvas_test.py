@@ -711,3 +711,27 @@ async def test_reconnecting_viewer_receives_only_browsed_page_snapshot(tmp_path:
     assert snapshots[0]["page_id"] == first_id
     assert [action["text"] for action in snapshots[0]["annotations"]] == ["First page"]
     assert "Second page" not in str(messages)
+
+
+@pytest.mark.asyncio
+async def test_api_server_remove_draw_websocket_message() -> None:
+    state = MagicMock()
+    state.connections = MagicMock()
+    state.connections.processed_doodle_message_ids = set()
+    state.connections.active_ws_connections = []
+    state.doodles = MagicMock()
+    state.doodles.page_id = ""
+
+    sender = AsyncMock()
+    sender.state = MagicMock()
+    sender.state.theater_id = "test_stage"
+
+    msg = {
+        "type": "remove_draw",
+        "stroke_id": "stroke-99",
+        "ids": ["s1", "s2"],
+        "client_message_id": "msg-123",
+    }
+    await canvas._apply_doodle_message(state, msg, sender)
+    state.doodles.remove_draw.assert_called_once_with(stroke_id="stroke-99", ids=["s1", "s2"])
+    sender.send_json.assert_awaited_once_with({"type": "doodle_ack", "client_message_id": "msg-123"})

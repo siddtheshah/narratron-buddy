@@ -1,4 +1,4 @@
-import { expect, test, type CanvasHarness } from '../../testing/ui/canvas_fixtures';
+import { expect, test, type CanvasHarness } from '../testing/canvas_fixtures';
 import type { Page, WebSocketRoute } from '@playwright/test';
 
 type AudioRecorderModule = typeof import('./audio-recorder.js');

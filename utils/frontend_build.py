@@ -20,7 +20,7 @@ else:
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 _EMIT_SUFFIXES = {".ts"}
 _DECLARATION_SUFFIXES = (".d.ts", ".d.mts", ".d.cts")
-_EXCLUDED_FRONTEND_DIRS = frozenset({"static", "templates"})
+_EXCLUDED_FRONTEND_DIRS = frozenset({"static", "templates", "testing"})
 _BUILD_CONFIG_FILES = (
     "tsconfig.json",
     "tsconfig.build.json",

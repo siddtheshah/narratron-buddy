@@ -1,11 +1,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { expect, REPO_ROOT, test } from '../../testing/ui/canvas_fixtures';
+import { expect, REPO_ROOT, test } from '../testing/canvas_fixtures';
 import {
   loadGameSnapshots,
   parseSubmittedAction,
   type SubmittedGameAction,
-} from '../../testing/ui/game_fixtures';
+} from '../testing/game_fixtures';
 import type { GamePayload } from '../game/game-renderer.js';
 
 const snapshots = loadGameSnapshots();

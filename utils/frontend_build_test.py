@@ -86,6 +86,10 @@ def test_ignores_tests_excluded_from_production_build(tmp_path: Path) -> None:
     for name in ("cursor-state_test.ts", "legacy_test.js", "legacy.js", "legacy.jsx", "legacy.tsx"):
         (source.parent / name).write_text("// Not emitted by tsconfig.build.json\n", encoding="utf-8")
 
+    fixture = tmp_path / "frontend" / "testing" / "canvas_fixtures.ts"
+    fixture.parent.mkdir()
+    fixture.write_text("// Shared Playwright fixture\n", encoding="utf-8")
+
     with patch("utils.frontend_build.subprocess.run") as run_mock:
         ensure_canvas_assets_built(project_root=tmp_path)
     run_mock.assert_not_called()

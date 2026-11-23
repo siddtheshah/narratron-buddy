@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { WebSocketRoute } from '@playwright/test';
-import { REPO_ROOT, expect, test } from '../../testing/ui/canvas_fixtures';
+import { REPO_ROOT, expect, test } from '../testing/canvas_fixtures';
 
 type SceneModule = typeof import('/static/generated/canvas/scene.js');
 type SpeechReplayModule = typeof import('/static/generated/canvas/speech-replay.js');

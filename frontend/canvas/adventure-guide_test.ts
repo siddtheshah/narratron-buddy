@@ -5,7 +5,7 @@ import {
   REPO_ROOT,
   TEMPLATES_DIR,
   test,
-} from '../../testing/ui/canvas_fixtures';
+} from '../testing/canvas_fixtures';
 
 test.describe('Adventure Guide UI', () => {
   test('canvas template and controller include required adventure guide elements and copy', async () => {

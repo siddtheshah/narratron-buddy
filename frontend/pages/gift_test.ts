@@ -6,7 +6,7 @@ import {
   TEMPLATES_DIR,
   expect,
   test,
-} from '../../testing/ui/canvas_fixtures';
+} from '../testing/canvas_fixtures';
 
 interface GiftTestWindow extends Window {
   __authModalTabs?: Array<string | undefined>;

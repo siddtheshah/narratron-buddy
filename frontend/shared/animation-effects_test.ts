@@ -1,4 +1,4 @@
-import { expect, test } from '../../testing/ui/canvas_fixtures';
+import { expect, test } from '../testing/canvas_fixtures';
 
 type AnimationEffectsModule = typeof import('./animation-effects.js');
 

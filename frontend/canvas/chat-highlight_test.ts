@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { WebSocketRoute } from '@playwright/test';
-import { expect, TEMPLATES_DIR, test } from '../../testing/ui/canvas_fixtures';
+import { expect, TEMPLATES_DIR, test } from '../testing/canvas_fixtures';
 
 interface AgentThoughtState {
   text: string;

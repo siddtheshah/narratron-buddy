@@ -1,4 +1,4 @@
-import { expect, test } from '../../testing/ui/canvas_fixtures';
+import { expect, test } from '../testing/canvas_fixtures';
 
 interface ChatMessagePayload {
   author: string;

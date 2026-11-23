@@ -7,7 +7,7 @@ import {
   TEMPLATES_DIR,
   test,
   type CanvasHarness,
-} from '../../testing/ui/canvas_fixtures';
+} from '../testing/canvas_fixtures';
 
 type UserHelpModule = typeof import('/static/generated/pages/user-help.js');
 type ChatControllerModule = typeof import('/static/generated/shared/chat-controller.js');

@@ -7,7 +7,7 @@ import {
   expect,
   test,
   type CanvasHarness,
-} from '../../../testing/ui/canvas_fixtures';
+} from '../../../frontend/testing/canvas_fixtures';
 
 type TestlabAudioVadModule = typeof import('./audio-vad.js');
 type PcmWorkletProcessorModule = typeof import('/static/generated/audio/pcm-worklet-processor.js');

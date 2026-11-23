@@ -1,9 +1,9 @@
 import type { Page, Route } from '@playwright/test';
-import { expect, test, type CanvasHarness } from '../../testing/ui/canvas_fixtures';
+import { expect, test, type CanvasHarness } from '../testing/canvas_fixtures';
 import {
   loadGameSnapshots,
   parseSubmittedAction,
-} from '../../testing/ui/game_fixtures';
+} from '../testing/game_fixtures';
 import type { GamePayload, GameRenderer } from './game-renderer.js';
 
 type GameRendererModule = typeof import('./game-renderer.js');

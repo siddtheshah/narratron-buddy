@@ -1,4 +1,4 @@
-import { expect, test, type CanvasHarness } from '../../testing/ui/canvas_fixtures';
+import { expect, test, type CanvasHarness } from '../testing/canvas_fixtures';
 import type { Locator, Page, WebSocketRoute } from '@playwright/test';
 import type { TextAnnotation } from './text-annotations.js';
 

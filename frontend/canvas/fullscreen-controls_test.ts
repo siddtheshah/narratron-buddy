@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { expect, test, type CanvasHarness } from '../../testing/ui/canvas_fixtures';
+import { expect, test, type CanvasHarness } from '../testing/canvas_fixtures';
 
 type FullscreenControlsModule = typeof import('/static/generated/canvas/fullscreen-controls.js');
 type FullscreenControlsController =

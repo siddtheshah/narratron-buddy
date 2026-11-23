@@ -1,4 +1,4 @@
-import { expect, test } from '../../testing/ui/canvas_fixtures';
+import { expect, test } from '../testing/canvas_fixtures';
 import type { GamePayload } from '../game/game-renderer.js';
 import type { RemoteGameController } from './remote-game.js';
 

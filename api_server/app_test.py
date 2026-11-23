@@ -11,7 +11,13 @@ from fastapi.testclient import TestClient
 import pytest
 
 import object_registry
-from api_server.app import can_control_agent_websocket, can_access_agent_websocket, is_contributor
+from api_server.app import (
+    app,
+    can_control_agent_websocket,
+    can_access_agent_websocket,
+    get_theater_owner_credits,
+    is_contributor,
+)
 app_module = importlib.import_module("api_server.app")
 
 
@@ -546,6 +552,139 @@ def test_get_agent_status_enforces_access_hides_credits_from_non_owners_and_prot
         res_owner = asyncio.run(app_module.get_agent_status_endpoint("stage", req))
         assert res_owner["credits"] == 0.0
         live_mgr.stop_session.assert_called_once_with(theater_id="stage")
+
+
+class TestAgentCreditsEnforcement(unittest.TestCase):
+    def setUp(self) -> None:
+        self.client = TestClient(app)
+
+    @patch("object_registry.db")
+    def test_get_theater_owner_credits_positive(self, mock_db: MagicMock) -> None:
+        mock_db.get_deployment.return_value = {"theater_id": "theater_1", "user_id": 42}
+        mock_db.get_user_by_id.return_value = {"id": 42, "credits": 50.0}
+
+        has_credits, balance, owner_id = get_theater_owner_credits("theater_1")
+        self.assertTrue(has_credits)
+        self.assertEqual(balance, 50.0)
+        self.assertEqual(owner_id, 42)
+
+    @patch("object_registry.db")
+    def test_get_theater_owner_credits_zero_or_negative(self, mock_db: MagicMock) -> None:
+        mock_db.get_deployment.return_value = {"theater_id": "theater_1", "user_id": 42}
+        mock_db.get_user_by_id.return_value = {"id": 42, "credits": 0.0}
+
+        has_credits, balance, owner_id = get_theater_owner_credits("theater_1")
+        self.assertFalse(has_credits)
+        self.assertEqual(balance, 0.0)
+        self.assertEqual(owner_id, 42)
+
+        mock_db.get_user_by_id.return_value = {"id": 42, "credits": -5.0}
+        has_credits_neg, balance_neg, owner_id_neg = get_theater_owner_credits("theater_1")
+        self.assertFalse(has_credits_neg)
+        self.assertEqual(balance_neg, -5.0)
+
+    @patch("object_registry.db")
+    def test_get_theater_owner_credits_missing_records(self, mock_db: MagicMock) -> None:
+        mock_db.get_deployment.return_value = None
+        has_credits, balance, owner_id = get_theater_owner_credits("non_existent_theater")
+        self.assertFalse(has_credits)
+        self.assertEqual(balance, 0.0)
+        self.assertIsNone(owner_id)
+
+    @patch("api_server.app.get_current_user_async", AsyncMock(return_value={"id": 99}))
+    @patch("object_registry.db")
+    @patch("object_registry.live_agent_manager")
+    def test_start_agent_blocked_when_credits_le_zero(self, mock_agent_mgr: MagicMock, mock_db: MagicMock) -> None:
+        mock_db.get_deployment.return_value = {"theater_id": "theater_poor", "user_id": 99}
+        mock_db.get_user_by_id.return_value = {"id": 99, "credits": 0.0}
+
+        response = self.client.post("/api/theaters/theater_poor/agent/start")
+        self.assertEqual(response.status_code, 402)
+        json_data = response.json()
+        self.assertTrue(json_data.get("insufficient_credits"))
+        self.assertEqual(json_data.get("agent_running"), False)
+        mock_agent_mgr.stop_session.assert_called_once_with(theater_id="theater_poor")
+
+    @patch("api_server.app.get_current_user_async", AsyncMock(return_value={"id": 88}))
+    @patch("object_registry.db")
+    @patch("object_registry.live_agent_manager")
+    def test_start_agent_allowed_when_credits_positive(self, mock_agent_mgr: MagicMock, mock_db: MagicMock) -> None:
+        mock_db.get_deployment.return_value = {"theater_id": "theater_rich", "user_id": 88}
+        mock_db.get_user_by_id.return_value = {"id": 88, "credits": 20.0}
+        mock_session = MagicMock()
+        mock_session.status = "ready"
+        mock_agent_mgr.get_or_create_session.return_value = mock_session
+
+        response = self.client.post("/api/theaters/theater_rich/agent/start")
+        self.assertEqual(response.status_code, 200)
+        json_data = response.json()
+        self.assertFalse(json_data.get("insufficient_credits"))
+        self.assertTrue(json_data.get("agent_running"))
+
+    @patch("api_server.app.get_current_user_async", AsyncMock(return_value=None))
+    def test_start_agent_unauthenticated_returns_401(self) -> None:
+        response = self.client.post("/api/theaters/theater_rich/agent/start")
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.json()["detail"], "Authentication required.")
+
+    @patch("api_server.app.get_current_user_async", AsyncMock(return_value={"id": 55}))
+    @patch("object_registry.db")
+    def test_start_agent_non_orator_returns_403(self, mock_db: MagicMock) -> None:
+        mock_db.get_deployment.return_value = {"theater_id": "theater_rich", "user_id": 88, "active_orator_id": 88}
+        response = self.client.post("/api/theaters/theater_rich/agent/start")
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.json()["detail"], "Only the active orator can start the agent.")
+
+    @patch("api_server.app.get_current_user_async", AsyncMock(return_value=None))
+    def test_stop_agent_unauthenticated_returns_401(self) -> None:
+        response = self.client.post("/api/theaters/theater_rich/agent/stop")
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.json()["detail"], "Authentication required.")
+
+    @patch("api_server.app.get_current_user_async", AsyncMock(return_value={"id": 55}))
+    @patch("object_registry.db")
+    def test_stop_agent_non_orator_returns_403(self, mock_db: MagicMock) -> None:
+        mock_db.get_deployment.return_value = {"theater_id": "theater_rich", "user_id": 88, "active_orator_id": 88}
+        response = self.client.post("/api/theaters/theater_rich/agent/stop")
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.json()["detail"], "Only the active orator can stop the agent.")
+
+    @patch("api_server.app.get_current_user_async", AsyncMock(return_value={"id": 88}))
+    @patch("object_registry.db")
+    @patch("object_registry.live_agent_manager")
+    def test_stop_agent_allowed_for_active_orator(self, mock_agent_mgr: MagicMock, mock_db: MagicMock) -> None:
+        mock_db.get_deployment.return_value = {"theater_id": "theater_rich", "user_id": 88}
+        mock_agent_mgr.stop_session.return_value = True
+        response = self.client.post("/api/theaters/theater_rich/agent/stop")
+        self.assertEqual(response.status_code, 200)
+        json_data = response.json()
+        self.assertEqual(json_data.get("status"), "stopped")
+        self.assertEqual(json_data.get("agent_running"), False)
+        mock_agent_mgr.stop_session.assert_called_once_with(theater_id="theater_rich")
+
+    @patch("api_server.app.get_current_user_async", AsyncMock(return_value={"id": 77}))
+    @patch("api_server.shared.get_current_user_async", AsyncMock(return_value={"id": 77}))
+    @patch("object_registry.db")
+    @patch("object_registry.live_agent_manager")
+    def test_get_agent_status_stops_session_when_credits_le_zero(
+        self, mock_agent_mgr: MagicMock, mock_db: MagicMock
+    ) -> None:
+        mock_db.get_deployment.return_value = {
+            "theater_id": "theater_depleted",
+            "user_id": 77,
+            "join_key": "KEY-DEPLETED",
+        }
+        mock_db.get_user_by_id.return_value = {"id": 77, "credits": -1.0}
+        mock_session = MagicMock()
+        mock_session.status = "active"
+        mock_agent_mgr.get_session.return_value = mock_session
+
+        response = self.client.get("/api/theaters/theater_depleted/agent/status")
+        self.assertEqual(response.status_code, 200)
+        json_data = response.json()
+        self.assertTrue(json_data.get("insufficient_credits"))
+        self.assertFalse(json_data.get("agent_running"))
+        mock_agent_mgr.stop_session.assert_called_once_with(theater_id="theater_depleted")
 
 
 if __name__ == "__main__":

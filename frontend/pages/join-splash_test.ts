@@ -6,7 +6,7 @@ import {
   TEMPLATES_DIR,
   expect,
   test,
-} from '../../testing/ui/canvas_fixtures';
+} from '../testing/canvas_fixtures';
 
 function loadPreparedJoinSplashHtml(headInject = ''): string {
   let html = fs.readFileSync(path.join(TEMPLATES_DIR, 'join_splash.html'), 'utf-8');

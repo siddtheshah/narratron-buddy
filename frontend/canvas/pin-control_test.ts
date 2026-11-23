@@ -1,4 +1,4 @@
-import { expect, test } from '../../testing/ui/canvas_fixtures';
+import { expect, test } from '../testing/canvas_fixtures';
 
 type PinControlModule = typeof import('/static/generated/canvas/pin-control.js');
 type CanvasPinState = import('/static/generated/canvas/pin-control.js').CanvasPinState;

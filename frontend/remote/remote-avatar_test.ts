@@ -8,7 +8,7 @@ import {
     expect,
     test,
     type CanvasHarness,
-} from '../../testing/ui/canvas_fixtures';
+} from '../testing/canvas_fixtures';
 import type { RemoteStatusState } from './remote.js';
 
 test.use({ launchOptions: { args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] } });

@@ -537,5 +537,31 @@ def test_resolve_stamp_image_rejects_file_uri_traversal_and_ancestor_walk(tmp_pa
     ) is None
 
 
+def test_doodle_state_remove_draw_backend() -> None:
+    persist_called = False
 
+    def on_persist() -> None:
+        nonlocal persist_called
+        persist_called = True
 
+    ds = DoodleState(persist=on_persist)
+    ds.doodles = [
+        {"type": "draw", "id": "s1", "stroke_id": "str1", "x0": 0.1, "y0": 0.1, "x1": 0.2, "y1": 0.2},
+        {"type": "draw", "id": "s2", "stroke_id": "str1", "x0": 0.2, "y0": 0.2, "x1": 0.3, "y1": 0.3},
+        {"type": "draw", "id": "s3", "stroke_id": "str2", "x0": 0.4, "y0": 0.4, "x1": 0.5, "y1": 0.5},
+        {"type": "text", "id": "t1", "text": "Keep"},
+    ]
+
+    # Remove by stroke_id
+    ds.remove_draw(stroke_id="str1")
+    assert len(ds.doodles) == 2
+    assert ds.doodles[0]["id"] == "s3"
+    assert ds.doodles[1]["id"] == "t1"
+    assert persist_called is True
+
+    # Remove by id
+    persist_called = False
+    ds.remove_draw(ids=["s3"])
+    assert len(ds.doodles) == 1
+    assert ds.doodles[0]["id"] == "t1"
+    assert persist_called is True

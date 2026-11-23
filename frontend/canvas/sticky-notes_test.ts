@@ -1,4 +1,4 @@
-import { CANVAS_ORIGIN, expect, test } from '../../testing/ui/canvas_fixtures';
+import { CANVAS_ORIGIN, expect, test } from '../testing/canvas_fixtures';
 import type { Route, WebSocketRoute } from '@playwright/test';
 
 interface StickyNotePayload {

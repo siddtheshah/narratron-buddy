@@ -1,4 +1,4 @@
-import { expect, test } from '../../testing/ui/canvas_fixtures';
+import { expect, test } from '../testing/canvas_fixtures';
 import type { AnimationRenderer } from './media.js';
 
 type MediaModule = typeof import('./media.js');

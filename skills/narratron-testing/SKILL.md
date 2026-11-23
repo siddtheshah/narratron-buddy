@@ -35,12 +35,16 @@ Tests are organized into three categories:
      - `frontend/canvas/navigation_test.ts` (tests `frontend/canvas/navigation.ts`)
      - `frontend/canvas/doodle-actions_test.ts` (tests `frontend/canvas/doodle-actions.ts`)
      - `frontend/shared/state-polling_test.ts` (tests `frontend/shared/state-polling.ts`)
-   - Shared browser test fixtures and their self-tests live in `testing/ui/`:
-     - `testing/ui/canvas_fixtures.ts` (shared Playwright fixture)
-     - `testing/ui/canvas_fixtures_test.ts` (self-tests for `canvas_fixtures.ts`)
+   - Shared browser test fixtures and their self-tests live in `frontend/testing/`:
+     - `frontend/testing/canvas_fixtures.ts` (shared Playwright fixture)
+     - `frontend/testing/canvas_fixtures_test.ts` (self-tests for `canvas_fixtures.ts`)
 
-3. **Python UI & Backend Integration Tests (`testing/ui/`)**:
-   - **Python UI Tests (`*_test.py`)**: Backend-focused UI and API integration tests (e.g., backend undo handlers in `canvas_undo_test.py`, FastAPI/baton-credits checks in `remote_test.py`, and manifest/state checks in `triframe_animation_test.py`).
+3. **Python Integration Tests**: Place `*_test.py` files beside the backend code they exercise.
+   - Canvas WebSocket tests live in `api_server/canvas_test.py`, and remote baton
+     and credits browser integration tests live in `api_server/remote_browser_test.py`.
+   - Shared Python browser fixtures live in `testing/browser.py`. Request
+     `offline_browser_contexts` for Playwright tests and use the relevant frontend
+     build fixture when serving generated assets.
 
 ---
 
@@ -117,7 +121,7 @@ uv run pytest -n 4
 # Run a specific directory or file (prefer -n 0 for single files to avoid worker startup overhead)
 uv run pytest -n 2 services/
 uv run pytest -n 0 tools/image/image_tool_test.py
-uv run pytest -n 0 testing/ui/canvas_undo_test.py
+uv run pytest -n 0 api_server/canvas_test.py -k remove_draw
 
 # Run serially without worker processes (useful for targeted runs, step debugging, or pdb)
 uv run pytest -n 0
@@ -158,10 +162,10 @@ module layout. Follow these patterns for new modules and tests:
    - Ensure all templates, modules, and tests import via the same canonical URL so singleton module instances remain shared (compatibility re-export shims under `frontend/static/js/` have been retired).
 
 3. **Writing Playwright Tests with `canvas_fixtures.ts`**:
-   - Use the shared fixture in `testing/ui/canvas_fixtures.ts`:
+   - Use the shared fixture in `frontend/testing/canvas_fixtures.ts`:
      ```ts
      // From frontend/<consumer>/<module>_test.ts:
-     import { expect, test } from '../../testing/ui/canvas_fixtures';
+     import { expect, test } from '../testing/canvas_fixtures';
 
      test('module interaction', async ({ canvas, page }) => {
        await canvas.mount({
@@ -214,19 +218,13 @@ UI tests have strict offline and security guards:
 
 ## 2. Directory Layout of `testing/`
 
-The `testing/` directory contains UI integration tests, test data, evaluation scenarios, and shared test utilities:
+The `testing/` directory contains shared test utilities, evaluation harnesses, and test data:
 
 ```text
 testing/
 ├── e2e/               # End-to-end browser validation and load harnesses
-├── ui/                # Shared browser fixtures & backend-focused UI integration tests
-│   ├── canvas_fixtures.ts        # Shared Playwright TS fixture (offline guard, static server, canvas.html loader)
-│   ├── canvas_fixtures_test.ts   # Self-tests for shared Playwright fixtures
-│   ├── canvas_undo_test.py       # Python backend tests for undo endpoints
-│   ├── remote_test.py            # Backend FastAPI/baton-credits checks
-│   ├── triframe_animation_test.py # Backend animation manifest/state checks
-│   ├── conftest.py               # Pytest fixtures and frontend build triggers
-│   └── base.py                   # Shared unittest state/storage fixture for Python
+├── browser.py        # Python Playwright network guard and build fixture
+├── browser_test.py   # Browser network guard self-test
 ├── testcases/         # Evaluation test scenarios containing expectations.json and audio files
 │   └── desert_basic/
 │       ├── expectations.json

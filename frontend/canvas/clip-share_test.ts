@@ -1,4 +1,4 @@
-import { CANVAS_ORIGIN, expect, test } from '../../testing/ui/canvas_fixtures';
+import { CANVAS_ORIGIN, expect, test } from '../testing/canvas_fixtures';
 
 type ClipShareModule = typeof import('/static/generated/canvas/clip-share.js');
 type ClipShareController = import('/static/generated/canvas/clip-share.js').ClipShareController;

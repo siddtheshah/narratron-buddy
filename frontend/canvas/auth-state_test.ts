@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { WebSocketRoute } from '@playwright/test';
-import { CANVAS_ORIGIN, expect, REPO_ROOT, STATIC_DIR, test } from '../../testing/ui/canvas_fixtures';
+import { CANVAS_ORIGIN, expect, REPO_ROOT, STATIC_DIR, test } from '../testing/canvas_fixtures';
 
 type AuthFlowModule = typeof import('/static/generated/shared/auth-flow.js');
 

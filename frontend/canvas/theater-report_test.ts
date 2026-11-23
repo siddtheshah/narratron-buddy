@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { Route } from '@playwright/test';
-import { expect, TEMPLATES_DIR, test, type CanvasHarness } from '../../testing/ui/canvas_fixtures';
+import { expect, TEMPLATES_DIR, test, type CanvasHarness } from '../testing/canvas_fixtures';
 
 type TheaterReportModule = typeof import('/static/generated/canvas/theater-report.js');
 

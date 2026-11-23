@@ -10,17 +10,17 @@ import pytest
 from utils.frontend_build import ensure_canvas_assets_built
 
 
-@pytest.fixture(scope="session", autouse=True)
-def ensure_generated_canvas_assets() -> None:
+@pytest.fixture(scope="session")
+def ensure_browser_assets() -> None:
     """Build generated canvas TypeScript assets when local sources are missing or stale."""
-    ensure_canvas_assets_built(include_testlab=True)
+    ensure_canvas_assets_built()
 
 
 Parameters = ParamSpec("Parameters")
 Result = TypeVar("Result")
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture
 def offline_browser_contexts(monkeypatch: pytest.MonkeyPatch) -> Iterator[list[str]]:
     """Install a last-resort deny route before individual tests register mocks."""
     blocked: list[str] = []

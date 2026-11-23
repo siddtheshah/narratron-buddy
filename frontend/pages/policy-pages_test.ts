@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { CANVAS_ORIGIN, expect, TEMPLATES_DIR, test } from '../../testing/ui/canvas_fixtures';
+import { CANVAS_ORIGIN, expect, TEMPLATES_DIR, test } from '../testing/canvas_fixtures';
 
 const AUTH_FLOW_MODULE_URL = '/static/generated/shared/auth-flow.js';
 

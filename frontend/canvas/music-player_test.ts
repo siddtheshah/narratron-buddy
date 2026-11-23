@@ -1,4 +1,4 @@
-import { expect, test } from '../../testing/ui/canvas_fixtures';
+import { expect, test } from '../testing/canvas_fixtures';
 
 type MusicPlayerModule = typeof import('/static/generated/canvas/music-player.js');
 type MusicPlayerController = import('/static/generated/canvas/music-player.js').MusicPlayerController;

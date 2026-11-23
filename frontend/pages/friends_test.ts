@@ -6,7 +6,7 @@ import {
   expect,
   TEMPLATES_DIR,
   test,
-} from '../../testing/ui/canvas_fixtures';
+} from '../testing/canvas_fixtures';
 
 type FriendsModule = typeof import('/static/generated/pages/friends.js');
 

@@ -8,7 +8,7 @@ import {
   expect,
   test,
   type CanvasHarness,
-} from '../../../testing/ui/canvas_fixtures';
+} from '../../../frontend/testing/canvas_fixtures';
 
 type TestlabGameLabModule = typeof import('./game-lab.js');
 

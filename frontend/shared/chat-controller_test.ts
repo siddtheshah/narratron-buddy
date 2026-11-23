@@ -1,5 +1,5 @@
 import type { Route } from '@playwright/test';
-import { expect, test } from '../../testing/ui/canvas_fixtures';
+import { expect, test } from '../testing/canvas_fixtures';
 import type {
   ChatApplySettingsResult,
   ChatBroadcastMessage,

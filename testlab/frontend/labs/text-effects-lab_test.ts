@@ -7,7 +7,7 @@ import {
   STATIC_DIR,
   expect,
   test,
-} from '../../../testing/ui/canvas_fixtures';
+} from '../../../frontend/testing/canvas_fixtures';
 
 const TEXT_EFFECTS_HTML_PATH = path.join(REPO_ROOT, 'testlab', 'frontend', 'templates', 'text_effects_lab.html');
 

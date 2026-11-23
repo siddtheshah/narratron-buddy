@@ -7,7 +7,7 @@ import {
   TEMPLATES_DIR,
   test,
   type CanvasHarness,
-} from '../../testing/ui/canvas_fixtures';
+} from '../testing/canvas_fixtures';
 import type {
   ActionWheelAction,
   ActionWheelController,

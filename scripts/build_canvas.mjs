@@ -10,7 +10,7 @@ const testlabDir = path.join(rootDir, 'testlab');
 const testlabFrontendDir = path.join(testlabDir, 'frontend');
 const testlabOutputDir = path.join(testlabFrontendDir, 'static', 'generated');
 const testlabTsconfig = path.join(testlabDir, 'tsconfig.json');
-const excludedDirs = new Set(['static', 'templates']);
+const excludedDirs = new Set(['static', 'templates', 'testing']);
 const tscBin = path.join(
   rootDir,
   'node_modules',

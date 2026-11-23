@@ -1,4 +1,4 @@
-import { expect, test } from '../../testing/ui/canvas_fixtures';
+import { expect, test } from '../testing/canvas_fixtures';
 
 type MicConfigModule = typeof import('/static/generated/canvas/mic-config.js');
 type MicConfigController = import('/static/generated/canvas/mic-config.js').MicConfigController;

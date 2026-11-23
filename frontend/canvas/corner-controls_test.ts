@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { expect, TEMPLATES_DIR, test } from '../../testing/ui/canvas_fixtures';
+import { expect, TEMPLATES_DIR, test } from '../testing/canvas_fixtures';
 
 function loadCornerControlsHtml(): string {
   const template = fs.readFileSync(path.join(TEMPLATES_DIR, 'canvas.html'), 'utf-8');

@@ -1,4 +1,4 @@
-import { expect, test, type CanvasHarness } from '../../testing/ui/canvas_fixtures';
+import { expect, test, type CanvasHarness } from '../testing/canvas_fixtures';
 import type { Page, WebSocketRoute } from '@playwright/test';
 
 type DeviceAwarePcmModule = typeof import('../audio/device-aware-pcm.js');
