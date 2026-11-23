@@ -144,10 +144,8 @@ uv run pytest -n 4 adventures
 
 ### Canvas TypeScript Layout & Testing Patterns
 
-The browser TypeScript migration is complete. See
-[`frontend/canvas/MIGRATION.md`](../../frontend/canvas/MIGRATION.md) for the historical
-coverage inventory and [frontend/README.md](../../frontend/README.md) for the current layout. Follow these patterns for new
-modules and tests:
+See [`frontend/README.md`](../../frontend/README.md) for the current browser
+module layout. Follow these patterns for new modules and tests:
 
 1. **Source Organization & Compilation**:
    - Production TypeScript source code resides in `frontend/<consumer>/<module>.ts`.

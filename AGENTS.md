@@ -133,9 +133,7 @@ TypeScript or keep `npm run watch` running. Generated files in
 Docker compiles these assets in its Node build stage.
 
 See the [testing guide](skills/narratron-testing/SKILL.md) for fixtures, offline
-guards, and evaluation commands, and the
-[migration inventory](frontend/canvas/MIGRATION.md) for coverage parity and
-remaining optional improvements.
+guards, and evaluation commands.
 
 ### Local testing
 
