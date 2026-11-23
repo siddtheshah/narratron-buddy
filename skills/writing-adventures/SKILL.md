@@ -95,7 +95,9 @@ The `metadata.json` file registers the adventure in the Narratron catalog and UI
   "created_at": "2026-09-07T12:00:00Z",
   "cover_image": "references/cover.webp",
   "difficulty": "Medium",
-  "recommended_players": "1-4"
+  "recommended_players": "1-4",
+  "version": "1.0.0",
+  "has_game": false
 }
 ```
 
@@ -109,6 +111,8 @@ The `metadata.json` file registers the adventure in the Narratron catalog and UI
 - **`cover_image`** *(string, required)*: Relative path to cover art (e.g., `"references/cover.webp"`). If omitted or missing, the adventure loader falls back to the first available image file (`.webp`, `.png`, `.jpg`, `.jpeg`) found in the package.
 - **`difficulty`** *(string, optional)*: `"Easy"`, `"Medium"`, or `"Hard"` (default fallback: `"Medium"`).
 - **`recommended_players`** *(string, optional)*: e.g. `"1"`, `"1-4"`, `"2-6"` (default fallback: `"1-4"`).
+- **`version`** *(string, optional)*: Package version string (e.g., `"1.0.0"`). Displayed in the adventure catalog when present.
+- **`has_game`** *(boolean, optional)*: Set to `true` when the adventure includes a `game/` package (`false` by default). Displayed as a `Game` pill and filter in the adventure catalog.
 - **`created_at`** *(string, optional)*: ISO 8601 UTC timestamp string (e.g. `"2026-09-07T12:00:00Z"`).
 
 ---

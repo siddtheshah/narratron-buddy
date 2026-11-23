@@ -120,7 +120,9 @@ adventures/my-custom-adventure/
   "created_at": "2026-09-07T12:00:00Z",
   "cover_image": "references/cover.webp",
   "difficulty": "Medium",
-  "recommended_players": "1-4"
+  "recommended_players": "1-4",
+  "version": "1.0.0",
+  "has_game": false
 }
 ```
 
@@ -133,6 +135,8 @@ adventures/my-custom-adventure/
 - **`cover_image`** *(string)*: Relative path to the cover artwork within the adventure package (e.g. `"references/cover.webp"`).
 - **`difficulty`** *(string)*: `"Easy"`, `"Medium"`, or `"Hard"`.
 - **`recommended_players`** *(string)*: e.g. `"1"`, `"1-4"`, `"2-6"`.
+- **`version`** *(string, optional)*: Package version string (e.g. `"1.0.0"`). Displayed in the adventure catalog when present.
+- **`has_game`** *(boolean, optional)*: Set to `true` if the adventure includes a `game/` package (defaults to `false`). Controls the `Game` indicator and filter in the adventure catalog.
 
 ---
 

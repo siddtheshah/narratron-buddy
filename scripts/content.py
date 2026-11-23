@@ -161,6 +161,8 @@ COLLECTIONS = {
 }
 METADATA = TypeAdapter(dict[str, JsonValue])
 STRING = TypeAdapter(str)
+BOOL = TypeAdapter(bool)
+ADVENTURE_GAME_FILES = ("game/game.yaml", "game/game.yml", "game/game.json")
 
 
 def slugify(value: str) -> str:
@@ -250,13 +252,23 @@ def package_metadata(package: Path, kind: str, previous: Path | None = None) -> 
         "description": f"Pre-defined {kind} package for {package.name}.",
         "author": "Narratron Creator", "genre": spec.genre, "tags": list(spec.tags),
         "difficulty": "Medium", "recommended_players": spec.players,
+        "version": "1.0.0",
         **metadata,
     }
     metadata["id"] = safe_name(STRING.validate_python(metadata.get("id") or slugify(package.name), strict=True))
     metadata["title"] = STRING.validate_python(metadata.get("title") or default_title, strict=True)
+    raw_version = STRING.validate_python(metadata["version"], strict=True).strip()
+    if not raw_version:
+        raise ValueError(f"{package.name} metadata.json has empty version.")
+    metadata["version"] = raw_version
     metadata["created_at"] = STRING.validate_python(
         metadata.get("created_at") or old.get("created_at") or datetime.now(timezone.utc).isoformat(), strict=True,
     )
+    if kind == "adventures":
+        if "has_game" in metadata:
+            metadata["has_game"] = BOOL.validate_python(metadata["has_game"], strict=True)
+        else:
+            metadata["has_game"] = any((package / rel).is_file() for rel in ADVENTURE_GAME_FILES)
     if not metadata.get("cover_image"):
         images = [path for path in content_files(package) if path.suffix.lower() in (".svg", ".png", ".jpg", ".jpeg", ".webp")]
         crest = package / "game/crest.svg"

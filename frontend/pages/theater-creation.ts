@@ -15,6 +15,8 @@ export interface AdventurePreset {
   readonly track_count?: number;
   readonly reference_count?: number;
   readonly difficulty?: string;
+  readonly version?: string;
+  readonly has_game?: boolean;
 }
 
 export interface TheaterSummary {
@@ -344,10 +346,18 @@ export function initializeTheaterCreation(): TheaterCreationController | null {
       if (desc) desc.innerText = adv.description || '';
       if (pills) {
         const items: string[] = [];
+        if (adv.has_game === true) items.push('<span>🎮 Game</span>');
         if (adv.lore_count) items.push(`<span>📜 ${adv.lore_count} Lore Docs</span>`);
         if (adv.track_count) items.push(`<span>🎵 ${adv.track_count} Soundtracks</span>`);
         if (adv.reference_count) items.push(`<span>🖼️ ${adv.reference_count} References</span>`);
         if (adv.difficulty) items.push(`<span>⚡ ${escapeHtml(adv.difficulty)}</span>`);
+        if (adv.version) {
+          const trimmed = adv.version.trim();
+          if (trimmed) {
+            const label = trimmed.startsWith('v') || trimmed.startsWith('V') ? trimmed : `v${trimmed}`;
+            items.push(`<span>${escapeHtml(label)}</span>`);
+          }
+        }
         pills.innerHTML = items.join(' • ');
       }
     }

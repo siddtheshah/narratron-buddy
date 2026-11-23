@@ -9,6 +9,7 @@ from unittest.mock import MagicMock, patch
 
 from absl.testing import flagsaver
 from google.cloud import storage
+from pydantic import ValidationError
 import pytest
 import yaml
 
@@ -156,6 +157,8 @@ class TestAdventureService(unittest.TestCase):
                 "created_at": "2026-08-10T10:00:00Z",
                 "cover_image": "references/cover.png",
                 "tags": ["Sci-Fi", "Action"],
+                "version": "1.2.0",
+                "has_game": True,
             }),
             encoding="utf-8",
         )
@@ -180,6 +183,7 @@ class TestAdventureService(unittest.TestCase):
                 "created_at": "2026-08-18T12:00:00Z",  # Newer than alpha
                 "cover_image": "references/beta_cover.jpg",
                 "tags": ["Fantasy"],
+                "has_game": False,
             }),
             encoding="utf-8",
         )
@@ -235,6 +239,11 @@ class TestAdventureService(unittest.TestCase):
         self.assertEqual(adventures[0]["lore_count"], 1)
         self.assertEqual(adventures[2]["lore_count"], 1)
         self.assertEqual(adventures[0]["reference_count"], 1)
+        self.assertIs(adventures[0]["has_game"], False)
+        self.assertIs(adventures[1]["has_game"], False)
+        self.assertIs(adventures[2]["has_game"], True)
+        self.assertNotIn("version", adventures[0])
+        self.assertEqual(adventures[2]["version"], "1.2.0")
 
     def test_get_adventure_and_cover(self):
         service = AdventureService(base_dir=self.local_dir)
@@ -404,6 +413,48 @@ class TestAdventureService(unittest.TestCase):
         service_custom = AdventureService(base_dir=custom_dir)
         self.assertEqual(service_custom.base_dir, custom_dir)
         self.assertEqual(service_custom.list_adventures(force_refresh=True), [])
+
+    def test_has_game_rejects_non_boolean_metadata(self) -> None:
+        invalid_dir = self.local_dir / "Invalid Game Flag"
+        invalid_dir.mkdir()
+        (invalid_dir / "metadata.json").write_text(
+            json.dumps({
+                "id": "invalid-game-flag",
+                "title": "Invalid Game Flag",
+                "has_game": "yes",
+            }),
+            encoding="utf-8",
+        )
+        service = AdventureService(base_dir=self.local_dir)
+        with self.assertRaises(ValidationError):
+            service.list_adventures(force_refresh=True)
+
+    def test_version_rejects_non_string_and_empty_metadata(self) -> None:
+        invalid_dir = self.local_dir / "Invalid Version"
+        invalid_dir.mkdir()
+        meta_path = invalid_dir / "metadata.json"
+        meta_path.write_text(
+            json.dumps({
+                "id": "invalid-version",
+                "title": "Invalid Version",
+                "version": 1,
+            }),
+            encoding="utf-8",
+        )
+        service = AdventureService(base_dir=self.local_dir)
+        with self.assertRaises(ValidationError):
+            service.list_adventures(force_refresh=True)
+
+        meta_path.write_text(
+            json.dumps({
+                "id": "invalid-version",
+                "title": "Invalid Version",
+                "version": "   ",
+            }),
+            encoding="utf-8",
+        )
+        with self.assertRaises(ValueError):
+            service.list_adventures(force_refresh=True)
 
 
 def test_cloud_adventure_refresh_checks_only_gcs_sentinel(tmp_path: Path) -> None:

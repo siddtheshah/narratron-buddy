@@ -676,3 +676,35 @@ def test_avatar_package_metadata_uses_manifest_title_and_poster(tmp_path: Path) 
     assert metadata["genre"] == "3D Avatar"
 
 
+def test_adventure_package_metadata_sets_and_validates_has_game(tmp_path: Path) -> None:
+    with_game = tmp_path / "with-game"
+    write_file(with_game / "theater.yaml", "live_agent: {}\n")
+    write_file(with_game / "game/game.yaml", "game: {}\n")
+    with_game_meta = content.package_metadata(with_game, "adventures")
+    assert with_game_meta["has_game"] is True
+    assert with_game_meta["version"] == "1.0.0"
+
+    without_game = tmp_path / "without-game"
+    write_file(without_game / "theater.yaml", "live_agent: {}\n")
+    assert content.package_metadata(without_game, "adventures")["has_game"] is False
+
+    explicit = tmp_path / "explicit-game"
+    write_file(explicit / "theater.yaml", "live_agent: {}\n")
+    write_file(explicit / "metadata.json", json.dumps({"id": "explicit-game", "has_game": True, "version": "2.1.0"}))
+    explicit_meta = content.package_metadata(explicit, "adventures")
+    assert explicit_meta["has_game"] is True
+    assert explicit_meta["version"] == "2.1.0"
+
+    invalid = tmp_path / "invalid-game"
+    write_file(invalid / "theater.yaml", "live_agent: {}\n")
+    write_file(invalid / "metadata.json", json.dumps({"id": "invalid-game", "has_game": "yes"}))
+    with pytest.raises(ValueError):
+        content.package_metadata(invalid, "adventures")
+
+    invalid_version = tmp_path / "invalid-version"
+    write_file(invalid_version / "theater.yaml", "live_agent: {}\n")
+    write_file(invalid_version / "metadata.json", json.dumps({"id": "invalid-version", "version": "  "}))
+    with pytest.raises(ValueError):
+        content.package_metadata(invalid_version, "adventures")
+
+

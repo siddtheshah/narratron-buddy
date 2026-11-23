@@ -53,6 +53,8 @@ CACHE_CHECK_INTERVAL_SECONDS = 60.0
 DEFAULT_ADVENTURES_BUCKET = "narratron-buddy-app-storage"
 DEFAULT_ADVENTURES_PREFIX = "adventures"
 DOWNLOAD_WORKERS = 8
+BOOL = TypeAdapter(bool)
+STRING = TypeAdapter(str)
 
 AdventureAssets = tuple[list[tuple[str, bytes]], dict[str, list[tuple[str, bytes]]],
                         list[tuple[str, bytes]], dict[str, JsonValue]]
@@ -208,6 +210,16 @@ class AdventureService:
             meta["track_count"] = track_count
             meta["reference_count"] = ref_count
             meta["has_custom_config"] = (folder / "theater.yaml").exists() or (folder / "theater.yml").exists()
+            meta["has_game"] = (
+                BOOL.validate_python(meta["has_game"], strict=True)
+                if "has_game" in meta
+                else False
+            )
+            if "version" in meta:
+                raw_version = STRING.validate_python(meta["version"], strict=True).strip()
+                if not raw_version:
+                    raise ValueError(f"Adventure {adv_id} metadata.json has empty version.")
+                meta["version"] = raw_version
 
             # Ensure cover image URL/path exists
             if not meta.get("cover_image"):

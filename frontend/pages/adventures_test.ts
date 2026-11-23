@@ -40,6 +40,8 @@ const SAMPLE_ADVENTURES: readonly AdventureSummary[] = [
     track_count: 2,
     reference_count: 3,
     difficulty: 'Medium',
+    version: '1.2.0',
+    has_game: true,
   },
   {
     id: 'frost-fjord',
@@ -51,6 +53,7 @@ const SAMPLE_ADVENTURES: readonly AdventureSummary[] = [
     lore_count: 2,
     track_count: 1,
     reference_count: 0,
+    has_game: false,
   },
   {
     id: 'ashen-keep',
@@ -119,12 +122,24 @@ test('adventures page loads catalog, filters by search and tag, escapes content,
 
   // Missing cover falls back to placeholder, invalid date falls back to 'Recently Added'.
   await expect(page.locator('#card-starfall-station .card-cover-placeholder')).toBeVisible();
-  await expect(page.locator('#card-starfall-station .meta-pill')).toHaveCount(4);
+  await expect(page.locator('#card-starfall-station .meta-pill')).toHaveCount(6);
+  await expect(page.locator('#card-starfall-station .meta-pill-game')).toContainText('Game');
+  await expect(page.locator('#card-starfall-station .meta-pill-version')).toHaveText('v1.2.0');
+  await expect(page.locator('#card-frost-fjord .meta-pill-game')).toHaveCount(0);
+  await expect(page.locator('#card-frost-fjord .meta-pill-version')).toHaveCount(0);
+  await expect(page.locator('#card-ashen-keep .meta-pill-game')).toHaveCount(0);
   await expect(page.locator('#card-ashen-keep .badge-date')).toContainText('Recently Added');
   await expect(page.locator('#card-starfall-station a.btn-secondary')).toHaveAttribute(
     'href',
     '/deploy?creation_path=adventure&preset=starfall-station',
   );
+
+  // Game filter button shows only adventures with has_game=true.
+  const gameBtn = page.getByRole('button', { name: '🎮 Game', exact: true });
+  await gameBtn.click();
+  await expect(gameBtn).toHaveClass(/active/);
+  await expect(page.locator('#adventuresGrid .card')).toHaveCount(1);
+  await expect(page.locator('#card-starfall-station')).toBeVisible();
 
   // Tag buttons highlight properly (including Norse -> Norse Fantasy) and filter cards.
   const norseBtn = page.getByRole('button', { name: 'Norse', exact: true });
@@ -137,7 +152,12 @@ test('adventures page loads catalog, filters by search and tag, escapes content,
   await expect(page.locator('#adventuresGrid .card')).toHaveCount(1);
   await expect(page.locator('#card-ashen-keep')).toBeVisible();
 
-  // Search query with no match shows empty state and Clear Filters resets both query and tag.
+  // Search query 'game' matches adventures with has_game=true; unknown query shows empty state.
+  await page.getByRole('button', { name: 'All Adventures', exact: true }).click();
+  await page.locator('#searchInput').fill('game');
+  await expect(page.locator('#adventuresGrid .card')).toHaveCount(1);
+  await expect(page.locator('#card-starfall-station')).toBeVisible();
+
   await page.locator('#searchInput').fill('nonexistent-xyz');
   await expect(page.locator('#adventuresGrid')).toContainText('No adventures matched your search');
   await page.getByRole('button', { name: 'Clear Filters', exact: true }).click();

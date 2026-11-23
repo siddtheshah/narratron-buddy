@@ -10,6 +10,8 @@ import {
   test,
 } from '../testing/canvas_fixtures';
 
+import type { AdventurePreset } from './theater-creation.js';
+
 interface TheaterRowFixture {
   theater_id: string;
   name: string;
@@ -23,6 +25,7 @@ interface TheaterRowFixture {
 
 interface DeployRouteState {
   theaters: TheaterRowFixture[];
+  adventures: AdventurePreset[];
   deletedTheaters: string[];
   deployments: Record<string, string>[];
   fetchLog: Array<{ type: 'stop_agent' | 'delete_theater'; url: string }>;
@@ -147,6 +150,7 @@ async function setupDeployHarness(
     ) => Promise<void>;
   },
   page: Page,
+  initialAdventures: AdventurePreset[] = [],
 ): Promise<DeployHarness> {
   const defaultConfigYaml = fs.readFileSync(
     path.join(REPO_ROOT, 'theater_default.yaml'),
@@ -155,6 +159,7 @@ async function setupDeployHarness(
   const deployHtml = prepareDeployHtml();
   const state: DeployRouteState = {
     theaters: [],
+    adventures: initialAdventures,
     deletedTheaters: [],
     deployments: [],
     fetchLog: [],
@@ -199,7 +204,12 @@ async function setupDeployHarness(
           },
         });
       } else if (pathname === '/api/adventures') {
-        await route.fulfill({ json: [] });
+        await route.fulfill({ json: state.adventures });
+      } else if (pathname.startsWith('/api/adventures/') && pathname.endsWith('/cover')) {
+        await route.fulfill({
+          contentType: 'image/svg+xml',
+          body: '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"></svg>',
+        });
       } else if (pathname === '/api/theaters/default-config') {
         await route.fulfill({ json: { config_yaml: defaultConfigYaml } });
       } else if (pathname === '/api/theaters/create-and-deploy' && method === 'POST') {
@@ -543,4 +553,40 @@ test('theater deletion stops agent session first', async ({ canvas, page }) => {
   expect(state.fetchLog[0].url).toContain('theater-alpha');
   expect(state.fetchLog[1].type).toBe('delete_theater');
   expect(state.fetchLog[1].url).toContain('theater-alpha');
+});
+
+test('adventure preset preview shows Game indicator from metadata', async ({ canvas, page }) => {
+  await setupDeployHarness(canvas, page, [
+    {
+      id: 'with-game',
+      title: 'With Game',
+      genre: 'Strategy',
+      description: 'Includes a playable game.',
+      lore_count: 3,
+      version: '1.0.0',
+      has_game: true,
+    },
+    {
+      id: 'story-only',
+      title: 'Story Only',
+      genre: 'Mystery',
+      description: 'Pure narrative adventure.',
+      lore_count: 2,
+      has_game: false,
+    },
+  ]);
+
+  await page.evaluate(() => window.selectCreationPath?.('adventure'));
+  const select = page.locator('#adventurePresetSelect');
+  await expect(select.locator('option')).toHaveCount(3);
+
+  await select.selectOption('with-game');
+  await expect(page.locator('#presetCardPills')).toContainText('🎮 Game');
+  await expect(page.locator('#presetCardPills')).toContainText('📜 3 Lore Docs');
+  await expect(page.locator('#presetCardPills')).toContainText('v1.0.0');
+
+  await select.selectOption('story-only');
+  await expect(page.locator('#presetCardPills')).not.toContainText('Game');
+  await expect(page.locator('#presetCardPills')).not.toContainText('v1.0.0');
+  await expect(page.locator('#presetCardPills')).toContainText('📜 2 Lore Docs');
 });

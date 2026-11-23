@@ -13,6 +13,8 @@ export interface AdventureSummary {
   readonly track_count?: number;
   readonly reference_count?: number;
   readonly difficulty?: string;
+  readonly version?: string;
+  readonly has_game?: boolean;
 }
 
 interface DeployTheaterResponse {
@@ -58,6 +60,12 @@ function createMetaPill(text: string, title: string): HTMLSpanElement {
   pill.title = title;
   pill.textContent = text;
   return pill;
+}
+
+function formatAdventureVersion(version: string): string {
+  const trimmed = version.trim();
+  if (!trimmed) return '';
+  return trimmed.startsWith('v') || trimmed.startsWith('V') ? trimmed : `v${trimmed}`;
 }
 
 export function initAdventuresPage(): AdventuresController | null {
@@ -200,6 +208,11 @@ export function initAdventuresPage(): AdventuresController | null {
     const trackCount = adv.track_count || 0;
     const refCount = adv.reference_count || 0;
 
+    if (adv.has_game === true) {
+      const gamePill = createMetaPill('🎮 Game', 'Includes interactive game');
+      gamePill.classList.add('meta-pill-game');
+      pills.append(gamePill);
+    }
     if (loreCount > 0) {
       pills.append(createMetaPill(`📜 ${loreCount} Lore Docs`, `${loreCount} Lore Documents`));
     }
@@ -213,6 +226,14 @@ export function initAdventuresPage(): AdventuresController | null {
     }
     if (adv.difficulty) {
       pills.append(createMetaPill(`⚡ ${adv.difficulty}`, 'Difficulty'));
+    }
+    if (adv.version) {
+      const formattedVersion = formatAdventureVersion(adv.version);
+      if (formattedVersion) {
+        const versionPill = createMetaPill(formattedVersion, `Version ${adv.version}`);
+        versionPill.classList.add('meta-pill-version');
+        pills.append(versionPill);
+      }
     }
 
     const actions = document.createElement('div');
@@ -258,17 +279,22 @@ export function initAdventuresPage(): AdventuresController | null {
       const desc = (adv.description || '').toLowerCase();
       const genre = (adv.genre || '').toLowerCase();
       const tags = (adv.tags || []).map((tag) => tag.toLowerCase());
+      const hasGame = adv.has_game === true;
 
+      const matchesGameQuery =
+        hasGame && (query === 'game' || query === 'games' || query === 'has game');
       const matchesQuery =
         !query ||
         title.includes(query) ||
         desc.includes(query) ||
         tags.some((tag) => tag.includes(query)) ||
-        genre.includes(query);
+        genre.includes(query) ||
+        matchesGameQuery;
       const matchesTag =
         activeTag === 'all' ||
-        genre.includes(tagQuery) ||
-        tags.some((tag) => tag.includes(tagQuery));
+        (tagQuery === 'game'
+          ? hasGame
+          : genre.includes(tagQuery) || tags.some((tag) => tag.includes(tagQuery)));
 
       return matchesQuery && matchesTag;
     });
