@@ -1,3 +1,4 @@
+import { initializeRemoteClips } from './remote-clips.js';
 import {
     initializeChatController,
     type ChatAuthUser,
@@ -213,6 +214,7 @@ export function initializeRemote(): RemoteController {
     let assetsLoading = false;
     let lastAssetsSignature: string | null = null;
     const theaterId = new URLSearchParams(location.search).get('theater_id');
+    const clipRecording = initializeRemoteClips(theaterId, (message) => showToast(message, 'info'));
     const storyLog: StoryLogInspectorController | undefined = initializeStoryLogInspector(theaterId, { embedded: true });
     const previewTabs = [...document.querySelectorAll<HTMLElement>('.preview-tabs [role="tab"]')];
     const previewThoughtTab = document.getElementById('preview-thought-tab');
@@ -1120,6 +1122,7 @@ export function initializeRemote(): RemoteController {
         const isNowOrator = !currentBatonState || Boolean(isActiveOrator || (isOwner && !currentBatonState.active_orator));
 
         controls.disabled = !state || busy || !isNowOrator;
+        clipRecording?.setCanRecord(Boolean(state?.is_orator && isNowOrator));
         storyControls.disabled = !state || busy || !isNowOrator;
         const storyInputStatus = document.getElementById('story-input-status');
         if (storyInputStatus) {
@@ -2015,6 +2018,7 @@ export function initializeRemote(): RemoteController {
     });
 
     const handlePageHide = (): void => {
+        clipRecording?.disconnect();
         previewAudio.update(null, false);
         window.clearTimeout(audioReconnectTimer);
         window.clearTimeout(audioRefreshTimer);
@@ -2099,6 +2103,7 @@ export function initializeRemote(): RemoteController {
             document.removeEventListener('visibilitychange', handleVisibilityChange);
             disposeRemoteAvatar();
             handlePageHide();
+            clipRecording?.destroy();
             if (agentWs) {
                 try { agentWs.close(); } catch { /* Ignore close errors. */ }
                 agentWs = null;

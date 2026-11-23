@@ -38,15 +38,16 @@ export function playCanvasAnimation(
   renderer: AnimationRenderer,
   animation: CanvasAnimation,
   resolveUrl: (url: string) => string = url => url,
-): void {
+): Promise<void> | undefined {
   if (animation.type === 'layered') {
-    renderer.playLayeredAnimation(animation.layers.map(layer => ({ ...layer, url: resolveUrl(layer.url) })));
+    return renderer.playLayeredAnimation(animation.layers.map(layer => ({ ...layer, url: resolveUrl(layer.url) })));
   } else if (animation.type === 'video') {
-    renderer.playVideoAnimation(resolveUrl(animation.video_url || animation.url || ''), animation);
+    return renderer.playVideoAnimation(resolveUrl(animation.video_url || animation.url || ''), animation);
   } else if (animation.type === 'triframe') {
-    renderer.playSequence(animation.frames.map(resolveUrl), {
+    return renderer.playSequence(animation.frames.map(resolveUrl), {
       frameDuration: animation.frame_duration_ms || 1400,
       crossfadeDuration: animation.crossfade_duration_ms || 500,
     });
   }
+  return undefined;
 }

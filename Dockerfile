@@ -27,6 +27,7 @@ COPY --from=ghcr.io/astral-sh/uv:0.11.21 /uv /uvx /bin/
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     ca-certificates \
+    ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 RUN groupadd --system --gid 10001 appuser \
@@ -44,7 +45,9 @@ COPY pyproject.toml uv.lock ./
 
 # Install dependencies into a persistent virtual environment
 ENV UV_PROJECT_ENVIRONMENT="/opt/venv"
+ENV PLAYWRIGHT_BROWSERS_PATH="/opt/playwright"
 RUN uv sync --frozen --no-dev --no-install-project \
+    && uv run --no-sync python -m playwright install --with-deps --no-shell chromium \
     && uv run --no-sync python -c "from google.adk.sessions import DatabaseSessionService; DatabaseSessionService('sqlite+aiosqlite:///:memory:')" \
     && chown -R appuser:appuser /opt/venv
 

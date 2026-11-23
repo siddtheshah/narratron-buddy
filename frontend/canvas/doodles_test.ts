@@ -625,6 +625,7 @@ test('canvas clip sharing opens OBS clip stage and mixes opt-in voice and tab au
   );
   let apiClipsCalled = false;
   let draftUploadCalled = false;
+  let draftStatusChecks = 0;
   await canvas.serveRoute(
     (url) => url.origin === CANVAS_ORIGIN && url.pathname === '/api/clips',
     async (route: Route) => {
@@ -642,7 +643,13 @@ test('canvas clip sharing opens OBS clip stage and mixes opt-in voice and tab au
   await canvas.serveRoute(
     (url) => url.origin === CANVAS_ORIGIN && url.pathname === '/api/tiktok/draft-status',
     async (route: Route) => {
-      await route.fulfill({ json: { status: 'SEND_TO_USER_INBOX' } });
+      draftStatusChecks += 1;
+      await route.fulfill({
+        json: {
+          publish_id: 'pub-1',
+          status: draftStatusChecks === 1 ? 'PROCESSING_UPLOAD' : 'SEND_TO_USER_INBOX',
+        },
+      });
     },
   );
 
@@ -769,6 +776,9 @@ test('canvas clip sharing opens OBS clip stage and mixes opt-in voice and tab au
   await page.locator('#clip-stop-early-btn').click();
 
   await expect(page.locator('#clip-draft-handoff')).toHaveClass(/active/);
+  const openTikTok = page.getByRole('link', { name: 'Open TikTok' });
+  const draftStatus = page.locator('#clip-draft-status');
+  await expect(openTikTok).toBeHidden();
 
   const clipState = await page.evaluate(
     () => (window as ClipRecorderMockWindow).__clipMockState!,
@@ -793,6 +803,15 @@ test('canvas clip sharing opens OBS clip stage and mixes opt-in voice and tab au
     window.postMessage({ type: 'narratron-tiktok-connected' }, window.location.origin);
   });
   await expect.poll(() => draftUploadCalled).toBe(true);
+  await expect(openTikTok).toBeVisible();
+  await expect(openTikTok).toHaveAttribute('href', 'https://www.tiktok.com/');
+  await expect(openTikTok).toHaveAttribute('target', '_blank');
+  await expect(page.getByRole('button', { name: 'Send to TikTok draft' })).toBeHidden();
+  await expect(page.getByText('In the TikTok app, open Inbox', { exact: false })).toBeVisible();
+  expect(draftStatusChecks).toBe(0);
+  await expect(draftStatus).toHaveText('Clip sent. TikTok is preparing your draft.');
+  await expect(draftStatus).toHaveText('Delivered to your TikTok Inbox.', { timeout: 15_000 });
+  expect(draftStatusChecks).toBe(2);
   expect(apiClipsCalled).toBe(false);
 });
 

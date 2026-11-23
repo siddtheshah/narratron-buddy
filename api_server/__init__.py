@@ -28,6 +28,7 @@ import api_server.friends  # noqa: F401
 import api_server.pages  # noqa: F401
 import api_server.theater_editor  # noqa: F401
 import api_server.tiktok  # noqa: F401
+import api_server.clip_recording  # noqa: F401
 import api_server.user_help  # noqa: F401
 import api_server.remote  # noqa: F401
 

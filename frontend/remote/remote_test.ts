@@ -212,6 +212,106 @@ test('missing theater_id shows error status and toast without crashing', async (
     await expect(page.locator('#canvas-link')).toHaveAttribute('hidden', '');
 });
 
+test('mobile remote shows recording progress, previews and clears a clip, and sends it to TikTok', async ({ canvas, page }) => {
+    const clip = Buffer.from('recorded MP4 bytes');
+    const commands: string[] = [];
+    const uploads: (Buffer | null)[] = [];
+    await page.clock.install();
+    await page.addInitScript(() => {
+        window.open = () => {
+            window.postMessage({ type: 'narratron-tiktok-connected' }, location.origin);
+            return window;
+        };
+    });
+    await mountRemote(canvas, {
+        viewport: { width: 320, height: 844 },
+        onWebSocket: (ws) => {
+            const url = new URL(ws.url());
+            if (url.pathname !== '/ws/clip-recording') return;
+            expect(url.searchParams.get('theater_id')).toBe('stage');
+            ws.send('{"type":"recording"}');
+            ws.onMessage((message) => {
+                commands.push(String(message));
+                ws.send('{"type":"processing"}');
+                ws.send(clip);
+            });
+        },
+        onRoute: async (url, route) => {
+            if (url.pathname === '/api/tiktok/draft-upload-mp4') {
+                uploads.push(route.request().postDataBuffer());
+                await route.fulfill({ json: { publish_id: 'draft-1' } });
+                return true;
+            }
+            return false;
+        },
+    });
+
+    const clipBox = page.getByRole('region', { name: 'Record', exact: true });
+    const start = clipBox.getByRole('button', { name: 'Start', exact: true });
+    const previewButton = clipBox.getByRole('button', { name: 'Preview', exact: true });
+    const clear = clipBox.getByRole('button', { name: 'Clear', exact: true });
+    const review = clipBox.getByRole('group', { name: 'Clip actions' });
+    const makeTikTok = review.getByRole('button', { name: 'Make Tiktok', exact: true });
+    const downloadButton = review.getByRole('button', { name: 'Download', exact: true });
+    const stop = page.getByRole('button', { name: 'Stop', exact: true });
+    const progress = page.getByRole('progressbar', { name: 'Clip recording progress' });
+    await expect(progress).toBeHidden();
+    await expect(review).toBeHidden();
+    const idleStart = (await start.boundingBox())!;
+    const topRow = (await clipBox.locator('#remote-clip-main').boundingBox())!;
+    expect(idleStart.x + idleStart.width).toBeCloseTo(topRow.x + topRow.width);
+    await start.click();
+    await expect(progress).toBeVisible();
+    await expect(progress).toHaveAttribute('max', '30000');
+    await page.clock.fastForward(15_000);
+    await expect.poll(() => progress.evaluate((bar: HTMLProgressElement) => bar.value)).toBeGreaterThanOrEqual(15_000);
+    await page.clock.fastForward(16_000);
+    await expect(progress).toHaveJSProperty('value', 30_000);
+    await stop.click();
+
+    await expect(review).toBeVisible();
+    await expect(progress).toBeHidden();
+    expect(commands).toEqual(['stop']);
+    await expect(clipBox.locator('#remote-clip-status')).toBeEmpty();
+    const [startBox, previewBox, clearBox, makeBox, downloadBox] = await Promise.all(
+        [start, previewButton, clear, makeTikTok, downloadButton].map((button) => button.boundingBox()),
+    );
+    expect(startBox!.width).toBeLessThan(idleStart.width);
+    expect(startBox!.x).toBeCloseTo(idleStart.x);
+    expect(startBox!.y).toBe(previewBox!.y);
+    expect(previewBox!.y).toBe(clearBox!.y);
+    expect(makeBox!.y).toBeGreaterThan(clearBox!.y);
+    expect(makeBox!.y).toBe(downloadBox!.y);
+    expect(makeBox!.x).toBeLessThan(downloadBox!.x);
+    const [download] = await Promise.all([
+        page.waitForEvent('download'),
+        downloadButton.click(),
+    ]);
+    expect(download.suggestedFilename()).toMatch(/\.mp4$/);
+    const video = page.locator('#remote-clip-video');
+    await expect(video).toBeHidden();
+    await previewButton.click();
+    const preview = page.getByRole('dialog', { name: 'Clip preview' });
+    await expect(preview).toBeVisible();
+    expect(await preview.boundingBox()).toEqual({ x: 0, y: 0, width: 320, height: 844 });
+    await expect(video).toHaveAttribute('src', /^blob:/);
+    await video.click();
+    await expect(preview).toBeHidden();
+    await makeTikTok.click();
+    await expect(review.getByRole('link', { name: 'Open TikTok' })).toBeVisible();
+    await expect(page.locator('#toast-message')).toHaveText('Clip sent. TikTok is preparing your draft.');
+    expect(uploads).toHaveLength(1);
+    expect(uploads[0]?.includes(clip)).toBe(true);
+    expect(uploads[0]?.toString()).toContain('Content-Type: video/mp4');
+    await clear.click();
+    await expect(review).toBeHidden();
+    await expect(previewButton).toBeHidden();
+    expect((await start.boundingBox())!.width).toBeCloseTo(idleStart.width);
+    await expect(video).not.toHaveAttribute('src');
+    await expect(start).toBeEnabled();
+    await expect(start).toBeFocused();
+});
+
 test('header displays theater id and join key while canvas link omits join key', async ({ canvas, page }) => {
     await mountRemote(canvas, {
         theaterId: 'other',
@@ -1603,7 +1703,9 @@ for (const width of [320, 390, 700] as const) {
         expect(
             await page.evaluate(() =>
                 [...document.querySelectorAll('.bar')].every((bar) => {
-                    const children = [...bar.children].filter((child) => !child.classList.contains('sr-only'));
+                    const children = [...bar.children].filter(
+                        (child) => !child.classList.contains('sr-only') && child.getClientRects().length > 0,
+                    );
                     const bounds = children.map((child) => child.getBoundingClientRect());
                     return (
                         bounds.every(
@@ -1640,6 +1742,13 @@ for (const width of [320, 390, 700] as const) {
         expect(collabBox).not.toBeNull();
         expect(collabBox!.width).toBeGreaterThanOrEqual(60);
         expect(collabBox!.height).toBeGreaterThanOrEqual(52);
+        const startButton = page.getByRole('region', { name: 'Record', exact: true })
+            .getByRole('button', { name: 'Start', exact: true });
+        const startBox = await startButton.boundingBox();
+        expect(startBox).not.toBeNull();
+        expect(startBox!.x).toBeCloseTo(collabBox!.x);
+        expect(startBox!.width).toBeCloseTo(collabBox!.width);
+        expect(startBox!.height).toBeCloseTo(collabBox!.height);
 
         for (const [media, pin, newAction] of [
             ['scene', 'scene-pin', 'new_image'],

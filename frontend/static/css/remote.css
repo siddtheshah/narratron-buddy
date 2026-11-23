@@ -37,6 +37,18 @@ fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
 .bar[aria-labelledby="music-title"] { --bar-accent: #45e0ff; }
 .bar[aria-labelledby="direction-title"] { --bar-accent: #edc68c; }
 .bar[aria-labelledby="audience-title"] { --bar-accent: #93c9b0; }
+#remote-clip-box { flex-direction: column; align-items: stretch; }
+#remote-clip-main, #remote-clip-review:not([hidden]) { display: flex; align-items: center; gap: inherit; }
+#remote-clip-toggle { flex: 1; min-width: 4rem; }
+#remote-clip-toggle[data-recording="true"] { flex: 0 0 auto; color: #fecaca; background: #ef444433; border-color: #f8717180; }
+#remote-clip-progress { flex: 1; min-width: 0; height: .55rem; accent-color: #f87171; }
+#remote-clip-status:empty { display: none; }
+#remote-clip-review a { flex: 1; padding: .5rem 0; font-size: .85rem; text-align: center; }
+#remote-clip-preview { position: fixed; inset: 0; width: 100%; height: 100dvh; max-width: none; max-height: none; margin: 0; padding: 0; overflow: hidden; border: 0; background: #000; }
+#remote-clip-preview::backdrop { background: #000; }
+#remote-clip-preview-close { width: 100%; height: 100%; padding: 0; border: 0; border-radius: 0; background: #000; }
+#remote-clip-video { display: block; width: 100%; height: 100%; object-fit: contain; }
+#remote-clip-preview-close span { position: absolute; bottom: max(1rem, env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%); padding: .35rem .65rem; border-radius: 1rem; background: #000b; color: #fff; }
 h2 { flex: 0 0 76px; margin: 0; padding-left: 3px; color: var(--bar-accent); font-size: 14px; font-weight: 600; letter-spacing: -.02em; }
 input, button { font: inherit; border-radius: 6px; border: 1px solid #ffffff10; }
 input { background: #10151f; color: #e9edf5; padding: 8px 10px; width: 100%; min-width: 0; font-size: 16px; box-shadow: inset 0 1px 3px #00000020; }
@@ -48,7 +60,8 @@ button:disabled { opacity: .38; cursor: default; box-shadow: none; }
 button.primary { background: #edc68c12; border-color: #edc68c30; color: #edc68c; }
 button.primary:hover:enabled { background: #edc68c22; border-color: #edc68c66; color: #ffe0b4; }
 button[aria-pressed="true"] { border-color: #93c9b045; color: #aedcc6; background: #93c9b012; }
-.power-button { flex: 1; height: 52px; display: grid; place-items: center; padding: 10px; color: #aedcc6; border-color: #93c9b045; background: #93c9b012; }
+.power-button, #remote-clip-main button { height: 52px; }
+.power-button { flex: 1; display: grid; place-items: center; padding: 10px; color: #aedcc6; border-color: #93c9b045; background: #93c9b012; }
 .power-button svg { width: 30px; height: 30px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; }
 .power-button[aria-pressed="true"] { color: #efb0a6; border-color: #e58e7d55; background: #e58e7d14; }
 .power-button:hover:enabled { color: #d0f6e3; border-color: #93c9b080; background: #93c9b024; }

@@ -120,6 +120,43 @@ def initialize_draft_upload(payload: DraftUploadRequest, request: Request):
     return {"upload_url": data["upload_url"], "publish_id": data["publish_id"]}
 
 
+def _upload_mp4_draft(user_id: int, access_token: str, video: bytes) -> str:
+    size = len(video)
+    body = json.dumps({"source_info": {"source": "FILE_UPLOAD", "video_size": size, "chunk_size": size, "total_chunk_count": 1}}).encode("utf-8")
+    upstream = UrlRequest(_UPLOAD_INIT_URL, data=body, headers={"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"})
+    try:
+        with urlopen(upstream, timeout=20) as response:  # nosec B310 - fixed TikTok endpoint
+            result = json.loads(response.read().decode("utf-8"))
+        data = result["data"]
+        publish_id: str = data["publish_id"]
+        put = UrlRequest(data["upload_url"], data=video, method="PUT", headers={"Content-Type": "video/mp4", "Content-Length": str(size), "Content-Range": f"bytes 0-{size - 1}/{size}"})
+        with urlopen(put, timeout=120):  # nosec B310 - one-time URL supplied by TikTok
+            pass
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail="TikTok could not receive the MP4 clip.") from exc
+    _LAST_PUBLISH_ID[user_id] = publish_id
+    return publish_id
+
+
+@app.post("/api/tiktok/draft-upload-mp4")
+def upload_mp4_draft(request: Request, clip: UploadFile = File(...)) -> dict[str, str]:
+    """Send a mobile recording to TikTok from the server."""
+    user = get_current_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Connect TikTok to send this clip as a draft.")
+    token = _TOKENS.get(user["id"])
+    if not token or token["expires_at"] <= time.time():
+        raise HTTPException(status_code=401, detail="Connect TikTok to send this clip as a draft.")
+    if clip.content_type != "video/mp4":
+        raise HTTPException(status_code=415, detail="Upload an MP4 clip.")
+    video = clip.file.read(MAX_FILE_UPLOAD_BYTES + 1)
+    if not video:
+        raise HTTPException(status_code=400, detail="Uploaded clip is empty.")
+    if len(video) > MAX_FILE_UPLOAD_BYTES:
+        raise HTTPException(status_code=400, detail="Clip exceeds maximum allowed size of 10MB.")
+    return {"publish_id": _upload_mp4_draft(user["id"], token["access_token"], video)}
+
+
 @app.post("/api/tiktok/draft-upload-transcoded")
 def upload_transcoded_draft(request: Request, clip: UploadFile = File(...)):
     """Convert a browser WebM privately, upload its MP4 to TikTok, then delete it."""
@@ -162,20 +199,9 @@ def upload_transcoded_draft(request: Request, clip: UploadFile = File(...)):
         size = os.path.getsize(converted)
         if size > MAX_FILE_UPLOAD_BYTES:
             raise HTTPException(status_code=400, detail="Converted video exceeds maximum allowed size of 10MB.")
-        body = json.dumps({"source_info": {"source": "FILE_UPLOAD", "video_size": size, "chunk_size": size, "total_chunk_count": 1}}).encode("utf-8")
-        upstream = UrlRequest(_UPLOAD_INIT_URL, data=body, headers={"Authorization": f"Bearer {token['access_token']}", "Content-Type": "application/json"})
-        try:
-            with urlopen(upstream, timeout=20) as response:  # nosec B310 - fixed TikTok endpoint
-                init = json.loads(response.read().decode("utf-8"))
-            data = init["data"]
-            with open(converted, "rb") as media:
-                put = UrlRequest(data["upload_url"], data=media.read(), method="PUT", headers={"Content-Type": "video/mp4", "Content-Length": str(size), "Content-Range": f"bytes 0-{size - 1}/{size}"})
-                with urlopen(put, timeout=120):  # nosec B310 - one-time URL supplied by TikTok
-                    pass
-        except Exception as exc:
-            raise HTTPException(status_code=502, detail="TikTok could not receive the converted MP4.") from exc
-    _LAST_PUBLISH_ID[user["id"]] = data["publish_id"]
-    return {"publish_id": data["publish_id"], "transcoded": True}
+        with open(converted, "rb") as media:
+            publish_id = _upload_mp4_draft(user["id"], token["access_token"], media.read())
+    return {"publish_id": publish_id, "transcoded": True}
 
 
 @app.get("/api/tiktok/draft-status")

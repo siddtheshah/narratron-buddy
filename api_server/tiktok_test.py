@@ -9,12 +9,33 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi import HTTPException, UploadFile
+from starlette.datastructures import Headers
 
 from api_server import tiktok
 
 
 def _request():
     return SimpleNamespace(cookies={}, base_url="https://narratron.test/")
+
+
+def test_upload_mp4_draft_sends_the_recorded_file_without_converting() -> None:
+    video = b"recorded MP4"
+    clip = UploadFile(io.BytesIO(video), filename="clip.mp4", headers=Headers({"content-type": "video/mp4"}))
+    init = io.BytesIO(b'{"data":{"publish_id":"mobile","upload_url":"https://tiktok.test/upload"}}')
+    with (
+        patch.object(tiktok, "get_current_user", return_value={"id": 42}),
+        patch.dict(tiktok._TOKENS, {42: {"access_token": "token", "expires_at": time.time() + 3600}}),
+        patch.dict(tiktok._LAST_PUBLISH_ID, {}, clear=True),
+        patch.object(tiktok, "urlopen", side_effect=[init, io.BytesIO()]) as urlopen,
+        patch.object(tiktok.subprocess, "run") as transcode,
+    ):
+        assert tiktok.upload_mp4_draft(_request(), clip) == {"publish_id": "mobile"}
+        assert tiktok._LAST_PUBLISH_ID[42] == "mobile"
+        ticket, upload = (call.args[0] for call in urlopen.call_args_list)
+        assert json.loads(ticket.data)["source_info"]["video_size"] == len(video)
+        assert upload.data == video
+        assert upload.get_method() == "PUT"
+        transcode.assert_not_called()
 
 
 def test_upload_transcoded_draft_requires_authentication():

@@ -87,6 +87,22 @@
             </button>
         </section>
     </fieldset>
+    <section id="remote-clip-box" class="bar" aria-labelledby="clip-title">
+        <div id="remote-clip-main">
+            <h2 id="clip-title">Record</h2>
+            <button type="button" id="remote-clip-toggle" disabled>Start</button>
+            <button type="button" id="remote-clip-preview-btn" aria-haspopup="dialog" hidden>Preview</button>
+            <button type="button" id="remote-clip-clear" hidden>Clear</button>
+            <progress id="remote-clip-progress" max="30000" value="0" aria-label="Clip recording progress" hidden></progress>
+            <span id="remote-clip-status" class="bar-status" role="status"></span>
+        </div>
+        <div id="remote-clip-review" role="group" aria-label="Clip actions" hidden>
+            <button type="button" id="clip-tiktok-draft-link">Make Tiktok</button>
+            <a id="clip-tiktok-open-link" href="https://www.tiktok.com/" target="_blank" rel="noopener" aria-describedby="clip-tiktok-inbox-help" hidden>Open TikTok</a>
+            <button type="button" id="remote-clip-download">Download</button>
+            <span id="clip-tiktok-inbox-help" class="sr-only" hidden>Open TikTok Inbox and tap the upload notification to edit and publish the clip.</span>
+        </div>
+    </section>
     </div>
     <div id="command-modal" class="command-modal" role="dialog" aria-modal="true" aria-labelledby="command-modal-title" hidden>
         <div class="command-modal-backdrop" id="command-modal-backdrop"></div>
@@ -219,6 +235,12 @@
     </div>
     <p id="feedback" class="sr-only" role="status" aria-live="polite"></p>
 </main>
+<dialog id="remote-clip-preview" aria-label="Clip preview">
+    <button type="button" id="remote-clip-preview-close" aria-label="Close clip preview">
+        <video id="remote-clip-video" playsinline preload="none"></video>
+        <span>Tap to close</span>
+    </button>
+</dialog>
 <div id="baton-request-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="baton-request-modal-title" aria-hidden="true" style="display: none;">
     <div class="modal-card baton-modal-card">
         <div class="baton-modal-icon" aria-hidden="true">🎙️</div>

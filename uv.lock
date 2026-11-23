@@ -1683,6 +1683,7 @@ dependencies = [
     { name = "jsonschema" },
     { name = "openai", extra = ["realtime"] },
     { name = "pillow" },
+    { name = "playwright" },
     { name = "pyarrow" },
     { name = "python-dotenv" },
     { name = "python-multipart" },
@@ -1695,7 +1696,6 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
-    { name = "playwright" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "pytest-env" },
@@ -1721,6 +1721,7 @@ requires-dist = [
     { name = "jsonschema", specifier = ">=4.0" },
     { name = "openai", extras = ["realtime"], specifier = ">=2.0" },
     { name = "pillow", specifier = ">=13.0.0" },
+    { name = "playwright", specifier = "==1.63.0" },
     { name = "pyarrow", specifier = ">=17.0" },
     { name = "python-dotenv", specifier = ">=1.0.1" },
     { name = "python-multipart" },
@@ -1733,7 +1734,6 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "playwright" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "pytest-env", specifier = ">=1.7.1" },

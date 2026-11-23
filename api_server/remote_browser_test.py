@@ -27,6 +27,14 @@ def remote_page(ensure_browser_assets: None, offline_browser_contexts: list[str]
                     "frontend/static/generated/remote/remote.js",
                     "text/javascript",
                 ),
+                "/static/generated/remote/remote-clips.js": (
+                    "frontend/static/generated/remote/remote-clips.js",
+                    "text/javascript",
+                ),
+                "/static/generated/shared/tiktok-draft.js": (
+                    "frontend/static/generated/shared/tiktok-draft.js",
+                    "text/javascript",
+                ),
                 "/static/generated/remote/remote-game.js": (
                     "frontend/static/generated/remote/remote-game.js",
                     "text/javascript",

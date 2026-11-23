@@ -156,6 +156,7 @@
         #clip-draft-handoff.active { display: flex; }
         .clip-draft-action { display: inline-block; width: 100%; margin-top: 1.2rem; padding: .75rem 1rem; border: 1px solid rgba(244, 114, 182, .7); border-radius: 10px; color: #fff; background: rgba(236, 72, 153, .28); font-weight: 700; text-align: center; text-decoration: none; }
         .clip-draft-action:hover { background: rgba(236, 72, 153, .42); }
+        .clip-draft-action[hidden] { display: none; }
     </style>
 </head>
 
@@ -184,12 +185,14 @@
         <button id="clip-stop-early-btn" type="button">Stop early</button>
         <button id="clip-start-over-btn" type="button">Start over</button>
     </div>
-    <div id="clip-draft-handoff" aria-live="polite">
+    <div id="clip-draft-handoff">
         <div class="clip-capture-card">
             <h1>Your clip is ready</h1>
-            <p>It was downloaded to this device. Connect TikTok to send this same clip into its editable draft flow. You choose when to publish.</p>
+            <p id="clip-draft-intro">It was downloaded to this device. Connect TikTok to send this same clip into its editable draft flow. You choose when to publish.</p>
             <button id="clip-tiktok-draft-link" class="clip-draft-action" type="button">Send to TikTok draft</button>
-            <div id="clip-draft-status" aria-live="polite"></div>
+            <p id="clip-draft-status" role="status"></p>
+            <p id="clip-tiktok-inbox-help" hidden>You can close this window. In the TikTok app, open Inbox on the account you connected and tap the upload notification when it arrives.</p>
+            <a id="clip-tiktok-open-link" class="clip-draft-action" href="https://www.tiktok.com/" target="_blank" rel="noopener" hidden>Open TikTok</a>
         </div>
     </div>
 

@@ -1,3 +1,4 @@
+import { downloadClip, initializeTikTokDraftHandoff } from '../shared/tiktok-draft.js';
 import { startCanvasStatePolling } from '../shared/state-polling.js';
 import { createDoodleRenderer } from '../canvas/doodle-renderer.js';
 import type { DoodleAnnotation } from '../canvas/doodle-types.js';
@@ -100,24 +101,6 @@ interface AudioMix {
 
 interface ClipControl {
   stop(discard?: boolean): void;
-}
-
-interface TikTokErrorDetail {
-  readonly message?: string;
-  readonly code?: string;
-}
-
-interface TikTokErrorResponse {
-  readonly detail?: string | TikTokErrorDetail;
-}
-
-interface TikTokUploadResponse {
-  readonly upload_url: string;
-}
-
-interface TikTokDraftStatusResponse {
-  readonly status?: string;
-  readonly fail_reason?: string;
 }
 
 export interface ObsCanvasController {
@@ -229,18 +212,6 @@ function preferredClipMimeType(): string {
   );
 }
 
-function downloadClip(blob: Blob, mimeType: string): void {
-  const extension = mimeType.startsWith('video/mp4') ? 'mp4' : 'webm';
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = `narratron-tiktok-clip-${new Date().toISOString().replace(/[:.]/g, '-')}.${extension}`;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
-
 async function createClipAudioMix(
   displayStream: MediaStream,
   includeMicrophone: boolean,
@@ -290,18 +261,9 @@ function initializeClipMode(signal: AbortSignal): void {
   const clipStopEarlyBtn = document.getElementById('clip-stop-early-btn');
   const clipStartOverBtn = document.getElementById('clip-start-over-btn');
   const clipDraftHandoff = document.getElementById('clip-draft-handoff');
-  const clipTikTokDraftLink = document.getElementById('clip-tiktok-draft-link');
-  const clipDraftStatus = document.getElementById('clip-draft-status');
-
-  let completedClip: Blob | null = null;
+  const prepareDraft = initializeTikTokDraftHandoff(clipDraftHandoff, signal);
   let activeClipControl: ClipControl | null = null;
   let clipTimerInterval: ReturnType<typeof setInterval> | null = null;
-
-  function setDraftStatus(message: string): void {
-    if (clipDraftStatus) {
-      clipDraftStatus.textContent = message;
-    }
-  }
 
   function showClipReadyState(message = 'Ready to record'): void {
     clipRecordingBar?.classList.add('active');
@@ -312,99 +274,8 @@ function initializeClipMode(signal: AbortSignal): void {
   }
 
   function showTikTokDraftHandoff(clip: Blob): void {
-    completedClip = clip;
+    prepareDraft(clip);
     clipDraftHandoff?.classList.add('active');
-  }
-
-  async function sendClipToTikTokDraft(): Promise<void> {
-    if (!completedClip) return;
-    setDraftStatus('Preparing secure TikTok connection…');
-    const popup = window.open(
-      '/api/tiktok/connect',
-      'narratron-tiktok-connect',
-      'popup=yes,width=520,height=720',
-    );
-    if (!popup) {
-      setDraftStatus('Allow pop-ups to connect TikTok.');
-      return;
-    }
-
-    async function connected(event: MessageEvent): Promise<void> {
-      const payload = event.data as { type?: string } | null;
-      if (
-        event.origin !== window.location.origin ||
-        payload?.type !== 'narratron-tiktok-connected' ||
-        !completedClip
-      ) {
-        return;
-      }
-      window.removeEventListener('message', connected);
-      const clipToUpload = completedClip;
-      try {
-        setDraftStatus('Sending clip to TikTok…');
-        const baseMimeType = (clipToUpload.type || 'video/webm').split(';', 1)[0];
-        const response =
-          baseMimeType === 'video/webm'
-            ? await fetch('/api/tiktok/draft-upload-transcoded', {
-                method: 'POST',
-                body: (() => {
-                  const form = new FormData();
-                  form.append('clip', clipToUpload, 'narratron-clip.webm');
-                  return form;
-                })(),
-              })
-            : await fetch('/api/tiktok/draft-upload', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  video_size: clipToUpload.size,
-                  mime_type: baseMimeType,
-                }),
-              });
-        if (!response.ok) {
-          const failure = (await response.json().catch(() => ({}))) as TikTokErrorResponse;
-          const detail = failure.detail;
-          const message =
-            typeof detail === 'string'
-              ? detail
-              : detail?.message || detail?.code || JSON.stringify(detail || failure);
-          throw new Error(message || 'TikTok draft setup failed.');
-        }
-        if (baseMimeType !== 'video/webm') {
-          const { upload_url } = (await response.json()) as TikTokUploadResponse;
-          const put = await fetch(upload_url, {
-            method: 'PUT',
-            headers: {
-              'Content-Type': baseMimeType,
-              'Content-Length': String(clipToUpload.size),
-              'Content-Range': `bytes 0-${clipToUpload.size - 1}/${clipToUpload.size}`,
-            },
-            body: clipToUpload,
-          });
-          if (!put.ok) {
-            throw new Error('TikTok could not receive the clip.');
-          }
-        }
-        completedClip = null;
-        setDraftStatus('Sent. Checking TikTok delivery…');
-        setTimeout(async () => {
-          const status = (await fetch('/api/tiktok/draft-status').then((res) =>
-            res.json(),
-          )) as TikTokDraftStatusResponse;
-          setDraftStatus(
-            status.status === 'SEND_TO_USER_INBOX'
-              ? 'Delivered to your TikTok inbox—open the notification to edit the draft.'
-              : `TikTok status: ${status.status || 'processing'}${
-                  status.fail_reason ? ` (${status.fail_reason})` : ''
-                }`,
-          );
-        }, 4000);
-      } catch (error) {
-        setDraftStatus(extractErrorMessage(error, 'Unable to send the clip.'));
-      }
-    }
-
-    window.addEventListener('message', connected, { signal });
   }
 
   async function recordClipFromObsStage(): Promise<Blob | null> {
@@ -520,7 +391,6 @@ function initializeClipMode(signal: AbortSignal): void {
   clipStartRecordingBtn?.addEventListener('click', beginClipCapture, { signal });
   clipStopEarlyBtn?.addEventListener('click', () => activeClipControl?.stop(false), { signal });
   clipStartOverBtn?.addEventListener('click', () => activeClipControl?.stop(true), { signal });
-  clipTikTokDraftLink?.addEventListener('click', sendClipToTikTokDraft, { signal });
   signal.addEventListener('abort', () => {
     if (clipTimerInterval) {
       clearInterval(clipTimerInterval);
@@ -544,6 +414,7 @@ export async function initObsCanvas(): Promise<ObsCanvasController> {
   if (!rendererCanvas || !doodleCanvas || !currentImage || !narrationMount) {
     throw new Error('Required OBS canvas DOM elements are missing.');
   }
+  const stageDataset = rendererCanvas.dataset;
 
   const abortController = new AbortController();
   const { signal } = abortController;
@@ -914,14 +785,18 @@ export async function initObsCanvas(): Promise<ObsCanvasController> {
           animationSignature !== lastAnimationSignature);
       const firstLoad = isFirstCanvasLoad;
       isFirstCanvasLoad = false;
-      if (!isNewImage) return;
+      if (!isNewImage) {
+        if (firstLoad) stageDataset.stageReady = 'true';
+        return;
+      }
 
       lastTime = data.time ?? 0;
       lastImageRawUrl = data.latest;
       lastImageEffect = currentImageEffect;
       lastAnimationSignature = animationSignature;
+      let render: Promise<void> | undefined;
       if (animationSignature && data.animation) {
-        playCanvasAnimation(imageRenderer, data.animation, withJoinKey);
+        render = playCanvasAnimation(imageRenderer, data.animation, withJoinKey);
       } else if (data.latest) {
         imageRenderer.stopSequence();
         const newImgUrl = withJoinKey(
@@ -930,8 +805,10 @@ export async function initObsCanvas(): Promise<ObsCanvasController> {
         const transition = firstLoad
           ? 'none'
           : (data.transition || 'crossfade').toLowerCase().trim();
-        void applyImageTransition(newImgUrl, transition, currentImageEffect);
+        render = applyImageTransition(newImgUrl, transition, currentImageEffect);
       }
+      await render;
+      if (firstLoad) stageDataset.stageReady = 'true';
     } catch (err) {
       console.error('OBS Canvas fetch error:', err);
     }
@@ -991,9 +868,7 @@ export async function initObsCanvas(): Promise<ObsCanvasController> {
   startCanvasStatePolling(fetchLatestImage);
   connectCanvasStateSocket();
 
-  // Clip mode is intentionally isolated from the interactive canvas so
-  // screen capture sees the OBS visual stage only. The recorder gets a
-  // filtered video-only stream; it cannot receive microphone/tab audio.
+  // Desktop clip mode adds the browser-picker controls to the OBS stage.
   if (urlParams.get('clip') === '1') {
     initializeClipMode(signal);
   }
