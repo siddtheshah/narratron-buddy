@@ -1,0 +1,28 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "types": [],
+    "rootDir": "frontend",
+    "outDir": "frontend/static/generated",
+    "tsBuildInfoFile": "frontend/static/generated/.tsbuildinfo",
+    "noEmit": false,
+    "sourceMap": true,
+    "inlineSources": true,
+    "declaration": false,
+    "paths": {
+      "/static/generated/*": ["../frontend/*"],
+      "/testlab-static/generated/*": ["./frontend/*"]
+    }
+  },
+  "references": [
+    { "path": "../tsconfig.build.json" }
+  ],
+  "include": [
+    "frontend/**/*.ts"
+  ],
+  "exclude": [
+    "frontend/**/*_test.ts",
+    "frontend/static/**",
+    "frontend/templates/**"
+  ]
+}

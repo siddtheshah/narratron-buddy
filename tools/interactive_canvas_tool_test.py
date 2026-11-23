@@ -114,7 +114,7 @@ def test_canvas_generation_uses_text_provider_with_catalog_response_schema():
 
 def test_canvas_generation_attaches_the_active_canvas_image():
     tools, canvas = make_tools(lambda *_: valid_draft())
-    image_path = Path(__file__).resolve().parent.parent / "testlab" / "images" / "trace-knight-sword.png"
+    image_path = Path(__file__).resolve().parent.parent / "testlab" / "assets" / "images" / "trace-knight-sword.png"
     canvas.visual.shown_image_path = str(image_path)
 
     result = tools.update_interactive_canvas("Put health bars beneath the fighters")

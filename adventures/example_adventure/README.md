@@ -102,12 +102,12 @@ Concession is unavailable after a win or draw.
 
 ### 1. Automated Smoke Test
 ```powershell
-uv run python testlab/adventure_runner.py --adventure example_adventure --smoke
+uv run python testlab/labs/adventure_runner.py --adventure example_adventure --smoke
 ```
 
 ### 2. Interactive CLI Test
 ```powershell
-uv run python testlab/adventure_runner.py --adventure example_adventure
+uv run python testlab/labs/adventure_runner.py --adventure example_adventure
 ```
 
 ### 3. Visual Browser Test Lab

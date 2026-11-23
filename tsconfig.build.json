@@ -2,12 +2,15 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "types": [],
+    "composite": true,
     "rootDir": "frontend",
     "outDir": "frontend/static/generated",
+    "tsBuildInfoFile": "frontend/static/generated/.tsbuildinfo",
     "noEmit": false,
     "sourceMap": true,
     "inlineSources": true,
-    "declaration": false
+    "declaration": true,
+    "declarationMap": false
   },
   "include": [
     "frontend/**/*.ts"

@@ -49,20 +49,20 @@ from providers import (
     list_video_provider_specs,
     VideoGenerationRequest,
 )
-from testlab.image_benchmark import ROOT as BENCHMARK_ROOT, BenchmarkPrompt, get_prompt, prompt_catalog
-from testlab.music_benchmark import BenchmarkMusicPrompt, get_music_prompt, music_prompt_catalog
-from testlab.text_response_benchmark import BenchmarkTextPrompt, get_text_prompt, text_prompt_catalog
-from testlab.speech_benchmark import BenchmarkSpeechPrompt, get_speech_prompt, speech_prompt_catalog
-from testlab.animation_benchmark import get_animation_prompt, animation_prompt_catalog
-from testlab.layered_animation_lab import get_layered_animation_catalog, list_piece_images
-from testlab.video_benchmark import get_video_prompt, video_prompt_catalog
+from testlab.benchmarks.image_benchmark import ROOT as BENCHMARK_ROOT, BenchmarkPrompt, get_prompt, prompt_catalog
+from testlab.benchmarks.music_benchmark import BenchmarkMusicPrompt, get_music_prompt, music_prompt_catalog
+from testlab.benchmarks.text_response_benchmark import BenchmarkTextPrompt, get_text_prompt, text_prompt_catalog
+from testlab.benchmarks.speech_benchmark import BenchmarkSpeechPrompt, get_speech_prompt, speech_prompt_catalog
+from testlab.benchmarks.animation_benchmark import get_animation_prompt, animation_prompt_catalog
+from testlab.labs.layered_animation_lab import get_layered_animation_catalog, list_piece_images
+from testlab.benchmarks.video_benchmark import get_video_prompt, video_prompt_catalog
 from providers.fal_qwen_layered_provider import FalQwenLayeredProvider, LayeredImageRequest
-from testlab.a2ui_canvas_lab import (
+from testlab.labs.a2ui_canvas_lab import (
     A2UICanvasTestConfig,
     default_canvas_config,
     run_canvas_test,
 )
-from testlab.adventure_runner import (
+from testlab.labs.adventure_runner import (
     AdventureSession,
     list_available_adventures,
 )
@@ -71,18 +71,23 @@ from components.theater_manager import TheaterManager
 from services.text_beautifier import TextBeautifier
 
 from tools.story import ReferenceManager, StoryTool
-from testlab.game_lab import router as game_lab_router
-from testlab.decision_lab import router as decision_lab_router
+from testlab.labs.game_lab import router as game_lab_router
+from testlab.labs.decision_lab import router as decision_lab_router
 
 ROOT = Path(__file__).resolve().parent
 PROJECT_ROOT = ROOT.parent
+TESTLAB_ASSETS = ROOT / "assets"
+TESTLAB_FRONTEND = ROOT / "frontend"
+TESTLAB_STATIC = TESTLAB_FRONTEND / "static"
+TESTLAB_STATIC_GENERATED = TESTLAB_STATIC / "generated"
+TESTLAB_TEMPLATES = TESTLAB_FRONTEND / "templates"
 load_dotenv(PROJECT_ROOT / ".env")
 logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    ensure_canvas_assets_built()
+    ensure_canvas_assets_built(include_testlab=True)
     yield
 
 
@@ -92,9 +97,11 @@ app.include_router(decision_lab_router)
 STATIC_GENERATED = PROJECT_ROOT / "frontend" / "static" / "generated"
 STATIC_GENERATED.mkdir(parents=True, exist_ok=True)
 app.mount("/static/generated", StaticFiles(directory=STATIC_GENERATED), name="static-generated")
+TESTLAB_STATIC_GENERATED.mkdir(parents=True, exist_ok=True)
+app.mount("/testlab-static", StaticFiles(directory=TESTLAB_STATIC), name="testlab-static")
 app.mount("/effects-static", StaticFiles(directory=PROJECT_ROOT / "frontend" / "static"), name="effects-static")
 app.mount("/carousel", StaticFiles(directory=PROJECT_ROOT / "frontend" / "templates" / "carousel"), name="carousel")
-app.mount("/test-images", StaticFiles(directory=ROOT / "images"), name="test-images")
+app.mount("/test-images", StaticFiles(directory=TESTLAB_ASSETS / "images"), name="test-images")
 class _NoCacheStaticFiles(StaticFiles):
     async def get_response(self, path: str, scope: Scope) -> Response:
         response = await super().get_response(path, scope)
@@ -122,7 +129,7 @@ app.mount(
     _NoCacheStaticFiles(directory=PROJECT_ROOT / "adventures" / "umbral-dungeon" / "avatars" / "umbral-sigil", check_dir=False),
     name="umbral-sigil-assets",
 )
-app.mount("/avatar-assets", _NoCacheStaticFiles(directory=ROOT / "avatar_packages"), name="avatar-assets")
+app.mount("/avatar-assets", _NoCacheStaticFiles(directory=TESTLAB_ASSETS / "avatar_packages"), name="avatar-assets")
 THREE_ROOT = PROJECT_ROOT / "node_modules" / "three"
 app.mount("/avatar-lib/three", StaticFiles(directory=THREE_ROOT / "build", check_dir=False), name="avatar-three")
 app.mount("/avatar-lib/addons", StaticFiles(directory=THREE_ROOT / "examples" / "jsm", check_dir=False), name="avatar-three-addons")
@@ -159,17 +166,17 @@ _runs_lock = threading.Lock()
 
 MAX_IN_FLIGHT_PER_PROVIDER = 5
 CANVAS_IMAGE_EXTENSIONS = frozenset({".png", ".jpg", ".jpeg", ".webp", ".gif"})
-CANVAS_IMAGE_ROOTS = (ROOT / "images", PROJECT_ROOT / "theaters")
+CANVAS_IMAGE_ROOTS = (TESTLAB_ASSETS / "images", PROJECT_ROOT / "theaters")
 
 
 @app.get("/", include_in_schema=False)
 def index():
-    return FileResponse(ROOT / "index.html", media_type="text/html")
+    return FileResponse(TESTLAB_TEMPLATES / "index.html", media_type="text/html")
 
 
 @app.get("/avatar-lab", include_in_schema=False)
 def avatar_lab() -> FileResponse:
-    return FileResponse(ROOT / "avatar_lab.html", media_type="text/html")
+    return FileResponse(TESTLAB_TEMPLATES / "avatar_lab.html", media_type="text/html")
 
 
 @app.websocket("/ws")
@@ -185,17 +192,17 @@ async def generic_websocket_fallback(websocket: WebSocket) -> None:
 
 @app.get("/vad", include_in_schema=False)
 def vad_lab():
-    return FileResponse(ROOT / "audio_vad_lab.html", media_type="text/html")
+    return FileResponse(TESTLAB_TEMPLATES / "audio_vad_lab.html", media_type="text/html")
 
 
 @app.get("/effects", include_in_schema=False)
 def effects_lab():
-    return FileResponse(ROOT / "effects_lab.html", media_type="text/html")
+    return FileResponse(TESTLAB_TEMPLATES / "effects_lab.html", media_type="text/html")
 
 
 @app.get("/layered-animation", include_in_schema=False)
 def layered_animation_lab():
-    return FileResponse(ROOT / "layered_animation_lab.html", media_type="text/html")
+    return FileResponse(TESTLAB_TEMPLATES / "layered_animation_lab.html", media_type="text/html")
 
 
 @app.get("/api/layered-animation/catalog")
@@ -210,7 +217,7 @@ def layered_animation_pieces():
 
 @app.get("/animation-benchmark", include_in_schema=False)
 def animation_benchmark_lab():
-    return FileResponse(ROOT / "animation_benchmark.html", media_type="text/html")
+    return FileResponse(TESTLAB_TEMPLATES / "animation_benchmark.html", media_type="text/html")
 
 
 @app.get("/api/animation-benchmark/catalog")
@@ -250,7 +257,7 @@ def get_animation_benchmark_run(run_id: str):
 @app.get("/video-benchmark", include_in_schema=False)
 @app.get("/video-lab", include_in_schema=False)
 def video_benchmark_lab():
-    return FileResponse(ROOT / "video_benchmark.html", media_type="text/html")
+    return FileResponse(TESTLAB_TEMPLATES / "video_benchmark.html", media_type="text/html")
 
 
 @app.get("/api/video-benchmark/catalog")
@@ -310,42 +317,42 @@ def get_video_benchmark_run(run_id: str):
 
 @app.get("/image-benchmark", include_in_schema=False)
 def image_benchmark_lab():
-    return FileResponse(ROOT / "image_benchmark.html", media_type="text/html")
+    return FileResponse(TESTLAB_TEMPLATES / "image_benchmark.html", media_type="text/html")
 
 
 @app.get("/music-benchmark", include_in_schema=False)
 def music_benchmark_lab():
-    return FileResponse(ROOT / "music_benchmark.html", media_type="text/html")
+    return FileResponse(TESTLAB_TEMPLATES / "music_benchmark.html", media_type="text/html")
 
 
 @app.get("/text-benchmark", include_in_schema=False)
 def text_benchmark_lab():
-    return FileResponse(ROOT / "text_response_benchmark.html", media_type="text/html")
+    return FileResponse(TESTLAB_TEMPLATES / "text_response_benchmark.html", media_type="text/html")
 
 
 @app.get("/speech-benchmark", include_in_schema=False)
 def speech_benchmark_lab():
-    return FileResponse(ROOT / "speech_benchmark.html", media_type="text/html")
+    return FileResponse(TESTLAB_TEMPLATES / "speech_benchmark.html", media_type="text/html")
 
 
 @app.get("/story-planner", include_in_schema=False)
 def story_planner_lab():
-    return FileResponse(ROOT / "story_planner_lab.html", media_type="text/html")
+    return FileResponse(TESTLAB_TEMPLATES / "story_planner_lab.html", media_type="text/html")
 
 
 @app.get("/a2ui-canvas", include_in_schema=False)
 def a2ui_canvas_lab():
-    return FileResponse(ROOT / "a2ui_canvas_lab.html", media_type="text/html")
+    return FileResponse(TESTLAB_TEMPLATES / "a2ui_canvas_lab.html", media_type="text/html")
 
 
 @app.get("/adventure-runner", include_in_schema=False)
 def adventure_runner_lab():
-    return FileResponse(ROOT / "adventure_runner.html", media_type="text/html")
+    return FileResponse(TESTLAB_TEMPLATES / "adventure_runner.html", media_type="text/html")
 
 
 @app.get("/text-effects", include_in_schema=False)
 def text_effects_lab():
-    return FileResponse(ROOT / "text_effects_lab.html", media_type="text/html")
+    return FileResponse(TESTLAB_TEMPLATES / "text_effects_lab.html", media_type="text/html")
 
 
 @app.get("/api/text-effects/presets")

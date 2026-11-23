@@ -378,7 +378,7 @@ Make sure your `.env` has `GEMINI_API_KEY` set, then run:
 
 #### Interactive CLI REPL
 ```powershell
-uv run python testlab/adventure_runner.py --adventure my-custom-adventure
+uv run python testlab/labs/adventure_runner.py --adventure my-custom-adventure
 ```
 You can type player actions at the `Player > ` prompt and inspect:
 - The story planner's scene reaction and narrative response.
@@ -389,7 +389,7 @@ You can type player actions at the `Player > ` prompt and inspect:
 #### Automated Smoke Test
 To verify that the adventure initializes cleanly and resolves an opening turn:
 ```powershell
-uv run python testlab/adventure_runner.py --adventure my-custom-adventure --smoke
+uv run python testlab/labs/adventure_runner.py --adventure my-custom-adventure --smoke
 ```
 This executes a single turn, checks that story beats generate properly, and exits with code `0` on success.
 
@@ -408,7 +408,7 @@ When authoring complex narratives, manually typing 20 turns to test edge cases o
 #### Basic Autoplay Run
 Run a default 10-turn autonomous session:
 ```powershell
-uv run python testlab/adventure_runner.py --adventure my-custom-adventure --autoplay
+uv run python testlab/labs/adventure_runner.py --adventure my-custom-adventure --autoplay
 ```
 
 #### Tailoring the Playstyle Persona (`--autoplay-instructions`)
@@ -416,17 +416,17 @@ Direct the player's behavior, tactical focus, and personality using `--autoplay-
 
 - **Realistic & Pragmatic** (Grounded survival and bureaucratic diplomacy):
   ```powershell
-  uv run python testlab/adventure_runner.py --adventure the-overlords-assistant --autoplay --turns 20 --autoplay-instructions "Play in a realistic style: act as a grounded, pragmatic, and cautious mortal assistant in Overlord Malakor's court. Prioritize personal survival, use realistic bureaucratic diplomacy and workplace leverage, be observant and respectful of lethal power dynamics, and avoid absurd, reckless, or cartoonish actions."
+  uv run python testlab/labs/adventure_runner.py --adventure the-overlords-assistant --autoplay --turns 20 --autoplay-instructions "Play in a realistic style: act as a grounded, pragmatic, and cautious mortal assistant in Overlord Malakor's court. Prioritize personal survival, use realistic bureaucratic diplomacy and workplace leverage, be observant and respectful of lethal power dynamics, and avoid absurd, reckless, or cartoonish actions."
   ```
 
 - **Zany & Boundary-Testing** (Stress-testing story planner resilience against chaotic choices):
   ```powershell
-  uv run python testlab/adventure_runner.py --adventure groove-space-odyssey --autoplay --turns 15 --autoplay-instructions "Be zany, audacious, and test edge cases. Attempt unexpected solutions, talk to inanimate objects, and bend the rules."
+  uv run python testlab/labs/adventure_runner.py --adventure groove-space-odyssey --autoplay --turns 15 --autoplay-instructions "Be zany, audacious, and test edge cases. Attempt unexpected solutions, talk to inanimate objects, and bend the rules."
   ```
 
 - **Methodical Investigator** (Deep lore probing and clue verification):
   ```powershell
-  uv run python testlab/adventure_runner.py --adventure my-custom-adventure --autoplay --turns 12 --autoplay-instructions "Act as a meticulous, inquisitive detective. Prioritize examining clues, interrogating witnesses on contradictions, and recording evidence."
+  uv run python testlab/labs/adventure_runner.py --adventure my-custom-adventure --autoplay --turns 12 --autoplay-instructions "Act as a meticulous, inquisitive detective. Prioritize examining clues, interrogating witnesses on contradictions, and recording evidence."
   ```
 
 #### Command-Line Flags Reference
@@ -485,11 +485,11 @@ When your adventure is ready to be featured for everyone on **narratron.app**:
 - [ ] `lore/RESPONDER.md`, `lore/PLANNER.md`, and `lore/RECORDER.md` define independent priorities, role boundaries, and lore roadmaps; shared rules live in separate lore documents.
 - [ ] The adventure passes the smoke test:
   ```powershell
-  uv run python testlab/adventure_runner.py --adventure <your-adventure-folder> --smoke
+  uv run python testlab/labs/adventure_runner.py --adventure <your-adventure-folder> --smoke
   ```
 - [ ] The adventure passes an autonomous multi-turn playtest session (10+ turns) verifying narrative consistency and peripheral triggers:
   ```powershell
-  uv run python testlab/adventure_runner.py --adventure <your-adventure-folder> --autoplay --turns 10
+  uv run python testlab/labs/adventure_runner.py --adventure <your-adventure-folder> --autoplay --turns 10
   ```
 - [ ] Final verification: Uploaded the folder via [/deploy](https://narratron.app/deploy) and successfully complete an interactive play session in the full Narratron app.
 

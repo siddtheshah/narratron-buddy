@@ -54,5 +54,6 @@ playlists/*
 # Frontend TypeScript & Playwright
 node_modules/
 frontend/static/generated/
+testlab/frontend/static/generated/
 playwright-report/
 test-results/

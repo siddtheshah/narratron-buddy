@@ -1,0 +1,591 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Narratron Decision Provider Lab & Latency Benchmark</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      color-scheme: dark;
+      --ink: #f8fafc;
+      --muted: #9aa6bd;
+      --line: rgba(255, 255, 255, .12);
+      --panel: rgba(20, 24, 40, .86);
+      --panel-inner: #0e1324;
+      --accent: #6366f1;
+      --accent-soft: rgba(99, 102, 241, .18);
+      --good: #34d399;
+      --warn: #f59e0b;
+      --bad: #fb7185;
+      --cyan: #38bdf8;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: radial-gradient(circle at 15% 0%, #1e1b4b 0, transparent 38%), #070a14;
+      color: var(--ink);
+      font-family: Outfit, system-ui, sans-serif;
+    }
+    main {
+      width: min(1440px, calc(100% - 36px));
+      margin: auto;
+      padding: 34px 0 72px;
+    }
+    .top-nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 10px;
+    }
+    .back-link {
+      color: #a5b4fc;
+      text-decoration: none;
+      font-size: .88rem;
+      font-weight: 500;
+    }
+    .back-link:hover { text-decoration: underline; }
+    .eyebrow {
+      color: #a5b4fc;
+      font-size: .75rem;
+      font-weight: 700;
+      letter-spacing: .14em;
+      text-transform: uppercase;
+    }
+    h1 {
+      margin: 6px 0 10px;
+      font-size: clamp(2rem, 3.8vw, 3.1rem);
+      letter-spacing: -.04em;
+    }
+    .intro {
+      max-width: 960px;
+      color: var(--muted);
+      line-height: 1.55;
+      margin: 0 0 18px;
+    }
+    .primitive-strip {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+    .primitive-card {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: rgba(15, 20, 36, .75);
+      padding: 13px 15px;
+    }
+    .primitive-card strong {
+      font-family: "Fira Code", monospace;
+      color: #c7d2fe;
+      font-size: .9rem;
+    }
+    .primitive-card p {
+      margin: 5px 0 0;
+      color: var(--muted);
+      font-size: .84rem;
+      line-height: 1.4;
+    }
+    .panel {
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: var(--panel);
+      padding: 18px;
+      margin-top: 18px;
+    }
+    .section-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+    .section-title {
+      font-weight: 700;
+      font-size: 1.1rem;
+      margin: 0;
+    }
+    .scenario-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 10px;
+    }
+    .scenario-card {
+      border: 1px solid var(--line);
+      border-radius: 13px;
+      padding: 13px;
+      background: var(--panel-inner);
+      cursor: pointer;
+      text-align: left;
+      transition: border-color .15s, transform .15s, background .15s;
+    }
+    .scenario-card:hover {
+      border-color: var(--accent);
+      transform: translateY(-1px);
+    }
+    .scenario-card.active {
+      outline: 2px solid var(--accent);
+      border-color: transparent;
+      background: rgba(99, 102, 241, .12);
+    }
+    .scenario-meta {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+      margin-bottom: 6px;
+    }
+    .pill {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 99px;
+      background: #1e293b;
+      color: #a5b4fc;
+      font-size: .72rem;
+      font-weight: 600;
+    }
+    .pill.available { background: rgba(52, 211, 153, .16); color: var(--good); }
+    .pill.unconfigured { background: rgba(245, 158, 11, .16); color: var(--warn); }
+    .pill.speedup { background: rgba(56, 189, 248, .18); color: var(--cyan); font-family: "Fira Code", monospace; }
+    .code-tag {
+      font-family: "Fira Code", monospace;
+      font-size: .72rem;
+      color: var(--muted);
+    }
+    .scenario-card h3 {
+      margin: 4px 0 6px;
+      font-size: .96rem;
+      color: var(--ink);
+    }
+    .scenario-card p {
+      margin: 0;
+      color: var(--muted);
+      font-size: .81rem;
+      line-height: 1.4;
+    }
+    .workspace-grid {
+      display: grid;
+      grid-template-columns: 1.05fr 1.15fr;
+      gap: 18px;
+      margin-top: 18px;
+    }
+    @media (max-width: 1024px) {
+      .workspace-grid { grid-template-columns: 1fr; }
+    }
+    label.field-label {
+      display: block;
+      font-size: .8rem;
+      font-weight: 600;
+      color: #cbd5e1;
+      margin: 12px 0 6px;
+    }
+    textarea, input[type="text"], input[type="number"], select {
+      width: 100%;
+      padding: 9px 11px;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      background: #090d1a;
+      color: var(--ink);
+      font: inherit;
+      font-size: .87rem;
+    }
+    textarea:focus, input[type="text"]:focus, input[type="number"]:focus, select:focus {
+      outline: 2px solid var(--accent);
+      border-color: transparent;
+    }
+    .rule-box {
+      font-family: "Fira Code", monospace;
+      font-size: .78rem;
+      padding: 10px 12px;
+      border-radius: 9px;
+      background: rgba(99, 102, 241, .1);
+      border: 1px solid rgba(99, 102, 241, .3);
+      color: #e0e7ff;
+      word-break: break-word;
+    }
+    .question-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-top: 8px;
+    }
+    .question-editor {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 12px;
+      background: #0b1020;
+    }
+    .question-editor-row {
+      display: grid;
+      grid-template-columns: 130px 1fr auto;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+    .btn {
+      border: 0;
+      border-radius: 999px;
+      padding: 10px 16px;
+      background: var(--accent);
+      color: white;
+      font: 600 .88rem Outfit, sans-serif;
+      cursor: pointer;
+    }
+    .btn.secondary {
+      background: #1e293b;
+      color: #e2e8f0;
+    }
+    .btn.small {
+      padding: 5px 11px;
+      font-size: .76rem;
+    }
+    .btn.danger {
+      background: rgba(251, 113, 133, .18);
+      color: var(--bad);
+    }
+    .btn:disabled { opacity: .55; cursor: wait; }
+    .actions-bar {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 16px;
+    }
+    .outcome-banner {
+      border-radius: 14px;
+      padding: 16px;
+      border: 1px solid var(--line);
+      background: #0e1528;
+      margin-bottom: 14px;
+    }
+    .outcome-banner.fast {
+      border-color: rgba(52, 211, 153, .45);
+      background: linear-gradient(135deg, rgba(16, 185, 129, .14), rgba(14, 21, 40, .9));
+    }
+    .outcome-banner.fallback {
+      border-color: rgba(245, 158, 11, .45);
+      background: linear-gradient(135deg, rgba(245, 158, 11, .14), rgba(14, 21, 40, .9));
+    }
+    .outcome-banner.action {
+      border-color: rgba(99, 102, 241, .45);
+      background: linear-gradient(135deg, rgba(99, 102, 241, .16), rgba(14, 21, 40, .9));
+    }
+    .outcome-banner h3 {
+      margin: 6px 0 6px;
+      font-size: 1.18rem;
+    }
+    .outcome-banner p {
+      margin: 0 0 10px;
+      color: #cbd5e1;
+      font-size: .88rem;
+      line-height: 1.45;
+    }
+    .trace-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .trace-item {
+      font-family: "Fira Code", monospace;
+      font-size: .74rem;
+      padding: 4px 8px;
+      border-radius: 6px;
+      background: rgba(0, 0, 0, .35);
+      border: 1px solid var(--line);
+      color: #e2e8f0;
+    }
+    .answer-cards {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .answer-card {
+      border: 1px solid var(--line);
+      border-radius: 13px;
+      padding: 14px;
+      background: #0b1020;
+    }
+    .answer-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+    .answer-name {
+      font-family: "Fira Code", monospace;
+      font-weight: 600;
+      font-size: .92rem;
+      color: #e0e7ff;
+    }
+    .prob-row {
+      display: grid;
+      grid-template-columns: minmax(110px, 170px) 1fr 54px;
+      align-items: center;
+      gap: 10px;
+      margin: 6px 0;
+      font-size: .82rem;
+    }
+    .prob-label {
+      font-family: "Fira Code", monospace;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      color: #cbd5e1;
+    }
+    .prob-label.winner {
+      color: var(--good);
+      font-weight: 600;
+    }
+    .bar-track {
+      height: 9px;
+      border-radius: 99px;
+      background: #1e293b;
+      overflow: hidden;
+      position: relative;
+    }
+    .bar-fill {
+      height: 100%;
+      border-radius: 99px;
+      background: var(--accent);
+      transition: width .25s ease;
+    }
+    .bar-fill.good { background: var(--good); }
+    .bar-fill.cyan { background: var(--cyan); }
+    .wire-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+      margin-top: 14px;
+    }
+    @media (max-width: 900px) {
+      .wire-grid { grid-template-columns: 1fr; }
+    }
+    pre.wire-json {
+      margin: 0;
+      padding: 12px;
+      border-radius: 10px;
+      background: #060913;
+      border: 1px solid var(--line);
+      font-family: "Fira Code", monospace;
+      font-size: .76rem;
+      line-height: 1.45;
+      overflow: auto;
+      max-height: 360px;
+      color: #cbd5e1;
+    }
+    /* Benchmark Section Styles */
+    .bench-config-grid {
+      display: grid;
+      grid-template-columns: 1.15fr 1fr;
+      gap: 16px;
+      margin-top: 10px;
+    }
+    @media (max-width: 980px) {
+      .bench-config-grid { grid-template-columns: 1fr; }
+    }
+    .bench-provider-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 10px;
+    }
+    .bench-provider-card {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 12px;
+      background: var(--panel-inner);
+    }
+    .bench-provider-card label.check-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: .9rem;
+    }
+    .bench-scenario-checks {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 7px;
+      max-height: 210px;
+      overflow: auto;
+      padding: 8px;
+      border-radius: 10px;
+      border: 1px solid var(--line);
+      background: var(--panel-inner);
+    }
+    .bench-scenario-item {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      font-size: .82rem;
+      color: #e2e8f0;
+      cursor: pointer;
+    }
+    .bench-table-wrap {
+      overflow-x: auto;
+      margin-top: 14px;
+    }
+    table.bench-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: .84rem;
+    }
+    table.bench-table th,
+    table.bench-table td {
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: middle;
+    }
+    table.bench-table th {
+      color: var(--muted);
+      font-size: .75rem;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      background: rgba(14, 19, 36, .75);
+    }
+    .latency-cell {
+      min-width: 170px;
+    }
+    .latency-val {
+      font-family: "Fira Code", monospace;
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body>
+<main>
+  <div class="top-nav">
+    <div class="eyebrow">Narratron Test Lab</div>
+    <a class="back-link" href="/">← Back to Test Lab Index</a>
+  </div>
+  <h1>Decision Provider Lab & Latency Benchmark (<code>/v1/decisions</code>)</h1>
+  <p class="intro">
+    Explore how Narratron replaces slow autoregressive JSON generation with single-pass structured decisions
+    using <code>DecisionProvider</code> and OpenAI's <code>gpt-6-luna</code> Decisions API — and benchmark head-to-head
+    latency, token overhead, and decision agreement against Gemini Flash-Lite / Flash constrained-JSON baselines.
+  </p>
+
+  <div class="primitive-strip">
+    <div class="primitive-card">
+      <strong>predicate</strong>
+      <p>Evaluates a yes/no condition against shared evidence and returns a calibrated <code>probability</code> in <code>[0.0, 1.0]</code>.</p>
+    </div>
+    <div class="primitive-card">
+      <strong>choice</strong>
+      <p>Selects one option from up to 255 discrete choices, returning the winning <code>choice</code>, per-option <code>probabilities</code>, and <code>confidence</code>.</p>
+    </div>
+    <div class="primitive-card">
+      <strong>score</strong>
+      <p>Rates evidence on an ordered rubric of <code>levels</code>, returning a probability-weighted continuous <code>score</code> and level distribution.</p>
+    </div>
+  </div>
+
+  <!-- Multi-Provider Latency Benchmark Panel -->
+  <section class="panel" id="benchmarkSection">
+    <div class="section-header">
+      <div>
+        <h2 class="section-title">Multi-Provider Latency & Accuracy Benchmark</h2>
+        <p style="margin:4px 0 0;color:var(--muted);font-size:.84rem">
+          Compare single-pass <code>OpenAIDecisionProvider</code> (<code>/v1/decisions</code>) against
+          <code>TextResponseDecisionProvider</code> (constrained JSON schema generation on Gemini Flash-Lite & Gemini 3 Flash)
+          across identical <code>DecisionRequest</code> payloads.
+        </p>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <label style="font-size:.8rem;color:#cbd5e1;display:flex;align-items:center;gap:6px">
+          Repetitions
+          <input id="benchRepetitions" type="number" min="1" max="20" value="3" style="width:68px;padding:6px 8px">
+        </label>
+        <button id="runBenchmarkBtn" type="button" class="btn">Run Latency Benchmark</button>
+      </div>
+    </div>
+
+    <div class="bench-config-grid">
+      <div>
+        <label class="field-label" style="margin-top:0">Providers to Compare</label>
+        <div id="benchProviderList" class="bench-provider-list"></div>
+      </div>
+      <div>
+        <div class="section-header" style="margin-bottom:6px">
+          <label class="field-label" style="margin:0">Scenarios in Benchmark Suite</label>
+          <div style="display:flex;gap:6px">
+            <button id="selectAllScenariosBtn" type="button" class="btn secondary small">All</button>
+            <button id="clearAllScenariosBtn" type="button" class="btn secondary small">None</button>
+          </div>
+        </div>
+        <div id="benchScenarioChecks" class="bench-scenario-checks"></div>
+      </div>
+    </div>
+
+    <div id="benchStatusBanner" style="margin-top:12px;font-size:.84rem;color:var(--muted)"></div>
+    <div id="benchResultsContainer"></div>
+  </section>
+
+  <section class="panel">
+    <div class="section-header">
+      <h2 class="section-title">Interactive Narratron Decision Scenarios</h2>
+      <div id="providerStatus" style="display:flex;flex-wrap:wrap;gap:6px"></div>
+    </div>
+    <div id="scenarioGrid" class="scenario-grid"></div>
+  </section>
+
+  <div class="workspace-grid">
+    <section class="panel" style="margin-top:0">
+      <div class="section-header">
+        <h2 class="section-title" id="activeScenarioTitle">Decision Input & Questions</h2>
+        <span class="code-tag" id="activeSubsystem"></span>
+      </div>
+      <p id="activeDescription" style="color:var(--muted);font-size:.85rem;margin:0 0 10px;line-height:1.45"></p>
+
+      <label class="field-label">Downstream Narratron Decision Rule</label>
+      <div id="activeDecisionRule" class="rule-box"></div>
+
+      <label class="field-label" for="inputText">Shared Input Evidence (<code>input</code>)</label>
+      <textarea id="inputText" rows="4"></textarea>
+
+      <div class="section-header" style="margin-top:14px;margin-bottom:6px">
+        <label class="field-label" style="margin:0">Questions Evaluated in One Pass (<code>questions</code>)</label>
+        <button id="addQuestionBtn" type="button" class="btn secondary small">+ Add Question</button>
+      </div>
+      <div id="questionList" class="question-list"></div>
+
+      <div class="actions-bar">
+        <button id="runWalkthroughBtn" type="button" class="btn">Inspect Walkthrough Decision</button>
+        <select id="liveProviderSelect" style="width:auto;min-width:210px;padding:8px 11px"></select>
+        <button id="runLiveBtn" type="button" class="btn secondary">Run Live Provider</button>
+        <span id="runStatus" class="code-tag"></span>
+      </div>
+    </section>
+
+    <section class="panel" style="margin-top:0">
+      <div class="section-header">
+        <h2 class="section-title">Decision Evaluation & How Narratron Uses It</h2>
+        <span id="evalMeta" class="code-tag"></span>
+      </div>
+
+      <div id="outcomeContainer"></div>
+      <div id="answersContainer" class="answer-cards"></div>
+
+      <div class="wire-grid">
+        <div>
+          <label class="field-label">Wire Request (<code>POST /v1/decisions</code>)</label>
+          <pre id="wireRequest" class="wire-json"></pre>
+        </div>
+        <div>
+          <label class="field-label">Structured Answers & Usage</label>
+          <pre id="wireResponse" class="wire-json"></pre>
+        </div>
+      </div>
+    </section>
+  </div>
+</main>
+
+<script type="module" src="/testlab-static/generated/labs/decision-lab.js"></script>
+</body>
+</html>

@@ -43,9 +43,12 @@ def test_static_generated_mount_serves_canvas_modules_without_shadowing_effects_
         assert animation_generated.status_code == 200
         assert animation_generated.headers["content-type"].split(";")[0] in {"text/javascript", "application/javascript"}
 
-        vad_generated = client.get("/static/generated/testlab/testlab-audio-vad.js")
+        vad_generated = client.get("/testlab-static/generated/labs/audio-vad.js")
         assert vad_generated.status_code == 200
         assert vad_generated.headers["content-type"].split(";")[0] in {"text/javascript", "application/javascript"}
+
+        avatar_css = client.get("/testlab-static/css/avatar-lab.css")
+        assert avatar_css.status_code == 200
 
         splitting_vendor = client.get("/effects-static/js/splitting.min.js")
         assert splitting_vendor.status_code == 200
@@ -57,7 +60,7 @@ def test_lab_pages_resolve_migrated_canvas_modules_without_404() -> None:
         ("/effects", "/static/generated/shared/image-effects.js"),
         ("/animation-benchmark", "/static/generated/shared/animation-effects.js"),
         ("/layered-animation", "/static/generated/shared/animation-effects.js"),
-        ("/vad", "/static/generated/testlab/testlab-audio-vad.js"),
+        ("/vad", "/testlab-static/generated/labs/audio-vad.js"),
     ]
     with TestClient(app) as client, sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=True)
@@ -106,7 +109,7 @@ def test_lab_pages_resolve_migrated_canvas_modules_without_404() -> None:
 def test_startup_builds_canvas_assets() -> None:
     with patch("testlab.server.ensure_canvas_assets_built") as build:
         with TestClient(app) as client:
-            build.assert_called_once_with()
+            build.assert_called_once_with(include_testlab=True)
             response = client.get("/static/generated/game/game-renderer.js")
             assert response.status_code == 200
 

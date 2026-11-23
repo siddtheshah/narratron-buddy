@@ -14,7 +14,7 @@ import type { RemoteStatusState } from './remote.js';
 test.use({ launchOptions: { args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] } });
 test.describe.configure({ mode: 'serial' });
 
-const CUBE_MODEL_PATH = path.join(REPO_ROOT, 'testlab', 'avatar_packages', 'cube', 'model.glb');
+const CUBE_MODEL_PATH = path.join(REPO_ROOT, 'testlab', 'assets', 'avatar_packages', 'cube', 'model.glb');
 const STAGE_AVATAR_ROUTE = '/theaters/stage/avatars/mobile-companion';
 
 const TEST_AVATAR_MANIFEST = {

@@ -53,8 +53,8 @@ For an embedded game that drives narration, use [Adventure Runner](http://127.0.
 - Run the authored package's tests when present. The [example game tests](../../games/example_game/game/game_test.py) show how to verify turn order, invalid moves, win/draw/reset, and canvas effects. For changes to the shared lab or runtime, run the relevant checks below.
 
   ```powershell
-  uv run pytest -n 0 games/example_game/game testlab/game_lab_test.py testlab/game_harness_test.py
-  npm run test:ui -- frontend/testlab/testlab-game-lab_test.ts frontend/game/game-renderer_test.ts
+  uv run pytest -n 0 games/example_game/game testlab/labs/game_lab_test.py testlab/labs/game_harness_test.py
+  npm run test:ui -- testlab/frontend/labs/game-lab_test.ts frontend/game/game-renderer_test.ts
   ```
 
 - Open the actual package in a browser, play a meaningful turn, and capture the board in a useful state. Give the contributor the package path, a local launch URL and exact first moves, and a screenshot or transcript if available. State which paths you exercised and call out any provider-backed or canvas behavior you could not verify.

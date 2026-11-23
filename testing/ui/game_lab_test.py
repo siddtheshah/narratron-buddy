@@ -9,8 +9,8 @@ from playwright.sync_api import Dialog, Route, expect, sync_playwright
 from pytest import MonkeyPatch
 
 from providers.text_response_provider import TextResponseProvider
-from testlab import game_lab
-from testlab.game_harness_test import response
+from testlab.labs import game_lab
+from testlab.labs.game_harness_test import response
 
 
 def test_manual_lab_plays_checkers_and_resets(
@@ -30,6 +30,11 @@ def test_manual_lab_plays_checkers_and_resets(
         "/static/generated",
         StaticFiles(directory=game_lab.PROJECT_ROOT / "frontend" / "static" / "generated"),
         name="static-generated",
+    )
+    app.mount(
+        "/testlab-static",
+        StaticFiles(directory=game_lab.TESTLAB_ROOT / "frontend" / "static"),
+        name="testlab-static",
     )
     client = TestClient(app)
 

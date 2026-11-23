@@ -78,7 +78,7 @@ def offline_lab_text_providers() -> Generator[MagicMock, None, None]:
     provider.display_name = "Mock Text Provider"
     provider.generate.side_effect = AssertionError("This test must mock text generation")
     with (
-        patch("testlab.adventure_runner.get_text_response_provider", return_value=provider),
+        patch("testlab.labs.adventure_runner.get_text_response_provider", return_value=provider),
         patch("testlab.server.get_text_response_provider", return_value=provider),
     ):
         yield provider

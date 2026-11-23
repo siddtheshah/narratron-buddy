@@ -1,0 +1,400 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Narratron Layered Animation Lab</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #080a13;
+      --panel: #101222;
+      --panel-hover: #171930;
+      --line: rgba(255, 255, 255, .12);
+      --ink: #f8fafc;
+      --subtle: #a5b4cc;
+      --violet: #a78bfa;
+      --violet-glow: rgba(167, 139, 250, 0.25);
+      --accent: #818cf8;
+      --danger: #f87171;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: radial-gradient(circle at 12% 0%, #2c1d5b 0, transparent 36%), var(--bg);
+      color: var(--ink);
+      font-family: Outfit, sans-serif;
+    }
+
+    header {
+      width: min(1380px, calc(100% - 40px));
+      margin: 0 auto;
+      padding: 32px 0 20px;
+    }
+
+    .eyebrow {
+      margin: 0 0 6px;
+      color: #c4b5fd;
+      font-weight: 600;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      font-size: .75rem;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(2rem, 3.5vw, 3rem);
+      letter-spacing: -.04em;
+    }
+
+    .intro {
+      max-width: 720px;
+      margin: 10px 0 20px;
+      line-height: 1.5;
+      color: var(--subtle);
+    }
+
+    main {
+      width: min(1380px, calc(100% - 40px));
+      margin: 0 auto;
+      padding-bottom: 60px;
+      display: grid;
+      grid-template-columns: 1fr 420px;
+      gap: 24px;
+    }
+
+    @media (max-width: 1080px) {
+      main {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: rgba(16, 18, 34, .75);
+      backdrop-filter: blur(12px);
+      padding: 20px;
+    }
+
+    /* Stage Controls Bar */
+    .stage-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px 18px;
+      align-items: center;
+      margin-bottom: 16px;
+      padding: 12px 16px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: rgba(23, 25, 48, 0.6);
+    }
+
+    label {
+      color: var(--subtle);
+      font-size: .85rem;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    select, input[type=text], input[type=number] {
+      border: 1px solid var(--line);
+      background: #17172a;
+      color: var(--ink);
+      border-radius: 8px;
+      padding: 6px 10px;
+      font: inherit;
+      font-size: 0.88rem;
+    }
+
+    input[type=range] {
+      accent-color: var(--violet);
+      vertical-align: middle;
+    }
+
+    button {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 8px 14px;
+      color: var(--ink);
+      background: rgba(255, 255, 255, .06);
+      cursor: pointer;
+      font: 500 .85rem Outfit, sans-serif;
+      transition: background 0.15s ease, border-color 0.15s ease;
+    }
+
+    button:hover {
+      background: var(--violet-glow);
+      border-color: var(--violet);
+    }
+
+    button.btn-primary {
+      background: rgba(167, 139, 250, 0.2);
+      border-color: var(--violet);
+      color: #ede9fe;
+    }
+    button.btn-primary:hover {
+      background: rgba(167, 139, 250, 0.35);
+    }
+
+    button.btn-danger {
+      border-color: rgba(248, 113, 113, 0.4);
+      color: var(--danger);
+    }
+    button.btn-danger:hover {
+      background: rgba(248, 113, 113, 0.15);
+    }
+
+    /* Stage Canvas Container */
+    .stage-viewport {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 20px 48px rgba(0, 0, 0, 0.4);
+      background: #090b14;
+    }
+
+    .stage-viewport.bg-checkerboard {
+      background-image: linear-gradient(45deg, #16192c 25%, transparent 25%),
+                        linear-gradient(-45deg, #16192c 25%, transparent 25%),
+                        linear-gradient(45deg, transparent 75%, #16192c 75%),
+                        linear-gradient(-45deg, transparent 75%, #16192c 75%);
+      background-size: 24px 24px;
+      background-position: 0 0, 0 12px, 12px -12px, -12px 0px;
+    }
+
+    .stage-viewport.bg-black { background: #000; }
+    .stage-viewport.bg-white { background: #fff; }
+
+    canvas#stage-canvas {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      display: block;
+    }
+
+    .stage-status {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 12px;
+      font-size: 0.8rem;
+      color: var(--subtle);
+    }
+
+    /* Layer Controls Side Panel */
+    .panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+
+    .panel-header h2 {
+      margin: 0;
+      font-size: 1.25rem;
+    }
+
+    .layer-list {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      max-height: 640px;
+      overflow-y: auto;
+      padding-right: 4px;
+    }
+
+    .layer-card {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--panel);
+      padding: 14px;
+      transition: border-color 0.15s ease;
+    }
+
+    .layer-card:hover {
+      border-color: var(--violet);
+    }
+
+    .layer-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+
+    .layer-thumb {
+      width: 44px;
+      height: 44px;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      object-fit: cover;
+      background: #000;
+    }
+
+    .layer-title {
+      flex: 1;
+      font-weight: 600;
+      font-size: 0.95rem;
+    }
+
+    .layer-actions {
+      display: flex;
+      gap: 4px;
+    }
+
+    .layer-actions button {
+      padding: 4px 8px;
+      font-size: 0.75rem;
+      border-radius: 6px;
+    }
+
+    .layer-body {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px 12px;
+      font-size: 0.82rem;
+    }
+
+    .layer-body label {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 4px;
+    }
+
+    .layer-body select, .layer-body input {
+      width: 100%;
+      margin: 0;
+    }
+
+    .range-val {
+      font-size: 0.75rem;
+      color: var(--violet);
+      margin-left: auto;
+    }
+
+    /* Modal / JSON Panel */
+    .json-panel {
+      margin-top: 16px;
+    }
+
+    textarea#json-io {
+      width: 100%;
+      height: 120px;
+      background: #0c0e1a;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      color: #c4b5fd;
+      font-family: monospace;
+      font-size: 0.8rem;
+      padding: 10px;
+      resize: vertical;
+    }
+  </style>
+</head>
+
+<body>
+  <header>
+    <p class="eyebrow">Narratron Test Lab</p>
+    <h1>Layered Animation Lab</h1>
+    <p class="intro">
+      Test local layer motion treatments (sway, vibrate, pulse) and depth ordering on transparent RGBA piece images from <code>testlab/assets/images/pieces</code>.
+    </p>
+  </header>
+
+  <main>
+    <!-- Left Column: Stage & Global Controls -->
+    <section>
+      <div class="card">
+        <div class="stage-bar">
+          <label>Preset:
+            <select id="preset-select">
+              <option value="">-- Custom Composition --</option>
+            </select>
+          </label>
+
+          <label>Stage Background:
+            <select id="bg-select">
+              <option value="checkerboard" selected>Checkerboard (RGBA)</option>
+              <option value="dark">Dark Space</option>
+              <option value="black">Pure Black</option>
+              <option value="white">Pure White</option>
+            </select>
+          </label>
+
+          <label>Aspect Ratio:
+            <select id="aspect-select">
+              <option value="16/9" selected>16 : 9</option>
+              <option value="1/1">1 : 1</option>
+              <option value="4/3">4 : 3</option>
+            </select>
+          </label>
+
+          <button id="btn-play-pause" class="btn-primary" type="button">Pause Motion</button>
+          <label>Master Speed:
+            <input id="master-speed" type="range" min="0.1" max="2.5" step="0.1" value="1.0">
+            <span id="master-speed-val" class="range-val">1.0x</span>
+          </label>
+        </div>
+
+        <div id="stage-viewport" class="stage-viewport bg-checkerboard">
+          <canvas id="stage-canvas"></canvas>
+        </div>
+
+        <div class="stage-status">
+          <span id="fps-counter">60 FPS</span>
+          <span id="layer-count-status">0 Layers Active</span>
+          <span id="canvas-dim-status">Canvas: 1280x720</span>
+        </div>
+      </div>
+
+      <!-- JSON Manifest Export / Import -->
+      <div class="card json-panel">
+        <div class="panel-header">
+          <h3>Layered Animation Manifest JSON</h3>
+          <div>
+            <button id="btn-export-json" type="button">Export JSON</button>
+            <button id="btn-import-json" type="button">Apply JSON</button>
+          </div>
+        </div>
+        <textarea id="json-io" placeholder="Paste or view layer animation manifest JSON..."></textarea>
+      </div>
+    </section>
+
+    <!-- Right Column: Layer Stack Manager -->
+    <section class="card">
+      <div class="panel-header">
+        <h2>Layer Stack</h2>
+        <div>
+          <button id="btn-clear-all" class="btn-danger" type="button">Clear All</button>
+          <button id="btn-add-layer" class="btn-primary" type="button">+ Add Layer</button>
+        </div>
+      </div>
+
+      <div id="layer-list" class="layer-list">
+        <!-- Rendered dynamically -->
+      </div>
+    </section>
+  </main>
+
+  <script type="module" src="/testlab-static/generated/labs/layered-animation-lab.js"></script>
+</body>
+
+</html>

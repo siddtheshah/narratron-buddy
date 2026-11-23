@@ -75,7 +75,7 @@ When creating a new adventure, follow this sequence:
    - Place scene imagery in `references/scenes/<Scene Name>/1.webp` with `scene.yaml` (each scene requires its own subfolder; loose images directly under `references/scenes/` are unsupported).
    - Place cover/location references in `references/`, optional tactical tokens in `stamps/`, and loopable tracks in `playlists/<Mood>/`.
    - **Asset Lifecycle**: At session initialization, the manager reads authored portraits, scene imagery, and trait files directly from `references/` without copying or duplicating them into output. During play, visual evolutions and appearance changes create new numbered iterations under `output/artifacts/updated_references/characters/` and `output/artifacts/updated_references/scenes/`. The live agent uses `<Character Name>` tags in visual prompts to bind the latest portrait. Authors can manually copy session updates back into authored folders if permanent evolution is desired.
-7. **Test Locally**: Run unit tests (`uv run pytest -n 0 adventures/<adventure-slug>`), smoke tests (`--smoke`), and interactive/autoplay sessions using `testlab/adventure_runner.py`.
+7. **Test Locally**: Run unit tests (`uv run pytest -n 0 adventures/<adventure-slug>`), smoke tests (`--smoke`), and interactive/autoplay sessions using `testlab/labs/adventure_runner.py`.
 8. **Final Verification**: Upload the folder to [narratron.app/deploy](https://narratron.app/deploy) for live verification.
 
 ---
@@ -468,7 +468,7 @@ uv run pytest -n 0 adventures/<adventure-folder-name>
 Verify that the adventure loads, parses configuration, and completes an initial narrative turn:
 
 ```bash
-uv run python testlab/adventure_runner.py --adventure <adventure-folder-name> --smoke
+uv run python testlab/labs/adventure_runner.py --adventure <adventure-folder-name> --smoke
 ```
 
 - Returns exit code `0` on success.
@@ -478,7 +478,7 @@ uv run python testlab/adventure_runner.py --adventure <adventure-folder-name> --
 Play through multiple turns directly in the terminal to evaluate dialogue, state updates, and pacing:
 
 ```bash
-uv run python testlab/adventure_runner.py --adventure <adventure-folder-name>
+uv run python testlab/labs/adventure_runner.py --adventure <adventure-folder-name>
 ```
 
 - Type player actions at the `Player > ` prompt.
@@ -490,10 +490,10 @@ Stress-test pacing, edge cases, lore adherence, and sticky note stability withou
 
 ```bash
 # Basic 10-turn autonomous run:
-uv run python testlab/adventure_runner.py --adventure <adventure-folder-name> --autoplay
+uv run python testlab/labs/adventure_runner.py --adventure <adventure-folder-name> --autoplay
 
 # Custom duration and persona:
-uv run python testlab/adventure_runner.py --adventure <adventure-folder-name> \
+uv run python testlab/labs/adventure_runner.py --adventure <adventure-folder-name> \
     --autoplay \
     --turns 20 \
     --autoplay-instructions "Play in a realistic style: act as a grounded, pragmatic mortal assistant prioritizing survival, diplomatic leverage, and careful protocol."
@@ -580,9 +580,9 @@ Before packaging your adventure for players or deploying to a live session:
   - [ ] `playlists/` contain valid audio files organized by mood subdirectories, with optional `description.txt`.
 - [ ] **Testing**:
   - [ ] Adventure unit tests pass (if present): `uv run pytest -n 0 adventures/<slug>`.
-  - [ ] CLI smoke test passes: `uv run python testlab/adventure_runner.py --adventure <slug> --smoke`.
+  - [ ] CLI smoke test passes: `uv run python testlab/labs/adventure_runner.py --adventure <slug> --smoke`.
   - [ ] Interactive multi-turn CLI test succeeds without unhandled errors.
-  - [ ] Autonomous multi-turn playtest passes: `uv run python testlab/adventure_runner.py --adventure <slug> --autoplay --turns 10`.
+  - [ ] Autonomous multi-turn playtest passes: `uv run python testlab/labs/adventure_runner.py --adventure <slug> --autoplay --turns 10`.
   - [ ] Logs in `evaluation_results/` show clean sticky note updates without note sprawl.
   - [ ] Live `/deploy` session verified on [narratron.app/deploy](https://narratron.app/deploy).
 

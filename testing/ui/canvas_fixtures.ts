@@ -15,6 +15,8 @@ export const CANVAS_WS_ORIGIN = 'wss://canvas.test';
 export const REPO_ROOT = path.resolve(__dirname, '..', '..');
 export const STATIC_DIR = path.join(REPO_ROOT, 'frontend', 'static');
 export const TEMPLATES_DIR = path.join(REPO_ROOT, 'frontend', 'templates');
+export const TESTLAB_STATIC_DIR = path.join(REPO_ROOT, 'testlab', 'frontend', 'static');
+export const TESTLAB_TEMPLATES_DIR = path.join(REPO_ROOT, 'testlab', 'frontend', 'templates');
 
 const IMPORT_HELPER_INIT_SCRIPT =
   'window.__importModule = (moduleUrl) => import(moduleUrl);';
@@ -172,14 +174,16 @@ function buildDocumentHtml(options: MountCanvasOptions): string {
 async function fulfillStaticAsset(
   route: Route,
   url: URL,
+  mountPrefix: string,
+  baseDir: string,
   unexpectedRequests: string[],
 ): Promise<void> {
-  const encodedRelative = url.pathname.slice('/static/'.length);
+  const encodedRelative = url.pathname.slice(mountPrefix.length);
   const relativePath = decodeURIComponent(encodedRelative);
-  const resolvedPath = path.resolve(STATIC_DIR, relativePath);
-  const staticPrefix = STATIC_DIR.endsWith(path.sep) ? STATIC_DIR : `${STATIC_DIR}${path.sep}`;
+  const resolvedPath = path.resolve(baseDir, relativePath);
+  const staticPrefix = baseDir.endsWith(path.sep) ? baseDir : `${baseDir}${path.sep}`;
 
-  if (resolvedPath !== STATIC_DIR && !resolvedPath.startsWith(staticPrefix)) {
+  if (resolvedPath !== baseDir && !resolvedPath.startsWith(staticPrefix)) {
     unexpectedRequests.push(`Blocked static path traversal: ${url.pathname}`);
     await route.abort('blockedbyclient');
     return;
@@ -222,7 +226,21 @@ async function attachContextIsolation(
     (url: URL) => url.origin === CANVAS_ORIGIN && url.pathname.startsWith('/static/'),
     async (route: Route) => {
       const url = new URL(route.request().url());
-      await fulfillStaticAsset(route, url, unexpectedRequests);
+      await fulfillStaticAsset(route, url, '/static/', STATIC_DIR, unexpectedRequests);
+    },
+  );
+
+  await context.route(
+    (url: URL) => url.origin === CANVAS_ORIGIN && url.pathname.startsWith('/testlab-static/'),
+    async (route: Route) => {
+      const url = new URL(route.request().url());
+      await fulfillStaticAsset(
+        route,
+        url,
+        '/testlab-static/',
+        TESTLAB_STATIC_DIR,
+        unexpectedRequests,
+      );
     },
   );
 }

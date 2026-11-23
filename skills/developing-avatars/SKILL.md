@@ -15,12 +15,12 @@ If the contributor supplies a usable GLB, start at mesh inspection. If a 3D API 
 
 ## Model a procedural avatar
 
-Choose this path for avatars whose geometry and motion are intentionally defined in code, such as a floating cube, animated sigil, or shader-driven form. Define the silhouette, meshes, materials, and motion in a generator and export a GLB. Adapt the [Three.js cube builder](../../testlab/build_cube_avatar.mjs) to write into the target package. The bundled script writes to the reference cube's own `model.glb`. Keep the generator with the authoring sources so contributors can reproduce the model.
+Choose this path for avatars whose geometry and motion are intentionally defined in code, such as a floating cube, animated sigil, or shader-driven form. Define the silhouette, meshes, materials, and motion in a generator and export a GLB. Adapt the [Three.js cube builder](../../testlab/assets/build_cube_avatar.mjs) to write into the target package. The bundled script writes to the reference cube's own `model.glb`. Keep the generator with the authoring sources so contributors can reproduce the model.
 
 ## Choose a package and reference
 
 - Work in `avatars/<slug>/` for a reusable catalog package, or `<theater-or-adventure>/avatars/<slug>/` for an embedded avatar. Include `avatar.json`, a self-contained `model.glb`, and a `preview.webp` poster when possible. Add `metadata.json` for a reusable catalog entry. Keep the folder, manifest, and catalog IDs aligned.
-- Use the [avatar package contract](../../site_docs/avatar_packages.md) for manifest fields, the orthographic camera and lighting, shader bindings, and allowed files. Start with the [reaction cube](../../testlab/avatar_packages/cube/avatar.json) for a small interactive model, the [Cube of Light](../../adventures/example_adventure/avatars/light-cube/avatar.json) for mood colors and a shader, or [Narratron](../../example_theater/avatars/narratron/avatar.json) for multiple clips and effects.
+- Use the [avatar package contract](../../site_docs/avatar_packages.md) for manifest fields, the orthographic camera and lighting, shader bindings, and allowed files. Start with the [reaction cube](../../testlab/assets/avatar_packages/cube/avatar.json) for a small interactive model, the [Cube of Light](../../adventures/example_adventure/avatars/light-cube/avatar.json) for mood colors and a shader, or [Narratron](../../example_theater/avatars/narratron/avatar.json) for multiple clips and effects.
 
 ## Build and inspect
 

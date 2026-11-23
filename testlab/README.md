@@ -1,5 +1,15 @@
 # Narratron Test Lab
 
+## Directory layout
+
+| Directory | Responsibility |
+| --- | --- |
+| `server.py`, `__main__.py` | Standalone FastAPI server and CLI entry point (`uv run python -m testlab`) |
+| `labs/` | Interactive lab backends, harnesses, CLI smoke scripts, and adjacent Python tests |
+| `benchmarks/` | Provider and engine benchmark catalogs, runners, and adjacent Python tests |
+| `frontend/` | Test Lab TypeScript sources (`labs/`, `benchmarks/`), Playwright `*_test.ts` tests, HTML `templates/`, and `static/` assets (including gitignored `generated/` JS compiled via `testlab/tsconfig.json`) |
+| `assets/` | Curated test images, avatar packages, scenario fixtures, and avatar generator script |
+
 ## Run locally
 
 From the repository root, install dependencies, build the browser modules, and
@@ -14,7 +24,7 @@ uv run python -m uvicorn testlab.server:app --host 127.0.0.1 --port 8015
 
 Open the [Test Lab index](http://127.0.0.1:8015/). While editing frontend modules,
 run `npm run watch` to rebuild them as you work. Run `npm test` for type checking,
-the build, and Playwright tests. Python route tests are in `testlab/*_test.py`.
+the build, and Playwright tests. Python route and backend tests live in `testlab/server_test.py`, `testlab/labs/*_test.py`, and `testlab/benchmarks/*_test.py`.
 
 ## Provider benchmarks
 
@@ -35,17 +45,17 @@ uv run python scripts/list_gemini_voice_tags.py
 To exercise one Vertex-backed planner turn from the command line, run:
 
 ```powershell
-uv run python testlab/story_planner_smoke.py
+uv run python testlab/labs/story_planner_smoke.py
 ```
 
 To exercise one real A2UI Canvas generation turn in an isolated temporary theater,
 using a two-knight health-bar scenario, run:
 
 ```powershell
-uv run python testlab/a2ui_canvas_smoke.py
+uv run python testlab/labs/a2ui_canvas_smoke.py
 ```
 
-Add `--image testlab/images/trace-knight-sword.png` to include a canvas image in the request.
+Add `--image testlab/assets/images/trace-knight-sword.png` to include a canvas image in the request.
 
 The same configurable test is available in the Test Lab server at `/a2ui-canvas`. It accepts a model,
 canvas request, optional workspace-local image, expected surface count, and an optional persistence
@@ -62,7 +72,7 @@ Reset reloads the package and starts a fresh game.
 The CLI autoplayer can choose either in-character text or a game control:
 
 ```powershell
-uv run python testlab/adventure_runner.py --adventure example_adventure --autoplay --turns 10
+uv run python testlab/labs/adventure_runner.py --adventure example_adventure --autoplay --turns 10
 ```
 
 Each decision receives the current visible game panel, including enabled buttons,
@@ -93,7 +103,7 @@ committed AI actions with revisions, before/after state, timings, and errors.
 For a command-line run:
 
 ```powershell
-uv run python -m testlab.game_harness --game adventures/example_adventure/game/game.yaml --scenario testlab/scenarios/checkers.json --provider gemini-3 --output output/game-test/report.json
+uv run python -m testlab.labs.game_harness --game adventures/example_adventure/game/game.yaml --scenario testlab/assets/scenarios/checkers.json --provider gemini-3 --output output/game-test/report.json
 ```
 
 Live runs use the existing provider configuration and credentials loaded from
@@ -131,5 +141,5 @@ legal responses alone do not establish strategic playing strength.
 Run the offline harness tests with:
 
 ```powershell
-uv run pytest -n 0 testlab/game_harness_test.py testlab/game_lab_test.py
+uv run pytest -n 0 testlab/labs/game_harness_test.py testlab/labs/game_lab_test.py
 ```

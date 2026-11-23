@@ -12,7 +12,7 @@ import pytest
 
 from game_engine.game_runtime import FunctionDefinition, GameAction, GameProgram, GameStep, GameWorkBudgetExceeded
 from testing.game_fixtures import counter_definition, exchange_definition
-from testlab.game_benchmark import sample
+from testlab.benchmarks.game_benchmark import sample
 from game_engine.go_cel import DEFAULT_COST_LIMIT, GoGameState, GoWorker, GoWorkerPool
 
 

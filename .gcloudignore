@@ -35,6 +35,7 @@ evaluation_results/
 *_test.py
 node_modules/
 frontend/static/generated/
+testlab/frontend/static/generated/
 playwright-report/
 test-results/
 

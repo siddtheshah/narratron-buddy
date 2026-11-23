@@ -6,7 +6,8 @@ from pytest import MonkeyPatch
 import pytest
 
 from testing.game_fixtures import counter_definition
-from testlab import adventure_runner, server
+from testlab import server
+from testlab.labs import adventure_runner
 from components.story.story_handoffs import GameControlDecision
 from components.story.story_session import StoryRole, StorySession
 from providers.text_response_provider import TextResponseRequest, TextResponseResult

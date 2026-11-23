@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Avatar Lab · Narratron</title>
+  <link rel="stylesheet" href="/testlab-static/css/avatar-lab.css">
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "/avatar-lib/three/three.module.js",
+        "three/addons/": "/avatar-lib/addons/"
+      }
+    }
+  </script>
+  <script type="module" src="/testlab-static/generated/labs/avatar-lab.js"></script>
+</head>
+<body>
+  <main>
+    <a class="back-link" href="/">← Test Lab</a>
+    <h1>Avatar Lab</h1>
+    <div class="workspace">
+      <section class="preview" aria-labelledby="preview-heading">
+        <div class="section-heading">
+          <h2 id="preview-heading">Canvas preview</h2>
+          <label><span id="avatar-choice-label">Avatar</span>
+            <select id="avatar-choice" aria-labelledby="avatar-choice-label">
+              <option value="cube">Cube</option>
+              <option value="light-cube">Cube of Light</option>
+              <option value="example_avatar">Example Avatar</option>
+              <option value="narratron">Narratron</option>
+              <option value="umbral-sigil">Umbral Sigil</option>
+            </select>
+          </label>
+          <label for="backdrop">Backdrop
+            <select id="backdrop">
+              <option value="scene">Story scene</option>
+              <option value="dark">Dark</option>
+              <option value="light">Light</option>
+            </select>
+          </label>
+        </div>
+        <div id="stage" class="stage" data-backdrop="scene">
+          <div class="canvas-corner">
+            <div id="avatar" class="avatar">
+              <img id="poster" alt="" hidden>
+              <button id="avatar-activate" class="avatar-hit-area" type="button" aria-label="Poke the cube"
+                aria-describedby="avatar-interaction-hint" hidden></button>
+            </div>
+            <div class="canvas-controls" aria-hidden="true">
+              <span><svg viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="5.5"/><path d="m15 15 5 5"/></svg></span>
+              <span><svg viewBox="0 0 24 24"><path d="M5 7V5h14v2M12 5v14m-3 0h6"/></svg></span>
+              <span><svg viewBox="0 0 24 24"><path d="m9 5 11 7-11 7z"/></svg></span>
+            </div>
+          </div>
+        </div>
+        <div class="playback-details">
+          <p id="playback-status" role="status">Loading cube…</p>
+          <p id="avatar-interaction-hint" hidden>Hover to get its attention. Click or tap to poke it.</p>
+        </div>
+      </section>
+      <section class="actions" aria-labelledby="actions-heading">
+        <div class="section-heading">
+          <h2 id="actions-heading">Cube actions</h2>
+        </div>
+        <div id="action-list" class="action-list"></div>
+      </section>
+    </div>
+  </main>
+</body>
+</html>

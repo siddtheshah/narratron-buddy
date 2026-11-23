@@ -15,7 +15,7 @@ renderer code. Bundled references include:
   `spark.frag`).
 - `adventures/example_adventure/avatars/light-cube`: luminous floating cube
   using a single looping clip, six color-only mood actions, and a dust shader.
-- `testlab/avatar_packages/cube`: minimal reaction cube demonstrating `hover`
+- `testlab/assets/avatar_packages/cube`: minimal reaction cube demonstrating `hover`
   and `activate` reactions without custom shaders.
 
 Avatar packages are mounted by adventure selection, folder import, ZIP import,

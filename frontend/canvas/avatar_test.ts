@@ -113,7 +113,7 @@ test('light-cube playback supports selectColor and playAction backwards-compatib
 });
 
 test('avatar action playback switches clips, returns one-shots to idle, and triggers activation reaction', async ({ canvas, page }) => {
-  const cubeModelPath = path.join(REPO_ROOT, 'testlab', 'avatar_packages', 'cube', 'model.glb');
+  const cubeModelPath = path.join(REPO_ROOT, 'testlab', 'assets', 'avatar_packages', 'cube', 'model.glb');
   const stageAvatarRoute = '/theaters/stage/avatars/multi-action';
   const manifest = {
     id: 'multi-action',
@@ -201,7 +201,7 @@ test('avatar action playback switches clips, returns one-shots to idle, and trig
 
 test('prefers-reduced-motion keeps idle steady and snaps action state without continuous motion', async ({ canvas, page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  const cubeModelPath = path.join(REPO_ROOT, 'testlab', 'avatar_packages', 'cube', 'model.glb');
+  const cubeModelPath = path.join(REPO_ROOT, 'testlab', 'assets', 'avatar_packages', 'cube', 'model.glb');
   const stageAvatarRoute = '/theaters/stage/avatars/reduced-motion';
   const manifest = {
     id: 'reduced-motion',
@@ -261,7 +261,7 @@ test('prefers-reduced-motion keeps idle steady and snaps action state without co
 });
 
 test('canvas_state avatar payload drives playback, deduplicates polls, and replays incremented sequences', async ({ canvas, page }) => {
-  const cubeModelPath = path.join(REPO_ROOT, 'testlab', 'avatar_packages', 'cube', 'model.glb');
+  const cubeModelPath = path.join(REPO_ROOT, 'testlab', 'assets', 'avatar_packages', 'cube', 'model.glb');
   const stageAvatarRoute = '/theaters/stage/avatars/state-driven';
   const manifest = {
     id: 'state-driven',
@@ -348,7 +348,7 @@ test('canvas_state avatar payload drives playback, deduplicates polls, and repla
 });
 
 test('canvas avatar stays hidden until agent is summoned and hides when banished', async ({ canvas, page }) => {
-  const cubeModelPath = path.join(REPO_ROOT, 'testlab', 'avatar_packages', 'cube', 'model.glb');
+  const cubeModelPath = path.join(REPO_ROOT, 'testlab', 'assets', 'avatar_packages', 'cube', 'model.glb');
   const stageAvatarRoute = '/theaters/stage/avatars/summon-gated';
   const manifest = {
     id: 'summon-gated',

@@ -15,16 +15,20 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "paths": {
-      "/static/generated/*": ["./frontend/*"]
+      "/static/generated/*": ["./frontend/*"],
+      "/testlab-static/generated/*": ["./testlab/frontend/*"]
     }
   },
   "include": [
     "playwright.config.ts",
     "testing/ui/**/*.ts",
-    "frontend/**/*.ts"
+    "frontend/**/*.ts",
+    "testlab/frontend/**/*.ts"
   ],
   "exclude": [
     "frontend/static/**",
-    "frontend/templates/**"
+    "frontend/templates/**",
+    "testlab/frontend/static/**",
+    "testlab/frontend/templates/**"
   ]
 }

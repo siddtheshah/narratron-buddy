@@ -17,7 +17,7 @@ def test_skips_build_when_frontend_sources_are_absent(tmp_path: Path) -> None:
     run_mock.assert_not_called()
 
 
-@pytest.mark.parametrize("consumer", ["canvas", "pages", "shared", "remote", "testlab", "audio", "game"])
+@pytest.mark.parametrize("consumer", ["canvas", "pages", "shared", "remote", "audio", "game"])
 def test_skips_build_when_generated_outputs_are_up_to_date(tmp_path: Path, consumer: str) -> None:
     source = tmp_path / "frontend" / consumer / "module.ts"
     source.parent.mkdir(parents=True)
@@ -35,7 +35,7 @@ def test_skips_build_when_generated_outputs_are_up_to_date(tmp_path: Path, consu
     run_mock.assert_not_called()
 
 
-@pytest.mark.parametrize("consumer", ["canvas", "pages", "shared", "remote", "testlab", "audio", "game"])
+@pytest.mark.parametrize("consumer", ["canvas", "pages", "shared", "remote", "audio", "game"])
 def test_runs_npm_build_when_generated_output_is_missing_or_stale(tmp_path: Path, consumer: str) -> None:
     source = tmp_path / "frontend" / consumer / "module.ts"
     source.parent.mkdir(parents=True)
@@ -121,4 +121,32 @@ def test_ignores_static_and_templates_directories_under_frontend(tmp_path: Path)
 
     with patch("utils.frontend_build.subprocess.run") as run_mock:
         ensure_canvas_assets_built(project_root=tmp_path)
+    run_mock.assert_not_called()
+
+
+@pytest.mark.parametrize("section", ["labs", "benchmarks"])
+def test_testlab_frontend_build_only_checked_when_requested(tmp_path: Path, section: str) -> None:
+    source = tmp_path / "testlab" / "frontend" / section / "sample.ts"
+    source.parent.mkdir(parents=True)
+    source.write_text("export const x = 1;\n", encoding="utf-8")
+
+    with patch("utils.frontend_build.subprocess.run") as run_mock:
+        ensure_canvas_assets_built(project_root=tmp_path)
+    run_mock.assert_not_called()
+
+    with (
+        patch("utils.frontend_build.shutil.which", return_value="npm"),
+        patch("utils.frontend_build.subprocess.run") as run_mock,
+    ):
+        ensure_canvas_assets_built(project_root=tmp_path, include_testlab=True)
+    run_mock.assert_called_once_with(["npm", "run", "build"], cwd=tmp_path, check=True)
+
+    output = tmp_path / "testlab" / "frontend" / "static" / "generated" / section / "sample.js"
+    output.parent.mkdir(parents=True)
+    output.write_text("export const x = 1;\n", encoding="utf-8")
+    os.utime(source, (1000, 1000))
+    os.utime(output, (2000, 2000))
+
+    with patch("utils.frontend_build.subprocess.run") as run_mock:
+        ensure_canvas_assets_built(project_root=tmp_path, include_testlab=True)
     run_mock.assert_not_called()
