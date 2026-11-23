@@ -62,6 +62,7 @@ export interface RemoteSceneAsset {
     readonly id: string;
     readonly name: string;
     readonly url?: string | null;
+    readonly image_url?: string | null;
     readonly description?: string | null;
 }
 
@@ -77,15 +78,13 @@ export interface RemotePlaylistGroup {
     readonly tracks?: readonly RemoteMusicTrack[] | null;
 }
 
-interface RemoteMusicCardAsset {
-    readonly id: string;
-    readonly name: string;
-    readonly url?: string | null;
-    readonly isGroup?: boolean;
-    readonly isTrack?: boolean;
-    readonly playlistName?: string;
-    readonly tracks?: readonly RemoteMusicTrack[] | null;
-}
+const visualAssetCategories = [
+    { kind: 'scenes', idKey: 'scene_id', empty: 'No scenes available.' },
+    { kind: 'characters', idKey: 'character_id', empty: 'No character references available.' },
+    { kind: 'animations', idKey: 'id', empty: 'No animations available.' },
+] as const;
+
+type VisualAssetCategory = typeof visualAssetCategories[number];
 
 export interface BatonUser {
     readonly id: number;
@@ -201,8 +200,21 @@ export function initializeRemote(): RemoteController {
     const tabs = [...document.querySelectorAll<HTMLElement>('[data-view]')];
     const views = tabs.map((tab) => document.getElementById(tab.getAttribute('aria-controls') ?? ''));
     const viewContainer = requireElement<HTMLElement>(document.getElementById('remote-views'), 'remote-views');
-    const scenesCarousel = requireElement<HTMLElement>(document.getElementById('scenes-carousel'), 'scenes-carousel');
-    const musicCarousel = requireElement<HTMLElement>(document.getElementById('music-carousel'), 'music-carousel');
+    const visualAssetCarousels = visualAssetCategories.map((category) => {
+        const id = `${category.kind}-carousel`;
+        return { category, carousel: requireElement(document.getElementById(id), id) };
+    });
+    const musicOpenButtons = [...document.querySelectorAll<HTMLButtonElement>('[data-open-music]')];
+    const musicDrawer = requireElement<HTMLDialogElement>(document.getElementById('music-drawer'), 'music-drawer');
+    const musicTitle = requireElement(document.getElementById('music-drawer-title'), 'music-drawer-title');
+    const musicBack = requireElement(document.getElementById('music-drawer-back'), 'music-drawer-back');
+    const musicClose = requireElement(document.getElementById('music-drawer-close'), 'music-drawer-close');
+    const musicContent = requireElement(document.getElementById('music-drawer-content'), 'music-drawer-content');
+    const musicStatus = requireElement(document.getElementById('music-drawer-status'), 'music-drawer-status');
+    let musicLoadSequence = 0;
+    let playlists: readonly RemotePlaylistGroup[] = [];
+    let selectedPlaylistId: string | null = null;
+    let playlistListScroll = 0;
     const assetStatus = requireElement<HTMLElement>(document.getElementById('asset-status'), 'asset-status');
     const retryAssets = requireElement<HTMLElement>(document.getElementById('retry-assets'), 'retry-assets');
     const toast = document.getElementById('toast');
@@ -827,34 +839,36 @@ export function initializeRemote(): RemoteController {
         }
     }, { passive: true });
 
-    function createAssetCard(item: RemoteSceneAsset | RemoteMusicCardAsset, type: 'scene' | 'music'): HTMLElement {
+    function createAssetCard(item: RemoteSceneAsset, category: VisualAssetCategory): HTMLElement {
         const card = document.createElement('article');
         card.className = 'asset-card';
         card.setAttribute('role', 'button');
         card.setAttribute('tabindex', '0');
         card.setAttribute('aria-label', item.name);
         card.title = `Double tap to send "${item.name}" to canvas`;
-        if (type === 'scene') {
-            card.style.setProperty('--card-accent', '#cd9aff');
-            if (item.url) {
-                const image = document.createElement('img');
-                image.src = item.url;
-                image.alt = item.name;
-                image.loading = 'lazy';
-                image.referrerPolicy = 'no-referrer';
-                card.append(image);
-            } else {
-                const placeholder = document.createElement('div');
-                placeholder.className = 'music-placeholder';
-                placeholder.style.color = '#cd9aff';
-                placeholder.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect width="18" height="18" x="3" y="3" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>';
-                card.append(placeholder);
-            }
+        const url = item.url || item.image_url;
+        const placeholder = document.createElement('div');
+        placeholder.className = 'asset-placeholder';
+        placeholder.innerHTML = category.kind === 'animations'
+            ? '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m10 9 5 3-5 3Z"/></svg>'
+            : '<svg viewBox="0 0 24 24" aria-hidden="true"><rect width="18" height="18" x="3" y="3" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>';
+        if (url && !/\.(mp4|webm)(?:[?#]|$)/i.test(url)) {
+            const image = document.createElement('img');
+            image.alt = '';
+            image.loading = 'lazy';
+            image.referrerPolicy = 'no-referrer';
+            image.addEventListener('error', () => image.replaceWith(placeholder), { once: true });
+            image.src = url;
+            card.append(image);
+        } else if (url) {
+            const video = document.createElement('video');
+            video.preload = 'metadata';
+            video.muted = true;
+            video.playsInline = true;
+            video.addEventListener('error', () => video.replaceWith(placeholder), { once: true });
+            video.src = url.includes('#') ? url : `${url}#t=0.001`;
+            card.append(video);
         } else {
-            card.style.setProperty('--card-accent', '#45e0ff');
-            const placeholder = document.createElement('div');
-            placeholder.className = 'music-placeholder';
-            placeholder.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>';
             card.append(placeholder);
         }
 
@@ -863,12 +877,8 @@ export function initializeRemote(): RemoteController {
         card.append(title);
 
         function trigger(): void {
-            if (!state || busy) return;
-            const path = `${basePath()}/${type === 'scene' ? 'scenes' : 'playlists'}/push`;
-            const payload: Readonly<Record<string, string | boolean>> = type === 'scene'
-                ? { scene_id: item.id }
-                : { id: item.id };
-            void send(card, path, payload);
+            if (!isOratorUser()) return;
+            void send(card, `${basePath()}/${category.kind}/push`, { [category.idKey]: item.id });
         }
 
         let pointerStartX = 0;
@@ -914,18 +924,9 @@ export function initializeRemote(): RemoteController {
         });
 
         card.addEventListener('keydown', (event: KeyboardEvent) => {
-            if (event.key === 'Enter' || event.key === ' ') {
+            if ((event.key === 'Enter' || event.key === ' ') && !event.repeat) {
                 event.preventDefault();
-                const now = Date.now();
-                if (now - lastTap < 500) {
-                    lastTap = 0;
-                    if (now - lastTriggerTime >= 500) {
-                        lastTriggerTime = now;
-                        trigger();
-                    }
-                } else {
-                    lastTap = now;
-                }
+                trigger();
             }
         });
 
@@ -935,10 +936,10 @@ export function initializeRemote(): RemoteController {
     async function loadAssets(force = false): Promise<void> {
         if (assetsLoading && !force) return;
         const sequence = ++assetSequence;
-        const hasRenderedAssets = scenesCarousel.children.length > 0 || musicCarousel.children.length > 0;
+        const hasRenderedAssets = lastAssetsSignature !== null;
         if (!hasRenderedAssets || force) {
-            scenesCarousel.replaceChildren();
-            musicCarousel.replaceChildren();
+            visualAssetCarousels.forEach(({ carousel }) => carousel.replaceChildren());
+            lastAssetsSignature = null;
             retryAssets.hidden = true;
             assetStatus.textContent = state ? 'Loading assets…' : 'Reconnect to browse assets.';
         }
@@ -948,57 +949,31 @@ export function initializeRemote(): RemoteController {
         }
         assetsLoading = true;
         try {
-            const [scenes, playlists] = await Promise.all([
-                request<RemoteSceneAsset[]>(`${basePath()}/scenes`),
-                request<RemotePlaylistGroup[]>(`${basePath()}/playlists`),
-            ]);
+            const assets = await Promise.all(visualAssetCarousels.map(({ category }) =>
+                request<RemoteSceneAsset[]>(`${basePath()}/${category.kind}`),
+            ));
             if (sequence !== assetSequence || !state) return;
 
-            const signature = JSON.stringify({ scenes, playlists });
+            const signature = JSON.stringify(assets);
             if (!force && hasRenderedAssets && signature === lastAssetsSignature) {
                 return;
             }
             lastAssetsSignature = signature;
 
-            const musicEntries: RemoteMusicCardAsset[] = (playlists || []).flatMap((group) => [
-                { ...group, isGroup: true },
-                ...(group.tracks || []).map((track) => ({ ...track, playlistName: group.name, isTrack: true })),
-            ]);
-
-            if (!scenes.length && !musicEntries.length) {
-                assetStatus.textContent = 'No scenes available in this theater yet.';
-            } else if (!scenes.length) {
-                assetStatus.textContent = 'No scenes available in this theater yet.';
-            } else {
-                assetStatus.textContent = '';
-            }
-
-            const sceneNodes: HTMLElement[] = [];
-            if (scenes.length) {
-                for (const scene of scenes) {
-                    sceneNodes.push(createAssetCard(scene, 'scene'));
+            assetStatus.textContent = '';
+            visualAssetCarousels.forEach(({ category, carousel }, index) => {
+                const items = category.kind === 'characters'
+                    ? assets[index].filter((item) => item.url || item.image_url)
+                    : assets[index];
+                if (items.length) {
+                    carousel.replaceChildren(...items.map((item) => createAssetCard(item, category)));
+                } else {
+                    const empty = document.createElement('div');
+                    empty.className = 'asset-empty';
+                    empty.textContent = category.empty;
+                    carousel.replaceChildren(empty);
                 }
-            } else {
-                const empty = document.createElement('div');
-                empty.className = 'asset-empty';
-                empty.textContent = 'No scenes available.';
-                sceneNodes.push(empty);
-            }
-
-            const musicNodes: HTMLElement[] = [];
-            if (musicEntries.length) {
-                for (const music of musicEntries) {
-                    musicNodes.push(createAssetCard(music, 'music'));
-                }
-            } else {
-                const empty = document.createElement('div');
-                empty.className = 'asset-empty';
-                empty.textContent = 'No music available.';
-                musicNodes.push(empty);
-            }
-
-            scenesCarousel.replaceChildren(...sceneNodes);
-            musicCarousel.replaceChildren(...musicNodes);
+            });
         } catch (error: unknown) {
             if (sequence !== assetSequence) return;
             const detail = getErrorMessage(error);
@@ -1013,6 +988,109 @@ export function initializeRemote(): RemoteController {
     }
 
     retryAssets.addEventListener('click', () => { void loadAssets(true); });
+
+    function createMusicButton(label: string, onClick: () => void): HTMLButtonElement {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.textContent = label;
+        button.addEventListener('click', onClick);
+        return button;
+    }
+
+    function createMusicAction(label: string, id: string, success: string): HTMLButtonElement {
+        const button = createMusicButton(label, () => {
+            if (!isOratorUser()) return;
+            void send(button, `${basePath()}/playlists/push`, { id }, undefined, {
+                element: musicStatus, success,
+            });
+        });
+        button.dataset.musicAction = '';
+        button.setAttribute('aria-disabled', String(busy));
+        return button;
+    }
+
+    function showPlaylistList(restoreFocus = false): void {
+        musicTitle.textContent = 'Music';
+        musicBack.hidden = true;
+        const stop = createMusicAction('No music', 'no_music', 'Music stopped.');
+        const rows = playlists.map((playlist) => {
+            const count = playlist.tracks?.length ?? 0;
+            const button = createMusicButton(playlist.name, () => {
+                selectedPlaylistId = playlist.id;
+                playlistListScroll = musicContent.scrollTop;
+                showPlaylistTracks(playlist);
+            });
+            button.className = 'music-playlist-row';
+            const detail = document.createElement('span');
+            detail.textContent = `${count} ${count === 1 ? 'track' : 'tracks'} ›`;
+            button.append(detail);
+            return button;
+        });
+        musicContent.replaceChildren(stop, ...rows);
+        if (!rows.length) {
+            const empty = document.createElement('p');
+            empty.textContent = 'No playlists available.';
+            musicContent.append(empty);
+        }
+        if (restoreFocus) {
+            const index = playlists.findIndex((playlist) => playlist.id === selectedPlaylistId);
+            (rows[index] ?? stop).focus({ preventScroll: true });
+            musicContent.scrollTop = playlistListScroll;
+        }
+        selectedPlaylistId = null;
+    }
+
+    function showPlaylistTracks(playlist: RemotePlaylistGroup): void {
+        musicTitle.textContent = playlist.name;
+        musicBack.hidden = false;
+        const tracks = playlist.tracks ?? [];
+        const actions = tracks.map((track) => createMusicAction(track.name, track.id, `Playing ${track.name}.`));
+        const playAll = createMusicAction('Play playlist', playlist.id, `Playing ${playlist.name}.`);
+        playAll.className = 'music-play-all';
+        playAll.disabled = !tracks.length;
+        musicContent.replaceChildren(playAll, ...actions);
+        if (!tracks.length) {
+            const empty = document.createElement('p');
+            empty.textContent = 'No tracks available.';
+            musicContent.append(empty);
+        }
+        musicContent.scrollTop = 0;
+        musicTitle.focus();
+    }
+
+    async function loadMusic(): Promise<void> {
+        const sequence = ++musicLoadSequence;
+        musicContent.replaceChildren();
+        musicStatus.textContent = 'Loading music…';
+        try {
+            const groups = await request<RemotePlaylistGroup[]>(`${basePath()}/playlists`);
+            if (sequence !== musicLoadSequence || !musicDrawer.open) return;
+            playlists = groups;
+            musicStatus.textContent = '';
+            showPlaylistList();
+        } catch (error: unknown) {
+            if (sequence !== musicLoadSequence || !musicDrawer.open) return;
+            musicStatus.textContent = getErrorMessage(error);
+            musicContent.replaceChildren(createMusicButton('Retry loading music', () => { void loadMusic(); }));
+        }
+    }
+
+    musicOpenButtons.forEach((button) => button.addEventListener('click', () => {
+        if (!state || busy || !isOratorUser()) return;
+        musicTitle.textContent = 'Music';
+        musicBack.hidden = true;
+        musicDrawer.showModal();
+        void loadMusic();
+    }));
+    musicBack.addEventListener('click', () => showPlaylistList(true));
+    musicClose.addEventListener('click', () => musicDrawer.close());
+    musicDrawer.addEventListener('click', (event) => {
+        if (event.target !== musicDrawer) return;
+        const bounds = musicDrawer.getBoundingClientRect();
+        if (event.clientY < bounds.top || event.clientX < bounds.left || event.clientX > bounds.right) {
+            musicDrawer.close();
+        }
+    });
 
     function renderPreview(): void {
         previewImage.hidden = !state || !previewLoaded;
@@ -1087,6 +1165,7 @@ export function initializeRemote(): RemoteController {
     }
 
     const handleDocumentKeyDown = (event: KeyboardEvent): void => {
+        if (musicDrawer.open) return;
         if (event.key === 'Escape') {
             if (toast && !toast.hidden && toast.classList.contains('show')) {
                 dismissToast();
@@ -1122,6 +1201,12 @@ export function initializeRemote(): RemoteController {
         const isNowOrator = !currentBatonState || Boolean(isActiveOrator || (isOwner && !currentBatonState.active_orator));
 
         controls.disabled = !state || busy || !isNowOrator;
+        const canBrowseMusic = Boolean(state && isNowOrator && isOratorUser());
+        musicOpenButtons.forEach((button) => { button.disabled = !canBrowseMusic || busy; });
+        if (!canBrowseMusic && musicDrawer.open) musicDrawer.close();
+        musicContent.querySelectorAll('[data-music-action]').forEach((button) => {
+            button.setAttribute('aria-disabled', String(busy));
+        });
         clipRecording?.setCanRecord(Boolean(state?.is_orator && isNowOrator));
         storyControls.disabled = !state || busy || !isNowOrator;
         const storyInputStatus = document.getElementById('story-input-status');
@@ -1134,10 +1219,9 @@ export function initializeRemote(): RemoteController {
             assetSequence += 1;
             assetsLoading = false;
             lastAssetsSignature = null;
-            scenesCarousel.replaceChildren();
-            musicCarousel.replaceChildren();
+            visualAssetCarousels.forEach(({ carousel }) => carousel.replaceChildren());
             assetStatus.textContent = 'Reconnect to browse assets.';
-        } else if (!views[0]?.hidden && !assetsLoading && !scenesCarousel.children.length && !musicCarousel.children.length && retryAssets.hidden
+        } else if (!views[0]?.hidden && !assetsLoading && lastAssetsSignature === null && retryAssets.hidden
             && assetStatus.textContent === 'Reconnect to browse assets.') {
             void loadAssets();
         }
@@ -1248,25 +1332,30 @@ export function initializeRemote(): RemoteController {
         path: string,
         payload: Readonly<Record<string, string | boolean>>,
         onSuccess: () => void = () => {},
+        resultStatus?: { element: HTMLElement; success: string },
     ): Promise<void> {
         if (!state || busy) return;
         const version = generation;
         busy = true;
         refreshSequence += 1;
         window.clearTimeout(pollTimer);
-        viewContainer.querySelectorAll<HTMLElement>('[data-error]').forEach((control) => {
-            delete control.dataset.error;
-            control.removeAttribute('aria-describedby');
+        [viewContainer, musicDrawer].forEach((container) => {
+            container.querySelectorAll<HTMLElement>('[data-error]').forEach((control) => {
+                delete control.dataset.error;
+                control.removeAttribute('aria-describedby');
+            });
         });
         button.setAttribute('aria-busy', 'true');
         render();
         message('Sending…');
+        if (resultStatus) resultStatus.element.textContent = 'Sending…';
         try {
             await request<unknown>(path, payload);
             if (version !== generation) return;
             onSuccess();
             message('Accepted.');
             if (button.closest('.asset-card')) assetStatus.textContent = 'Sent to canvas.';
+            if (resultStatus) resultStatus.element.textContent = resultStatus.success;
         } catch (error: unknown) {
             if (version !== generation) return;
             const detail = isNetworkOrTimeoutError(error)
@@ -1275,10 +1364,14 @@ export function initializeRemote(): RemoteController {
             button.dataset.error = detail;
             const parent = button.closest<HTMLElement>('.bar, .asset-card, .command-modal-dialog');
             if (parent) parent.dataset.error = detail;
-            button.setAttribute('aria-describedby', 'feedback');
+            button.setAttribute('aria-describedby', resultStatus?.element.id ?? 'feedback');
             message('', true);
             if (button.closest('.asset-card')) assetStatus.textContent = detail;
-            showToast(detail, 'error');
+            if (resultStatus && musicDrawer.open) {
+                resultStatus.element.textContent = detail;
+            } else {
+                showToast(detail, 'error');
+            }
         } finally {
             if (version === generation) {
                 await refresh(version);
@@ -2087,6 +2180,7 @@ export function initializeRemote(): RemoteController {
     return {
         destroy(): void {
             generation += 1;
+            if (musicDrawer.open) musicDrawer.close();
             window.clearTimeout(pollTimer);
             window.clearTimeout(toastTimer);
             window.clearTimeout(audioReconnectTimer);

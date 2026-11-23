@@ -90,7 +90,7 @@ def remote_page(ensure_browser_assets: None, offline_browser_contexts: list[str]
                 route.fulfill(body=Path("frontend/static/narratron-avatar.png").read_bytes(), content_type="image/png")
             elif path == "/favicon.png":
                 route.fulfill(body=Path("frontend/templates/narratron favicon.png").read_bytes(), content_type="image/png")
-            elif path.endswith("/scenes") or path.endswith("/playlists") or path in {"/api/chat", "/api/suggestions"}:
+            elif path.endswith(("/scenes", "/characters", "/animations", "/playlists")) or path in {"/api/chat", "/api/suggestions"}:
                 route.fulfill(json=[])
             elif path.endswith("/remote"):
                 route.fulfill(json={"agent_running": True, "pinned": False, "music_pinned": False,

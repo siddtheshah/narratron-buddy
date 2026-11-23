@@ -32,16 +32,22 @@
     </nav>
     <div id="remote-views">
     <section id="asset-manager" role="tabpanel" aria-labelledby="assets-tab" tabindex="0" hidden>
+        <button type="button" class="music-library-button" data-open-music aria-haspopup="dialog" aria-controls="music-drawer" disabled>Browse music <span aria-hidden="true">›</span></button>
+        <p class="asset-instructions">Double-tap a card to send it to the canvas.</p>
+        <p id="asset-status" role="status"></p>
+        <button id="retry-assets" hidden>Retry loading assets</button>
         <div class="asset-section">
             <h2 class="asset-category-title">Scenes</h2>
             <div id="scenes-carousel" class="asset-carousel" role="group" aria-label="Scenes carousel" tabindex="0"></div>
         </div>
         <div class="asset-section">
-            <h2 class="asset-category-title">Music</h2>
-            <div id="music-carousel" class="asset-carousel" role="group" aria-label="Music carousel" tabindex="0"></div>
+            <h2 class="asset-category-title">Character references</h2>
+            <div id="characters-carousel" class="asset-carousel" role="group" aria-label="Character references carousel" tabindex="0"></div>
         </div>
-        <p id="asset-status" role="status"></p>
-        <button id="retry-assets" hidden>Retry loading assets</button>
+        <div class="asset-section">
+            <h2 class="asset-category-title">Animations</h2>
+            <div id="animations-carousel" class="asset-carousel" role="group" aria-label="Animations carousel" tabindex="0"></div>
+        </div>
     </section>
     <div id="remote-controls" role="tabpanel" aria-labelledby="inputs-tab" tabindex="0">
     <fieldset id="controls" disabled>
@@ -68,6 +74,7 @@
             <button class="media-arrow" data-action="previous_music" aria-label="Previous track"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m13 5-7 7 7 7M6 12h14"/></svg></button>
             <button data-action="toggle_music_pin" class="pin-button" aria-pressed="false" aria-label="Pin music" title="Pin music" id="music-pin"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3h6l-1 6 4 4v2H6v-2l4-4-1-6ZM12 15v6"/></svg></button>
             <button class="media-arrow" data-action="next_music" aria-label="Next track"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m11 5 7 7-7 7M18 12H4"/></svg></button>
+            <button type="button" class="music-library-icon" data-open-music aria-label="Browse music" title="Browse music" aria-haspopup="dialog" aria-controls="music-drawer" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h12M3 10h12M3 15h7m4 3a2.5 2.5 0 1 0 5 0V9l3 2"/></svg></button>
             <button class="primary generate-button" data-action="new_music" data-live aria-label="New music" title="New music"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m13 3 2.5 6.5L22 12l-6.5 2.5L13 21l-2.5-6.5L4 12l6.5-2.5L13 3ZM4 2v5M1.5 4.5h5M4 18v4M2 20h4"/></svg></button>
         </section>
         <section id="story-direction" class="bar" aria-labelledby="direction-title" hidden>
@@ -233,6 +240,15 @@
         </div>
     </section>
     </div>
+    <dialog id="music-drawer" aria-labelledby="music-drawer-title">
+        <div class="music-drawer-header">
+            <button type="button" id="music-drawer-back" hidden>‹ Playlists</button>
+            <h2 id="music-drawer-title" tabindex="-1">Music</h2>
+            <button type="button" id="music-drawer-close" aria-label="Close music" autofocus>×</button>
+        </div>
+        <div id="music-drawer-content" class="music-drawer-content"></div>
+        <p id="music-drawer-status" role="status"></p>
+    </dialog>
     <p id="feedback" class="sr-only" role="status" aria-live="polite"></p>
 </main>
 <dialog id="remote-clip-preview" aria-label="Clip preview">

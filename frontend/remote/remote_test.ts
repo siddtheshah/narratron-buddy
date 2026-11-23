@@ -34,6 +34,8 @@ interface RemoteMountOptions {
     batonState?: BatonState | (() => BatonState);
     authUser?: RemoteUser | null;
     scenes?: RemoteSceneAsset[];
+    characters?: RemoteSceneAsset[];
+    animations?: RemoteSceneAsset[];
     playlists?: RemotePlaylistGroup[];
     onRoute?: (url: URL, route: Route) => Promise<boolean> | boolean;
     onWebSocket?: (ws: WebSocketRoute) => void;
@@ -147,6 +149,16 @@ async function mountRemote(
 
             if (url.pathname.endsWith('/scenes')) {
                 await route.fulfill({ json: options.scenes ?? [] });
+                return;
+            }
+
+            if (url.pathname.endsWith('/characters')) {
+                await route.fulfill({ json: options.characters ?? [] });
+                return;
+            }
+
+            if (url.pathname.endsWith('/animations')) {
+                await route.fulfill({ json: options.animations ?? [] });
                 return;
             }
 
@@ -648,7 +660,7 @@ test('preview tracks scenes, retries failed images, and displays agent thoughts'
     expect(await page.locator('#preview-image').getAttribute('src')).toBeNull();
 });
 
-test('assets carousel loads scenes/playlists, pushes on double tap, and retries on failure', async ({
+test('assets carousels push scenes, character references, and animations and retry loading', async ({
     canvas,
     page,
 }) => {
@@ -657,13 +669,11 @@ test('assets carousel loads scenes/playlists, pushes on double tap, and retries 
 
     await mountRemote(canvas, {
         viewport: { width: 390, height: 844 },
-        playlists: [
-            {
-                id: 'playlist:rain',
-                name: 'Rain',
-                tracks: [{ id: 'track:storm', name: 'Storm', url: '/storm.mp3' }],
-            },
+        characters: [
+            { id: 'character:captain', name: 'Captain', image_url: '/forest.svg' },
+            { id: 'character:ghost', name: 'Ghost' },
         ],
+        animations: [{ id: 'waterfall', name: 'Waterfall', url: '/forest.svg' }],
         onRoute: async (url, route) => {
             if (url.pathname.endsWith('/scenes')) {
                 if (failScenes) {
@@ -682,7 +692,7 @@ test('assets carousel loads scenes/playlists, pushes on double tap, and retries 
                 });
                 return true;
             }
-            if (url.pathname.endsWith('/scenes/push') || url.pathname.endsWith('/playlists/push')) {
+            if (/\/(scenes|characters|animations)\/push$/.test(url.pathname)) {
                 pushed.push({ path: url.pathname, body: JSON.parse(route.request().postData() ?? '{}') });
                 await route.fulfill({ json: { status: 'accepted' } });
                 return true;
@@ -700,8 +710,9 @@ test('assets carousel loads scenes/playlists, pushes on double tap, and retries 
     failScenes = false;
     await page.getByRole('button', { name: 'Retry loading assets' }).click();
     await expect(page.getByRole('heading', { name: 'Forest' })).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Rain' })).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Storm' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Captain' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Waterfall' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Ghost' })).toHaveCount(0);
 
     const forestCard = page.locator('.asset-card').filter({
         has: page.getByRole('heading', { name: 'Forest', exact: true }),
@@ -709,20 +720,102 @@ test('assets carousel loads scenes/playlists, pushes on double tap, and retries 
     await forestCard.dblclick();
     await waitForRemoteReady(page);
 
-    const rainCard = page.locator('.asset-card').filter({
-        has: page.getByRole('heading', { name: 'Rain', exact: true }),
-    });
-    await rainCard.dblclick();
-    await waitForRemoteReady(page);
+    const captain = page.getByRole('button', { name: 'Captain' });
+    await captain.dispatchEvent('pointerdown', { pointerType: 'touch', button: 0 });
+    await captain.dispatchEvent('pointerup', { pointerType: 'touch', button: 0 });
+    expect(pushed).toHaveLength(1);
+    await captain.dispatchEvent('pointerdown', { pointerType: 'touch', button: 0 });
+    await captain.dispatchEvent('pointerup', { pointerType: 'touch', button: 0 });
+    await expect.poll(() => pushed.length).toBe(2);
+    await expect(captain).not.toHaveAttribute('aria-busy', 'true');
+    await page.getByRole('button', { name: 'Waterfall' }).press('Enter');
 
-    expect(pushed).toEqual([
+    await expect.poll(() => pushed).toEqual([
         { path: '/api/theaters/stage/scenes/push', body: { scene_id: 'forest' } },
-        { path: '/api/theaters/stage/playlists/push', body: { id: 'playlist:rain' } },
+        { path: '/api/theaters/stage/characters/push', body: { character_id: 'character:captain' } },
+        { path: '/api/theaters/stage/animations/push', body: { id: 'waterfall' } },
     ]);
 
     // Swiping inside carousel does not switch tabs.
     await swipePanel(page, -150, 0, '#scenes-carousel');
     await expect(page.getByRole('tab', { name: 'Assets' })).toHaveAttribute('aria-selected', 'true');
+});
+
+test('music drawer navigates playlists, plays tracks or groups, and stops music', async ({ canvas, page }) => {
+    let failLoad = true;
+    let failPlay = true;
+    const pushed: unknown[] = [];
+    await mountRemote(canvas, {
+        viewport: { width: 320, height: 640 },
+        playlists: [
+            {
+                id: 'playlist:rain', name: 'Rain', tracks: [
+                    ...Array.from({ length: 15 }, (_, index) => ({ id: `track:rain-${index}`, name: `Rain ${index + 1}` })),
+                    { id: 'track:storm', name: 'Storm' },
+                ],
+            },
+            { id: 'playlist:forest', name: 'Forest', tracks: [{ id: 'track:birds', name: 'Birds' }] },
+        ],
+        onRoute: async (url, route) => {
+            if (url.pathname.endsWith('/playlists') && failLoad) {
+                await route.fulfill({ status: 503, json: { detail: 'Music failed to load.' } });
+                return true;
+            }
+            if (url.pathname.endsWith('/playlists/push')) {
+                if (failPlay) {
+                    await route.fulfill({ status: 409, json: { detail: 'Could not play music.' } });
+                } else {
+                    pushed.push(JSON.parse(route.request().postData() ?? '{}'));
+                    await route.fulfill({ json: { status: 'ok' } });
+                }
+                return true;
+            }
+            return false;
+        },
+    });
+    await waitForRemoteReady(page);
+    const browse = page.getByRole('tabpanel', { name: 'Remote' }).getByRole('button', { name: 'Browse music' });
+    await browse.click();
+    const drawer = page.getByRole('dialog', { name: 'Music' });
+    await expect(drawer.getByRole('status')).toHaveText('Music failed to load.');
+    failLoad = false;
+    await drawer.getByRole('button', { name: 'Retry loading music' }).click();
+    const rain = drawer.getByRole('button', { name: /Rain/ });
+    await expect(rain).toBeVisible();
+    await expect(drawer.getByRole('button', { name: 'Storm' })).toHaveCount(0);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await rain.press('Enter');
+
+    const rainDrawer = page.getByRole('dialog', { name: 'Rain' });
+    await expect(rainDrawer.getByRole('heading', { name: 'Rain' })).toBeFocused();
+    await expect(rainDrawer.getByRole('button', { name: 'Birds' })).toHaveCount(0);
+    expect(pushed).toEqual([]);
+    const storm = rainDrawer.getByRole('button', { name: 'Storm' });
+    await storm.click();
+    await expect(storm).toBeInViewport();
+    await expect(rainDrawer.getByRole('button', { name: 'Close music' })).toBeInViewport();
+    await expect(rainDrawer.getByRole('status')).toHaveText('Could not play music.');
+    failPlay = false;
+    await storm.click();
+    await expect(rainDrawer.getByRole('status')).toHaveText('Playing Storm.');
+    await rainDrawer.getByRole('button', { name: 'Play playlist' }).click();
+    await expect(rainDrawer.getByRole('status')).toHaveText('Playing Rain.');
+    await rainDrawer.getByRole('button', { name: /Playlists/ }).click();
+    await expect(rain).toBeFocused();
+    await drawer.getByRole('button', { name: 'No music' }).click();
+    await expect(drawer.getByRole('status')).toHaveText('Music stopped.');
+    await expect(drawer.getByRole('button', { name: 'No music' })).toBeEnabled();
+    expect(pushed).toEqual([{ id: 'track:storm' }, { id: 'playlist:rain' }, { id: 'no_music' }]);
+
+    await page.keyboard.press('Escape');
+    await expect(drawer).toBeHidden();
+    await expect(browse).toBeFocused();
+    await page.getByRole('tab', { name: 'Assets' }).click();
+    const browseFromAssets = page.getByRole('tabpanel', { name: 'Assets' }).getByRole('button', { name: 'Browse music' });
+    await browseFromAssets.click();
+    await expect(drawer).toBeVisible();
+    await drawer.getByRole('button', { name: 'Close music' }).click();
+    await expect(browseFromAssets).toBeFocused();
 });
 
 test('role and baton visibility gates pure viewer, idle owner, and contributor flows', async ({
