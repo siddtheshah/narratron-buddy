@@ -127,7 +127,7 @@ Use `create_animation` for requested motion or scenes that clearly benefit. Laye
 {% endif %}
 {% if interactive_canvas_enabled %}
 ## Interactive Canvas
-Use `update_interactive_canvas` for relevant controls or displays; the designer chooses surfaces. Ordinary scene UI clears with the next image. Use `clear_interactive_canvas` only for a complete reset. Treat clicked controls as immutable user input{% if adventure_mode %} and route in-world actions through `process_user_action`{% endif %}.
+Use `update_interactive_canvas` for relevant controls or displays; the designer chooses surfaces. Ask for game controls when the player should make a move the current game exposes. Game buttons submit the player's move directly to the game engine. Ordinary scene UI clears with the next image. Use `clear_interactive_canvas` only for a complete reset. Treat clicked story controls as immutable user input{% if adventure_mode %} and route in-world actions through `process_user_action`{% endif %}.
 {% endif %}
 {% if user_help_enabled %}
 ## Interface Help

@@ -2,6 +2,18 @@
 
 from collections.abc import Callable
 
+from pydantic import BaseModel
+
+from game_engine.game_runtime import GameAction
+
+
+class CanvasGameAction(BaseModel):
+    """A game command captured from a rendered game control."""
+
+    definition_hash: str
+    command: GameAction
+    confirmation: str = ""
+
 
 def clamp_surface_placement(left_pct: float, top_pct: float) -> dict[str, float]:
     return {"left_pct": round(max(2.0, min(98.0, float(left_pct))), 2), "top_pct": round(max(2.0, min(98.0, float(top_pct))), 2)}
@@ -55,15 +67,44 @@ class UIState:
         surface = self.interactive_surfaces.get(str(surface_id))
         components: dict[str, dict[str, object]] = {}
         for message in (surface or {}).get("messages", []):
-            if not isinstance(message, dict):
+            if type(message) is not dict:
                 continue
+            if message.get("deleteSurface"):
+                return None
+            if message.get("createSurface"):
+                components.clear()
             payload = message.get("createSurface") or message.get("updateComponents") or {}
-            for component in payload.get("components", []):
-                if isinstance(component, dict) and component.get("id"):
+            updates = payload.get("components") if type(payload) is dict else None
+            if type(updates) is not list:
+                continue
+            for component in updates:
+                if type(component) is dict and component.get("id"):
                     components[str(component["id"])] = component
+        # Older saved surfaces can lack a root. For generated trees, only a
+        # control reachable from the current root can submit an action.
+        if "root" in components:
+            pending = ["root"]
+            visited: set[str] = set()
+            while pending:
+                current_id = pending.pop()
+                if current_id == component_id:
+                    break
+                if current_id in visited:
+                    continue
+                visited.add(current_id)
+                node = components.get(current_id, {})
+                child = node.get("child")
+                children = node.get("children")
+                if type(child) is str:
+                    pending.append(child)
+                if type(children) is list:
+                    pending.extend(item for item in children if type(item) is str)
+            else:
+                return None
         component = components.get(str(component_id), {})
-        event = (component.get("action") or {}).get("event", {})
-        if event.get("name") == action_name:
+        action = component.get("action")
+        event = action.get("event") if type(action) is dict else None
+        if type(event) is dict and event.get("name") == action_name:
             return dict(event)
         return None
 

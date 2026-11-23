@@ -9,6 +9,7 @@ from fastapi import HTTPException, WebSocketDisconnect
 
 import object_registry
 from api_server import canvas
+from components.canvas.ui_state import UIState
 from components.theater_manager import TheaterManager
 
 
@@ -425,6 +426,7 @@ def test_a2ui_action_relays_authoritative_player_action_and_removes_surface():
     registry_db = MagicMock()
     registry_db.get_deployment.return_value = {"user_id": 3, "active_orator_id": 3}
     state = MagicMock()
+    state.ui = UIState(MagicMock(), MagicMock())
     state.ui.interactive_surfaces = {"sword_card": {"messages": [{"createSurface": {"components": [{
         "id": "grab", "action": {"event": {"name": "grabSword", "context": {"playerAction": "I grab the sword."}}}
     }]}}]}}
@@ -454,7 +456,7 @@ def test_a2ui_action_relays_authoritative_player_action_and_removes_surface():
     sent_text = session.send_user_content.call_args.args[0].parts[0].text
     assert "I grab the sword." in sent_text
     assert "forged client text" not in sent_text
-    state.ui.delete_surface.assert_called_once_with("sword_card")
+    assert "sword_card" not in state.ui.interactive_surfaces
 
 
 def test_a2ui_action_rejects_non_orator():

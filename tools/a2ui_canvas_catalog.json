@@ -5,7 +5,7 @@
   "title": "Narratron Canvas Catalog",
   "description": "A compact A2UI catalog for safe overlays on Narratron's image canvas.",
   "catalogId": "https://narratron.com/a2ui/catalogs/canvas/v1",
-  "instructions": "Design one compact overlay. Use a flat component list with an id of root. Use only static child ID arrays; do not use child templates. Keep copy brief and avoid covering the scene center or bottom dialogue. Use at most three Buttons. Every Button action must include event.context.userAction as a literal description of what the user chose. Use persistent surfaces only for cross-scene HUDs and trackers.",
+  "instructions": "Design one compact overlay. Use a flat component list with an id of root. Use only static child ID arrays; do not use child templates. Keep copy brief and avoid covering the scene center or bottom dialogue. Use at most three Buttons. Each Button action must use either event.context.userAction for a story choice or event.context.gameActionRef for a listed game control. Use persistent surfaces only for cross-scene HUDs and trackers.",
   "components": {
     "Card": {
       "type": "object",

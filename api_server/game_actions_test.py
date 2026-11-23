@@ -1,5 +1,7 @@
+import json
 from collections.abc import Iterator
 from pathlib import Path
+from shutil import copytree
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
@@ -8,8 +10,12 @@ from fastapi.testclient import TestClient
 
 import object_registry
 from api_server import canvas, theaters
+from components.canvas.canvas_state_manager import CanvasStateManager
+from components.theater_manager import TheaterManager
 from game_engine.game_state import GameAction, GameState
+from providers import TextResponseRequest, TextResponseResult
 from testing.game_fixtures import make_example_canvas, make_preview_checkers_game
+from tools.interactive_canvas_tool import InteractiveCanvasTools
 
 
 @pytest.fixture
@@ -35,6 +41,59 @@ def test_game_action_without_agent_and_stale_conflict(game_route: GameState) -> 
     with pytest.raises(HTTPException) as error:
         canvas.post_game_action(action, request, "checkers")
     assert error.value.status_code == 409
+
+
+def test_generated_canvas_button_uses_game_dispatch_and_rejects_stale_moves(tmp_path: Path) -> None:
+    theater = TheaterManager(tmp_path).theater("board")
+    copytree(Path("games/example_game"), theater.directory(), dirs_exist_ok=True)
+    state = CanvasStateManager(theater)
+    on_player_action = Mock()
+    state.game.on_player_action = on_player_action
+
+    def generate(request: TextResponseRequest) -> TextResponseResult:
+        control_line = request.prompt.split("Game context: ", 1)[1].splitlines()[0]
+        controls = json.loads(control_line)["player_controls"]
+        center = next(item for item in controls if item["name"] == "move" and item["arguments"] == {"index": 4})
+        components = [
+            {"id": "root", "component": "Button", "child": "label", "action": {"event": {
+                "name": "play_center", "context": {"gameActionRef": center["ref"]},
+            }}},
+            {"id": "label", "component": "Text", "text": "Play center"},
+        ]
+        return TextResponseResult(text="", provider="test", model="test-model", parsed={"surfaces": [
+            {"left_pct": 25, "top_pct": 70, "width_pct": 22, "components": components},
+            {"left_pct": 75, "top_pct": 70, "width_pct": 22, "components": components},
+        ]})
+
+    tools = InteractiveCanvasTools(theater, state, text_response_provider=Mock(generate=generate))
+    result = tools.update_interactive_canvas("Show two buttons that play the center square")
+    assert result["status"] == "displayed"
+    first, second = result["surface_ids"]
+
+    def click(surface_id: str) -> dict[str, str]:
+        component = state.ui.interactive_surfaces[surface_id]["messages"][0]["createSurface"]["components"][0]
+        return canvas.post_a2ui_action(canvas.A2UIActionEnvelope(version="v1.0", action=canvas.A2UIActionBody(
+            name=component["action"]["event"]["name"], surfaceId=surface_id, sourceComponentId="root",
+            timestamp="2026-11-23T12:00:00Z", context={"gameAction": "untrusted", "userAction": "wrong route"},
+        )), Request({"type": "http"}), "board")
+
+    with patch.object(canvas, "_require_canvas_access"), patch.object(canvas, "_state", return_value=state), \
+            patch.object(object_registry.db, "get_deployment", return_value={"user_id": 3, "active_orator_id": 3}), \
+            patch.object(canvas, "get_current_user", return_value={"id": 3, "username": "ada"}), \
+            patch.object(object_registry.live_agent_manager, "get_session") as live_session:
+        assert click(first) == {"status": "accepted", "surface_id": first}
+        with pytest.raises(HTTPException) as stale:
+            click(second)
+        live_session.assert_not_called()
+
+    assert stale.value.status_code == 409
+    assert first not in state.ui.interactive_surfaces
+    assert second in state.ui.interactive_surfaces
+    assert state.game.revision == 1
+    assert state.game.state["board"][4] == 1
+    on_player_action.assert_called_once()
+    action = on_player_action.call_args.args[0]
+    assert action.username == "ada"
 
 
 def test_game_action_rejects_viewers_and_illegal_moves(game_route: GameState) -> None:

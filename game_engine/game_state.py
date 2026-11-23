@@ -539,12 +539,14 @@ class GameState:
 
     def act(
         self, action: GameAction, actor: Literal["player", "contributor", "narratron"] = "player",
-        *, story_event_id: str = "", username: str = "",
+        *, story_event_id: str = "", username: str = "", expected_definition_hash: str | None = None,
     ) -> dict[str, JsonValue] | None:
         with self._lock:
             if self.program is None:
                 logger.debug("[GameState] Act rejected: no playable game")
                 raise ValueError("This theater has no playable game.")
+            if expected_definition_hash is not None and expected_definition_hash != self.definition_hash:
+                raise StaleGameAction("The game was replaced. Review the current game and try again.")
             canvas_enabled = self.program.definition.canvas_api is not None
             if canvas_enabled and self._canvas_host is None:
                 raise ValueError("Canvas-enabled actions require the shared canvas commit host.")

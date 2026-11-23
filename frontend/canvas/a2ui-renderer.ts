@@ -435,6 +435,10 @@ export function createA2UICanvasRenderer(
     payload: A2UIActionPayload,
     button: HTMLButtonElement,
   ): Promise<void> {
+    const confirmation = payload.action.context.gameConfirmation;
+    if (typeof confirmation === 'string' && confirmation && !window.confirm(confirmation)) return;
+    const surface = button.closest('.a2ui-surface');
+    surface?.querySelector('.a2ui-action-error')?.remove();
     button.disabled = true;
     try {
       const response = await fetch(actionUrl(), {
@@ -442,11 +446,23 @@ export function createA2UICanvasRenderer(
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      button.closest('.a2ui-surface')?.classList.add('a2ui-surface-used');
+      if (!response.ok) {
+        const result: unknown = await response.json().catch(() => null);
+        const detail = isRecord(result) && typeof result.detail === 'string' ? result.detail : null;
+        throw new Error(detail || `Action could not be submitted (HTTP ${response.status}).`);
+      }
+      if (button.isConnected) surface?.classList.add('a2ui-surface-used');
     } catch (error) {
       console.error('A2UI action failed:', error);
       button.disabled = false;
+      if (surface && button.isConnected && typeof payload.action.context.gameAction === 'string') {
+        const feedback = document.createElement('p');
+        feedback.className = 'a2ui-action-error';
+        feedback.setAttribute('role', 'alert');
+        feedback.textContent = error instanceof Error ? error.message : 'Game action could not be submitted.';
+        surface.querySelector('.a2ui-action-error')?.remove();
+        surface.append(feedback);
+      }
     }
   }
 
@@ -615,6 +631,7 @@ export function createA2UICanvasRenderer(
       rendered.updateControls?.(surface);
       const contentSignature = JSON.stringify(surface.messages || []);
       if (contentSignature !== rendered.contentSignature) {
+        host.querySelector('.a2ui-action-error')?.remove();
         const content = renderComponent(
           'root',
           byId,

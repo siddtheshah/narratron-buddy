@@ -26,8 +26,9 @@ from api_server.shared import (
 
 from components.canvas.canvas_state_manager import CanvasStateManager
 from components.canvas.doodle_state import DoodleSnapshot
+from components.canvas.ui_state import CanvasGameAction
 from game_engine.game_state import GameAction, StaleGameAction, UnauthorizedGameAction
-from pydantic import JsonValue
+from pydantic import JsonValue, ValidationError
 
 logger = logging.getLogger(__name__)
 
@@ -404,19 +405,6 @@ async def broadcast_baton_update(theater_id: str, baton_state: dict[str, object]
         if user and "id" in user
     }
     await _broadcast_doodle(state, {"type": "baton_state", "baton_state": baton_state, "active_viewers": list(users.values())})
-
-
-def _interactive_action(state: Any, surface_id: str, component_id: str, action_name: str) -> dict[str, object] | None:
-    surface = state.ui.interactive_surfaces.get(surface_id, {})
-    for message in surface.get("messages", []) if isinstance(surface, dict) else []:
-        payload = message.get("createSurface") or message.get("updateComponents") or {} if isinstance(message, dict) else {}
-        for component in payload.get("components", []) if isinstance(payload, dict) else []:
-            if not isinstance(component, dict) or str(component.get("id")) != component_id:
-                continue
-            event = (component.get("action") or {}).get("event", {})
-            if isinstance(event, dict) and event.get("name") == action_name:
-                return dict(event)
-    return None
 
 
 async def _apply_doodle_message(state: CanvasStateManager, data: dict[str, JsonValue], sender: WebSocket) -> None:
@@ -810,8 +798,8 @@ def post_a2ui_action(
     request: Request,
     theater_id: str,
     join_key: Optional[str] = None,
-):
-    """Validate a renderer action, then relay it to the active live agent."""
+) -> dict[str, str]:
+    """Resolve a rendered control and submit its game command or story input."""
     _require_canvas_access(request, theater_id, join_key=join_key)
     if payload.version != "v1.0":
         raise HTTPException(status_code=400, detail="Unsupported A2UI protocol version.")
@@ -820,15 +808,33 @@ def post_a2ui_action(
     if not can_control_agent_websocket(deployment, current_user=current_user):
         raise HTTPException(status_code=403, detail="Only the active orator can use interactive canvas controls.")
     state = _state(theater_id)
-    action = _interactive_action(
-        state,
+    action = state.ui.get_interactive_action(
         payload.action.surfaceId,
         payload.action.sourceComponentId,
         payload.action.name,
     )
     if not action:
         raise HTTPException(status_code=404, detail="This interactable is no longer active.")
-    authoritative_context = action.get("context") or {}
+    authoritative_context = action.get("context")
+    if type(authoritative_context) is not dict:
+        raise HTTPException(status_code=400, detail="Interactive control has no user action.")
+    if "gameAction" in authoritative_context:
+        serialized = authoritative_context["gameAction"]
+        if type(serialized) is not str:
+            raise HTTPException(status_code=400, detail="Interactive control has an invalid game action.")
+        try:
+            game_action = CanvasGameAction.model_validate_json(serialized)
+        except ValidationError as exc:
+            raise HTTPException(status_code=400, detail="Interactive control has an invalid game action.") from exc
+        _apply_game_action(
+            state, game_action.command, request, theater_id, actor="player",
+            expected_definition_hash=game_action.definition_hash,
+        )
+        if state.ui.get_interactive_action(
+            payload.action.surfaceId, payload.action.sourceComponentId, payload.action.name,
+        ) is not None:
+            state.ui.delete_surface(payload.action.surfaceId)
+        return {"status": "accepted", "surface_id": payload.action.surfaceId}
     user_action = " ".join(str(
         authoritative_context.get("userAction") or authoritative_context.get("playerAction") or ""
     ).split())[:2000]
@@ -858,24 +864,38 @@ def post_game_action(
     """Apply a revision-checked move without requiring a live story agent."""
     _require_canvas_access(request, theater_id, join_key=join_key)
     deployment = object_registry.db.get_deployment(theater_id)
-    if not can_control_agent_websocket(deployment, current_user=get_current_user(request)):
-        state = _state(theater_id)
+    current_user = get_current_user(request)
+    is_orator = can_control_agent_websocket(deployment, current_user=current_user)
+    state = _state(theater_id)
+    if not is_orator:
         if not (
             state.ui is not None
             and state.ui.viewer_collab_enabled is True
             and bool(deployment)
-            and is_contributor(deployment, current_user=get_current_user(request)) is True
+            and is_contributor(deployment, current_user=current_user) is True
         ):
             raise HTTPException(status_code=403, detail="Only the active orator can control the game.")
-    state = _state(theater_id)
+    return _apply_game_action(state, payload, request, theater_id, actor="player" if is_orator else "contributor")
+
+
+def _apply_game_action(
+    state: CanvasStateManager,
+    payload: GameAction,
+    request: Request,
+    theater_id: str,
+    *,
+    actor: Literal["player", "contributor"],
+    expected_definition_hash: str | None = None,
+) -> dict[str, JsonValue] | None:
     if state.game is None:
         raise HTTPException(status_code=404, detail="This theater has no game.")
     if state.game.program is not None and state.game.program.definition.canvas_api is not None and payload.canvas_revision is None:
         raise HTTPException(status_code=400, detail="Canvas-enabled actions require the displayed canvas revision.")
     try:
-        is_orator = can_control_agent_websocket(deployment, current_user=get_current_user(request))
-        username = _request_username(request)
-        return state.game.act(payload, username=username) if is_orator else state.game.act(payload, actor="contributor", username=username)
+        return state.game.act(
+            payload, actor=actor, username=_request_username(request),
+            expected_definition_hash=expected_definition_hash,
+        )
     except UnauthorizedGameAction as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     except StaleGameAction as exc:

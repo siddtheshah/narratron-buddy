@@ -343,6 +343,26 @@ def test_get_interactive_action_not_found_or_mismatched() -> None:
     assert state.get_interactive_action("hud", "btn", "hover") is None
 
 
+def test_get_interactive_action_uses_latest_reachable_button() -> None:
+    state = UIState(lambda: None, lambda *_: None)
+    state.upsert_surface({"surface_id": "choices", "messages": [
+        {"createSurface": {"components": [
+            {"id": "root", "children": ["inspect", "leave"]},
+            {"id": "inspect", "action": {"event": {"name": "inspect", "context": {"userAction": "Inspect the map"}}}},
+            {"id": "leave", "action": {"event": {"name": "leave"}}},
+        ]}},
+        {"updateComponents": {"components": [
+            {"id": "root", "child": "inspect"},
+            {"id": "inspect", "action": {"event": {"name": "inspect", "context": {"userAction": "Inspect the door"}}}},
+        ]}},
+    ]})
+
+    assert state.get_interactive_action("choices", "inspect", "inspect") == {
+        "name": "inspect", "context": {"userAction": "Inspect the door"},
+    }
+    assert state.get_interactive_action("choices", "leave", "leave") is None
+
+
 def test_get_interactive_action_resilient_to_malformed_messages() -> None:
     state = UIState(lambda: None, lambda *_: None)
     state.upsert_surface({

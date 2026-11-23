@@ -35,6 +35,7 @@ async function setupSurfacePage(
   page: Page,
   options: {
     actionStatus?: number;
+    actionContext?: Readonly<Record<string, string>>;
     patchStatus?: number;
     deleteStatus?: number;
   } = {},
@@ -61,7 +62,7 @@ async function setupSurfacePage(
       if (url.pathname === '/action') {
         await route.fulfill({
           status: actionStatus,
-          json: actionStatus >= 400 ? { error: 'Action rejected' } : { ok: true },
+          json: actionStatus >= 400 ? { detail: 'Action rejected' } : { ok: true },
         });
         return;
       }
@@ -83,7 +84,7 @@ async function setupSurfacePage(
     ],
   });
 
-  await page.evaluate(async (moduleUrl: string) => {
+  await page.evaluate(async ({ moduleUrl, context }) => {
     const { createA2UICanvasRenderer } =
       await window.__importModule<A2UIRendererModule>(moduleUrl);
     const win = window as unknown as A2UIHarnessWindow;
@@ -108,7 +109,7 @@ async function setupSurfacePage(
                   id: 'button',
                   component: 'Button',
                   child: 'label',
-                  action: { event: { name: 'choose' } },
+                  action: { event: { name: 'choose', context } },
                 },
                 { id: 'label', component: 'Text', text: 'Choose' },
               ],
@@ -119,7 +120,7 @@ async function setupSurfacePage(
     ];
     win.renderer.render(win.surfaces);
     await Promise.all(document.getAnimations().map((animation) => animation.finished));
-  }, A2UI_MODULE_URL);
+  }, { moduleUrl: A2UI_MODULE_URL, context: options.actionContext });
 
   return requests;
 }
@@ -235,6 +236,27 @@ test('content button still sends action and re-enables on error', async ({
   await expect.poll(() => failedRequests.length).toBe(1);
   await expect(retryButton).toBeEnabled();
   await expect(page.locator('.a2ui-surface')).not.toHaveClass(/a2ui-surface-used/);
+});
+
+test('game button honors confirmation and announces a rejected move', async ({ canvas, page }) => {
+  const requests = await setupSurfacePage(canvas, page, {
+    actionStatus: 409,
+    actionContext: { gameAction: '{}', gameConfirmation: 'Play here?' },
+  });
+  const button = page.locator('.a2ui-button');
+  page.once('dialog', async (dialog) => {
+    expect(dialog.message()).toBe('Play here?');
+    await dialog.dismiss();
+  });
+  await button.click();
+  expect(requests).toHaveLength(0);
+  await expect(button).toBeEnabled();
+
+  page.once('dialog', async (dialog) => dialog.accept());
+  await button.click();
+  await expect(page.getByRole('alert')).toHaveText('Action rejected');
+  expect(requests).toHaveLength(1);
+  await expect(button).toBeEnabled();
 });
 
 test('cancelled drag restores position on pointercancel and lostpointercapture', async ({

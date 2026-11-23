@@ -5,6 +5,7 @@ from unittest.mock import MagicMock
 
 from jsonschema import Draft202012Validator
 
+from components.canvas.ui_state import CanvasGameAction
 from providers import TextResponseResult
 from tools.interactive_canvas_tool import (
     A2UISurfaceDraft,
@@ -139,6 +140,61 @@ def test_update_interactive_canvas_without_id_creates_a2ui_surface():
     assert create["catalogId"] == CANVAS_CATALOG_ID
     assert create["components"][-1]["action"]["event"]["context"]["userAction"] == "I grab the sword."
     canvas.ui.upsert_surface.assert_called_once()
+
+
+def test_canvas_can_mix_game_and_story_buttons() -> None:
+    draft = valid_draft()
+    draft.components[1]["children"].append("play")
+    draft.components.extend([
+        {"id": "play_label", "component": "Text", "text": "Play center"},
+        {"id": "play", "component": "Button", "child": "play_label", "action": {
+            "event": {"name": "play", "context": {"userAction": "", "gameActionRef": "action_1"}},
+        }},
+    ])
+    tools, canvas = make_tools(lambda _prompt: draft)
+    canvas.get_latest_state.return_value["game_state"] = {
+        "definition_hash": "board-package", "revision": 7, "canvas_revision": 11,
+        "view": [{"kind": "column", "props": {}, "children": [
+            {"kind": "button", "props": {"text": "Play center"}, "action": {
+                "name": "move", "arguments": {"index": 4}, "confirmation": "Play here?",
+            }},
+            {"kind": "button", "props": {"text": "Occupied square", "disabled": True},
+             "action": {"name": "move", "arguments": {"index": 5}}},
+        ]}],
+    }
+    canvas.game.story_snapshot.return_value = {"revision": 7, "state": {"turn": "player"}}
+
+    result = tools.update_interactive_canvas("Offer a game move and a story choice")
+
+    assert result["status"] == "displayed"
+    prompt = tools.text_response_provider.generate.call_args.args[0].prompt
+    assert '"ref": "action_1", "label": "Play center"' in prompt
+    assert '"turn": "player"' in prompt
+    assert "Occupied square" not in prompt
+    components = canvas.ui.upsert_surface.call_args.args[0]["messages"][0]["createSurface"]["components"]
+    story_event = next(item["action"]["event"] for item in components if item["id"] == "grab")
+    game_event = next(item["action"]["event"] for item in components if item["id"] == "play")
+    assert story_event["context"] == {"userAction": "I grab the sword."}
+    assert game_event["name"].startswith("game_")
+    assert game_event["context"]["gameConfirmation"] == "Play here?"
+    submitted = CanvasGameAction.model_validate_json(game_event["context"]["gameAction"])
+    assert submitted.definition_hash == "board-package"
+    assert submitted.command.name == "move"
+    assert submitted.command.arguments == {"index": 4}
+    assert submitted.command.revision == 7
+    assert submitted.command.canvas_revision == 11
+
+
+def test_canvas_rejects_generated_game_reference_when_no_game_control_exists() -> None:
+    draft = valid_draft()
+    draft.components[-1]["action"]["event"]["context"] = {"gameActionRef": "action_999"}
+    tools, canvas = make_tools(lambda _prompt: draft)
+
+    result = tools.update_interactive_canvas("Offer a move")
+
+    assert "unlisted game control" in result["error"]
+    assert tools.text_response_provider.generate.call_count == 2
+    canvas.ui.upsert_surface.assert_not_called()
 
 
 def test_update_interactive_canvas_creation_preserves_ui_agent_persistence_choice():

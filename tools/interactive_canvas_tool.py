@@ -7,16 +7,19 @@ import logging
 import re
 import threading
 import uuid
+from collections.abc import Iterator
 from copy import deepcopy
 from pathlib import Path
 from typing import Any, Callable, Optional
 
 from components.canvas_state import CanvasStateManager
+from components.canvas.ui_state import CanvasGameAction
 from components.theater_manager import Theater
 
 from jsonschema import Draft202012Validator
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, JsonValue, ValidationError
 
+from game_engine.game_runtime import GameAction, RenderedAction, RenderedNode
 from providers import TextResponseAttachment, TextResponseProvider, TextResponseRequest
 from tools.base_tool import BaseTools, logged_tool_call, with_cycle_cooldown
 from tools.tool_metadata import terminal
@@ -88,8 +91,10 @@ def _common_type_for_generation(name: str) -> dict[str, Any]:
                         "name": identifier,
                         "context": {
                             "type": "object",
-                            "properties": {"userAction": {"type": "string", "minLength": 1}},
-                            "required": ["userAction"],
+                            "properties": {
+                                "userAction": {"type": "string"},
+                                "gameActionRef": {"type": "string"},
+                            },
                             "additionalProperties": literal,
                         },
                     },
@@ -194,6 +199,7 @@ def _component_generation_schema(catalog: dict[str, Any]) -> dict[str, Any]:
                         "enum": list(dict.fromkeys([*existing["enum"], *safe_schema["enum"]])),
                     }
     properties["component"] = {"type": "string", "enum": sorted(catalog["components"])}
+    properties["action"]["properties"]["event"]["properties"]["context"]["required"] = ["userAction", "gameActionRef"]
     required = [
         name
         for name in properties
@@ -260,6 +266,61 @@ CONTAINER_COMPONENTS = frozenset({"Column", "Row", "Grid"})
 CANVAS_COMPONENT_SCHEMA = _component_validation_schema(CANVAS_CATALOG)
 CANVAS_DRAFT_SCHEMA = _draft_generation_schema(CANVAS_CATALOG)
 CANVAS_COMPONENT_VALIDATOR = Draft202012Validator(CANVAS_COMPONENT_SCHEMA)
+
+
+def _game_buttons(nodes: list[RenderedNode]) -> Iterator[tuple[str, RenderedAction]]:
+    for node in nodes:
+        if node.props.get("disabled"):
+            continue
+        if node.kind == "button" and node.action is not None:
+            label = node.props.get("text") or node.props.get("label") or node.props.get("id") or node.action.name
+            yield str(label)[:200], node.action
+        yield from _game_buttons(node.children)
+
+
+def _game_context(
+    game: JsonValue, story_snapshot: dict[str, JsonValue] | None,
+) -> tuple[str, dict[str, CanvasGameAction]]:
+    if type(game) is not dict or not game.get("definition_hash") or game.get("error"):
+        return "No active game controls.", {}
+    view = game.get("view")
+    if type(view) is not list:
+        return "No active game controls.", {}
+    revision = game["revision"]
+    client = game.get("client")
+    transitions = client.get("transitions", {}) if type(client) is dict else {}
+    descriptions: list[dict[str, JsonValue]] = []
+    actions: dict[str, CanvasGameAction] = {}
+    budget = 12_000
+    for label, button in _game_buttons([RenderedNode.model_validate(node) for node in view]):
+        transition = transitions.get(button.name, {})
+        if transition.get("preview") or transition.get("triggering") is False:
+            continue
+        reference = f"action_{len(actions) + 1}"
+        description: dict[str, JsonValue] = {
+            "ref": reference, "label": label, "name": button.name, "arguments": button.arguments,
+        }
+        size = len(json.dumps(description, ensure_ascii=False))
+        if size > budget:
+            continue
+        try:
+            command = GameAction(
+                name=button.name, arguments=button.arguments, revision=revision,
+                canvas_revision=game.get("canvas_revision"),
+            )
+        except ValidationError:
+            continue
+        actions[reference] = CanvasGameAction(
+            definition_hash=game["definition_hash"],
+            command=command,
+            confirmation=button.confirmation,
+        )
+        descriptions.append(description)
+        budget -= size
+    game_context = json.dumps({"player_controls": descriptions}, ensure_ascii=False)
+    if story_snapshot and story_snapshot.get("revision") == revision:
+        game_context += "\nGame state summary: " + json.dumps(story_snapshot.get("state"), ensure_ascii=False)[:6_000]
+    return game_context, actions
 COMPONENT_ALLOWED_FIELDS = {
     name: frozenset({"id", *definition.get("allOf", [{}, {}])[-1].get("properties", {})})
     for name, definition in CANVAS_CATALOG["components"].items()
@@ -355,12 +416,11 @@ class InteractiveCanvasTools(BaseTools):
                 self._story_plan_completed = False
         return None
 
-    def _canvas(self) -> Any:
+    def _canvas(self) -> CanvasStateManager:
         return self.canvas_manager
 
-    def _canvas_context(self) -> tuple[str, Optional[bytes], str]:
+    def _canvas_context(self, latest: dict[str, JsonValue]) -> tuple[str, Optional[bytes], str]:
         canvas = self._canvas()
-        latest = canvas.get_latest_state()
         current_surfaces = latest.get("interactive_surfaces", [])
         context = {
             "image_prompt": latest.get("prompt", ""),
@@ -410,7 +470,7 @@ class InteractiveCanvasTools(BaseTools):
         # still showing the UI agent the exact current A2UI definitions.
         return json.dumps(context, ensure_ascii=False)[:30_000], image_bytes, mime_type
 
-    def _prompt(self, request: str, canvas_context: str, *, has_canvas_image: bool) -> str:
+    def _prompt(self, request: str, canvas_context: str, game_context: str, *, has_canvas_image: bool) -> str:
         catalog_summary = "\n".join(
             f"- {name}: {definition.get('description', '')} Required fields: "
             + ", ".join(
@@ -429,6 +489,7 @@ positioned UI, such as one health bar/card for each character.
 User request: {request}
 Current canvas context: {canvas_context}
 Canvas image: {"An image is attached to this request. Inspect it as the current scene and use its subjects and open space when choosing placement." if has_canvas_image else "No canvas image is attached; rely on the text context."}
+Game context: {game_context}
 
 Placement contract (critical): `left_pct` and `top_pct` are the CENTER of the surface, not its
 top-left corner. Keep the whole surface on screen: do not put a center close to an edge. For a surface
@@ -455,6 +516,14 @@ Structural rules are mandatory: Card has exactly one `child` ID; Column and Row 
 array; Grid needs `children` and `columns`; Button needs both `child` and `action`; Text needs `text`.
 Every referenced child ID must be the id of another component in this same flat list. A Progress should
 include value, max, label, and variant whenever the request specifies them.
+
+Give each Button exactly one destination in action.event.context. For story or live-agent choices,
+set `userAction` to the selected intent in the user's voice and `gameActionRef` to an empty string.
+For a button that plays a game move, copy the exact `ref` of a listed player control into
+`gameActionRef` and set `userAction` to an empty string. The button label must describe the listed
+move and its arguments. Use the game state summary to avoid controls that do not fit the current
+position. Never invent game references or arguments, and never use a story button to request
+execution of an unavailable game move. One overlay can include both kinds of buttons.
 
 Every component `id` and Button action event `name` MUST match
 `^[A-Za-z_][A-Za-z0-9_]*$`. Use snake_case only: no spaces, hyphens, punctuation,
@@ -623,11 +692,17 @@ object interactions, clues, and flavor cards must use persistent=false."""
                         event["name"],
                     )
                 context = event.get("context")
-                if not isinstance(context, dict):
+                if type(context) is not dict:
                     raise ValueError(f"Button {component_id} action needs a literal context object.")
-                action_text = context.get("userAction") or context.get("playerAction")
-                if not str(action_text or "").strip():
-                    raise ValueError(f"Button {component_id} action needs context.userAction.")
+                if "gameAction" in context or "gameConfirmation" in context:
+                    raise ValueError(f"Button {component_id} must reference a listed game control by gameActionRef.")
+                for key in ("userAction", "gameActionRef"):
+                    if key in context and type(context[key]) is str and not context[key].strip():
+                        del context[key]
+                has_story_action = bool(context.get("userAction") or context.get("playerAction"))
+                has_game_action = bool(context.get("gameActionRef"))
+                if has_story_action == has_game_action:
+                    raise ValueError(f"Button {component_id} needs exactly one of context.userAction or context.gameActionRef.")
                 # A literal-only event context keeps the browser renderer non-executable.
                 if any(isinstance(value, (dict, list)) for value in context.values()):
                     raise ValueError(f"Button {component_id} action context must contain literals only.")
@@ -645,6 +720,26 @@ object interactions, clues, and flavor cards must use persistent=false."""
                 detail = errors[0].message
                 raise ValueError(f"Component at index {index} violates the Canvas Catalog: {detail}")
         return clean
+
+    @staticmethod
+    def _bind_game_actions(components: list[dict[str, JsonValue]], actions: dict[str, CanvasGameAction]) -> None:
+        for component in components:
+            if component["component"] != "Button":
+                continue
+            event = component["action"]["event"]
+            context = event["context"]
+            reference = context.pop("gameActionRef", None)
+            if reference is None:
+                continue
+            command = actions.get(reference)
+            if command is None:
+                raise ValueError(f"Button {component['id']} references an unlisted game control: {reference!r}.")
+            # A regenerated button has a new identity even when the designer
+            # reuses its component ID and action name.
+            event["name"] = f"game_{uuid.uuid4().hex}"
+            context["gameAction"] = command.model_dump_json()
+            if command.confirmation:
+                context["gameConfirmation"] = command.confirmation
 
     @staticmethod
     def _canonical_identifier(value: str, prefix: str) -> str:
@@ -682,8 +777,12 @@ object interactions, clues, and flavor cards must use persistent=false."""
             request,
         )
         canvas = self._canvas()
-        context, image_bytes, mime_type = self._canvas_context()
-        prompt = self._prompt(request, context, has_canvas_image=bool(image_bytes))
+        latest = canvas.get_latest_state()
+        context, image_bytes, mime_type = self._canvas_context(latest)
+        game = latest.get("game_state")
+        game_snapshot = canvas.game.story_snapshot("responder") if game else None
+        game_context, game_actions = _game_context(game, game_snapshot)
+        prompt = self._prompt(request, context, game_context, has_canvas_image=bool(image_bytes))
         draft: A2UISurfaceBatchDraft | None = None
         validated_drafts: list[tuple[A2UISurfaceDraft, list[dict[str, Any]]]] | None = None
         for attempt in range(2):
@@ -693,6 +792,8 @@ object interactions, clues, and flavor cards must use persistent=false."""
                     (surface_draft, self._validate_components(surface_draft.components))
                     for surface_draft in draft.surfaces
                 ]
+                for _, components in validated_drafts:
+                    self._bind_game_actions(components, game_actions)
                 target_ids = [str(surface.target_surface_id or "").strip() for surface, _ in validated_drafts]
                 specified_ids = [target_id for target_id in target_ids if target_id]
                 if len(specified_ids) != len(set(specified_ids)):
