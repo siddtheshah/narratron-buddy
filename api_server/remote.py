@@ -76,11 +76,11 @@ def read_remote(
     user = get_current_user(request)
     if not user:
         return HTMLResponse(
-            (PROJECT_ROOT / "templates" / "remote_login.html").read_text(encoding="utf-8"),
+            (PROJECT_ROOT / "frontend" / "templates" / "remote_login.html").read_text(encoding="utf-8"),
             status_code=401, headers=headers,
         )
     deployment = _require_canvas_access(request, theater_id, join_key=join_key)
-    content = (PROJECT_ROOT / "templates" / "remote.html").read_text(encoding="utf-8")
+    content = (PROJECT_ROOT / "frontend" / "templates" / "remote.html").read_text(encoding="utf-8")
     user_id = user.get("id")
     is_owner = bool(deployment and user_id and user_id == deployment.get("user_id"))
     active_orator_id = deployment.get("active_orator_id") if deployment else None

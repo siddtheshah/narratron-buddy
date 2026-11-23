@@ -4,6 +4,7 @@ import type { Dialog, Page, Route } from '@playwright/test';
 import {
   CANVAS_ORIGIN,
   expect,
+  REPO_ROOT,
   STATIC_DIR,
   TEMPLATES_DIR,
   test,
@@ -148,7 +149,7 @@ async function setupDeployHarness(
   page: Page,
 ): Promise<DeployHarness> {
   const defaultConfigYaml = fs.readFileSync(
-    path.join(TEMPLATES_DIR, '..', 'theater_default.yaml'),
+    path.join(REPO_ROOT, 'theater_default.yaml'),
     'utf-8',
   );
   const deployHtml = prepareDeployHtml();

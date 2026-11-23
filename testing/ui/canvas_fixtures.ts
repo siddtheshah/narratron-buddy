@@ -13,8 +13,8 @@ import {
 export const CANVAS_ORIGIN = 'https://canvas.test';
 export const CANVAS_WS_ORIGIN = 'wss://canvas.test';
 export const REPO_ROOT = path.resolve(__dirname, '..', '..');
-export const STATIC_DIR = path.join(REPO_ROOT, 'static');
-export const TEMPLATES_DIR = path.join(REPO_ROOT, 'templates');
+export const STATIC_DIR = path.join(REPO_ROOT, 'frontend', 'static');
+export const TEMPLATES_DIR = path.join(REPO_ROOT, 'frontend', 'templates');
 
 const IMPORT_HELPER_INIT_SCRIPT =
   'window.__importModule = (moduleUrl) => import(moduleUrl);';

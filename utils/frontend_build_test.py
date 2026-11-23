@@ -23,7 +23,7 @@ def test_skips_build_when_generated_outputs_are_up_to_date(tmp_path: Path, consu
     source.parent.mkdir(parents=True)
     source.write_text("export const x = 1;\n", encoding="utf-8")
 
-    output = tmp_path / "static" / "generated" / consumer / "module.js"
+    output = tmp_path / "frontend" / "static" / "generated" / consumer / "module.js"
     output.parent.mkdir(parents=True)
     output.write_text("export const x = 1;\n", encoding="utf-8")
 
@@ -49,7 +49,7 @@ def test_runs_npm_build_when_generated_output_is_missing_or_stale(tmp_path: Path
 
     run_mock.assert_called_once_with(["npm", "run", "build"], cwd=tmp_path, check=True)
 
-    output = tmp_path / "static" / "generated" / consumer / "module.js"
+    output = tmp_path / "frontend" / "static" / "generated" / consumer / "module.js"
     output.parent.mkdir(parents=True)
     output.write_text("export const x = 1;\n", encoding="utf-8")
     os.utime(output, (1000, 1000))
@@ -78,7 +78,7 @@ def test_ignores_tests_excluded_from_production_build(tmp_path: Path) -> None:
     source = tmp_path / "frontend" / "canvas" / "cursor-state.ts"
     source.parent.mkdir(parents=True)
     source.write_text("export const x = 1;\n", encoding="utf-8")
-    output = tmp_path / "static" / "generated" / "canvas" / "cursor-state.js"
+    output = tmp_path / "frontend" / "static" / "generated" / "canvas" / "cursor-state.js"
     output.parent.mkdir(parents=True)
     output.write_text("export const x = 1;\n", encoding="utf-8")
     os.utime(source, (1000, 1000))
@@ -95,7 +95,7 @@ def test_rebuilds_when_declaration_changes(tmp_path: Path) -> None:
     source = tmp_path / "frontend" / "canvas" / "cursor-state.ts"
     source.parent.mkdir(parents=True)
     source.write_text("export const x = 1;\n", encoding="utf-8")
-    output = tmp_path / "static" / "generated" / "canvas" / "cursor-state.js"
+    output = tmp_path / "frontend" / "static" / "generated" / "canvas" / "cursor-state.js"
     output.parent.mkdir(parents=True)
     output.write_text("export const x = 1;\n", encoding="utf-8")
     os.utime(source, (1000, 1000))
@@ -108,3 +108,17 @@ def test_rebuilds_when_declaration_changes(tmp_path: Path) -> None:
     ):
         ensure_canvas_assets_built(project_root=tmp_path)
     run_mock.assert_called_once_with(["npm", "run", "build"], cwd=tmp_path, check=True)
+
+
+def test_ignores_static_and_templates_directories_under_frontend(tmp_path: Path) -> None:
+    static_file = tmp_path / "frontend" / "static" / "generated" / "canvas" / "sample.ts"
+    static_file.parent.mkdir(parents=True)
+    static_file.write_text("export const ignored = true;\n", encoding="utf-8")
+
+    template_file = tmp_path / "frontend" / "templates" / "canvas.html"
+    template_file.parent.mkdir(parents=True)
+    template_file.write_text("<html></html>\n", encoding="utf-8")
+
+    with patch("utils.frontend_build.subprocess.run") as run_mock:
+        ensure_canvas_assets_built(project_root=tmp_path)
+    run_mock.assert_not_called()

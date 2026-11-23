@@ -3,6 +3,8 @@ import path from 'node:path';
 import type { Page, Route, WebSocketRoute } from '@playwright/test';
 import {
     CANVAS_ORIGIN,
+    REPO_ROOT,
+    STATIC_DIR,
     TEMPLATES_DIR,
     expect,
     test,
@@ -1983,7 +1985,7 @@ for (const [width, userAgent, shouldRedirect] of [
         const templateHtml = await fs.promises.readFile(path.join(TEMPLATES_DIR, 'canvas.html'), 'utf-8');
         const head = templateHtml.slice(0, templateHtml.indexOf('<link rel="icon"'));
         const generatedNavigationJs = await fs.promises.readFile(
-            path.resolve(TEMPLATES_DIR, '..', 'static', 'generated', 'shared', 'device-navigation.js'),
+            path.join(STATIC_DIR, 'generated', 'shared', 'device-navigation.js'),
             'utf-8',
         );
 
@@ -2098,7 +2100,7 @@ test.describe('mobile touch gestures and integrated watch audio', () => {
         page,
     }) => {
         const desertMp3 = await fs.promises.readFile(
-            path.resolve(TEMPLATES_DIR, '..', 'testing', 'testdata', 'playlists', 'cold desert.mp3'),
+            path.join(REPO_ROOT, 'testing', 'testdata', 'playlists', 'cold desert.mp3'),
         );
         let canvasSocket: WebSocketRoute | null = null;
         let speechGen = 1;

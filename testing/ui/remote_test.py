@@ -22,66 +22,66 @@ def remote_page() -> Iterator[Page]:
         def serve(route: Route) -> None:
             path = urlsplit(route.request.url).path
             files = {
-                "/remote": ("templates/remote.html", "text/html"),
+                "/remote": ("frontend/templates/remote.html", "text/html"),
                 "/static/generated/remote/remote.js": (
-                    "static/generated/remote/remote.js",
+                    "frontend/static/generated/remote/remote.js",
                     "text/javascript",
                 ),
                 "/static/generated/remote/remote-game.js": (
-                    "static/generated/remote/remote-game.js",
+                    "frontend/static/generated/remote/remote-game.js",
                     "text/javascript",
                 ),
                 "/static/generated/game/game-renderer.js": (
-                    "static/generated/game/game-renderer.js",
+                    "frontend/static/generated/game/game-renderer.js",
                     "text/javascript",
                 ),
                 "/static/generated/game/game-runtime.js": (
-                    "static/generated/game/game-runtime.js",
+                    "frontend/static/generated/game/game-runtime.js",
                     "text/javascript",
                 ),
                 "/static/generated/game/game-panel.js": (
-                    "static/generated/game/game-panel.js",
+                    "frontend/static/generated/game/game-panel.js",
                     "text/javascript",
                 ),
                 "/static/generated/game/game-panel-bridge.js": (
-                    "static/generated/game/game-panel-bridge.js",
+                    "frontend/static/generated/game/game-panel-bridge.js",
                     "text/javascript",
                 ),
                 "/static/generated/audio/pcm-worklet-processor.js": (
-                    "static/generated/audio/pcm-worklet-processor.js",
+                    "frontend/static/generated/audio/pcm-worklet-processor.js",
                     "text/javascript",
                 ),
-                "/static/css/game-renderer.css": ("static/css/game-renderer.css", "text/css"),
+                "/static/css/game-renderer.css": ("frontend/static/css/game-renderer.css", "text/css"),
                 "/static/generated/remote/remote-audio.js": (
-                    "static/generated/remote/remote-audio.js",
+                    "frontend/static/generated/remote/remote-audio.js",
                     "text/javascript",
                 ),
                 "/static/generated/shared/story-log-inspector.js": (
-                    "static/generated/shared/story-log-inspector.js",
+                    "frontend/static/generated/shared/story-log-inspector.js",
                     "text/javascript",
                 ),
                 "/static/generated/shared/chat-controller.js": (
-                    "static/generated/shared/chat-controller.js",
+                    "frontend/static/generated/shared/chat-controller.js",
                     "text/javascript",
                 ),
                 "/static/generated/shared/chat-emotes.js": (
-                    "static/generated/shared/chat-emotes.js",
+                    "frontend/static/generated/shared/chat-emotes.js",
                     "text/javascript",
                 ),
                 "/static/generated/shared/device-navigation.js": (
-                    "static/generated/shared/device-navigation.js",
+                    "frontend/static/generated/shared/device-navigation.js",
                     "text/javascript",
                 ),
-                "/static/css/remote.css": ("static/css/remote.css", "text/css"),
-                "/static/css/chat.css": ("static/css/chat.css", "text/css"),
+                "/static/css/remote.css": ("frontend/static/css/remote.css", "text/css"),
+                "/static/css/chat.css": ("frontend/static/css/chat.css", "text/css"),
             }
             if path in files:
                 filename, content_type = files[path]
                 route.fulfill(body=Path(filename).read_text(encoding="utf-8"), content_type=content_type)
             elif path == "/static/narratron-avatar.png":
-                route.fulfill(body=Path("static/narratron-avatar.png").read_bytes(), content_type="image/png")
+                route.fulfill(body=Path("frontend/static/narratron-avatar.png").read_bytes(), content_type="image/png")
             elif path == "/favicon.png":
-                route.fulfill(body=Path("templates/narratron favicon.png").read_bytes(), content_type="image/png")
+                route.fulfill(body=Path("frontend/templates/narratron favicon.png").read_bytes(), content_type="image/png")
             elif path.endswith("/scenes") or path.endswith("/playlists") or path in {"/api/chat", "/api/suggestions"}:
                 route.fulfill(json=[])
             elif path.endswith("/remote"):

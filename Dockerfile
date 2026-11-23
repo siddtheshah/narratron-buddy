@@ -65,9 +65,9 @@ COPY --chown=appuser:appuser storage/ storage/
 COPY --chown=appuser:appuser testlab/ testlab/
 COPY --chown=appuser:appuser tools/ tools/
 COPY --chown=appuser:appuser utils/ utils/
-COPY --chown=appuser:appuser templates/ templates/
-COPY --chown=appuser:appuser static/ static/
-COPY --chown=appuser:appuser --from=frontend-build /app/static/generated/ static/generated/
+COPY --chown=appuser:appuser frontend/templates/ frontend/templates/
+COPY --chown=appuser:appuser frontend/static/ frontend/static/
+COPY --chown=appuser:appuser --from=frontend-build /app/frontend/static/generated/ frontend/static/generated/
 COPY --chown=appuser:appuser pricing/ pricing/
 COPY --chown=appuser:appuser providers/ providers/
 COPY --chown=appuser:appuser models/ models/

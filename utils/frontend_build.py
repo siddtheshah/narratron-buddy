@@ -20,6 +20,7 @@ else:
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 _EMIT_SUFFIXES = {".ts"}
 _DECLARATION_SUFFIXES = (".d.ts", ".d.mts", ".d.cts")
+_EXCLUDED_FRONTEND_DIRS = frozenset({"static", "templates"})
 _BUILD_CONFIG_FILES = (
     "tsconfig.json",
     "tsconfig.build.json",
@@ -31,8 +32,11 @@ def _is_declaration_file(path: Path) -> bool:
     return path.name.endswith(_DECLARATION_SUFFIXES)
 
 
-def _is_build_input(path: Path) -> bool:
+def _is_build_input(path: Path, frontend_dir: Path) -> bool:
     """Match the production source includes/excludes in tsconfig.build.json."""
+    rel_parts = path.relative_to(frontend_dir).parts
+    if rel_parts and rel_parts[0] in _EXCLUDED_FRONTEND_DIRS:
+        return False
     return (
         path.is_file()
         and path.suffix.lower() in _EMIT_SUFFIXES
@@ -46,7 +50,7 @@ def _collect_emitted_sources(frontend_dir: Path) -> list[Path]:
         return []
     sources: list[Path] = []
     for path in sorted(frontend_dir.rglob("*")):
-        if not _is_build_input(path):
+        if not _is_build_input(path, frontend_dir):
             continue
         if _is_declaration_file(path):
             continue
@@ -59,7 +63,7 @@ def _latest_input_mtime_ns(project_root: Path, frontend_dir: Path) -> int:
     """Return the newest modification timestamp across frontend sources and TS build configs."""
     latest = 0
     for path in frontend_dir.rglob("*"):
-        if _is_build_input(path):
+        if _is_build_input(path, frontend_dir):
             latest = max(latest, path.stat().st_mtime_ns)
     for rel_path in _BUILD_CONFIG_FILES:
         config_path = project_root / rel_path
@@ -74,7 +78,7 @@ def _needs_build(project_root: Path) -> bool:
     sources = _collect_emitted_sources(frontend_dir)
     if not sources:
         return False
-    generated_dir = project_root / "static" / "generated"
+    generated_dir = project_root / "frontend" / "static" / "generated"
     latest_input = _latest_input_mtime_ns(project_root, frontend_dir)
     for source_path in sources:
         output_path = generated_dir / source_path.relative_to(frontend_dir).with_suffix(".js")
@@ -110,7 +114,7 @@ def _acquire_build_lock(lock_path: Path) -> Iterator[None]:
 
 
 def ensure_canvas_assets_built(project_root: Path = PROJECT_ROOT) -> None:
-    """Build static/generated/ when local frontend/ sources are missing output or stale."""
+    """Build frontend/static/generated/ when local frontend/ sources are missing output or stale."""
     if not _needs_build(project_root):
         return
     digest = hashlib.sha256(str(project_root.resolve()).encode("utf-8")).hexdigest()[:12]
@@ -121,7 +125,7 @@ def ensure_canvas_assets_built(project_root: Path = PROJECT_ROOT) -> None:
         npm_executable = shutil.which("npm")
         if npm_executable is None:
             raise RuntimeError(
-                "frontend TypeScript sources exist in frontend/ but static/generated/ "
+                "frontend TypeScript sources exist in frontend/ but frontend/static/generated/ "
                 "is missing or stale, and 'npm' was not found on PATH. Run 'npm ci && npm run build'."
             )
         subprocess.run([npm_executable, "run", "build"], cwd=project_root, check=True)

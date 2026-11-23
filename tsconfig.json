@@ -22,5 +22,9 @@
     "playwright.config.ts",
     "testing/ui/**/*.ts",
     "frontend/**/*.ts"
+  ],
+  "exclude": [
+    "frontend/static/**",
+    "frontend/templates/**"
   ]
 }

@@ -3,7 +3,6 @@
 import asyncio
 import html
 import json
-import os
 import re
 from dataclasses import dataclass
 from typing import Optional
@@ -82,7 +81,7 @@ def render_seo_markup(metadata: SeoMetadata) -> str:
 
 def render_shared_topbar(active_page: str = "", show_pricing: bool = False) -> str:
     """Render the shared navigation topbar HTML."""
-    template_path = PROJECT_ROOT / "templates" / "shared_topbar.html"
+    template_path = PROJECT_ROOT / "frontend" / "templates" / "shared_topbar.html"
     raw = template_path.read_text(encoding="utf-8")
     try:
         import jinja2
@@ -129,7 +128,7 @@ def render_shared_topbar(active_page: str = "", show_pricing: bool = False) -> s
 
 def render_docs_sidebar(active_page: str = "") -> str:
     """Render the persistent documentation navigation and search control."""
-    template_path = PROJECT_ROOT / "templates" / "docs_sidebar.html"
+    template_path = PROJECT_ROOT / "frontend" / "templates" / "docs_sidebar.html"
     raw = template_path.read_text(encoding="utf-8")
     try:
         import jinja2
@@ -146,7 +145,7 @@ def render_page_template(
     seo_metadata: Optional[SeoMetadata] = None,
 ) -> str:
     """Read a page template and inject the shared topbar component."""
-    template_path = PROJECT_ROOT / "templates" / template_name
+    template_path = PROJECT_ROOT / "frontend" / "templates" / template_name
     html_content = template_path.read_text(encoding="utf-8")
     topbar_html = render_shared_topbar(active_page=active_page, show_pricing=show_pricing)
     html_content = html_content.replace("<!-- SHARED_TOPBAR -->", topbar_html)
@@ -172,7 +171,7 @@ def render_page_template(
 def read_favicon():
     """Serve the shared browser-tab icon."""
     return FileResponse(
-        PROJECT_ROOT / "templates" / "narratron favicon.png",
+        PROJECT_ROOT / "frontend" / "templates" / "narratron favicon.png",
         media_type="image/png",
     )
 
@@ -180,7 +179,7 @@ def read_favicon():
 def read_narratron_avatar():
     """Serve the small brand avatar icon."""
     return FileResponse(
-        PROJECT_ROOT / "static" / "narratron-avatar.png",
+        PROJECT_ROOT / "frontend" / "static" / "narratron-avatar.png",
         media_type="image/png",
     )
 
@@ -594,9 +593,8 @@ def read_popout(request: Request, theater_id: Optional[str] = None, join_key: Op
             )
             _grant_canvas_access(response, request, theater_id, join_key)
             return response
-    template_path = os.path.join(str(PROJECT_ROOT), "templates", "popout.html")
-    with open(template_path, "r", encoding="utf-8") as f:
-        return f.read()
+    template_path = PROJECT_ROOT / "frontend" / "templates" / "popout.html"
+    return template_path.read_text(encoding="utf-8")
 
 @app.get("/obs", response_class=HTMLResponse)
 @app.get("/obs/{theater_id}", response_class=HTMLResponse)
@@ -626,9 +624,8 @@ async def read_obs_canvas(
             )
         )
 
-    template_path = os.path.join(str(PROJECT_ROOT), "templates", "obs.html")
-    with open(template_path, "r", encoding="utf-8") as f:
-        content = f.read()
+    template_path = PROJECT_ROOT / "frontend" / "templates" / "obs.html"
+    content = template_path.read_text(encoding="utf-8")
 
     response = HTMLResponse(content=content)
     if theater_id and deployment and resolved_join_key and _valid_join_key(deployment["join_key"], resolved_join_key):
@@ -674,5 +671,5 @@ async def read_canvas(
             )
         )
 
-    template_path = PROJECT_ROOT / "templates" / "canvas.html"
+    template_path = PROJECT_ROOT / "frontend" / "templates" / "canvas.html"
     return template_path.read_text(encoding="utf-8")

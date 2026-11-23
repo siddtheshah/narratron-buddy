@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { expect, REPO_ROOT, test } from './canvas_fixtures';
+import { expect, STATIC_DIR, test } from './canvas_fixtures';
 
 interface BookmarksModule {
   initializeCanvasBookmarks: (options: {
@@ -43,7 +43,7 @@ test('serves generated canvas assets under /static/generated/canvas/', async ({
   canvas,
   page,
 }) => {
-  const generatedDir = path.join(REPO_ROOT, 'static', 'generated', 'canvas');
+  const generatedDir = path.join(STATIC_DIR, 'generated', 'canvas');
   fs.mkdirSync(generatedDir, { recursive: true });
   const probeFile = `_fixture_probe_${process.pid}_${Date.now()}.js`;
   const tempProbePath = path.join(generatedDir, probeFile);

@@ -134,7 +134,7 @@ class UserHelpService:
     @staticmethod
     def _default_help_roots() -> tuple[Path, ...]:
         project_root = Path(__file__).resolve().parent.parent
-        return (project_root / "templates", project_root / "site_docs")
+        return (project_root / "frontend" / "templates", project_root / "site_docs")
 
     async def answer(self, question: str) -> str:
         """Research one question without depending on a theater or chat transport.

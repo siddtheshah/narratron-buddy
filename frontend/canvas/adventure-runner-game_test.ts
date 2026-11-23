@@ -4,6 +4,7 @@ import type { Route } from '@playwright/test';
 import {
   CANVAS_ORIGIN,
   REPO_ROOT,
+  STATIC_DIR,
   expect,
   test,
 } from '../../testing/ui/canvas_fixtures';
@@ -108,7 +109,7 @@ test.describe('Adventure Runner Game UI', () => {
         const file = parts[2];
         if (kind === 'js' && file) {
           const body = await fs.promises.readFile(
-            path.join(REPO_ROOT, 'static', 'generated', 'game', file),
+            path.join(STATIC_DIR, 'generated', 'game', file),
             'utf-8',
           );
           await route.fulfill({ body, contentType: 'application/javascript; charset=utf-8' });
@@ -116,7 +117,7 @@ test.describe('Adventure Runner Game UI', () => {
         }
         if (kind === 'css' && file) {
           const body = await fs.promises.readFile(
-            path.join(REPO_ROOT, 'static', 'css', file),
+            path.join(STATIC_DIR, 'css', file),
             'utf-8',
           );
           await route.fulfill({ body, contentType: 'text/css; charset=utf-8' });

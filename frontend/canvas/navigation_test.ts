@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { expect, REPO_ROOT, test } from '../../testing/ui/canvas_fixtures';
+import { expect, TEMPLATES_DIR, test } from '../../testing/ui/canvas_fixtures';
 
 import type { DoodleAnnotation } from './doodle-types.js';
 
@@ -22,12 +22,12 @@ const NAVIGATION_MODULE_URL = '/static/generated/canvas/navigation.js';
 
 async function readNavigationToggleMarkup(): Promise<string> {
   const templateHtml = await fs.promises.readFile(
-    path.join(REPO_ROOT, 'templates', 'canvas.html'),
+    path.join(TEMPLATES_DIR, 'canvas.html'),
     'utf-8',
   );
   const match = templateHtml.match(/<button id="canvas-navigation-toggle"[\s\S]*?<\/button>/);
   if (!match) {
-    throw new Error('Could not find #canvas-navigation-toggle in templates/canvas.html');
+    throw new Error('Could not find #canvas-navigation-toggle in frontend/templates/canvas.html');
   }
   return match[0];
 }

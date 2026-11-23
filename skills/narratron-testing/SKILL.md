@@ -99,7 +99,7 @@ npx playwright test -g "cursor-state" --workers=1
 # Run TypeScript type-checking across project & tests (tsc --noEmit)
 npm run typecheck
 
-# Build production TypeScript modules (frontend/ -> static/generated/)
+# Build production TypeScript modules (frontend/ -> frontend/static/generated/)
 npm run build
 
 # Watch mode for interactive TypeScript development
@@ -149,13 +149,13 @@ module layout. Follow these patterns for new modules and tests:
 
 1. **Source Organization & Compilation**:
    - Production TypeScript source code resides in `frontend/<consumer>/<module>.ts`.
-   - The build compiles modules to browser ES modules in `static/generated/<consumer>/<module>.js`.
-   - `static/generated/` is gitignored and compiled automatically during `Dockerfile` builds and local startup via `utils/frontend_build.py`.
+   - The build compiles modules to browser ES modules in `frontend/static/generated/<consumer>/<module>.js`.
+   - `frontend/static/generated/` is gitignored and compiled automatically during `Dockerfile` builds and local startup via `utils/frontend_build.py`.
    - Relative imports between TypeScript files under `frontend/` must use the `.js` extension (e.g., `import { canvasCursorState } from './cursor-state.js';`) to align with native browser ES module resolution.
 
 2. **Canonical Module Imports**:
    - Import migrated modules directly via their canonical compiled URL (`/static/generated/<consumer>/<module>.js`).
-   - Ensure all templates, modules, and tests import via the same canonical URL so singleton module instances remain shared (compatibility re-export shims under `static/js/` have been retired).
+   - Ensure all templates, modules, and tests import via the same canonical URL so singleton module instances remain shared (compatibility re-export shims under `frontend/static/js/` have been retired).
 
 3. **Writing Playwright Tests with `canvas_fixtures.ts`**:
    - Use the shared fixture in `testing/ui/canvas_fixtures.ts`:
@@ -178,7 +178,7 @@ module layout. Follow these patterns for new modules and tests:
        expect(result).toBe(true);
      });
      ```
-   - For full canvas page testing, use `canvas.openCanvas({ isOrator: true, ... })` which loads `templates/canvas.html` with mocked backend APIs (`/api/*`, `/theaters/*`, and `wss://...`).
+   - For full canvas page testing, use `canvas.openCanvas({ isOrator: true, ... })` which loads `frontend/templates/canvas.html` with mocked backend APIs (`/api/*`, `/theaters/*`, and `wss://...`).
    - Use `window.__importModule<typeof import('./my-module.js')>(url)` in browser evaluations for typed access without rewriting dynamic browser `import()` into CommonJS `require()`.
 
 4. **Test Migration & Parity Verification**:

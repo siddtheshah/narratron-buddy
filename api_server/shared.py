@@ -46,7 +46,7 @@ async def add_cache_control_headers(request: Request, call_next):
         response.headers.setdefault("Cache-Control", "no-cache, must-revalidate")
     return response
 
-static_dir = PROJECT_ROOT / "static"
+static_dir = PROJECT_ROOT / "frontend" / "static"
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 # Screenshots and diagrams embedded in the public documentation.
@@ -69,7 +69,7 @@ os.makedirs(ref_library_folder, exist_ok=True)
 app.mount("/reference_library", StaticFiles(directory=ref_library_folder), name="reference_library")
 
 # Artwork used by the public join-page background carousel.
-carousel_folder = str((PROJECT_ROOT / "templates" / "carousel").resolve())
+carousel_folder = str((PROJECT_ROOT / "frontend" / "templates" / "carousel").resolve())
 app.mount("/carousel", StaticFiles(directory=carousel_folder), name="carousel")
 
 # Stamp images stored locally or in mounted GCS storage.

@@ -4,6 +4,7 @@ import type { Route } from '@playwright/test';
 import {
   CANVAS_ORIGIN,
   REPO_ROOT,
+  STATIC_DIR,
   expect,
   test,
 } from '../../testing/ui/canvas_fixtures';
@@ -11,7 +12,7 @@ import {
 type TestlabAdventureRunnerModule = typeof import('./testlab-adventure-runner.js');
 
 const ADVENTURE_RUNNER_HTML_PATH = path.join(REPO_ROOT, 'testlab', 'adventure_runner.html');
-const GAME_RENDERER_CSS_PATH = path.join(REPO_ROOT, 'static', 'css', 'game-renderer.css');
+const GAME_RENDERER_CSS_PATH = path.join(STATIC_DIR, 'css', 'game-renderer.css');
 
 interface RecordedRequest {
   readonly method: string;

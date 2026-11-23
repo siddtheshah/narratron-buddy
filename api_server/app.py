@@ -118,7 +118,7 @@ APP_NAME = "narratron-combined"
 
 
 # Static assets shared by the canvas templates.
-static_dir = Path(__file__).resolve().parent.parent / "static"
+static_dir = Path(__file__).resolve().parent.parent / "frontend" / "static"
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 use_in_memory_artifacts = object_registry.FLAGS.use_in_memory_artifacts

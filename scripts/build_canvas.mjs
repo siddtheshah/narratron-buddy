@@ -5,7 +5,8 @@ import { fileURLToPath } from 'node:url';
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const frontendDir = path.join(rootDir, 'frontend');
-const outputDir = path.join(rootDir, 'static', 'generated');
+const outputDir = path.join(rootDir, 'frontend', 'static', 'generated');
+const excludedFrontendDirs = new Set(['static', 'templates']);
 const tscBin = path.join(
   rootDir,
   'node_modules',
@@ -19,6 +20,9 @@ function hasSourceFiles(dir) {
   }
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     if (entry.isDirectory()) {
+      if (dir === frontendDir && excludedFrontendDirs.has(entry.name)) {
+        continue;
+      }
       if (hasSourceFiles(path.join(dir, entry.name))) {
         return true;
       }
@@ -62,7 +66,7 @@ if (!isWatch) {
 fs.mkdirSync(outputDir, { recursive: true });
 
 if (!hasInputs && !isWatch) {
-  console.log('No source files in frontend/; ensured static/generated exists.');
+  console.log('No source files in frontend/; ensured frontend/static/generated exists.');
   process.exit(0);
 }
 

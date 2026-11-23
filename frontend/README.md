@@ -11,9 +11,11 @@ Sources and adjacent `*_test.ts` browser tests are grouped by their consumers:
 | `audio/` | Audio capture, PCM conversion, and the audio worklet |
 | `game/` | Shared game runtime, rendering, and HTML panels |
 | `shared/` | Cross-page auth, chat, polling, effects, and site controls |
+| `static/` | Stylesheets, vendor scripts, brand images, static fragments, and gitignored `generated/` JS |
+| `templates/` | HTML page templates, favicons, and join-page carousel artwork |
 
 `npm run build` compiles production sources to matching paths under
-`static/generated/`. For example, `pages/profile.ts` is served at
+`frontend/static/generated/`. For example, `pages/profile.ts` is served at
 `/static/generated/pages/profile.js`. Use these canonical URLs in templates and
 browser tests, and `.js` extensions in relative module imports. Shared modules
 must have one canonical URL so consumers share their singleton state.

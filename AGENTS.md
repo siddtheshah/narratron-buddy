@@ -127,9 +127,10 @@ npm run test:ui -- frontend/canvas/cursor-state_test.ts --workers=1
 
 `npm run test:ui` uses existing generated assets, so rebuild after changing
 TypeScript or keep `npm run watch` running. Generated files in
-`static/generated/` are ignored by Git; edit `frontend/**/*.ts` and use
-`.js` extensions for relative browser imports. Templates load modules from
-`/static/generated/<consumer>/`. See the [frontend layout](frontend/README.md).
+`frontend/static/generated/` are ignored by Git; edit `frontend/**/*.ts` and use
+`.js` extensions for relative browser imports. Templates in
+`frontend/templates/` load modules from `/static/generated/<consumer>/`. See the
+[frontend layout](frontend/README.md).
 Docker compiles these assets in its Node build stage.
 
 See the [testing guide](skills/narratron-testing/SKILL.md) for fixtures, offline

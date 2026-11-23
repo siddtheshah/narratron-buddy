@@ -28,7 +28,7 @@ def test_manual_lab_plays_checkers_and_resets(
     app.include_router(game_lab.router)
     app.mount(
         "/static/generated",
-        StaticFiles(directory=game_lab.PROJECT_ROOT / "static" / "generated"),
+        StaticFiles(directory=game_lab.PROJECT_ROOT / "frontend" / "static" / "generated"),
         name="static-generated",
     )
     client = TestClient(app)

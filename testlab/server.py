@@ -89,11 +89,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 app = FastAPI(title="Narratron Test Lab", lifespan=lifespan)
 app.include_router(game_lab_router)
 app.include_router(decision_lab_router)
-STATIC_GENERATED = PROJECT_ROOT / "static" / "generated"
+STATIC_GENERATED = PROJECT_ROOT / "frontend" / "static" / "generated"
 STATIC_GENERATED.mkdir(parents=True, exist_ok=True)
 app.mount("/static/generated", StaticFiles(directory=STATIC_GENERATED), name="static-generated")
-app.mount("/effects-static", StaticFiles(directory=PROJECT_ROOT / "static"), name="effects-static")
-app.mount("/carousel", StaticFiles(directory=PROJECT_ROOT / "templates" / "carousel"), name="carousel")
+app.mount("/effects-static", StaticFiles(directory=PROJECT_ROOT / "frontend" / "static"), name="effects-static")
+app.mount("/carousel", StaticFiles(directory=PROJECT_ROOT / "frontend" / "templates" / "carousel"), name="carousel")
 app.mount("/test-images", StaticFiles(directory=ROOT / "images"), name="test-images")
 class _NoCacheStaticFiles(StaticFiles):
     async def get_response(self, path: str, scope: Scope) -> Response:

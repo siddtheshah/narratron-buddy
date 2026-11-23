@@ -3,7 +3,7 @@ import path from 'node:path';
 import type { Route } from '@playwright/test';
 import {
   expect,
-  REPO_ROOT,
+  STATIC_DIR,
   TEMPLATES_DIR,
   test,
   type CanvasHarness,
@@ -477,7 +477,7 @@ for (const view of ['canvas', 'popout'] as const) {
     };
 
     const chatCss = await fs.promises.readFile(
-      path.join(REPO_ROOT, 'static', 'css', 'chat.css'),
+      path.join(STATIC_DIR, 'css', 'chat.css'),
       'utf-8',
     );
 

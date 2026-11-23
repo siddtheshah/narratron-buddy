@@ -3,7 +3,7 @@
   "compilerOptions": {
     "types": [],
     "rootDir": "frontend",
-    "outDir": "static/generated",
+    "outDir": "frontend/static/generated",
     "noEmit": false,
     "sourceMap": true,
     "inlineSources": true,
@@ -13,6 +13,8 @@
     "frontend/**/*.ts"
   ],
   "exclude": [
-    "frontend/**/*_test.ts"
+    "frontend/**/*_test.ts",
+    "frontend/static/**",
+    "frontend/templates/**"
   ]
 }
