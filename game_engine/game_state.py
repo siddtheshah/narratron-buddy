@@ -19,7 +19,8 @@ from pydantic import Field, JsonValue, TypeAdapter
 
 from game_engine.game_client import browser_compatible, browser_program
 from game_engine.canvas_host import CanvasHost
-from game_engine.canvas_evaluation import CanvasEvaluator
+from game_engine.canvas_contract import CanvasEvent
+from game_engine.canvas_evaluation import CanvasEvaluator, ResolvedShortcut
 from game_engine.game_source import find_game_file
 from game_engine.game_runtime import (
     Budget, GameAction, GameStep, GameModel, GameProgram, MAX_GAME_BYTES, MAX_VALUE_BYTES,
@@ -89,6 +90,7 @@ class GameState:
         self._lock = canvas_host.canvas_lock if canvas_host is not None else RLock()
         self._canvas_host = canvas_host
         self._canvas_revision = -1
+        self._shortcuts: list[ResolvedShortcut] = []
         self._canvas_evaluation: CanvasEvaluator | None = None
         self._persist = persist
         self._notify = notify
@@ -209,6 +211,7 @@ class GameState:
             self._view, self._model_state, self._narratron_actions = prepared.view, prepared.model_state, prepared.actions
             self._view_username = effective_username
             self._canvas_revision = snapshot.revision
+            self._shortcuts = prepared.shortcuts
             return self._view
         if self._worker is not None:
             from game_engine.go_cel import Prepared, validate_prepared
@@ -400,6 +403,9 @@ class GameState:
                         self._prepare(self.state, username=username)
                     payload["view"] = self._view
                     payload["canvas_revision"] = self._canvas_revision
+                    if self.program.definition.keyboard is not None:
+                        payload["shortcuts"] = [shortcut.model_dump(mode="json") for shortcut in self._shortcuts]
+                        payload["shortcut_keys"] = [binding.key for binding in self.program.definition.keyboard.bindings]
                 except ValueError as exc:
                     if username != self._view_username:
                         payload["view"] = []
@@ -545,7 +551,10 @@ class GameState:
             if self.program is None:
                 logger.debug("[GameState] Act rejected: no playable game")
                 raise ValueError("This theater has no playable game.")
-            if expected_definition_hash is not None and expected_definition_hash != self.definition_hash:
+            if any(
+                expected is not None and expected != self.definition_hash
+                for expected in (expected_definition_hash, action.definition_hash)
+            ):
                 raise StaleGameAction("The game was replaced. Review the current game and try again.")
             canvas_enabled = self.program.definition.canvas_api is not None
             if canvas_enabled and self._canvas_host is None:
@@ -562,11 +571,30 @@ class GameState:
                     f"The game changed (action revision {action.revision} != current revision {self.revision}). Review its current state and try again."
                 )
             observed = None
+            input_snapshot = None
             if canvas_enabled:
                 assert self._canvas_host is not None
                 observed = self._canvas_host.canvas_observation()
                 if action.canvas_revision is not None and action.canvas_revision != observed.revision:
                     raise StaleGameAction("The canvas changed. Review the current page and try again.")
+            if action.binding_id is not None:
+                if observed is None or actor == "narratron":
+                    raise ValueError("This game does not accept keyboard actions.")
+                if action.definition_hash is None or action.canvas_revision is None:
+                    raise InvalidGameInput("Keyboard actions require the displayed game and canvas revisions.")
+                if observed.revision != self._canvas_revision or (self.program.uses_user and username != self._view_username):
+                    self._prepare(self.state, username=username)
+                shortcut = next((item for item in self._shortcuts if item.id == action.binding_id), None)
+                if shortcut is None or shortcut.action.name != action.name or shortcut.action.arguments != action.arguments:
+                    raise InvalidGameInput("This keyboard shortcut is unavailable.")
+                if actor == "contributor" and shortcut.action.permission != "contributor":
+                    raise UnauthorizedGameAction("Only the active orator can take this game action.")
+                input_snapshot = observed.model_copy(update={"event": CanvasEvent(
+                    id=uuid4().hex, kind="key_pressed", actor=actor,
+                    page_id=observed.page.id if observed.page is not None else None,
+                    canvas_revision=observed.revision, object_ids=[], point=None, region_ids=[],
+                    key=shortcut.key, binding_id=shortcut.id,
+                )})
             effective_username = "" if actor == "narratron" else (username if username else action.username)
             if action.username != effective_username:
                 action.username = effective_username
@@ -610,6 +638,7 @@ class GameState:
             event_id = story_event_id or f"player:{self.definition_hash}:{action.revision}"
 
             previous_canvas_revision = self._canvas_revision
+            previous_shortcuts = self._shortcuts
             self._active_username = effective_username
             try:
                 with ExitStack() as transaction:
@@ -618,7 +647,7 @@ class GameState:
                         with self._canvas_engine() as evaluator:
                             try:
                                 proposal = evaluator.attempt(
-                                    self.state, observed, GameStep(name=action.name, arguments=action.arguments),
+                                    self.state, input_snapshot or observed, GameStep(name=action.name, arguments=action.arguments),
                                     actor, username=effective_username,
                                 )
                             except SchemaValidationError as exc:
@@ -643,6 +672,7 @@ class GameState:
                         self._view, self._model_state, self._narratron_actions = prepared.view, prepared.model_state, prepared.actions
                         self._view_username = effective_username
                         self._canvas_revision = staged.revision
+                        self._shortcuts = prepared.shortcuts
                     elif self._worker is not None:
                         self._act_go(action, actor, username=effective_username)
                     else:
@@ -666,6 +696,7 @@ class GameState:
                 )
             except Exception as exc:
                 self._canvas_revision = previous_canvas_revision
+                self._shortcuts = previous_shortcuts
                 self._story_commits.pop(event_id, None)
                 self.state, self._view, self._view_username, self._active_username, self._model_state, self._narratron_actions, self.revision = (
                     previous, previous_view, previous_view_username, previous_active_username, previous_model_state, previous_actions, revision

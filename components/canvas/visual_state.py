@@ -11,7 +11,8 @@ import re
 import threading
 import time
 from uuid import uuid4
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from typing import Any, Literal, Optional, Tuple, TypeAlias, TypedDict, Union
 
 from components.theater_manager import Theater
@@ -822,12 +823,13 @@ class VisualState:
         self, file_path: str, *, transition: str = "crossfade", effect: str = "gleam3",
         prompt: str = "", clear_animation: bool = True,
         animation: dict[str, object] | None = None, url_for_path: Callable[[str], str] | None = None,
+        new_page: bool = False,
     ) -> bool:
         """Record a visual presentation and return whether the scene changed."""
         transition, effect = transition or "crossfade", effect or "gleam3"
         if file_path and file_path == self.shown_image_path:
             transition = "none"
-        changed = (file_path != self.shown_image_path or effect != self.shown_image_effect)
+        changed = new_page or file_path != self.shown_image_path or effect != self.shown_image_effect
         if changed or not self.shown_image_time:
             self.shown_image_time = time.time()
             self._visual_display_started_at = time.monotonic()
@@ -850,7 +852,8 @@ class VisualState:
                 item["animation"] = animation
             last = self.shown_images_history[-1] if self.shown_images_history else None
             if (
-                not isinstance(last, dict)
+                new_page
+                or not isinstance(last, dict)
                 or last.get("path") != file_path
                 or last.get("effect") != effect
                 or last.get("animation") != animation
@@ -885,6 +888,33 @@ class VisualState:
         self.orator_cursor = len(self.shown_images_history) - 1 if self.shown_images_history else None
         self._history_index = self.orator_cursor
         return changed
+
+    @contextmanager
+    def stage_game_scene(self, path: str, url: str) -> Iterator[dict[str, object]]:
+        """Stage a fresh native history page without notifying before commitment."""
+        with self.canvas_lock:
+            if self.pending_visuals:
+                raise ValueError("Wait for pending canvas visuals before changing the game scene.")
+            previous = (
+                self.shown_image_path, self.shown_image_prompt, self.shown_image_transition,
+                self.shown_image_effect, self.shown_image_time, self._visual_display_started_at,
+                self.shown_animation_frames, self.shown_layered_animation, self.shown_video_animation,
+                self.image_revision, self.current_cycle_visual, self.orator_cursor, self._history_index,
+                self.shown_images_history,
+            )
+            self.shown_images_history = list(self.shown_images_history)
+            try:
+                self.show_image(path, url_for_path=lambda _: url, new_page=True, effect="none")
+                yield self.shown_images_history[-1]
+            except BaseException:
+                (
+                    self.shown_image_path, self.shown_image_prompt, self.shown_image_transition,
+                    self.shown_image_effect, self.shown_image_time, self._visual_display_started_at,
+                    self.shown_animation_frames, self.shown_layered_animation, self.shown_video_animation,
+                    self.image_revision, self.current_cycle_visual, self.orator_cursor, self._history_index,
+                    self.shown_images_history,
+                ) = previous
+                raise
 
     def _apply_history_item(self, target_idx: int) -> bool:
         with self._cycle_lock:

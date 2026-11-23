@@ -32,6 +32,58 @@ const AGENT_CONNECTION_MODULE_URL = '/static/generated/canvas/agent-connection.j
 
 const snapshots = loadGameSnapshots();
 
+test('canvas shortcuts submit the mapped game action and keep blocked keys out of history', async ({ canvas, page }) => {
+  const submitted: unknown[] = [];
+  const game = {
+    definition_hash: 'a'.repeat(64),
+    revision: 0,
+    canvas_revision: 1,
+    view: [],
+    shortcut_keys: ['ArrowLeft', 'ArrowRight'],
+    shortcuts: [{
+      id: 'move-left', key: 'ArrowLeft', label: 'Left',
+      action: { name: 'move', arguments: { direction: 'left' }, permission: 'orator' },
+    }],
+  };
+  await canvas.serveRoute('/action', async (route) => {
+    submitted.push(route.request().postDataJSON());
+    await route.fulfill({ json: { ...game, revision: 1, canvas_revision: 2, shortcuts: [] } });
+  });
+  await canvas.mount({
+    html: '<button id="toggle" hidden>Game</button><div id="surface">Scene</div><div id="panel"></div><input aria-label="Chat">',
+    moduleScripts: [`
+      import { createGameRenderer } from '${RENDERER_MODULE_URL}';
+      window.addEventListener('keydown', (event) => {
+        if (event.key === 'ArrowRight') document.body.dataset.historyKey = event.key;
+      });
+      createGameRenderer({
+        container: document.getElementById('panel'),
+        toggleButton: document.getElementById('toggle'),
+        keyboardCanvas: document.getElementById('surface'),
+        actionUrl: () => '/action',
+        canEdit: () => true,
+        refresh: () => {},
+      }).render(${JSON.stringify(game)});
+    `],
+  });
+  const surface = page.locator('#surface');
+  await expect(surface).toHaveAttribute('tabindex', '0');
+  await page.getByRole('textbox', { name: 'Chat' }).press('ArrowLeft');
+  expect(submitted).toHaveLength(0);
+  await surface.click();
+  await expect(surface).toBeFocused();
+  await page.keyboard.press('ArrowRight');
+  await expect(page.locator('body')).not.toHaveAttribute('data-history-key', 'ArrowRight');
+  const response = page.waitForResponse((result) => result.url().endsWith('/action'));
+  await page.keyboard.press('ArrowLeft');
+  await response;
+  expect(submitted).toEqual([{
+    name: 'move', arguments: { direction: 'left' }, revision: 0, draft: [],
+    binding_id: 'move-left', definition_hash: game.definition_hash, canvas_revision: 1,
+  }]);
+  await expect(page.locator('#panel')).toBeHidden();
+});
+
 async function setupAgentGamePage(
   canvas: CanvasHarness,
   page: Page,

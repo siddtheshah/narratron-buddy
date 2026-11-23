@@ -1,12 +1,10 @@
 # CEL canvas interface, version 1
 
-Status: proposed contract, partially implemented. Package validation, strict
-observation/command models, and pure Python/Go CEL evaluation are implemented.
-The still-image observation adapter, pinned image catalog, canonical object
-geometry, and atomic local saves are also implemented. The shared commit host,
-animation adapter, input integration, and remaining acceptance gates are unfinished;
-canvas-enabled actions are not enabled in the live game host. Existing
-version-2 games continue to work without opting in.
+Status: partially implemented. The live host supports still-image observations,
+scene pushes, game stamp writes, and keyboard shortcuts. The local theater
+document commits supported game state and canvas changes together. The
+animation, overlay, stamp tray, and pointer evidence flows below describe the
+broader contract. Existing version-2 games can continue without opting in.
 
 Every game uses the same host-provided `canvas` value. It describes the shared
 canvas, while `state` remains the game's authoritative inventory, mechanics,
@@ -320,14 +318,14 @@ a selected stamp, change tabs, or navigate image history for that same key.
 Blur, page hiding, Escape, or package reset clears held-key tracking; resuming
 requires a fresh non-repeated press. V1 has no key-up actions or held-key state.
 
-For a matched key, the client submits the binding ID, observed game and canvas
-revisions, and a unique client input ID. The host resolves the binding and its
-arguments against that snapshot, records a `key_pressed` event, and dispatches
-the ordinary game action. It derives actor and permissions from the session,
-not from client fields. The event has the canonical `key` and `binding_id`,
+For a matched key, the client uses the exported shortcut to submit an ordinary
+game action with its binding ID, definition hash, and observed game and canvas
+revisions. The host checks the submitted name and arguments against the
+current binding and supplies a `key_pressed` event. It derives actor and
+permissions from the session. The event has the canonical `key` and `binding_id`,
 empty `object_ids` and `region_ids`, and `point: null`; it carries the current
 page ID or `null` if there is no page. Input registration alone does not advance
-canvas revision. Retries reuse the same input/event identity and cannot move twice.
+canvas revision. A retry after a successful move receives a stale-revision conflict.
 
 The browser reports input; this is not proof of a physical key press. The host
 validates the declared shortcut and resulting action just as it validates a

@@ -26,6 +26,15 @@ export interface GamePayload {
   readonly error?: string;
   readonly placement?: GamePlacement | null;
   readonly canvas_revision?: number;
+  readonly shortcuts?: readonly GameShortcut[];
+  readonly shortcut_keys?: readonly string[];
+}
+
+interface GameShortcut {
+  readonly id: string;
+  readonly key: string;
+  readonly label: string;
+  readonly action: RenderedGameAction;
 }
 
 export interface GameRendererOptions {
@@ -42,6 +51,7 @@ export interface GameRendererOptions {
   readonly beforeOpen?: () => void | Promise<void>;
   readonly onPendingChange?: (pending: boolean) => void;
   readonly onMove?: (placement: { left_pct: number; top_pct: number }) => void | Promise<void>;
+  readonly keyboardCanvas?: HTMLElement | null;
 }
 
 export interface GameRenderer {
@@ -256,6 +266,7 @@ export function createGameRenderer({
   beforeOpen = async () => {},
   onPendingChange = () => {},
   onMove = () => {},
+  keyboardCanvas = null,
 }: GameRendererOptions): GameRenderer {
   const stylesheet = document.createElement('link');
   stylesheet.rel = 'stylesheet';
@@ -289,6 +300,52 @@ export function createGameRenderer({
   const rendererId = `game-renderer-${++rendererSequence}`;
   let panelFrame: HTMLIFrameElement | null = null;
   let panelActions = new Map<string, RenderedGameAction>();
+  let keyboardReleased = false;
+  let canvasPointerActive = false;
+  const interactive = 'a, button, input, select, textarea, iframe, [contenteditable], [tabindex], [role="button"], [role="slider"]';
+  if (keyboardCanvas) {
+    keyboardCanvas.addEventListener('pointerdown', (event) => {
+      canvasPointerActive = true;
+      if (!game?.shortcuts || event.button !== 0 || !(event.target instanceof Element)) return;
+      const control = event.target.closest(interactive);
+      if (!container.contains(event.target) && (!control || control === keyboardCanvas)) {
+        keyboardCanvas.focus({ preventScroll: true });
+      }
+    }, true);
+    container.addEventListener('pointerdown', (event) => {
+      if (game?.shortcuts && event.button === 0 && event.target instanceof Element &&
+          event.target.closest(interactive) === container) {
+        container.focus({ preventScroll: true });
+      }
+    }, true);
+    for (const eventName of ['pointerup', 'pointercancel', 'blur']) {
+      window.addEventListener(eventName, () => { canvasPointerActive = false; }, true);
+    }
+    window.addEventListener('keydown', (event) => {
+      if (!game?.shortcuts || !(event.target instanceof Element)) return;
+      const target = event.target;
+      const panelFocused = open && (target === container ||
+        (container.contains(target) && target.closest(interactive) === container));
+      if (target !== keyboardCanvas && !panelFocused) return;
+      if (event.key === 'Escape') {
+        keyboardReleased = true;
+        return;
+      }
+      if (keyboardReleased || event.defaultPrevented || event.isComposing ||
+          event.shiftKey || event.altKey || event.ctrlKey || event.metaKey ||
+          document.hidden || activePointerId !== null || canvasPointerActive) return;
+      const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
+      const shortcut = game.shortcuts.find((item) => item.key === key);
+      if (!shortcut || !canAct(shortcut.action)) {
+        // A blocked game direction must not fall through to canvas history.
+        if (game.shortcut_keys?.includes(key)) event.stopImmediatePropagation();
+        return;
+      }
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      if (!event.repeat) void send(shortcut.action, false, shortcut.id);
+    }, true);
+  }
 
   window.addEventListener('message', (event: MessageEvent<unknown>) => {
     if (!panelFrame || event.source !== panelFrame.contentWindow) return;
@@ -369,6 +426,7 @@ export function createGameRenderer({
     opening = false;
     open = false;
     draw();
+    if (game?.shortcuts) keyboardCanvas?.focus({ preventScroll: true });
   }
 
   toggleButton.addEventListener('click', async (event: MouseEvent) => {
@@ -384,6 +442,7 @@ export function createGameRenderer({
       await beforeOpen();
       if (request !== openRequest || !game) return;
       open = true;
+      keyboardReleased = false;
       if (unseenUpdate) {
         unseenUpdate = false;
         highlightUpdate();
@@ -396,13 +455,14 @@ export function createGameRenderer({
       if (request === openRequest) {
         opening = false;
         draw();
+        if (open && game?.shortcuts) container.focus({ preventScroll: true });
       }
     }
   });
 
   toggleButton.addEventListener('pointerdown', (event: PointerEvent) => event.stopPropagation());
 
-  async function send(action: RenderedGameAction, committing = false): Promise<void> {
+  async function send(action: RenderedGameAction, committing = false, bindingId?: string): Promise<void> {
     if (pending || !canAct(action) || !game?.view) return;
     if (action.confirmation && !window.confirm(action.confirmation)) return;
     const transition = game.client?.transitions[action.name];
@@ -431,6 +491,7 @@ export function createGameRenderer({
           arguments: action.arguments,
           revision,
           draft: committing ? draft.slice(0, -1) : draft,
+          ...(bindingId ? { binding_id: bindingId, definition_hash: definitionHash } : {}),
           ...(game.canvas_revision !== undefined
             ? { canvas_revision: game.canvas_revision }
             : {}),
@@ -706,6 +767,15 @@ export function createGameRenderer({
           ? 'Close game'
           : 'Open game';
     container.hidden = !game || !open;
+    if (keyboardCanvas) {
+      if (game?.shortcuts) {
+        keyboardCanvas.tabIndex = 0;
+        container.tabIndex = -1;
+      } else {
+        keyboardCanvas.removeAttribute('tabindex');
+        container.removeAttribute('tabindex');
+      }
+    }
     container.replaceChildren();
     if (!game) return;
 
@@ -828,6 +898,13 @@ export function createGameRenderer({
     }
 
     const feedback = panel.querySelector('[data-game-layout="sidebar"] > .game-column') || panel;
+    const shortcuts = game.shortcuts?.filter((shortcut) => canAct(shortcut.action));
+    if (keyboardCanvas && shortcuts?.length) {
+      const keys: Record<string, string> = {
+        ArrowUp: '↑', ArrowDown: '↓', ArrowLeft: '←', ArrowRight: '→', ' ': 'Space',
+      };
+      feedback.append(message(shortcuts.map(({ key, label }) => `${keys[key] || key} ${label}`).join(' · '), 'game-message'));
+    }
     if (draft.length) {
       const controls = document.createElement('div');
       controls.className = 'game-node game-column game-draft-controls';
@@ -940,6 +1017,7 @@ export function createGameRenderer({
         local = target?.client ? createLocalGame(target.client) : null;
       }
       if (target?.definition_hash !== game?.definition_hash) {
+        keyboardReleased = false;
         localPlacement = null;
         selectedTabs.clear();
       }

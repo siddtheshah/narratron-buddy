@@ -527,6 +527,7 @@ const gameRenderer =
         container: gameStateLayer,
         toggleButton: gameStateToggleBtn,
         actionUrl: () => `/api/game/action?theater_id=${encodeURIComponent(theaterId || '')}`,
+        keyboardCanvas: document.getElementById('image-container'),
         canContribute: () => isCollabModeEnabled() && hasContributorsPermission(),
         canMove: () => isCurrentOrator() || hasContributorsPermission(),
         canEdit: () => isCurrentOrator(),

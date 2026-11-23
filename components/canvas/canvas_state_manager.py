@@ -12,7 +12,7 @@ import asyncio
 import json
 import logging
 from collections.abc import Callable, Iterator
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from threading import RLock
 from hashlib import sha256
 from pathlib import Path
@@ -31,7 +31,7 @@ from utils.atomic_file import atomic_write_text
 from components.canvas.canvas_assets import CanvasAssetCatalog
 from components.canvas.canvas_observation import ObservationClock, observe_page
 from components.canvas.game_stamps import stage_stamps
-from game_engine.canvas_contract import CanvasSnapshot, Page, Region
+from game_engine.canvas_contract import COMMANDS, CanvasSnapshot, Page, Region
 
 if TYPE_CHECKING:
     from services.text_beautifier import TextBeautifier
@@ -318,31 +318,85 @@ class CanvasStateManager:
         The game, visual cycle, and native doodle writers share canvas_lock.
         Exceptions from evaluation or persistence restore the original page.
         """
-        with self.canvas_lock:
+        with self.canvas_lock, ExitStack() as staging:
             if not effects:
                 yield snapshot
                 return
             if self.visual.pinned:
                 raise ValueError("Unpin the canvas before applying game output.")
             assert self.theater is not None and self.game is not None
-            native = self._doodle_page()
-            if native is None or snapshot.page is None or native["page_id"] != snapshot.page.id:
-                raise ValueError("The shared canvas page changed.")
             catalog = CanvasAssetCatalog(self.theater.directory(), self.theater.get_url_for_path)
-            actions, staged = stage_stamps(effects, snapshot, self.doodles.doodles, catalog, self.game.definition_hash)
-            previous, previous_clock = self.doodles.doodles, self.canvas_clock
+            native = self._doodle_page()
+            if (native.get("page_id") if native is not None else None) != (
+                snapshot.page.id if snapshot.page is not None else None
+            ):
+                raise ValueError("The shared canvas page changed.")
+            commands = COMMANDS.validate_python(effects, strict=True)
+            scene = next((command for command in commands if command.op == "show_scene"), None)
+            staged = snapshot
+            stamp_batches: dict[str, list[JsonValue]] = {}
+            for command in commands:
+                if command.op == "show_scene":
+                    continue
+                if command.op not in {"put_stamp", "remove_stamp"}:
+                    raise ValueError(f"The panel canvas host does not support {command.op} yet.")
+                target = command.target.model_dump()
+                if "page_id" in target:
+                    stamp_batches.setdefault(target["page_id"], []).append(command.model_dump(mode="json"))
+            if snapshot.page is not None and snapshot.page.id in stamp_batches:
+                previous = self.doodles.doodles
+                actions, staged = stage_stamps(
+                    stamp_batches[snapshot.page.id], snapshot, previous, catalog, self.game.definition_hash,
+                )
+                assert native is not None
+                native["doodles"] = actions
+
+                @contextmanager
+                def restore_doodles(page: DoodlePage, original: list[DoodleAction]) -> Iterator[None]:
+                    try:
+                        yield
+                    except BaseException:
+                        page["doodles"] = original
+                        raise
+
+                staging.enter_context(restore_doodles(native, previous))
+            if scene is not None:
+                asset = catalog.scene(scene.scene_id)
+                new_native = staging.enter_context(self.visual.stage_game_scene(asset.path, asset.url))
+                page = Page(
+                    id=str(new_native["page_id"]), scene_id=asset.scene_id, asset_id=asset.asset_id,
+                    media_kind="image", animation=None, width=asset.width, height=asset.height,
+                )
+                new_native["canvas_page"] = page.model_dump(mode="json")
+                new_native["canvas_regions"] = {key: region.model_dump(mode="json") for key, region in asset.regions.items()}
+                staged = observe_page(page, [], revision=snapshot.revision, regions=asset.regions)
+                scene_stamps: list[JsonValue] = [
+                    {**command.model_dump(mode="json"), "target": {"page_id": page.id}}
+                    for command in commands
+                    if command.op in {"put_stamp", "remove_stamp"} and command.target.model_dump().get("page_ref") == scene.page_ref
+                ]
+                if scene_stamps:
+                    actions, staged = stage_stamps(scene_stamps, staged, [], catalog, self.game.definition_hash)
+                    new_native["doodles"] = actions
+                previous_surfaces = self.ui.interactive_surfaces
+                self.ui.interactive_surfaces = {
+                    surface_id: surface for surface_id, surface in previous_surfaces.items()
+                    if bool(surface.get("persistent", False))
+                }
+            previous_clock = self.canvas_clock
             projection = staged.model_dump(mode="json")
             projection.pop("revision")
             fingerprint = sha256(json.dumps(projection, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
             self.canvas_clock = ObservationClock(
                 revision=previous_clock.revision + (fingerprint != previous_clock.fingerprint), fingerprint=fingerprint,
             )
-            self.doodles.doodles = actions
-            staged = CanvasSnapshot.model_validate({**staged.model_dump(mode="json"), "revision": self.canvas_clock.revision})
             try:
+                staged = CanvasSnapshot.model_validate({**staged.model_dump(mode="json"), "revision": self.canvas_clock.revision})
                 yield staged
             except BaseException:
-                self.doodles.doodles, self.canvas_clock = previous, previous_clock
+                self.canvas_clock = previous_clock
+                if scene is not None:
+                    self.ui.interactive_surfaces = previous_surfaces
                 raise
 
     @synchronized
@@ -379,6 +433,7 @@ class CanvasStateManager:
 
     @synchronized
     def get_latest_state(self, *, username: str = "") -> dict[str, JsonValue]:
+        game = self.game.payload(username=username)
         visual = self.visual.payload()
         sticky_notes = self.notepad.get_present_sticky_notes()
         return {**visual, "music": self.audio.payload(), "music_pinned": self.audio.pinned,
@@ -391,4 +446,4 @@ class CanvasStateManager:
                 "avatar": self.avatar.payload(),
                 **self.story.payload(), "sticky_notes": sticky_notes,
                 "interactive_surfaces": list(self.ui.interactive_surfaces.values()),
-                "game_state": self.game.payload(username=username) if username else self.game.payload()}
+                "game_state": game}

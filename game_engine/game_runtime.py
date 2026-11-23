@@ -221,6 +221,8 @@ class GameAction(GameStep):
     draft: list[GameStep] = Field(default_factory=list, max_length=64)
     canvas_revision: int | None = Field(default=None, ge=0)
     username: str = Field(default="", max_length=MAX_ACTION_STRING_LENGTH)
+    binding_id: str | None = Field(default=None, min_length=1, max_length=128)
+    definition_hash: str | None = Field(default=None, min_length=64, max_length=64)
 
 
 class RenderedAction(GameModel):
