@@ -6,11 +6,64 @@ checkers implementation; `testing/game_fixtures.py` declares an unrelated counte
 using the same runtime and renderer.
 
 The entry point is mounted by adventure selection, folder import and ZIP import.
-The canvas game button appears when a package is present and opens only on click.
+Each declaration must choose one of three presentations.
+
+- `view` opens the legacy structured game panel.
+- `panel` opens the authored [`game/panel.html`](game_html_panels.md).
+- `rendered_canvas` opens the game-owned SVG on the main canvas.
+
+The canvas game button opens and closes the selected presentation.
 The active orator can submit actions; when the active orator enables collaboration
 mode, viewers with contributor permission can also submit actions annotated with
 `"permission": "contributor"`. Other viewers see the committed view.
 A live story agent is not required.
+
+## Game-owned canvas scenes
+
+Use a top-level `rendered_canvas` to display an SVG when a viewer opens the
+game. The scene is fitted to the canvas viewport using the root SVG's
+`viewBox` and appears below stamps, drawings, and game controls. It also works
+on a theater with no generated artwork.
+
+Use the same CEL expressions and structured SVG nodes as the panel. The root
+must be a single, non-repeating `svg`. Use `repeat` on child nodes to lay out
+pieces or tiles, and use `image` to place an SVG from the `game/` directory.
+Set `x`, `y`, `width`, and `height` in the parent SVG's coordinate system.
+The root can use `src` to supply static artwork and its `viewBox`.
+
+```yaml
+rendered_canvas:
+  kind: svg
+  props: {viewBox: '"0 0 960 540"'}
+  children:
+    - kind: image
+      props:
+        src: '"rover.svg"'
+        x: 'state.column * 96'
+        y: 'state.row * 96'
+        width: '96'
+        height: '96'
+```
+
+Project saved state and `derived` bindings into the scene. CEL can calculate
+coordinates, choose assets and colors, generate labels, and filter lists for
+repeated elements. Keep your visual expressions deterministic for viewers to
+see the same composition. For games with `canvas_api`, scene expressions
+receive the usual render-time canvas observation with `canvas.event == null`.
+Accepted actions update the shared scene. Saved games reconstruct the visual
+from state during load.
+
+The SVG passes pointer input to the canvas. Use
+[canvas events or keyboard shortcuts](game_canvas_interface.md) to drive
+game actions. While a rendered canvas is open, permitted shortcuts are also
+available as buttons. The scene has no per-frame CEL evaluation, SVG scripts,
+or node-level actions. A template can repeat up to 256 times, the scene has a
+1,024 generated-node budget, and its output including expanded assets is
+limited to 128 KiB.
+
+Try [Beacon Relay](../games/canvas_scene_demo/game/game.yaml) in Game Lab.
+Turn off AI play, load `games/canvas_scene_demo/game/game.yaml`, and choose
+**Advance rover**, **Charge relay**, then **Advance rover**.
 
 ## Interaction model: turn-based transactional games
 

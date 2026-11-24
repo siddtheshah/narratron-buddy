@@ -54,6 +54,7 @@ ALLOWED_SVG_TAGS = {
     "stop", "clipPath", "mask", "symbol",
 }
 IGNORED_SVG_TAGS = {"title", "desc", "metadata"}
+CANVAS_SCENE_NODE_KINDS = (ALLOWED_SVG_TAGS - {"text"}) | {"image", "svg_text"}
 ALLOWED_SVG_ATTRIBUTES = {
     "id", "viewBox", "preserveAspectRatio", "x", "y", "width", "height",
     "cx", "cy", "r", "rx", "ry", "x1", "y1", "x2", "y2", "d", "points",
@@ -171,8 +172,8 @@ class PanelDefinition(GameModel):
         ])
 
 
-def empty_view() -> ViewNode:
-    return ViewNode(kind="column")
+def _omit_absent_view(view: ViewNode | None) -> bool:
+    return view is None
 
 
 class GameDefinition(GameModel):
@@ -189,19 +190,39 @@ class GameDefinition(GameModel):
     derived: list[Binding] = Field(default_factory=list, max_length=24)
     invariants: list[str] = Field(default_factory=list, max_length=16)
     transitions: dict[str, TransitionDefinition] = Field(min_length=1, max_length=32)
-    view: ViewNode = Field(default_factory=empty_view)
+    view: ViewNode | None = Field(default=None, exclude_if=_omit_absent_view)
     panel: PanelDefinition | None = None
+    rendered_canvas: ViewNode | None = Field(default=None, exclude_if=_omit_absent_view)
+
+    @field_validator("rendered_canvas")
+    @classmethod
+    def validate_rendered_canvas(cls, scene: ViewNode | None) -> ViewNode | None:
+        if scene is None:
+            return None
+        if scene.kind != "svg" or scene.repeat is not None:
+            raise ValueError("A canvas scene requires a single, non-repeating SVG root.")
+        pending = [scene]
+        while pending:
+            node = pending.pop()
+            if node.kind not in CANVAS_SCENE_NODE_KINDS or node.action is not None:
+                raise ValueError("Canvas scenes accept only SVG nodes without actions.")
+            pending.extend(node.children)
+        return scene
 
     @model_validator(mode="after")
-    def panel_view(self) -> Self:
-        if self.panel is not None:
-            view = self.panel.as_view()
-            if "view" in self.model_fields_set and self.view != view:
-                raise ValueError("Specify a panel or structured view, not both.")
-            self.view = view
-        elif "view" not in self.model_fields_set:
-            raise ValueError("A game requires a view or panel declaration.")
+    def one_presentation(self) -> Self:
+        if sum(surface is not None for surface in (self.view, self.panel, self.rendered_canvas)) != 1:
+            raise ValueError("Specify exactly one of view, panel, or rendered_canvas.")
         return self
+
+    @property
+    def presentation(self) -> ViewNode:
+        if self.panel is not None:
+            return self.panel.as_view()
+        if self.rendered_canvas is not None:
+            return self.rendered_canvas
+        assert self.view is not None
+        return self.view
 
 
 class GameStep(GameModel):
@@ -540,8 +561,15 @@ class GameProgram:
                 self.compile_scoped(shortcut.enabled, allowed_functions, canvas=True)
                 self.compile_scoped(shortcut.action.name, allowed_functions, canvas=True)
                 self.compile_scoped(shortcut.action.arguments, allowed_functions, canvas=True)
-        self.compile_view(definition.view, allowed_functions, 0)
+        self.presentation = definition.presentation
+        self.compile_view(self.presentation, allowed_functions, 0)
         self.uses_user: bool = any("user" in deps for deps in self.dependencies.values())
+
+    def validate_canvas_size(self, presentation: list[JsonValue]) -> None:
+        if self.definition.rendered_canvas is not None:
+            scene_bytes = len(json.dumps(presentation[0], ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
+            if scene_bytes > MAX_VALUE_BYTES:
+                raise ValueError("Rendered canvas scene exceeds its size budget.")
 
     def check_binding_name(self, name: str) -> None:
         if self.definition.canvas_api is not None and name in {"canvas", "next_state"}:
@@ -715,6 +743,13 @@ class Execution:
             raise ValueError("Model-facing game actions exceed their size budget.")
         return model_state, actions
 
+    def render_presentation(self, context: dict[str, JsonValue]) -> list[JsonValue]:
+        presentation: list[JsonValue] = [
+            node.model_dump(mode="json") for node in self.render(self.program.presentation, context)
+        ]
+        self.program.validate_canvas_size(presentation)
+        return presentation
+
     def render(self, node: ViewNode, context: dict[str, JsonValue]) -> list[RenderedNode]:
         contexts = [context]
         if node.repeat is not None:
@@ -797,7 +832,7 @@ def validate_game_package(
             execution.validate(definition.initial, context)
             canvas = CanvasSnapshot.empty() if definition.canvas_api is not None else None
             view_context = context if canvas is None else {**context, "canvas": canvas.model_dump(mode="json")}
-            view = [node.model_dump(mode="json") for node in execution.render(definition.view, view_context)]
+            view = execution.render_presentation(view_context)
             model_state, actions = execution.model_context(context, canvas)
             if canvas is not None:
                 from game_engine.canvas_evaluation import CanvasEvaluation, check_evaluation_limits, resolve_shortcuts

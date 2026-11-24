@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import type { WebSocketRoute } from '@playwright/test';
 import { expect, REPO_ROOT, test } from '../testing/canvas_fixtures';
 import {
   loadGameSnapshots,
@@ -9,6 +10,61 @@ import {
 import type { GamePayload } from '../game/game-renderer.js';
 
 const snapshots = loadGameSnapshots();
+
+test('the game button opens and closes the committed canvas for a viewer', async ({
+  canvas,
+  page,
+}) => {
+  let socket: WebSocketRoute | undefined;
+  const sceneAt = (revision: number): GamePayload => ({
+    definition_hash: 'beacon-relay',
+    revision,
+    rendered_canvas: {
+      kind: 'svg',
+      props: { viewBox: '0 0 100 100' },
+      children: [{ kind: 'circle', props: { cx: 30 + 25 * revision, cy: 50, r: 10 }, children: [], action: null }],
+      action: null,
+    },
+  });
+  let game: GamePayload | null = sceneAt(0);
+  await canvas.openCanvas({
+    isOrator: false,
+    apiRoutes: {
+      '/api/latest': async (route) => route.fulfill({ json: { game_state: game } }),
+    },
+    onWebSocket: (ws) => {
+      if (new URL(ws.url()).pathname !== '/ws/canvas-state') return;
+      socket = ws;
+      ws.send(JSON.stringify({ type: 'state_ready' }));
+    },
+  });
+
+  const scene = page.locator('#game-canvas-scene');
+  const piece = scene.locator('circle');
+  const toggle = page.getByRole('button', { name: 'Toggle game canvas' });
+  await expect(scene).toBeHidden();
+  await toggle.click();
+  await expect(piece).toBeVisible();
+  await expect(piece).toHaveAttribute('cx', '30');
+  await expect(page.locator('#game-state-layer')).toBeHidden();
+  expect(socket).toBeDefined();
+  const update = JSON.stringify({ type: 'state_changed', domains: ['latest'] });
+
+  game = sceneAt(1);
+  socket!.send(update);
+  await expect(piece).toHaveAttribute('cx', '55');
+  await expect(page.locator('#game-state-layer')).toBeHidden();
+
+  await toggle.click();
+  await expect(scene).toBeHidden();
+  await toggle.click();
+  await expect(piece).toHaveAttribute('cx', '55');
+
+  game = null;
+  socket!.send(update);
+  await expect(scene).toBeHidden();
+  await expect(piece).toHaveCount(0);
+});
 
 test('winning checkers refreshes the page and keeps crown when panel closes', async ({
   canvas,

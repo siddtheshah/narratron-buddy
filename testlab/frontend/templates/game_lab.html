@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Game Testing Lab</title>
-<link rel="stylesheet" href="/game-lab-assets/css/game-renderer.css?v=12">
+<link rel="stylesheet" href="/game-lab-assets/css/game-renderer.css?v=13">
 <style>
 :root {
   color-scheme: dark;
@@ -301,6 +301,24 @@ button:disabled {
    Renders the game panel with the exact canvas appearance, dimensions,
    shadows, font, and row alignment.
    ========================================================================== */
+#game-scene-preview {
+  margin-bottom: 1rem;
+  overflow: hidden;
+}
+
+#game-scene-preview > .game-svg {
+  aspect-ratio: 16 / 9;
+  height: auto;
+}
+
+#game-scene-preview .game-canvas-commands {
+  position: static;
+}
+
+#game-scene-preview .game-canvas-commands:not(:empty) {
+  margin-top: 0.5rem;
+}
+
 #game-preview {
   display: flex;
   justify-content: center;
@@ -557,6 +575,7 @@ pre {
 
     <button id="toggle" type="button" hidden>Show / hide game</button>
     <div id="placeholder" class="placeholder">The game board will appear here.</div>
+    <div id="game-scene-preview" class="game-canvas-scene" hidden></div>
     <div id="game-preview" hidden></div>
   </section>
 

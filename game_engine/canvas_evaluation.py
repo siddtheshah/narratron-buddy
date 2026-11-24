@@ -105,7 +105,7 @@ class CanvasEvaluator:
         view_context = {**context, "canvas": observation_context(snapshot)}
         execution.budget.nodes = 0
         svg_start = execution.svg_expanded_bytes
-        view = [node.model_dump(mode="json") for node in execution.render(self.program.definition.view, view_context)]
+        view = execution.render_presentation(view_context)
         model_state, actions = execution.model_context(
             context, CanvasSnapshot.model_validate(observation_context(snapshot)),
         )
@@ -139,7 +139,7 @@ class CanvasEvaluator:
                 from game_engine.game_runtime import GameAction
 
                 view_context = {**context, "canvas": observation_context(snapshot)}
-                view = [node.model_dump(mode="json") for node in execution.render(self.program.definition.view, view_context)]
+                view = [node.model_dump(mode="json") for node in execution.render(self.program.presentation, view_context)]
                 shortcut_allows = any(
                     binding.action.permission == "contributor"
                     and binding.action.name == step.name

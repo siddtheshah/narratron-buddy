@@ -1,0 +1,88 @@
+version: 2
+canvas_api: {version: 1, effects: []}
+initial: {position: 0, powered: false}
+state_schema:
+  type: object
+  properties:
+    position: {enum: [0, 1, 2]}
+    powered: {type: boolean}
+  required: [position, powered]
+  additionalProperties: false
+constants:
+  pad_x: [180, 480, 780]
+derived:
+  - {name: complete, expr: 'state.position == 2'}
+  - {name: canMove, expr: '!complete && (state.position == 0 || state.powered)'}
+  - {name: canCharge, expr: 'state.position == 1 && !state.powered'}
+  - name: status
+    expr: 'complete ? "Relay online" : state.powered ? "Gate unlocked" : state.position == 1 ? "Charge the relay" : "Advance to the relay"'
+invariants:
+  - 'state.position != 2 || state.powered'
+transitions:
+  advance:
+    parameters: {type: object, additionalProperties: false}
+    guard: canMove
+    triggering: false
+    result: '{"position": state.position + 1, "powered": state.powered}'
+  charge:
+    parameters: {type: object, additionalProperties: false}
+    guard: canCharge
+    triggering: false
+    result: '{"position": state.position, "powered": true}'
+  reset:
+    parameters: {type: object, additionalProperties: false}
+    triggering: false
+    result: initial
+keyboard:
+  bindings:
+    - id: advance
+      key: ArrowRight
+      label: Advance rover
+      enabled: canMove
+      action: {name: '"advance"'}
+    - id: charge
+      key: ' '
+      label: Charge relay
+      enabled: canCharge
+      action: {name: '"charge"'}
+    - id: reset
+      key: r
+      label: Reset
+      enabled: 'state.position != 0'
+      action: {name: '"reset"'}
+rendered_canvas:
+  kind: svg
+  props: {src: '"relay.svg"', label: '"Beacon Relay. " + status'}
+  children:
+    - kind: circle
+      repeat: constants.pad_x
+      binding: padX
+      props:
+        cx: padX
+        cy: '332'
+        r: '11'
+        fill: 'padX == constants.pad_x[state.position] ? "#81F6CF" : "#476179"'
+    - kind: rect
+      props:
+        x: '458'
+        y: '164'
+        width: '44'
+        height: '8'
+        rx: '4'
+        fill: 'state.powered ? "#81F6CF" : "#EB954F"'
+    - kind: image
+      props:
+        src: '"rover.svg"'
+        x: 'constants.pad_x[state.position] - 48'
+        y: '238'
+        width: '96'
+        height: '72'
+    - kind: svg_text
+      props:
+        text: status
+        x: '480'
+        y: '450'
+        text-anchor: '"middle"'
+        fill: '"#D3E9F1"'
+        font-family: '"monospace"'
+        font-size: '26'

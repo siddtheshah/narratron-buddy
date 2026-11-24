@@ -142,8 +142,24 @@ def test_panel_requires_file_and_excludes_structured_view(tmp_path: Path) -> Non
         validate_game_package(definition.model_dump_json().encode(), game_dir=tmp_path)
     data = counter_definition().model_dump(mode="json")
     data["panel"] = {"parameters": {}}
-    with pytest.raises(ValueError, match="not both"):
+    with pytest.raises(ValueError, match="Specify exactly one"):
         GameDefinition.model_validate(data)
+
+
+@pytest.mark.parametrize("other_presentations", [(), ("view",), ("panel",), ("view", "panel")])
+def test_rendered_canvas_is_an_exclusive_presentation(other_presentations: tuple[str, ...]) -> None:
+    data = counter_definition().model_dump(mode="json", exclude={"view", "panel"})
+    with pytest.raises(ValueError, match="Specify exactly one"):
+        GameDefinition.model_validate(data)
+
+    data["rendered_canvas"] = {"kind": "svg"}
+    choices = {"view": {"kind": "column"}, "panel": {"parameters": {}}}
+    data.update({name: choices[name] for name in other_presentations})
+    if other_presentations:
+        with pytest.raises(ValueError, match="Specify exactly one"):
+            GameDefinition.model_validate(data)
+    else:
+        assert GameDefinition.model_validate(data).presentation.kind == "svg"
 
 
 @pytest.mark.parametrize("content", [None, b'<script src="https://external.test/script.js"></script>'])

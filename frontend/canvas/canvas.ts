@@ -528,6 +528,7 @@ const gameRenderer =
         toggleButton: gameStateToggleBtn,
         actionUrl: () => `/api/game/action?theater_id=${encodeURIComponent(theaterId || '')}`,
         keyboardCanvas: document.getElementById('image-container'),
+        canvasSceneContainer: document.getElementById('game-canvas-scene'),
         canContribute: () => isCollabModeEnabled() && hasContributorsPermission(),
         canMove: () => isCurrentOrator() || hasContributorsPermission(),
         canEdit: () => isCurrentOrator(),

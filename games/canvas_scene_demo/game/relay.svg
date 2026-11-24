@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 540">
+  <rect width="960" height="540" fill="#0C1927"/>
+  <path d="M0 242 122 193 234 222 354 146 497 226 650 179 809 224 960 172V375H0Z" fill="#13283B"/>
+  <path d="M0 281 157 230 281 257 427 221 549 271 726 211 863 245 960 233V388H0Z" fill="#192F42"/>
+  <path d="M0 395H960M0 480H960" stroke="#254056" stroke-width="2"/>
+  <path d="M180 332H780" stroke="#2C4B61" stroke-width="12" stroke-linecap="round"/>
+  <path d="M180 332H780" stroke="#53718A" stroke-width="2" stroke-dasharray="6 14"/>
+  <circle cx="180" cy="332" r="22" fill="#152534" stroke="#64849D" stroke-width="2"/>
+  <circle cx="480" cy="332" r="22" fill="#152534" stroke="#64849D" stroke-width="2"/>
+  <circle cx="780" cy="332" r="22" fill="#152534" stroke="#64849D" stroke-width="2"/>
+  <path d="M425 280V177L456 153H504L535 177V280M445 280V192L463 183H497L515 192V280" fill="#213F55" fill-rule="evenodd" stroke="#4F6B80" stroke-width="3"/>
+  <path d="M733 284V220L755 198H805L827 220V284" fill="none" stroke="#55738B" stroke-width="3"/>
+  <path d="M758 218H802M767 228H793" stroke="#55738B" stroke-width="2" stroke-linecap="round"/>
+  <g fill="#92AFC4" font-family="monospace" font-size="13" letter-spacing="2" text-anchor="middle">
+    <text x="180" y="374">DEPOT</text>
+    <text x="480" y="374">RELAY</text>
+    <text x="780" y="374">UPLINK</text>
+  </g>
+  <text x="54" y="78" fill="#E0EEF4" font-family="monospace" font-size="40" font-weight="bold">Beacon Relay</text>
+  <path d="M54 102H258" stroke="#81F6CF" stroke-width="2"/>
+</svg>

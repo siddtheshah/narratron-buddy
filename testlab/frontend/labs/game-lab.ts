@@ -332,7 +332,9 @@ export function initGameLab(): GameLabController | null {
     canEdit,
     canContribute,
     refresh,
-    stylesheetUrl: '/game-lab-assets/css/game-renderer.css?v=12',
+    stylesheetUrl: '/game-lab-assets/css/game-renderer.css?v=13',
+    canvasSceneContainer: document.getElementById('game-scene-preview'),
+    keyboardCanvas: document.getElementById('game-scene-preview'),
     initiallyOpen: true,
     onPendingChange: (pending: boolean): void => {
       loadBtn.disabled = pending;

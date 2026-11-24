@@ -61,7 +61,7 @@ def _expression(program: GameProgram, node: Tree[Token] | Token) -> JsonValue:
 
 def browser_program(program: GameProgram) -> dict[str, JsonValue] | None:
     """Export player rules only; server execution remains authoritative."""
-    if not program.definition.local_preview or program.definition.canvas_api is not None or program.definition.panel is not None or program.uses_user:
+    if not program.definition.local_preview or program.definition.canvas_api is not None or program.definition.view is None or program.uses_user:
         return None
     if not browser_compatible([program.definition.initial, program.definition.constants]):
         return None
@@ -77,7 +77,7 @@ def browser_program(program: GameProgram) -> dict[str, JsonValue] | None:
             collect_view(child)
 
     definition = program.definition
-    collect_view(definition.view)
+    collect_view(program.presentation)
     sources.update(function.expr for function in definition.functions.values())
     sources.update(binding.expr for binding in definition.derived)
     sources.update(definition.invariants)
@@ -102,6 +102,6 @@ def browser_program(program: GameProgram) -> dict[str, JsonValue] | None:
         "derived": [binding.model_dump(mode="json") for binding in definition.derived],
         "invariants": definition.invariants,
         "transitions": transitions,
-        "view": definition.view.model_dump(mode="json"),
+        "view": program.presentation.model_dump(mode="json"),
         "assets": {name: node.model_dump(mode="json") for name, node in (program.svg_assets or {}).items()},
     }

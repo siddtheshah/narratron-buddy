@@ -247,7 +247,7 @@ class GameState:
         budget.nodes = 0
         context = execution.context(state)
         execution.validate(state, context)
-        view = [node.model_dump(mode="json") for node in execution.render(self.program.definition.view, context)]
+        view = execution.render_presentation(context)
         if len(json.dumps(view).encode("utf-8")) - execution.svg_expanded_bytes > MAX_VALUE_BYTES:
             raise ValueError("Rendered view exceeds its size budget.")
         model_state, actions = execution.model_context(context)
@@ -387,13 +387,17 @@ class GameState:
                         "revision": self.revision,
                         # A failed personalized render must not return another
                         # viewer's cached content.
-                        "view": [],
                         "error": str(exc),
                     }
+                    if self.program.definition.rendered_canvas is not None:
+                        payload_err["rendered_canvas"] = None
+                    else:
+                        payload_err["view"] = []
                     if self.program.panel_html is not None:
                         payload_err["panel_html"] = self.program.panel_html
                     return json.loads(json.dumps(payload_err))
-            payload: dict[str, JsonValue] = {"definition_hash": self.definition_hash, "revision": self.revision, "view": self._view, "error": self.error}
+            payload: dict[str, JsonValue] = {"definition_hash": self.definition_hash, "revision": self.revision, "error": self.error}
+            view = self._view
             if self.program.panel_html is not None:
                 payload["panel_html"] = self.program.panel_html
             if self.program.definition.canvas_api is not None and self._canvas_host is not None:
@@ -401,15 +405,19 @@ class GameState:
                     snapshot = self._canvas_host.canvas_observation()
                     if snapshot.revision != self._canvas_revision or (self.program.uses_user and username != self._view_username):
                         self._prepare(self.state, username=username)
-                    payload["view"] = self._view
+                    view = self._view
                     payload["canvas_revision"] = self._canvas_revision
                     if self.program.definition.keyboard is not None:
                         payload["shortcuts"] = [shortcut.model_dump(mode="json") for shortcut in self._shortcuts]
                         payload["shortcut_keys"] = [binding.key for binding in self.program.definition.keyboard.bindings]
                 except ValueError as exc:
                     if username != self._view_username:
-                        payload["view"] = []
+                        view = []
                     payload["error"] = str(exc)
+            if self.program.definition.rendered_canvas is not None:
+                payload["rendered_canvas"] = view[0] if view else None
+            else:
+                payload["view"] = view
             if self._client is not None and browser_compatible(self.state):
                 payload["client"] = self._client
                 payload["state"] = self.state
@@ -793,7 +801,7 @@ class GameState:
             view_execution.budget = budget
             budget.nodes = 0
             view = [node.model_dump(mode="json") for node in view_execution.render(
-                self.program.definition.view, view_execution.context(self.state),
+                self.program.presentation, view_execution.context(self.state),
             )]
             if not _view_nodes_allow_contributor(
                 view, GameAction(name=step.name, arguments=step.arguments, revision=self.revision),

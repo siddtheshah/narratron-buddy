@@ -38,7 +38,10 @@ test('canvas shortcuts submit the mapped game action and keep blocked keys out o
     definition_hash: 'a'.repeat(64),
     revision: 0,
     canvas_revision: 1,
-    view: [],
+    rendered_canvas: {
+      kind: 'svg', props: { viewBox: '0 0 100 100' },
+      children: [{ kind: 'circle', props: { cx: 50, cy: 50, r: 10 }, children: [] }],
+    },
     shortcut_keys: ['ArrowLeft', 'ArrowRight'],
     shortcuts: [{
       id: 'move-left', key: 'ArrowLeft', label: 'Left',
@@ -47,10 +50,19 @@ test('canvas shortcuts submit the mapped game action and keep blocked keys out o
   };
   await canvas.serveRoute('/action', async (route) => {
     submitted.push(route.request().postDataJSON());
-    await route.fulfill({ json: { ...game, revision: 1, canvas_revision: 2, shortcuts: [] } });
+    await route.fulfill({ json: {
+      ...game,
+      revision: 1,
+      canvas_revision: 2,
+      shortcuts: [],
+      rendered_canvas: {
+        ...game.rendered_canvas,
+        children: [{ kind: 'circle', props: { cx: 25, cy: 50, r: 10 }, children: [] }],
+      },
+    } });
   });
   await canvas.mount({
-    html: '<button id="toggle" hidden>Game</button><div id="surface">Scene</div><div id="panel"></div><input aria-label="Chat">',
+    html: '<button id="toggle" hidden>Game</button><div id="surface">Scene<div id="game-canvas-scene" class="game-canvas-scene" hidden></div></div><div id="panel"></div><input aria-label="Chat">',
     moduleScripts: [`
       import { createGameRenderer } from '${RENDERER_MODULE_URL}';
       window.addEventListener('keydown', (event) => {
@@ -60,6 +72,7 @@ test('canvas shortcuts submit the mapped game action and keep blocked keys out o
         container: document.getElementById('panel'),
         toggleButton: document.getElementById('toggle'),
         keyboardCanvas: document.getElementById('surface'),
+        canvasSceneContainer: document.getElementById('game-canvas-scene'),
         actionUrl: () => '/action',
         canEdit: () => true,
         refresh: () => {},
@@ -67,7 +80,15 @@ test('canvas shortcuts submit the mapped game action and keep blocked keys out o
     `],
   });
   const surface = page.locator('#surface');
+  const toggle = page.getByRole('button', { name: 'Toggle game canvas' });
+  const scenePiece = page.locator('#game-canvas-scene circle');
+  await expect(scenePiece).toHaveCount(0);
+  await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-controls', 'game-canvas-scene');
   await expect(surface).toHaveAttribute('tabindex', '0');
+  await expect(scenePiece).toBeVisible();
+  await expect(scenePiece).toHaveAttribute('cx', '50');
+  await expect(scenePiece).toHaveCSS('pointer-events', 'none');
   await page.getByRole('textbox', { name: 'Chat' }).press('ArrowLeft');
   expect(submitted).toHaveLength(0);
   await surface.click();
@@ -82,6 +103,11 @@ test('canvas shortcuts submit the mapped game action and keep blocked keys out o
     binding_id: 'move-left', definition_hash: game.definition_hash, canvas_revision: 1,
   }]);
   await expect(page.locator('#panel')).toBeHidden();
+  await expect(scenePiece).toHaveAttribute('cx', '25');
+  await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  await expect(scenePiece).toHaveCount(0);
+  await expect(surface).not.toHaveAttribute('tabindex', '0');
 });
 
 async function setupAgentGamePage(

@@ -19,6 +19,7 @@ from game_engine.game_runtime import (
 from game_engine.game_state import GameAction, GameState
 from game_engine.go_cel import GoWorker
 from testing.game_fixtures import counter_definition
+from testlab.labs.game_harness import PanelOnlyCanvas
 
 
 @pytest.fixture(params=["python", "go"])
@@ -73,6 +74,42 @@ def test_attempt_returns_next_state_and_commands_without_changing_inputs(worker:
     assert result.canvas_effects == [{"op": "put_stamp", "target": {"page_id": "page-7"}, "key": "piece", "asset_id": "stamp:key", "center": {"x": 2000, "y": 5000}, "width": 600, "rotation": 0, "draggable": True}]
     assert definition.initial == {"count": 0}
     assert snapshot.model_dump(mode="json") == before
+
+
+def test_demo_scene_follows_committed_state_and_restores_from_save(worker: GoWorker | None) -> None:
+    directory = Path(__file__).resolve().parents[1] / "games" / "canvas_scene_demo"
+    persist = Mock()
+    backend = "go" if worker is not None else "python"
+    game = GameState(directory, persist, Mock(), worker=worker, backend=backend, canvas_host=PanelOnlyCanvas())
+    initial = game.payload()
+    assert initial is not None
+    assert "view" not in initial and "panel_html" not in initial
+    assert initial["rendered_canvas"]["props"]["viewBox"] == "0 0 960 540"
+
+    game.act(GameAction(
+        name="advance", arguments={}, revision=0, canvas_revision=initial["canvas_revision"],
+        definition_hash=game.definition_hash, binding_id="advance",
+    ))
+    moved = game.payload()
+    assert moved is not None
+    assert moved["rendered_canvas"]["children"][-2]["props"]["src"] == "rover.svg"
+    assert moved["rendered_canvas"]["children"][-2]["props"]["x"] == 432
+    with pytest.raises(ValueError, match="not permitted"):
+        game.act(GameAction(name="advance", arguments={}, revision=1))
+
+    persist.side_effect = OSError("save failed")
+    with pytest.raises(ValueError, match="undone"):
+        game.act(GameAction(name="charge", arguments={}, revision=1))
+    rolled_back = game.payload()
+    assert rolled_back is not None
+    assert rolled_back["revision"] == 1
+    assert rolled_back["rendered_canvas"] == moved["rendered_canvas"]
+
+    restored = GameState(directory, Mock(), Mock(), worker=worker, backend=backend, canvas_host=PanelOnlyCanvas())
+    restored.load(game.serialize()["game_state"])
+    reloaded = restored.payload()
+    assert reloaded is not None
+    assert reloaded["rendered_canvas"] == moved["rendered_canvas"]
 
 
 def test_refresh_uses_canvas_revision_without_changing_game_state(worker: GoWorker | None) -> None:

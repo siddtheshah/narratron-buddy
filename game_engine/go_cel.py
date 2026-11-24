@@ -186,9 +186,11 @@ class GoWorker:
             self.lock.release()
 
     def load(self, program: GameProgram, *, package: str = "") -> Prepared:
+        definition = program.definition.model_dump(mode="json")
+        definition["view"] = program.presentation.model_dump(mode="json")
         message: dict[str, JsonValue] = {
             "op": "load",
-            "definition": program.definition.model_dump(mode="json"),
+            "definition": definition,
             "sources": program.dependencies,
             "random": sorted(program.random_expressions),
             "assets": {name: node.model_dump(mode="json") for name, node in (program.svg_assets or {}).items()},
@@ -279,6 +281,7 @@ def validate_prepared(program: GameProgram, prepared: Prepared) -> list[JsonValu
             raise ValueError("Game state exceeds its size budget.")
         program.state_validator.validate(state)
     view: list[JsonValue] = [node.model_dump(mode="json") for node in prepared.view]
+    program.validate_canvas_size(view)
     view_bytes = len(json.dumps(view, allow_nan=False, separators=(",", ":")).encode("utf-8"))
     if view_bytes - prepared.svg_expanded_bytes > MAX_VALUE_BYTES:
         raise ValueError("Rendered view exceeds its size budget.")

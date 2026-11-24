@@ -24,6 +24,9 @@ games/*
 !games/README.md
 !games/example_game/
 !games/example_game/**
+!games/canvas_scene_demo/
+!games/canvas_scene_demo/**
+games/canvas_scene_demo/**/__pycache__/
 games/example_game/**/__pycache__/
 avatars/*
 !avatars/README.md

@@ -1,0 +1,11 @@
+{
+  "id": "canvas-scene-demo",
+  "title": "Beacon Relay",
+  "description": "Guide a rover through a three-pad relay and watch its game state render on the canvas.",
+  "author": "Narratron Creator",
+  "genre": "Puzzle",
+  "tags": ["Example", "Canvas", "SVG"],
+  "cover_image": "game/relay.svg",
+  "difficulty": "Easy",
+  "recommended_players": "1"
+}

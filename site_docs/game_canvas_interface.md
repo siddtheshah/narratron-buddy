@@ -12,6 +12,10 @@ location, and progress. A visible stamp is an observation, not proof of ownershi
 or an accepted move. The game panel and the main canvas submit actions through
 the same permission checks, guards, invariants, and commit boundary.
 
+Use [a game-owned canvas scene](game_packages.md#game-owned-canvas-scenes) to
+render game state as SVG. The game button opens a viewport layer derived from
+the current game position. The commands below operate on shared canvas pages.
+
 The interface supports both reading and writing the canvas. CEL reads an
 immutable observation and returns write commands from a transition. Those
 commands can push a scene or animation, add or update real canvas stamps, and

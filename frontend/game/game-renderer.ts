@@ -21,6 +21,7 @@ export interface GamePayload {
   readonly revision: number;
   readonly state?: GameRecord;
   readonly view?: readonly RenderedGameNode[];
+  readonly rendered_canvas?: RenderedGameNode | null;
   readonly panel_html?: string;
   readonly client?: GameClientProgram | null;
   readonly error?: string;
@@ -52,6 +53,7 @@ export interface GameRendererOptions {
   readonly onPendingChange?: (pending: boolean) => void;
   readonly onMove?: (placement: { left_pct: number; top_pct: number }) => void | Promise<void>;
   readonly keyboardCanvas?: HTMLElement | null;
+  readonly canvasSceneContainer?: HTMLElement | null;
 }
 
 export interface GameRenderer {
@@ -260,13 +262,14 @@ export function createGameRenderer({
   canContribute = () => false,
   refresh,
   canMove = () => canEdit() || canContribute(),
-  stylesheetUrl = '/static/css/game-renderer.css?v=12',
+  stylesheetUrl = '/static/css/game-renderer.css?v=13',
   initiallyOpen = false,
   embedded = false,
   beforeOpen = async () => {},
   onPendingChange = () => {},
   onMove = () => {},
   keyboardCanvas = null,
+  canvasSceneContainer = null,
 }: GameRendererOptions): GameRenderer {
   const stylesheet = document.createElement('link');
   stylesheet.rel = 'stylesheet';
@@ -277,6 +280,7 @@ export function createGameRenderer({
   let pending = false;
   let error = '';
   let signature = '';
+  let canvasSceneSignature = '';
   let open = initiallyOpen;
   let opening = false;
   let openRequest = 0;
@@ -302,11 +306,19 @@ export function createGameRenderer({
   let panelActions = new Map<string, RenderedGameAction>();
   let keyboardReleased = false;
   let canvasPointerActive = false;
+  const canvasCommands = canvasSceneContainer ? document.createElement('div') : null;
+  if (canvasCommands) canvasCommands.className = 'game-canvas-commands';
+  const keyLabels: Record<string, string> = {
+    ArrowUp: '↑', ArrowDown: '↓', ArrowLeft: '←', ArrowRight: '→', ' ': 'Space',
+  };
+  const isCanvasGame = (): boolean => game?.rendered_canvas !== undefined;
+  const keyboardEnabled = (): boolean =>
+    Boolean(game?.shortcuts) && (!isCanvasGame() || open);
   const interactive = 'a, button, input, select, textarea, iframe, [contenteditable], [tabindex], [role="button"], [role="slider"]';
   if (keyboardCanvas) {
     keyboardCanvas.addEventListener('pointerdown', (event) => {
       canvasPointerActive = true;
-      if (!game?.shortcuts || event.button !== 0 || !(event.target instanceof Element)) return;
+      if (!keyboardEnabled() || event.button !== 0 || !(event.target instanceof Element)) return;
       const control = event.target.closest(interactive);
       if (!container.contains(event.target) && (!control || control === keyboardCanvas)) {
         keyboardCanvas.focus({ preventScroll: true });
@@ -322,7 +334,7 @@ export function createGameRenderer({
       window.addEventListener(eventName, () => { canvasPointerActive = false; }, true);
     }
     window.addEventListener('keydown', (event) => {
-      if (!game?.shortcuts || !(event.target instanceof Element)) return;
+      if (!game?.shortcuts || !keyboardEnabled() || !(event.target instanceof Element)) return;
       const target = event.target;
       const panelFocused = open && (target === container ||
         (container.contains(target) && target.closest(interactive) === container));
@@ -426,7 +438,7 @@ export function createGameRenderer({
     opening = false;
     open = false;
     draw();
-    if (game?.shortcuts) keyboardCanvas?.focus({ preventScroll: true });
+    if (game?.shortcuts && !isCanvasGame()) keyboardCanvas?.focus({ preventScroll: true });
   }
 
   toggleButton.addEventListener('click', async (event: MouseEvent) => {
@@ -455,7 +467,9 @@ export function createGameRenderer({
       if (request === openRequest) {
         opening = false;
         draw();
-        if (open && game?.shortcuts) container.focus({ preventScroll: true });
+        if (open && game?.shortcuts) {
+          (isCanvasGame() ? keyboardCanvas : container)?.focus({ preventScroll: true });
+        }
       }
     }
   });
@@ -463,7 +477,7 @@ export function createGameRenderer({
   toggleButton.addEventListener('pointerdown', (event: PointerEvent) => event.stopPropagation());
 
   async function send(action: RenderedGameAction, committing = false, bindingId?: string): Promise<void> {
-    if (pending || !canAct(action) || !game?.view) return;
+    if (!game || pending || !canAct(action) || (!game.view && !(open && game.rendered_canvas))) return;
     if (action.confirmation && !window.confirm(action.confirmation)) return;
     const transition = game.client?.transitions[action.name];
     if (!committing && local && transition && (!transition.triggering || transition.preview)) {
@@ -752,32 +766,70 @@ export function createGameRenderer({
     panelActions = new Map<string, RenderedGameAction>();
     if (embedded) open = Boolean(game);
     if (!game) open = false;
+    const canvasGame = isCanvasGame();
     toggleButton.hidden = !game;
     toggleButton.setAttribute('aria-expanded', String(open));
+    const controlledSurface = canvasGame ? canvasSceneContainer : container;
+    if (controlledSurface?.id) toggleButton.setAttribute('aria-controls', controlledSurface.id);
     const hasError = Boolean(error || game?.error);
     toggleButton.dataset.gameError = String(hasError);
     toggleButton.dataset.gameUpdated = String(unseenUpdate && !open);
-    const label = hasError ? 'Toggle game — game error' : 'Toggle game';
+    const label = `Toggle game${canvasGame ? ' canvas' : ''}${hasError ? ' — game error' : ''}`;
     toggleButton.setAttribute('aria-label', unseenUpdate ? `${label} — new update` : label);
     toggleButton.title = hasError
       ? 'Game error — click to view details'
       : unseenUpdate
         ? 'Game updated — click to view'
         : open
-          ? 'Close game'
-          : 'Open game';
-    container.hidden = !game || !open;
+          ? `Close game${canvasGame ? ' canvas' : ''}`
+          : `Open game${canvasGame ? ' canvas' : ''}`;
+    container.hidden = !game || !open || canvasGame;
+    const shortcuts = game?.shortcuts?.filter((shortcut) => canAct(shortcut.action));
     if (keyboardCanvas) {
-      if (game?.shortcuts) {
+      if (keyboardEnabled()) {
         keyboardCanvas.tabIndex = 0;
-        container.tabIndex = -1;
+        if (!canvasGame) container.tabIndex = -1;
       } else {
         keyboardCanvas.removeAttribute('tabindex');
+      }
+      if (!keyboardEnabled() || canvasGame) {
         container.removeAttribute('tabindex');
       }
     }
+    if (canvasSceneContainer && canvasCommands) {
+      const scene = open ? game?.rendered_canvas : null;
+      const sceneSignature = scene ? JSON.stringify(scene) : '';
+      if (sceneSignature !== canvasSceneSignature) {
+        canvasSceneSignature = sceneSignature;
+        canvasSceneContainer.replaceChildren(...(scene ? [nodeView(scene)] : []));
+      }
+      canvasSceneContainer.hidden = !open || !canvasGame;
+      if (open && canvasGame) {
+        const controls = (shortcuts ?? []).map((shortcut) => {
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.textContent = shortcut.label;
+          button.title = keyLabels[shortcut.key] || shortcut.key;
+          button.disabled = pending;
+          button.addEventListener('click', () => {
+            keyboardCanvas?.focus({ preventScroll: true });
+            void send(shortcut.action, false, shortcut.id);
+          });
+          return button;
+        });
+        canvasCommands.replaceChildren(...controls);
+        if (hasError) {
+          const alert = message(error || game?.error || '', 'game-error');
+          alert.setAttribute('role', 'alert');
+          canvasCommands.append(alert);
+        }
+        canvasSceneContainer.append(canvasCommands);
+      } else {
+        canvasCommands.remove();
+      }
+    }
     container.replaceChildren();
-    if (!game) return;
+    if (!game || canvasGame) return;
 
     const panel = document.createElement('section');
     panel.className = 'game-panel';
@@ -898,12 +950,8 @@ export function createGameRenderer({
     }
 
     const feedback = panel.querySelector('[data-game-layout="sidebar"] > .game-column') || panel;
-    const shortcuts = game.shortcuts?.filter((shortcut) => canAct(shortcut.action));
     if (keyboardCanvas && shortcuts?.length) {
-      const keys: Record<string, string> = {
-        ArrowUp: '↑', ArrowDown: '↓', ArrowLeft: '←', ArrowRight: '→', ' ': 'Space',
-      };
-      feedback.append(message(shortcuts.map(({ key, label }) => `${keys[key] || key} ${label}`).join(' · '), 'game-message'));
+      feedback.append(message(shortcuts.map(({ key, label }) => `${keyLabels[key] || key} ${label}`).join(' · '), 'game-message'));
     }
     if (draft.length) {
       const controls = document.createElement('div');
