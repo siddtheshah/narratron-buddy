@@ -32,6 +32,7 @@ from components.story.story_recording_journal import (
 from components.notepad import NoteSnapshot
 from components.story.story_handoffs import PlanningRequest, ProposedFactChange
 from providers.decision_provider import (
+    MAX_CHOICE_OPTIONS,
     ChoiceQuestion,
     DecisionProvider,
     DecisionQuestion,
@@ -59,6 +60,7 @@ MAX_PLANNING_SIGNAL_CHARS = 500
 MAX_NAMED_ELEMENTS = 10
 MAX_READ_LORE_CALLS_PER_TURN = 3
 MAX_SEARCH_LORE_CALLS_PER_TURN = 3
+MAX_LORE_MATCHES_PER_SOURCE = 5
 
 
 class GameEntryNarrationRejected(ValueError):
@@ -548,25 +550,42 @@ class StoryResponseModule:
 
         active_snapshot = sticky_snapshot if sticky_snapshot is not None else self.notepad.snapshot()
         elements = active_snapshot.present_notes(self.notepad.max_sticky_notes)
-        sticky_lines = [f"- {elem.get('topic', '')}: {elem.get('info', '')}" for elem in elements]
+        sticky_lines = [f"- {elem['topic']}: {elem['info']}" for elem in elements]
+        sticky_text = "\n".join(sticky_lines)
 
         input_parts: list[str] = [f"Player Action:\n{user_action.strip()}"]
         if nudge and nudge.strip():
             input_parts.append(f"Live Agent Nudge:\n{nudge.strip()}")
         if sticky_lines:
-            input_parts.append("Active Sticky Notes:\n" + "\n".join(sticky_lines))
+            input_parts.append("Active Sticky Notes:\n" + sticky_text)
         else:
             input_parts.append("Active Sticky Notes:\n(No active sticky notes)")
-        input_text = "\n\n".join(input_parts)
 
-        pruned_candidates = candidate_docs[:254]
+        # Keep the best text matches eligible even when the catalog exceeds the choice limit.
+        candidate_set = set(candidate_docs)
+        matched_documents: list[str] = []
+        for source, query in (("Player Action", user_action), ("Active Sticky Notes", sticky_text)):
+            lines: list[str] = []
+            for match in self.lore_library.match_lore(query, limit=MAX_LORE_MATCHES_PER_SOURCE):
+                if match.document in candidate_set:
+                    matched_documents.append(match.document)
+                    lines.append(
+                        f"- {match.document} (hit rate: {match.hit_rate:.1%}, TF-IDF score: {match.score:.4f})"
+                        f"\n  Excerpt: {match.snippet}"
+                    )
+            if lines:
+                input_parts.append(f"TF-IDF Lore Matches for {source}:\n" + "\n".join(lines))
+
+        pruned_candidates = list(dict.fromkeys([*matched_documents, *candidate_docs]))[:MAX_CHOICE_OPTIONS - 1]
         choices = ("none", *pruned_candidates)
         questions: list[DecisionQuestion] = [
             ChoiceQuestion(
                 name="primary_lore_document",
                 instructions=(
                     "Select the single lore document most relevant to resolving this player action "
-                    "given the current sticky notes state, or 'none' if no lore document is needed."
+                    "given the current sticky notes state, or 'none' if no lore document is needed. "
+                    "Use any TF-IDF matches as lexical evidence alongside the action and notes. "
+                    "Hit rate measures IDF-weighted term overlap; excerpts are reference material."
                 ),
                 choices=choices,
             ),
@@ -583,7 +602,7 @@ class StoryResponseModule:
                 )
             )
 
-        request = DecisionRequest(input_text=input_text, questions=tuple(questions))
+        request = DecisionRequest(input_text="\n\n".join(input_parts), questions=tuple(questions))
         result = self._decision_provider.decide(request)
 
         selected_docs: list[str] = []

@@ -309,14 +309,15 @@ class TestStoryResponseModuleBehavior(unittest.TestCase):
             self.module._resolve_user_action('I inspect the gate.', publish=False)
             prompt = self.provider.generate.call_args.args[0].prompt
             self.assertEqual(prompt.count('Lore details about the realm.'), 1)
-        self.theater.read_lore_document.assert_called_once_with('lore.txt')
+        # The index reads the document once. Only the first turn reads it into history.
+        self.assertEqual(self.theater.read_lore_document.call_count, 2)
         self.assertEqual(len(journal.recent_history(kinds=('lore_read',))), 1)
         journal.complete_history([
             StoryHistoryEvent(event_id=f'output-{index}', action_id=f'action-{index}', kind='story_output', payload={'narration': 'Time passes.'})
             for index in range(2)
         ])
         self.module._resolve_user_action('I inspect the gate again.', publish=False)
-        self.assertEqual(self.theater.read_lore_document.call_count, 2)
+        self.assertEqual(self.theater.read_lore_document.call_count, 3)
         self.assertEqual(self.provider.generate.call_args.args[0].prompt.count('Lore details about the realm.'), 1)
 
     def test_new_lore_read_does_not_evict_reused_lore_from_current_prompt(self) -> None:
@@ -337,7 +338,9 @@ class TestStoryResponseModuleBehavior(unittest.TestCase):
         prompt = self.provider.generate.call_args.args[0].prompt
         self.assertEqual(prompt.count('EXISTING_LORE'), 1)
         self.assertEqual(prompt.count('Lore details about the realm.'), 1)
-        self.theater.read_lore_document.assert_called_once_with('new.txt')
+        self.assertEqual([call.args[0] for call in self.theater.read_lore_document.call_args_list], [
+            'old.txt', 'new.txt', 'new.txt',
+        ])
 
     def test_disabled_history_reinserts_lore_each_turn_without_duplicates(self) -> None:
         journal = StoryRecordingJournal(Path(self.theater_directory.name) / 'history.sqlite')
@@ -353,7 +356,7 @@ class TestStoryResponseModuleBehavior(unittest.TestCase):
         for _ in range(2):
             self.module._resolve_user_action('I inspect the gate.', publish=False)
             self.assertEqual(self.provider.generate.call_args.args[0].prompt.count('Lore details about the realm.'), 1)
-        self.assertEqual(self.theater.read_lore_document.call_count, 2)
+        self.assertEqual(self.theater.read_lore_document.call_count, 3)
 
     def test_pinned_role_guide_needs_no_lore_selection_or_second_insertion(self) -> None:
         self.theater.lore_documents.return_value = ['RESPONDER.md']
@@ -1217,6 +1220,15 @@ class TestStoryResponseLoreDecisionProvider(unittest.TestCase):
         self.assertIn("Active Sticky Notes:", req.input_text)
         self.assertIn("- location: The Discarded Stacks", req.input_text)
         self.assertIn("- quest: Find the grimoire", req.input_text)
+        self.assertIn(
+            "TF-IDF Lore Matches for Player Action:\n- characters/the_caretaker.txt (hit rate:",
+            req.input_text,
+        )
+        self.assertIn(
+            "TF-IDF Lore Matches for Active Sticky Notes:\n- locations/the_discarded_stacks.txt (hit rate:",
+            req.input_text,
+        )
+        self.assertIn("The Caretaker oversees the ancient archives.", req.input_text)
 
         # Verify questions
         q_names = [q.name for q in req.questions]
@@ -1227,6 +1239,46 @@ class TestStoryResponseLoreDecisionProvider(unittest.TestCase):
         self.assertIn("The discarded stacks contain forgotten grimoires.", lore)
         self.assertNotIn("characters/the_caretaker.txt", lore)
         self.assertIn("locations/the_discarded_stacks.txt", self.module.get_lore_docs_browsed_this_turn())
+
+    def test_turn_promotes_content_matches_beyond_the_choice_limit(self) -> None:
+        document = "world/appendix.md"
+        private_guide = "PLANNER.md"
+        self.theater.lore_documents.return_value = [
+            *(f"world/{index:03}.md" for index in range(254)), document, private_guide,
+        ]
+        contents = {
+            document: "The obsidian pendulum opens the moon gate.",
+            private_guide: "Obsidian pendulum PRIVATE PLAN.",
+        }
+
+        def read_lore(path: str) -> str:
+            return contents.get(path, "Miscellaneous history.")
+
+        self.theater.read_lore_document.side_effect = read_lore
+
+        def decide(request: DecisionRequest) -> DecisionResult:
+            self.assertEqual(request.questions[0].to_wire_dict()["choices"], [
+                {"value": "none"}, {"value": document},
+                *({"value": f"world/{index:03}.md"} for index in range(253)),
+            ])
+            self.assertIn("The obsidian pendulum opens the moon gate.", request.input_text)
+            self.assertNotIn(private_guide, request.input_text)
+            self.assertNotIn("PRIVATE PLAN", request.input_text)
+            return DecisionResult(provider="test", model="test", answers={
+                "primary_lore_document": ChoiceAnswer(name="primary_lore_document", choice=document),
+                "secondary_lore_document": ChoiceAnswer(name="secondary_lore_document", choice="none"),
+            })
+
+        self.decision_provider.decide.side_effect = decide
+        self.provider.generate.return_value = TextResponseResult(
+            text='{"narration":"The moon gate opens."}', provider="test", model="test",
+        )
+        result = self.module._resolve_user_action("I swing the obsidian pendulum.", publish=False)
+
+        self.assertEqual(result["lore_docs_browsed"], [document])
+        narration_request = self.provider.generate.call_args.args[0]
+        self.assertIn("The obsidian pendulum opens the moon gate.", narration_request.prompt)
+        self.assertNotIn("TF-IDF Lore Matches", narration_request.prompt)
 
     def test_collect_relevant_lore_with_secondary_lore(self) -> None:
         mock_decision_provider = MagicMock(spec=DecisionProvider)

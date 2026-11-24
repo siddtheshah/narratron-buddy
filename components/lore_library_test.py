@@ -112,6 +112,23 @@ class TestLoreLibrary(unittest.TestCase):
             "Error: Search query must contain alphanumeric keywords.",
         )
 
+    def test_prose_matches_measure_weighted_coverage_without_repeated_words(self) -> None:
+        self.documents[:] = ["cover.md", "strong.md", "weak.md"]
+        self.contents.update({
+            "cover.md": "The council convenes.",
+            "strong.md": "The council hid the starblade.",
+            "weak.md": "The council called a meeting.",
+        })
+        matches = self.library.match_lore("The council and the starblade, the starblade!", limit=2)
+
+        self.assertEqual([match.document for match in matches], ["strong.md", "cover.md"])
+        self.assertEqual(matches[0].hit_rate, 1.0)
+        self.assertLess(matches[1].hit_rate, 0.5)
+        self.assertIn("hid the starblade", matches[0].snippet)
+        self.assertEqual(self.library.match_lore("And the", limit=2), [])
+        self.assertEqual(self.library.match_lore("Unknown", limit=2), [])
+        self.assertEqual(self.theater.read_lore_document.call_count, 3)
+
     def test_search_caches_index_and_query_results(self) -> None:
         first = self.library.search_lore("starblade")
         reads_after_first_search = self.theater.read_lore_document.call_count

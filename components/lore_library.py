@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from collections import Counter
+from dataclasses import dataclass
 import logging
 import math
 import re
 from threading import Lock
-from typing import Any, Dict, List, Literal, Optional, Tuple
+from typing import List, Literal
 from pathlib import PurePosixPath
 
 from components.theater_manager import Theater
@@ -24,6 +26,38 @@ ROLE_DOCUMENTS: dict[StoryRole, str] = {
 }
 ROLE_FILENAMES = {name.casefold() for name in ROLE_DOCUMENTS.values()}
 
+# Turn queries are prose, unlike the short keyword queries sent to search_lore.
+PROSE_STOP_WORDS = frozenset(
+    "a an and are as at be been but by can could did do does for from had has have "
+    "he her him his how i if in into is it its me my of on or our she so than that "
+    "the their them then there these they this those to up us was we were what "
+    "when where which who will with would you your".split()
+)
+
+
+@dataclass(frozen=True)
+class _IndexedLoreDocument:
+    content: str
+    counts: Counter[str]
+    length: int
+
+
+@dataclass(frozen=True)
+class _LoreCorpus:
+    documents: dict[str, _IndexedLoreDocument]
+    document_frequencies: Counter[str]
+
+    def inverse_document_frequency(self, term: str) -> float:
+        return math.log((len(self.documents) + 1) / (self.document_frequencies[term] + 1)) + 1.0
+
+
+@dataclass(frozen=True)
+class LoreMatch:
+    document: str
+    score: float
+    hit_rate: float
+    snippet: str
+
 
 class LoreLibrary:
     """Encapsulate lore reading, indexing, caching, and searching."""
@@ -32,11 +66,10 @@ class LoreLibrary:
         if theater is None:
             raise ValueError("theater is required.")
         self.theater: Theater = theater
-        self._theater_id = getattr(theater, "theater_id", None) or ""
 
-        self._lore_index_cache: Optional[Dict[str, Dict[str, Any]]] = None
+        self._lore_index_cache: _LoreCorpus | None = None
         self._lore_cache_lock: Lock = Lock()
-        self._search_query_cache: Dict[str, str] = {}
+        self._search_query_cache: dict[str, str] = {}
 
     def _visible_documents(self, role: StoryRole | None = None) -> list[str]:
         """Keep role instructions out of other consumers' lists and search indexes."""
@@ -49,7 +82,7 @@ class LoreLibrary:
 
     @property
     def theater_id(self) -> str:
-        return self._theater_id or (getattr(self.theater, "theater_id", "") if self.theater else "")
+        return self.theater.theater_id
 
     @staticmethod
     def extract_snippet(content: str, terms: List[str], max_len: int = 150) -> str:
@@ -73,34 +106,61 @@ class LoreLibrary:
         suffix = "..." if end < len(content) else ""
         return f'"{prefix}{snippet}{suffix}"'
 
-    def get_lore_corpus_index(self) -> Dict[str, Dict[str, Any]]:
+    def _get_lore_corpus(self) -> _LoreCorpus:
         """Return cached pre-tokenized lore corpus index for the active theater."""
         with self._lore_cache_lock:
             if self._lore_index_cache is not None:
                 return self._lore_index_cache
 
-            if not self.theater_id:
-                return {}
-
-            documents = self._visible_documents()
-            corpus_index: Dict[str, Dict[str, Any]] = {}
-            for doc_path in documents:
+            documents: dict[str, _IndexedLoreDocument] = {}
+            document_frequencies: Counter[str] = Counter()
+            for doc_path in self._visible_documents():
                 try:
                     content = self.theater.read_lore_document(doc_path)
                 except Exception:
                     continue
                 tokens = re.findall(r"\w+", content.lower())
-                counts: Dict[str, int] = {}
-                for t in tokens:
-                    counts[t] = counts.get(t, 0) + 1
-                corpus_index[doc_path] = {
-                    "content": content,
-                    "tokens": tokens,
-                    "counts": counts,
-                    "length": len(tokens),
-                }
-            self._lore_index_cache = corpus_index
+                counts = Counter(tokens)
+                documents[doc_path] = _IndexedLoreDocument(content, counts, len(tokens))
+                document_frequencies.update(counts.keys())
+            self._lore_index_cache = _LoreCorpus(documents, document_frequencies)
             return self._lore_index_cache
+
+    @staticmethod
+    def _rank_documents(
+        corpus: _LoreCorpus, query_terms: list[str], idf: dict[str, float],
+    ) -> list[tuple[str, float]]:
+        scores: list[tuple[str, float]] = []
+        for path, document in corpus.documents.items():
+            if document.length == 0:
+                continue
+            score = sum(document.counts[term] / document.length * idf[term] for term in query_terms)
+            if score > 0:
+                scores.append((path, score))
+        return sorted(scores, key=lambda item: item[1], reverse=True)
+
+    def match_lore(self, text: str, *, limit: int) -> list[LoreMatch]:
+        """Rank shared lore for prose and report IDF-weighted query term coverage."""
+        terms = list(dict.fromkeys(
+            term for term in re.findall(r"\w+", text.lower()) if term not in PROSE_STOP_WORDS
+        ))
+        if not terms or not self.theater_id:
+            return []
+
+        corpus = self._get_lore_corpus()
+        idf = {term: corpus.inverse_document_frequency(term) for term in terms}
+        total_query_weight = sum(idf.values())
+        ranked = self._rank_documents(corpus, terms, idf)
+        matches: list[LoreMatch] = []
+        for path, score in ranked[:limit]:
+            document = corpus.documents[path]
+            matched_terms = [term for term in terms if document.counts[term]]
+            hit_rate = sum(idf[term] for term in matched_terms) / total_query_weight
+            strongest_term = max(matched_terms, key=idf.__getitem__)
+            matches.append(LoreMatch(
+                path, score, hit_rate, self.extract_snippet(document.content, [strongest_term]),
+            ))
+        return matches
 
     def clear_lore_cache(self) -> None:
         """Clear cached lore search index and cached query results."""
@@ -213,42 +273,20 @@ class LoreLibrary:
             )
             return cached_result
 
-        corpus_index = self.get_lore_corpus_index()
-        if not corpus_index:
+        corpus = self._get_lore_corpus()
+        if not corpus.documents:
             return "No lore documents are available for this theater."
 
-        total_docs = len(corpus_index)
         unique_query_terms = list(dict.fromkeys(query_terms))
-        df: Dict[str, int] = {}
-        for t in unique_query_terms:
-            df[t] = sum(1 for doc in corpus_index.values() if doc["counts"].get(t, 0) > 0)
-
-        idf: Dict[str, float] = {}
-        for t in unique_query_terms:
-            idf[t] = math.log((total_docs + 1) / (df[t] + 1)) + 1.0
-
-        scores: List[Tuple[str, float, str]] = []
-        for doc_path, doc_info in corpus_index.items():
-            length = doc_info["length"]
-            if length == 0:
-                continue
-            counts = doc_info["counts"]
-            score = 0.0
-            for t in query_terms:
-                tf = counts.get(t, 0) / length
-                score += tf * idf[t]
-
-            if score > 0:
-                snippet = self.extract_snippet(doc_info["content"], unique_query_terms)
-                scores.append((doc_path, score, snippet))
-
-        scores.sort(key=lambda item: item[1], reverse=True)
+        idf = {term: corpus.inverse_document_frequency(term) for term in unique_query_terms}
+        scores = self._rank_documents(corpus, query_terms, idf)
 
         if not scores:
             res_str = f"No matching lore documents found for query: '{clean_query}'"
         else:
             results_lines = [f"Lore search results for query '{clean_query}':"]
-            for doc_path, score, snippet in scores[:10]:
+            for doc_path, score in scores[:10]:
+                snippet = self.extract_snippet(corpus.documents[doc_path].content, unique_query_terms)
                 results_lines.append(f"- {doc_path} (score: {score:.4f})")
                 if snippet:
                     results_lines.append(f"  Snippet: {snippet}")
