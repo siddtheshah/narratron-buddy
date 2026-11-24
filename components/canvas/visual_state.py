@@ -10,11 +10,15 @@ from pathlib import Path
 import re
 import threading
 import time
-from uuid import uuid4
+from uuid import NAMESPACE_URL, uuid5
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
-from typing import Any, Literal, Optional, Tuple, TypeAlias, TypedDict, Union
+from typing import Any, Literal, Optional, Tuple, TypeAlias, TypedDict, Union, cast
 
+from pydantic import JsonValue
+
+from components.canvas.canvas_assets import IMAGE_SUFFIXES
+from components.canvas.canvas_page import AnimationCanvasPage, CanvasPage, ImageCanvasPage
 from components.theater_manager import Theater
 from utils.image_utils import (
     extract_image_prompt,
@@ -97,7 +101,7 @@ class VisualState:
         self.shown_image_path: str | None = None
         self.shown_image_time = 0.0
         self.shown_image_prompt = ""
-        self.shown_images_history: list[dict[str, object]] = []
+        self.shown_images_history: list[CanvasPage] = []
         self.shown_image_transition = "crossfade"
         self.shown_image_effect = "gleam3"
         self.shown_animation_frames: list[str] = []
@@ -278,6 +282,7 @@ class VisualState:
             self.current_cycle_visual
             or self.shown_image_path
             or self.has_active_animation()
+            or self.active_game_page()
         )
 
     def update_image(
@@ -566,7 +571,7 @@ class VisualState:
         th = self.theater
         if not th:
             return
-        if self.shown_image_path or self._has_generated_image(th):
+        if self.shown_image_path or self.active_game_page() or self._has_generated_image(th):
             return
         cfg = th.config()
         configured = cfg.get("starting_image", "") if isinstance(cfg, dict) else ""
@@ -746,6 +751,8 @@ class VisualState:
             Tuple of (image_url, file_path_str, timestamp, prompt_text)
         """
         th = theater or self.theater
+        if self.active_game_page():
+            return None, None, self.shown_image_time, self.shown_image_prompt
 
         # 1. Explicit shown image
         if self.shown_image_path:
@@ -843,26 +850,26 @@ class VisualState:
         if changed:
             self.image_revision += 1
         if file_path:
-            item: dict[str, object] = {
+            record: dict[str, JsonValue] = {
                 "path": file_path, "url": url_for_path(file_path) if url_for_path else file_path,
                 "prompt": prompt, "time": self.shown_image_time,
                 "transition": transition, "effect": effect,
             }
             if animation:
-                item["animation"] = animation
+                record["animation"] = cast(dict[str, JsonValue], animation)
             last = self.shown_images_history[-1] if self.shown_images_history else None
             if (
                 new_page
-                or not isinstance(last, dict)
+                or last is None
                 or last.get("path") != file_path
                 or last.get("effect") != effect
                 or last.get("animation") != animation
             ):
-                item["page_id"] = uuid4().hex
-                self.shown_images_history.append(item)
+                page = AnimationCanvasPage(record) if animation else ImageCanvasPage(record)
+                self.shown_images_history.append(page)
                 self.shown_images_history = self.shown_images_history[-100:]
             else:
-                last.update(item)
+                last.update(record)
 
         if animation:
             anim_type = str(animation.get("type", "animation"))
@@ -890,11 +897,8 @@ class VisualState:
         return changed
 
     @contextmanager
-    def stage_game_scene(self, path: str, url: str) -> Iterator[dict[str, object]]:
-        """Stage a fresh native history page without notifying before commitment."""
+    def _stage_history_change(self) -> Iterator[None]:
         with self.canvas_lock:
-            if self.pending_visuals:
-                raise ValueError("Wait for pending canvas visuals before changing the game scene.")
             previous = (
                 self.shown_image_path, self.shown_image_prompt, self.shown_image_transition,
                 self.shown_image_effect, self.shown_image_time, self._visual_display_started_at,
@@ -904,8 +908,7 @@ class VisualState:
             )
             self.shown_images_history = list(self.shown_images_history)
             try:
-                self.show_image(path, url_for_path=lambda _: url, new_page=True, effect="none")
-                yield self.shown_images_history[-1]
+                yield
             except BaseException:
                 (
                     self.shown_image_path, self.shown_image_prompt, self.shown_image_transition,
@@ -916,16 +919,77 @@ class VisualState:
                 ) = previous
                 raise
 
-    def _apply_history_item(self, target_idx: int) -> bool:
+    @contextmanager
+    def stage_game_scene(self, path: str, url: str) -> Iterator[CanvasPage]:
+        """Stage a fresh image page for a game scene command."""
+        with self._stage_history_change():
+            if self.pending_visuals:
+                raise ValueError("Wait for pending canvas visuals before changing the game scene.")
+            self.show_image(path, url_for_path=lambda _: url, new_page=True, effect="none")
+            yield self.shown_images_history[-1]
+
+    def current_page(self) -> CanvasPage | None:
+        if not self.shown_images_history:
+            return None
+        return self.shown_images_history[-1 if self.orator_cursor is None else self.orator_cursor]
+
+    def active_game_page(self) -> bool:
+        page = self.current_page()
+        return page is not None and page.kind == "game"
+
+    def game_page(self, definition_hash: str) -> CanvasPage | None:
+        return next((page for page in self.shown_images_history if page.matches_game(definition_hash)), None)
+
+    def _legacy_page_id(self, path: str, index: int) -> str:
+        return uuid5(NAMESPACE_URL, f"narratron:{self.theater_id}:canvas:{index}:{path}").hex
+
+    @synchronized
+    def ensure_initial_page(self) -> bool:
+        """Promote the visible fallback to a page that can own annotations."""
+        if self.shown_images_history:
+            return False
+        url, path, timestamp, prompt = self._resolve_active_image()
+        if not url or not path:
+            return False
+        animation = self._animation_payload(self.theater, prompt)
+        if not animation and Path(path).suffix.lower() not in IMAGE_SUFFIXES:
+            return False
+        record: dict[str, JsonValue] = {
+            "page_id": self._legacy_page_id(path, 0),
+            "path": path,
+            "url": url,
+            "prompt": prompt,
+            "time": timestamp,
+            "transition": self.shown_image_transition,
+            "effect": self.shown_image_effect,
+        }
+        if animation:
+            record["animation"] = cast(dict[str, JsonValue], animation)
+        self.shown_images_history.append(CanvasPage.from_saved(record))
+        self._apply_history_item(0, notify=False)
+        self.shown_image_time = timestamp
+        return True
+
+    @contextmanager
+    def stage_game_page(self, page: CanvasPage) -> Iterator[None]:
+        """Open a game page, retaining an existing page and its annotations."""
+        with self._stage_history_change():
+            index = next((i for i, item in enumerate(self.shown_images_history)
+                          if item.id == page.id), None)
+            if index is None:
+                self.shown_images_history = [*self.shown_images_history, page][-100:]
+                index = len(self.shown_images_history) - 1
+            self._apply_history_item(index, notify=False)
+            yield
+
+    def _apply_history_item(self, target_idx: int, *, notify: bool = True) -> bool:
         with self._cycle_lock:
             if not self.shown_images_history or target_idx < 0 or target_idx >= len(self.shown_images_history):
                 return False
             target = self.shown_images_history[target_idx]
             self.orator_cursor = target_idx
             self._history_index = target_idx
-            raw_path = target.get("path")
-            file_path = str(raw_path) if raw_path is not None else None
-            self.shown_image_path = file_path
+            self.shown_image_path = target.path
             self.shown_image_prompt = str(target.get("prompt") or "")
             self.shown_image_transition = str(target.get("transition") or "crossfade")
             self.shown_image_effect = str(target.get("effect") or "gleam3")
@@ -933,75 +997,19 @@ class VisualState:
             self._visual_display_started_at = time.monotonic()
             self.image_revision += 1
 
-            anim = target.get("animation")
-            if anim and type(anim) is dict:
-                anim_type = str(anim.get("type") or "")
-                if anim_type == "triframe":
-                    frame_paths = anim.get("frame_paths")
-                    self.shown_animation_frames = [str(p) for p in frame_paths] if type(frame_paths) is list else []
-                    self.shown_layered_animation = None
-                    self.shown_video_animation = None
-                    self.current_cycle_visual = {
-                        "type": "triframe",
-                        "manifest": anim,
-                        "frame_paths": list(self.shown_animation_frames),
-                        "prompt": self.shown_image_prompt,
-                        "path": file_path,
-                        "priority": self.PRIORITY_SHOW,
-                        "source": "show_animation",
-                    }
-                elif anim_type == "layered":
-                    self.shown_animation_frames = []
-                    self.shown_layered_animation = anim
-                    self.shown_video_animation = None
-                    self.current_cycle_visual = {
-                        "type": "layered",
-                        "manifest": anim,
-                        "prompt": self.shown_image_prompt,
-                        "path": file_path,
-                        "priority": self.PRIORITY_SHOW,
-                        "source": "show_animation",
-                    }
-                elif anim_type == "video":
-                    self.shown_animation_frames = []
-                    self.shown_layered_animation = None
-                    self.shown_video_animation = anim
-                    self.current_cycle_visual = {
-                        "type": "video",
-                        "manifest": anim,
-                        "prompt": self.shown_image_prompt,
-                        "path": file_path,
-                        "priority": self.PRIORITY_SHOW,
-                        "source": "show_animation",
-                    }
-                else:
-                    self.shown_animation_frames = []
-                    self.shown_layered_animation = None
-                    self.shown_video_animation = None
-                    self.current_cycle_visual = None
-            else:
-                self.shown_animation_frames = []
-                self.shown_layered_animation = None
-                self.shown_video_animation = None
-                if file_path:
-                    self.current_cycle_visual = {
-                        "type": "image",
-                        "path": file_path,
-                        "transition": self.shown_image_transition,
-                        "effect": self.shown_image_effect,
-                        "prompt": self.shown_image_prompt,
-                        "priority": self.PRIORITY_SHOW,
-                        "source": "show_image",
-                    }
-                else:
-                    self.current_cycle_visual = None
+            self.shown_animation_frames = []
+            self.shown_layered_animation = None
+            self.shown_video_animation = None
+            self.current_cycle_visual = target.restore(self)
 
+        if not notify:
+            return True
         if self.on_visual_changed_fn:
             self.on_visual_changed_fn(True)
         elif self.notify_changed_fn:
             self.notify_changed_fn("latest")
 
-        if self.on_show_image and not anim and self.shown_image_path:
+        if self.on_show_image and target.kind == "image" and self.shown_image_path:
             self.on_show_image(
                 str(self.shown_image_path),
                 transition=self.shown_image_transition,
@@ -1020,6 +1028,13 @@ class VisualState:
     def select_history_image(self, index: int) -> bool:
         """Present a bookmarked history entry using the normal media restoration path."""
         return self._apply_history_item(index)
+
+    @synchronized
+    def select_history_page(self, page_id: str) -> bool:
+        for index, page in enumerate(self.shown_images_history):
+            if page.id == page_id:
+                return self._apply_history_item(index)
+        return False
 
     def next_image(self) -> bool:
         """Advance visual presentation to the next image/animation in history towards head."""
@@ -1095,13 +1110,17 @@ class VisualState:
             self.shown_image_time = float(data["shown_image_time"])
         elif isinstance(data.get("time"), (int, float)):
             self.shown_image_time = float(data["time"])
-        history = data.get("shown_images_history", [])
-        self.shown_images_history = list(history) if isinstance(history, list) else []
-        for index, item in enumerate(self.shown_images_history):
-            if type(item) is str:
-                item = {"path": item, "url": self.get_url_for_path(item)}
-                self.shown_images_history[index] = item
-            item.setdefault("page_id", uuid4().hex)
+        history = data.get("shown_images_history")
+        self.shown_images_history = []
+        if type(history) is list:
+            for index, item in enumerate(history):
+                if type(item) is str:
+                    item = {"path": item, "url": self.get_url_for_path(item)}
+                if type(item) is dict:
+                    record = dict(item)
+                    if not record.get("page_id"):
+                        record["page_id"] = self._legacy_page_id(str(record.get("path") or ""), index)
+                    self.shown_images_history.append(CanvasPage.from_saved(record))
         frames = data.get("shown_animation_frames", [])
         self.shown_animation_frames = [frame for frame in frames if isinstance(frame, str)] if isinstance(frames, list) else []
         self.shown_layered_animation = data.get("shown_layered_animation") if isinstance(data.get("shown_layered_animation"), dict) else None
@@ -1132,7 +1151,8 @@ class VisualState:
 
     def serialize(self) -> dict[str, object]:
         return {"current_image_basename": self.current_image_basename, "shown_image_path": self.shown_image_path,
-                "shown_image_prompt": self.shown_image_prompt, "shown_images_history": list(self.shown_images_history),
+                "shown_image_prompt": self.shown_image_prompt,
+                "shown_images_history": [dict(page) for page in self.shown_images_history],
                 "shown_image_transition": self.shown_image_transition, "shown_image_effect": self.shown_image_effect,
                 "shown_animation_frames": list(self.shown_animation_frames), "shown_layered_animation": self.shown_layered_animation,
                 "shown_video_animation": self.shown_video_animation, "pinned": self.pinned,
@@ -1142,6 +1162,25 @@ class VisualState:
         """Resolve the canvas still image without serializing its full history."""
         image_url, _, _, _ = self._resolve_active_image()
         return image_url
+
+    def _animation_payload(self, theater: Theater, prompt: str) -> dict[str, object] | None:
+        if self.shown_animation_frames:
+            return {
+                "type": "triframe",
+                "frame_paths": list(self.shown_animation_frames),
+                "frames": [
+                    self.get_url_for_path(path, theater)
+                    for path in self.shown_animation_frames
+                ],
+                "frame_duration_ms": 1400,
+                "crossfade_duration_ms": 500,
+                "scene_prompt": self.shown_image_prompt or prompt,
+            }
+        if self.shown_layered_animation:
+            return {"type": "layered", **self.shown_layered_animation}
+        if self.shown_video_animation:
+            return {"type": "video", **self.shown_video_animation}
+        return None
 
     def payload(self) -> dict[str, object]:
         th = self.theater
@@ -1155,49 +1194,18 @@ class VisualState:
         effect = self.shown_image_effect or "gleam3"
 
         formatted_history: list[dict[str, object]] = []
-        for h in self.shown_images_history:
-            if isinstance(h, dict):
-                h_copy = {key: value for key, value in h.items() if key != "doodles"}
-                h_path = str(h_copy.get("path") or "")
-                h_prompt = str(h_copy.get("prompt") or "")
-                if h_path:
-                    h_copy["prompt"] = self._resolve_prompt_for_file(h_path, h_prompt, theater=th)
-                if h_copy.get("animation") and isinstance(h_copy["animation"], dict):
-                    anim = dict(h_copy["animation"])
-                    if anim.get("type") == "triframe" and isinstance(anim.get("frame_paths"), list):
-                        anim["frames"] = [self.get_url_for_path(str(p), th) for p in anim["frame_paths"]]
-                    h_copy["animation"] = anim
-                formatted_history.append(h_copy)
-            elif isinstance(h, str):
-                formatted_history.append({
-                    "path": h,
-                    "url": self.get_url_for_path(h, th),
-                    "prompt": self._resolve_prompt_for_file(h, theater=th),
-                    "time": 0.0,
-                    "transition": transition,
-                    "effect": effect,
-                })
+        for page in self.shown_images_history:
+            presentation = page.presentation(self.get_url_for_path)
+            if page.path:
+                prompt = str(presentation.get("prompt") or "")
+                presentation["prompt"] = self._resolve_prompt_for_file(page.path, prompt, theater=th)
+            formatted_history.append(dict(presentation))
 
-        anim_info: dict[str, object] | None = None
-        if self.shown_animation_frames:
-            anim_info = {
-                "type": "triframe",
-                "frame_paths": list(self.shown_animation_frames),
-                "frames": [
-                    self.get_url_for_path(path, th)
-                    for path in self.shown_animation_frames
-                ],
-                "frame_duration_ms": 1400,
-                "crossfade_duration_ms": 500,
-                "scene_prompt": self.shown_image_prompt or prompt_text,
-            }
-        elif self.shown_layered_animation:
-            anim_info = {"type": "layered", **self.shown_layered_animation}
-        elif self.shown_video_animation:
-            anim_info = {"type": "video", **self.shown_video_animation}
+        anim_info = self._animation_payload(th, prompt_text)
 
         if selected_file and not formatted_history:
             item: dict[str, object] = {
+                "kind": "animation" if anim_info else "image",
                 "path": selected_file,
                 "url": image_url if image_url is not None else selected_file,
                 "prompt": prompt_text,

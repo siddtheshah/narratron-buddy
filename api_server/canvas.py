@@ -294,10 +294,12 @@ class OratorAction(BaseModel):
     action: Literal[
         "new_music", "new_image",
         "previous_music", "next_music", "previous_image", "next_image", "bookmark_image",
+        "bookmark_page", "show_game_page",
         "toggle_music_pin", "toggle_canvas_pin",
         "update_story", "update_ui",
     ]
     history_index: int | None = Field(default=None, ge=0, strict=True)
+    page_id: str | None = Field(default=None, min_length=1, max_length=128)
 
 
 class OratorActionResponse(BaseModel):
@@ -860,6 +862,7 @@ def post_game_action(
     request: Request,
     theater_id: str,
     join_key: str | None = None,
+    page_id: str | None = None,
 ) -> dict[str, JsonValue] | None:
     """Apply a revision-checked move without requiring a live story agent."""
     _require_canvas_access(request, theater_id, join_key=join_key)
@@ -875,7 +878,10 @@ def post_game_action(
             and is_contributor(deployment, current_user=current_user) is True
         ):
             raise HTTPException(status_code=403, detail="Only the active orator can control the game.")
-    return _apply_game_action(state, payload, request, theater_id, actor="player" if is_orator else "contributor")
+    return _apply_game_action(
+        state, payload, request, theater_id,
+        actor="player" if is_orator else "contributor", expected_page_id=page_id,
+    )
 
 
 def _apply_game_action(
@@ -886,6 +892,7 @@ def _apply_game_action(
     *,
     actor: Literal["player", "contributor"],
     expected_definition_hash: str | None = None,
+    expected_page_id: str | None = None,
 ) -> dict[str, JsonValue] | None:
     if state.game is None:
         raise HTTPException(status_code=404, detail="This theater has no game.")
@@ -895,6 +902,7 @@ def _apply_game_action(
         return state.game.act(
             payload, actor=actor, username=_request_username(request),
             expected_definition_hash=expected_definition_hash,
+            expected_page_id=expected_page_id,
         )
     except UnauthorizedGameAction as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
@@ -1062,26 +1070,35 @@ def post_orator_action(
             if is_image:
                 state.visual.cancel_immediate_image()
             raise HTTPException(status_code=409, detail="Narratron could not receive the action.")
-    elif payload.action == "bookmark_image":
-        if payload.history_index is None or not state.visual.select_history_image(payload.history_index):
-            raise HTTPException(status_code=400, detail="Bookmark image is no longer available.")
+    elif payload.action == "show_game_page":
+        try:
+            state.show_game_page()
+        except (ValueError, OverflowError) as exc:
+            raise HTTPException(status_code=400, detail="The rendered game page is unavailable.") from exc
+    elif payload.action in ("bookmark_page", "bookmark_image"):
+        if payload.action == "bookmark_page":
+            found = payload.page_id is not None and state.visual.select_history_page(payload.page_id)
+        else:
+            found = payload.history_index is not None and state.visual.select_history_image(payload.history_index)
+        if not found:
+            raise HTTPException(status_code=400, detail="Bookmarked page is no longer available.")
         if session and session.is_alive:
             session.send_content(types.Content(role="system", parts=[types.Part(text=(
-                "[Orator Action] The orator returned to a bookmarked scene image."
+                "[Orator Action] The orator returned to a bookmarked canvas page."
             ))]))
     elif payload.action == "previous_image":
         if not state.visual.previous_image():
-            raise HTTPException(status_code=400, detail="No previous image available.")
+            raise HTTPException(status_code=400, detail="No previous canvas page available.")
         if session and session.is_alive:
             session.send_content(types.Content(role="system", parts=[types.Part(text=(
-                "[Orator Action] The orator reverted to the previous scene image."
+                "[Orator Action] The orator returned to the previous canvas page."
             ))]))
     elif payload.action == "next_image":
         if not state.visual.next_image():
-            raise HTTPException(status_code=400, detail="No next image available.")
+            raise HTTPException(status_code=400, detail="No next canvas page available.")
         if session and session.is_alive:
             session.send_content(types.Content(role="system", parts=[types.Part(text=(
-                "[Orator Action] The orator advanced to the next scene image."
+                "[Orator Action] The orator advanced to the next canvas page."
             ))]))
     elif payload.action == "previous_music":
         if not state.audio.previous_music():
@@ -1111,7 +1128,8 @@ def post_orator_action(
                 f"[Orator Action] Canvas pinned: {state.visual.pinned}. Music pinned: {state.audio.pinned}. "
                 "Keep pinned media unchanged until the orator unpins it."
             ))]))
-    state.persist()
+    if payload.action != "show_game_page":
+        state.persist()
     return {
         "status": "accepted",
         "pinned": state.visual.pinned,

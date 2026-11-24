@@ -21,6 +21,7 @@ import pytest
 
 import object_registry
 from api_server.shared import app
+from components.canvas.canvas_page import ImageCanvasPage
 from components.canvas.canvas_state_service import CanvasStateService
 from components.canvas.visual_state import VisualState
 from components.theater_package import IneligibleAssetError, safe_asset_path
@@ -1527,7 +1528,7 @@ def test_reset_removes_image_updates_and_cached_canvas_history(builder: BuilderH
     service = CanvasStateService(builder.manager)
     states = [service.get(theater_id) for theater_id in identifiers]
     for state in states:
-        state.visual.shown_images_history = [{"path": "old.webp", "page_id": "old-page"}]
+        state.visual.shown_images_history = [ImageCanvasPage({"path": "old.webp", "page_id": "old-page"})]
         state.chat.messages = [{"text": "old chat"}]
         state.persist()
     connections = [state.connections for state in states]

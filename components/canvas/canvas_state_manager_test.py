@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from shutil import copytree
 from typing import cast
 from fastapi import WebSocket
 from PIL import Image
@@ -10,6 +11,8 @@ import pytest
 from pathlib import Path
 
 from components.canvas.canvas_state_manager import CanvasStateManager
+from game_engine.game_runtime import GameAction
+from game_engine.game_state import StaleGameAction
 from testing.base import CanvasTestCase
 
 
@@ -102,6 +105,12 @@ def test_manager_hydrates_each_persisted_component(tmp_path: Path) -> None:
     assert manager.ui.viewer_collab_enabled is True
     assert manager.story.narration == "Previously."
     assert manager.chat.get_messages() == [{"author": "a", "text": "hi"}]
+    page = manager.get_latest_state()["history"][0]
+    assert page["page_id"] == manager.doodles.page_id
+    page_doodles = manager.doodles_for_page(page["page_id"])
+    assert page_doodles is not None and not page_doodles.enabled
+    reloaded = CanvasStateManager(theater_manager.theater("restored"))
+    assert reloaded.get_latest_state()["history"][0]["page_id"] == page["page_id"]
 
 
 def test_manager_hydrates_from_legacy_theater_state_json(tmp_path: Path) -> None:
@@ -116,6 +125,50 @@ def test_manager_hydrates_from_legacy_theater_state_json(tmp_path: Path) -> None
     manager = CanvasStateManager(theater_manager.theater("legacy"))
     assert manager.visual.shown_image_path == "legacy.png"
     assert manager.story.narration == "From legacy file."
+
+
+def test_game_page_round_trips_with_media_history_and_its_own_doodles(tmp_path: Path) -> None:
+    theater = FakeTheaterManager(tmp_path).theater("relay")
+    example = Path(__file__).resolve().parents[2] / "games" / "canvas_scene_demo" / "game"
+    copytree(example, theater.directory() / "game")
+    manager = CanvasStateManager(theater)
+    manager.visual.show_image("cover.png")
+    manager.visual.show_triframe(["one.png", "two.png", "three.png"])
+    animation_page = manager.visual.current_page()
+    assert animation_page is not None
+    manager.doodles.set_enabled(False)
+
+    manager.show_game_page()
+    game_page = manager.visual.current_page()
+    assert game_page is not None
+    assert game_page.kind == "game"
+    assert manager.visual.preview_image_url() is None
+    assert manager.doodles.enabled
+    manager.doodles.add({"type": "draw", "x0": 0.1, "y0": 0.2, "x1": 0.3, "y1": 0.4, "size": 3})
+    observed = manager.canvas_observation()
+    assert observed.page is not None
+    assert (observed.page.media_kind, observed.page.width, observed.page.height) == ("game", 960, 540)
+    assert manager.game is not None
+    manager.game.act(GameAction(name="advance", arguments={}, revision=0), expected_page_id=game_page.id)
+
+    assert manager.visual.previous_image()
+    assert manager.visual.shown_animation_frames == ["one.png", "two.png", "three.png"]
+    assert not manager.doodles.enabled
+    with pytest.raises(StaleGameAction, match="shared game page changed"):
+        manager.game.act(GameAction(name="charge", arguments={}, revision=1), expected_page_id=game_page.id)
+    assert manager.visual.previous_image()
+    assert manager.visual.shown_image_path == "cover.png"
+    assert manager.visual.next_image()
+    assert manager.doodles.page_id == animation_page.id
+    assert manager.visual.select_history_page(game_page.id)
+    manager.show_game_page()
+
+    reloaded = CanvasStateManager(theater)
+    assert [page.kind for page in reloaded.visual.shown_images_history] == ["image", "animation", "game"]
+    assert reloaded.doodles.page_id == game_page.id
+    assert len(reloaded.doodles.snapshot()["batches"]) == 1
+    assert reloaded.game is not None
+    assert reloaded.game.revision == 1
 
 
 def test_manager_handles_corrupt_json_gracefully(tmp_path: Path) -> None:

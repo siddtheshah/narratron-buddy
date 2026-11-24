@@ -3,6 +3,8 @@ import { startCanvasStatePolling } from '../shared/state-polling.js';
 import { createDoodleRenderer } from '../canvas/doodle-renderer.js';
 import type { DoodleAnnotation } from '../canvas/doodle-types.js';
 import { createImageRenderer, type ImageRenderer } from '../canvas/image-renderer.js';
+import { createGameRenderer, type GamePayload } from '../game/game-renderer.js';
+import type { HistoryItem } from '../canvas/history-paging.js';
 import {
   getAnimationSignature,
   playCanvasAnimation,
@@ -22,12 +24,8 @@ export interface ObsMusicState {
   readonly paused?: boolean;
 }
 
-export interface ObsHistoryEntry {
-  readonly page_id?: string | null;
-}
-
 export interface ObsLatestResponse {
-  readonly latest?: string;
+  readonly latest?: string | null;
   readonly time?: number;
   readonly effect?: string;
   readonly transition?: string;
@@ -39,7 +37,8 @@ export interface ObsLatestResponse {
   readonly music?: ObsMusicState | null;
   readonly doodle_page_id?: string | null;
   readonly orator_cursor?: number;
-  readonly history?: readonly ObsHistoryEntry[];
+  readonly history?: readonly HistoryItem[];
+  readonly game_state?: GamePayload | null;
   readonly doodles_enabled?: boolean;
 }
 
@@ -163,20 +162,11 @@ function insertStampBeforeNonStamps(
 
 function appendDrawBatch(
   actions: ObsDoodleAnnotation[],
-  doodleCanvas: HTMLCanvasElement,
-  renderSegment: (
-    x0: number,
-    y0: number,
-    x1: number,
-    y1: number,
-    color: string,
-    size: number,
-  ) => void,
+  renderStrokeSegment: (action: DoodleAnnotation) => void,
   points: readonly number[],
   color: string | undefined,
   size: number | undefined,
 ): void {
-  const rect = doodleCanvas.getBoundingClientRect();
   const resolvedColor = color ?? '#ffffff';
   const resolvedSize = size || 3;
   for (let index = 0; index < points.length - 2; index += 2) {
@@ -190,14 +180,7 @@ function appendDrawBatch(
       size: resolvedSize,
     };
     actions.push(action);
-    renderSegment(
-      action.x0! * rect.width,
-      action.y0! * rect.height,
-      action.x1! * rect.width,
-      action.y1! * rect.height,
-      resolvedColor,
-      resolvedSize,
-    );
+    renderStrokeSegment(action);
   }
 }
 
@@ -430,13 +413,14 @@ export async function initObsCanvas(): Promise<ObsCanvasController> {
   });
 
   let lastTime = 0;
-  let lastImageRawUrl: string | undefined = '';
+  let lastImageRawUrl: string | null | undefined = '';
   let lastImageEffect: string | null = null;
   let isFirstCanvasLoad = true;
   let lastAnimationSignature = '';
   let doodleActions: ObsDoodleAnnotation[] = [];
   let doodlesEnabled = true;
   let displayedDoodlePageId: string | null = null;
+  let displayedPage: HistoryItem | undefined;
   let doodlePageRequestSequence = 0;
 
   // OBS Browser Sources capture audio produced by this page. Keep this
@@ -556,9 +540,19 @@ export async function initObsCanvas(): Promise<ObsCanvasController> {
     fadeDuration: 1200,
     fitMode: 'cover',
   });
+  const gameScene = document.getElementById('game-canvas-scene');
+  const gameRenderer = gameScene ? createGameRenderer({
+    container: document.createElement('div'),
+    toggleButton: document.createElement('button'),
+    canvasSceneContainer: gameScene,
+    canEdit: () => false,
+    actionUrl: () => '',
+    refresh: () => {},
+  }) : null;
   const doodleRenderer = createDoodleRenderer({
     canvas: doodleCanvas,
-    fitMode: 'cover',
+    fitMode: () => displayedPage?.kind === 'game' ? 'contain' : 'cover',
+    getPage: () => displayedPage?.kind === 'game' ? displayedPage.canvas_page ?? null : null,
     isVisible: () => doodlesEnabled,
     stampLayer: document.getElementById('canvas-stamp-layer'),
     canSelectSegment: () => false,
@@ -568,7 +562,7 @@ export async function initObsCanvas(): Promise<ObsCanvasController> {
   const applyImageTransition = imageRenderer.applyTransition;
   const resizeDoodleCanvas = (): void => doodleRenderer.resize(doodleActions);
   const redrawAllDoodles = (): void => doodleRenderer.redraw(doodleActions);
-  const renderSegment = doodleRenderer.renderSegment;
+  const renderStrokeSegment = doodleRenderer.renderStrokeSegment;
   const renderTextAnnotation = doodleRenderer.renderText;
 
   window.addEventListener(
@@ -612,8 +606,7 @@ export async function initObsCanvas(): Promise<ObsCanvasController> {
     (data.batches || []).forEach((batch) => {
       appendDrawBatch(
         doodleActions,
-        doodleCanvas!,
-        renderSegment,
+        renderStrokeSegment,
         batch.points || [],
         batch.color,
         batch.size,
@@ -672,8 +665,7 @@ export async function initObsCanvas(): Promise<ObsCanvasController> {
       } else if (data.type === 'draw_batch') {
         appendDrawBatch(
           doodleActions,
-          doodleCanvas,
-          renderSegment,
+          renderStrokeSegment,
           data.points || [],
           data.color,
           data.size,
@@ -682,17 +674,10 @@ export async function initObsCanvas(): Promise<ObsCanvasController> {
         const drawAction: ObsDoodleAnnotation = {
           ...data,
           type: 'draw',
+          color: data.color ?? '#ffffff',
         };
         doodleActions.push(drawAction);
-        const rect = doodleCanvas.getBoundingClientRect();
-        renderSegment(
-          (drawAction.x0 ?? 0) * rect.width,
-          (drawAction.y0 ?? 0) * rect.height,
-          (drawAction.x1 ?? 0) * rect.width,
-          (drawAction.y1 ?? 0) * rect.height,
-          drawAction.color ?? '#ffffff',
-          drawAction.size || 3,
-        );
+        renderStrokeSegment(drawAction);
       } else if (data.type === 'text') {
         const textAction: ObsDoodleAnnotation = {
           ...data,
@@ -762,9 +747,12 @@ export async function initObsCanvas(): Promise<ObsCanvasController> {
       }
 
       const cursor = data.orator_cursor;
-      const doodlePage = typeof cursor === 'number' ? data.history?.[cursor] : undefined;
-      const pageId = data.doodle_page_id || doodlePage?.page_id || null;
-      if (pageId !== displayedDoodlePageId) {
+      const wasGamePage = displayedPage?.kind === 'game';
+      displayedPage = typeof cursor === 'number' ? data.history?.[cursor] : undefined;
+      const isGamePage = displayedPage?.kind === 'game';
+      const pageId = data.doodle_page_id || displayedPage?.page_id || null;
+      const pageChanged = pageId !== displayedDoodlePageId;
+      if (pageChanged) {
         displayedDoodlePageId = pageId;
         doodleActions = [];
         redrawAllDoodles();
@@ -776,16 +764,26 @@ export async function initObsCanvas(): Promise<ObsCanvasController> {
       }
 
       const currentImageEffect = data.effect || 'gleam3';
-      const animationSignature = getAnimationSignature(data.animation);
+      const animation = displayedPage?.animation ?? data.animation;
+      const animationSignature = getAnimationSignature(animation);
       const isNewImage =
         Boolean(data.latest || animationSignature) &&
-        ((data.time ?? 0) > lastTime ||
+        (pageChanged || (data.time ?? 0) > lastTime ||
           data.latest !== lastImageRawUrl ||
           currentImageEffect !== lastImageEffect ||
           animationSignature !== lastAnimationSignature);
       const firstLoad = isFirstCanvasLoad;
       isFirstCanvasLoad = false;
-      if (!isNewImage) {
+      if (isGamePage) {
+        if (!wasGamePage) imageRenderer.clear();
+        const game = displayedPage?.game_definition_hash === data.game_state?.definition_hash
+          ? data.game_state : null;
+        gameRenderer?.render(game ?? null, game ? displayedPage?.game_view_box ?? '0 0 300 150' : false);
+        stageDataset.stageReady = 'true';
+        return;
+      }
+      if (wasGamePage) gameRenderer?.render(null);
+      if (!isNewImage && !wasGamePage) {
         if (firstLoad) stageDataset.stageReady = 'true';
         return;
       }
@@ -795,8 +793,8 @@ export async function initObsCanvas(): Promise<ObsCanvasController> {
       lastImageEffect = currentImageEffect;
       lastAnimationSignature = animationSignature;
       let render: Promise<void> | undefined;
-      if (animationSignature && data.animation) {
-        render = playCanvasAnimation(imageRenderer, data.animation, withJoinKey);
+      if (animationSignature && animation) {
+        render = playCanvasAnimation(imageRenderer, animation, withJoinKey);
       } else if (data.latest) {
         imageRenderer.stopSequence();
         const newImgUrl = withJoinKey(

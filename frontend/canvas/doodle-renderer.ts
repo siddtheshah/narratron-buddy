@@ -15,7 +15,8 @@ export function createDoodleRenderer({ canvas, isVisible = () => true, textLayer
         const width = canvas?.clientWidth || 0;
         const height = canvas?.clientHeight || 0;
         if (!(pageWidth > 0 && pageHeight > 0)) return {x: 0, y: 0, width, height};
-        const scale = fitMode === "cover" ? Math.max(width / pageWidth, height / pageHeight) : Math.min(width / pageWidth, height / pageHeight);
+        const fit = typeof fitMode === 'function' ? fitMode() : fitMode;
+        const scale = fit === "cover" ? Math.max(width / pageWidth, height / pageHeight) : Math.min(width / pageWidth, height / pageHeight);
         const imageWidth = pageWidth * scale;
         const imageHeight = pageHeight * scale;
         return {x: (width - imageWidth) / 2, y: (height - imageHeight) / 2, width: imageWidth, height: imageHeight};

@@ -22,7 +22,8 @@ from pydantic import JsonValue, TypeAdapter
 
 from components.canvas import AudioState, AvatarState, ChatManager, ConnectionState, DoodleState, StoryState, ToolResponseState, UIState, VisualState
 from components.theater_manager import Theater
-from components.canvas.doodle_state import DoodleAction, DoodlePage
+from components.canvas.canvas_page import CanvasPage, DoodleAction, GameCanvasPage
+from game_engine.game_runtime import RenderedNode
 from game_engine.game_state import GameState
 from components.notepad import Notepad
 from components.story.input_gathering_cycle import story_input_cycle_duration
@@ -89,7 +90,7 @@ class CanvasStateManager:
         )
         self.audio = AudioState(self.notify_changed)
         self.doodles = DoodleState(
-            self.persist, theater=self.theater, page_provider=self._doodle_page, lock=self.canvas_lock,
+            self.persist, theater=self.theater, page_provider=self.visual.current_page, lock=self.canvas_lock,
             user_stamp_resolver=self.user_stamp_resolver,
         )
         self.ui = UIState(self.persist, self.notify_changed)
@@ -132,23 +133,53 @@ class CanvasStateManager:
         self.visual.initialize_starting_image()
         self.notify_changed()
 
-    def _doodle_page(self) -> DoodlePage | None:
-        history = self.visual.shown_images_history
-        index = self.visual.orator_cursor
-        if not history:
-            return None
-        return cast(DoodlePage, history[-1 if index is None else index])
-
+    @synchronized
     def doodles_for_page(self, page_id: str) -> DoodleState | None:
         """Route delayed drawing messages to their original history page."""
         for item in self.visual.shown_images_history:
-            if item.get("page_id") == page_id:
-                page = cast(DoodlePage, item)
+            if item.id == page_id:
                 return DoodleState(
-                    self.persist, theater=self.theater, page_provider=lambda: page, lock=self.canvas_lock,
+                    self.persist, theater=self.theater, page_provider=lambda: item, lock=self.canvas_lock,
                     user_stamp_resolver=self.user_stamp_resolver,
                 )
         return None
+
+    def _ensure_initial_page(self) -> None:
+        if self.visual.current_page() is None:
+            legacy_doodles = self.doodles.serialize()
+            if self.visual.ensure_initial_page():
+                self.doodles.load(legacy_doodles)
+
+    @synchronized
+    def show_game_page(self) -> None:
+        """Publish the theater's rendered game as an addressable canvas page."""
+        program = self.game.program
+        if program is None or program.definition.rendered_canvas is None:
+            raise ValueError("This theater has no rendered game canvas.")
+        game_hash = self.game.definition_hash
+        existing = self.visual.game_page(game_hash)
+        if existing is None:
+            view_box = ""
+            if program.initial_view:
+                scene = RenderedNode.model_validate(program.initial_view[0])
+                view_box = str(scene.props.get("viewBox") or "")
+            existing = GameCanvasPage.create(game_hash, view_box)
+        self._ensure_initial_page()
+        surfaces = self.ui.interactive_surfaces
+        with self.visual.stage_game_page(existing):
+            self.ui.interactive_surfaces = {
+                key: surface for key, surface in surfaces.items() if bool(surface.get("persistent", False))
+            }
+            try:
+                self.persist()
+            except BaseException:
+                self.ui.interactive_surfaces = surfaces
+                raise
+        self.notify_changed("latest")
+
+    def is_active_game_page(self, page_id: str, definition_hash: str) -> bool:
+        page = self.visual.current_page()
+        return page is not None and page.id == page_id and page.matches_game(definition_hash)
 
     def _on_visual_changed(self, changed: bool = True) -> None:
         if changed:
@@ -270,32 +301,21 @@ class CanvasStateManager:
         assert self.visual is not None and self.theater is not None
         if self.canvas_clock_error:
             raise ValueError(self.canvas_clock_error)
-        history = self.visual.shown_images_history
-        if not history:
+        native = self.visual.current_page()
+        if native is None:
             observed = CanvasSnapshot.empty(self.canvas_clock.revision)
         else:
-            index = self.visual.orator_cursor
-            native = cast(dict[str, JsonValue], history[-1 if index is None else index])
-            if native.get("animation"):
-                raise ValueError("Canvas animation observations require the animation catalog adapter.")
             if "canvas_page" not in native:
-                source_path = str(native.get("path", ""))
+                source_path = native.path
                 catalog = CanvasAssetCatalog(self.theater.directory(), self.theater.get_url_for_path)
-                asset = catalog.observe_image(source_path)
-                page = Page(
-                    id=str(native["page_id"]), scene_id=asset.scene_id, asset_id=asset.asset_id,
-                    media_kind="image", animation=None, width=asset.width, height=asset.height,
-                )
-                native["canvas_page"] = page.model_dump(mode="json")
-                native["canvas_regions"] = {key: region.model_dump(mode="json") for key, region in asset.regions.items()}
-                native["path"], native["url"] = asset.path, asset.url
+                native.initialize_geometry(catalog)
                 if self.visual.shown_image_path == source_path:
-                    self.visual.shown_image_path = asset.path
+                    self.visual.shown_image_path = native.path
             page = Page.model_validate(native["canvas_page"])
             regions = TypeAdapter(dict[str, Region]).validate_python(native.get("canvas_regions", {}), strict=True)
             doodles = self.doodles_for_page(page.id)
             assert doodles is not None
-            doodles.canonicalize_canvas_objects(page, str(native["path"]))
+            doodles.canonicalize_canvas_objects(page, native.path)
             observed = observe_page(page, doodles.doodles, revision=self.canvas_clock.revision, regions=regions)
         projection = observed.model_dump(mode="json")
         projection.pop("revision")
@@ -326,8 +346,8 @@ class CanvasStateManager:
                 raise ValueError("Unpin the canvas before applying game output.")
             assert self.theater is not None and self.game is not None
             catalog = CanvasAssetCatalog(self.theater.directory(), self.theater.get_url_for_path)
-            native = self._doodle_page()
-            if (native.get("page_id") if native is not None else None) != (
+            native = self.visual.current_page()
+            if (native.id if native is not None else None) != (
                 snapshot.page.id if snapshot.page is not None else None
             ):
                 raise ValueError("The shared canvas page changed.")
@@ -349,14 +369,14 @@ class CanvasStateManager:
                     stamp_batches[snapshot.page.id], snapshot, previous, catalog, self.game.definition_hash,
                 )
                 assert native is not None
-                native["doodles"] = actions
+                native.annotations["doodles"] = actions
 
                 @contextmanager
-                def restore_doodles(page: DoodlePage, original: list[DoodleAction]) -> Iterator[None]:
+                def restore_doodles(page: CanvasPage, original: list[DoodleAction]) -> Iterator[None]:
                     try:
                         yield
                     except BaseException:
-                        page["doodles"] = original
+                        page.annotations["doodles"] = original
                         raise
 
                 staging.enter_context(restore_doodles(native, previous))
@@ -377,7 +397,7 @@ class CanvasStateManager:
                 ]
                 if scene_stamps:
                     actions, staged = stage_stamps(scene_stamps, staged, [], catalog, self.game.definition_hash)
-                    new_native["doodles"] = actions
+                    new_native.annotations["doodles"] = actions
                 previous_surfaces = self.ui.interactive_surfaces
                 self.ui.interactive_surfaces = {
                     surface_id: surface for surface_id, surface in previous_surfaces.items()
@@ -433,6 +453,7 @@ class CanvasStateManager:
 
     @synchronized
     def get_latest_state(self, *, username: str = "") -> dict[str, JsonValue]:
+        self._ensure_initial_page()
         game = self.game.payload(username=username)
         visual = self.visual.payload()
         sticky_notes = self.notepad.get_present_sticky_notes()

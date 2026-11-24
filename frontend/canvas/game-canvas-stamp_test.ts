@@ -8,8 +8,105 @@ import {
   type SubmittedGameAction,
 } from '../testing/game_fixtures';
 import type { GamePayload } from '../game/game-renderer.js';
+import type { HistoryItem } from './history-paging.js';
 
 const snapshots = loadGameSnapshots();
+
+test('opening a game creates a bookmarkable page with independent annotations', async ({
+  canvas,
+  page,
+}) => {
+  const game: GamePayload = {
+    definition_hash: 'relay',
+    revision: 0,
+    rendered_canvas: {
+      kind: 'svg',
+      props: { viewBox: '0 0 100 50' },
+      children: [{ kind: 'circle', props: { cx: 50, cy: 25, r: 10 }, children: [], action: null }],
+      action: null,
+    },
+  };
+  const imagePage: HistoryItem = {
+    kind: 'image', page_id: 'image-page', url: '/static/narratron-avatar.png', time: 1,
+  };
+  const gamePage: HistoryItem = {
+    kind: 'game', page_id: 'game-page', game_definition_hash: 'relay', game_view_box: '0 0 100 50',
+    canvas_page: { width: 100, height: 50 },
+  };
+  const history = [imagePage];
+  let cursor = 0;
+  const actions: { action: string; page_id?: string }[] = [];
+  const doodleSnapshot = (pageId: string | null) => ({
+    type: 'doodle_snapshot',
+    page_id: pageId,
+    enabled: true,
+    batches: [],
+    stamps: [],
+    annotations: pageId === 'game-page'
+      ? [{ type: 'text', id: 'note', x: 0.5, y: 0.5, size: 25, text: 'Game clue' }]
+      : [],
+  });
+
+  await canvas.openCanvas({
+    isOrator: true,
+    apiRoutes: {
+      '/api/latest': async (route) => route.fulfill({
+        json: { history, orator_cursor: cursor, latest: history[cursor]?.url ?? null, game_state: game },
+      }),
+      '/api/doodles': async (route, url) =>
+        route.fulfill({ json: doodleSnapshot(url.searchParams.get('page_id')) }),
+      '/api/theaters/stage/orator-action': async (route) => {
+        const body = route.request().postDataJSON() as { action: string; page_id?: string };
+        actions.push(body);
+        if (body.action === 'show_game_page') {
+          history.push(gamePage);
+          cursor = 1;
+        } else if (body.action === 'previous_image') {
+          cursor = 0;
+        } else if (body.action === 'bookmark_page' && body.page_id === gamePage.page_id) {
+          cursor = 1;
+        }
+        await route.fulfill({ json: { orator_cursor: cursor } });
+      },
+    },
+    onWebSocket(ws) {
+      const url = new URL(ws.url());
+      if (url.pathname !== '/ws/doodle') return;
+      ws.send(JSON.stringify(doodleSnapshot(url.searchParams.get('page_id') ?? history[cursor]?.page_id ?? null)));
+      ws.onMessage((message) => {
+        const request = JSON.parse(String(message)) as { type?: string; page_id?: string };
+        if (request.type === 'subscribe_doodles') {
+          ws.send(JSON.stringify(doodleSnapshot(request.page_id ?? null)));
+        }
+      });
+    },
+  });
+
+  const scene = page.locator('#game-canvas-scene');
+  const clue = page.locator('#canvas-text-layer').getByText('Game clue');
+  await expect(scene).toBeHidden();
+  await page.getByRole('button', { name: 'Toggle game canvas' }).click();
+  await expect(scene.locator('circle')).toBeVisible();
+  await expect(clue).toBeVisible();
+  await expect(page.locator('#page-indicator')).toHaveText('2 / 2');
+
+  const bookmark = page.getByRole('button', { name: 'Bookmark current page' });
+  await bookmark.click();
+  await page.locator('#page-prev-btn').click();
+  await expect(scene).toBeHidden();
+  await expect(clue).toHaveCount(0);
+  await expect(page.locator('#page-indicator')).toHaveText('1 / 2');
+
+  await bookmark.hover();
+  await page.locator('.bookmark-item').filter({ hasText: 'Game canvas' }).click();
+  await expect(scene.locator('circle')).toBeVisible();
+  await expect(clue).toBeVisible();
+  expect(actions).toEqual([
+    { action: 'show_game_page' },
+    { action: 'previous_image' },
+    { action: 'bookmark_page', page_id: 'game-page' },
+  ]);
+});
 
 test('the game button opens and closes the committed canvas for a viewer', async ({
   canvas,

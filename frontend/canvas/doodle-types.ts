@@ -55,7 +55,7 @@ export interface DoodleRendererOptions {
   onSelectSegment?: (actions: DoodleAnnotation[]) => void;
   onRemoveSegment?: (actions: DoodleAnnotation[]) => void;
   getPage?: () => { width: number; height: number } | null;
-  fitMode?: 'contain' | 'cover';
+  fitMode?: 'contain' | 'cover' | (() => 'contain' | 'cover');
 }
 
 export interface MoveDrag {

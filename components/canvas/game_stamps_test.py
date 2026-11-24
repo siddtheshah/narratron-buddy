@@ -87,7 +87,7 @@ def test_postcommit_notification_failure_leaves_both_outputs_durable(canvas: Can
 
 
 def test_unsupported_observation_is_a_game_error_without_hiding_story(canvas: CanvasStateManager) -> None:
-    canvas.visual.shown_images_history[-1]["animation"] = {"format": "video"}
+    canvas.visual.show_video_animation({"video_path": "scene.mp4"})
     canvas.story.narration = "Still available"
     payload = canvas.get_latest_state()
     assert payload["narration"] == "Still available"

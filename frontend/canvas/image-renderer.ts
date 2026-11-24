@@ -67,6 +67,7 @@ export interface ImageRenderer {
     playLayeredAnimation(layers: AnimationLayer[], options?: AnimationOptions | number): Promise<void>;
     playVideoAnimation(url: string, options?: AnimationOptions | number): Promise<void>;
     stopSequence(): void;
+    clear(): void;
     setImageEffectsEnabled(enabled: boolean): void;
 }
 
@@ -315,6 +316,7 @@ export function createImageRenderer({
         layeredAnimationRequest = null;
         const oldSnapshot = captureCanvasSnapshot();
         stopSequence();
+        const generation = sequenceGeneration;
 
         const newImage = new Image();
         if (isWhitelistedCdn(imageUrl)) {
@@ -334,6 +336,7 @@ export function createImageRenderer({
                 newImage.onerror = () => resolve();
             });
         }
+        if (generation !== sequenceGeneration) return;
 
         if (image) {
             // Haze and trace sample the DOM image for their source pixels.
@@ -923,6 +926,17 @@ export function createImageRenderer({
         playLayeredAnimation,
         playVideoAnimation,
         stopSequence,
+        clear(): void {
+            stopSequence();
+            layeredAnimationRequest = null;
+            currentImage = null;
+            currentImageEffect = "none";
+            removeImageEffect();
+            image?.removeAttribute("src");
+            image?.classList.remove(...loadedClassNames);
+            if (canvas) context?.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
+            if (backgroundLayer) backgroundLayer.style.backgroundImage = "none";
+        },
         setImageEffectsEnabled(enabled: boolean): void {
             if (!enabled) {
                 removeImageEffect();

@@ -4,6 +4,7 @@ from unittest.mock import Mock
 
 import pytest
 
+from components.canvas.canvas_page import ImageCanvasPage
 from components.canvas.canvas_state_service import CanvasStateService
 
 
@@ -100,7 +101,7 @@ def test_service_preserves_user_stamp_resolver_for_cached_and_history_pages(tmp_
         refresh()
         assert service.get("live").doodles.resolve_stamp_image(action) == b"STAMP"
 
-    canvas.visual.shown_images_history.append({"page_id": "previous", "doodles": []})
+    canvas.visual.shown_images_history.append(ImageCanvasPage({"page_id": "previous", "doodles": []}))
     previous = canvas.doodles_for_page("previous")
     assert previous is not None
     assert previous.resolve_stamp_image(action) == b"STAMP"

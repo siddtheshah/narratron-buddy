@@ -367,6 +367,8 @@ let latestStateRequestSequence = 0;
 let canvasPinned = false;
 let musicPinned = false;
 let lastGameCanvasRevision: number | null | undefined = null;
+let latestGame: GamePayload | null = null;
+let usesGamePages = false;
 let micMode: MicMode = readInitialMicMode();
 
 let musicPlayer: MusicPlayerController | null = null;
@@ -526,13 +528,23 @@ const gameRenderer =
     ? createGameRenderer({
         container: gameStateLayer,
         toggleButton: gameStateToggleBtn,
-        actionUrl: () => `/api/game/action?theater_id=${encodeURIComponent(theaterId || '')}`,
+        actionUrl: () => {
+          const params = new URLSearchParams({ theater_id: theaterId || '' });
+          const page = historyPaging?.getCurrentItem();
+          if (page?.kind === 'game' && page.page_id) params.set('page_id', page.page_id);
+          return `/api/game/action?${params}`;
+        },
         keyboardCanvas: document.getElementById('image-container'),
         canvasSceneContainer: document.getElementById('game-canvas-scene'),
-        canContribute: () => isCollabModeEnabled() && hasContributorsPermission(),
+        canContribute: () => !historyPaging?.isPagedBack() && isCollabModeEnabled() && hasContributorsPermission(),
         canMove: () => isCurrentOrator() || hasContributorsPermission(),
         canEdit: () => isCurrentOrator(),
         refresh: () => fetchLatestImage(),
+        onOpenCanvasPage: async () => {
+          const response = await postCanvasHistoryAction({ action: 'show_game_page' });
+          if (!response.ok) throw new Error('Could not open the game canvas.');
+          await fetchLatestImage();
+        },
         beforeOpen: async () => {
           if (isCurrentOrator() && agentConnection && !agentConnection.isAgentStarted()) {
             await agentConnection.startAgentTheater();
@@ -753,6 +765,14 @@ const pagingControls = document.getElementById('history-paging-controls');
 
 initializeStoryLogInspector(activeTheaterId);
 
+function postCanvasHistoryAction(body: Record<string, string | number>): Promise<Response> {
+  return fetch(`/api/theaters/${encodeURIComponent(activeTheaterId)}/orator-action`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+}
+
 historyPaging = createHistoryPagingController({
   theaterId: activeTheaterId,
   isOrator: isCurrentOrator,
@@ -774,7 +794,13 @@ historyPaging = createHistoryPagingController({
   minimalModeInput: getInputElement('minimal-mode-input'),
   hasDoodleCanvas: () => Boolean(document.getElementById('doodle-canvas')),
   isSelectionActive: () => Boolean(window.isCanvasSelectionActive),
-  onRefreshBookmarks: () => canvasBookmarks?.refresh(),
+  onRefreshBookmarks: () => {
+    canvasBookmarks?.refresh();
+    const page = historyPaging?.getCurrentItem();
+    const gamePage = page?.kind === 'game' && page.game_definition_hash === latestGame?.definition_hash
+      ? page.game_view_box ?? '0 0 300 150' : false;
+    gameRenderer?.render(latestGame, usesGamePages ? gamePage : null);
+  },
   onRefreshToolInteraction: () => doodleSession?.refreshCanvasToolInteraction(),
   onDisplayPageDoodles: (item: HistoryItem) => doodleSession?.displayPageDoodles(item),
 });
@@ -784,16 +810,15 @@ canvasBookmarks = initializeCanvasBookmarks({
   isOrator: isCurrentOrator,
   getHistory: () => historyPaging?.getHistory() ?? [],
   getIndex: () => historyPaging?.getCurrentViewIndex() ?? 0,
-  navigate: async (index: number) => {
-    const response = await fetch(
-      `/api/theaters/${encodeURIComponent(activeTheaterId)}/orator-action`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'bookmark_image', history_index: index }),
-      },
-    );
+  navigate: async (index: number, pageId?: string) => {
+    const response = await postCanvasHistoryAction(pageId
+      ? { action: 'bookmark_page', page_id: pageId }
+      : { action: 'bookmark_image', history_index: index });
     if (!response.ok) throw new Error('Bookmark navigation failed');
+    if (pageId) {
+      await fetchLatestImage();
+      return;
+    }
     const result = (await response.json()) as TheaterActionResponse;
     if (historyPaging) {
       historyPaging.setOratorCursorIndex(Number(result.orator_cursor));
@@ -962,13 +987,9 @@ async function fetchLatestImage(): Promise<void> {
       data.committed_scene_speech_generation,
     );
     a2uiCanvasRenderer?.render(data.interactive_surfaces ?? null);
-    gameRenderer?.render(data.game_state ?? null);
+    latestGame = data.game_state ?? null;
+    usesGamePages = Array.isArray(data.history);
 
-    const gameCanvasRevision = data.game_state?.canvas_revision;
-    if (gameCanvasRevision !== undefined && gameCanvasRevision !== lastGameCanvasRevision) {
-      lastGameCanvasRevision = gameCanvasRevision;
-      void requestPageDoodles();
-    }
     if (data.sticky_notes !== undefined && typeof window.updateCanvasStickyNotes === 'function') {
       window.updateCanvasStickyNotes(data.sticky_notes, data.hidden_stickies);
     }
@@ -992,6 +1013,11 @@ async function fetchLatestImage(): Promise<void> {
     }
 
     historyPaging?.applyLatestState(data);
+    const gameCanvasRevision = data.game_state?.canvas_revision;
+    if (gameCanvasRevision !== undefined && gameCanvasRevision !== lastGameCanvasRevision) {
+      lastGameCanvasRevision = gameCanvasRevision;
+      void requestPageDoodles();
+    }
   } catch (err: unknown) {
     console.error('Failed to fetch image data:', err);
   }

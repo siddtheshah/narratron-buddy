@@ -286,7 +286,7 @@ test('shared scene preserves speech until scene commit', async ({ canvas, page }
   });
 });
 
-test('obs restores doodles from selected history page', async ({ canvas, page }) => {
+test('obs restores annotations and renders a game when the shared page changes', async ({ canvas, page }) => {
   await setupObsPage(canvas, page);
 
   let selected = 0;
@@ -295,13 +295,23 @@ test('obs restores doodles from selected history page', async ({ canvas, page })
   await canvas.serveRoute('**/api/latest?**', async (route: Route) => {
     await route.fulfill({
       json: {
-        latest: '/image.png',
+        latest: selected === 0 ? '/image.png' : null,
         time: selected + 1,
         effect: 'none',
         doodle_page_id: ['first', 'second'][selected],
         orator_cursor: selected,
         doodles_enabled: true,
-        history: [{ page_id: 'first' }, { page_id: 'second' }],
+        history: [
+          { page_id: 'first', kind: 'image' },
+          {
+            page_id: 'second', kind: 'game', game_definition_hash: 'relay',
+            game_view_box: '0 0 100 50', canvas_page: { width: 100, height: 50 },
+          },
+        ],
+        game_state: {
+          definition_hash: 'relay', revision: 0,
+          rendered_canvas: { kind: 'svg', props: { viewBox: '0 0 100 50' }, children: [], action: null },
+        },
       },
     });
   });
@@ -335,6 +345,8 @@ test('obs restores doodles from selected history page', async ({ canvas, page })
 
   selected = 1;
   sockets[0].send('{"type":"state_changed","domains":["latest"]}');
+  await expect(page.locator('#game-canvas-scene svg')).toBeVisible();
+  await expect(page.locator('#current-image')).not.toHaveAttribute('src');
   await page.waitForFunction(
     (previous: string) =>
       (document.getElementById('doodle-canvas') as HTMLCanvasElement).toDataURL() !== previous,
@@ -343,6 +355,8 @@ test('obs restores doodles from selected history page', async ({ canvas, page })
 
   selected = 0;
   sockets[0].send('{"type":"state_changed","domains":["latest"]}');
+  await expect(page.locator('#game-canvas-scene')).toBeHidden();
+  await expect(page.locator('#current-image')).toHaveJSProperty('naturalWidth', 1);
   await page.waitForFunction(
     (expected: string) =>
       (document.getElementById('doodle-canvas') as HTMLCanvasElement).toDataURL() === expected,

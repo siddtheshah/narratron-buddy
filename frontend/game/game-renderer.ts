@@ -54,11 +54,13 @@ export interface GameRendererOptions {
   readonly onMove?: (placement: { left_pct: number; top_pct: number }) => void | Promise<void>;
   readonly keyboardCanvas?: HTMLElement | null;
   readonly canvasSceneContainer?: HTMLElement | null;
+  readonly onOpenCanvasPage?: () => Promise<void>;
+  readonly canOpenCanvasPage?: () => boolean;
 }
 
 export interface GameRenderer {
   close(): void;
-  render(next?: GamePayload | null): void;
+  render(next?: GamePayload | null, canvasPage?: string | false | null): void;
 }
 
 interface DraftEntry {
@@ -270,6 +272,8 @@ export function createGameRenderer({
   onMove = () => {},
   keyboardCanvas = null,
   canvasSceneContainer = null,
+  onOpenCanvasPage,
+  canOpenCanvasPage = canEdit,
 }: GameRendererOptions): GameRenderer {
   const stylesheet = document.createElement('link');
   stylesheet.rel = 'stylesheet';
@@ -282,6 +286,8 @@ export function createGameRenderer({
   let signature = '';
   let canvasSceneSignature = '';
   let open = initiallyOpen;
+  // A viewBox selects the shared game page. False means another page is selected.
+  let canvasPage: string | false | null = null;
   let opening = false;
   let openRequest = 0;
   let unseenUpdate = false;
@@ -451,6 +457,10 @@ export function createGameRenderer({
     const request = ++openRequest;
     opening = true;
     try {
+      if (isCanvasGame() && canvasPage === false && onOpenCanvasPage) {
+        if (canOpenCanvasPage()) await onOpenCanvasPage();
+        return;
+      }
       await beforeOpen();
       if (request !== openRequest || !game) return;
       open = true;
@@ -764,10 +774,12 @@ export function createGameRenderer({
   function draw(): void {
     panelFrame = null;
     panelActions = new Map<string, RenderedGameAction>();
-    if (embedded) open = Boolean(game);
-    if (!game) open = false;
     const canvasGame = isCanvasGame();
-    toggleButton.hidden = !game;
+    if (embedded) open = Boolean(game);
+    if (canvasGame && canvasPage !== null) open = canvasPage !== false;
+    if (!game) open = false;
+    toggleButton.hidden = !game || (canvasGame && canvasPage !== null &&
+      (typeof canvasPage === 'string' || !canOpenCanvasPage()));
     toggleButton.setAttribute('aria-expanded', String(open));
     const controlledSurface = canvasGame ? canvasSceneContainer : container;
     if (controlledSurface?.id) toggleButton.setAttribute('aria-controls', controlledSurface.id);
@@ -798,10 +810,15 @@ export function createGameRenderer({
     }
     if (canvasSceneContainer && canvasCommands) {
       const scene = open ? game?.rendered_canvas : null;
-      const sceneSignature = scene ? JSON.stringify(scene) : '';
+      const sceneSignature = scene ? JSON.stringify([scene, canvasPage]) : '';
       if (sceneSignature !== canvasSceneSignature) {
         canvasSceneSignature = sceneSignature;
-        canvasSceneContainer.replaceChildren(...(scene ? [nodeView(scene)] : []));
+        const root = scene ? nodeView(scene) : null;
+        if (root instanceof SVGElement && typeof canvasPage === 'string') {
+          root.setAttribute('viewBox', canvasPage);
+          root.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+        }
+        canvasSceneContainer.replaceChildren(...(root ? [root] : []));
       }
       canvasSceneContainer.hidden = !open || !canvasGame;
       if (open && canvasGame) {
@@ -1017,8 +1034,8 @@ export function createGameRenderer({
 
   return {
     close,
-    render(next?: GamePayload | null): void {
-      const target = next === undefined ? game : next;
+    render(next?: GamePayload | null, page: string | false | null = canvasPage): void {
+      let target = next === undefined ? game : next;
       if (
         next !== undefined &&
         next !== null &&
@@ -1026,16 +1043,20 @@ export function createGameRenderer({
         next.definition_hash === game.definition_hash &&
         next.revision < game.revision
       ) {
-        return;
+        target = game;
       }
       const nextSignature = JSON.stringify([
         target,
+        page,
+        canOpenCanvasPage(),
         canEdit(),
         Boolean(canContribute()),
         Boolean(canMove()),
       ]);
       if (nextSignature === signature) return;
       signature = nextSignature;
+      if (page !== canvasPage) keyboardReleased = false;
+      canvasPage = page;
       const changed =
         target?.definition_hash !== game?.definition_hash || target?.revision !== game?.revision;
       if (changed) inputValues.clear();

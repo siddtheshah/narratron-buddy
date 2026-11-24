@@ -14,6 +14,8 @@ export interface BookmarkAnimationInfo {
 }
 
 export interface BookmarkHistoryItem {
+  readonly page_id?: string | null;
+  readonly kind?: 'image' | 'animation' | 'game';
   readonly path?: string | null;
   readonly url?: string | null;
   readonly name?: string | null;
@@ -27,7 +29,7 @@ export interface InitializeCanvasBookmarksOptions {
   readonly isOrator: () => boolean;
   readonly getHistory: () => readonly BookmarkHistoryItem[];
   readonly getIndex: () => number;
-  readonly navigate: (index: number) => Promise<void>;
+  readonly navigate: (index: number, pageId?: string) => Promise<void>;
 }
 
 export interface CanvasBookmarksController {
@@ -43,13 +45,15 @@ interface ResolvedBookmark extends StoredBookmark {
   readonly index: number;
 }
 
-// Use media identity and creation time: repeated presentations of the same image
-// are separate history entries, while appending history does not move bookmarks.
-function historyKey(item: BookmarkHistoryItem): string {
+function legacyHistoryKey(item: BookmarkHistoryItem): string {
   return JSON.stringify([item.path || item.url || item.animation, item.time || 0]);
 }
 
-function imageName(item: BookmarkHistoryItem): string {
+function historyKey(item: BookmarkHistoryItem): string {
+  return item.page_id ? `page:${item.page_id}` : legacyHistoryKey(item);
+}
+
+function pageName(item: BookmarkHistoryItem): string {
   const pathStr = (item.path || item.url || '').split(/[?#]/)[0] ?? '';
   const rawFilename = pathStr.split(/[\\/]/).pop() ?? '';
   const filename = rawFilename.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ');
@@ -57,7 +61,8 @@ function imageName(item: BookmarkHistoryItem): string {
     typeof item.animation === 'object' && item.animation !== null
       ? item.animation.scene_prompt
       : undefined;
-  const name = (item.name || filename || item.prompt || animationPrompt || 'Untitled image').trim();
+  const fallback = item.kind === 'game' ? 'Game canvas' : 'Untitled page';
+  const name = (item.name || filename || item.prompt || animationPrompt || fallback).trim();
   return name.length > 36 ? `${name.slice(0, 33).trimEnd()}…` : name;
 }
 
@@ -151,12 +156,26 @@ export function initializeCanvasBookmarks({
     toggle.setAttribute('aria-expanded', String(open));
   }
 
+  function save(): void {
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(bookmarks));
+    } catch (error) {
+      console.warn('Could not save canvas bookmarks', error);
+    }
+  }
+
   function refresh(): void {
     root!.hidden = !isOrator();
     if (root!.hidden) {
       expand(false);
     }
     const history = getHistory();
+    const legacyKeys = new Map(history.filter((item) => item.page_id && item.kind !== 'game')
+      .map((item) => [legacyHistoryKey(item), historyKey(item)]));
+    if (bookmarks.some((entry) => legacyKeys.has(entry.key))) {
+      bookmarks = bookmarks.map((entry) => ({...entry, key: legacyKeys.get(entry.key) ?? entry.key}));
+      save();
+    }
     const currentIndex = getIndex();
     const current = history[currentIndex];
     const selected = current
@@ -189,7 +208,7 @@ export function initializeCanvasBookmarks({
       entries,
       currentIndex,
       busy,
-      entries.map((entry) => imageName(history[entry.index]!)),
+      entries.map((entry) => pageName(history[entry.index]!)),
     ]);
     if (signature === nextSignature) {
       return;
@@ -206,7 +225,7 @@ export function initializeCanvasBookmarks({
 
     for (const entry of entries) {
       const historyItem = history[entry.index]!;
-      const labelText = imageName(historyItem);
+      const labelText = pageName(historyItem);
       const button = document.createElement('button');
       button.type = 'button';
       button.className = 'bookmark-item';
@@ -233,11 +252,12 @@ export function initializeCanvasBookmarks({
         refresh();
         try {
           // Resolve against the latest history, including any pages added since hover.
-          const index = getHistory().findIndex((item) => historyKey(item) === entry.key);
+          const latest = getHistory();
+          const index = latest.findIndex((item) => historyKey(item) === entry.key);
           if (index < 0) {
             throw new Error('This bookmarked page is no longer available.');
           }
-          await navigate(index);
+          await navigate(index, latest[index]?.page_id ?? undefined);
           navigated = true;
         } catch (error) {
           status.textContent = 'Could not open bookmark. Try again.';
@@ -273,11 +293,7 @@ export function initializeCanvasBookmarks({
       bookmarks.sort((a, b) => a.number - b.number);
     }
 
-    try {
-      localStorage.setItem(storageKey, JSON.stringify(bookmarks));
-    } catch (error) {
-      console.warn('Could not save canvas bookmarks', error);
-    }
+    save();
 
     refresh();
     status.textContent = `Bookmark ${number} ${existing ? 'removed' : 'added'}.`;

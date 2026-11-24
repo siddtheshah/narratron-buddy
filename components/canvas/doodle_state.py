@@ -19,10 +19,9 @@ if TYPE_CHECKING:
     from components.theater_manager import Theater
     from game_engine.canvas_contract import Page
 
-logger = logging.getLogger(__name__)
+from components.canvas.canvas_page import CanvasPage, DoodleAction as DoodleAction, DoodleValue as DoodleValue, PageAnnotations
 
-DoodleValue = str | float | int | bool | list[float] | None
-DoodleAction = dict[str, DoodleValue]
+logger = logging.getLogger(__name__)
 
 
 class DoodleSnapshot(TypedDict):
@@ -32,12 +31,6 @@ class DoodleSnapshot(TypedDict):
     batches: list[DoodleAction]
     annotations: list[DoodleAction]
     stamps: list[DoodleAction]
-
-
-class DoodlePage(TypedDict, total=False):
-    page_id: str
-    doodles: list[DoodleAction]
-    doodles_enabled: bool
 
 
 def doodle_snapshot_batches(doodles: list[DoodleAction]) -> list[DoodleAction]:
@@ -125,7 +118,7 @@ class DoodleState:
         persist: Callable[[], None],
         theater: Optional[Theater] = None,
         stamp_resolver: Optional[Callable[[DoodleAction], bytes | None]] = None,
-        page_provider: Callable[[], DoodlePage | None] | None = None,
+        page_provider: Callable[[], CanvasPage | None] | None = None,
         lock: RLock | None = None,
         *,
         user_stamp_resolver: Callable[[DoodleAction], bytes | None] | None = None,
@@ -137,12 +130,12 @@ class DoodleState:
         self.stamp_resolver = stamp_resolver
         self.user_stamp_resolver = user_stamp_resolver
         self._page_provider = page_provider
-        self._empty_page: DoodlePage = {}
+        self._empty_page: PageAnnotations = {}
 
     @property
-    def page(self) -> DoodlePage:
+    def page(self) -> PageAnnotations:
         page = self._page_provider() if self._page_provider is not None else None
-        return page if page is not None else self._empty_page
+        return page.annotations if page is not None else self._empty_page
 
     @property
     def page_id(self) -> str:

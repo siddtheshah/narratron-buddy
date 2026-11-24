@@ -12,6 +12,9 @@ export interface HistoryCanvasPage {
 export type HistoryAnimation = CanvasAnimation & { readonly scene_prompt?: string };
 
 export interface HistoryItem {
+  readonly kind?: 'image' | 'animation' | 'game';
+  readonly game_definition_hash?: string;
+  readonly game_view_box?: string;
   readonly url?: string | null;
   readonly prompt?: string | null;
   readonly time?: number | null;
@@ -64,6 +67,7 @@ export interface HistoryImageRenderer {
   playVideoAnimation: AnimationRenderer['playVideoAnimation'];
   playSequence: AnimationRenderer['playSequence'];
   stopSequence?: () => void;
+  clear?: () => void;
   setImageEffectsEnabled?: (enabled: boolean) => void;
 }
 
@@ -158,7 +162,7 @@ function readInitialMinimalMode(): boolean {
 }
 
 /**
- * Manage canvas image history navigation, orator cursor stepping, sliding-window
+ * Manage canvas page navigation, orator cursor stepping, sliding-window
  * media preloading/unloading, Minimal Mode quality/animation fallbacks, and
  * prompt badge expansion.
  */
@@ -199,6 +203,7 @@ export function createHistoryPagingController(
   let lastImageRawUrl: string | null = null;
   let lastImageEffect: string | null = null;
   let lastAnimationSignature = '';
+  let lastSharedPageId: string | null = null;
   let isFirstCanvasLoad = true;
 
   let imageHistory: HistoryItem[] = [];
@@ -369,16 +374,17 @@ export function createHistoryPagingController(
     pruneHistoryResources(currentViewIndex);
 
     const item = imageHistory[currentViewIndex];
-    if (item) {
-      onDisplayPageDoodles?.(item);
-    }
-    if (!item || (!item.url && !item.animation)) return;
-
+    onDisplayPageDoodles?.(item);
     if (promptButton) {
       promptButton.classList.remove('expanded');
       promptButton.style.display = 'none';
     }
     promptPinned = false;
+    if (item.kind === 'game' || (!item.url && !item.animation)) {
+      imageRenderer.clear?.();
+      updatePagingControlsUI();
+      return;
+    }
     const promptText = item.prompt || item.animation?.scene_prompt || '';
     if (promptText && promptTextSpan && promptButton) {
       promptTextSpan.textContent = promptText;
@@ -471,7 +477,7 @@ export function createHistoryPagingController(
         updatePagingControlsUI();
       }
     } catch (err) {
-      console.error('Failed to trigger previous image action:', err);
+      console.error('Failed to open the previous canvas page:', err);
     }
   }
 
@@ -511,7 +517,7 @@ export function createHistoryPagingController(
         updatePagingControlsUI();
       }
     } catch (err) {
-      console.error('Failed to trigger next image action:', err);
+      console.error('Failed to open the next canvas page:', err);
     }
   }
 
@@ -532,7 +538,8 @@ export function createHistoryPagingController(
   }
 
   function applyLatestState(data: LatestHistoryPayload): void {
-    if (data.history && Array.isArray(data.history) && data.history.length > 0) {
+    const viewedPageId = imageHistory[currentViewIndex]?.page_id;
+    if (data.history?.length) {
       imageHistory = [...data.history];
     } else if (data.latest) {
       const fallbackPrompt = data.prompt || data.animation?.scene_prompt || '';
@@ -547,9 +554,27 @@ export function createHistoryPagingController(
           animation: data.animation || null,
         },
       ];
+    } else if (Array.isArray(data.history)) {
+      imageHistory = [];
+    }
+
+    if (navigating && viewedPageId) {
+      const newIndex = imageHistory.findIndex((page) => page.page_id === viewedPageId);
+      if (newIndex >= 0) {
+        currentViewIndex = newIndex;
+      } else {
+        navigating = false;
+        pagedBack = false;
+      }
     }
 
     const orator = isOrator();
+    const serverIndex = imageHistory.length
+      ? Math.max(0, Math.min(data.orator_cursor ?? imageHistory.length - 1, imageHistory.length - 1))
+      : -1;
+    const sharedPageId = imageHistory[serverIndex]?.page_id ?? null;
+    const sharedPageChanged = sharedPageId !== lastSharedPageId;
+    lastSharedPageId = sharedPageId;
     if (!orator || isFirstCanvasLoad || oratorCursorIndex < 0) {
       if (data.orator_cursor !== undefined && data.orator_cursor !== null) {
         oratorCursorIndex = Math.max(
@@ -597,11 +622,16 @@ export function createHistoryPagingController(
         lastImageEffect = currentImageEffect;
         lastAnimationSignature = animationSignature;
       }
-      displayHistoryImage(currentViewIndex, 'none');
-    } else if (
-      isNewImage ||
+      if (currentViewIndex < imageHistory.length && imageHistory.length) {
+        displayHistoryImage(currentViewIndex, 'none');
+      } else {
+        currentViewIndex = -1;
+        updatePagingControlsUI();
+      }
+    } else if (imageHistory.length > 0 && (
+      sharedPageChanged || isNewImage ||
       (!orator && !navigating && currentViewIndex !== oratorCursorIndex)
-    ) {
+    )) {
       lastTime = dataTime;
       lastImageRawUrl = data.latest ?? null;
       lastImageEffect = currentImageEffect;
@@ -636,6 +666,10 @@ export function createHistoryPagingController(
         updatePagingControlsUI();
       }
     } else if (!data.latest && !data.animation && imageHistory.length === 0) {
+      currentViewIndex = -1;
+      oratorCursorIndex = -1;
+      imageRenderer.clear?.();
+      if (viewedPageId && Array.isArray(data.history)) onDisplayPageDoodles?.({});
       if (backgroundLayer) {
         backgroundLayer.style.backgroundImage = 'none';
       }

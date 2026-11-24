@@ -554,6 +554,7 @@ class GameState:
     def act(
         self, action: GameAction, actor: Literal["player", "contributor", "narratron"] = "player",
         *, story_event_id: str = "", username: str = "", expected_definition_hash: str | None = None,
+        expected_page_id: str | None = None,
     ) -> dict[str, JsonValue] | None:
         with self._lock:
             if self.program is None:
@@ -580,6 +581,10 @@ class GameState:
                 )
             observed = None
             input_snapshot = None
+            if expected_page_id is not None and (
+                self._canvas_host is None or not self._canvas_host.is_active_game_page(expected_page_id, self.definition_hash)
+            ):
+                raise StaleGameAction("The shared game page changed.")
             if canvas_enabled:
                 assert self._canvas_host is not None
                 observed = self._canvas_host.canvas_observation()

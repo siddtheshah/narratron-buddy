@@ -75,14 +75,14 @@ class Page(CanvasModel):
     id: Identifier
     scene_id: Identifier | None
     asset_id: Identifier
-    media_kind: Literal["image", "animation", "video"]
+    media_kind: Literal["image", "animation", "video", "game"]
     animation: Animation | None
     width: PositiveSize
     height: PositiveSize
 
     @model_validator(mode="after")
     def consistent_media(self) -> Self:
-        if self.media_kind == "image":
+        if self.media_kind in ("image", "game"):
             if self.animation is not None:
                 raise ValueError("Still pages cannot declare animation playback.")
         elif self.animation is None:
