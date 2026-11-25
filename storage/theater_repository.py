@@ -43,6 +43,21 @@ def ensure_theaters_root() -> Path:
 logger = logging.getLogger(__name__)
 
 
+def _copy_directory_contents(source: Path, target: Path) -> None:
+    """Merge bytes and directories without requiring POSIX metadata support.
+
+    Bucket mounts can reject permission and timestamp updates. Even copytree
+    with copy_function=copyfile still applies copystat to each directory.
+    """
+    target.mkdir(parents=True, exist_ok=True)
+    for item in source.iterdir():
+        destination = target / item.name
+        if item.is_dir():
+            _copy_directory_contents(item, destination)
+        else:
+            shutil.copyfile(item, destination)
+
+
 class TheaterRepository:
     """Provides theater export, reconstruction, and metadata management on a storage directory."""
 
@@ -110,9 +125,9 @@ class TheaterRepository:
                     continue
                 dest = target / item.name
                 if item.is_dir():
-                    shutil.copytree(item, dest, dirs_exist_ok=True)
+                    _copy_directory_contents(item, dest)
                 else:
-                    shutil.copy2(item, dest)
+                    shutil.copyfile(item, dest)
             # Package saves replace the authored file set, while runtime output
             # and canvas state retain the repository's existing merge behavior.
             for item in target.rglob("*"):
@@ -155,7 +170,7 @@ class TheaterRepository:
             return False
 
         try:
-            shutil.copytree(source, target_dir, dirs_exist_ok=True)
+            _copy_directory_contents(source, target_dir)
             (target_dir / "output").mkdir(parents=True, exist_ok=True)
             (target_dir / "references").mkdir(parents=True, exist_ok=True)
             (target_dir / "playlists").mkdir(parents=True, exist_ok=True)

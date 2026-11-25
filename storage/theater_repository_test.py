@@ -9,6 +9,66 @@ from absl.testing import flagsaver
 from storage.theater_repository import TheaterRepository, get_theaters_root
 
 
+def test_export_and_restore_without_filesystem_metadata_support(tmp_path: Path) -> None:
+    repository = TheaterRepository(tmp_path / "repository")
+    source = tmp_path / "checkout"
+    files = {
+        "theater.json": b'{"theater_id":"quest","name":"Quest"}',
+        "theater.yaml": b"live_agent: {}\n",
+        "references/characters/Hero/1.webp": b"hero-image",
+        "lore/story.md": b"Story lore",
+        "output/artifacts/images/scene.webp": b"generated-image",
+    }
+    for relative, content in files.items():
+        target = source / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(content)
+    (source / "playlists" / "empty").mkdir(parents=True)
+    (source / "editor.json").write_text("private editor state", encoding="utf-8")
+    (source / "editor.tmp").write_text("pending editor state", encoding="utf-8")
+    saved = repository.theater_path("quest")
+    (saved / "lore").mkdir(parents=True)
+    (saved / "lore" / "obsolete.md").write_text("old lore", encoding="utf-8")
+    restored = tmp_path / "restored"
+    restored.mkdir()
+    (restored / "keep.txt").write_text("existing checkout file", encoding="utf-8")
+
+    # Bucket mounts support file contents, but can reject chmod/utime. This
+    # also catches copytree's directory metadata writes, even with copyfile.
+    with (
+        patch("os.chmod", side_effect=PermissionError("Operation not permitted")),
+        patch("os.utime", side_effect=PermissionError("Operation not permitted")),
+    ):
+        assert repository.export_theater("quest", source)
+        assert repository.reconstruct_theater("quest", restored)
+
+    for root in (saved, restored):
+        for relative, content in files.items():
+            assert (root / relative).read_bytes() == content
+        assert (root / "playlists" / "empty").is_dir()
+        assert not (root / "editor.json").exists()
+        assert not (root / "editor.tmp").exists()
+        assert not (root / "lore" / "obsolete.md").exists()
+    assert (restored / "keep.txt").read_text(encoding="utf-8") == "existing checkout file"
+
+
+def test_failed_content_copy_reports_failure_without_pruning_saved_assets(tmp_path: Path) -> None:
+    repository = TheaterRepository(tmp_path / "repository")
+    source = tmp_path / "checkout"
+    source.mkdir()
+    (source / "theater.json").write_text('{"theater_id":"quest","name":"Quest"}', encoding="utf-8")
+    saved = repository.theater_path("quest")
+    (saved / "references").mkdir(parents=True)
+    image = saved / "references" / "hero.webp"
+    image.write_bytes(b"saved-image")
+
+    with patch("shutil.copyfile", side_effect=OSError("Bucket write failed")):
+        assert not repository.export_theater("quest", source)
+        assert not repository.reconstruct_theater("quest", tmp_path / "restored")
+
+    assert image.read_bytes() == b"saved-image"
+
+
 class TestTheaterRootSelection(unittest.TestCase):
     def test_cloud_root_defaults_to_mnt_storage_theaters(self):
         self.assertEqual(get_theaters_root(), Path("/mnt/storage/theaters"))
