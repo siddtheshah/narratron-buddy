@@ -1724,20 +1724,39 @@ async def create_and_deploy_theater(request: Request):
         raise HTTPException(status_code=400, detail=str(error)) from error
     deployed_meta = object_registry.theater_manager.deploy_theater(metadata.theater_id)
 
-    # Record deployment & deduct credits (0.0 cost)
-    object_registry.db.record_deployment(
-        deployed_meta.theater_id,
-        user["id"],
-        deployed_meta.join_key,
-        cost=0.0,
-        name=name or deployed_meta.name,
-    )
+    deployment_recorded = False
+    try:
+        # Record deployment & deduct credits (0.0 cost)
+        if not object_registry.db.record_deployment(
+            deployed_meta.theater_id,
+            user["id"],
+            deployed_meta.join_key,
+            cost=0.0,
+            name=name or deployed_meta.name,
+        ):
+            raise HTTPException(
+                status_code=503,
+                detail="Could not register the new theater. Please try again.",
+            )
+        deployment_recorded = True
+        if not await _export_canvas_theater_async(deployed_meta.theater_id):
+            raise HTTPException(
+                status_code=503,
+                detail="Could not save the new theater. Please try again.",
+            )
+    except Exception:
+        if deployment_recorded:
+            object_registry.db.delete_deployment(deployed_meta.theater_id)
+        object_registry.theater_manager.destroy_theater(deployed_meta.theater_id)
+        object_registry.theater_repository.delete_theater(deployed_meta.theater_id)
+        object_registry.canvas_states.states.pop(deployed_meta.theater_id, None)
+        checkout_locks.pop(deployed_meta.theater_id, None)
+        raise
     auth_session_cache.invalidate_user(user["id"])
     theater_access_cache.invalidate_theater(deployed_meta.theater_id)
 
     res_dict = deployed_meta.model_dump()
     res_dict["is_owner"] = True
-    asyncio.create_task(_export_canvas_theater_async(deployed_meta.theater_id))
     return {"status": "ok", "theater_id": deployed_meta.theater_id, "theater": res_dict}
 
 @app.post("/api/theaters/{theater_id}/deploy")

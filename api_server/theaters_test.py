@@ -1674,6 +1674,7 @@ async def test_create_and_deploy_theater_with_preset_adventure():
     with patch.object(theaters, "get_current_user_async", AsyncMock(return_value=mock_user)), \
          patch.object(object_registry, "theater_manager", mock_manager), \
          patch.object(object_registry, "db", mock_db), \
+         patch.object(theaters, "_export_canvas_theater_async", AsyncMock(return_value=True)) as mock_export, \
          patch.object(object_registry, "adventure_service", mock_adv_service):
 
         res = await theaters.create_and_deploy_theater(request)
@@ -1688,6 +1689,7 @@ async def test_create_and_deploy_theater_with_preset_adventure():
         assert create_args["theater_config"]["live_agent"]["style"] == "eerie"
         assert create_args["theater_config"]["story_planning"]["adventure_mode"] is True
         assert create_args["metadata_json"] == mock_adv_meta
+        mock_export.assert_awaited_once_with("theater_preset123")
         mock_db.record_deployment.assert_called_once_with(
             "theater_preset123", 42, "KEY-TEST1", cost=0.0, name="Lesovik Station"
         )
@@ -2223,6 +2225,124 @@ def test_adventure_with_custom_avatar_does_not_copy_default_narratron_avatar(tmp
         assert (theater_dir / "avatars" / "light-cube" / "avatar.json").is_file()
         assert not (theater_dir / "avatars" / "example_avatar").exists()
         assert not (theater_dir / "avatars" / "narratron").exists()
+
+
+def test_adventure_deploy_saves_to_durable_theater_repository_immediately(tmp_path: Path) -> None:
+    import json
+    from absl.testing import flagsaver
+    from components.canvas.canvas_state_service import CanvasStateService
+    from components.theater_manager import TheaterManager
+    from services.adventure_service import AdventureService
+    from storage.theater_repository import TheaterRepository
+    from testing.reference_images import png_bytes
+
+    adventures_root = tmp_path / "adventures"
+    adventure_dir = adventures_root / "clockwork-vault"
+    (adventure_dir / "references").mkdir(parents=True, exist_ok=True)
+    (adventure_dir / "lore").mkdir(parents=True, exist_ok=True)
+    (adventure_dir / "playlists" / "ambient").mkdir(parents=True, exist_ok=True)
+
+    cover_bytes = png_bytes()
+    lore_bytes = b"The brass gears never stop turning."
+    track_bytes = mp3_bytes()
+    (adventure_dir / "metadata.json").write_text(
+        json.dumps({"id": "clockwork-vault", "title": "Clockwork Vault"}),
+        encoding="utf-8",
+    )
+    (adventure_dir / "theater.yaml").write_text(
+        "story_planning:\n  adventure_mode: true\n",
+        encoding="utf-8",
+    )
+    (adventure_dir / "references" / "cover.png").write_bytes(cover_bytes)
+    (adventure_dir / "lore" / "intro.txt").write_bytes(lore_bytes)
+    (adventure_dir / "playlists" / "ambient" / "gears.mp3").write_bytes(track_bytes)
+
+    manager = TheaterManager(tmp_path / "ephemeral")
+    repository = TheaterRepository(tmp_path / "repository")
+    canvas_service = CanvasStateService(manager)
+    mock_db = MagicMock()
+    mock_db.record_deployment.return_value = True
+
+    with flagsaver.flagsaver(testing_use_local=True), \
+         patch.object(theaters, "get_current_user_async", AsyncMock(return_value={"id": 42})), \
+         patch.object(object_registry, "theater_manager", manager), \
+         patch.object(object_registry, "theater_repository", repository), \
+         patch.object(object_registry, "canvas_states", canvas_service), \
+         patch.object(object_registry, "db", mock_db), \
+         patch.object(object_registry, "adventure_service", AdventureService(adventures_root)), \
+         TestClient(app) as client:
+        response = client.post(
+            "/api/theaters/create-and-deploy",
+            data={
+                "name": "Clockwork Vault",
+                "creation_mode": "adventure",
+                "preset_adventure_id": "clockwork-vault",
+                "enable_adventure_mode": "true",
+            },
+        )
+
+    assert response.status_code == 200, response.text
+    theater_id = response.json()["theater_id"]
+    assert repository.theater_exists(theater_id)
+    repo_dir = repository.theater_path(theater_id)
+    assert (repo_dir / "theater.json").is_file()
+    assert (repo_dir / "theater.yaml").is_file()
+    assert (repo_dir / "metadata.json").is_file()
+    assert (repo_dir / "references" / "cover.png").read_bytes() == cover_bytes
+    assert (repo_dir / "lore" / "intro.txt").read_bytes() == lore_bytes
+    assert (repo_dir / "playlists" / "ambient" / "gears.mp3").read_bytes() == track_bytes
+    mock_db.record_deployment.assert_called_once()
+
+
+def test_adventure_deploy_fails_and_cleans_up_when_repository_save_fails(tmp_path: Path) -> None:
+    import json
+    from absl.testing import flagsaver
+    from components.canvas.canvas_state_service import CanvasStateService
+    from components.theater_manager import TheaterManager
+    from services.adventure_service import AdventureService
+    from storage.theater_repository import TheaterRepository
+
+    adventures_root = tmp_path / "adventures"
+    adventure_dir = adventures_root / "clockwork-vault"
+    adventure_dir.mkdir(parents=True, exist_ok=True)
+    (adventure_dir / "metadata.json").write_text(
+        json.dumps({"id": "clockwork-vault", "title": "Clockwork Vault"}),
+        encoding="utf-8",
+    )
+    (adventure_dir / "theater.yaml").write_text(
+        "story_planning:\n  adventure_mode: true\n",
+        encoding="utf-8",
+    )
+
+    manager = TheaterManager(tmp_path / "ephemeral")
+    repository = TheaterRepository(tmp_path / "repository")
+    canvas_service = CanvasStateService(manager)
+    mock_db = MagicMock()
+    mock_db.record_deployment.return_value = True
+
+    with flagsaver.flagsaver(testing_use_local=True), \
+         patch.object(theaters, "get_current_user_async", AsyncMock(return_value={"id": 42})), \
+         patch.object(object_registry, "theater_manager", manager), \
+         patch.object(object_registry, "theater_repository", repository), \
+         patch.object(object_registry, "canvas_states", canvas_service), \
+         patch.object(object_registry, "db", mock_db), \
+         patch.object(repository, "export_theater", return_value=False), \
+         patch.object(object_registry, "adventure_service", AdventureService(adventures_root)), \
+         TestClient(app) as client:
+        response = client.post(
+            "/api/theaters/create-and-deploy",
+            data={
+                "name": "Clockwork Vault",
+                "creation_mode": "adventure",
+                "preset_adventure_id": "clockwork-vault",
+                "enable_adventure_mode": "true",
+            },
+        )
+
+    assert response.status_code == 503
+    assert list((tmp_path / "ephemeral").iterdir()) == []
+    assert list((tmp_path / "repository").iterdir()) == []
+    mock_db.delete_deployment.assert_called_once()
 
 
 
