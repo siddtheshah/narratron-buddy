@@ -17,6 +17,66 @@ const CANVAS_MODULE_URL = '/static/generated/canvas/canvas.js';
 const PNG_DATA_URL =
   'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
 
+for (const failure of ['repository', 'network', 'invalid-response'] as const) {
+  test(`theater save shows a toast and allows retry after ${failure} failure`, async ({ canvas, page }) => {
+    let fail = true;
+    await canvas.openCanvas({
+      isOrator: true,
+      apiRoutes: {
+        '/api/theaters/stage/save': async (route) => {
+          if (!fail) {
+            await route.fulfill({ json: { status: 'saved', theater_id: 'stage' } });
+          } else if (failure === 'network') {
+            await route.abort('failed');
+          } else if (failure === 'invalid-response') {
+            await route.fulfill({ status: 502, contentType: 'text/plain', body: 'Bad Gateway' });
+          } else {
+            await route.fulfill({
+              status: 500,
+              json: { detail: 'Failed to save theater to the repository. Please try again.' },
+            });
+          }
+        },
+      },
+    });
+    const button = page.locator('#save-theater-btn');
+    const originalText = await button.innerHTML();
+    await button.click();
+    const toast = page.locator('.share-toast');
+    await expect(toast).toHaveClass(/show/);
+    await expect(toast).toContainText(failure === 'repository'
+      ? 'Save failed: Failed to save theater to the repository. Please try again.'
+      : 'Failed to save theater:');
+    await expect(button).toBeEnabled();
+    expect(await button.innerHTML()).toBe(originalText);
+    fail = false;
+    await button.click();
+    await expect(button).toHaveText('✓');
+    await expect(button).toBeEnabled();
+    expect(await button.innerHTML()).toBe(originalText);
+  });
+}
+
+test('theater save stays pending until the repository save completes', async ({ canvas, page }) => {
+  let finishSave: () => void = () => {};
+  const pendingSave = new Promise<void>((resolve) => { finishSave = resolve; });
+  await canvas.openCanvas({
+    isOrator: true,
+    apiRoutes: {
+      '/api/theaters/stage/save': async (route) => {
+        await pendingSave;
+        await route.fulfill({ json: { status: 'saved', theater_id: 'stage' } });
+      },
+    },
+  });
+  const button = page.locator('#save-theater-btn');
+  await button.click();
+  await expect(button).toHaveText('⏳');
+  await expect(button).toBeDisabled();
+  finishSave();
+  await expect(button).toHaveText('✓');
+});
+
 test('auth hydration runs testing auto-login once and displays authenticated user', async ({
   canvas,
   page,

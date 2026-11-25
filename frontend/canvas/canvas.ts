@@ -716,7 +716,7 @@ const saveTheaterBtn = getButtonElement('save-theater-btn');
 if (saveTheaterBtn) {
   saveTheaterBtn.addEventListener('click', async () => {
     if (!currenttheaterId) {
-      alert('No active theater ID found to save.');
+      showShareToast('No active theater ID found to save.');
       return;
     }
     const originalText = saveTheaterBtn.innerHTML;
@@ -734,12 +734,12 @@ if (saveTheaterBtn) {
           saveTheaterBtn.disabled = false;
         }, 2000);
       } else {
-        alert('Save failed: ' + (data.detail || 'Unknown error'));
+        showShareToast('Save failed: ' + (data.detail || 'Unknown error'));
         saveTheaterBtn.innerHTML = originalText;
         saveTheaterBtn.disabled = false;
       }
     } catch (error: unknown) {
-      alert('Failed to save theater: ' + readErrorMessage(error, 'Unknown error'));
+      showShareToast('Failed to save theater: ' + readErrorMessage(error, 'Unknown error'));
       saveTheaterBtn.innerHTML = originalText;
       saveTheaterBtn.disabled = false;
     }

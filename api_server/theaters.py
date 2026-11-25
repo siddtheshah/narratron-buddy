@@ -1977,9 +1977,9 @@ async def take_back_baton(theater_id: str, request: Request):
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@app.post("/api/theaters/{theater_id}/save", status_code=202)
-async def save_theater_to_db(theater_id: str, request: Request):
-    """Save canvas theater state and image assets to SQLite database on user demand."""
+@app.post("/api/theaters/{theater_id}/save")
+async def save_theater_to_db(theater_id: str, request: Request) -> dict[str, str]:
+    """Save canvas state and assets, reporting success after the repository export."""
     user = await get_current_user_async(request)
     if not user:
         raise HTTPException(status_code=401, detail="Authentication required.")
@@ -1990,8 +1990,9 @@ async def save_theater_to_db(theater_id: str, request: Request):
     if dep["user_id"] != user["id"]:
         raise HTTPException(status_code=403, detail="Only the theater owner can save this theater.")
 
-    asyncio.create_task(_export_canvas_theater_async(theater_id))
-    return {"status": "queued", "theater_id": theater_id}
+    if not await _export_canvas_theater_async(theater_id):
+        raise HTTPException(status_code=500, detail="Failed to save theater to the repository. Please try again.")
+    return {"status": "saved", "theater_id": theater_id}
 
 @app.get("/api/theaters/{theater_id}/export-assets")
 def export_theater_assets(theater_id: str, request: Request):

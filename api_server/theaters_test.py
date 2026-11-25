@@ -1472,6 +1472,28 @@ async def test_save_theater_requires_the_registry_deployment_owner():
     assert error.value.status_code == 403
 
 
+@pytest.mark.parametrize("save_result", [True, False, RuntimeError("Repository unavailable")])
+def test_canvas_save_reports_repository_result(save_result: bool | RuntimeError) -> None:
+    registry_db = MagicMock()
+    registry_db.get_deployment.return_value = {"user_id": 2}
+    export = MagicMock(side_effect=[save_result])
+    with patch.object(object_registry, "db", registry_db), \
+         patch.object(object_registry, "theater_manager", MagicMock()), \
+         patch.object(object_registry, "canvas_states", MagicMock()) as states, \
+         patch.object(theaters, "get_current_user_async", AsyncMock(return_value={"id": 2})), \
+         patch.object(theaters, "save_theater_checkout", export):
+        response = TestClient(app).post("/api/theaters/stage/save")
+
+    states.get.return_value.save_local_theater_data.assert_called_once()
+    export.assert_called_once()
+    if save_result is True:
+        assert response.status_code == 200
+        assert response.json() == {"status": "saved", "theater_id": "stage"}
+    else:
+        assert response.status_code == 500
+        assert response.json() == {"detail": "Failed to save theater to the repository. Please try again."}
+
+
 def test_export_theater_requires_the_registry_deployment_owner():
     registry_db = MagicMock()
     registry_db.get_deployment.return_value = {"user_id": 2}
@@ -2269,8 +2291,8 @@ def test_adventure_deploy_saves_to_durable_theater_repository_immediately(tmp_pa
          patch.object(object_registry, "theater_repository", repository), \
          patch.object(object_registry, "canvas_states", canvas_service), \
          patch.object(object_registry, "db", mock_db), \
-         patch.object(object_registry, "adventure_service", AdventureService(adventures_root)), \
-         TestClient(app) as client:
+         patch.object(object_registry, "adventure_service", AdventureService(adventures_root)):
+        client = TestClient(app)
         response = client.post(
             "/api/theaters/create-and-deploy",
             data={
@@ -2327,8 +2349,8 @@ def test_adventure_deploy_fails_and_cleans_up_when_repository_save_fails(tmp_pat
          patch.object(object_registry, "canvas_states", canvas_service), \
          patch.object(object_registry, "db", mock_db), \
          patch.object(repository, "export_theater", return_value=False), \
-         patch.object(object_registry, "adventure_service", AdventureService(adventures_root)), \
-         TestClient(app) as client:
+         patch.object(object_registry, "adventure_service", AdventureService(adventures_root)):
+        client = TestClient(app)
         response = client.post(
             "/api/theaters/create-and-deploy",
             data={
