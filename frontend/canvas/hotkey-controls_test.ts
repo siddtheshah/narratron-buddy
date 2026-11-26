@@ -250,11 +250,11 @@ test('loads defaults or valid stored hotkeys and falls back cleanly on malformed
   page,
 }) => {
   await mountHotkeyHarness(canvas, page);
-  await expect(page.locator('#menu-text-hotkey-display')).toHaveText('Text Hotkey: Shift + Space');
-  await expect(page.locator('#howto-text-hotkey-display')).toHaveText('Shift + Space');
-  await expect(page.locator('#orator-command-dismiss-hotkey')).toHaveText('Shift + Space');
-  await expect(page.locator('#menu-hotkey-display')).toHaveText('Mic Hotkey: Ctrl + Shift + [');
-  await expect(page.locator('#howto-mic-hotkey-display')).toHaveText('Ctrl + Shift + [');
+  await expect(page.locator('#menu-text-hotkey-display')).toHaveText('Text Hotkey: Ctrl + Space');
+  await expect(page.locator('#howto-text-hotkey-display')).toHaveText('Ctrl + Space');
+  await expect(page.locator('#orator-command-dismiss-hotkey')).toHaveText('Ctrl + Space');
+  await expect(page.locator('#menu-hotkey-display')).toHaveText('Mic Hotkey: Shift + Space');
+  await expect(page.locator('#howto-mic-hotkey-display')).toHaveText('Shift + Space');
 
   // Invalid JSON falls back to defaults.
   await mountHotkeyHarness(canvas, page, {
@@ -263,8 +263,8 @@ test('loads defaults or valid stored hotkeys and falls back cleanly on malformed
       narratron_mic_hotkey: 'null',
     },
   });
-  await expect(page.locator('#menu-text-hotkey-display')).toHaveText('Text Hotkey: Shift + Space');
-  await expect(page.locator('#menu-hotkey-display')).toHaveText('Mic Hotkey: Ctrl + Shift + [');
+  await expect(page.locator('#menu-text-hotkey-display')).toHaveText('Text Hotkey: Ctrl + Space');
+  await expect(page.locator('#menu-hotkey-display')).toHaveText('Mic Hotkey: Shift + Space');
 
   // Valid stored hotkeys are restored and reflected in UI.
   await mountHotkeyHarness(canvas, page, {
@@ -324,7 +324,7 @@ test('rebinding ignores modifiers, cancels mutually and on Escape, flashes succe
 
   // Starting mic rebind cancels text rebind and invokes onRebindStart.
   await micBtn.click();
-  await expect(textDisplay).toHaveText('Text Hotkey: Shift + Space');
+  await expect(textDisplay).toHaveText('Text Hotkey: Ctrl + Space');
   await expect(micDisplay).toHaveText('Press key combo to rebind...');
   expect(
     await page.evaluate(() => {
@@ -335,7 +335,7 @@ test('rebinding ignores modifiers, cancels mutually and on Escape, flashes succe
 
   // Escape cancels mic rebind without saving.
   await page.keyboard.press('Escape');
-  await expect(micDisplay).toHaveText('Mic Hotkey: Ctrl + Shift + [');
+  await expect(micDisplay).toHaveText('Mic Hotkey: Shift + Space');
   expect(await page.evaluate(() => localStorage.getItem('narratron_mic_hotkey'))).toBeNull();
 
   // Rebinding via legacy button sets active state, then completes on Alt+Digit9.
@@ -356,7 +356,7 @@ test('rebinding ignores modifiers, cancels mutually and on Escape, flashes succe
   await page.evaluate(() => {
     (window as unknown as HotkeyHarnessWindow).hotkeyControls?.cancelRebinding();
   });
-  await expect(textDisplay).toHaveText('Text Hotkey: Shift + Space');
+  await expect(textDisplay).toHaveText('Text Hotkey: Ctrl + Space');
 
   await textBtn.click();
   await page.keyboard.press('Control+Alt+KeyK');
@@ -437,7 +437,7 @@ test('orator command overlay opens, suppresses repeats/inputs/viewers, submits, 
       new KeyboardEvent('keydown', {
         code: 'Space',
         key: ' ',
-        shiftKey: true,
+        ctrlKey: true,
         repeat: true,
         bubbles: true,
       }),
@@ -448,7 +448,7 @@ test('orator command overlay opens, suppresses repeats/inputs/viewers, submits, 
   // Editable elements suppress opening.
   for (const selector of ['#chat-input', '#notes-textarea', '#mic-select', '#editable-box']) {
     await page.locator(selector).focus();
-    await page.keyboard.press('Shift+Space');
+    await page.keyboard.press('Control+Space');
     await expect(overlay).not.toHaveClass(/active/);
   }
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
@@ -457,14 +457,14 @@ test('orator command overlay opens, suppresses repeats/inputs/viewers, submits, 
   await page.evaluate(() => {
     (window as unknown as HotkeyHarnessWindow).isOratorFlag = false;
   });
-  await page.keyboard.press('Shift+Space');
+  await page.keyboard.press('Control+Space');
   await expect(overlay).not.toHaveClass(/active/);
 
   // Orator opens, stops scene speech, focuses input, and handles failed then successful submit.
   await page.evaluate(() => {
     (window as unknown as HotkeyHarnessWindow).isOratorFlag = true;
   });
-  await page.keyboard.press('Shift+Space');
+  await page.keyboard.press('Control+Space');
   await expect(overlay).toHaveClass(/active/);
   await expect(overlay).toHaveAttribute('aria-hidden', 'false');
   await expect(input).toBeFocused();
@@ -489,7 +489,7 @@ test('orator command overlay opens, suppresses repeats/inputs/viewers, submits, 
 
   // Escape inside input closes and clears value.
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
-  await page.keyboard.press('Shift+Space');
+  await page.keyboard.press('Control+Space');
   await input.fill('Draft text');
   await page.keyboard.press('Escape');
   await expect(overlay).not.toHaveClass(/active/);
@@ -503,7 +503,7 @@ test('mic shortcut supports toggle, push-to-talk keydown/keyup, button-key Enter
   await mountHotkeyHarness(canvas, page);
 
   // Toggle mode clicks connect button unless disabled or suppressed.
-  await page.keyboard.press('Control+Shift+BracketLeft');
+  await page.keyboard.press('Shift+Space');
   expect(
     await page.evaluate(() => (window as unknown as HotkeyHarnessWindow).connectClickCount),
   ).toBe(1);
@@ -511,7 +511,7 @@ test('mic shortcut supports toggle, push-to-talk keydown/keyup, button-key Enter
   await page.evaluate(() => {
     (document.getElementById('agent-connect-btn') as HTMLButtonElement).disabled = true;
   });
-  await page.keyboard.press('Control+Shift+BracketLeft');
+  await page.keyboard.press('Shift+Space');
   expect(
     await page.evaluate(() => (window as unknown as HotkeyHarnessWindow).connectClickCount),
   ).toBe(1);
@@ -523,9 +523,8 @@ test('mic shortcut supports toggle, push-to-talk keydown/keyup, button-key Enter
     win.micModeFlag = 'push-to-talk';
   });
 
-  await page.keyboard.down('Control');
   await page.keyboard.down('Shift');
-  await page.keyboard.down('BracketLeft');
+  await page.keyboard.down('Space');
   expect(
     await page.evaluate(() => (window as unknown as HotkeyHarnessWindow).beginMicPressCalls),
   ).toEqual(['hotkey']);
@@ -535,8 +534,7 @@ test('mic shortcut supports toggle, push-to-talk keydown/keyup, button-key Enter
   expect(
     await page.evaluate(() => (window as unknown as HotkeyHarnessWindow).releaseMicPressCount),
   ).toBe(1);
-  await page.keyboard.up('BracketLeft');
-  await page.keyboard.up('Control');
+  await page.keyboard.up('Space');
 
   // Focused connect button + Enter triggers button-key press/release.
   await page.locator('#agent-connect-btn').focus();
@@ -549,10 +547,10 @@ test('mic shortcut supports toggle, push-to-talk keydown/keyup, button-key Enter
     await page.evaluate(() => (window as unknown as HotkeyHarnessWindow).releaseMicPressCount),
   ).toBe(2);
 
-  // Focused agentStartStopBtn blocks Space / Shift+Space activation.
+  // Focused agentStartStopBtn blocks Space / Ctrl+Space activation.
   await page.locator('#agent-start-stop-btn').focus();
   await page.keyboard.press('Space');
-  await page.keyboard.press('Shift+Space');
+  await page.keyboard.press('Control+Space');
   expect(
     await page.evaluate(() => (window as unknown as HotkeyHarnessWindow).startStopClickCount),
   ).toBe(0);
@@ -568,7 +566,7 @@ test('mic shortcut supports toggle, push-to-talk keydown/keyup, button-key Enter
     (document.activeElement as HTMLElement | null)?.blur();
     (window as unknown as HotkeyHarnessWindow).hotkeyControls?.destroy();
   });
-  await page.keyboard.press('Shift+Space');
+  await page.keyboard.press('Control+Space');
   await expect(page.locator('#orator-command-overlay')).not.toHaveClass(/active/);
 });
 
@@ -592,9 +590,9 @@ test('closing orator command blurs input synchronously so immediate mic hotkey w
     const activeAfterClose = document.activeElement?.id ?? null;
     window.dispatchEvent(
       new KeyboardEvent('keydown', {
-        code: 'BracketLeft',
-        key: '[',
-        ctrlKey: true,
+        code: 'Space',
+        key: ' ',
+        ctrlKey: false,
         shiftKey: true,
         bubbles: true,
       }),

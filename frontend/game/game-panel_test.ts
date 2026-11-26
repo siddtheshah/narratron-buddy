@@ -276,7 +276,7 @@ test('canvas hotkeys work after clicking game panel', async ({ canvas, page }) =
   // Spoofed key messages from any other window must be ignored.
   await page.evaluate(() => {
     window.postMessage(
-      { type: 'game-panel-key', eventType: 'keydown', key: ' ', code: 'Space', shiftKey: true },
+      { type: 'game-panel-key', eventType: 'keydown', key: ' ', code: 'Space', ctrlKey: true },
       '*',
     );
   });
@@ -286,8 +286,8 @@ test('canvas hotkeys work after clicking game panel', async ({ canvas, page }) =
     ),
   ).toBe(false);
 
-  // Text hotkey (Shift+Space) still opens and focuses the Orator command input.
-  await page.keyboard.press('Shift+Space');
+  // Text hotkey (Ctrl+Space) still opens and focuses the Orator command input.
+  await page.keyboard.press('Control+Space');
   await page.waitForFunction(() =>
     document.getElementById('orator-command-overlay')?.classList.contains('active'),
   );
@@ -299,10 +299,10 @@ test('canvas hotkeys work after clicking game panel', async ({ canvas, page }) =
     () => !document.getElementById('orator-command-overlay')?.classList.contains('active'),
   );
 
-  // Click inside the iframe again (a disabled button) and trigger the mic hotkey (Ctrl+Shift+[).
+  // Click inside the iframe again (a disabled button) and trigger the mic hotkey (Shift+Space).
   await frame.getByRole('button', { name: 'Disabled action' }).click({ force: true });
   expect(await page.evaluate(() => document.activeElement?.className)).toBe('game-html-panel');
-  await page.keyboard.press('Control+Shift+BracketLeft');
+  await page.keyboard.press('Shift+Space');
   await page.waitForFunction(() => (window as unknown as PanelTestWindow).micClicks === 1);
 
   // Push-to-talk keydown and keyup must both forward from the iframe.
@@ -310,15 +310,13 @@ test('canvas hotkeys work after clicking game panel', async ({ canvas, page }) =
     (window as unknown as PanelTestWindow).setMicMode?.('push-to-talk');
   });
   await frame.locator('#status').click();
-  await page.keyboard.down('Control');
   await page.keyboard.down('Shift');
-  await page.keyboard.down('BracketLeft');
+  await page.keyboard.down('Space');
   await page.waitForFunction(() =>
     (window as unknown as PanelTestWindow).micPressLog?.includes('begin:hotkey'),
   );
-  await page.keyboard.up('BracketLeft');
+  await page.keyboard.up('Space');
   await page.keyboard.up('Shift');
-  await page.keyboard.up('Control');
   await page.waitForFunction(() =>
     (window as unknown as PanelTestWindow).micPressLog?.includes('release'),
   );

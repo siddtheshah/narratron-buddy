@@ -362,8 +362,8 @@ test('canvas.html wires push-to-talk, orator text command, VAD 1s interruption, 
   expect(await page.evaluate(() => (window as unknown as AudioTrackingWindow).__playedAudio.length)).toBe(2);
   expect(await page.evaluate(() => (window as unknown as AudioTrackingWindow).__playedAudio[1].paused)).toBe(false);
 
-  // 2. Opening orator text command (default Shift+Space) interrupts active speech playback.
-  await page.keyboard.press('Shift+Space');
+  // 2. Opening orator text command (default Ctrl+Space) interrupts active speech playback.
+  await page.keyboard.press('Control+Space');
   await expect(page.locator('#orator-command-overlay')).toHaveClass(/active/);
   await expect(replayBtn).not.toHaveClass(/playing/);
   expect(await page.evaluate(() => (window as unknown as AudioTrackingWindow).__playedAudio[1].paused)).toBe(true);

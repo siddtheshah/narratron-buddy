@@ -133,7 +133,7 @@ test('auth hydration runs testing auto-login once and displays authenticated use
   expect(meCalls).toBe(callsBeforeSecondRead);
 });
 
-test('orator role UI activates controls and submits text commands via Shift+Space', async ({
+test('orator role UI activates controls and submits text commands via Ctrl+Space', async ({
   canvas,
   page,
 }) => {
@@ -155,7 +155,7 @@ test('orator role UI activates controls and submits text commands via Shift+Spac
     '/theater-editor?theater_id=stage',
   );
 
-  await page.keyboard.press('Shift+Space');
+  await page.keyboard.press('Control+Space');
   const overlay = page.locator('#orator-command-overlay');
   await expect(overlay).toHaveClass(/active/);
   await expect(page.locator('#orator-command-input')).toBeFocused();
@@ -183,7 +183,7 @@ test('viewer role hides orator controls and ignores orator command hotkey', asyn
   await expect(page.locator('#suggestions-toggle-btn')).toBeHidden();
   await expect(page.locator('#sticky-notes-toggle-btn')).toBeHidden();
 
-  await page.keyboard.press('Shift+Space');
+  await page.keyboard.press('Control+Space');
   await expect(page.locator('#orator-command-overlay')).not.toHaveClass(/active/);
 });
 

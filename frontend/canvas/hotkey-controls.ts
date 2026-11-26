@@ -61,10 +61,10 @@ export const MIC_HOTKEY_STORAGE_KEY = 'narratron_mic_hotkey';
 export const TEXT_HOTKEY_STORAGE_KEY = 'narratron_text_hotkey';
 
 export const DEFAULT_MIC_HOTKEY: HotkeySpec = {
-  code: 'BracketLeft',
-  key: '[',
+  code: 'Space',
+  key: ' ',
   altKey: false,
-  ctrlKey: true,
+  ctrlKey: false,
   shiftKey: true,
 };
 
@@ -72,8 +72,8 @@ export const DEFAULT_TEXT_HOTKEY: HotkeySpec = {
   code: 'Space',
   key: ' ',
   altKey: false,
-  ctrlKey: false,
-  shiftKey: true,
+  ctrlKey: true,
+  shiftKey: false,
 };
 
 const CODE_DISPLAY_LABELS: Readonly<Record<string, string>> = {
