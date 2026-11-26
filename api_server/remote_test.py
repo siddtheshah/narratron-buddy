@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 import object_registry
 from api_server import remote
 from components.theater_manager import TheaterManager
-from storage.theater_repository import TheaterRepository
+from storage.local_theater_repository import LocalTheaterRepository
 
 
 @pytest.fixture
@@ -133,7 +133,7 @@ def test_remote_restores_inactive_adventure_before_loading_state(
     )
     log_text = '{"type":"user_action","action":"Explore the ruins"}\n'
     saved_manager.theater("stage").append_output_file("story_log.jsonl", log_text)
-    repository = TheaterRepository(tmp_path / "repository")
+    repository = LocalTheaterRepository(tmp_path / "repository")
     assert repository.export_theater("stage", saved_manager.theater("stage").directory())
     manager = TheaterManager(tmp_path / "runtime")
     theater_dir = manager.theater("stage").directory()

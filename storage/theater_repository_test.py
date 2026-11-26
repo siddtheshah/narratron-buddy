@@ -6,11 +6,24 @@ from unittest.mock import patch
 
 from absl.testing import flagsaver
 
-from storage.theater_repository import TheaterRepository, get_theaters_root
+from storage.local_theater_repository import LocalTheaterRepository
+from storage.theater_repository import get_theaters_root
+
+
+def test_local_catalog_export_keeps_filesystem_backend_when_flags_change(tmp_path: Path) -> None:
+    changed = []
+    repository = LocalTheaterRepository(tmp_path / "repository", storage_changed=changed.append)
+    source = tmp_path / "checkout"
+    source.mkdir()
+    (source / "theater.json").write_text('{"theater_id":"quest"}', encoding="utf-8")
+    with flagsaver.flagsaver(testing_use_local=False):
+        assert repository.export_catalog_theater("quest", source, {})
+    assert repository.get_theater_metadata("quest") == {"theater_id": "quest"}
+    assert changed == ["quest"]
 
 
 def test_export_and_restore_without_filesystem_metadata_support(tmp_path: Path) -> None:
-    repository = TheaterRepository(tmp_path / "repository")
+    repository = LocalTheaterRepository(tmp_path / "repository")
     source = tmp_path / "checkout"
     files = {
         "theater.json": b'{"theater_id":"quest","name":"Quest"}',
@@ -53,7 +66,7 @@ def test_export_and_restore_without_filesystem_metadata_support(tmp_path: Path) 
 
 
 def test_failed_content_copy_reports_failure_without_pruning_saved_assets(tmp_path: Path) -> None:
-    repository = TheaterRepository(tmp_path / "repository")
+    repository = LocalTheaterRepository(tmp_path / "repository")
     source = tmp_path / "checkout"
     source.mkdir()
     (source / "theater.json").write_text('{"theater_id":"quest","name":"Quest"}', encoding="utf-8")
@@ -88,7 +101,7 @@ class TheaterRepositoryTest(unittest.TestCase):
         self.work_dir = Path(self.temp_dir.name) / "work"
         self.repo_dir.mkdir()
         self.work_dir.mkdir()
-        self.repo = TheaterRepository(base_dir=self.repo_dir)
+        self.repo = LocalTheaterRepository(base_dir=self.repo_dir)
 
     def tearDown(self):
         self.temp_dir.cleanup()

@@ -217,7 +217,7 @@ class TestTheaterManager(unittest.TestCase):
         self.temp_dir.cleanup()
 
     def test_stamp_package_import_and_repository_round_trip(self) -> None:
-        from storage.theater_repository import TheaterRepository
+        from storage.local_theater_repository import LocalTheaterRepository
 
         archive = io.BytesIO()
         with zipfile.ZipFile(archive, "w") as package:
@@ -233,7 +233,7 @@ class TestTheaterManager(unittest.TestCase):
         }])
         (theater.stamps_dir() / "notes.txt").write_text("ignored", encoding="utf-8")
         self.assertEqual(len(theater.stamps()), 1)
-        repository = TheaterRepository(Path(self.temp_dir.name) / "repository")
+        repository = LocalTheaterRepository(Path(self.temp_dir.name) / "repository")
         self.assertTrue(repository.export_theater("stamp-stage", theater.directory()))
         restored = Path(self.temp_dir.name) / "restored"
         self.assertTrue(repository.reconstruct_theater("stamp-stage", restored))

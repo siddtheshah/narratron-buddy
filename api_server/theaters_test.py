@@ -19,6 +19,7 @@ from api_server.app import app
 import object_registry
 import api_server.theaters as theaters
 from testing.reference_images import mp3_bytes, png_bytes, wav_bytes
+from services.adventure_service import AdventureAssets
 from utils.config_loader import get_theater_default_config
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -1494,6 +1495,26 @@ def test_canvas_save_reports_repository_result(save_result: bool | RuntimeError)
         assert response.json() == {"detail": "Failed to save theater to the repository. Please try again."}
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("saved", [False, True])
+async def test_initial_catalog_export_uses_direct_repository_save(saved: bool, tmp_path: Path) -> None:
+    manager = MagicMock()
+    manager.theater.return_value.directory.return_value = tmp_path
+    repository = MagicMock()
+    repository.export_catalog_theater.return_value = saved
+    catalog_assets = {"checksum": MagicMock(spec=theaters.storage.Blob)}
+    with (
+        patch.object(object_registry, "theater_manager", manager),
+        patch.object(object_registry, "theater_repository", repository),
+        patch.object(object_registry, "canvas_states", MagicMock()) as states,
+        patch.object(object_registry, "db", MagicMock()),
+        patch.object(theaters, "save_theater_checkout", side_effect=AssertionError("No mounted export")),
+    ):
+        assert await theaters._export_canvas_theater_async("catalog-quest", catalog_assets) is saved
+    repository.export_catalog_theater.assert_called_once_with("catalog-quest", tmp_path, catalog_assets)
+    states.get.return_value.save_local_theater_data.assert_called_once_with(theater_dir=tmp_path)
+
+
 def test_export_theater_requires_the_registry_deployment_owner():
     registry_db = MagicMock()
     registry_db.get_deployment.return_value = {"user_id": 2}
@@ -1658,7 +1679,8 @@ def test_get_adventure_cover_endpoint_success_and_404():
 
 
 @pytest.mark.asyncio
-async def test_create_and_deploy_theater_with_preset_adventure():
+@pytest.mark.parametrize("cloud_catalog", [False, True])
+async def test_create_and_deploy_theater_with_preset_adventure(cloud_catalog: bool) -> None:
     mock_user = {"id": 42, "email": "test@narratron.com"}
     mock_deployed = MagicMock()
     mock_deployed.theater_id = "theater_preset123"
@@ -1692,6 +1714,17 @@ async def test_create_and_deploy_theater_with_preset_adventure():
     mock_adv_service = MagicMock()
     mock_adv_service.get_adventure.return_value = mock_adv_meta
     mock_adv_service.load_adventure_assets.return_value = (mock_adv_refs, mock_adv_playlists, mock_adv_lore, mock_adv_config)
+    catalog_blob = MagicMock(spec=theaters.storage.Blob)
+
+    def load_assets(
+        adventure_id: str, *, catalog_assets: dict[str, theaters.storage.Blob],
+    ) -> AdventureAssets:
+        assert adventure_id == "lesovik-station"
+        if cloud_catalog:
+            catalog_assets["checksum"] = catalog_blob
+        return mock_adv_refs, mock_adv_playlists, mock_adv_lore, mock_adv_config
+
+    mock_adv_service.load_adventure_assets.side_effect = load_assets
 
     with patch.object(theaters, "get_current_user_async", AsyncMock(return_value=mock_user)), \
          patch.object(object_registry, "theater_manager", mock_manager), \
@@ -1711,7 +1744,10 @@ async def test_create_and_deploy_theater_with_preset_adventure():
         assert create_args["theater_config"]["live_agent"]["style"] == "eerie"
         assert create_args["theater_config"]["story_planning"]["adventure_mode"] is True
         assert create_args["metadata_json"] == mock_adv_meta
-        mock_export.assert_awaited_once_with("theater_preset123")
+        if cloud_catalog:
+            mock_export.assert_awaited_once_with("theater_preset123", {"checksum": catalog_blob})
+        else:
+            mock_export.assert_awaited_once_with("theater_preset123")
         mock_db.record_deployment.assert_called_once_with(
             "theater_preset123", 42, "KEY-TEST1", cost=0.0, name="Lesovik Station"
         )
@@ -2255,7 +2291,7 @@ def test_adventure_deploy_saves_to_durable_theater_repository_immediately(tmp_pa
     from components.canvas.canvas_state_service import CanvasStateService
     from components.theater_manager import TheaterManager
     from services.adventure_service import AdventureService
-    from storage.theater_repository import TheaterRepository
+    from storage.local_theater_repository import LocalTheaterRepository
     from testing.reference_images import png_bytes
 
     adventures_root = tmp_path / "adventures"
@@ -2280,7 +2316,7 @@ def test_adventure_deploy_saves_to_durable_theater_repository_immediately(tmp_pa
     (adventure_dir / "playlists" / "ambient" / "gears.mp3").write_bytes(track_bytes)
 
     manager = TheaterManager(tmp_path / "ephemeral")
-    repository = TheaterRepository(tmp_path / "repository")
+    repository = LocalTheaterRepository(tmp_path / "repository")
     canvas_service = CanvasStateService(manager)
     mock_db = MagicMock()
     mock_db.record_deployment.return_value = True
@@ -2322,7 +2358,7 @@ def test_adventure_deploy_fails_and_cleans_up_when_repository_save_fails(tmp_pat
     from components.canvas.canvas_state_service import CanvasStateService
     from components.theater_manager import TheaterManager
     from services.adventure_service import AdventureService
-    from storage.theater_repository import TheaterRepository
+    from storage.local_theater_repository import LocalTheaterRepository
 
     adventures_root = tmp_path / "adventures"
     adventure_dir = adventures_root / "clockwork-vault"
@@ -2337,7 +2373,7 @@ def test_adventure_deploy_fails_and_cleans_up_when_repository_save_fails(tmp_pat
     )
 
     manager = TheaterManager(tmp_path / "ephemeral")
-    repository = TheaterRepository(tmp_path / "repository")
+    repository = LocalTheaterRepository(tmp_path / "repository")
     canvas_service = CanvasStateService(manager)
     mock_db = MagicMock()
     mock_db.record_deployment.return_value = True

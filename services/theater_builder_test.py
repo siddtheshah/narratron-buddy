@@ -8,7 +8,7 @@ import pytest
 from PIL import Image
 import json
 
-from storage.theater_repository import TheaterRepository
+from storage.local_theater_repository import LocalTheaterRepository
 from storage.database import DatabaseManager
 
 from services.theater_builder import (
@@ -58,7 +58,7 @@ def test_animation_folder_upload_save_restore_and_delete(tmp_path: Path) -> None
     }
     store.write_files(info, files)
     assert set(files) <= {item.path for item in store.files(info.theater_id)}
-    repo = TheaterRepository(tmp_path / "saved")
+    repo = LocalTheaterRepository(tmp_path / "saved")
     assert repo.export_theater(info.theater_id, root)
     restored = tmp_path / "restored"
     assert repo.reconstruct_theater(info.theater_id, restored)
@@ -81,7 +81,7 @@ def test_avatar_shaders_allowed_and_preserved_without_arbitrary_scripts(tmp_path
     }
     store.write_files(info, files)
     assert {item.path for item in store.files(info.theater_id)} >= set(files)
-    repo = TheaterRepository(tmp_path / "saved")
+    repo = LocalTheaterRepository(tmp_path / "saved")
     assert repo.export_theater(info.theater_id, root)
     restored = tmp_path / "restored"
     assert repo.reconstruct_theater(info.theater_id, restored)
@@ -175,7 +175,7 @@ def test_default_draft_matches_example_theater_and_preserves_assets_on_publish(t
     info = store.create(7, "World", "live_agent: {}\n")
     target = tmp_path / "runtime"
     target.mkdir()
-    assert TheaterRepository(target.parent).export_theater(target.name, store.directory(info.theater_id))
+    assert LocalTheaterRepository(target.parent).export_theater(target.name, store.directory(info.theater_id))
     assert (target / "theater.yaml").is_file()
     assert (target / "references" / "narratron_avatar.webp").is_file()
     assert (target / "playlists" / "default" / "new_story.mp3").is_file()
@@ -198,7 +198,7 @@ def test_game_format_replacement_is_atomic_and_multiple_declarations_are_rejecte
     assert (store.directory(info.theater_id) / "game/game.yml").read_bytes() == game
     assert not (store.directory(info.theater_id) / "game/game.yaml").exists()
     target = tmp_path / "published"
-    assert TheaterRepository(target.parent).export_theater(target.name, store.directory(info.theater_id))
+    assert LocalTheaterRepository(target.parent).export_theater(target.name, store.directory(info.theater_id))
     assert (target / "game/entity_schema.json").read_bytes() == b'{"type": "object"}'
 
 
@@ -246,11 +246,11 @@ def test_draft_publish_removes_moved_assets_but_preserves_runtime_output(tmp_pat
     store.write_files(info, {"references/hero.png": b"image"})
     target = tmp_path / "runtime"
     target.mkdir()
-    assert TheaterRepository(target.parent).export_theater(target.name, store.directory(info.theater_id))
+    assert LocalTheaterRepository(target.parent).export_theater(target.name, store.directory(info.theater_id))
     (target / "output").mkdir()
     (target / "output/session.txt").write_text("runtime", encoding="utf-8")
     store.write_files(info, {}, [FileMove(source="references/hero.png", destination="references/people/hero.png")])
-    assert TheaterRepository(target.parent).export_theater(target.name, store.directory(info.theater_id))
+    assert LocalTheaterRepository(target.parent).export_theater(target.name, store.directory(info.theater_id))
     assert not (target / "references/hero.png").exists()
     assert (target / "references/people/hero.png").read_bytes() == b"image"
     assert (target / "output/session.txt").read_text(encoding="utf-8") == "runtime"
@@ -450,7 +450,7 @@ def test_loading_theater_into_editor_preserves_characters_folder_and_assets(tmp_
     # Test copy_to also keeps characters directory
     target = tmp_path / "target_theater"
     target.mkdir()
-    assert TheaterRepository(target.parent).export_theater(target.name, store.directory(info.theater_id))
+    assert LocalTheaterRepository(target.parent).export_theater(target.name, store.directory(info.theater_id))
     assert (target / "references" / "characters").is_dir()
     assert (target / "references" / "characters" / "Arthur Modella" / "1.png").read_bytes() == b"arthur_png"
 
@@ -500,7 +500,7 @@ def test_loading_theater_into_editor_preserves_scenes_folder_and_assets(tmp_path
     # Test copy_to also keeps scenes directory
     target = tmp_path / "target_theater"
     target.mkdir()
-    assert TheaterRepository(target.parent).export_theater(target.name, store.directory(info.theater_id))
+    assert LocalTheaterRepository(target.parent).export_theater(target.name, store.directory(info.theater_id))
     assert (target / "references" / "scenes").is_dir()
     assert (target / "references" / "scenes" / "Old Harbor" / "1.png").read_bytes() == b"harbor_png"
 
@@ -532,7 +532,7 @@ def test_character_traits_are_edited_in_shared_checkout(tmp_path: Path) -> None:
     store.write_files(info, {relative: b"personality: Bold\n"})
     target = tmp_path / "runtime"
     target.mkdir()
-    assert TheaterRepository(target.parent).export_theater(target.name, store.directory(info.theater_id))
+    assert LocalTheaterRepository(target.parent).export_theater(target.name, store.directory(info.theater_id))
     assert target.joinpath(relative).read_bytes() == b"personality: Bold\n"
     assert character.read_text(encoding="utf-8") == "personality: Bold\n"
 
@@ -548,6 +548,6 @@ def test_scene_profile_is_edited_in_shared_checkout(tmp_path: Path) -> None:
     store.write_files(info, {relative: b"description: A harbor at sunset\n"})
     target = tmp_path / "runtime"
     target.mkdir()
-    assert TheaterRepository(target.parent).export_theater(target.name, store.directory(info.theater_id))
+    assert LocalTheaterRepository(target.parent).export_theater(target.name, store.directory(info.theater_id))
     assert (target / relative).read_bytes() == b"description: A harbor at sunset\n"
     assert profile.read_text(encoding="utf-8") == "description: A harbor at sunset\n"

@@ -1,12 +1,27 @@
 """Construct application singletons without credentials or developer-owned data."""
 
 import atexit
+from collections.abc import Iterator
+from contextlib import contextmanager
 import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import MagicMock, patch
+from absl import flags
 
 from providers.text_response_provider import TextResponseProvider
+
+
+@contextmanager
+def _local_test_resources() -> Iterator[None]:
+    """Select local construction without removing flags defined during import."""
+    local_flag = flags.FLAGS["testing_use_local"]
+    previous = local_flag.value
+    local_flag.value = True
+    try:
+        yield
+    finally:
+        local_flag.value = previous
 
 
 def initialize_test_registry() -> None:
@@ -46,6 +61,7 @@ def initialize_test_registry() -> None:
         patch("services.music_catalog.get_text_response_provider", return_value=provider),
         patch("providers.registry.get_text_response_provider", return_value=provider),
         patch("storage.stamp_storage.StampStorage._init_gcs_client", return_value=None),
+        _local_test_resources(),
     ):
         import object_registry
         import utils.email_service  # noqa: F401

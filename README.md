@@ -116,8 +116,27 @@ and resolves adventure IDs to folder names. `GCS_BUCKET` defaults to
 to match the mounted source. Downloads use Application Default Credentials with
 permission to list and read those objects. Temporary downloads are removed after
 the existing package parser reads them, including on failure. Local mode and
-explicit local adventure directories continue to read from disk. Repository
-persistence remains in the background after deployment.
+explicit local adventure directories continue to read from disk.
+
+Deployment returns success after the initial durable theater save. For cloud
+catalog adventures, unchanged assets are copied within GCS to
+`theaters/<theater_id>/` using eight concurrent workers, avoiding a server
+download/upload round trip for persistence. The local download remains necessary
+for validation and serving the active theater. Final file checksums identify
+unchanged catalog bytes even after path normalization; edited configuration,
+uploaded overrides, and generated state are uploaded separately. Source generation
+preconditions protect copies against catalog changes, and `theater.json` is saved
+last. Logs report server-side copy and upload counts. These saves require object
+creation and deletion permissions in addition to catalog read access. Subsequent
+editor and canvas saves list GCS object metadata once, skip files whose checksums
+match, upload only changed or new files, and remove deleted package assets while
+preserving runtime output. Logs also report the unchanged file count.
+
+Application setup selects a `LocalTheaterRepository` or `GCSTheaterRepository`
+instance behind the shared `TheaterRepository` interface. The GCS bucket is
+injected at construction; save operations do not inspect runtime flags or infer
+the backend from directory paths. Both implementations retain the existing
+directory-based reads, including the mounted directory in cloud mode.
 
 Game and adventure content can be backed up to separate Git repositories under
 `gs://narratron-buddy-app-storage/git/` without adding packages to this source

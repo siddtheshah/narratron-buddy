@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 from components.theater_manager import TheaterManager
 from services.theater_builder import DraftInfo, TheaterBuilderStore
-from storage.theater_repository import TheaterRepository
+from storage.local_theater_repository import LocalTheaterRepository
 
 from pricing.pricing_controller import PricingController
 from storage.database import LocalDatabaseManager
@@ -202,7 +202,7 @@ class TestStorageLimits(unittest.TestCase):
 
     def test_editor_changes_and_saves_invalidate_index_but_metadata_reads_do_not(self) -> None:
         manager = TheaterManager(self.theaters_root / "runtime", storage_changed=self.db.invalidate_theater_storage)
-        repository = TheaterRepository(self.theaters_root / "saved", storage_changed=self.db.invalidate_theater_storage)
+        repository = LocalTheaterRepository(self.theaters_root / "saved", storage_changed=self.db.invalidate_theater_storage)
         manager.create_theater("Stage", "stage", theater_config={"live_agent": {}})
         self.db.record_deployment("stage", self.user_id, "KEY", cost=0.0)
         builder = TheaterBuilderStore(manager.base_dir, self.db, manager.notify_storage_changed)

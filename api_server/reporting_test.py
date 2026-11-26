@@ -10,7 +10,7 @@ from starlette.requests import Request
 import api_server.reporting as reporting
 from pricing.pricing_controller import PricingController
 from storage.database import LocalDatabaseManager
-from storage.theater_repository import TheaterRepository
+from storage.local_theater_repository import LocalTheaterRepository
 
 
 @pytest.mark.asyncio
@@ -23,7 +23,7 @@ async def test_reports_link_shared_evidence_and_support_moderation(tmp_path: Pat
         database.add_contributor('stage', owner['id'], reporter['id'])
         database.request_baton('stage', owner['id'], reporter['id'])
         database.accept_baton('stage', reporter['id'])
-        repository = TheaterRepository(tmp_path / 'theaters')
+        repository = LocalTheaterRepository(tmp_path / 'theaters')
         source = repository.theater_path('stage')
         source.mkdir()
         (source / 'theater.json').write_text('{"name":"Reported Theater"}')

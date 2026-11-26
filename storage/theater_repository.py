@@ -1,18 +1,21 @@
 """Storage repository for persisting and reconstructing theater assets.
 
-Operates directly on a directory path (e.g. local directory or mounted GCS bucket).
+Shared directory addressing, mounted reads, and the repository save contract.
 """
 
 from __future__ import annotations
 
 import json
+from abc import ABC, abstractmethod
 import logging
 from pathlib import Path
 import shutil
-from typing import Any, Callable, Dict, List, Optional
+from typing import Callable
+
+from pydantic import JsonValue
+from google.cloud import storage
 
 from components.theater_manager import validate_theater_id
-from components.theater_package import safe_asset_path
 
 from absl import flags
 
@@ -58,16 +61,17 @@ def _copy_directory_contents(source: Path, target: Path) -> None:
             shutil.copyfile(item, destination)
 
 
-class TheaterRepository:
-    """Provides theater export, reconstruction, and metadata management on a storage directory."""
+class TheaterRepository(ABC):
+    """Common repository contract and reads through the backing directory.
 
-    def __init__(self, base_dir: Optional[Path | str] = None,
+    Cloud repositories share the existing mounted reads; concrete implementations
+    select how working copies are persisted, without runtime backend detection.
+    """
+
+    def __init__(self, base_dir: Path | str,
                  storage_changed: Callable[[str], None] | None = None) -> None:
         self.storage_changed = storage_changed
-        if base_dir is not None:
-            self._base_dir = Path(base_dir).resolve()
-        else:
-            self._base_dir = ensure_theaters_root()
+        self._base_dir = Path(base_dir).resolve()
         self._base_dir.mkdir(parents=True, exist_ok=True)
 
     def _notify_storage_changed(self, theater_id: str) -> None:
@@ -95,7 +99,7 @@ class TheaterRepository:
         self,
         theater_id: str,
         source_dir: Path | str,
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: dict[str, JsonValue] | None = None,
     ) -> bool:
         """Export a theater's directory tree and metadata to repository storage."""
         source_dir = Path(source_dir).resolve()
@@ -116,37 +120,18 @@ class TheaterRepository:
             self._notify_storage_changed(theater_id)
             return True
 
-        try:
-            target.mkdir(parents=True, exist_ok=True)
-            (target / "references" / "characters").mkdir(parents=True, exist_ok=True)
-            (target / "references" / "scenes").mkdir(parents=True, exist_ok=True)
-            for item in source_dir.iterdir():
-                if item.name in {"editor.json", "editor.tmp"}:
-                    continue
-                dest = target / item.name
-                if item.is_dir():
-                    _copy_directory_contents(item, dest)
-                else:
-                    shutil.copyfile(item, dest)
-            # Package saves replace the authored file set, while runtime output
-            # and canvas state retain the repository's existing merge behavior.
-            for item in target.rglob("*"):
-                if not item.is_file():
-                    continue
-                relative = item.relative_to(target).as_posix()
-                try:
-                    source_file = safe_asset_path(source_dir, relative)
-                    safe_asset_path(target, relative)
-                except ValueError:
-                    continue
-                if not source_file.is_file():
-                    item.unlink()
-            return True
-        except Exception as e:
-            logger.warning("Failed to export theater %s to %s: %s", theater_id, target, e)
-            return False
-        finally:
-            self._notify_storage_changed(theater_id)
+        return self._export_theater(theater_id, source_dir)
+
+    @abstractmethod
+    def _export_theater(self, theater_id: str, source_dir: Path) -> bool:
+        """Persist a validated working copy through this repository's backend."""
+        raise NotImplementedError
+
+    def export_catalog_theater(
+        self, theater_id: str, source_dir: Path, catalog_assets: dict[str, storage.Blob],
+    ) -> bool:
+        """Save a catalog checkout using the backend's normal export behavior."""
+        return self.export_theater(theater_id, source_dir)
 
     def reconstruct_theater(self, theater_id: str, target_dir: Path | str) -> bool:
         """Reconstruct a theater's directory and assets from repository storage."""
@@ -185,7 +170,7 @@ class TheaterRepository:
         finally:
             self._notify_storage_changed(theater_id)
 
-    def get_theater_metadata(self, theater_id: str) -> Optional[Dict[str, Any]]:
+    def get_theater_metadata(self, theater_id: str) -> dict[str, JsonValue] | None:
         """Fetch parsed theater.json metadata for a theater without modifying disk."""
         meta_file = self.theater_path(theater_id) / "theater.json"
         if meta_file.exists():
@@ -219,7 +204,7 @@ class TheaterRepository:
             return True
         return False
 
-    def list_theaters(self) -> List[Dict[str, Any]]:
+    def list_theaters(self) -> list[dict[str, JsonValue]]:
         """List all theaters available in repository storage."""
         theaters = []
         if self._base_dir.exists():

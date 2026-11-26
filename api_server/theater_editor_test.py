@@ -36,6 +36,7 @@ from services.google_asset_importer import GoogleImportResult
 from services.theater_builder import BuilderProposal, ChatMessage, DraftInfo, GenerationRequest, TheaterBuilderStore
 from services.live_agent import get_playlists_context
 from services.music_catalog import MusicCatalog
+from storage.local_theater_repository import LocalTheaterRepository
 from storage.theater_repository import TheaterRepository
 from tools.music_tool import MusicTools
 
@@ -165,7 +166,7 @@ def test_canvas_help_does_not_restart_when_durable_save_fails(builder: BuilderHa
 @pytest.fixture
 def builder(tmp_path: Path) -> Iterator[BuilderHarness]:
     manager = TheaterManager(tmp_path / "runtime")
-    repository = TheaterRepository(tmp_path / "repository")
+    repository = LocalTheaterRepository(tmp_path / "repository")
     database = MagicMock()
     deployments: dict[str, dict[str, JsonValue]] = {}
     database.get_deployment.return_value = None

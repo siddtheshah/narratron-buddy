@@ -268,9 +268,12 @@ class AdventureService:
         return None
 
     def load_adventure_assets(
-        self, adventure_id: str
+        self, adventure_id: str, *, catalog_assets: dict[str, storage.Blob] | None = None,
     ) -> AdventureAssets:
         """Load and package all adventure assets for mounting to a new theater.
+
+        When supplied, populate catalog_assets with checksum-indexed GCS source
+        objects so the initial durable save can copy unchanged bytes in GCS.
 
         Returns:
             Tuple of:
@@ -311,19 +314,24 @@ class AdventureService:
         if self._use_gcs():
             with TemporaryDirectory(prefix="narratron-adventure-") as temporary:
                 local_folder = Path(temporary)
-                self._download_adventure_folder(matched_folder.name, local_folder)
+                if catalog_assets is None:
+                    self._download_adventure_folder(matched_folder.name, local_folder)
+                else:
+                    self._download_adventure_folder(matched_folder.name, local_folder, catalog_assets=catalog_assets)
                 return self._load_adventure_folder(local_folder, adventure_id)
         return self._load_adventure_folder(matched_folder, adventure_id)
 
     @staticmethod
-    def _download_adventure_folder(folder_name: str, destination: Path) -> None:
+    def _download_adventure_folder(
+        folder_name: str, destination: Path, *, catalog_assets: dict[str, storage.Blob] | None = None,
+    ) -> None:
         """Download a package directly from GCS with bounded parallel transfers."""
         client = storage.Client()
         bucket = client.bucket(os.getenv("GCS_BUCKET", DEFAULT_ADVENTURES_BUCKET))
         root_prefix = os.getenv("GCS_ADVENTURES_PREFIX", DEFAULT_ADVENTURES_PREFIX).strip("/")
         prefix = f"{root_prefix}/{folder_name}/" if root_prefix else f"{folder_name}/"
-        names = [blob.name.removeprefix(prefix) for blob in bucket.list_blobs(prefix=prefix)
-                 if not blob.name.endswith("/")]
+        blobs = [blob for blob in bucket.list_blobs(prefix=prefix) if not blob.name.endswith("/")]
+        names = [blob.name.removeprefix(prefix) for blob in blobs]
         if not names:
             raise FileNotFoundError(f"No adventure files found under gs://{bucket.name}/{prefix}")
         # Reject unsafe object names before starting any of the downloads.
@@ -334,6 +342,12 @@ class AdventureService:
             worker_type=transfer_manager.THREAD, max_workers=DOWNLOAD_WORKERS,
             raise_exception=True,
         )
+        if catalog_assets is not None:
+            # Match the final theater bytes against GCS checksums. This survives
+            # package path normalization and safely excludes uploaded overrides.
+            for blob in blobs:
+                if blob.md5_hash is not None and blob.generation is not None:
+                    catalog_assets[blob.md5_hash] = blob
 
     @staticmethod
     def _load_adventure_folder(folder: Path, adventure_id: str) -> AdventureAssets:

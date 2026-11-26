@@ -22,6 +22,7 @@ from providers.image_provider import ImageGenerationRequest, ImageGenerationResu
 from providers.music_provider import MusicGenerationResult
 from providers.video_provider import VideoGenerationResult
 from services.theater_assets import ReferenceIntentDecision
+from storage.local_theater_repository import LocalTheaterRepository
 from storage.theater_repository import TheaterRepository
 
 
@@ -41,7 +42,7 @@ def stamps(tmp_path: Path) -> Iterator[StampHarness]:
     manager.create_theater("Stamps", "stage")
     root = manager.theater("stage").directory()
     (root / "theater.yaml").write_text("visuals:\n  style: Fantasy\n", encoding="utf-8")
-    repository = TheaterRepository(tmp_path / "repository")
+    repository = LocalTheaterRepository(tmp_path / "repository")
     repository.export_theater("stage", root)
     database = MagicMock()
     database.get_deployment.return_value = {"user_id": 7, "active_orator_id": 8, "contributors": "[9]"}

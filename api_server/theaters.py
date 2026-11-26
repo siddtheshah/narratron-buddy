@@ -31,6 +31,7 @@ from api_server.shared import (
     PROJECT_ROOT,
 )
 from google.genai import types
+from google.cloud import storage
 from api_server.canvas import broadcast_baton_update, _broadcast_doodle
 from services.theater_image_generation import generate_theater_image
 from services.theater_media_generation import generate_theater_media
@@ -456,12 +457,17 @@ async def _generate_canvas_asset(
         await asyncio.to_thread(object_registry.db.release_generation_slot, slot_id)
 
 
-async def _export_canvas_theater_async(theater_id: str) -> bool:
+async def _export_canvas_theater_async(
+    theater_id: str, catalog_assets: dict[str, storage.Blob] | None = None,
+) -> bool:
     """Export theater canvas data to repository asynchronously."""
     def _export() -> bool:
         theater_dir = object_registry.theater_manager.theater(theater_id).directory()
         object_registry.canvas_states.get(theater_id).save_local_theater_data(theater_dir=theater_dir)
-        saved = save_theater_checkout(theater_id, object_registry.theater_manager, object_registry.theater_repository, object_registry.db)
+        if catalog_assets:
+            saved = object_registry.theater_repository.export_catalog_theater(theater_id, theater_dir, catalog_assets)
+        else:
+            saved = save_theater_checkout(theater_id, object_registry.theater_manager, object_registry.theater_repository, object_registry.db)
         if saved:
             metadata = object_registry.theater_manager.get_theater(theater_id)
             if metadata is not None:
@@ -1530,12 +1536,14 @@ async def create_and_deploy_theater(request: Request):
     playlists_data = {}
     lore_files = []
     adventure_metadata = None
+    catalog_assets: dict[str, storage.Blob] = {}
 
     # If an adventure preset is chosen, load its assets first
     adv_config: dict = {}
     if preset_adventure_id:
         adv_refs, adv_playlists, adv_lore, adv_config = await asyncio.to_thread(
             object_registry.adventure_service.load_adventure_assets, preset_adventure_id,
+            catalog_assets=catalog_assets,
         )
         reference_files.extend(adv_refs)
         lore_files.extend(adv_lore)
@@ -1739,7 +1747,11 @@ async def create_and_deploy_theater(request: Request):
                 detail="Could not register the new theater. Please try again.",
             )
         deployment_recorded = True
-        if not await _export_canvas_theater_async(deployed_meta.theater_id):
+        if catalog_assets:
+            saved = await _export_canvas_theater_async(deployed_meta.theater_id, catalog_assets)
+        else:
+            saved = await _export_canvas_theater_async(deployed_meta.theater_id)
+        if not saved:
             raise HTTPException(
                 status_code=503,
                 detail="Could not save the new theater. Please try again.",

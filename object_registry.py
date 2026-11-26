@@ -20,6 +20,7 @@ import uuid
 from absl import flags
 from dotenv import load_dotenv
 from fastapi import FastAPI
+from google.cloud import storage
 
 from components.canvas.canvas_state_service import CanvasStateService
 from components.theater_manager import TheaterManager
@@ -35,7 +36,9 @@ from services.text_beautifier import TextBeautifier
 from services.user_stamp_resolver import UserStampResolver
 from storage.database import CloudPostgresDatabaseManager, LocalDatabaseManager
 from storage.stamp_storage import StampStorage, ensure_stamps_root
-from storage.theater_repository import TheaterRepository
+from storage.theater_repository import TheaterRepository, ensure_theaters_root
+from storage.local_theater_repository import LocalTheaterRepository
+from storage.gcs_theater_repository import GCSTheaterRepository
 from utils.config_loader import get_app_config
 from utils.frontend_build import ensure_canvas_assets_built
 
@@ -173,7 +176,15 @@ def invalidate_theater_storage(theater_id: str) -> None:
 
 
 theater_manager = TheaterManager(storage_changed=invalidate_theater_storage)
-theater_repository = TheaterRepository(storage_changed=invalidate_theater_storage)
+theater_repository: TheaterRepository
+if FLAGS.testing_use_local:
+    theater_repository = LocalTheaterRepository(ensure_theaters_root(), storage_changed=invalidate_theater_storage)
+else:
+    theater_repository = GCSTheaterRepository(
+        ensure_theaters_root(),
+        bucket=storage.Client().bucket(os.getenv("GCS_BUCKET", "narratron-buddy-app-storage")),
+        storage_changed=invalidate_theater_storage,
+    )
 pricing_controller = PricingController.from_env()
 local_database_path = PROJECT_ROOT / "deployer.db"
 if FLAGS.testing_use_local and FLAGS.with_empty_db:

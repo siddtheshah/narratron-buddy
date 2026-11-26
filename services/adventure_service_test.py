@@ -1,6 +1,8 @@
 """Unit tests for services/adventure_service.py."""
 
 import json
+import base64
+import hashlib
 from pathlib import Path
 import tempfile
 import unittest
@@ -22,7 +24,8 @@ from services.adventure_service import (
 
 
 @pytest.mark.parametrize("prefix", ["adventures", "/custom/presets/", ""])
-def test_cloud_adventure_download_uses_python_transfer_manager(tmp_path: Path, prefix: str) -> None:
+@pytest.mark.parametrize("capture_catalog", [False, True])
+def test_cloud_adventure_download_uses_python_transfer_manager(tmp_path: Path, prefix: str, capture_catalog: bool) -> None:
     mount = tmp_path / "mount"
     folder = mount / "Actual Folder"
     folder.mkdir(parents=True)
@@ -44,7 +47,12 @@ def test_cloud_adventure_download_uses_python_transfer_manager(tmp_path: Path, p
     bucket.name = "custom-bucket"
     root = prefix.strip("/")
     object_prefix = f"{root}/Actual Folder/" if root else "Actual Folder/"
-    bucket.list_blobs.return_value = [SimpleNamespace(name=object_prefix + name) for name in assets]
+    blobs = []
+    for name, content in assets.items():
+        blob = storage.Blob(object_prefix + name, bucket, generation=42)
+        blob._properties["md5Hash"] = base64.b64encode(hashlib.md5(content).digest()).decode("ascii")
+        blobs.append(blob)
+    bucket.list_blobs.return_value = blobs.copy()
     bucket.list_blobs.return_value.append(SimpleNamespace(name=object_prefix + "lore/"))
     temporary_paths: list[Path] = []
 
@@ -72,10 +80,13 @@ def test_cloud_adventure_download_uses_python_transfer_manager(tmp_path: Path, p
          patch.object(adventures.storage, "Client", autospec=True) as client, \
          patch.object(adventures.transfer_manager, "download_many_to_path", side_effect=download) as transfer:
         client.return_value.bucket.return_value = bucket
-        references, playlists, lore, config = service.load_adventure_assets("public-id")
+        catalog_assets: dict[str, storage.Blob] | None = {} if capture_catalog else None
+        references, playlists, lore, config = service.load_adventure_assets("public-id", catalog_assets=catalog_assets)
         client.return_value.bucket.assert_called_once_with("custom-bucket")
         bucket.list_blobs.assert_called_once_with(prefix=object_prefix)
         transfer.assert_called_once()
+        if catalog_assets is not None:
+            assert set(catalog_assets.values()) == set(blobs)
 
     assert dict(references) == {name: data for name, data in assets.items()
                                 if name.startswith(("references/", "stamps/", "game/", "animations/")) or name == "planning.yaml"}
